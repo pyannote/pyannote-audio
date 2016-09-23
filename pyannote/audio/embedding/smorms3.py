@@ -26,119 +26,10 @@
 # AUTHORS
 # Gregory GELLY - gregory.gelly@limsi.fr
 
-from __future__ import absolute_import
-from keras import backend as K
-from keras.utils.generic_utils import get_from_module
-from six.moves import zip
+import os.path
 
-
-def clip_norm(g, c, n):
-    if c > 0:
-        g = K.switch(n >= c, g * c / n, g)
-    return g
-
-
-def optimizer_from_config(config, custom_objects={}):
-    all_classes = {
-        'sgd': SGD,
-        'rmsprop': RMSprop,
-        'adagrad': Adagrad,
-        'adadelta': Adadelta,
-        'adam': Adam,
-        'adamax': Adamax,
-        'nadam': Nadam,
-    }
-    class_name = config['class_name']
-    if class_name in custom_objects:
-        cls = custom_objects[class_name]
-    else:
-        if class_name.lower() not in all_classes:
-            raise ValueError('Optimizer class not found:', class_name)
-        cls = all_classes[class_name.lower()]
-    return cls.from_config(config['config'])
-
-
-class Optimizer(object):
-    '''Abstract optimizer base class.
-    Note: this is the parent class of all optimizers, not an actual optimizer
-    that can be used for training models.
-    All Keras optimizers support the following keyword arguments:
-        clipnorm: float >= 0. Gradients will be clipped
-            when their L2 norm exceeds this value.
-        clipvalue: float >= 0. Gradients will be clipped
-            when their absolute value exceeds this value.
-    '''
-    def __init__(self, **kwargs):
-        allowed_kwargs = {'clipnorm', 'clipvalue'}
-        for k in kwargs:
-            if k not in allowed_kwargs:
-                raise Exception('Unexpected keyword argument '
-                                'passed to optimizer: ' + str(k))
-        self.__dict__.update(kwargs)
-        self.updates = []
-        self.weights = []
-
-    def get_state(self):
-        return [K.get_value(u[0]) for u in self.updates]
-
-    def set_state(self, value_list):
-        assert len(self.updates) == len(value_list)
-        for u, v in zip(self.updates, value_list):
-            K.set_value(u[0], v)
-
-    def get_updates(self, params, constraints, loss):
-        raise NotImplementedError
-
-    def get_gradients(self, loss, params):
-        grads = K.gradients(loss, params)
-        if hasattr(self, 'clipnorm') and self.clipnorm > 0:
-            norm = K.sqrt(sum([K.sum(K.square(g)) for g in grads]))
-            grads = [clip_norm(g, self.clipnorm, norm) for g in grads]
-        if hasattr(self, 'clipvalue') and self.clipvalue > 0:
-            grads = [K.clip(g, -self.clipvalue, self.clipvalue) for g in grads]
-        return grads
-
-    def set_weights(self, weights):
-        '''Sets the weights of the optimizer, from Numpy arrays.
-        Should only be called after computing the gradients
-        (otherwise the optimizer has no weights).
-        # Arguments
-            weights: a list of Numpy arrays. The number
-                of arrays and their shape must match
-                number of the dimensions of the weights
-                of the optimizer (i.e. it should match the
-                output of `get_weights`).
-        '''
-        params = self.weights
-        weight_value_tuples = []
-        param_values = K.batch_get_value(params)
-        for pv, p, w in zip(param_values, params, weights):
-            if pv.shape != w.shape:
-                raise Exception('Optimizer weight shape ' +
-                                str(pv.shape) +
-                                ' not compatible with '
-                                'provided weight shape ' + str(w.shape))
-            weight_value_tuples.append((p, w))
-        K.batch_set_value(weight_value_tuples)
-
-    def get_weights(self):
-        '''Returns the current weights of the optimizer,
-        as a list of numpy arrays.
-        '''
-        return K.batch_get_value(self.weights)
-
-    def get_config(self):
-        config = {}
-        if hasattr(self, 'clipnorm'):
-            config['clipnorm'] = self.clipnorm
-        if hasattr(self, 'clipvalue'):
-            config['clipvalue'] = self.clipvalue
-        return config
-
-    @classmethod
-    def from_config(cls, config):
-        return cls(**config)
-
+from keras.optimizers import Optimizer 
+import keras.backend as K
 
 class SMORMS3(Optimizer):
     '''SMORMS3 optimizer.
@@ -197,17 +88,3 @@ class SMORMS3(Optimizer):
         base_config = super(SMORMS3, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
-# aliases
-sgd = SGD
-rmsprop = RMSprop
-adagrad = Adagrad
-adadelta = Adadelta
-adam = Adam
-adamax = Adamax
-smorms3 = SMORMS3
-
-
-def get(identifier, kwargs=None):
-    return get_from_module(identifier, globals(), 'optimizer',
-                           instantiate=True, kwargs=kwargs)
-    
