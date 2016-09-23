@@ -28,7 +28,7 @@
 
 import os.path
 
-from keras import optimizers
+from keras.optimizers import Optimizer 
 import keras.backend as K
 
 class SMORMS3(Optimizer):
