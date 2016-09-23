@@ -45,8 +45,6 @@ class SMORMS3(Optimizer):
         self.__dict__.update(locals())
         self.iterations = K.variable(0)
         self.lr = K.variable(lr)
-        self.beta_1 = K.variable(beta_1)
-        self.beta_2 = K.variable(beta_2)
         self.decay = K.variable(decay)
         self.inital_decay = decay
 
