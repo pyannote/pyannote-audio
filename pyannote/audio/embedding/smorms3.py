@@ -66,8 +66,9 @@ class SMORMS3(Optimizer):
             r = 1. / (1. + mem)
             m_t = (1. - r) * m + r * g
             v_t = (1. - r) * v + r * K.square(g)
-            p_t = p - g * K.min(lr, m_t * m_t / (v_t + self.epsilon)) / (K.sqrt(v_t) + self.epsilon)
-            mem_t = 1. + mem * (1. - m_t * m_t / (v_t + self.epsilon))
+            denoise = K.square(m_t) / (v_t + self.epsilon)
+            p_t = p - g * K.min(lr, denoise) / (K.sqrt(v_t) + self.epsilon)
+            mem_t = 1. + mem * (1. - denoise)
 
             self.updates.append(K.update(m, m_t))
             self.updates.append(K.update(v, v_t))
