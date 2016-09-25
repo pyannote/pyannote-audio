@@ -67,7 +67,7 @@ class SMORMS3(Optimizer):
             m_t = (1. - r) * m + r * g
             v_t = (1. - r) * v + r * K.square(g)
             denoise = K.square(m_t) / (v_t + self.epsilon)
-            p_t = p - g * K.min(lr, denoise) / (K.sqrt(v_t) + self.epsilon)
+            p_t = p - g * K.minimum(lr, denoise) / (K.sqrt(v_t) + self.epsilon)
             mem_t = 1. + mem * (1. - denoise)
 
             self.updates.append(K.update(m, m_t))
@@ -87,5 +87,59 @@ class SMORMS3(Optimizer):
                   'decay': float(K.get_value(self.decay)),
                   'epsilon': self.epsilon}
         base_config = super(SMORMS3, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+class SMORMS3Mod(Optimizer):
+    '''SMORMS3Mod optimizer.
+    Slight modification of SMORMS3
+    # Arguments
+        lr: float >= 0. Learning rate.
+        epsilon: float >= 0. Fuzz factor.
+    # References
+        - [RMSprop loses to SMORMS3 - Beware the Epsilon!](http://sifter.org/~simon/journal/20150420.html)
+    '''
+    def __init__(self, epsilon=1e-16, **kwargs):
+        super(SMORMS3Mod, self).__init__(**kwargs)
+        self.__dict__.update(locals())
+        self.iterations = K.variable(0)
+
+    def get_updates(self, params, constraints, loss):
+        grads = self.get_gradients(loss, params)
+        self.updates = [K.update_add(self.iterations, 1)]
+
+        shapes = [K.get_variable_shape(p) for p in params]
+        ms = [K.zeros(shape) for shape in shapes]
+        vs = [K.zeros(shape) for shape in shapes]
+        mems = [K.zeros(shape) for shape in shapes]
+        denoises = [K.zeros(shape) for shape in shapes]
+        self.weights = [self.iterations] + ms + vs + mems + denoises
+
+        for p, g, m, v, mem, denoise in zip(params, grads, ms, vs, mems, denoises):
+            r = K.minimum(0.2, K.maximum(0.005, 1. / (1. + mem)))
+            mem_t = 1. / r - 1.
+            m_t = (1. - r) * m + r * g
+            v_t = (1. - r) * v + r * K.square(g)
+            denoise_t = 0.99 * denoise + 0.01 * K.square(m_t) / (v_t + self.epsilon)
+            p_t = p - g * denoise_t / (K.sqrt(v_t) + self.epsilon)
+            mem_t = K.maximum(0., 1. + mem_t * (1. - denoise_t))
+
+            self.updates.append(K.update(m, m_t))
+            self.updates.append(K.update(v, v_t))
+            self.updates.append(K.update(mem, mem_t))
+            self.updates.append(K.update(denoise, denoise_t))
+
+            new_p = p_t
+            # apply constraints
+            if p in constraints:
+                c = constraints[p]
+                new_p = c(new_p)
+            self.updates.append(K.update(p, new_p))
+        return self.updates
+
+    def get_config(self):
+        config = {'lr': float(K.get_value(self.lr)),
+                  'decay': float(K.get_value(self.decay)),
+                  'epsilon': self.epsilon}
+        base_config = super(SMORMS3Mod, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
