@@ -282,8 +282,6 @@ class TristouNette(object):
                                    dropout_W=0.0,
                                    dropout_U=0.0)(x)
 
-            # forward = BatchNormalization(mode=2)(forward)
-
         x = forward
 
         # stack dense layers
@@ -291,7 +289,6 @@ class TristouNette(object):
             x = TimeDistributed(Dense(output_dim,
                       activation='tanh',
                       name='dense_{i:d}'.format(i=i)))(x)
-            # x = BatchNormalization(mode=2)(x)
 
         # stack final dense layer
         if self.space == 'sphere':
