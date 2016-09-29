@@ -89,9 +89,9 @@ class SMORMS3(Optimizer):
         base_config = super(SMORMS3, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
-class SMORMS3Mod(Optimizer):
-    '''SMORMS3Mod optimizer.
-    Slight modification of SMORMS3
+class SSMORMS3(Optimizer):
+    '''SSMORMS3 optimizer for Stabilized SMORMS3.
+    Slight modification of SMORMS3 that stabilizes its behavior
     # Arguments
         lr: float >= 0. Learning rate.
         epsilon: float >= 0. Fuzz factor.
@@ -99,7 +99,7 @@ class SMORMS3Mod(Optimizer):
         - [RMSprop loses to SMORMS3 - Beware the Epsilon!](http://sifter.org/~simon/journal/20150420.html)
     '''
     def __init__(self, epsilon=1e-16, **kwargs):
-        super(SMORMS3Mod, self).__init__(**kwargs)
+        super(SSMORMS3, self).__init__(**kwargs)
         self.__dict__.update(locals())
         self.iterations = K.variable(0)
 
@@ -140,6 +140,6 @@ class SMORMS3Mod(Optimizer):
         config = {'lr': float(K.get_value(self.lr)),
                   'decay': float(K.get_value(self.decay)),
                   'epsilon': self.epsilon}
-        base_config = super(SMORMS3Mod, self).get_config()
+        base_config = super(SSMORMS3, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
