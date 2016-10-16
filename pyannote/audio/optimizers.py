@@ -26,8 +26,6 @@
 # AUTHORS
 # Gregory GELLY - gregory.gelly@limsi.fr
 
-import os.path
-
 from keras.optimizers import Optimizer 
 import keras.backend as K
 
@@ -37,6 +35,7 @@ class SMORMS3(Optimizer):
     # Arguments
         lr: float >= 0. Learning rate.
         epsilon: float >= 0. Fuzz factor.
+        decay: float >= 0. Learning rate decay over each update.
     # References
         - [RMSprop loses to SMORMS3 - Beware the Epsilon!](http://sifter.org/~simon/journal/20150420.html)
     '''
