@@ -37,24 +37,17 @@ class SequenceEmbedding(object):
 
     Parameters
     ----------
-    loss : pyannote.audio.embedding.losses.Loss
-        `Loss` instance. It is expected to implement the following methods:
-        __call__, design_model, and get_embedding
-    optimizer: str, optional
-        Keras optimizer. Defaults to 'rmsprop'.
-    log_dir: str, optional
-        When provided, log status after each epoch into this directory. This
-        will create several files, including loss plots and weights files.
+    glue : pyannote.audio.embedding.glue.Glue
+        `Glue` instance. It is expected to implement the following methods:
+        loss, build_model, and extract_embedding
 
     See also
     --------
-    pyannote.audio.embedding.losses.Loss for more details on `loss` parameter
+    pyannote.audio.embedding.glue.Glue for more details on `glue` parameter
     """
-    def __init__(self, loss=None, optimizer='rmsprop', log_dir=None):
+    def __init__(self, glue=None):
         super(SequenceEmbedding, self).__init__()
-        self.loss = loss
-        self.optimizer = optimizer
-        self.log_dir = log_dir
+        self.glue = glue
 
     @classmethod
     def from_disk(cls, architecture, weights):
@@ -102,7 +95,7 @@ class SequenceEmbedding(object):
         if weights and os.path.isfile(weights) and not overwrite:
             raise ValueError("File '{weights}' already exists.".format(weights=weights))
 
-        embedding = self.loss.get_embedding(self.model_)
+        embedding = self.glue.extract_embedding(self.model_)
 
         if architecture:
             yaml_string = embedding.to_yaml()
@@ -112,14 +105,18 @@ class SequenceEmbedding(object):
         if weights:
             embedding.save_weights(weights, overwrite=overwrite)
 
-    def fit(self, input_shape, generator,
-            samples_per_epoch, nb_epoch, callbacks=[]):
+    def fit(self, input_shape, design_embedding, generator,
+            samples_per_epoch, nb_epoch, optimizer='rmsprop', log_dir=None):
         """Train the embedding
 
         Parameters
         ----------
         input_shape : (n_frames, n_features) tuple
             Shape of input sequence
+        design_embedding : function or callable
+            This function should take input_shape as input and return a Keras
+            model that takes a sequence as input, and returns the embedding as
+            output.
         generator : iterable
             The output of the generator must be a tuple (inputs, targets) or a
             tuple (inputs, targets, sample_weights). All arrays should contain
@@ -130,23 +127,36 @@ class SequenceEmbedding(object):
             Number of samples to process before going to the next epoch.
         nb_epoch : int
             Total number of iterations on the data
-        callbacks : list, optional
-            List of callbacks to be called during training.
-            Defaults to [LoggingCallback()]
+        optimizer: str, optional
+            Keras optimizer. Defaults to 'rmsprop'.
+        log_dir: str, optional
+            When provided, log status after each epoch into this directory.
+            This will create several files, including loss plots and weights
+            files.
 
         See also
         --------
         keras.engine.training.Model.fit_generator
         """
 
-        if not callbacks and self.log_dir is not None:
-            default_callback = LoggingCallback(
-                self.log_dir, get_model=self.loss.get_embedding)
-            callbacks = [default_callback]
+        callbacks = []
 
-        self.model_ = self.loss.design_model(input_shape)
-        self.model_.compile(optimizer=self.optimizer,
-                            loss=self.loss)
+        extract_embedding = self.glue.extract_embedding
+
+        if self.log_dir is not None:
+            callback = LoggingCallback(
+                self.log_dir, extract_embedding=extract_embedding)
+            callbacks.append(callback)
+
+        # in case the {generator | optimizer | glue} define their own
+        # callbacks, append them as well. this might be useful.
+        for stuff in [generator, optimizer, self.glue]:
+            if hasattr(stuff, 'callbacks'):
+                callbacks.append(stuff.callbacks(
+                    extract_embedding=extract_embedding))
+
+        self.model_ = self.glue.build_model(input_shape, design_embedding)
+        self.model_.compile(optimizer=optimizer, loss=self.glue.loss)
 
         return self.model_.fit_generator(
             generator, samples_per_epoch, nb_epoch,
@@ -168,7 +178,7 @@ class SequenceEmbedding(object):
         embeddings : (n_samples, n_dimensions)
         """
         if not hasattr(self, 'embedding_'):
-            self.embedding_ = self.loss.get_embedding(self.model_)
+            self.embedding_ = self.glue.extract_embedding(self.model_)
 
         return self.embedding_.predict(
             sequences, batch_size=batch_size, verbose=verbose)

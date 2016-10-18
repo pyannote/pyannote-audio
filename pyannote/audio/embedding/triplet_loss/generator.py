@@ -33,6 +33,17 @@ from scipy.spatial.distance import pdist, squareform
 from pyannote.generators.batch import BaseBatchGenerator
 from pyannote.audio.generators.labels import \
     LabeledFixedDurationSequencesBatchGenerator
+from keras.callbacks import Callback
+
+
+class UpdateEmbedding(Callback):
+    def __init__(self, generator, extract_embedding):
+        super(UpdateEmbedding, self).__init__()
+        self.generator = generator
+        self.extract_embedding = extract_embedding
+
+    def on_batch_begin(self, batch, logs={}):
+        self.generator.update(self.model, self.extract_embedding)
 
 
 class TripletGenerator(object):
@@ -102,7 +113,6 @@ class TripletGenerator(object):
         # this is meant to pre-generate all labeled sequences once and for all
         # and get the number of unique labels into self.n_labels
         next(self.triplet_generator_)
-
 
     def iter_triplets(self):
 
@@ -254,6 +264,22 @@ class TripletGenerator(object):
             {'type': 'boolean'}
         )
 
+    def update(self, new_model, extract_embedding):
+
+        # make a copy of current embedding
+        embedding = extract_embedding(new_model)
+        embedding_copy = model_from_yaml(embedding.to_yaml())
+        embedding_copy.set_weights(embedding.get_weights())
+
+        # update the embedding used by the generator
+        sequence_embedding = SequenceEmbedding()
+        sequence_embedding.embedding_ = embedding_copy
+        self.embedding = sequence_embedding
+
+    def callbacks(self, extract_embedding=None):
+        callback = UpdateEmbedding(self, extract_embedding=extract_embedding)
+        return [callback]
+
 
 class TripletBatchGenerator(BaseBatchGenerator):
     """Triplet generator for triplet loss sequence embedding
@@ -311,3 +337,7 @@ class TripletBatchGenerator(BaseBatchGenerator):
     @property
     def n_labels(self):
         return self.triplet_generator_.n_labels
+
+    def callbacks(self, extract_embedding=None):
+        return self.triplet_generator_.callbacks(
+            extract_embedding=extract_embedding)

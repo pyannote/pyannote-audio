@@ -26,71 +26,16 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
-
 import keras.backend as K
 from keras.models import Model
 
 from keras.layers import Input
 from keras.layers import merge
 
-
-class Loss(object):
-    """Loss function for sequence embedding training
-
-    Parameters
-    ----------
-    design_embedding : function or callable
-        This function should take input_shape as input and return a Keras model
-        that takes a sequence as input, and returns the embedding as output.
-
-    See also
-    --------
-    An example of `design_embedding` can be found in
-    pyannote.audio.embedding.models.TristouNet.__call__
-    """
-    def __init__(self, design_embedding, **kwargs):
-        super(Loss, self).__init__()
-        self.design_embedding = design_embedding
-
-    def __call__(self, y_true, y_pred):
-        raise NotImplementedError('')
-
-    def design_model(self, input_shape):
-        """Design the model for which the loss is optimized
-
-        This method can (and should!) make use of `design_embedding` attribute
-
-        Parameters
-        ----------
-        input_shape: (n_samples, n_features) tuple
-            Shape of input sequences.
-
-        Returns
-        -------
-        model : Keras model
-
-        See also
-        --------
-        An example of such a method can be found in `TripletLoss` class
-        """
-        raise NotImplementedError('')
-
-    def get_embedding(self, from_model):
-        """Extract embedding Keras model
-
-        Parameters
-        ----------
-        from_model : Keras model
-            Current state of the model
-
-        Returns
-        -------
-        embedding : Keras model
-        """
-        raise NotImplementedError('')
+from ..glue import Glue
 
 
-class TripletLoss(Loss):
+class TripletLoss(Glue):
     """Triplet loss for sequence embedding
 
             anchor        |-----------|           |---------|
@@ -107,9 +52,6 @@ class TripletLoss(Loss):
 
     Parameters
     ----------
-    design_embedding : callable, or func
-        This function should take input_shape as input and return the embedding
-        as a Keras model
     margin : float, optional
         Triplet loss margin. Defaults to 0.2.
     positive_only : boolean, optional
@@ -120,18 +62,13 @@ class TripletLoss(Loss):
     ---------
     Hervé Bredin, "TristouNet: Triplet Loss for Speaker Turn Embedding"
     Submitted to ICASSP 2017. https://arxiv.org/abs/1609.04301
-
-    See also
-    --------
-    An example of `design_embedding` can be found in
-    pyannote.audio.embedding.models.TristouNet.__call__
     """
-    def __init__(self, design_embedding, margin=0.2, positive_only=True):
-        super(TripletLoss, self).__init__(design_embedding)
+    def __init__(self, margin=0.2, positive_only=True):
+        super(TripletLoss, self).__init__()
         self.margin = margin
         self.positive_only = positive_only
-        # HACK https://github.com/fchollet/keras/issues/3833
-        self.__name__ = 'TripletLoss'
+        # # HACK https://github.com/fchollet/keras/issues/3833
+        # self.__name__ = 'TripletLoss'
 
     def _triplet_loss(self, inputs):
         p = K.sum(K.square(inputs[0] - inputs[1]), axis=-1, keepdims=True)
@@ -149,18 +86,32 @@ class TripletLoss(Loss):
     def _identity_loss(y_true, y_pred):
         return K.mean(y_pred - 0 * y_true)
 
-    def __call__(self, y_true, y_pred):
-        return self._identity_loss(y_true, y_pred)
+    def build_model(self, input_shape, design_embedding):
+        """Design the model for which the loss is optimized
 
-    def get_embedding(self, from_model):
-        return from_model.layers_by_depth[1][0]
+        Parameters
+        ----------
+        input_shape: (n_samples, n_features) tuple
+            Shape of input sequences.
+        design_embedding : function or callable
+            This function should take input_shape as input and return a Keras
+            model that takes a sequence as input, and returns the embedding as
+            output.
 
-    def design_model(self, input_shape):
+        Returns
+        -------
+        model : Keras model
+
+        See also
+        --------
+        An example of `design_embedding` is
+        pyannote.audio.embedding.models.TristouNet.__call__
+        """
         anchor = Input(shape=input_shape, name="anchor")
         positive = Input(shape=input_shape, name="positive")
         negative = Input(shape=input_shape, name="negative")
 
-        embedding = self.design_embedding(input_shape)
+        embedding = design_embedding(input_shape)
         embedded_anchor = embedding(anchor)
         embedded_positive = embedding(positive)
         embedded_negative = embedding(negative)
@@ -170,5 +121,10 @@ class TripletLoss(Loss):
             mode=self._triplet_loss, output_shape=self._output_shape)
 
         model = Model(input=[anchor, positive, negative], output=distance)
-
         return model
+
+    def loss(self, y_true, y_pred):
+        return self._identity_loss(y_true, y_pred)
+
+    def extract_embedding(self, from_model):
+        return from_model.layers_by_depth[1][0]
