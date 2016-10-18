@@ -152,7 +152,7 @@ class SequenceEmbedding(object):
         # callbacks, append them as well. this might be useful.
         for stuff in [generator, optimizer, self.glue]:
             if hasattr(stuff, 'callbacks'):
-                callbacks.append(stuff.callbacks(
+                callbacks.extend(stuff.callbacks(
                     extract_embedding=extract_embedding))
 
         self.model_ = self.glue.build_model(input_shape, design_embedding)
