@@ -34,17 +34,22 @@ from pyannote.generators.batch import BaseBatchGenerator
 from pyannote.audio.generators.labels import \
     LabeledFixedDurationSequencesBatchGenerator
 from keras.callbacks import Callback
+from keras.models import model_from_yaml
+from pyannote.audio.embedding.base import SequenceEmbedding
 
 
 class UpdateEmbedding(Callback):
+
     def __init__(self, generator, extract_embedding):
         super(UpdateEmbedding, self).__init__()
         self.generator = generator
         self.extract_embedding = extract_embedding
 
-    def on_batch_begin(self, batch, logs={}):
+    def on_train_begin(self, logs={}):
         self.generator.update(self.model, self.extract_embedding)
 
+    def on_batch_begin(self, batch, logs={}):
+        self.generator.update(self.model, self.extract_embedding)
 
 class TripletGenerator(object):
     """Triplet generator for triplet loss sequence embedding
@@ -65,8 +70,6 @@ class TripletGenerator(object):
         Yaafe feature extraction (e.g. YaafeMFCC instance)
     file_generator: iterable
         File generator (the training set, typically)
-    embedding: SequenceEmbedding
-        Sequence embedding (currently being optimized)
     duration: float, optional
         Sequence duration. Defaults to 3 seconds.
     overlap: float, optional
@@ -83,7 +86,7 @@ class TripletGenerator(object):
         Batch size. Defaults to 32.
     """
 
-    def __init__(self, extractor, file_generator, embedding, margin=0.2,
+    def __init__(self, extractor, file_generator, margin=0.2,
                  duration=3.0, overlap=0.0, normalize=False,
                  per_fold=0, per_label=40, batch_size=32):
 
@@ -91,7 +94,6 @@ class TripletGenerator(object):
 
         self.extractor = extractor
         self.file_generator = file_generator
-        self.embedding = embedding
         self.margin = margin
         self.duration = duration
         self.overlap = overlap
@@ -213,6 +215,7 @@ class TripletGenerator(object):
                 # their embeddings (using current state of embedding network)
                 embeddings = self.embedding.transform(
                     sequences, batch_size=self.batch_size)
+
                 # pairwise squared euclidean distances
                 distances = squareform(pdist(embeddings, metric='sqeuclidean'))
 
@@ -300,8 +303,6 @@ class TripletBatchGenerator(BaseBatchGenerator):
         Yaafe feature extraction (e.g. YaafeMFCC instance)
     file_generator: iterable
         File generator (the training set, typically)
-    sequence_embedding: TripletLossSequenceEmbedding
-        Triplet loss sequence embedding (currently being optimized)
     duration: float, optional
         Sequence duration. Defaults to 3 seconds.
     overlap: float, optional
@@ -316,12 +317,12 @@ class TripletBatchGenerator(BaseBatchGenerator):
     batch_size: int, optional
         Batch size. Defaults to 32.
     """
-    def __init__(self, feature_extractor, file_generator, sequence_embedding,
+    def __init__(self, feature_extractor, file_generator,
                  margin=0.2, duration=3.0, overlap=0.5, normalize=False,
                  per_fold=0, per_label=40, batch_size=32):
 
         self.triplet_generator_ = TripletGenerator(
-            feature_extractor, file_generator, sequence_embedding,
+            feature_extractor, file_generator,
             duration=duration, overlap=overlap, normalize=normalize,
             per_fold=per_fold, per_label=per_label, batch_size=batch_size)
 
