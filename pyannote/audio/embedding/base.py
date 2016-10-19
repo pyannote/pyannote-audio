@@ -143,9 +143,9 @@ class SequenceEmbedding(object):
 
         extract_embedding = self.glue.extract_embedding
 
-        if self.log_dir is not None:
+        if log_dir is not None:
             callback = LoggingCallback(
-                self.log_dir, extract_embedding=extract_embedding)
+                log_dir, extract_embedding=extract_embedding)
             callbacks.append(callback)
 
         # in case the {generator | optimizer | glue} define their own
