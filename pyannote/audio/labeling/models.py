@@ -36,12 +36,10 @@ from keras.layers.wrappers import TimeDistributed
 
 
 class StackedLSTM(object):
-    """Stacked LSTM
+    """Stacked LSTM sequence labeling
 
     Parameters
     ----------
-    n_classes : int, optional
-        Number of output classes. Defaults to 2 (binary classification).
     lstm: list, optional
         List of output dimension of stacked LSTMs.
         Defaults to [16, ] (i.e. one LSTM with output dimension 16)
@@ -50,18 +48,20 @@ class StackedLSTM(object):
     dense: list, optional
         Number of units of additionnal stacked dense layers.
         Defaults to [16, ] (i.e. add one dense layer with 16 units)
+    n_classes : int, optional
+        Number of output classes. Defaults to 2 (binary classification).
     """
-    def __init__(self, n_classes=2, lstm=[16], bidirectional=True, dense=[16]):
+    def __init__(self, lstm=[16,], bidirectional=True,
+                 dense=[16,], n_classes=2):
 
         super(StackedLSTM, self).__init__()
-
         self.lstm = lstm
         self.bidirectional = bidirectional
         self.dense = dense
         self.n_classes = n_classes
 
     def __call__(self, input_shape):
-        """Design labeling model
+        """Design labeling
 
         Parameters
         ----------

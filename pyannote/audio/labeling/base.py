@@ -34,28 +34,9 @@ from keras.models import model_from_yaml
 
 class SequenceLabeling(object):
     """Sequence labeling
-
-    Parameters
-    ----------
-    design_model : function or callable
-        This function should take input_shape as input and return a Keras model
-        that takes a sequence as input, and return the labels as output.
-    optimizer: str, optional
-        Keras optimizer. Defaults to 'rmsprop'.
-    log_dir: str, optional
-        When provided, log status after each epoch into this directory. This
-        will create several files, including loss plots and weights files.
-
-    See also
-    --------
-    An example of `design_model` can be found in
-    pyannote.audio.labeling.models.StackedLSTM.__call__
     """
-    def __init__(self, design_model=None, optimizer='rmsprop', log_dir=None):
+    def __init__(self):
         super(SequenceLabeling, self).__init__()
-        self.design_model = design_model
-        self.optimizer = optimizer
-        self.log_dir = log_dir
 
     @classmethod
     def from_disk(cls, architecture, weights):
@@ -77,8 +58,8 @@ class SequenceLabeling(object):
 
         with open(architecture, 'r') as fp:
             yaml_string = fp.read()
-        self.model_ = model_from_yaml(yaml_string)
-        self.model_.load_weights(weights)
+        self.labeling_ = model_from_yaml(yaml_string)
+        self.labeling_.load_weights(weights)
         return self
 
     def to_disk(self, architecture=None, weights=None, overwrite=False):
@@ -104,14 +85,14 @@ class SequenceLabeling(object):
             raise ValueError("File '{weights}' already exists.".format(weights=weights))
 
         if architecture:
-            yaml_string = self.model_.to_yaml()
+            yaml_string = self.labeling_.to_yaml()
             with open(architecture, 'w') as fp:
                 fp.write(yaml_string)
 
         if weights:
-            self.model_.save_weights(weights, overwrite=overwrite)
+            self.labeling_.save_weights(weights, overwrite=overwrite)
 
-    def fit(self, input_shape, generator,
+    def fit(self, input_shape, design_labeling, generator,
             samples_per_epoch, nb_epoch, callbacks=[]):
         """Train the model
 
@@ -119,31 +100,51 @@ class SequenceLabeling(object):
         ----------
         input_shape : (n_frames, n_features) tuple
             Shape of input sequence
+        design_labeling : function or callable
+            This function should take input_shape as input and return a Keras
+            model that takes a sequence as input, and returns the labeling as
+            output.
         generator : iterable
-            Batch generator
+            The output of the generator must be a tuple (inputs, targets) or a
+            tuple (inputs, targets, sample_weights). All arrays should contain
+            the same number of samples. The generator is expected to loop over
+            its data indefinitely. An epoch finishes when `samples_per_epoch`
+            samples have been seen by the model.
         samples_per_epoch : int
             Number of samples to process before going to the next epoch.
         nb_epoch : int
             Total number of iterations on the data
-        callbacks : list, optional
-            List of callbacks to be called during training.
-            Defaults to [LoggingCallback()]
+        optimizer: str, optional
+            Keras optimizer. Defaults to 'rmsprop'.
+        log_dir: str, optional
+            When provided, log status after each epoch into this directory.
+            This will create several files, including loss plots and weights
+            files.
 
         See also
         --------
         keras.engine.training.Model.fit_generator
         """
 
-        if not callbacks and self.log_dir:
-            default_callback = LoggingCallback(self, log_dir=self.log_dir)
-            callbacks = [default_callback]
+        callbacks = []
 
-        self.model_ = self.design_model(input_shape)
-        self.model_.compile(optimizer=self.optimizer,
-                            loss='categorical_crossentropy',
-                            metrics=['accuracy'])
+        if log_dir is not None:
+            log = [('train', 'loss'), ('train', 'accuracy')]
+            callback = LoggingCallback(log_dir, log=log)
+            callbacks.append(callback)
 
-        self.model_.fit_generator(
+        # in case the {generator | optimizer} define their own
+        # callbacks, append them as well. this might be useful.
+        for stuff in [generator, optimizer]:
+            if hasattr(stuff, 'callbacks'):
+                callbacks.extend(stuff.callbacks())
+
+        self.labeling_ = design_labeling(input_shape)
+        self.labeling_.compile(optimizer=optimizer,
+                               loss='categorical_crossentropy',
+                               metrics=['accuracy'])
+
+        return self.labeling_.fit_generator(
             generator, samples_per_epoch, nb_epoch,
             verbose=1, callbacks=callbacks)
 
@@ -162,5 +163,5 @@ class SequenceLabeling(object):
         -------
         labels : (n_samples, n_frames, n_classes) array
         """
-        return self.model_.predict(
+        return self.labeling_.predict(
             sequence, batch_size=batch_size, verbose=verbose)
