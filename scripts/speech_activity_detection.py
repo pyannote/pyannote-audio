@@ -30,7 +30,7 @@
 Speech activity detection
 
 Usage:
-  speech_activity_detection train <config.yml> <database.task.protocol> <wav_template>
+  speech_activity_detection train <config.yml> <database.task.protocol> <wav_template> 
   speech_activity_detection apply <config.yml> <weights.h5> <database.task.protocol> <wav_template> <output_dir>
   speech_activity_detection -h | --help
   speech_activity_detection --version
@@ -53,20 +53,10 @@ import numpy as np
 from docopt import docopt
 
 import pyannote.core
-# from pyannote.audio.callback import LoggingCallback
-# from pyannote.audio.features.yaafe import YaafeMFCC
 from pyannote.audio.labeling.base import SequenceLabeling
-# from pyannote.audio.labeling.models import StackedLSTM
 from pyannote.audio.generators.speech import SpeechActivityDetectionBatchGenerator
-# from pyannote.audio.labeling.aggregation import SequenceLabelingAggregation
-# from pyannote.audio.signal import Binarize
 from pyannote.database import get_database
-# from pyannote.metrics.detection import DetectionErrorRate, DetectionAccuracy, \
-#                                        DetectionPrecision, DetectionRecall
-# from pyannote.metrics import f_measure
-# from pyannote.core.json import dump_to
 from pyannote.audio.optimizers import SSMORMS3
-
 
 def train(protocol, medium_template, config_yml):
 
@@ -82,7 +72,7 @@ def train(protocol, medium_template, config_yml):
     # deduce workdir from path of configuration file
     workdir = os.path.dirname(config_yml)
     # this is where model weights are saved after each epoch
-    log_dir = workdir + '/' + dataset
+    LOG_DIR = workdir + '/' + protocol
 
     # -- PROTOCOL --
     database_name, task_name, protocol_name = protocol.split('.')
@@ -119,9 +109,9 @@ def train(protocol, medium_template, config_yml):
     # callback = LoggingCallback(log_dir=log_dir, log=log)
 
     # number of samples per epoch + round it to closest batch
-    hours_per_epoch = protocol.stats('train')['annotated']
+    seconds_per_epoch = protocol.stats('train')['annotated']
     samples_per_epoch = batch_size * \
-        int(np.ceil((3600 * hours_per_epoch / step) / batch_size))
+        int(np.ceil((seconds_per_epoch / step) / batch_size))
 
     # input shape (n_frames, n_features)
     input_shape = generator.get_shape()
