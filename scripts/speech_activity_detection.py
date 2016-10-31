@@ -29,21 +29,32 @@
 """
 Speech activity detection
 
+"train" mode expects a file <config_dir>/config.yml and will create the following
+directory structure:
+   <train_dir>/database.task.protocol/architecture.yml
+                                       weights/{epoch:04d}.h5
+where <train_dir> = <config_dir>/database.task.protocol
+
+"tune" m
+
+<train_dir>
+
+# apply
+
 Usage:
-  speech_activity_detection train <config.yml> <database.task.protocol> <wav_template> 
-  speech_activity_detection apply <config.yml> <weights.h5> <database.task.protocol> <wav_template> <output_dir>
+  speech_activity_detection train <experiment_dir> <database.task.protocol> <wav_template>
+  speech_activity_detection tune <train_dir> <database.task.protocol> <wav_template>
   speech_activity_detection -h | --help
   speech_activity_detection --version
 
 Options:
-  <config.yml>              Use this configuration file.
-  <database.task.protocol>  Use this dataset (e.g. "Etape.SpeakerDiarization.TV" for training)
-  <wav_template>            Path template to actual media files (e.g. '/Users/bredin/Corpora/etape/{uri}.wav')
-  <weights.h5>              Path to pre-trained model weights. File
-                            'architecture.yml' must live in the same directory.
-  <output_dir>              Path where to save results.
-  -h --help                 Show this screen.
-  --version                 Show version.
+  <experiment_dir>               Directory where config.yml is stored.
+  <database.task.protocol>       Evaluation protocol (e.g. "Etape.SpeakerDiarization.TV")
+  <wav_template>                 Template to actual media files (e.g. '/Users/bredin/Corpora/etape/{uri}.wav')
+  <train_dir>                    Directory where train mode output its files
+  <output_dir>                   Path where to save results.
+  -h --help                      Show this screen.
+  --version                      Show version.
 
 """
 
@@ -53,12 +64,31 @@ import numpy as np
 from docopt import docopt
 
 import pyannote.core
+
 from pyannote.audio.labeling.base import SequenceLabeling
 from pyannote.audio.generators.speech import SpeechActivityDetectionBatchGenerator
+
+from pyannote.audio.labeling.aggregation import SequenceLabelingAggregation
+from pyannote.audio.signal import Binarize
+
 from pyannote.database import get_database
 from pyannote.audio.optimizers import SSMORMS3
 
-def train(protocol, medium_template, config_yml):
+import skopt
+import skopt.utils
+import skopt.space
+import skopt.plots
+
+from pyannote.metrics.detection import DetectionRecall
+from pyannote.metrics.detection import DetectionPrecision
+from pyannote.metrics import f_measure
+
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+
+
+def train(protocol, experiment_dir, train_dir):
 
     # -- TRAINING --
     batch_size = 1024
@@ -66,18 +96,9 @@ def train(protocol, medium_template, config_yml):
     optimizer = SSMORMS3()
 
     # load configuration file
+    config_yml = experiment_dir + '/config.yml'
     with open(config_yml, 'r') as fp:
         config = yaml.load(fp)
-
-    # deduce workdir from path of configuration file
-    workdir = os.path.dirname(config_yml)
-    # this is where model weights are saved after each epoch
-    LOG_DIR = workdir + '/' + protocol
-
-    # -- PROTOCOL --
-    database_name, task_name, protocol_name = protocol.split('.')
-    database = get_database(database_name, medium_template=medium_template)
-    protocol = database.get_protocol(task_name, protocol_name)
 
     # -- FEATURE EXTRACTION --
     feature_extraction_name = config['feature_extraction']['name']
@@ -103,11 +124,6 @@ def train(protocol, medium_template, config_yml):
         feature_extraction, normalize=normalize,
         duration=duration, step=step, batch_size=batch_size)
 
-    # # log loss and accuracy during training and
-    # # keep track of best models for both metrics
-    # log = [('train', 'loss'), ('train', 'accuracy')]
-    # callback = LoggingCallback(log_dir=log_dir, log=log)
-
     # number of samples per epoch + round it to closest batch
     seconds_per_epoch = protocol.stats('train')['annotated']
     samples_per_epoch = batch_size * \
@@ -120,7 +136,131 @@ def train(protocol, medium_template, config_yml):
     labeling.fit(input_shape, architecture,
                  generator(protocol.train(), infinite=True),
                  samples_per_epoch, nb_epoch,
-                 optimizer=optimizer, log_dir=LOG_DIR)
+                 optimizer=optimizer, log_dir=train_dir)
+
+
+def tune(protocol, train_dir, tune_dir):
+
+    np.random.seed(1337)
+    os.makedirs(tune_dir)
+
+    architecture_yml = train_dir + '/architecture.yml'
+    WEIGHTS_H5 = train_dir + '/weights/{epoch:04d}.h5'
+
+    nb_epoch = 0
+    while True:
+        weights_h5 = WEIGHTS_H5.format(epoch=nb_epoch)
+        if not os.path.isfile(weights_h5):
+            break
+        nb_epoch += 1
+
+    config_dir = os.path.dirname(os.path.dirname(train_dir))
+    config_yml = config_dir + '/config.yml'
+    with open(config_yml, 'r') as fp:
+        config = yaml.load(fp)
+
+    # -- FEATURE EXTRACTION --
+    feature_extraction_name = config['feature_extraction']['name']
+    features = __import__('pyannote.audio.features.yaafe',
+                          fromlist=[feature_extraction_name])
+    FeatureExtraction = getattr(features, feature_extraction_name)
+    feature_extraction = FeatureExtraction(
+        **config['feature_extraction'].get('params', {}))
+
+    # -- SEQUENCE GENERATOR --
+    duration = config['sequences']['duration']
+    step = config['sequences']['step']
+    normalize = config['sequences']['normalize']
+
+    predictions = {}
+
+    def objective_function(parameters, beta=1.0):
+
+        epoch, onset, offset = parameters
+
+        weights_h5 = WEIGHTS_H5.format(epoch=epoch)
+        sequence_labeling = SequenceLabeling.from_disk(
+            architecture_yml, weights_h5)
+
+        aggregation = SequenceLabelingAggregation(
+            sequence_labeling, feature_extraction, normalize=normalize,
+            duration=duration, step=step)
+
+        if epoch not in predictions:
+            predictions[epoch] = {}
+
+        # no need to use collar during tuning
+        precision = DetectionPrecision()
+        recall = DetectionRecall()
+
+        f, n = 0., 0
+        for dev_file in protocol.development():
+
+            uri = dev_file['uri']
+            reference = dev_file['annotation']
+            uem = dev_file['annotated']
+            n += 1
+
+            if uri in predictions[epoch]:
+                prediction = predictions[epoch][uri]
+            else:
+                wav = dev_file['medium']['wav']
+                prediction = aggregation.apply(wav)
+                predictions[epoch][uri] = prediction
+
+            binarizer = Binarize(onset=onset, offset=offset)
+            hypothesis = binarizer.apply(prediction, dimension=1)
+
+            p = precision(reference, hypothesis, uem=uem)
+            r = recall(reference, hypothesis, uem=uem)
+            f += f_measure(p, r, beta=beta)
+
+        return 1 - (f / n)
+
+    def callback(res):
+
+        n_trials = len(res.func_vals)
+        
+        # save best parameters so far
+        epoch, onset, offset = res.x
+        params = {'epoch': int(epoch),
+                  'onset': float(onset),
+                  'offset': float(offset)}
+        with open(tune_dir + '/tune.yml', 'w') as fp:
+            yaml.dump(params, fp, default_flow_style=False)
+
+        if n_trials % 10 == 0:
+            
+            # plot evaluations
+            _ = skopt.plots.plot_evaluations(res)
+            plt.savefig(tune_dir + '/history.png', dpi=150)
+            plt.close()
+
+            # plot objective function
+            #_ = skopt.plots.plot_objective(res)
+            #plt.savefig(tune_dir + '/objective.png', dpi=150)
+            #plt.close()
+
+            # save results so far
+            func = res['specs']['args']['func']
+            callback = res['specs']['args']['callback']
+            del res['specs']['args']['func']
+            del res['specs']['args']['callback']
+            skopt.utils.dump(res, tune_dir + '/tune.gz', store_objective=True)
+            res['specs']['args']['func'] = func
+            res['specs']['args']['callback'] = callback
+        
+    epoch = skopt.space.Integer(0, nb_epoch - 1)
+    onset = skopt.space.Real(0., 1., prior='uniform')
+    offset = skopt.space.Real(0., 1., prior='uniform')
+    dimensions = [epoch, onset, offset]
+    res = skopt.gp_minimize(objective_function, dimensions,
+                      n_calls=1000, n_random_starts=10,
+                      x0=[nb_epoch - 1, 0.5, 0.5],
+                      random_state=1337, verbose=True,
+                      callback=callback)
+
+    return res
 
 # def test(dataset, medium_template, config_yml, weights_h5, output_dir):
 #
@@ -223,23 +363,22 @@ if __name__ == '__main__':
 
     arguments = docopt(__doc__, version='Speech activity detection')
 
-    if arguments['train']:
-
-        # arguments
-        protocol = arguments['<database.task.protocol>']
+    medium_template = {}
+    if '<wav_template>' in arguments:
         medium_template = {'wav': arguments['<wav_template>']}
-        config_yml = arguments['<config.yml>']
 
-        # train the model
-        train(protocol, medium_template, config_yml)
+    if '<database.task.protocol>' in arguments:
+        protocol = arguments['<database.task.protocol>']
+        database_name, task_name, protocol_name = protocol.split('.')
+        database = get_database(database_name, medium_template=medium_template)
+        protocol = database.get_protocol(task_name, protocol_name)
 
-    # if arguments['apply']:
-    #
-    #     # arguments
-    #     config_yml = arguments['<config.yml>']
-    #     weights_h5 = arguments['<weights.h5>']
-    #     protocol = arguments['<database.task.protocol>']
-    #     medium_template = {'wav': arguments['<wav_template>']}
-    #     output_dir = arguments['<output_dir>']
-    #
-    #     test(protocol, medium_template, config_yml, weights_h5, output_dir)
+    if arguments['train']:
+        experiment_dir = arguments['<experiment_dir>']
+        train_dir = experiment_dir + '/train/' + arguments['<database.task.protocol>']
+        train(protocol, experiment_dir, train_dir)
+
+    if arguments['tune']:
+        train_dir = arguments['<train_dir>']
+        tune_dir = train_dir + '/tune/' + arguments['<database.task.protocol>']
+        res = tune(protocol, train_dir, tune_dir)
