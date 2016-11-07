@@ -51,6 +51,7 @@ class UpdateEmbedding(Callback):
     def on_batch_begin(self, batch, logs={}):
         self.generator.update(self.model, self.extract_embedding)
 
+
 class TripletGenerator(object):
     """Triplet generator for triplet loss sequence embedding
 
@@ -61,7 +62,7 @@ class TripletGenerator(object):
 
     and such that d(f(Xa), f(Xn)) < d(f(Xa), f(Xp)) + margin where
       * f is the current state of the embedding network (being optimized)
-      * d is the euclidean distance
+      * d is the (euclidean or cosine) distance
       * margin is the triplet loss margin (e.g. 0.2, typically)
 
     Parameters
@@ -70,6 +71,10 @@ class TripletGenerator(object):
         Yaafe feature extraction (e.g. YaafeMFCC instance)
     file_generator: iterable
         File generator (the training set, typically)
+    distance: {'sqeuclidean', 'cosine'}
+        Distance for which the embedding is optimized. Defaults to 'sqeuclidean'.
+    margin : float, optional
+        Defaults to 0.2.
     duration: float, optional
         Sequence duration. Defaults to 3 seconds.
     overlap: float, optional
@@ -86,7 +91,8 @@ class TripletGenerator(object):
         Batch size. Defaults to 32.
     """
 
-    def __init__(self, extractor, file_generator, margin=0.2,
+    def __init__(self, extractor, file_generator,
+                 distance='sqeuclidean', margin=0.2,
                  duration=3.0, overlap=0.0, normalize=False,
                  per_fold=0, per_label=40, batch_size=32):
 
@@ -94,6 +100,7 @@ class TripletGenerator(object):
 
         self.extractor = extractor
         self.file_generator = file_generator
+        self.distance = distance
         self.margin = margin
         self.duration = duration
         self.overlap = overlap
@@ -217,7 +224,7 @@ class TripletGenerator(object):
                     sequences, batch_size=self.batch_size)
 
                 # pairwise squared euclidean distances
-                distances = squareform(pdist(embeddings, metric='sqeuclidean'))
+                distances = squareform(pdist(embeddings, metric=self.distance))
 
                 for i in range(self.per_fold):
 
@@ -303,6 +310,10 @@ class TripletBatchGenerator(BaseBatchGenerator):
         Yaafe feature extraction (e.g. YaafeMFCC instance)
     file_generator: iterable
         File generator (the training set, typically)
+    distance: {'sqeuclidean', 'cosine'}
+        Distance for which the embedding is optimized. Defaults to 'sqeuclidean'.
+    margin : float, optional
+        Defaults to 0.2.
     duration: float, optional
         Sequence duration. Defaults to 3 seconds.
     overlap: float, optional
@@ -318,11 +329,13 @@ class TripletBatchGenerator(BaseBatchGenerator):
         Batch size. Defaults to 32.
     """
     def __init__(self, feature_extractor, file_generator,
-                 margin=0.2, duration=3.0, overlap=0.5, normalize=False,
+                 distance='sqeuclidean', margin=0.2,
+                 duration=3.0, overlap=0.5, normalize=False,
                  per_fold=0, per_label=40, batch_size=32):
 
         self.triplet_generator_ = TripletGenerator(
             feature_extractor, file_generator,
+            margin=margin, distance=distance,
             duration=duration, overlap=overlap, normalize=normalize,
             per_fold=per_fold, per_label=per_label, batch_size=batch_size)
 

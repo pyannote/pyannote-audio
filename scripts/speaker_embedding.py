@@ -83,6 +83,10 @@ Configuration file:
           dense: [16]                 # and one internal dense layer
           space: sphere               # embedding live on the unit hypersphere
           output_dim: 16              # of dimension 16
+
+    loss:
+       distance: sqeuclidean
+       margin: 0.2
     ...................................................................
 
 "train" mode:
@@ -160,7 +164,6 @@ from pyannote.metrics import f_measure
 def train(protocol, duration, experiment_dir, train_dir, subset='train'):
 
     # -- TRAINING --
-    batch_size = 1024
     nb_epoch = 1000
     optimizer = SSMORMS3()
     per_label = 40
@@ -188,12 +191,14 @@ def train(protocol, duration, experiment_dir, train_dir, subset='train'):
         **config['architecture'].get('params', {}))
 
     # -- LOSS --
-    margin = 0.2
-    glue = TripletLoss(margin=margin)
+    margin = config['loss']['margin']
+    distance = config['loss']['distance']
+    glue = TripletLoss(margin=margin, distance=distance)
 
     # -- SEQUENCE GENERATOR --
     generator = TripletBatchGenerator(
-        feature_extraction, protocol.train(), margin=margin,
+        feature_extraction, protocol.train(),
+        margin=margin, distance=distance,
         duration=duration, per_label=per_label, batch_size=batch_size)
 
     # input shape (n_frames, n_features)
@@ -265,6 +270,8 @@ def tune(protocol, train_dir, tune_dir, beta=1.0, subset='development'):
     feature_extraction = FeatureExtraction(
         **config['feature_extraction'].get('params', {}))
 
+    distance = config['loss']['distance']
+
     X, y = generate_test(protocol, subset, feature_extraction, duration)
 
     alphas = {}
@@ -280,7 +287,7 @@ def tune(protocol, train_dir, tune_dir, beta=1.0, subset='development'):
         fX = sequence_embedding.transform(X, batch_size=batch_size, verbose=0)
 
         # compute euclidean distance between every pair of sequences
-        y_distance = pdist(fX, metric='euclidean')
+        y_distance = pdist(fX, metric=distance)
 
         # compute same/different groundtruth
         y_true = pdist(y, metric='chebyshev') < 1
@@ -361,6 +368,8 @@ def test(protocol, tune_dir, subset='test', beta=1.0):
     feature_extraction = FeatureExtraction(
         **config['feature_extraction'].get('params', {}))
 
+    distance = config['loss']['distance']
+
     # -- HYPER-PARAMETERS --
     tune_yml = tune_dir + '/tune.yml'
     with open(tune_yml, 'r') as fp:
@@ -375,7 +384,7 @@ def test(protocol, tune_dir, subset='test', beta=1.0):
 
     X, y = generate_test(protocol, subset, feature_extraction, duration)
     fX = sequence_embedding.transform(X, batch_size=batch_size, verbose=0)
-    y_distance = pdist(fX, metric='euclidean')
+    y_distance = pdist(fX, metric=distance)
     y_true = pdist(y, metric='chebyshev') < 1
 
     fpr, tpr, thresholds = sklearn.metrics.roc_curve(

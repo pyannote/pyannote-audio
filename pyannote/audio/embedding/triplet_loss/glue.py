@@ -57,20 +57,31 @@ class TripletLoss(Glue):
     positive_only : boolean, optional
         When False, loss is d(a, p) - d(a, n) + margin.
         Default (True) is max(0, d(a, p) - d(a, n) + margin).
+    distance: {'sqeuclidean', 'cosine'}
+        Distance for which the embedding is optimized. Defaults to 'sqeuclidean'.
 
     Reference
     ---------
     Hervé Bredin, "TristouNet: Triplet Loss for Speaker Turn Embedding"
     Submitted to ICASSP 2017. https://arxiv.org/abs/1609.04301
     """
-    def __init__(self, margin=0.2, positive_only=True):
+    def __init__(self, margin=0.2, positive_only=True, distance='sqeuclidean'):
         super(TripletLoss, self).__init__()
         self.margin = margin
         self.positive_only = positive_only
+        self.distance = distance
 
-    def _triplet_loss(self, inputs):
+    def _loss_sqeuclidean(self, inputs):
         p = K.sum(K.square(inputs[0] - inputs[1]), axis=-1, keepdims=True)
         n = K.sum(K.square(inputs[0] - inputs[2]), axis=-1, keepdims=True)
+        loss = p + self.margin - n
+        if self.positive_only:
+            loss = K.maximum(0, loss)
+        return loss
+
+    def _loss_cosine(self, inputs):
+        p = -K.sum(inputs[0] * inputs[1], axis=-1, keepdims=True)
+        n = -K.sum(inputs[0] * inputs[2], axis=-1, keepdims=True)
         loss = p + self.margin - n
         if self.positive_only:
             loss = K.maximum(0, loss)
@@ -105,6 +116,7 @@ class TripletLoss(Glue):
         An example of `design_embedding` is
         pyannote.audio.embedding.models.TristouNet.__call__
         """
+
         anchor = Input(shape=input_shape, name="anchor")
         positive = Input(shape=input_shape, name="positive")
         negative = Input(shape=input_shape, name="negative")
@@ -114,9 +126,11 @@ class TripletLoss(Glue):
         embedded_positive = embedding(positive)
         embedded_negative = embedding(negative)
 
+        mode = getattr(self, '_loss_' + self.distance)
+
         distance = merge(
             [embedded_anchor, embedded_positive, embedded_negative],
-            mode=self._triplet_loss, output_shape=self._output_shape)
+            mode=mode, output_shape=self._output_shape)
 
         model = Model(input=[anchor, positive, negative], output=distance)
         return model
