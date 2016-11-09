@@ -30,6 +30,7 @@ import keras.backend as K
 from keras.models import Model
 
 from keras.layers import Input
+from keras.layers import Masking
 from keras.layers import LSTM
 from keras.layers import Dense
 from keras.layers import Lambda
@@ -95,7 +96,9 @@ class TristouNet(object):
 
         inputs = Input(shape=input_shape,
                        name="embedding_input")
-        x = inputs
+
+        masking = Masking(mask_value=0.)
+        x = masking(inputs)
 
         # stack LSTM layers
         n_lstm = len(self.lstm)
@@ -222,7 +225,9 @@ class TrottiNet(object):
 
         inputs = Input(shape=input_shape,
                        name="embedding_input")
-        x = inputs
+
+        masking = Masking(mask_value=0.)
+        x = masking(inputs)
 
         # stack (bidirectional) LSTM layers
         for i, output_dim in enumerate(self.lstm):
