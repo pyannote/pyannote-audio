@@ -176,6 +176,9 @@ class TristouNet(object):
 
         return Model(input=inputs, output=embeddings)
 
+    def get_embedding_size(self):
+        return self.output_dim
+
 
 class TrottiNet(object):
     """TrottiNet sequence embedding
@@ -278,3 +281,91 @@ class TrottiNet(object):
                             name="embedding_output")(x)
 
         return Model(input=inputs, output=embeddings)
+
+    def get_embedding_size(self):
+        return self.output_dim
+
+
+class MultiLevelTrottiNet(object):
+    """MultiLevelTristouNet sequence embedding is a multi-level version of TristouNet
+
+    Parameters
+    ----------
+    input_shape : (n_frames, n_features) tuple
+        Shape of input sequence.
+    optimizer: optimizer for
+    lstm: list, optional
+        List of output dimension of stacked LSTMs.
+        Defaults to [16, ] (i.e. one LSTM with output dimension 16)
+    bidirectional: boolean, optional
+        When True, use bi-directional LSTMs
+    """
+
+    def __init__(self, lstm=[16,8,8], dense=[], bidirectional=True):
+
+        self.lstm = lstm
+        self.dense = dense
+        self.bidirectional = bidirectional
+        self.embedding_size = 0
+        if (len(dense) > 0):
+            self.embedding_size = dense[-1]
+        else:
+            self.embedding_size = 0
+            for output_dim in lstm:
+                self.embedding_size += output_dim
+
+    def __call__(self, input_shape):
+        inputs = Input(shape=input_shape, name="input_sequence")
+
+        # stack LSTM layers
+        n_lstm = len(self.lstm)
+        for i, output_dim in enumerate(self.lstm):
+            if i:
+                # all but first LSTM
+                lstm_layer = LSTM(name='lstm_{i:d}'.format(i=i),
+                                output_dim=output_dim,
+                                return_sequences=True,
+                                activation='tanh',
+                                dropout_W=0.0,
+                                dropout_U=0.0)
+
+                if self.bidirectional:
+                    lstm_out = Bidirectional(lstm_layer, merge_mode='ave')(lstm_out)
+                else:
+                    lstm_out = lstm_layer(lstm_out)
+                multi_level_lstm = merge([multi_level_lstm, lstm_out], mode='concat', concat_axis=-1)
+            else:
+                lstm_layer = LSTM(name='lstm_{i:d}'.format(i=i),
+                                input_shape=input_shape,
+                                output_dim=output_dim,
+                                return_sequences=True,
+                                activation='tanh',
+                                dropout_W=0.0,
+                                dropout_U=0.0)
+                # first forward LSTM needs to be given the input shape
+                if self.bidirectional:
+                    # first backward LSTM needs to be given the input shape
+                    # AND to be told to process the sequence backward
+                    lstm_out = Bidirectional(lstm_layer, merge_mode='ave')(inputs)
+                else:
+                    lstm_out = lstm_layer(inputs)
+                multi_level_lstm = lstm_out
+
+        if (len(self.dense) > 0):
+            for i, output_dim in enumerate(self.dense):
+                multi_level_lstm = TimeDistributed(Dense(output_dim,
+                          activation='tanh',
+                          name='dense_{i:d}'.format(i=i)))(multi_level_lstm)
+     
+        multi_level_lstm_avg = GlobalAveragePooling1D()(multi_level_lstm)
+
+        # stack L2 normalization layer
+        embeddings = Lambda(lambda x: K.l2_normalize(x, axis=-1),
+                            name="embedding_output")(multi_level_lstm_avg)
+
+        return Model(input=[inputs], output=[embeddings])
+
+    def get_embedding_size(self):
+        return self.embedding_size
+
+
