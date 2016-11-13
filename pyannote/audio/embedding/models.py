@@ -176,9 +176,6 @@ class TristouNet(object):
 
         return Model(input=inputs, output=embeddings)
 
-    def get_embedding_size(self):
-        return self.output_dim
-
 
 class TrottiNet(object):
     """TrottiNet sequence embedding
@@ -282,9 +279,6 @@ class TrottiNet(object):
 
         return Model(input=inputs, output=embeddings)
 
-    def get_embedding_size(self):
-        return self.output_dim
-
 
 class MultiLevelTrottiNet(object):
     """MultiLevelTristouNet sequence embedding is a multi-level version of TristouNet
@@ -306,13 +300,6 @@ class MultiLevelTrottiNet(object):
         self.lstm = lstm
         self.dense = dense
         self.bidirectional = bidirectional
-        self.embedding_size = 0
-        if (len(dense) > 0):
-            self.embedding_size = dense[-1]
-        else:
-            self.embedding_size = 0
-            for output_dim in lstm:
-                self.embedding_size += output_dim
 
     def __call__(self, input_shape):
         inputs = Input(shape=input_shape, name="input_sequence")
@@ -365,7 +352,8 @@ class MultiLevelTrottiNet(object):
 
         return Model(input=[inputs], output=[embeddings])
 
-    def get_embedding_size(self):
-        return self.embedding_size
-
-
+    @property
+    def output_dim(self):
+        if len(self.dense):
+            return self.dense[-1]
+        return np.sum(self.lstm)
