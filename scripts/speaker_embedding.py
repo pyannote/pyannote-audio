@@ -149,8 +149,7 @@ from pyannote.audio.embedding.base import SequenceEmbedding
 from pyannote.audio.embedding.triplet_loss.glue import TripletLoss
 from pyannote.audio.embedding.triplet_loss.generator import TripletBatchGenerator
 
-from pyannote.audio.generators.labels import \
-    LabeledFixedDurationSequencesBatchGenerator
+from pyannote.audio.generators.labels import FixedDurationSequences
 from scipy.spatial.distance import pdist, squareform
 
 from pyannote.metrics.plot.binary_classification import plot_distributions
@@ -228,7 +227,7 @@ def generate_test(protocol, subset, feature_extraction, duration):
     np.random.seed(1337)
 
     # generate set of labeled sequences
-    generator = LabeledFixedDurationSequencesBatchGenerator(
+    generator = FixedDurationSequences(
         feature_extraction, duration=duration, step=duration, batch_size=-1)
     X, y = zip(*generator(getattr(protocol, subset)()))
     X, y = np.vstack(X), np.hstack(y)

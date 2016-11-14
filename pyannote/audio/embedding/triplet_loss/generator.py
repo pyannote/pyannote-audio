@@ -31,8 +31,7 @@ import itertools
 import numpy as np
 from scipy.spatial.distance import pdist, squareform
 from pyannote.generators.batch import BaseBatchGenerator
-from pyannote.audio.generators.labels import \
-    LabeledFixedDurationSequencesBatchGenerator
+from pyannote.audio.generators.labels import FixedDurationSequences
 from keras.callbacks import Callback
 from keras.models import model_from_yaml
 from pyannote.audio.embedding.base import SequenceEmbedding
@@ -106,7 +105,7 @@ class TripletGenerator(object):
         self.per_label = per_label
         self.batch_size = batch_size
 
-        self.generator_ = LabeledFixedDurationSequencesBatchGenerator(
+        self.generator_ = FixedDurationSequences(
             self.extractor,
             duration=self.duration,
             step=(1 - self.overlap) * self.duration,

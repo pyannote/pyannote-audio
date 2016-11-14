@@ -32,8 +32,7 @@ from pyannote.generators.batch import FileBasedBatchGenerator
 from pyannote.generators.fragment import SlidingLabeledSegments
 
 
-class LabeledFixedDurationSequencesBatchGenerator(YaafeMixin,
-                                                  FileBasedBatchGenerator):
+class FixedDurationSequences(YaafeMixin, FileBasedBatchGenerator):
     """(X_batch, y_batch) batch generator
 
     Yields batches made of sequences obtained using a sliding window over the
@@ -57,8 +56,7 @@ class LabeledFixedDurationSequencesBatchGenerator(YaafeMixin,
 
     Usage
     -----
-    >>> batch_generator = LabeledFixedDurationSequencesBatchGenerator(
-    ...     feature_extractor)
+    >>> batch_generator = FixedDurationSequences(feature_extractor)
     >>> for X_batch, y_batch in batch_generator.from_file(current_file):
     ...     # do something with
     """
@@ -72,7 +70,7 @@ class LabeledFixedDurationSequencesBatchGenerator(YaafeMixin,
 
         segment_generator = SlidingLabeledSegments(duration=duration,
                                                    step=step)
-        super(LabeledFixedDurationSequencesBatchGenerator, self).__init__(
+        super(FixedDurationSequences, self).__init__(
             segment_generator, batch_size=batch_size)
 
     def signature(self):
