@@ -123,7 +123,7 @@ class CenterLoss(Glue):
         An example of `design_embedding` is
         pyannote.audio.embedding.models.TristouNet.__call__
         """
-        design_center = CentersEmbeddings(output_dim=design_embedding.get_embedding_size())
+        design_center = CentersEmbeddings(output_dim=design_embedding.output_dim)
         self.centers = design_center((n_labels,))
         self.centers.compile(optimizer=SSMORMS3(), loss=self.loss)
         self.centers.summary()

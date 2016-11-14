@@ -150,14 +150,9 @@ class TristouNet(object):
 
         return Model(input=inputs, output=embeddings)
 
-<<<<<<< HEAD
-    def get_embedding_size(self):
-        return self.output_dim
-=======
     @property
     def output_dim(self):
         return self.mlp[-1]
->>>>>>> pyannote/develop
 
 
 class TrottiNet(object):
