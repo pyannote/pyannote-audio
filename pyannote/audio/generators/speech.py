@@ -37,13 +37,12 @@ import numpy as np
 class SpeechActivityDetectionBatchGenerator(YaafeMixin,
                                             FileBasedBatchGenerator):
 
-    def __init__(self, feature_extractor, duration=3.2, normalize=False,
-                 step=0.8, batch_size=32):
+    def __init__(self, feature_extractor,
+                 duration=3.2, step=0.8, batch_size=32):
 
         self.feature_extractor = feature_extractor
         self.duration = duration
         self.step = step
-        self.normalize = normalize
 
         segment_generator = SlidingSegments(duration=duration,
                                             step=step,
@@ -113,13 +112,12 @@ class SpeechActivityDetectionBatchGenerator(YaafeMixin,
 class OverlappingSpeechDetectionBatchGenerator(YaafeMixin,
                                                FileBasedBatchGenerator):
 
-    def __init__(self, feature_extractor, duration=3.2, normalize=False,
+    def __init__(self, feature_extractor, duration=3.2,
                  step=0.8, batch_size=32):
 
         self.feature_extractor = feature_extractor
         self.duration = duration
         self.step = step
-        self.normalize = normalize
 
         # source = 'coverage' ensures only speech regions are covered
         segment_generator = SlidingSegments(duration=duration,

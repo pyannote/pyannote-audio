@@ -27,9 +27,6 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 
-from scipy.stats import zscore
-
-
 class YaafeMixin:
 
     def get_shape(self):
@@ -67,12 +64,6 @@ class YaafeMixin:
             segment, signature=signature, identifier=identifier)
 
     def yaafe_process_segment(self, segment, signature=None, identifier=None):
-
         duration = signature.get('duration', None)
-
-        X = self.preprocessed_['X'][identifier].crop(
+        return self.preprocessed_['X'][identifier].crop(
             segment, mode='center', fixed=duration)
-        if self.normalize:
-            X = zscore(X, axis=0)
-
-        return X

@@ -88,7 +88,7 @@ Configuration file:
     sequences:
        duration: 3.2                 # this experiments relies
        step: 0.8                     # on sliding windows of 3.2s
-       normalize: False              # with a step of 0.8s
+                                     # with a step of 0.8s
     ...................................................................
 
 "train" mode:
@@ -191,9 +191,8 @@ def train(protocol, experiment_dir, train_dir, subset='train'):
     # -- SEQUENCE GENERATOR --
     duration = config['sequences']['duration']
     step = config['sequences']['step']
-    normalize = config['sequences']['normalize']
     generator = SpeechActivityDetectionBatchGenerator(
-        feature_extraction, normalize=normalize,
+        feature_extraction,
         duration=duration, step=step, batch_size=batch_size)
 
     # number of samples per epoch + round it to closest batch
@@ -242,7 +241,6 @@ def tune(protocol, train_dir, tune_dir, beta=1.0, subset='development'):
     # -- SEQUENCE GENERATOR --
     duration = config['sequences']['duration']
     step = config['sequences']['step']
-    normalize = config['sequences']['normalize']
 
     predictions = {}
 
@@ -255,7 +253,7 @@ def tune(protocol, train_dir, tune_dir, beta=1.0, subset='development'):
             architecture_yml, weights_h5)
 
         aggregation = SequenceLabelingAggregation(
-            sequence_labeling, feature_extraction, normalize=normalize,
+            sequence_labeling, feature_extraction,
             duration=duration, step=step)
 
         if epoch not in predictions:
@@ -367,7 +365,6 @@ def test(protocol, tune_dir, apply_dir, subset='test', beta=1.0):
     # -- SEQUENCE GENERATOR --
     duration = config['sequences']['duration']
     step = config['sequences']['step']
-    normalize = config['sequences']['normalize']
 
     # -- HYPER-PARAMETERS --
 
@@ -383,7 +380,7 @@ def test(protocol, tune_dir, apply_dir, subset='test', beta=1.0):
         architecture_yml, weights_h5)
 
     aggregation = SequenceLabelingAggregation(
-        sequence_labeling, feature_extraction, normalize=normalize,
+        sequence_labeling, feature_extraction,
         duration=duration, step=step)
 
     binarizer = Binarize(onset=tune['onset'], offset=tune['offset'])

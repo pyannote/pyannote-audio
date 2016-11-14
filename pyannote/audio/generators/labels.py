@@ -47,8 +47,6 @@ class LabeledFixedDurationSequencesBatchGenerator(YaafeMixin,
     step: float, optional
         Duration and step of sliding window (in seconds).
         Default to 3s and 750ms.
-    normalize: boolean, optional
-        Normalize (zscore) feature sequences
 
     Returns
     -------
@@ -65,13 +63,12 @@ class LabeledFixedDurationSequencesBatchGenerator(YaafeMixin,
     ...     # do something with
     """
 
-    def __init__(self, feature_extractor, duration=3.0, normalize=False,
+    def __init__(self, feature_extractor, duration=3.0,
                  step=0.75, batch_size=32):
 
         self.feature_extractor = feature_extractor
         self.duration = duration
         self.step = step
-        self.normalize = normalize
 
         segment_generator = SlidingLabeledSegments(duration=duration,
                                                    step=step)

@@ -79,8 +79,6 @@ class TripletGenerator(object):
         Sequence duration. Defaults to 3 seconds.
     overlap: float, optional
         Sequence overlap ratio. Defaults to 0 (no overlap).
-    normalize: boolean, optional
-        When True, normalize sequence (z-score). Defaults to False.
     per_label: int, optional
         Number of samples per label. Defaults to 40.
     per_fold: int, optional
@@ -93,7 +91,7 @@ class TripletGenerator(object):
 
     def __init__(self, extractor, file_generator,
                  distance='sqeuclidean', margin=0.2,
-                 duration=3.0, overlap=0.0, normalize=False,
+                 duration=3.0, overlap=0.8,
                  per_fold=0, per_label=40, batch_size=32):
 
         super(TripletGenerator, self).__init__()
@@ -104,7 +102,6 @@ class TripletGenerator(object):
         self.margin = margin
         self.duration = duration
         self.overlap = overlap
-        self.normalize = normalize
         self.per_fold = per_fold
         self.per_label = per_label
         self.batch_size = batch_size
@@ -112,7 +109,6 @@ class TripletGenerator(object):
         self.generator_ = LabeledFixedDurationSequencesBatchGenerator(
             self.extractor,
             duration=self.duration,
-            normalize=self.normalize,
             step=(1 - self.overlap) * self.duration,
             batch_size=-1)
 
@@ -318,8 +314,6 @@ class TripletBatchGenerator(BaseBatchGenerator):
         Sequence duration. Defaults to 3 seconds.
     overlap: float, optional
         Sequence overlap ratio. Defaults to 0 (no overlap).
-    normalize: boolean, optional
-        When True, normalize sequence (z-score). Defaults to False.
     per_label: int, optional
         Number of samples per label. Defaults to 40.
     per_fold: int, optional
@@ -330,13 +324,13 @@ class TripletBatchGenerator(BaseBatchGenerator):
     """
     def __init__(self, feature_extractor, file_generator,
                  distance='sqeuclidean', margin=0.2,
-                 duration=3.0, overlap=0.5, normalize=False,
+                 duration=3.0, overlap=0.5,
                  per_fold=0, per_label=40, batch_size=32):
 
         self.triplet_generator_ = TripletGenerator(
             feature_extractor, file_generator,
             margin=margin, distance=distance,
-            duration=duration, overlap=overlap, normalize=normalize,
+            duration=duration, overlap=overlap, 
             per_fold=per_fold, per_label=per_label, batch_size=batch_size)
 
         super(TripletBatchGenerator, self).__init__(
