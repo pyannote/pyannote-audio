@@ -25,6 +25,7 @@
 
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
+# Grégory GELLY
 
 import keras.backend as K
 from keras.models import Model
@@ -247,80 +248,115 @@ class TrottiNet(object):
     def output_dim(self):
         return self.mlp[-1]
 
-class MultiLevelTrottiNet(object):
-    """MultiLevelTristouNet sequence embedding is a multi-level version of TristouNet
+
+class ClopiNet(object):
+    """ClopiNet sequence embedding
+
+    LSTM          ⎤
+      » LSTM      ⎥ ( » MLP » ... » MLP ) » pooling › normalize
+           » LSTM ⎦
 
     Parameters
     ----------
-    input_shape : (n_frames, n_features) tuple
-        Shape of input sequence.
-    optimizer: optimizer for
     lstm: list, optional
         List of output dimension of stacked LSTMs.
         Defaults to [16, ] (i.e. one LSTM with output dimension 16)
-    bidirectional: boolean, optional
-        When True, use bi-directional LSTMs
+    bidirectional: {False, 'ave', 'concat'}, optional
+        Defines how the output of forward and backward LSTMs are merged.
+        'ave' (default) stands for 'average', 'concat' for concatenation.
+        See keras.layers.wrappers.Bidirectional for more information.
+        Use False to only use forward LSTMs.
+    mlp: list, optional
+        Number of units in additionnal stacked dense MLP layers.
+        Defaults to [] (i.e. do not stack any dense MLP layer)
     """
 
-    def __init__(self, lstm=[16,8,8], dense=[], bidirectional=True):
-
+    def __init__(self, lstm=[16, 8, 8], bidirectional='ave', mlp=[]):
+        super(ClopiNet, self).__init__()
         self.lstm = lstm
-        self.dense = dense
         self.bidirectional = bidirectional
+        self.mlp = mlp
 
     def __call__(self, input_shape):
-        inputs = Input(shape=input_shape, name="input_sequence")
+        """Design embedding
 
-        # stack LSTM layers
-        n_lstm = len(self.lstm)
+        Parameters
+        ----------
+        input_shape : (n_frames, n_features) tuple
+            Shape of input sequence.
+
+        Returns
+        -------
+        model : Keras model
+        """
+
+        inputs = Input(shape=input_shape,
+                       name="input_sequence")
+
+        # just rename the input variable to x
+        x = inputs
+
+        # stack (bidirectional) LSTM layers
         for i, output_dim in enumerate(self.lstm):
+
             if i:
-                # all but first LSTM
-                lstm_layer = LSTM(name='lstm_{i:d}'.format(i=i),
-                                output_dim=output_dim,
-                                return_sequences=True,
-                                activation='tanh',
-                                dropout_W=0.0,
-                                dropout_U=0.0)
+                lstm = LSTM(name='lstm_{i:d}'.format(i=i),
+                            output_dim=output_dim,
+                            return_sequences=True,
+                            activation='tanh',
+                            dropout_W=0.0,
+                            dropout_U=0.0)
 
-                if self.bidirectional:
-                    lstm_out = Bidirectional(lstm_layer, merge_mode='ave')(lstm_out)
-                else:
-                    lstm_out = lstm_layer(lstm_out)
-                multi_level_lstm = merge([multi_level_lstm, lstm_out], mode='concat', concat_axis=-1)
             else:
-                lstm_layer = LSTM(name='lstm_{i:d}'.format(i=i),
-                                input_shape=input_shape,
-                                output_dim=output_dim,
-                                return_sequences=True,
-                                activation='tanh',
-                                dropout_W=0.0,
-                                dropout_U=0.0)
-                # first forward LSTM needs to be given the input shape
-                if self.bidirectional:
-                    # first backward LSTM needs to be given the input shape
-                    # AND to be told to process the sequence backward
-                    lstm_out = Bidirectional(lstm_layer, merge_mode='ave')(inputs)
-                else:
-                    lstm_out = lstm_layer(inputs)
-                multi_level_lstm = lstm_out
+                # we need to provide input_shape to first LSTM
+                lstm = LSTM(name='lstm_{i:d}'.format(i=i),
+                            input_shape=input_shape,
+                            output_dim=output_dim,
+                            return_sequences=True,
+                            activation='tanh',
+                            dropout_W=0.0,
+                            dropout_U=0.0)
 
-        if (len(self.dense) > 0):
-            for i, output_dim in enumerate(self.dense):
-                multi_level_lstm = TimeDistributed(Dense(output_dim,
+            # bi-directional LSTM
+            if self.bidirectional:
+                lstm = Bidirectional(lstm, merge_mode=self.bidirectional)
+
+            # (actually) stack LSTM
+            x = lstm(x)
+
+            # concatenate output of all levels
+            if i:
+                concat_x = merge([concat_x, x], mode='concat', concat_axis=-1)
+            else:
+                # corner case for 1st level (i=0)
+                # as concat_x does not yet exist
+                concat_x = x
+
+        # just rename the concatenated output variable to x
+        x = concat_x
+
+        # (optionally) stack dense MLP layers
+        for i, output_dim in enumerate(self.mlp):
+
+            mlp = Dense(output_dim,
                           activation='tanh',
-                          name='dense_{i:d}'.format(i=i)))(multi_level_lstm)
-     
-        multi_level_lstm_avg = GlobalAveragePooling1D()(multi_level_lstm)
+                          name='mlp_{i:d}'.format(i=i))
 
-        # stack L2 normalization layer
-        embeddings = Lambda(lambda x: K.l2_normalize(x, axis=-1),
-                            name="embedding_output")(multi_level_lstm_avg)
+            x = TimeDistributed(mlp)(x)
 
-        return Model(input=[inputs], output=[embeddings])
+        # average pooling
+        pooling = GlobalAveragePooling1D(name='pooling')
+        x = pooling(x)
+
+        # L2 normalization layer
+        normalize = Lambda(lambda x: K.l2_normalize(x, axis=-1),
+                           name="normalize")
+        embeddings = normalize(x)
+
+        return Model(input=[inputs], output=embeddings)
 
     @property
     def output_dim(self):
-        if len(self.dense):
-            return self.dense[-1]
+        if self.mlp:
+            return self.mlp[-1]
         return np.sum(self.lstm)
