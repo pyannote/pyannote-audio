@@ -28,6 +28,7 @@
 
 import os.path
 
+import keras.backend as K
 from pyannote.audio.callback import LoggingCallback
 from keras.models import model_from_yaml
 
@@ -162,13 +163,16 @@ class SequenceEmbedding(object):
             generator, samples_per_epoch, nb_epoch,
             verbose=1, callbacks=callbacks)
 
-    def transform(self, sequences, batch_size=32, verbose=0):
+    def transform(self, sequences, layer_index=None, batch_size=32):
         """Apply pre-trained embedding to sequences
 
         Parameters
         ----------
         sequences : (n_samples, n_frames, n_features) array
             Array of sequences
+        layer_index : int, optional
+            Index of layer for which to return the activation.
+            Defaults to returning the activation of the final layer.
         batch_size : int, optional
             Number of samples per batch
         verbose : int, optional
@@ -177,8 +181,19 @@ class SequenceEmbedding(object):
         -------
         embeddings : (n_samples, n_dimensions)
         """
+
         if not hasattr(self, 'embedding_'):
             self.embedding_ = self.glue.extract_embedding(self.model_)
 
-        return self.embedding_.predict(
-            sequences, batch_size=batch_size, verbose=verbose)
+        if not hasattr(self, 'activation_'):
+            self.activation_ = []
+            for layer in self.embedding_.layers:
+                func = K.function(
+                    [self.embedding_.layers[0].input, K.learning_phase()],
+                    layer.output)
+                self.activation_.append(func)
+
+        if layer_index is not None:
+            return self.activation_[layer_index]([sequences, 0])
+
+        return self.embedding_.predict(sequences, batch_size=batch_size)

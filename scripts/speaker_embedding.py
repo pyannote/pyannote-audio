@@ -33,7 +33,7 @@ Usage:
   speaker_embedding train [--subset=<subset> --duration=<duration>] <experiment_dir> <database.task.protocol> <wav_template>
   speaker_embedding tune [--subset=<subset> --false-alarm=<beta>] <train_dir> <database.task.protocol> <wav_template>
   speaker_embedding test [--subset=<subset> --false-alarm=<beta>] <tune_dir> <database.task.protocol> <wav_template>
-  speaker_embedding apply [--subset=<subset> --step=<step>] <tune_dir> <database.task.protocol> <wav_template>
+  speaker_embedding apply [--subset=<subset> --step=<step> --layer=<index>] <tune_dir> <database.task.protocol> <wav_template>
   speaker_embedding -h | --help
   speaker_embedding --version
 
@@ -55,6 +55,8 @@ Options:
                              false rejection [default: 1.0]
   --step=<step>              Set step (in seconds) for embedding extraction.
                              [default: 0.1]
+  --layer=<index>            Index of layer for which to return the activation.
+                             Defaults to final layer.
   -h --help                  Show this screen.
   --version                  Show version.
 
@@ -150,6 +152,10 @@ from pyannote.audio.embedding.triplet_loss.generator import TripletBatchGenerato
 from pyannote.audio.generators.labels import \
     LabeledFixedDurationSequencesBatchGenerator
 from scipy.spatial.distance import pdist, squareform
+
+from pyannote.metrics.plot.binary_classification import plot_distributions
+from pyannote.metrics.plot.binary_classification import plot_det_curve
+from pyannote.metrics.plot.binary_classification import plot_precision_recall_curve
 
 from pyannote.audio.embedding.extraction import Extraction
 
@@ -284,7 +290,7 @@ def tune(protocol, train_dir, tune_dir, beta=1.0, subset='development'):
         sequence_embedding = SequenceEmbedding.from_disk(
             architecture_yml, weights_h5)
 
-        fX = sequence_embedding.transform(X, batch_size=batch_size, verbose=0)
+        fX = sequence_embedding.transform(X, batch_size=batch_size)
 
         # compute euclidean distance between every pair of sequences
         y_distance = pdist(fX, metric=distance)
@@ -314,7 +320,8 @@ def tune(protocol, train_dir, tune_dir, beta=1.0, subset='development'):
         epoch = int(res.x[0])
         alpha = alphas[epoch]
 
-        params = {'epoch': epoch,
+        params = {'nb_epoch': nb_epoch,
+                  'epoch': epoch,
                   'alpha': alpha}
         with open(tune_dir + '/tune.yml', 'w') as fp:
             yaml.dump(params, fp, default_flow_style=False)
@@ -348,9 +355,14 @@ def tune(protocol, train_dir, tune_dir, beta=1.0, subset='development'):
     return res
 
 
-def test(protocol, tune_dir, subset='test', beta=1.0):
+def test(protocol, tune_dir, test_dir, subset, beta=1.0):
 
     batch_size = 32
+
+    try:
+        os.makedirs(test_dir)
+    except Exception as e:
+        pass
 
     train_dir = os.path.dirname(os.path.dirname(tune_dir))
 
@@ -383,7 +395,7 @@ def test(protocol, tune_dir, subset='test', beta=1.0):
         architecture_yml, weights_h5)
 
     X, y = generate_test(protocol, subset, feature_extraction, duration)
-    fX = sequence_embedding.transform(X, batch_size=batch_size, verbose=0)
+    fX = sequence_embedding.transform(X, batch_size=batch_size)
     y_distance = pdist(fX, metric=distance)
     y_true = pdist(y, metric='chebyshev') < 1
 
@@ -406,30 +418,36 @@ def test(protocol, tune_dir, subset='test', beta=1.0):
     opt_frr = frr[opt_i]
     opt_fscore = fscore[opt_i]
 
-    print('# cond. thresh  far     frr     fscore  eer')
-    TEMPLATE = '{condition} {alpha:.5f} {far:.5f} {frr:.5f} {fscore:.5f} {eer:.5f}'
-    print(TEMPLATE.format(condition='optimal',
-                          alpha=opt_alpha,
-                          far=opt_far,
-                          frr=opt_frr,
-                          fscore=opt_fscore,
-                          eer=eer))
-
     alpha = tune['alpha']
     actual_i = np.searchsorted(thresholds, alpha)
     actual_far = far[actual_i]
     actual_frr = frr[actual_i]
     actual_fscore = fscore[actual_i]
 
-    print(TEMPLATE.format(condition='actual ',
-                          alpha=alpha,
-                          far=actual_far,
-                          frr=actual_frr,
-                          fscore=actual_fscore,
-                          eer=eer))
+    save_to = test_dir + '/' + subset
+    plot_distributions(y_true, y_distance, save_to)
+    eer = plot_det_curve(y_true, -y_distance, save_to)
+    plot_precision_recall_curve(y_true, -y_distance, save_to)
+
+    with open(save_to + '.txt', 'w') as fp:
+        fp.write('# cond. thresh  far     frr     fscore  eer\n')
+        TEMPLATE = '{condition} {alpha:.5f} {far:.5f} {frr:.5f} {fscore:.5f} {eer:.5f}\n'
+        fp.write(TEMPLATE.format(condition='optimal',
+                                 alpha=opt_alpha,
+                                 far=opt_far,
+                                 frr=opt_frr,
+                                 fscore=opt_fscore,
+                                 eer=eer))
+        fp.write(TEMPLATE.format(condition='actual ',
+                                 alpha=alpha,
+                                 far=actual_far,
+                                 frr=actual_frr,
+                                 fscore=actual_fscore,
+                                 eer=eer))
 
 
-def embed(protocol, tune_dir, apply_dir, subset='test', step=0.1):
+def embed(protocol, tune_dir, apply_dir, subset='test',
+          step=0.1, layer_index=None):
 
     os.makedirs(apply_dir)
 
@@ -463,8 +481,9 @@ def embed(protocol, tune_dir, apply_dir, subset='test', step=0.1):
 
     extraction = Extraction(sequence_embedding,
                             feature_extraction,
-                            duration=duration,
-                            step=step)
+                            duration=duration, step=step,
+                            layer_index=layer_index)
+
     EMBED_PKL = apply_dir + '/{uri}.pkl'
 
     for test_file in getattr(protocol, subset)():
@@ -473,6 +492,7 @@ def embed(protocol, tune_dir, apply_dir, subset='test', step=0.1):
         embedding = extraction.apply(wav)
         with open(EMBED_PKL.format(uri=uri), 'w') as fp:
             pickle.dump(embedding, fp)
+
 
 if __name__ == '__main__':
 
@@ -517,7 +537,8 @@ if __name__ == '__main__':
         if subset is None:
             subset = 'test'
         beta = float(arguments['--false-alarm'])
-        test(protocol, tune_dir, subset=subset, beta=beta)
+        test_dir = tune_dir + '/test/' + arguments['<database.task.protocol>']
+        test(protocol, tune_dir, test_dir, subset, beta=beta)
 
     if arguments['apply']:
         tune_dir = arguments['<tune_dir>']
@@ -525,4 +546,11 @@ if __name__ == '__main__':
             subset = 'test'
         apply_dir = tune_dir + '/apply/' + arguments['<database.task.protocol>'] + '.' + subset
         step = float(arguments['--step'])
-        embed(protocol, tune_dir, apply_dir, subset=subset, step=step)
+
+        layer_index = arguments['--layer']
+        if layer_index is not None:
+            layer_index = int(layer_index)
+
+        embed(protocol, tune_dir, apply_dir,
+              subset=subset, step=step,
+              layer_index=layer_index)
