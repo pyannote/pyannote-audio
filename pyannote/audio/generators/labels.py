@@ -30,6 +30,8 @@
 from .yaafe import YaafeMixin
 from pyannote.generators.batch import FileBasedBatchGenerator
 from pyannote.generators.fragment import SlidingLabeledSegments
+from pyannote.generators.fragment import RandomLabeledSegments
+import numpy as np
 
 
 class FixedDurationSequences(YaafeMixin, FileBasedBatchGenerator):
@@ -78,3 +80,56 @@ class FixedDurationSequences(YaafeMixin, FileBasedBatchGenerator):
             {'type': 'sequence', 'shape': self.get_shape()},
             {'type': 'label'}
         )
+
+
+class VariableDurationSequences(YaafeMixin, FileBasedBatchGenerator):
+
+    def __init__(self, feature_extractor, min_duration=1.0, max_duration=5.0,
+                 batch_size=32):
+
+        self.feature_extractor = feature_extractor
+        self.min_duration = min_duration
+        self.max_duration = max_duration
+
+        # this is needed for self.get_shape() to work
+        self.duration = max_duration
+
+        # pre-compute shape of zero-padded sequences
+        n_features = self.feature_extractor.dimension()
+        n_samples = self.feature_extractor.sliding_window().samples(
+            self.max_duration, mode='center')
+        self.shape_ = (n_samples, n_features)
+
+        segment_generator = RandomLabeledSegments(
+            min_duration=self.min_duration,
+            max_duration=self.max_duration)
+
+        super(VariableDurationSequences, self).__init__(
+            segment_generator, batch_size=batch_size)
+
+    def signature(self):
+        return (
+            {'type': 'sequence', 'shape': self.get_shape()},
+            {'type': 'label'}
+        )
+
+    def pack_sequence(self, sequences):
+        """
+        Parameters
+        ----------
+        sequences : list
+            List of variable length feature sequences
+
+        Returns
+        -------
+        batch : (batch_size, n_samples, n_features)
+            Zero-padded batch of feature sequences
+        """
+
+        zero_padded = []
+        for sequence in sequences:
+            zeros = np.zeros(self.shape_, dtype=np.float32)
+            zeros[:sequence.shape[0], :] = sequence
+            zero_padded.append(zeros)
+
+        return np.stack(zero_padded)
