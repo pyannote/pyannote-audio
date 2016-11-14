@@ -36,7 +36,7 @@ class Glue(object):
     def loss(self, y_true, y_pred):
         raise NotImplementedError('')
 
-    def build_model(self, input_shape, design_embedding):
+    def build_model(self, input_shape, design_embedding, n_labels=None):
         """Design the model for which the loss is optimized
 
         Parameters
