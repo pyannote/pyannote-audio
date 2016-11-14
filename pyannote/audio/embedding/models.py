@@ -38,6 +38,7 @@ from keras.layers import merge
 from keras.layers.pooling import GlobalAveragePooling1D
 from keras.layers.wrappers import Bidirectional
 from keras.layers.wrappers import TimeDistributed
+import numpy as np
 
 
 class TristouNet(object):
