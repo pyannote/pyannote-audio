@@ -176,7 +176,7 @@ class SequenceEmbedding(object):
     def fastfit(self, design_embedding, generator_train, nb_epoch,
             nb_batches_per_epoch, batch_size, per_label, nb_of_threads=12,
             generator_test=None, optimizer='rmsprop', LOG_DIR=None):
-        """Train the embedding
+        """Train the embedding faster
 
         Parameters
         ----------
@@ -274,22 +274,9 @@ class SequenceEmbedding(object):
         self.model_.compile(optimizer=optimizer, loss=self.glue.loss)
         self.model_.summary()
 
-        # size_embeddings = design_embedding.get_embedding_size()
-        # mask = np.ones((1,size_embeddings))
-        # # for mm in range(0, size_embeddings, 2):
-        # #     mask[0,mm] = 0.0
-
-        # centers = self.glue.build_model((n_labels,), CentersEmbeddings(output_dim=size_embeddings))
-        # centers.compile(optimizer=optimizer, loss=self.glue.loss)
-        # centers.summary()
-
         # writing model to disk
         architecture = LOG_DIR + '/architecture.yml'
         self.to_disk(architecture=architecture)
-
-        # center_trigger = np.zeros((n_labels, n_labels))
-        # for jj in range(n_labels):
-        #     center_trigger[jj,jj] = 1.0
 
         loss_train = []
         eer_test = []
@@ -323,93 +310,23 @@ class SequenceEmbedding(object):
                 sequences = X[indices]
                 batch_labels = y[indices]
 
-                # if (epoch >= 0):
-                #     for mm in range((epoch-0)/20):
-                #         if (mm < mask.shape[1]-3):
-                #             mask[0,mm] = 0.0
-                # print mask
-
                 # their embeddings (using current state of embedding network)
                 start_time = time.time()
-                # mask_input_emb = np.tile(mask, (sequences.shape[0],1))
-                # embeddings = self.model_.predict([sequences, mask_input_emb], batch_size=nb_of_threads*batch_size)
                 embeddings = self.model_.predict(sequences, batch_size=nb_of_threads*batch_size)
-                # print embeddings[0,:]
-                # mask_input_cent = np.tile(mask, (center_trigger.shape[0],1))
-                # embeddingscenters = centers.predict([center_trigger, mask_input_cent], batch_size=n_labels)
-                # embeddingscenters = centers.predict([center_trigger], batch_size=n_labels)
-                # print embeddingscenters[0,:]
-                # embeddings = embeddings.astype('float64')
-                # embeddingscenters = embeddingscenters.astype('float64')
                 pred_dur = (time.time() - start_time)
 
                 start_time = time.time()
-                # embeddings_jacobian = []
-                # for mm in range(embeddings.shape[0]):
-                #     if (mask.prod() == 0.0):
-                #         embeddings[mm,:] = embeddings[mm,:]*mask
-                #     [embeddings[mm,:], jacobian] = jacobian_l2norm(embeddings[mm,:])
-                #     embeddings_jacobian.append(jacobian)
-                # centers_jacobian = []
-                # for mm in range(embeddingscenters.shape[0]):
-                #     if (mask.prod() == 0.0):
-                #         embeddingscenters[mm,:] = embeddingscenters[mm,:]*mask
-                #     [embeddingscenters[mm,:], jacobian] = jacobian_l2norm(embeddingscenters[mm,:])
-                #     centers_jacobian.append(jacobian)
-                # norm_jaco_dur = (time.time() - start_time)
-
-                start_time = time.time()
-
                 [costs, derivatives] = self.glue.compute_cost_and_derivatives(embeddings, batch_labels, batch_size, nb_of_threads, pool)
-
-                # lines = []
-                # center_labels = np.unique(batch_labels)
-                # for jj in range(nb_of_threads):
-                #     # lines.append([embeddings[jj*batch_size:((jj+1)*batch_size),:],batch_labels[jj*batch_size:((jj+1)*batch_size)]])
-                #     # center_labels = np.unique(batch_labels[jj*batch_size:((jj+1)*batch_size)])
-                #     lines.append([embeddings[jj*batch_size:((jj+1)*batch_size),:],batch_labels[jj*batch_size:((jj+1)*batch_size)],\
-                #         embeddingscenters,center_labels])
-                #     # lines.append([embeddings[jj*batch_size:((jj+1)*batch_size),:],batch_labels[jj*batch_size:((jj+1)*batch_size)],\
-                #     #     mask])
-
-                # # costs = []
-                # # derivatives = []
-                # # for output in pool.imap(batch_triplet_loss, lines):
-                # # # for line in lines:
-                # # #     output = batch_triplet_loss(line)
-                # #     costs.append(output[0])
-                # #     derivatives.append(output[1])
-                # costs2 = []
-                # derivatives2 = []
-                # centers_derivatives = 0.0*embeddingscenters
-                # for output in pool.imap(batch_center_loss, lines):
-                #     costs2.append(output[0])
-                #     derivatives2.append(output[1])
-                #     centers_derivatives += output[2]
-                # # costs = np.hstack(costs)+np.hstack(costs2)
-                # # derivatives = np.vstack(derivatives)+np.vstack(derivatives2)
-                # costs = np.hstack(costs2)
-                # derivatives = np.vstack(derivatives2)
-            
-                # #multiplication by jacobian to get derivatives before l2 normalization
-                # # for mm in range(embeddings.shape[0]):
-                # #     derivatives[mm,:] = derivatives[mm,:].dot(embeddings_jacobian[mm])
-                # # for mm in range(embeddingscenters.shape[0]):
-                # #     centers_derivatives[mm,:] = centers_derivatives[mm,:].dot(centers_jacobian[mm])
-
                 deriv_dur = (time.time() - start_time)
 
                 start_time = time.time()
-                # loss_value = self.model_.train_on_batch([sequences, mask_input_emb], derivatives)
                 loss_value = self.model_.train_on_batch([sequences], derivatives)
-                # tmp = centers.train_on_batch([center_trigger, mask_input_cent], centers_derivatives)
                 batch_dur = (time.time() - start_time)
 
                 overall_batch_dur = (time.time() - start_time_batch)
                 batch_cost = np.sum(costs)
 
                 TXT_TEMPLATE = 'Predict --- {pred_dur:.3f} seconds ---\n'
-                # TXT_TEMPLATE += 'Normalization and jacobian computation --- {norm_jaco_dur:.3f} seconds ---\n'
                 TXT_TEMPLATE += 'Triplet derivation --- {deriv_dur:.3f} seconds ---\n'
                 TXT_TEMPLATE += 'Train on batch --- {batch_dur:.3f} seconds ---\n'
                 TXT_TEMPLATE += 'Epoch {epoch:04d}, batch {ii:04d} / {nb_of_batch_in_epoch:04d} processed in {overall_batch_dur:.3f}'
@@ -471,12 +388,9 @@ class SequenceEmbedding(object):
 
             PATH = LOG_DIR+'/weights/weights-{epoch:02d}.hdf5'
             PATH = PATH.format(epoch=epoch)
-            # self.model_.save_weights(PATH)
             self.to_disk(weights=PATH)
 
             # testing
-            # mask_input_emb = np.tile(mask, (Xtest.shape[0],1))
-            # fX = self.model_.predict([Xtest, mask_input_emb])
             fX = self.model_.predict([Xtest])
 
             # def eval_eer(fX, ytest, LOG_DIR, LOGPATH, epoch, epoch_dur):
