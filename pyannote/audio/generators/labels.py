@@ -129,7 +129,8 @@ class VariableDurationSequences(YaafeMixin, FileBasedBatchGenerator):
         zero_padded = []
         for sequence in sequences:
             zeros = np.zeros(self.shape_, dtype=np.float32)
-            zeros[:sequence.shape[0], :] = sequence
+            n_samples = min(self.shape_[0], sequence.shape[0])
+            zeros[:n_samples, :] = sequence[:n_samples]
             zero_padded.append(zeros)
 
         return np.stack(zero_padded)
