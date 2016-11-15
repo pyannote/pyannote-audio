@@ -31,6 +31,8 @@ import os.path
 from pyannote.audio.callback import LoggingCallback
 from keras.models import model_from_yaml
 
+from pyannote.audio.keras_utils import CUSTOM_OBJECTS
+
 
 class SequenceLabeling(object):
     """Sequence labeling
@@ -58,7 +60,8 @@ class SequenceLabeling(object):
 
         with open(architecture, 'r') as fp:
             yaml_string = fp.read()
-        self.labeling_ = model_from_yaml(yaml_string)
+        self.labeling_ = model_from_yaml(
+            yaml_string, custom_objects=CUSTOM_OBJECTS)
         self.labeling_.load_weights(weights)
         return self
 

@@ -37,6 +37,8 @@ from keras.callbacks import Callback
 from keras.models import model_from_yaml
 from pyannote.audio.embedding.base import SequenceEmbedding
 
+from pyannote.audio.keras_utils import CUSTOM_OBJECTS
+
 
 class UpdateEmbedding(Callback):
 
@@ -286,7 +288,8 @@ class TripletGenerator(object):
 
         # make a copy of current embedding
         embedding = extract_embedding(new_model)
-        embedding_copy = model_from_yaml(embedding.to_yaml())
+        embedding_copy = model_from_yaml(
+            embedding.to_yaml(), custom_objects=CUSTOM_OBJECTS)
         embedding_copy.set_weights(embedding.get_weights())
 
         # update the embedding used by the generator

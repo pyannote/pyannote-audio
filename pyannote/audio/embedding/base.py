@@ -31,6 +31,7 @@ import os.path
 import keras.backend as K
 from pyannote.audio.callback import LoggingCallback
 from keras.models import model_from_yaml
+from pyannote.audio.keras_utils import CUSTOM_OBJECTS
 
 
 class SequenceEmbedding(object):
@@ -70,7 +71,8 @@ class SequenceEmbedding(object):
 
         with open(architecture, 'r') as fp:
             yaml_string = fp.read()
-        self.embedding_ = model_from_yaml(yaml_string)
+        self.embedding_ = model_from_yaml(
+            yaml_string, custom_objects=CUSTOM_OBJECTS)
         self.embedding_.load_weights(weights)
         return self
 
