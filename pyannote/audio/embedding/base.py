@@ -33,6 +33,16 @@ from pyannote.audio.callback import LoggingCallback
 from keras.models import model_from_yaml
 from pyannote.audio.keras_utils import CUSTOM_OBJECTS
 
+import time
+import numpy as np
+import warnings
+import os.path
+import datetime
+import matplotlib.pyplot as plt
+import multiprocessing as mp
+from scipy.spatial.distance import pdist
+from pyannote.metrics.plot.binary_classification import plot_det_curve, plot_distributions
+
 
 class SequenceEmbedding(object):
     """Sequence embedding
@@ -164,6 +174,299 @@ class SequenceEmbedding(object):
         return self.model_.fit_generator(
             generator, samples_per_epoch, nb_epoch,
             verbose=1, callbacks=callbacks)
+
+    def fastfit(self, design_embedding, generator_train, nb_epoch,
+            nb_batches_per_epoch, batch_size, per_label, nb_of_threads=12,
+            generator_test=None, optimizer='rmsprop', LOG_DIR=None):
+        """Train the embedding faster
+
+        Parameters
+        ----------
+        input_shape : (n_frames, n_features) tuple
+            Shape of input sequence
+        design_embedding : function or callable
+            This function should take input_shape as input and return a Keras
+            model that takes a sequence as input, and returns the embedding as
+            output.
+        generator : iterable
+            The output of the generator must be a tuple (inputs, targets) or a
+            tuple (inputs, targets, sample_weights). All arrays should contain
+            the same number of samples. The generator is expected to loop over
+            its data indefinitely. An epoch finishes when `samples_per_epoch`
+            samples have been seen by the model.
+        samples_per_epoch : int
+            Number of samples to process before going to the next epoch.
+        nb_epoch : int
+            Total number of iterations on the data
+        optimizer: str, optional
+            Keras optimizer. Defaults to 'SSMORMS3'.
+        log_dir: str, optional
+            When provided, log status after each epoch into this directory.
+            This will create several files, including loss plots and weights
+            files.
+
+        See also
+        --------
+        keras.engine.training.Model.fit_generator
+        """
+        # create log_dir directory (and subdirectory)
+        os.makedirs(LOG_DIR)
+        os.makedirs(LOG_DIR + '/weights')
+
+        # write value to file
+        LOGPATH = LOG_DIR + '/{name}.{subset}.log'
+
+        start_time = time.time()
+        # generate set of labeled sequences
+        X, y = zip(*generator_test)
+        X, y = np.vstack(X), np.hstack(y)
+        # X = np.reshape(X, (X.shape[0], X.shape[1]/5, X.shape[2]*5))
+        print("Test database Loading --- %s seconds ---" % (time.time() - start_time))
+
+        start_time = time.time()
+        # randomly select (at most) 100 sequences from each speaker to ensure
+        # all speakers have the same importance in the evaluation
+        unique, y, counts = np.unique(y, return_inverse=True, return_counts=True)
+        n_speakers = len(unique)
+        indices = []
+        for speaker in range(n_speakers):
+            i = np.random.choice(np.where(y == speaker)[0], size=min(100, counts[speaker]), replace=False)
+            indices.append(i)
+        indices = np.hstack(indices)
+        Xtest, ytest = X[indices], y[indices, np.newaxis]
+        print("Test database random selection --- %s seconds ---" % (time.time() - start_time))
+
+        start_time = time.time()
+        # generate training set of labeled sequences
+        X, y = zip(*generator_train)
+        X, y2 = np.vstack(X), np.hstack(y)
+        # X = np.reshape(X, (X.shape[0], X.shape[1]/5, X.shape[2]*5))
+        n_seqs = y2.size
+        print("Train database with %d files loading --- %s seconds ---" % (n_seqs, time.time() - start_time))
+
+        # unique labels
+        unique, y, counts = np.unique(y2, return_inverse=True, return_counts=True)
+        n_labels = len(unique)
+
+        # shuffle labels
+        shuffled_labels = np.random.choice(n_labels,
+                                           size=n_labels,
+                                           replace=False)
+        
+        random_indices = {}
+        for ii in range(n_labels):
+            label = shuffled_labels[ii]
+            tmp = np.where(y == label)[0]
+            ind = np.random.choice(tmp,
+                                size=len(tmp),
+                                replace=False)
+            if (len(ind) > 0):
+                random_indices[label] = [ind, 0, len(ind)]
+            else:
+                print 'Problem in paradise'
+
+        # warn that some labels have very few training samples
+        too_few_samples = np.sum(counts < 10)
+        if too_few_samples > 0:
+            msg = '{n} labels (out of {N}) have less than {per_label} training samples.'
+            warnings.warn(msg.format(n=too_few_samples, N=10, per_label=per_label))
+
+        # Model Building
+        self.model_ = self.glue.build_model(X[0].shape, design_embedding, n_labels)
+        self.model_.compile(optimizer=optimizer, loss=self.glue.loss)
+        self.model_.summary()
+
+        # writing model to disk
+        architecture = LOG_DIR + '/architecture.yml'
+        self.to_disk(architecture=architecture)
+
+        loss_train = []
+        eer_test = []
+        label_pos = 0
+        pool = mp.Pool(nb_of_threads)
+        for epoch in range(nb_epoch):
+            start_time_epoch = time.time()
+            for ii in range(nb_batches_per_epoch):
+                start_time_batch = time.time()
+                indices = []
+                count_per_label = 0
+                while (len(indices) < nb_of_threads*batch_size):
+                    indices.append(random_indices[shuffled_labels[label_pos]][0][random_indices[shuffled_labels[label_pos]][1]])
+                    
+                    random_indices[shuffled_labels[label_pos]][1] += 1
+                    if (random_indices[shuffled_labels[label_pos]][1] >= random_indices[shuffled_labels[label_pos]][2]):
+                        random_indices[shuffled_labels[label_pos]][1] = 0
+                    
+                    count_per_label += 1
+                    if (count_per_label >= per_label):
+                        count_per_label = 0
+                        label_pos += 1
+                        if (label_pos >= shuffled_labels.size):
+                            label_pos = 0
+                            shuffled_labels = np.random.choice(n_labels,
+                                                       size=n_labels,
+                                                       replace=False)
+                indices = np.hstack(indices)
+
+                # selected sequences
+                sequences = X[indices]
+                batch_labels = y[indices]
+
+                # their embeddings (using current state of embedding network)
+                start_time = time.time()
+                embeddings = self.model_.predict(sequences, batch_size=nb_of_threads*batch_size)
+                pred_dur = (time.time() - start_time)
+
+                start_time = time.time()
+                [costs, derivatives] = self.glue.compute_cost_and_derivatives(embeddings, batch_labels, batch_size, nb_of_threads, pool)
+                deriv_dur = (time.time() - start_time)
+
+                start_time = time.time()
+                loss_value = self.model_.train_on_batch([sequences], derivatives)
+                batch_dur = (time.time() - start_time)
+
+                overall_batch_dur = (time.time() - start_time_batch)
+                batch_cost = np.sum(costs)
+
+                TXT_TEMPLATE = 'Predict --- {pred_dur:.3f} seconds ---\n'
+                TXT_TEMPLATE += 'Triplet derivation --- {deriv_dur:.3f} seconds ---\n'
+                TXT_TEMPLATE += 'Train on batch --- {batch_dur:.3f} seconds ---\n'
+                TXT_TEMPLATE += 'Epoch {epoch:04d}, batch {ii:04d} / {nb_of_batch_in_epoch:04d} processed in {overall_batch_dur:.3f}'
+                TXT_TEMPLATE += ' seconds with cost value of {batch_cost:.5g}\n\n'
+
+                log_string = TXT_TEMPLATE.format(pred_dur=pred_dur, deriv_dur=deriv_dur,\
+                    batch_dur=batch_dur, epoch=epoch, ii=ii+1, nb_of_batch_in_epoch=nb_batches_per_epoch,\
+                    overall_batch_dur=overall_batch_dur, batch_cost=batch_cost)
+                print log_string
+
+                mode = 'w' if ((epoch == 0)and(ii == 0)) else 'a'
+                try:
+                    log_filename = LOGPATH.format(subset='train', name='details')
+                    with open(log_filename, mode) as fp:
+                        fp.write(log_string)
+                        fp.flush()
+                except Exception as e:
+                    pass
+                try:
+                    log_filename = LOGPATH.format(subset='train', name='loss')
+                    now = datetime.datetime.now().isoformat()
+                    TXT_TEMPLATE = '{epoch:d} {ii:d} ' + now + ' {value:.5g}\n'
+                    log_string = TXT_TEMPLATE.format(epoch=epoch, ii=ii, value=batch_cost)
+                    with open(log_filename, mode) as fp:
+                        fp.write(log_string)
+                        fp.flush()
+                except Exception as e:
+                    print e
+                    pass
+
+                # keep track of cost after last batch
+                loss_train.append(batch_cost)
+                best_batch = np.argmin(loss_train)
+                best_value = np.min(loss_train)
+
+                # plot values to file and mark best value so far
+                fig = plt.figure()
+                plt.semilogy(loss_train, 'b')
+                plt.semilogy([best_batch], [best_value], 'bo')
+                plt.grid(True)
+
+                plt.xlabel('batch')
+                plt.ylabel('loss on train')
+
+                TITLE = 'loss = {best_value:.5g} on train @ batch #{best_batch:d}'
+                title = TITLE.format(best_value=best_value, best_batch=best_batch)
+                plt.title(title)
+
+                plt.tight_layout()
+
+                # save plot as PNG
+                try:
+                    plt.savefig(LOG_DIR + '/train.loss.png', dpi=150)
+                except Exception as e:
+                    pass
+                plt.close(fig)
+
+            epoch_dur = (time.time() - start_time_epoch)
+
+            PATH = LOG_DIR+'/weights/weights-{epoch:02d}.hdf5'
+            PATH = PATH.format(epoch=epoch)
+            self.to_disk(weights=PATH)
+
+            # testing
+            fX = self.model_.predict([Xtest])
+
+            # def eval_eer(fX, ytest, LOG_DIR, LOGPATH, epoch, epoch_dur):
+            start_time = time.time()
+            # compute euclidean distance between every pair of sequences
+            distances = np.arccos(np.clip(1.0-pdist(fX, metric='cosine'), -1.0, 1.0))
+            # distances = pdist(fX, metric='euclidean')
+
+            # compute same/different groundtruth
+            y_true = pdist(ytest, metric='chebyshev') < 1
+
+            # plot positive/negative scores distribution
+            # plot DET curve and return equal error rate
+            prefix = LOG_DIR + '/plot.{epoch:04d}'.format(epoch=epoch)
+            plot_distributions(y_true, distances, prefix, xlim=(0, np.pi), ymax=3, nbins=100)
+            eer = plot_det_curve(y_true, -distances, prefix)
+            eer *= 100.0
+            eer_dur = (time.time() - start_time)
+
+            TXT_TEMPLATE = 'Epoch #{epoch:05d} processed in {epoch_dur:.3f}'
+            TXT_TEMPLATE += ' seconds with EER={eer:.5g} on test dataset ---\n'
+            TXT_TEMPLATE += 'EER evaluation --- {eer_dur:.3f} seconds ---\n\n'
+
+            log_string = TXT_TEMPLATE.format(epoch=epoch, epoch_dur=epoch_dur,\
+                eer=eer, eer_dur=eer_dur)
+            print log_string
+
+            mode = 'w' if (epoch == 0) else 'a'
+            try:
+                log_filename = LOGPATH.format(subset='train', name='details')
+                with open(log_filename, mode) as fp:
+                    fp.write(log_string)
+                    fp.flush()
+            except Exception as e:
+                pass
+            try:
+                log_filename = LOGPATH.format(subset='test', name='eer')
+                now = datetime.datetime.now().isoformat()
+                TXT_TEMPLATE = '{epoch:d} ' + now + ' {value:.5g}\n'
+                log_string = TXT_TEMPLATE.format(epoch=epoch, value=eer)
+                with open(log_filename, mode) as fp:
+                    fp.write(log_string)
+                    fp.flush()
+            except Exception as e:
+                print e
+                pass
+
+            # keep track of cost after last batch
+            eer_test.append(eer)
+            best_epoch = np.argmin(eer_test)
+            best_value = np.min(eer_test)
+
+            # plot values to file and mark best value so far
+            fig = plt.figure()
+            plt.plot(eer_test, 'b')
+            plt.plot([best_epoch], [best_value], 'bo')
+            plt.grid(True)
+
+            plt.xlabel('epoch')
+            plt.ylabel('EER on test')
+
+            TITLE = 'EER = {best_value:.5g} on test @ epoch #{best_epoch:d}'
+            title = TITLE.format(best_value=best_value, best_epoch=best_epoch)
+            plt.title(title)
+
+            plt.tight_layout()
+
+            # save plot as PNG
+            try:
+                plt.savefig(LOG_DIR + '/test.eer.png', dpi=150)
+            except Exception as e:
+                pass
+            plt.close(fig)
+
 
     def transform(self, sequences, layer_index=None, batch_size=32):
         """Apply pre-trained embedding to sequences

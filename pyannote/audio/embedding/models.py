@@ -39,6 +39,7 @@ from keras.layers import Lambda
 from keras.layers import merge
 from keras.layers.wrappers import Bidirectional
 from keras.layers.wrappers import TimeDistributed
+import numpy as np
 
 from pyannote.audio.keras_utils import register_custom_object
 
