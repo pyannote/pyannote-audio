@@ -44,8 +44,6 @@ class GaussianDivergenceSegmentation(YaafeMixin, FileBasedBatchGenerator):
     ----------
     feature_extractor : YaafeFeatureExtractor
         Yaafe feature extractor
-    normalize : boolean, optional
-        Set to True to z-score normalize
     duration : float, optional
     step : float, optional
         Sliding window duration and step (in seconds).
@@ -63,12 +61,11 @@ class GaussianDivergenceSegmentation(YaafeMixin, FileBasedBatchGenerator):
     pyannote.audio.signal.Peak
 
     """
-    def __init__(self, feature_extractor, normalize=False,
+    def __init__(self, feature_extractor,
                  duration=1.000, step=0.100):
 
         # feature sequence
         self.feature_extractor = feature_extractor
-        self.normalize = normalize
 
         # (left vs. right) sliding windows
         self.duration = duration
@@ -127,8 +124,6 @@ class BICSegmentation(YaafeMixin, FileBasedBatchGenerator):
     ----------
     feature_extractor : YaafeFeatureExtractor
         Yaafe feature extractor
-    normalize : boolean, optional
-        Set to True to z-score normalize
     covariance_type : {'diag', 'full'}
         Covariance type. Defaults to 'full'.
     duration : float, optional
@@ -148,12 +143,11 @@ class BICSegmentation(YaafeMixin, FileBasedBatchGenerator):
     pyannote.audio.signal.Peak
 
     """
-    def __init__(self, feature_extractor, normalize=False,
-                 covariance_type='full', duration=1.000, step=0.100):
+    def __init__(self, feature_extractor, covariance_type='full',
+                 duration=1.000, step=0.100):
 
         # feature sequence
         self.feature_extractor = feature_extractor
-        self.normalize = normalize
 
         # (left vs. right) sliding windows
         self.duration = duration

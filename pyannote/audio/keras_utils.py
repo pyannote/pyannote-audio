@@ -26,46 +26,8 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
+CUSTOM_OBJECTS = {}
 
-import versioneer
 
-from setuptools import setup, find_packages
-
-setup(
-
-    # package
-    namespace_packages=['pyannote'],
-    packages=find_packages(),
-    install_requires=[
-        'pyannote.core >= 0.8',
-        'pyannote.metrics >= 0.10.2',
-        'pyannote.generators >= 0.2',
-        'pyannote.database >= 0.4',
-        'keras >= 1.1.0',
-        'theano >= 0.8.2',
-        'scikit-optimize >= 0.2',
-    ],
-
-    # versioneer
-    version=versioneer.get_version(),
-    cmdclass=versioneer.get_cmdclass(),
-
-    # PyPI
-    name='pyannote.audio',
-    description=('Audio processing'),
-    author='Hervé Bredin',
-    author_email='bredin@limsi.fr',
-    url='http://herve.niderb.fr/',
-    classifiers=[
-        "Development Status :: 4 - Beta",
-        "Intended Audience :: Science/Research",
-        "License :: OSI Approved :: MIT License",
-        "Natural Language :: English",
-        "Programming Language :: Python :: 2",
-        "Programming Language :: Python :: 2.7",
-        "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.4",
-        "Programming Language :: Python :: 3.5",
-        "Topic :: Scientific/Engineering"
-    ],
-)
+def register_custom_object(key, value):
+    CUSTOM_OBJECTS[key] = value

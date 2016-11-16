@@ -46,8 +46,6 @@ class Segmentation(YaafeMixin, FileBasedBatchGenerator):
         Pre-trained sequence embedding.
     feature_extractor : YaafeFeatureExtractor
         Yaafe feature extractor
-    normalize : boolean, optional
-        Set to True to z-score normalize
     duration : float, optional
     step : float, optional
         Sliding window duration and step (in seconds).
@@ -67,12 +65,11 @@ class Segmentation(YaafeMixin, FileBasedBatchGenerator):
     pyannote.audio.signal.Peak
 
     """
-    def __init__(self, sequence_embedding, feature_extractor, normalize=False,
+    def __init__(self, sequence_embedding, feature_extractor,
                  duration=1.000, step=0.100):
 
         # feature sequence
         self.feature_extractor = feature_extractor
-        self.normalize = normalize
 
         # sequence embedding
         self.sequence_embedding = sequence_embedding

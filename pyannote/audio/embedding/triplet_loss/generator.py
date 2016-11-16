@@ -31,11 +31,13 @@ import itertools
 import numpy as np
 from scipy.spatial.distance import pdist, squareform
 from pyannote.generators.batch import BaseBatchGenerator
-from pyannote.audio.generators.labels import \
-    LabeledFixedDurationSequencesBatchGenerator
+from pyannote.audio.generators.labels import FixedDurationSequences
+from pyannote.audio.generators.labels import VariableDurationSequences
 from keras.callbacks import Callback
 from keras.models import model_from_yaml
 from pyannote.audio.embedding.base import SequenceEmbedding
+
+from pyannote.audio.keras_utils import CUSTOM_OBJECTS
 
 
 class UpdateEmbedding(Callback):
@@ -77,10 +79,12 @@ class TripletGenerator(object):
         Defaults to 0.2.
     duration: float, optional
         Sequence duration. Defaults to 3 seconds.
+    min_duration: float, optional
+        Sequence minimum duration. When provided, generates sequences with
+        random duration in range [min_duration, duration]. Defaults to
+        fixed-duration sequences.
     overlap: float, optional
         Sequence overlap ratio. Defaults to 0 (no overlap).
-    normalize: boolean, optional
-        When True, normalize sequence (z-score). Defaults to False.
     per_label: int, optional
         Number of samples per label. Defaults to 40.
     per_fold: int, optional
@@ -93,7 +97,7 @@ class TripletGenerator(object):
 
     def __init__(self, extractor, file_generator,
                  distance='sqeuclidean', margin=0.2,
-                 duration=3.0, overlap=0.0, normalize=False,
+                 duration=3.0, min_duration=None, overlap=0.8,
                  per_fold=0, per_label=40, batch_size=32):
 
         super(TripletGenerator, self).__init__()
@@ -103,18 +107,24 @@ class TripletGenerator(object):
         self.distance = distance
         self.margin = margin
         self.duration = duration
+        self.min_duration = min_duration
         self.overlap = overlap
-        self.normalize = normalize
         self.per_fold = per_fold
         self.per_label = per_label
         self.batch_size = batch_size
 
-        self.generator_ = LabeledFixedDurationSequencesBatchGenerator(
-            self.extractor,
-            duration=self.duration,
-            normalize=self.normalize,
-            step=(1 - self.overlap) * self.duration,
-            batch_size=-1)
+        if self.min_duration is None:
+            self.generator_ = FixedDurationSequences(
+                self.extractor,
+                duration=self.duration,
+                step=(1 - self.overlap) * self.duration,
+                batch_size=-1)
+        else:
+            self.generator_ = VariableDurationSequences(
+                self.extractor,
+                max_duration=self.duration,
+                min_duration=self.min_duration,
+                batch_size=-1)
 
         self.triplet_generator_ = self.iter_triplets()
 
@@ -278,7 +288,8 @@ class TripletGenerator(object):
 
         # make a copy of current embedding
         embedding = extract_embedding(new_model)
-        embedding_copy = model_from_yaml(embedding.to_yaml())
+        embedding_copy = model_from_yaml(
+            embedding.to_yaml(), custom_objects=CUSTOM_OBJECTS)
         embedding_copy.set_weights(embedding.get_weights())
 
         # update the embedding used by the generator
@@ -312,14 +323,16 @@ class TripletBatchGenerator(BaseBatchGenerator):
         File generator (the training set, typically)
     distance: {'sqeuclidean', 'cosine'}
         Distance for which the embedding is optimized. Defaults to 'sqeuclidean'.
+    min_duration: float, optional
+        Sequence minimum duration. When provided, generates sequences with
+        random duration in range [min_duration, duration]. Defaults to
+        fixed-duration sequences.
     margin : float, optional
         Defaults to 0.2.
     duration: float, optional
         Sequence duration. Defaults to 3 seconds.
     overlap: float, optional
         Sequence overlap ratio. Defaults to 0 (no overlap).
-    normalize: boolean, optional
-        When True, normalize sequence (z-score). Defaults to False.
     per_label: int, optional
         Number of samples per label. Defaults to 40.
     per_fold: int, optional
@@ -330,13 +343,13 @@ class TripletBatchGenerator(BaseBatchGenerator):
     """
     def __init__(self, feature_extractor, file_generator,
                  distance='sqeuclidean', margin=0.2,
-                 duration=3.0, overlap=0.5, normalize=False,
+                 duration=3.0, min_duration=None, overlap=0.5,
                  per_fold=0, per_label=40, batch_size=32):
 
         self.triplet_generator_ = TripletGenerator(
             feature_extractor, file_generator,
             margin=margin, distance=distance,
-            duration=duration, overlap=overlap, normalize=normalize,
+            duration=duration, min_duration=min_duration, overlap=overlap,
             per_fold=per_fold, per_label=per_label, batch_size=batch_size)
 
         super(TripletBatchGenerator, self).__init__(

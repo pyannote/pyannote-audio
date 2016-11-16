@@ -30,7 +30,7 @@
 Speaker embedding
 
 Usage:
-  speaker_embedding train [--subset=<subset> --duration=<duration>] <experiment_dir> <database.task.protocol> <wav_template>
+  speaker_embedding train [--subset=<subset> --duration=<duration> --min-duration=<duration>] <experiment_dir> <database.task.protocol> <wav_template>
   speaker_embedding tune [--subset=<subset> --false-alarm=<beta>] <train_dir> <database.task.protocol> <wav_template>
   speaker_embedding test [--subset=<subset> --false-alarm=<beta>] <tune_dir> <database.task.protocol> <wav_template>
   speaker_embedding apply [--subset=<subset> --step=<step> --layer=<index>] <tune_dir> <database.task.protocol> <wav_template>
@@ -51,6 +51,9 @@ Options:
                              In "train" mode, default subset is "train".
                              In "tune" mode, default subset is "development".
                              In "apply" mode, default subset is "test".
+  --duration=<D>             Set duration of embedded sequences [default: 5.0]
+  --min-duration=<d>         Use sequences with duration in range [<d>, <D>].
+                             Defaults to sequences with fixed duration D.
   --false-alarm=<beta>       Set importance of false alarm with respect to
                              false rejection [default: 1.0]
   --step=<step>              Set step (in seconds) for embedding extraction.
@@ -149,8 +152,8 @@ from pyannote.audio.embedding.base import SequenceEmbedding
 from pyannote.audio.embedding.triplet_loss.glue import TripletLoss
 from pyannote.audio.embedding.triplet_loss.generator import TripletBatchGenerator
 
-from pyannote.audio.generators.labels import \
-    LabeledFixedDurationSequencesBatchGenerator
+from pyannote.audio.generators.labels import FixedDurationSequences
+from pyannote.audio.generators.labels import VariableDurationSequences
 from scipy.spatial.distance import pdist, squareform
 
 from pyannote.metrics.plot.binary_classification import plot_distributions
@@ -167,7 +170,8 @@ import sklearn.metrics
 from pyannote.metrics import f_measure
 
 
-def train(protocol, duration, experiment_dir, train_dir, subset='train'):
+def train(protocol, duration, experiment_dir, train_dir, subset='train',
+          min_duration=None):
 
     # -- TRAINING --
     nb_epoch = 1000
@@ -205,7 +209,8 @@ def train(protocol, duration, experiment_dir, train_dir, subset='train'):
     generator = TripletBatchGenerator(
         feature_extraction, protocol.train(),
         margin=margin, distance=distance,
-        duration=duration, per_label=per_label, batch_size=batch_size)
+        duration=duration, min_duration=min_duration,
+        per_label=per_label, batch_size=batch_size)
 
     # input shape (n_frames, n_features)
     input_shape = generator.get_shape()
@@ -228,7 +233,7 @@ def generate_test(protocol, subset, feature_extraction, duration):
     np.random.seed(1337)
 
     # generate set of labeled sequences
-    generator = LabeledFixedDurationSequencesBatchGenerator(
+    generator = FixedDurationSequences(
         feature_extraction, duration=duration, step=duration, batch_size=-1)
     X, y = zip(*generator(getattr(protocol, subset)()))
     X, y = np.vstack(X), np.hstack(y)
@@ -262,7 +267,11 @@ def tune(protocol, train_dir, tune_dir, beta=1.0, subset='development'):
             break
         nb_epoch += 1
 
-    duration = float(os.path.basename(train_dir))
+    duration = os.path.basename(train_dir)
+    if '-' in duration:
+        raise NotImplementedError(
+            'Tuning of variable-duration embedding is not supported yet.')
+    duration = float(duration)
     config_dir = os.path.dirname(os.path.dirname(os.path.dirname(train_dir)))
     config_yml = config_dir + '/config.yml'
     with open(config_yml, 'r') as fp:
@@ -366,7 +375,12 @@ def test(protocol, tune_dir, test_dir, subset, beta=1.0):
 
     train_dir = os.path.dirname(os.path.dirname(tune_dir))
 
-    duration = float(os.path.basename(train_dir))
+    duration = os.path.basename(train_dir)
+    if '-' in duration:
+        raise NotImplementedError(
+            'Testing of variable-duration embedding is not supported yet.')
+    duration = float(duration)
+
     config_dir = os.path.dirname(os.path.dirname(os.path.dirname(train_dir)))
     config_yml = config_dir + '/config.yml'
     with open(config_yml, 'r') as fp:
@@ -453,7 +467,12 @@ def embed(protocol, tune_dir, apply_dir, subset='test',
 
     train_dir = os.path.dirname(os.path.dirname(tune_dir))
 
-    duration = float(os.path.basename(train_dir))
+    duration = os.path.basename(train_dir)
+    if '-' in duration:
+        raise NotImplementedError(
+            'Application of variable-duration embedding is not supported yet.')
+    duration = float(duration)
+
     config_dir = os.path.dirname(os.path.dirname(os.path.dirname(train_dir)))
     config_yml = config_dir + '/config.yml'
     with open(config_yml, 'r') as fp:
@@ -517,12 +536,19 @@ if __name__ == '__main__':
         if subset is None:
             subset = 'train'
         duration = float(arguments['--duration'])
-        TRAIN_DIR = '{experiment_dir}/train/{protocol}.{subset}/{duration:g}'
+        min_duration = arguments['--min-duration']
+        if min_duration is None:
+            TRAIN_DIR = '{experiment_dir}/train/{protocol}.{subset}/{duration:g}'
+        else:
+            min_duration = float(min_duration)
+            TRAIN_DIR = '{experiment_dir}/train/{protocol}.{subset}/{min_duration:g}-{duration:g}'
+
         train_dir = TRAIN_DIR.format(
             experiment_dir=experiment_dir,
             protocol=arguments['<database.task.protocol>'],
-            subset=subset, duration=duration)
-        train(protocol, duration, experiment_dir, train_dir, subset=subset)
+            subset=subset, duration=duration, min_duration=min_duration)
+        train(protocol, duration, experiment_dir, train_dir, subset=subset,
+              min_duration=min_duration)
 
     if arguments['tune']:
         train_dir = arguments['<train_dir>']

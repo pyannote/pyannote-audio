@@ -58,12 +58,10 @@ class Extraction(YaafeMixin, FileBasedBatchGenerator):
 
     """
     def __init__(self, sequence_embedding, feature_extractor,
-                 normalize=False, duration=1.000,
-                 step=0.100, layer_index=None):
+                 duration=1.000, step=0.100, layer_index=None):
 
         # feature sequence
         self.feature_extractor = feature_extractor
-        self.normalize = normalize
 
         # sequence embedding
         self.sequence_embedding = sequence_embedding

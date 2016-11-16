@@ -28,17 +28,41 @@
 # Grégory GELLY
 
 import keras.backend as K
+from keras.engine import Layer, InputSpec
 from keras.models import Model
 
 from keras.layers import Input
+from keras.layers import Masking
 from keras.layers import LSTM
 from keras.layers import Dense
 from keras.layers import Lambda
 from keras.layers import merge
-from keras.layers.pooling import GlobalAveragePooling1D
 from keras.layers.wrappers import Bidirectional
 from keras.layers.wrappers import TimeDistributed
 import numpy as np
+
+from pyannote.audio.keras_utils import register_custom_object
+
+
+class EmbeddingAveragePooling(Layer):
+
+    def __init__(self, **kwargs):
+        super(EmbeddingAveragePooling, self).__init__(**kwargs)
+        self.input_spec = [InputSpec(ndim=3)]
+        self.supports_masking = True
+
+    def call(self, x, mask=None):
+        # thanks to L2 normalization, mask actually has no effect
+        return K.l2_normalize(K.sum(x, axis=1), axis=-1)
+
+    def get_output_shape_for(self, input_shape):
+        return (input_shape[0], input_shape[2])
+
+    def compute_mask(self, input, input_mask=None):
+        return None
+
+# register user-defined Keras layer
+register_custom_object('EmbeddingAveragePooling', EmbeddingAveragePooling)
 
 
 class TristouNet(object):
@@ -62,21 +86,16 @@ class TristouNet(object):
         'ave' stands for 'average', 'concat' (default) for concatenation.
         See keras.layers.wrappers.Bidirectional for more information.
         Use False to only use forward LSTMs.
-    pooling: {'last', 'average'}
-        Whether to use only the last output of the last LSTM ('last'),
-        or to use its average output ('average', default).
     mlp: list, optional
         Number of units in additionnal stacked dense MLP layers.
         Defaults to [16, 16] (i.e. two dense MLP layers with 16 units)
     """
 
-    def __init__(self, lstm=[16,], bidirectional='concat',
-                 pooling='average', mlp=[16, 16]):
+    def __init__(self, lstm=[16,], bidirectional='concat', mlp=[16, 16]):
 
         super(TristouNet, self).__init__()
         self.lstm = lstm
         self.bidirectional = bidirectional
-        self.pooling = pooling
         self.mlp = mlp
 
     def __call__(self, input_shape):
@@ -94,47 +113,39 @@ class TristouNet(object):
 
         inputs = Input(shape=input_shape,
                        name="input_sequence")
-        x = inputs
+
+        masking = Masking(mask_value=0.)
+        x = masking(inputs)
 
         # stack LSTM layers
         n_lstm = len(self.lstm)
         for i, output_dim in enumerate(self.lstm):
 
-            if self.pooling == 'last':
-                # only last LSTM should not return a sequence
-                return_sequences = i+1 < n_lstm
-            elif self.pooling == 'average':
-                return_sequences = True
-            else:
-                raise NotImplementedError(
-                    'unknown "{pooling}" pooling'.format(pooling=self.pooling))
-
             if i:
                 # all but first LSTM
                 lstm = LSTM(name='lstm_{i:d}'.format(i=i),
-                               output_dim=output_dim,
-                               return_sequences=return_sequences,
-                               activation='tanh',
-                               dropout_W=0.0,
-                               dropout_U=0.0)
+                            output_dim=output_dim,
+                            return_sequences=True,
+                            activation='tanh',
+                            dropout_W=0.0,
+                            dropout_U=0.0)
             else:
                 # first LSTM needs to be given the input shape
                 lstm = LSTM(name='lstm_{i:d}'.format(i=i),
-                               input_shape=input_shape,
-                               output_dim=output_dim,
-                               return_sequences=return_sequences,
-                               activation='tanh',
-                               dropout_W=0.0,
-                               dropout_U=0.0)
+                            input_shape=input_shape,
+                            output_dim=output_dim,
+                            return_sequences=True,
+                            activation='tanh',
+                            dropout_W=0.0,
+                            dropout_U=0.0)
 
             if self.bidirectional:
                 lstm = Bidirectional(lstm, merge_mode=self.bidirectional)
 
             x = lstm(x)
 
-        if self.pooling == 'average':
-            pooling = GlobalAveragePooling1D()
-            x = pooling(x)
+        pooling = EmbeddingAveragePooling(name='pooling')
+        x = pooling(x)
 
         # stack dense MLP layers
         for i, output_dim in enumerate(self.mlp):
@@ -144,9 +155,8 @@ class TristouNet(object):
                         name='mlp_{i:d}'.format(i=i))
             x = mlp(x)
 
-        # stack L2 normalization layer
         normalize = Lambda(lambda x: K.l2_normalize(x, axis=-1),
-                           name="normalize")
+                           name='normalize')
         embeddings = normalize(x)
 
         return Model(input=inputs, output=embeddings)
@@ -198,7 +208,9 @@ class TrottiNet(object):
 
         inputs = Input(shape=input_shape,
                        name="input_sequence")
-        x = inputs
+
+        masking = Masking(mask_value=0.)
+        x = masking(inputs)
 
         # stack (bidirectional) LSTM layers
         for i, output_dim in enumerate(self.lstm):
@@ -234,14 +246,9 @@ class TrottiNet(object):
 
             x = TimeDistributed(mlp)(x)
 
-        # average pooling
-        pooling = GlobalAveragePooling1D(name='pooling')
-        x = pooling(x)
-
-        # L2 normalization layer
-        normalize = Lambda(lambda x: K.l2_normalize(x, axis=-1),
-                           name="normalize")
-        embeddings = normalize(x)
+        # average pooling and L2 normalization
+        pooling = EmbeddingAveragePooling(name='pooling')
+        embeddings = pooling(x)
 
         return Model(input=inputs, output=embeddings)
 
@@ -294,8 +301,8 @@ class ClopiNet(object):
         inputs = Input(shape=input_shape,
                        name="input_sequence")
 
-        # just rename the input variable to x
-        x = inputs
+        masking = Masking(mask_value=0.)
+        x = masking(inputs)
 
         # stack (bidirectional) LSTM layers
         for i, output_dim in enumerate(self.lstm):
@@ -345,14 +352,9 @@ class ClopiNet(object):
 
             x = TimeDistributed(mlp)(x)
 
-        # average pooling
-        pooling = GlobalAveragePooling1D(name='pooling')
-        x = pooling(x)
-
-        # L2 normalization layer
-        normalize = Lambda(lambda x: K.l2_normalize(x, axis=-1),
-                           name="normalize")
-        embeddings = normalize(x)
+        # average pooling and L2 normalization
+        pooling = EmbeddingAveragePooling(name='pooling')
+        embeddings = pooling(x)
 
         return Model(input=[inputs], output=embeddings)
 

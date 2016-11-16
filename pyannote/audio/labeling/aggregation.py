@@ -45,8 +45,6 @@ class SequenceLabelingAggregation(YaafeMixin, FileBasedBatchGenerator):
         Pre-trained sequence labeling.
     feature_extractor : YaafeFeatureExtractor
         Yaafe feature extractor
-    normalize : boolean, optional
-        Set to True to z-score normalize
     duration : float, optional
     step : float, optional
         Sliding window duration and step (in seconds).
@@ -61,11 +59,10 @@ class SequenceLabelingAggregation(YaafeMixin, FileBasedBatchGenerator):
     """
 
     def __init__(self, sequence_labeling, feature_extractor,
-                 duration=3., step=0.75, normalize=False):
+                 duration=3., step=0.75):
 
         # feature sequence
         self.feature_extractor = feature_extractor
-        self.normalize = normalize
 
         # sequence labeling
         self.sequence_labeling = sequence_labeling
