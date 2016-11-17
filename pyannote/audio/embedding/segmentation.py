@@ -82,7 +82,7 @@ class Segmentation(YaafeMixin, FileBasedBatchGenerator):
         super(Segmentation, self).__init__(generator, batch_size=-1)
 
     def signature(self):
-        shape = self.get_shape()
+        shape = self.shape
         return (
             {'type': 'timestamp'},
             {'type': 'sequence', 'shape': shape},

@@ -201,7 +201,7 @@ def train(protocol, experiment_dir, train_dir, subset='train'):
         int(np.ceil((seconds_per_epoch / step) / batch_size))
 
     # input shape (n_frames, n_features)
-    input_shape = generator.get_shape()
+    input_shape = generator.shape
 
     labeling = SequenceLabeling()
     labeling.fit(input_shape, architecture,

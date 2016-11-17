@@ -118,30 +118,29 @@ class SequenceEmbedding(object):
         if weights:
             embedding.save_weights(weights, overwrite=overwrite)
 
-    def fit(self, input_shape, design_embedding, generator,
-            samples_per_epoch, nb_epoch, optimizer='rmsprop', log_dir=None):
+    def fit(self, design_embedding,
+            protocol, nb_epoch, subset='train',
+            optimizer='rmsprop', batch_size=None,
+            log_dir=None):
+
         """Train the embedding
 
         Parameters
         ----------
-        input_shape : (n_frames, n_features) tuple
-            Shape of input sequence
         design_embedding : function or callable
             This function should take input_shape as input and return a Keras
             model that takes a sequence as input, and returns the embedding as
             output.
-        generator : iterable
-            The output of the generator must be a tuple (inputs, targets) or a
-            tuple (inputs, targets, sample_weights). All arrays should contain
-            the same number of samples. The generator is expected to loop over
-            its data indefinitely. An epoch finishes when `samples_per_epoch`
-            samples have been seen by the model.
-        samples_per_epoch : int
-            Number of samples to process before going to the next epoch.
+        protocol : pyannote.database.Protocol
+
         nb_epoch : int
             Total number of iterations on the data
+        subset : {'train', 'development', 'test'}, optional
+            Defaults to 'train'.
         optimizer: str, optional
             Keras optimizer. Defaults to 'rmsprop'.
+        batch_size : int, optional
+            Batch size
         log_dir: str, optional
             When provided, log status after each epoch into this directory.
             This will create several files, including loss plots and weights
@@ -161,6 +160,10 @@ class SequenceEmbedding(object):
                 log_dir, extract_embedding=extract_embedding)
             callbacks.append(callback)
 
+        file_generator = getattr(protocol, subset)()
+        generator = self.glue.get_generator(
+            file_generator, batch_size=batch_size)
+
         # in case the {generator | optimizer | glue} define their own
         # callbacks, append them as well. this might be useful.
         for stuff in [generator, optimizer, self.glue]:
@@ -168,8 +171,11 @@ class SequenceEmbedding(object):
                 callbacks.extend(stuff.callbacks(
                     extract_embedding=extract_embedding))
 
-        self.model_ = self.glue.build_model(input_shape, design_embedding)
+        self.model_ = self.glue.build_model(generator.shape, design_embedding)
         self.model_.compile(optimizer=optimizer, loss=self.glue.loss)
+
+        samples_per_epoch = generator.get_samples_per_epoch(
+            protocol, subset=subset)
 
         return self.model_.fit_generator(
             generator, samples_per_epoch, nb_epoch,

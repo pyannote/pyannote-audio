@@ -270,11 +270,12 @@ class TripletGenerator(object):
     def __next__(self):
         return next(self.triplet_generator_)
 
-    def get_shape(self):
-        return self.generator_.get_shape()
+    @property
+    def shape(self):
+        return self.generator_.shape
 
     def signature(self):
-        shape = self.get_shape()
+        shape = self.shape
         return (
             [
                 {'type': 'sequence', 'shape': shape},
@@ -358,12 +359,26 @@ class TripletBatchGenerator(BaseBatchGenerator):
     def signature(self):
         return self.triplet_generator_.signature()
 
-    def get_shape(self):
-        return self.triplet_generator_.get_shape()
-
     @property
-    def n_labels(self):
-        return self.triplet_generator_.n_labels
+    def shape(self):
+        return self.triplet_generator_.shape
+
+    def get_samples_per_epoch(self, protocol, subset='train'):
+        """
+        Parameters
+        ----------
+        protocol : pyannote.database.protocol.protocol.Protocol
+        subset : {'train', 'development', 'test'}, optional
+
+        Returns
+        -------
+        samples_per_epoch : int
+            Number of samples per epoch.
+        """
+        n_labels = len(protocol.stats(subset)['labels'])
+        per_label = self.triplet_generator_.per_label
+        samples_per_epoch = per_label * (per_label - 1) * n_labels
+        return samples_per_epoch - (samples_per_epoch % self.batch_size)
 
     def callbacks(self, extract_embedding=None):
         return self.triplet_generator_.callbacks(
