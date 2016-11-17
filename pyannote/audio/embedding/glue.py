@@ -56,7 +56,7 @@ class Glue(object):
         --------
         An example of such a method can be found in `TripletLoss` class
         """
-        raise NotImplementedError('')
+        return design_embedding(input_shape)
 
     def extract_embedding(self, from_model):
         """Extract embedding from internal Keras model
