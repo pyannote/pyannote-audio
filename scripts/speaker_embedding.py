@@ -205,7 +205,7 @@ def train(protocol, duration, experiment_dir, train_dir, subset='train',
     # -- GLUE --
     glue_name = config['glue']['name']
     glues = __import__('pyannote.audio.embedding',
-                        from_list=[glue_name])
+                        fromlist=[glue_name])
     Glue = getattr(glues, glue_name)
     glue = Glue(feature_extraction,
                 duration=duration,
