@@ -77,7 +77,7 @@ class FixedDurationSequences(YaafeMixin, FileBasedBatchGenerator):
 
     def signature(self):
         return (
-            {'type': 'sequence', 'shape': self.get_shape()},
+            {'type': 'sequence', 'shape': self.shape},
             {'type': 'label'}
         )
 
@@ -91,7 +91,7 @@ class VariableDurationSequences(YaafeMixin, FileBasedBatchGenerator):
         self.min_duration = min_duration
         self.max_duration = max_duration
 
-        # this is needed for self.get_shape() to work
+        # this is needed for self.shape property to work
         self.duration = max_duration
 
         # pre-compute shape of zero-padded sequences
@@ -109,7 +109,7 @@ class VariableDurationSequences(YaafeMixin, FileBasedBatchGenerator):
 
     def signature(self):
         return (
-            {'type': 'sequence', 'shape': self.get_shape()},
+            {'type': 'sequence', 'shape': self.shape},
             {'type': 'label'}
         )
 

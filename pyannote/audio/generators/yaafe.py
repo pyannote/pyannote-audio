@@ -29,7 +29,8 @@
 
 class YaafeMixin:
 
-    def get_shape(self):
+    @property
+    def shape(self):
         return self.yaafe_get_shape()
 
     def yaafe_get_shape(self):

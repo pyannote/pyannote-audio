@@ -83,7 +83,7 @@ class SequenceLabelingAggregation(YaafeMixin, FileBasedBatchGenerator):
 
     def signature(self):
         """See `FileBasedBatchGenerator` base class for details"""
-        shape = self.get_shape()
+        shape = self.shape
         return {'type': 'sequence', 'shape': shape}
 
     def postprocess_sequence(self, mono_batch):

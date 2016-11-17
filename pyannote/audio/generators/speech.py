@@ -52,7 +52,7 @@ class SpeechActivityDetectionBatchGenerator(YaafeMixin,
 
     def signature(self):
 
-        shape = self.yaafe_get_shape()
+        shape = self.shape
         dimension = 2
 
         return [
@@ -128,7 +128,7 @@ class OverlappingSpeechDetectionBatchGenerator(YaafeMixin,
 
     def signature(self):
 
-        shape = self.yaafe_get_shape()
+        shape = self.shape
         dimension = 2
 
         return [

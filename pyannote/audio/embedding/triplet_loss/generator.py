@@ -270,11 +270,12 @@ class TripletGenerator(object):
     def __next__(self):
         return next(self.triplet_generator_)
 
-    def get_shape(self):
-        return self.generator_.get_shape()
+    @property
+    def shape(self):
+        return self.generator_.shape
 
     def signature(self):
-        shape = self.get_shape()
+        shape = self.shape
         return (
             [
                 {'type': 'sequence', 'shape': shape},
@@ -358,12 +359,10 @@ class TripletBatchGenerator(BaseBatchGenerator):
     def signature(self):
         return self.triplet_generator_.signature()
 
-    def get_shape(self):
-        return self.triplet_generator_.get_shape()
-
     @property
-    def n_labels(self):
-        return self.triplet_generator_.n_labels
+    def shape(self):
+        return self.triplet_generator_.shape
+
 
     def callbacks(self, extract_embedding=None):
         return self.triplet_generator_.callbacks(
