@@ -33,6 +33,7 @@ from keras.layers import Input
 from keras.layers import merge
 
 from ..glue import Glue
+from .generator import TripletBatchGenerator
 
 
 class TripletLoss(Glue):
@@ -52,39 +53,40 @@ class TripletLoss(Glue):
 
     Parameters
     ----------
-    margin : float, optional
-        Triplet loss margin. Defaults to 0.2.
-    positive_only : boolean, optional
-        When False, loss is d(a, p) - d(a, n) + margin.
-        Default (True) is max(0, d(a, p) - d(a, n) + margin).
+    feature_extractor
+    duration : float, optional
+    min_duration : float, optional
     distance: {'sqeuclidean', 'cosine'}
         Distance for which the embedding is optimized. Defaults to 'sqeuclidean'.
+    margin : float, optional
+        Triplet loss margin. Defaults to 0.2.
+    per_label : int, optional
+        Defaults to 40.
 
     Reference
     ---------
     Hervé Bredin, "TristouNet: Triplet Loss for Speaker Turn Embedding"
     Submitted to ICASSP 2017. https://arxiv.org/abs/1609.04301
     """
-    def __init__(self, margin=0.2, positive_only=True, distance='sqeuclidean'):
-        super(TripletLoss, self).__init__()
+
+    def __init__(self, feature_extractor, duration=5.0, min_duration=None,
+                 distance='sqeuclidean',  margin=0.2, per_label=40):
+        super(TripletLoss, self).__init__(
+            feature_extractor, duration, min_duration=min_duration,
+            distance=distance)
         self.margin = margin
-        self.positive_only = positive_only
-        self.distance = distance
+        self.per_label = per_label
 
     def _loss_sqeuclidean(self, inputs):
         p = K.sum(K.square(inputs[0] - inputs[1]), axis=-1, keepdims=True)
         n = K.sum(K.square(inputs[0] - inputs[2]), axis=-1, keepdims=True)
         loss = p + self.margin - n
-        if self.positive_only:
-            loss = K.maximum(0, loss)
         return loss
 
     def _loss_cosine(self, inputs):
         p = -K.sum(inputs[0] * inputs[1], axis=-1, keepdims=True)
         n = -K.sum(inputs[0] * inputs[2], axis=-1, keepdims=True)
         loss = p + self.margin - n
-        if self.positive_only:
-            loss = K.maximum(0, loss)
         return loss
 
     @staticmethod
@@ -94,6 +96,15 @@ class TripletLoss(Glue):
     @staticmethod
     def _identity_loss(y_true, y_pred):
         return K.mean(y_pred - 0 * y_true)
+
+    def get_generator(self, file_generator, batch_size=None, **kwargs):
+        if batch_size is None:
+            batch_size = 32
+        return TripletBatchGenerator(
+            self.feature_extractor, file_generator,
+            margin=self.margin, distance=self.distance,
+            duration=self.duration, min_duration=self.min_duration,
+            per_label=self.per_label, batch_size=batch_size)
 
     def build_model(self, input_shape, design_embedding):
         """Design the model for which the loss is optimized

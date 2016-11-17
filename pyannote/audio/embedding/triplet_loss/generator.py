@@ -363,6 +363,21 @@ class TripletBatchGenerator(BaseBatchGenerator):
     def shape(self):
         return self.triplet_generator_.shape
 
+    def get_samples_per_epoch(self, protocol, subset='train'):
+        """
+        Parameters
+        ----------
+        protocol : pyannote.database.protocol.protocol.Protocol
+        subset : {'train', 'development', 'test'}, optional
+
+        Returns
+        -------
+        samples_per_epoch : int
+            Number of samples per epoch.
+        """
+        n_labels = len(protocol.stats(subset)['speakers'])
+        samples_per_epoch = self.per_label * (self.per_label - 1) * n_labels
+        return samples_per_epoch - (samples_per_epoch % self.batch_size)
 
     def callbacks(self, extract_embedding=None):
         return self.triplet_generator_.callbacks(

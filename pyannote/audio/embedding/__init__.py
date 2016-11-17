@@ -25,3 +25,6 @@
 
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
+
+
+from .triplet_loss.glue import TripletLoss

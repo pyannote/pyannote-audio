@@ -28,12 +28,60 @@
 
 
 class Glue(object):
-    """Glue for sequence embedding training"""
+    """Glue for sequence embedding training
 
-    def __init__(self, **kwargs):
+    Parameters
+    ----------
+    feature_extractor
+    duration : float, optional
+    min_duration : float, optional
+    distance : {'sqeuclidean', 'cosine', 'angular'}, optional
+    """
+
+    def __init__(self, feature_extractor,
+                 duration=5.0, min_duration=None,
+                 distance='sqeuclidean', **kwargs):
         super(Glue, self).__init__()
+        self.feature_extractor = feature_extractor
+        self.duration = duration
+        self.min_duration = min_duration
+        self.distance = distance
 
     def loss(self, y_true, y_pred):
+        raise NotImplementedError('')
+
+    def get_generator(self, file_generator, batch_size=None, **kwargs):
+        """Get batch generator
+
+        * `batch_generator` must define a `shape` property that returns the
+          shape of generated sequences as a (n_samples, n_features) tuple.
+
+        * `batch_generator` must define a method called `get_samples_per_epoch`
+          with the signature `def get_samples_per_epoch(self, protocol, subset)`
+          that returns the number of samples to generate before ending an epoch.
+
+        * `batch_generator` may optionally define a method called `callbacks`
+          with the signature `def callbacks(self, extract_embedding=None)` that
+          is expected to return a list of Keras callbacks that will be added to
+          the list of callbacks during training. This might come in handy in
+          case the `batch_generator` depends on the internal state of the model
+          currently being trained.
+
+        Parameters
+        ----------
+        file_generator : iterable
+            e.g. protocol.train()
+        batch_size : int, optional
+            Batch size
+
+        Returns
+        -------
+        batch_generator : iterable
+            The output of this generator must be a tuple (inputs, targets) or a
+            tuple (inputs, targets, sample_weights). All arrays should contain
+            the same number of samples. The generator is expected to loop over
+            its data indefinitely.
+        """
         raise NotImplementedError('')
 
     def build_model(self, input_shape, design_embedding):
