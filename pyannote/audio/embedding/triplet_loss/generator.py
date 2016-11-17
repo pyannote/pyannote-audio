@@ -375,7 +375,7 @@ class TripletBatchGenerator(BaseBatchGenerator):
         samples_per_epoch : int
             Number of samples per epoch.
         """
-        n_labels = len(protocol.stats(subset)['speakers'])
+        n_labels = len(protocol.stats(subset)['labels'])
         per_label = self.triplet_generator_.per_label
         samples_per_epoch = per_label * (per_label - 1) * n_labels
         return samples_per_epoch - (samples_per_epoch % self.batch_size)
