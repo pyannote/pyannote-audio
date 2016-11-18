@@ -40,7 +40,7 @@ setup(
         'pyannote.core >= 0.8',
         'pyannote.metrics >= 0.10.2',
         'pyannote.generators >= 0.2',
-        'pyannote.database >= 0.4',
+        'pyannote.database >= 0.4.1',
         'keras >= 1.1.0',
         'theano >= 0.8.2',
         'scikit-optimize >= 0.2',

@@ -89,9 +89,12 @@ Configuration file:
           space: sphere               # embedding live on the unit hypersphere
           output_dim: 16              # of dimension 16
 
-    loss:
-       distance: sqeuclidean
-       margin: 0.2
+    glue:
+       name: TripletLoss
+       params:
+          distance: sqeuclidean
+          margin: 0.2
+          per_label: 40
     ...................................................................
 
 "train" mode:
@@ -176,7 +179,6 @@ def train(protocol, duration, experiment_dir, train_dir, subset='train',
     # -- TRAINING --
     nb_epoch = 1000
     optimizer = SSMORMS3()
-    per_label = 40
     batch_size = 8192
 
     # load configuration file
@@ -200,32 +202,21 @@ def train(protocol, duration, experiment_dir, train_dir, subset='train',
     architecture = Architecture(
         **config['architecture'].get('params', {}))
 
-    # -- LOSS --
-    margin = config['loss']['margin']
-    distance = config['loss']['distance']
-    glue = TripletLoss(margin=margin, distance=distance)
-
-    # -- SEQUENCE GENERATOR --
-    generator = TripletBatchGenerator(
-        feature_extraction, protocol.train(),
-        margin=margin, distance=distance,
-        duration=duration, min_duration=min_duration,
-        per_label=per_label, batch_size=batch_size)
-
-    # input shape (n_frames, n_features)
-    input_shape = generator.get_shape()
-
-    # estimate number of triplets per epoch
-    # (rounded to closest batch_size multiple)
-    n_labels = len(protocol.stats(subset)['speakers'])
-    samples_per_epoch = per_label * (per_label - 1) * n_labels
-    samples_per_epoch = samples_per_epoch - (samples_per_epoch % batch_size)
+    # -- GLUE --
+    glue_name = config['glue']['name']
+    glues = __import__('pyannote.audio.embedding',
+                        fromlist=[glue_name])
+    Glue = getattr(glues, glue_name)
+    glue = Glue(feature_extraction,
+                duration=duration,
+                min_duration=min_duration,
+                **config['glue'].get('params', {}))
 
     # actual training
     embedding = SequenceEmbedding(glue=glue)
-    embedding.fit(input_shape, architecture,
-                  generator, samples_per_epoch, nb_epoch,
-                  optimizer=optimizer, log_dir=train_dir)
+    embedding.fit(architecture, protocol, nb_epoch, subset=subset,
+                  optimizer=optimizer, batch_size=batch_size,
+                  log_dir=train_dir)
 
 
 def generate_test(protocol, subset, feature_extraction, duration):
@@ -285,7 +276,7 @@ def tune(protocol, train_dir, tune_dir, beta=1.0, subset='development'):
     feature_extraction = FeatureExtraction(
         **config['feature_extraction'].get('params', {}))
 
-    distance = config['loss']['distance']
+    distance = config['glue'].get('params', {}).get('distance', 'sqeuclidean')
 
     X, y = generate_test(protocol, subset, feature_extraction, duration)
 
@@ -394,7 +385,7 @@ def test(protocol, tune_dir, test_dir, subset, beta=1.0):
     feature_extraction = FeatureExtraction(
         **config['feature_extraction'].get('params', {}))
 
-    distance = config['loss']['distance']
+    distance = config['glue'].get('params', {}).get('distance', 'sqeuclidean')
 
     # -- HYPER-PARAMETERS --
     tune_yml = tune_dir + '/tune.yml'

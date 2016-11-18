@@ -33,25 +33,7 @@ from scipy.spatial.distance import pdist, squareform
 from pyannote.generators.batch import BaseBatchGenerator
 from pyannote.audio.generators.labels import FixedDurationSequences
 from pyannote.audio.generators.labels import VariableDurationSequences
-from keras.callbacks import Callback
-from keras.models import model_from_yaml
-from pyannote.audio.embedding.base import SequenceEmbedding
-
-from pyannote.audio.keras_utils import CUSTOM_OBJECTS
-
-
-class UpdateEmbedding(Callback):
-
-    def __init__(self, generator, extract_embedding):
-        super(UpdateEmbedding, self).__init__()
-        self.generator = generator
-        self.extract_embedding = extract_embedding
-
-    def on_train_begin(self, logs={}):
-        self.generator.update(self.model, self.extract_embedding)
-
-    def on_batch_begin(self, batch, logs={}):
-        self.generator.update(self.model, self.extract_embedding)
+from pyannote.audio.embedding.callbacks import UpdateGeneratorEmbedding
 
 
 class TripletGenerator(object):
@@ -270,11 +252,12 @@ class TripletGenerator(object):
     def __next__(self):
         return next(self.triplet_generator_)
 
-    def get_shape(self):
-        return self.generator_.get_shape()
+    @property
+    def shape(self):
+        return self.generator_.shape
 
     def signature(self):
-        shape = self.get_shape()
+        shape = self.shape
         return (
             [
                 {'type': 'sequence', 'shape': shape},
@@ -284,21 +267,9 @@ class TripletGenerator(object):
             {'type': 'boolean'}
         )
 
-    def update(self, new_model, extract_embedding):
-
-        # make a copy of current embedding
-        embedding = extract_embedding(new_model)
-        embedding_copy = model_from_yaml(
-            embedding.to_yaml(), custom_objects=CUSTOM_OBJECTS)
-        embedding_copy.set_weights(embedding.get_weights())
-
-        # update the embedding used by the generator
-        sequence_embedding = SequenceEmbedding()
-        sequence_embedding.embedding_ = embedding_copy
-        self.embedding = sequence_embedding
-
     def callbacks(self, extract_embedding=None):
-        callback = UpdateEmbedding(self, extract_embedding=extract_embedding)
+        callback = UpdateGeneratorEmbedding(
+            self, extract_embedding=extract_embedding, name='embedding')
         return [callback]
 
 
@@ -358,12 +329,26 @@ class TripletBatchGenerator(BaseBatchGenerator):
     def signature(self):
         return self.triplet_generator_.signature()
 
-    def get_shape(self):
-        return self.triplet_generator_.get_shape()
-
     @property
-    def n_labels(self):
-        return self.triplet_generator_.n_labels
+    def shape(self):
+        return self.triplet_generator_.shape
+
+    def get_samples_per_epoch(self, protocol, subset='train'):
+        """
+        Parameters
+        ----------
+        protocol : pyannote.database.protocol.protocol.Protocol
+        subset : {'train', 'development', 'test'}, optional
+
+        Returns
+        -------
+        samples_per_epoch : int
+            Number of samples per epoch.
+        """
+        n_labels = len(protocol.stats(subset)['labels'])
+        per_label = self.triplet_generator_.per_label
+        samples_per_epoch = per_label * (per_label - 1) * n_labels
+        return samples_per_epoch - (samples_per_epoch % self.batch_size)
 
     def callbacks(self, extract_embedding=None):
         return self.triplet_generator_.callbacks(

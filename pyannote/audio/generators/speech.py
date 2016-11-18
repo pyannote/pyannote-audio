@@ -52,7 +52,7 @@ class SpeechActivityDetectionBatchGenerator(YaafeMixin,
 
     def signature(self):
 
-        shape = self.yaafe_get_shape()
+        shape = self.shape
         dimension = 2
 
         return [
@@ -63,12 +63,16 @@ class SpeechActivityDetectionBatchGenerator(YaafeMixin,
     def preprocess(self, current_file, identifier=None):
         """Pre-compute file-wise X and y"""
 
+        # extract features for the whole file
+        # (if it has not been done already)
         current_file = self.yaafe_preprocess(
             current_file, identifier=identifier)
 
+        # if labels have already been extracted, do nothing
         if identifier in self.preprocessed_.setdefault('y', {}):
             return current_file
 
+        # get features as pyannote.core.SlidingWindowFeature instance
         X = self.preprocessed_['X'][identifier]
         sw = X.sliding_window
         n_samples = X.getNumber()
@@ -81,12 +85,14 @@ class SpeechActivityDetectionBatchGenerator(YaafeMixin,
 
         coverage = annotation.get_timeline().coverage()
 
-        for gap in coverage.gaps(annotated):
-            indices = sw.crop(gap, mode='loose')
+        # iterate over non-speech regions
+        for non_speech in coverage.gaps(annotated):
+            indices = sw.crop(non_speech, mode='loose')
             y[indices, 0] = 1
 
-        for segment in coverage:
-            indices = sw.crop(segment, mode='loose')
+        # iterate over speech regions
+        for speech in coverage:
+            indices = sw.crop(speech, mode='loose')
             y[indices, 1] = 1
 
         y = SlidingWindowFeature(y[:-1], sw)
@@ -128,7 +134,7 @@ class OverlappingSpeechDetectionBatchGenerator(YaafeMixin,
 
     def signature(self):
 
-        shape = self.yaafe_get_shape()
+        shape = self.shape
         dimension = 2
 
         return [

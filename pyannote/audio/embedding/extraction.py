@@ -76,7 +76,7 @@ class Extraction(YaafeMixin, FileBasedBatchGenerator):
         super(Extraction, self).__init__(generator, batch_size=-1)
 
     def signature(self):
-        shape = self.get_shape()
+        shape = self.shape
         return {'type': 'sequence', 'shape': shape}
 
     def postprocess_sequence(self, mono_batch):
