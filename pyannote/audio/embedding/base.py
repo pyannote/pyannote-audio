@@ -172,7 +172,7 @@ class SequenceEmbedding(object):
                     extract_embedding=extract_embedding))
 
         # if generator has n_labels attribute, pass it to build_model
-        nlabels = getattr(generator, 'n_labels', None)
+        n_labels = getattr(generator, 'n_labels', None)
         self.model_ = self.glue.build_model(
             generator.shape, design_embedding, n_labels=n_labels)
         self.model_.compile(optimizer=optimizer, loss=self.glue.loss)
