@@ -26,15 +26,13 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
+import numpy as np
 import keras.backend as K
 from keras.models import Model
-
 from keras.layers import Input
-from keras.layers import merge
 
 from ..glue import Glue
 
-import numpy as np
 
 def unitary_angular_triplet_loss(anchor, positive, negative):
     epsilon = 1e-6
@@ -201,5 +199,3 @@ class BatchTripletLoss(Glue):
             derivatives.append(output[1])
 
         return [np.hstack(costs), np.vstack(derivatives)]
-
-
