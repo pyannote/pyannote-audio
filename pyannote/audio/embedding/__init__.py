@@ -28,3 +28,4 @@
 
 
 from .triplet_loss.glue import TripletLoss
+from .center_loss.glue import CenterLoss

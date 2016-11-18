@@ -171,7 +171,10 @@ class SequenceEmbedding(object):
                 callbacks.extend(stuff.callbacks(
                     extract_embedding=extract_embedding))
 
-        self.model_ = self.glue.build_model(generator.shape, design_embedding)
+        # if generator has n_labels attribute, pass it to build_model
+        nlabels = getattr(generator, 'n_labels', None)
+        self.model_ = self.glue.build_model(
+            generator.shape, design_embedding, n_labels=n_labels)
         self.model_.compile(optimizer=optimizer, loss=self.glue.loss)
 
         samples_per_epoch = generator.get_samples_per_epoch(
