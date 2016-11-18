@@ -33,25 +33,7 @@ from scipy.spatial.distance import pdist, squareform
 from pyannote.generators.batch import BaseBatchGenerator
 from pyannote.audio.generators.labels import FixedDurationSequences
 from pyannote.audio.generators.labels import VariableDurationSequences
-from keras.callbacks import Callback
-from keras.models import model_from_yaml
-from pyannote.audio.embedding.base import SequenceEmbedding
-
-from pyannote.audio.keras_utils import CUSTOM_OBJECTS
-
-
-class UpdateEmbedding(Callback):
-
-    def __init__(self, generator, extract_embedding):
-        super(UpdateEmbedding, self).__init__()
-        self.generator = generator
-        self.extract_embedding = extract_embedding
-
-    def on_train_begin(self, logs={}):
-        self.generator.update(self.model, self.extract_embedding)
-
-    def on_batch_begin(self, batch, logs={}):
-        self.generator.update(self.model, self.extract_embedding)
+from pyannote.audio.embedding.callbacks import UpdateGeneratorEmbedding
 
 
 class TripletGenerator(object):
@@ -285,21 +267,9 @@ class TripletGenerator(object):
             {'type': 'boolean'}
         )
 
-    def update(self, new_model, extract_embedding):
-
-        # make a copy of current embedding
-        embedding = extract_embedding(new_model)
-        embedding_copy = model_from_yaml(
-            embedding.to_yaml(), custom_objects=CUSTOM_OBJECTS)
-        embedding_copy.set_weights(embedding.get_weights())
-
-        # update the embedding used by the generator
-        sequence_embedding = SequenceEmbedding()
-        sequence_embedding.embedding_ = embedding_copy
-        self.embedding = sequence_embedding
-
     def callbacks(self, extract_embedding=None):
-        callback = UpdateEmbedding(self, extract_embedding=extract_embedding)
+        callback = UpdateGeneratorEmbedding(
+            self, extract_embedding=extract_embedding, name='embedding')
         return [callback]
 
 
