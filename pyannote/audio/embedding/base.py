@@ -191,7 +191,8 @@ class SequenceEmbedding(object):
 
         return self.model_.fit_generator(
             generator, samples_per_epoch, nb_epoch,
-
+            verbose=1, callbacks=callbacks, max_q_size=1)
+    
     def fastfit(self, design_embedding, generator_train, nb_epoch,
             nb_batches_per_epoch, batch_size, per_label, nb_of_threads=12,
             generator_test=None, optimizer='rmsprop', LOG_DIR=None):
@@ -483,8 +484,6 @@ class SequenceEmbedding(object):
             except Exception as e:
                 pass
             plt.close(fig)
-
-            verbose=1, callbacks=callbacks, max_q_size=1)
 
     def transform(self, sequences, layer_index=None, batch_size=32):
         """Apply pre-trained embedding to sequences
