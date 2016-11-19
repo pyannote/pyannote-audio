@@ -165,6 +165,9 @@ from pyannote.metrics.plot.binary_classification import plot_precision_recall_cu
 
 from pyannote.audio.embedding.extraction import Extraction
 
+# needed for register_custom_object to be called
+import pyannote.audio.embedding.models
+
 import skopt
 import skopt.utils
 import skopt.space
