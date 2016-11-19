@@ -36,6 +36,9 @@ from pyannote.audio.keras_utils import CUSTOM_OBJECTS
 
 from pyannote.audio.embedding.base import SequenceEmbedding
 
+from pyannote.audio.generators.labels import FixedDurationSequences
+from pyannote.audio.generators.labels import VariableDurationSequences
+
 from scipy.spatial.distance import pdist
 from pyannote.metrics.plot.binary_classification import plot_det_curve
 from pyannote.metrics.plot.binary_classification import plot_distributions
