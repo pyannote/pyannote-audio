@@ -293,7 +293,11 @@ def tune(protocol, train_dir, tune_dir, beta=1.0, subset='development'):
         fX = sequence_embedding.transform(X, batch_size=batch_size)
 
         # compute euclidean distance between every pair of sequences
-        y_distance = pdist(fX, metric=distance)
+        if distance == 'angular':
+            cosine_distance = pdist(fX, metric='cosine')
+            y_distance = np.arccos(np.clip(1.0 - cosine_distance, -1.0, 1.0))
+        else:
+            y_distance = pdist(fX, metric=distance)
 
         # compute same/different groundtruth
         y_true = pdist(y, metric='chebyshev') < 1
@@ -401,7 +405,11 @@ def test(protocol, tune_dir, test_dir, subset, beta=1.0):
 
     X, y = generate_test(protocol, subset, feature_extraction, duration)
     fX = sequence_embedding.transform(X, batch_size=batch_size)
-    y_distance = pdist(fX, metric=distance)
+    if distance == 'angular':
+        cosine_distance = pdist(fX, metric='cosine')
+        y_distance = np.arccos(np.clip(1.0 - cosine_distance, -1.0, 1.0))
+    else:
+        y_distance = pdist(fX, metric=distance)
     y_true = pdist(y, metric='chebyshev') < 1
 
     fpr, tpr, thresholds = sklearn.metrics.roc_curve(
