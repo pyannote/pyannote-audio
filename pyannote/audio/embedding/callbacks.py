@@ -43,6 +43,14 @@ from scipy.spatial.distance import pdist
 from pyannote.metrics.plot.binary_classification import plot_det_curve
 from pyannote.metrics.plot.binary_classification import plot_distributions
 
+import matplotlib
+import warnings
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore")
+    matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+
+
 class UpdateGeneratorEmbedding(Callback):
 
     def __init__(self, generator, extract_embedding, name='embedding'):
@@ -154,3 +162,20 @@ class ValidateEmbedding(Callback):
         with open(self.log_dir + '/eer.txt', mode=mode) as fp:
             fp.write(self.EER_TEMPLATE_.format(epoch=epoch, eer=eer, now=now))
             fp.flush()
+
+        # plot eer = f(epoch)
+        self.eer_.append(eer)
+        best_epoch = np.argmin(self.eer_)
+        best_value = np.min(self.eer_)
+        fig = plt.figure()
+        plt.plot(self.eer_, 'b')
+        plt.plot([best_epoch], [best_value], 'bo')
+        plt.grid(True)
+        plt.xlabel('epoch')
+        plt.ylabel('EER on test')
+        TITLE = 'EER = {best_value:.5g} on test @ epoch #{best_epoch:d}'
+        title = TITLE.format(best_value=best_value, best_epoch=best_epoch)
+        plt.title(title)
+        plt.tight_layout()
+        plt.savefig(self.log_dir + '/eer.png', dpi=150)
+        plt.close(fig)
