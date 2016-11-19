@@ -214,7 +214,7 @@ def train(protocol, duration, experiment_dir, train_dir, subset='train',
 
     # actual training
     embedding = SequenceEmbedding(glue=glue)
-    embedding.fit(architecture, protocol, nb_epoch, subset=subset,
+    embedding.fit(architecture, protocol, nb_epoch, train=subset,
                   optimizer=optimizer, batch_size=batch_size,
                   log_dir=train_dir)
 
