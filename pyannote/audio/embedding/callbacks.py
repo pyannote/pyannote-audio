@@ -27,11 +27,18 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 
+import numpy as np
+import datetime
+
 from keras.callbacks import Callback
-from pyannote.audio.embedding.base import SequenceEmbedding
 from keras.models import model_from_yaml
 from pyannote.audio.keras_utils import CUSTOM_OBJECTS
 
+from pyannote.audio.embedding.base import SequenceEmbedding
+
+from scipy.spatial.distance import pdist
+from pyannote.metrics.plot.binary_classification import plot_det_curve
+from pyannote.metrics.plot.binary_classification import plot_distributions
 
 class UpdateGeneratorEmbedding(Callback):
 
@@ -61,3 +68,85 @@ class UpdateGeneratorEmbedding(Callback):
     def on_batch_begin(self, batch, logs={}):
         embedding = self._copy_embedding(self.model)
         setattr(self.generator, self.name, embedding)
+
+
+class ValidateEmbedding(Callback):
+
+    def __init__(self, glue, file_generator, log_dir):
+        super(ValidateEmbedding, self).__init__()
+
+        self.distance = glue.distance
+        self.extract_embedding = glue.extract_embedding
+        self.log_dir = log_dir
+
+        np.random.seed(1337)
+
+        # initialize fixed duration sequence generator
+        if glue.min_duration is None:
+            # initialize fixed duration sequence generator
+            generator = FixedDurationSequences(
+                glue.feature_extractor,
+                duration=glue.duration,
+                step=glue.duration,
+                batch_size=-1)
+        else:
+            # initialize variable duration sequence generator
+            generator = VariableDurationSequences(
+                glue.feature_extractor,
+                max_duration=glue.duration,
+                min_duration=glue.min_duration,
+                batch_size=-1)
+
+        # randomly select (at most) 100 sequences from each label to ensure
+        # all labels have (more or less) the same weight in the evaluation
+        X, y = zip(*generator(file_generator))
+        X = np.vstack(X)
+        y = np.hstack(y)
+        unique, y, counts = np.unique(y, return_inverse=True, return_counts=True)
+        n_labels = len(unique)
+        indices = []
+        for label in range(n_labels):
+            i = np.random.choice(np.where(y == label)[0], size=min(100, counts[label]), replace=False)
+            indices.append(i)
+        indices = np.hstack(indices)
+        X, y = X[indices], y[indices, np.newaxis]
+
+        # precompute same/different groundtruth
+        self.y_true = pdist(y, metric='chebyshev') < 1
+        self.X = X
+
+        self.EER_TEMPLATE = '{epoch:04d} {now} {eer:5f}\n'
+
+    def on_epoch_end(self, epoch, logs={}):
+
+        # keep track of current time
+        now = datetime.datetime.now().isoformat()
+
+        embedding = self.extract_embedding(self.model)
+        fX = embedding.predict(self.X)
+        if self.distance == 'angular':
+            cosine_distance = pdist(fX, metric='cosine')
+            distances = np.arccos(np.clip(1.0 - cosine_distance, -1.0, 1.0))
+        else:
+            distances = pdist(fX, metric=metric)
+
+        prefix = self.log_dir + '/plot.{epoch:04d}'.format(epoch=epoch)
+
+        # plot distributions of positive & negative scores
+        if self.distance == 'angular':
+            xlim = (0, np.pi)
+        elif self.distance == 'sqeuclidean':
+            xlim = (0, 4)
+        elif self.distance == 'cosine':
+            xlim = (-1.0, 1.0)
+        plot_distributions(self.y_true, distances, prefix,
+                           xlim=xlim, ymax=3, nbins=100)
+
+        # plot DET curve
+        eer = plot_det_curve(self.y_true, -distances, prefix)
+
+        # store equal error rate in file
+        mode = 'a' if epoch else 'w'
+        with open(self.log_dir + '/eer.txt', mode=mode):
+            fp.write(self.EER_TEMPLATE.format(epoch=epoch, eer=eer, now=now))
+            fp.flush()

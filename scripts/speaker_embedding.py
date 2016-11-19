@@ -30,7 +30,7 @@
 Speaker embedding
 
 Usage:
-  speaker_embedding train [--subset=<subset> --duration=<duration> --min-duration=<duration>] <experiment_dir> <database.task.protocol> <wav_template>
+  speaker_embedding train [--subset=<subset> --duration=<duration> --min-duration=<duration> --validation=<subset>] <experiment_dir> <database.task.protocol> <wav_template>
   speaker_embedding tune [--subset=<subset> --false-alarm=<beta>] <train_dir> <database.task.protocol> <wav_template>
   speaker_embedding test [--subset=<subset> --false-alarm=<beta>] <tune_dir> <database.task.protocol> <wav_template>
   speaker_embedding apply [--subset=<subset> --step=<step> --layer=<index>] <tune_dir> <database.task.protocol> <wav_template>
@@ -54,6 +54,8 @@ Options:
   --duration=<D>             Set duration of embedded sequences [default: 5.0]
   --min-duration=<d>         Use sequences with duration in range [<d>, <D>].
                              Defaults to sequences with fixed duration D.
+  --validation=<subset>      Set validation subset (train|development|test).
+                             [default: development]
   --false-alarm=<beta>       Set importance of false alarm with respect to
                              false rejection [default: 1.0]
   --step=<step>              Set step (in seconds) for embedding extraction.
@@ -165,6 +167,9 @@ from pyannote.metrics.plot.binary_classification import plot_precision_recall_cu
 
 from pyannote.audio.embedding.extraction import Extraction
 
+# needed for register_custom_object to be called
+import pyannote.audio.embedding.models
+
 import skopt
 import skopt.utils
 import skopt.space
@@ -174,7 +179,7 @@ from pyannote.metrics import f_measure
 
 
 def train(protocol, duration, experiment_dir, train_dir, subset='train',
-          min_duration=None):
+          min_duration=None, validation='development'):
 
     # -- TRAINING --
     nb_epoch = 1000
@@ -214,9 +219,9 @@ def train(protocol, duration, experiment_dir, train_dir, subset='train',
 
     # actual training
     embedding = SequenceEmbedding(glue=glue)
-    embedding.fit(architecture, protocol, nb_epoch, subset=subset,
+    embedding.fit(architecture, protocol, nb_epoch, train=subset,
                   optimizer=optimizer, batch_size=batch_size,
-                  log_dir=train_dir)
+                  log_dir=train_dir, validation=validation)
 
 
 def generate_test(protocol, subset, feature_extraction, duration):
@@ -293,7 +298,11 @@ def tune(protocol, train_dir, tune_dir, beta=1.0, subset='development'):
         fX = sequence_embedding.transform(X, batch_size=batch_size)
 
         # compute euclidean distance between every pair of sequences
-        y_distance = pdist(fX, metric=distance)
+        if distance == 'angular':
+            cosine_distance = pdist(fX, metric='cosine')
+            y_distance = np.arccos(np.clip(1.0 - cosine_distance, -1.0, 1.0))
+        else:
+            y_distance = pdist(fX, metric=distance)
 
         # compute same/different groundtruth
         y_true = pdist(y, metric='chebyshev') < 1
@@ -401,7 +410,11 @@ def test(protocol, tune_dir, test_dir, subset, beta=1.0):
 
     X, y = generate_test(protocol, subset, feature_extraction, duration)
     fX = sequence_embedding.transform(X, batch_size=batch_size)
-    y_distance = pdist(fX, metric=distance)
+    if distance == 'angular':
+        cosine_distance = pdist(fX, metric='cosine')
+        y_distance = np.arccos(np.clip(1.0 - cosine_distance, -1.0, 1.0))
+    else:
+        y_distance = pdist(fX, metric=distance)
     y_true = pdist(y, metric='chebyshev') < 1
 
     fpr, tpr, thresholds = sklearn.metrics.roc_curve(
@@ -533,13 +546,14 @@ if __name__ == '__main__':
         else:
             min_duration = float(min_duration)
             TRAIN_DIR = '{experiment_dir}/train/{protocol}.{subset}/{min_duration:g}-{duration:g}'
+        validation = arguments['--validation']
 
         train_dir = TRAIN_DIR.format(
             experiment_dir=experiment_dir,
             protocol=arguments['<database.task.protocol>'],
             subset=subset, duration=duration, min_duration=min_duration)
         train(protocol, duration, experiment_dir, train_dir, subset=subset,
-              min_duration=min_duration)
+              min_duration=min_duration, validation=validation)
 
     if arguments['tune']:
         train_dir = arguments['<train_dir>']
