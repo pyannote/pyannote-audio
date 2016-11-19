@@ -150,6 +150,6 @@ class ValidateEmbedding(Callback):
 
         # store equal error rate in file
         mode = 'a' if epoch else 'w'
-        with open(self.log_dir + '/eer.txt', mode=mode):
             fp.write(self.EER_TEMPLATE.format(epoch=epoch, eer=eer, now=now))
+        with open(self.log_dir + '/eer.txt', mode=mode) as fp:
             fp.flush()
