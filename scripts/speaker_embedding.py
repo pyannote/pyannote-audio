@@ -30,7 +30,7 @@
 Speaker embedding
 
 Usage:
-  speaker_embedding train [--subset=<subset> --duration=<duration> --min-duration=<duration>] <experiment_dir> <database.task.protocol> <wav_template>
+  speaker_embedding train [--subset=<subset> --duration=<duration> --min-duration=<duration> --validation=<subset>] <experiment_dir> <database.task.protocol> <wav_template>
   speaker_embedding tune [--subset=<subset> --false-alarm=<beta>] <train_dir> <database.task.protocol> <wav_template>
   speaker_embedding test [--subset=<subset> --false-alarm=<beta>] <tune_dir> <database.task.protocol> <wav_template>
   speaker_embedding apply [--subset=<subset> --step=<step> --layer=<index>] <tune_dir> <database.task.protocol> <wav_template>
@@ -54,6 +54,8 @@ Options:
   --duration=<D>             Set duration of embedded sequences [default: 5.0]
   --min-duration=<d>         Use sequences with duration in range [<d>, <D>].
                              Defaults to sequences with fixed duration D.
+  --validation=<subset>      Set validation subset (train|development|test).
+                             [default: development]
   --false-alarm=<beta>       Set importance of false alarm with respect to
                              false rejection [default: 1.0]
   --step=<step>              Set step (in seconds) for embedding extraction.
@@ -177,7 +179,7 @@ from pyannote.metrics import f_measure
 
 
 def train(protocol, duration, experiment_dir, train_dir, subset='train',
-          min_duration=None):
+          min_duration=None, validation='development'):
 
     # -- TRAINING --
     nb_epoch = 1000
@@ -219,7 +221,7 @@ def train(protocol, duration, experiment_dir, train_dir, subset='train',
     embedding = SequenceEmbedding(glue=glue)
     embedding.fit(architecture, protocol, nb_epoch, train=subset,
                   optimizer=optimizer, batch_size=batch_size,
-                  log_dir=train_dir)
+                  log_dir=train_dir, validation=validation)
 
 
 def generate_test(protocol, subset, feature_extraction, duration):
@@ -544,13 +546,14 @@ if __name__ == '__main__':
         else:
             min_duration = float(min_duration)
             TRAIN_DIR = '{experiment_dir}/train/{protocol}.{subset}/{min_duration:g}-{duration:g}'
+        validation = arguments['--validation']
 
         train_dir = TRAIN_DIR.format(
             experiment_dir=experiment_dir,
             protocol=arguments['<database.task.protocol>'],
             subset=subset, duration=duration, min_duration=min_duration)
         train(protocol, duration, experiment_dir, train_dir, subset=subset,
-              min_duration=min_duration)
+              min_duration=min_duration, validation=validation)
 
     if arguments['tune']:
         train_dir = arguments['<train_dir>']
