@@ -34,16 +34,6 @@ from pyannote.audio.callback import LoggingCallback
 from keras.models import model_from_yaml
 from pyannote.audio.keras_utils import CUSTOM_OBJECTS
 
-import time
-import numpy as np
-import warnings
-import os.path
-import datetime
-import matplotlib.pyplot as plt
-import multiprocessing as mp
-from scipy.spatial.distance import pdist
-from pyannote.metrics.plot.binary_classification import plot_det_curve, plot_distributions
-
 
 class SequenceEmbedding(object):
     """Sequence embedding
@@ -192,7 +182,7 @@ class SequenceEmbedding(object):
         return self.model_.fit_generator(
             generator, samples_per_epoch, nb_epoch,
             verbose=1, callbacks=callbacks, max_q_size=1)
-    
+
     def fastfit(self, design_embedding, generator_train, nb_epoch,
             nb_batches_per_epoch, batch_size, per_label, nb_of_threads=12,
             generator_test=None, optimizer='rmsprop', LOG_DIR=None):
@@ -270,7 +260,7 @@ class SequenceEmbedding(object):
         shuffled_labels = np.random.choice(n_labels,
                                            size=n_labels,
                                            replace=False)
-        
+
         random_indices = {}
         for ii in range(n_labels):
             label = shuffled_labels[ii]
@@ -310,11 +300,11 @@ class SequenceEmbedding(object):
                 count_per_label = 0
                 while (len(indices) < nb_of_threads*batch_size):
                     indices.append(random_indices[shuffled_labels[label_pos]][0][random_indices[shuffled_labels[label_pos]][1]])
-                    
+
                     random_indices[shuffled_labels[label_pos]][1] += 1
                     if (random_indices[shuffled_labels[label_pos]][1] >= random_indices[shuffled_labels[label_pos]][2]):
                         random_indices[shuffled_labels[label_pos]][1] = 0
-                    
+
                     count_per_label += 1
                     if (count_per_label >= per_label):
                         count_per_label = 0
