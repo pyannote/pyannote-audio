@@ -43,6 +43,14 @@ from scipy.spatial.distance import pdist
 from pyannote.metrics.plot.binary_classification import plot_det_curve
 from pyannote.metrics.plot.binary_classification import plot_distributions
 
+import matplotlib
+import warnings
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore")
+    matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+
+
 class UpdateGeneratorEmbedding(Callback):
 
     def __init__(self, generator, extract_embedding, name='embedding'):
@@ -115,10 +123,11 @@ class ValidateEmbedding(Callback):
         X, y = X[indices], y[indices, np.newaxis]
 
         # precompute same/different groundtruth
-        self.y_true = pdist(y, metric='chebyshev') < 1
-        self.X = X
+        self.y_ = pdist(y, metric='chebyshev') < 1
+        self.X_ = X
 
-        self.EER_TEMPLATE = '{epoch:04d} {now} {eer:5f}\n'
+        self.EER_TEMPLATE_ = '{epoch:04d} {now} {eer:5f}\n'
+        self.eer_ = []
 
     def on_epoch_end(self, epoch, logs={}):
 
@@ -126,7 +135,7 @@ class ValidateEmbedding(Callback):
         now = datetime.datetime.now().isoformat()
 
         embedding = self.extract_embedding(self.model)
-        fX = embedding.predict(self.X)
+        fX = embedding.predict(self.X_)
         if self.distance == 'angular':
             cosine_distance = pdist(fX, metric='cosine')
             distances = np.arccos(np.clip(1.0 - cosine_distance, -1.0, 1.0))
@@ -142,14 +151,31 @@ class ValidateEmbedding(Callback):
             xlim = (0, 4)
         elif self.distance == 'cosine':
             xlim = (-1.0, 1.0)
-        plot_distributions(self.y_true, distances, prefix,
+        plot_distributions(self.y_, distances, prefix,
                            xlim=xlim, ymax=3, nbins=100)
 
         # plot DET curve
-        eer = plot_det_curve(self.y_true, -distances, prefix)
+        eer = plot_det_curve(self.y_, -distances, prefix)
 
         # store equal error rate in file
         mode = 'a' if epoch else 'w'
-        with open(self.log_dir + '/eer.txt', mode=mode):
-            fp.write(self.EER_TEMPLATE.format(epoch=epoch, eer=eer, now=now))
+        with open(self.log_dir + '/eer.txt', mode=mode) as fp:
+            fp.write(self.EER_TEMPLATE_.format(epoch=epoch, eer=eer, now=now))
             fp.flush()
+
+        # plot eer = f(epoch)
+        self.eer_.append(eer)
+        best_epoch = np.argmin(self.eer_)
+        best_value = np.min(self.eer_)
+        fig = plt.figure()
+        plt.plot(self.eer_, 'b')
+        plt.plot([best_epoch], [best_value], 'bo')
+        plt.grid(True)
+        plt.xlabel('epoch')
+        plt.ylabel('EER on test')
+        TITLE = 'EER = {best_value:.5g} on test @ epoch #{best_epoch:d}'
+        title = TITLE.format(best_value=best_value, best_epoch=best_epoch)
+        plt.title(title)
+        plt.tight_layout()
+        plt.savefig(self.log_dir + '/eer.png', dpi=150)
+        plt.close(fig)
