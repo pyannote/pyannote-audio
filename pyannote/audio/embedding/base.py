@@ -30,7 +30,6 @@ import os.path
 
 import keras.backend as K
 from pyannote.audio.callback import LoggingCallback
-from pyannote.audio.embedding.callbacks import ValidateEmbedding
 
 from keras.models import model_from_yaml
 from pyannote.audio.keras_utils import CUSTOM_OBJECTS
@@ -176,6 +175,7 @@ class SequenceEmbedding(object):
                     extract_embedding=extract_embedding))
 
         if validation:
+            from pyannote.audio.embedding.callbacks import ValidateEmbedding
             file_generator = getattr(protocol, validation)()
             callback = ValidateEmbedding(self.glue, file_generator, log_dir)
             callbacks.append(callback)
