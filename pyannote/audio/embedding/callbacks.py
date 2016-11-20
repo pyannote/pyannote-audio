@@ -76,7 +76,7 @@ class UpdateGeneratorEmbedding(Callback):
         embedding = self._copy_embedding(self.model)
         setattr(self.generator, self.name, embedding)
 
-    def on_batch_begin(self, batch, logs={}):
+    def on_batch_end(self, batch, logs={}):
         embedding = self._copy_embedding(self.model)
         setattr(self.generator, self.name, embedding)
 
