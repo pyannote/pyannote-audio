@@ -59,26 +59,23 @@ class UpdateGeneratorEmbedding(Callback):
         self.extract_embedding = extract_embedding
         self.name = name
 
-    def _copy_embedding(self, current_model):
-
-        # make a copy of current embedding
-        embedding = self.extract_embedding(current_model)
-        embedding_copy = model_from_yaml(
-            embedding.to_yaml(), custom_objects=CUSTOM_OBJECTS)
-        embedding_copy.set_weights(embedding.get_weights())
-
-        # encapsulate it in a SequenceEmbedding instance
-        sequence_embedding = SequenceEmbedding()
-        sequence_embedding.embedding_ = embedding_copy
-        return sequence_embedding
-
     def on_train_begin(self, logs={}):
-        embedding = self._copy_embedding(self.model)
-        setattr(self.generator, self.name, embedding)
+        current_embedding = self.extract_embedding(self.model)
+        architecture = model_from_yaml(
+            current_embedding.to_yaml(),
+            custom_objects=CUSTOM_OBJECTS)
+        current_weights = current_embedding.get_weights()
+
+        sequence_embedding = SequenceEmbedding()
+        sequence_embedding.embedding_ = architecture
+        sequence_embedding.embedding_.set_weights(current_weights)
+        setattr(self.generator, self.name, sequence_embedding)
 
     def on_batch_end(self, batch, logs={}):
-        embedding = self._copy_embedding(self.model)
-        setattr(self.generator, self.name, embedding)
+        current_embedding = self.extract_embedding(self.model)
+        current_weights = current_embedding.get_weights()
+        sequence_embedding = getattr(self.generator, self.name)
+        sequence_embedding.embedding_.set_weights(current_weights)
 
 
 class ValidateEmbedding(Callback):
