@@ -115,8 +115,8 @@ class SequenceGenerator(object):
         )
 
 
-class CenterLossBatchGenerator(BaseBatchGenerator):
-    """Triplet generator for triplet loss sequence embedding
+class DerivativeBatchGenerator(BaseBatchGenerator):
+    """
 
     Generates ([X], derivatives) batch tuples where
       * X are sequences
@@ -145,7 +145,7 @@ class CenterLossBatchGenerator(BaseBatchGenerator):
     per_batch: int, optional
         Number of folds per batch. Defaults to 12.
     n_threads: int, optional
-        Defaults to 6.
+        Defaults to 1.
     """
 
     def __init__(self, feature_extractor, file_generator, compute_derivatives,
@@ -164,13 +164,10 @@ class CenterLossBatchGenerator(BaseBatchGenerator):
         self.n_threads = n_threads
 
         batch_size = self.per_label * self.per_fold * self.per_batch
-        super(CenterLossBatchGenerator, self).__init__(
+        super(DerivativeBatchGenerator, self).__init__(
             self.sequence_generator_, batch_size=batch_size)
 
         self.compute_derivatives = compute_derivatives
-
-    # def signature(self):
-    #     return self.sequence_generator_.signature()
 
     @property
     def shape(self):

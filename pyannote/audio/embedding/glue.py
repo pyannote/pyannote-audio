@@ -25,6 +25,13 @@
 
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
+# Grégory GELLY
+
+
+import multiprocessing
+from pyannote.audio.embedding.losses import unitary_cosine_triplet_loss
+from pyannote.audio.embedding.losses import unitary_euclidean_triplet_loss
+from pyannote.audio.embedding.losses import unitary_angular_triplet_loss
 
 
 class Glue(object):
@@ -102,7 +109,7 @@ class Glue(object):
 
         See also
         --------
-        An example of such a method can be found in `TripletLoss` class
+        An example of such a method can be found in `LegacyTripletLoss` class
         """
         return design_embedding(input_shape)
 
@@ -119,3 +126,68 @@ class Glue(object):
         embedding : Keras model
         """
         return from_model
+
+
+class BatchGlue(Glue):
+    """
+    Parameters
+    ----------
+    per_label : int, optional
+        Number of sequences per label. Defaults to 3.
+    per_fold : int, optional
+        Number of labels per fold. Defaults to 20.
+    per_batch: int, optional
+        Number of folds per batch. Defaults to 12.
+    """
+    def __init__(self, feature_extractor, duration=5.0, min_duration=None,
+                 distance='angular', per_label=3, per_fold=20, per_batch=12,
+                 n_threads=1):
+
+        super(BatchGlue, self).__init__(
+            feature_extractor, duration, min_duration=min_duration,
+            distance=distance)
+
+        if distance == 'angular':
+            self.loss_ = unitary_angular_triplet_loss
+        elif distance == 'cosine':
+            self.loss_ = unitary_cosine_triplet_loss
+        elif distance == 'euclidean':
+            self.loss_ = unitary_euclidean_triplet_loss
+        else:
+            raise NotImplementedError(
+                'unknown "{distance}" distance'.format(distance=distance))
+
+        self.per_label = per_label
+        self.per_fold = per_fold
+        self.per_batch = per_batch
+        self.n_threads = n_threads
+        self.pool_ = multiprocessing.Pool(self.n_threads)
+
+    @staticmethod
+    def _output_shape(input_shapes):
+        return (input_shapes[0][0], 1)
+
+    @staticmethod
+    def _derivative_loss(y_true, y_pred):
+        return K.sum((y_pred * y_true), axis=-1)
+
+    def get_generator(self, file_generator, **kwargs):
+        """
+        Parameters
+        ----------
+        file_generator
+        """
+
+        return DerivativeBatchGenerator(
+            self.feature_extractor, file_generator,
+            self.compute_derivatives,
+            distance=self.distance,
+            duration=self.duration, min_duration=self.min_duration,
+            per_label=self.per_label, per_fold=self.per_fold,
+            per_batch=self.per_batch, n_threads=self.n_threads)
+
+    def loss(self, y_true, y_pred):
+        return self._derivative_loss(y_true, y_pred)
+
+    def compute_derivatives(self, embeddings, labels):
+        raise NotImplementedError('')

@@ -28,22 +28,16 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 import numpy as np
+from functools import partial
+
 import keras.backend as K
 from keras.models import Model
 from keras.layers import Input
 from keras.layers import Dense
 from keras.layers import Lambda
 
-from pyannote.audio.embedding.glue import Glue
-from .generator import CenterLossBatchGenerator
-
-from pyannote.audio.embedding.batch_triplet_loss.glue import \
-    unitary_angular_triplet_loss, \
-    unitary_cosine_triplet_loss, \
-    unitary_euclidean_triplet_loss
+from pyannote.audio.embedding.glue import BatchGlue
 from pyannote.audio.optimizers import SSMORMS3
-import multiprocessing
-from functools import partial
 
 
 def center_loss(inputs, centers=None, distance=None):
@@ -104,7 +98,7 @@ def center_loss(inputs, centers=None, distance=None):
     return [cost, d_embeddings, d_centers]
 
 
-class CenterLoss(Glue):
+class CenterLoss(BatchGlue):
     """Center loss for sequence embedding
 
     Parameters
@@ -120,51 +114,6 @@ class CenterLoss(Glue):
     ---------
     Not yet written ;-)
     """
-    def __init__(self, feature_extractor, duration=5.0, min_duration=None,
-                 distance='angular', per_label=3, per_fold=20, per_batch=12,
-                 n_threads=1):
-        super(CenterLoss, self).__init__(
-            feature_extractor, duration, min_duration=min_duration,
-            distance=distance)
-
-        if distance == 'angular':
-            self.loss_ = unitary_angular_triplet_loss
-        elif distance == 'cosine':
-            self.loss_ = unitary_cosine_triplet_loss
-        elif distance == 'euclidean':
-            self.loss_ = unitary_euclidean_triplet_loss
-        else:
-            raise NotImplementedError(
-                'unknown "{distance}" distance'.format(distance=distance))
-
-        self.per_label = per_label
-        self.per_fold = per_fold
-        self.per_batch = per_batch
-        self.n_threads = n_threads
-        self.pool_ = multiprocessing.Pool(self.n_threads)
-
-    @staticmethod
-    def _output_shape(input_shapes):
-        return (input_shapes[0][0], 1)
-
-    @staticmethod
-    def _derivative_loss(y_true, y_pred):
-        return K.sum((y_pred * y_true), axis=-1)
-
-    def get_generator(self, file_generator, **kwargs):
-        """
-        Parameters
-        ----------
-        file_generator
-        """
-
-        return CenterLossBatchGenerator(
-            self.feature_extractor, file_generator,
-            self.compute_cost_and_derivatives,
-            distance=self.distance,
-            duration=self.duration, min_duration=self.min_duration,
-            per_label=self.per_label, per_fold=self.per_fold,
-            per_batch=self.per_batch, n_threads=self.n_threads)
 
     def _initialize_centers(self, n_labels, output_dim):
         trigger = Input(shape=(n_labels, ), name="trigger")
@@ -204,12 +153,8 @@ class CenterLoss(Glue):
         self.trigger_ = np.eye(self.n_labels_)
         return design_embedding(input_shape)
 
-    def loss(self, y_true, y_pred):
-        return self._derivative_loss(y_true, y_pred)
-
-    def compute_cost_and_derivatives(self, embeddings, labels):
+    def compute_derivatives(self, embeddings, labels):
         """Compute embedding derivatives
-
 
         Parameters
         ----------

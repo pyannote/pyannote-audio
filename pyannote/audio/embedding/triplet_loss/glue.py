@@ -24,19 +24,46 @@
 # SOFTWARE.
 
 # AUTHORS
+# Grégory GELLY
 # Hervé BREDIN - http://herve.niderb.fr
 
-import keras.backend as K
-from keras.models import Model
+import numpy as np
+from functools import partial
 
-from keras.layers import Input
-from keras.layers import merge
-
-from ..glue import Glue
-from .generator import TripletBatchGenerator
+from pyannote.audio.embedding.glue import BatchGlue
 
 
-class TripletLoss(Glue):
+def triplet_loss(inputs, distance=None):
+
+    embeddings = inputs[0]
+    labels = inputs[1]
+
+    cost = 0.0
+
+    d_embeddings = 0.0 * embeddings
+
+    for ii, (anchor, anchor_label) in enumerate(zip(embeddings, labels)):
+        for kk, (positive, positive_label) in enumerate(zip(embeddings, labels)):
+
+            if (ii == kk) or (anchor_label != positive_label):
+                continue
+
+                for ll, (negative, negative_label) in enumerate(zip(embeddings, labels)):
+
+                    if negative_label == positive_label:
+                        continue
+
+                    [cost_, d_anchor_, d_positive_, d_negative_] = distance(
+                        anchor, positive, negative)
+                    cost += cost_
+                    d_embeddings[ii, :] += d_anchor_
+                    d_embeddings[kk, :] += d_positive_
+                    d_embeddings[ll, :] += d_negative_
+
+    return [cost, d_embeddings]
+
+
+class TripletLoss(BatchGlue):
     """Triplet loss for sequence embedding
 
             anchor        |-----------|           |---------|
@@ -51,103 +78,31 @@ class TripletLoss(Glue):
             input    -->  | embedding | --> n --> |         |
             sequence      |-----------|           |---------|
 
-    Parameters
-    ----------
-    feature_extractor
-    duration : float, optional
-    min_duration : float, optional
-    distance: {'sqeuclidean', 'cosine'}
-        Distance for which the embedding is optimized. Defaults to 'sqeuclidean'.
-    margin : float, optional
-        Triplet loss margin. Defaults to 0.2.
-    per_label : int, optional
-        Defaults to 40.
-
     Reference
     ---------
-    Hervé Bredin, "TristouNet: Triplet Loss for Speaker Turn Embedding"
-    Submitted to ICASSP 2017. https://arxiv.org/abs/1609.04301
+    Not yet written ;-)
     """
 
-    def __init__(self, feature_extractor, duration=5.0, min_duration=None,
-                 distance='sqeuclidean',  margin=0.2, per_label=40):
-        super(TripletLoss, self).__init__(
-            feature_extractor, duration, min_duration=min_duration,
-            distance=distance)
-        self.margin = margin
-        self.per_label = per_label
+    def compute_derivatives(self, embeddings, labels):
 
-    def _loss_sqeuclidean(self, inputs):
-        p = K.sum(K.square(inputs[0] - inputs[1]), axis=-1, keepdims=True)
-        n = K.sum(K.square(inputs[0] - inputs[2]), axis=-1, keepdims=True)
-        loss = p + self.margin - n
-        return loss
+        embeddings = embeddings.astype('float64')
 
-    def _loss_cosine(self, inputs):
-        p = -K.sum(inputs[0] * inputs[1], axis=-1, keepdims=True)
-        n = -K.sum(inputs[0] * inputs[2], axis=-1, keepdims=True)
-        loss = p + self.margin - n
-        return loss
+        folds = []
+        fold_size = self.per_fold * self.per_label
 
-    @staticmethod
-    def _output_shape(input_shapes):
-        return (input_shapes[0][0], 1)
+        for t in range(self.per_batch):
+            fX = embeddings[t * fold_size:(t+1) * fold_size]
+            y = labels[t * fold_size:(t+1) * fold_size]
+            folds.append([fX, y, self.loss_])
 
-    @staticmethod
-    def _identity_loss(y_true, y_pred):
-        return K.mean(y_pred - 0 * y_true)
+        # self.loss_ is shared by all subsequent calls to 'triplet_loss'
+        process_fold = partial(triplet_loss, distance=self.loss_)
 
-    def get_generator(self, file_generator, batch_size=None, **kwargs):
-        if batch_size is None:
-            batch_size = 32
-        return TripletBatchGenerator(
-            self.feature_extractor, file_generator,
-            margin=self.margin, distance=self.distance,
-            duration=self.duration, min_duration=self.min_duration,
-            per_label=self.per_label, batch_size=batch_size)
+        # TODO - use zip instead of this for loop
+        costs = []
+        derivatives = []
+        for output in self.pool_.imap(process_fold, folds):
+            costs.append(output[0])
+            derivatives.append(output[1])
 
-    def build_model(self, input_shape, design_embedding, **kwargs):
-        """Design the model for which the loss is optimized
-
-        Parameters
-        ----------
-        input_shape: (n_samples, n_features) tuple
-            Shape of input sequences.
-        design_embedding : function or callable
-            This function should take input_shape as input and return a Keras
-            model that takes a sequence as input, and returns the embedding as
-            output.
-
-        Returns
-        -------
-        model : Keras model
-
-        See also
-        --------
-        An example of `design_embedding` is
-        pyannote.audio.embedding.models.TristouNet.__call__
-        """
-
-        anchor = Input(shape=input_shape, name="anchor")
-        positive = Input(shape=input_shape, name="positive")
-        negative = Input(shape=input_shape, name="negative")
-
-        embedding = design_embedding(input_shape)
-        embedded_anchor = embedding(anchor)
-        embedded_positive = embedding(positive)
-        embedded_negative = embedding(negative)
-
-        mode = getattr(self, '_loss_' + self.distance)
-
-        distance = merge(
-            [embedded_anchor, embedded_positive, embedded_negative],
-            mode=mode, output_shape=self._output_shape)
-
-        model = Model(input=[anchor, positive, negative], output=distance)
-        return model
-
-    def loss(self, y_true, y_pred):
-        return self._identity_loss(y_true, y_pred)
-
-    def extract_embedding(self, from_model):
-        return from_model.layers_by_depth[1][0]
+        return [np.hstack(costs), np.vstack(derivatives)]

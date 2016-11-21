@@ -27,5 +27,6 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 
+from .legacy_triplet_loss.glue import LegacyTripletLoss
 from .triplet_loss.glue import TripletLoss
 from .center_loss.glue import CenterLoss
