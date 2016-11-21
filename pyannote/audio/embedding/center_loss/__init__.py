@@ -25,3 +25,4 @@
 
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
+# Grégory GELLY

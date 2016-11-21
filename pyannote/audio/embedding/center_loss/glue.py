@@ -24,85 +24,159 @@
 # SOFTWARE.
 
 # AUTHORS
+# Grégory GELLY
 # Hervé BREDIN - http://herve.niderb.fr
 
+import numpy as np
 import keras.backend as K
 from keras.models import Model
-
 from keras.layers import Input
-from keras.layers import merge
+from keras.layers import Dense
+from keras.layers import Lambda
 
-from ..glue import Glue
+from pyannote.audio.embedding.glue import Glue
+from .generator import CenterLossBatchGenerator
 
-import numpy as np
-from pyannote.audio.embedding.batch_triplet_loss.glue import unitary_angular_triplet_loss,unitary_cosine_triplet_loss,unitary_euclidean_triplet_loss
-from pyannote.audio.embedding.center_loss.models import CentersEmbeddings
+from pyannote.audio.embedding.batch_triplet_loss.glue import \
+    unitary_angular_triplet_loss, \
+    unitary_cosine_triplet_loss, \
+    unitary_euclidean_triplet_loss
 from pyannote.audio.optimizers import SSMORMS3
+import multiprocessing
+from functools import partial
 
-def center_loss(inputs):
-    labels = inputs[1]
+
+def center_loss(inputs, centers=None, distance=None):
+    """Compute embeddings and center derivatives
+
+    Parameters
+    ----------
+    embeddings : (n_samples, n_dimensions) numpy array
+    labels : (n_samples, ) numpy array
+    center_labels : (n_centers, n_dimensions) numpy array
+        n_centers <= n_labels
+    centers : (n_labels, n_dimensions)
+    distance : callable
+
+    Returns
+    -------
+    cost : float
+    d_embeddings : ()
+        Embedding derivatives
+    d_centers :
+        Center derivatives
+    """
+
     embeddings = inputs[0]
-    labels2 = inputs[3]
-    embeddings2 = inputs[2]
-    distance = inputs[4]
+    labels = inputs[1]
+    center_labels = inputs[2]
 
     cost = 0.0
-    derivative = 0.0*embeddings
-    derivative2 = 0.0*embeddings2
-    for ii in range(embeddings.shape[0]):
-        for kk in range(labels2.shape[0]):
-            if (labels2[kk] == labels[ii]):
-                for ll in range(labels2.shape[0]):
-                    if (labels2[ll] != labels2[kk]):
-                        [local_cost, local_derivative_anchor, local_derivative_positive, local_derivative_negative] = distance(embeddings[ii,:], embeddings2[labels2[kk],:], embeddings2[labels2[ll],:])
-                        cost += local_cost
-                        derivative[ii,:] += local_derivative_anchor
-                        derivative2[labels2[kk],:] += local_derivative_positive
-                        derivative2[labels2[ll],:] += local_derivative_negative
 
-    return [cost, derivative, derivative2]
+    # embedding derivatives
+    d_embeddings = 0.0 * embeddings
+
+    # center derivatives
+    d_centers = 0.0 * centers
+
+    # loop on every embedding
+    for ii, (embedding, label) in enumerate(zip(embeddings, labels)):
+
+        # loop on every center
+        for kk, true_center in enumerate(center_labels):
+
+            # if current embedding belongs to current cluster
+            if (true_center == label):
+
+                # for every other center
+                for ll, other_center in enumerate(center_labels):
+                    if (other_center == true_center):
+                        continue
+
+                    [cost_, d_anchor_, d_positive_, d_negative_] = distance(
+                        embedding, centers[true_center, :], centers[other_center, :])
+                    cost += cost_
+
+                    d_embeddings[ii, :] += d_anchor_
+                    d_centers[true_center, :] += d_positive_
+                    d_centers[other_center, :] += d_negative_
+
+    return [cost, d_embeddings, d_centers]
 
 
 class CenterLoss(Glue):
     """Center loss for sequence embedding
 
-            anchor        |-----------|           |---------|
-            input    -->  | embedding | --> a --> |         |
-            sequence      |-----------|           |         |
-                                                  |         |
-            target        |-----------|           | triplet |
-            center   -->  | embedding | --> p --> |         | --> loss value
-            index         |-----------|           |  loss   |
-                                                  |         |
-            negative      |-----------|           |         |
-            centers  -->  | embedding | --> n --> |         |
-            indices       |-----------|           |---------|
+    Parameters
+    ----------
+    per_label : int, optional
+        Number of sequences per label. Defaults to 3.
+    per_fold : int, optional
+        Number of labels per fold. Defaults to 20.
+    per_batch: int, optional
+        Number of folds per batch. Defaults to 12.
 
     Reference
     ---------
     Not yet written ;-)
     """
-    def __init__(self, distance='angular'):
-        super(CenterLoss, self).__init__()
-        if (distance == 'angular'):
+    def __init__(self, feature_extractor, duration=5.0, min_duration=None,
+                 distance='angular', per_label=3, per_fold=20, per_batch=12,
+                 n_threads=1):
+        super(CenterLoss, self).__init__(
+            feature_extractor, duration, min_duration=min_duration,
+            distance=distance)
+
+        if distance == 'angular':
             self.loss_ = unitary_angular_triplet_loss
-        elif (distance == 'cosine'):
+        elif distance == 'cosine':
             self.loss_ = unitary_cosine_triplet_loss
-        elif (distance == 'euclidean'):
+        elif distance == 'euclidean':
             self.loss_ = unitary_euclidean_triplet_loss
         else:
             raise NotImplementedError(
                 'unknown "{distance}" distance'.format(distance=distance))
 
-    @staticmethod
-    def _derivative_loss(y_true, y_pred):
-        return K.sum((y_pred * y_true), axis=-1)
+        self.per_label = per_label
+        self.per_fold = per_fold
+        self.per_batch = per_batch
+        self.n_threads = n_threads
+        self.pool_ = multiprocessing.Pool(self.n_threads)
 
     @staticmethod
     def _output_shape(input_shapes):
         return (input_shapes[0][0], 1)
 
-    def build_model(self, input_shape, design_embedding, n_labels):
+    @staticmethod
+    def _derivative_loss(y_true, y_pred):
+        return K.sum((y_pred * y_true), axis=-1)
+
+    def get_generator(self, file_generator, **kwargs):
+        """
+        Parameters
+        ----------
+        file_generator
+        """
+
+        return CenterLossBatchGenerator(
+            self.feature_extractor, file_generator,
+            self.compute_cost_and_derivatives,
+            distance=self.distance,
+            duration=self.duration, min_duration=self.min_duration,
+            per_label=self.per_label, per_fold=self.per_fold,
+            per_batch=self.per_batch, n_threads=self.n_threads)
+
+    def _initialize_centers(self, n_labels, output_dim):
+        trigger = Input(shape=(n_labels, ), name="trigger")
+        x = Dense(output_dim, activation='linear', name='dense')(trigger)
+        centers = Lambda(lambda x: K.l2_normalize(x, axis=-1),
+                         name="centers")(x)
+
+        model = Model(input=trigger, output=centers)
+        model.compile(optimizer=SSMORMS3(), loss=self.loss)
+        return model
+
+    def build_model(self, input_shape, design_embedding, n_labels=None, **kwargs):
         """Design the model for which the loss is optimized
 
         Parameters
@@ -123,43 +197,55 @@ class CenterLoss(Glue):
         An example of `design_embedding` is
         pyannote.audio.embedding.models.TristouNet.__call__
         """
-        design_center = CentersEmbeddings(output_dim=design_embedding.output_dim)
-        self.centers = design_center((n_labels,))
-        self.centers.compile(optimizer=SSMORMS3(), loss=self.loss)
-        self.centers.summary()
-        self.center_trigger = np.eye(n_labels)
 
+        self.n_labels_ = n_labels
+        self.centers_ = self._initialize_centers(
+            self.n_labels_, design_embedding.output_dim)
+        self.trigger_ = np.eye(self.n_labels_)
         return design_embedding(input_shape)
 
     def loss(self, y_true, y_pred):
         return self._derivative_loss(y_true, y_pred)
 
-    def extract_embedding(self, from_model):
-        return from_model
+    def compute_cost_and_derivatives(self, embeddings, labels):
+        """Compute embedding derivatives
 
-    def compute_cost_and_derivatives(self, embeddings, batch_labels, batch_size, nb_of_threads, pool):
+
+        Parameters
+        ----------
+        embeddings : (n_samples, output_dim)
+        labels : (n_samples, )
+            labels is expected to be (n_threads x batch_size)
+        """
         embeddings = embeddings.astype('float64')
-        embeddingscenters = self.centers.predict(self.center_trigger).astype('float64')
+        current_centers = self.centers_.predict(self.trigger_).astype('float64')
 
-        lines = []
-        for jj in range(nb_of_threads):
-            center_labels = np.unique(batch_labels[jj*batch_size:((jj+1)*batch_size)])
-            lines.append([embeddings[jj*batch_size:((jj+1)*batch_size),:],
-                    batch_labels[jj*batch_size:((jj+1)*batch_size)],
-                    embeddingscenters, center_labels, self.loss_])
+        folds = []
+        fold_size = self.per_fold * self.per_label
 
+        for t in range(self.per_batch):
+            fold_labels = labels[t * fold_size: (t+1) * fold_size]
+            center_labels = np.unique(fold_labels)
+            fX = embeddings[t * fold_size:(t+1) * fold_size]
+            y = labels[t * fold_size:(t+1) * fold_size]
+            folds.append([fX, y, center_labels])
+
+        # self.loss_ and current_centers are shared
+        # by all subsequent calls to 'center_loss'
+        process_fold = partial(center_loss,
+                               distance=self.loss_,
+                               centers=current_centers)
+
+        # TODO - use zip instead of this for loop
         costs = []
         derivatives = []
-        centers_derivatives = 0.0*embeddingscenters
-        for output in pool.imap(center_loss, lines):
-        # for line in lines:
-        #     output = center_loss(line)
+        centers_derivatives = 0.0 * current_centers
+        for output in self.pool_.imap(process_fold, folds):
             costs.append(output[0])
             derivatives.append(output[1])
             centers_derivatives += output[2]
-        
-        self.centers.train_on_batch(self.center_trigger, centers_derivatives)
+
+        # update centers
+        self.centers_.train_on_batch(self.trigger_, centers_derivatives)
 
         return [np.hstack(costs), np.vstack(derivatives)]
-
-
