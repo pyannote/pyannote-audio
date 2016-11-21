@@ -89,7 +89,7 @@ class TripletLoss(BatchGlue):
         for t in range(self.per_batch):
             fX = embeddings[t * fold_size:(t+1) * fold_size]
             y = labels[t * fold_size:(t+1) * fold_size]
-            folds.append([fX, y, self.loss_])
+            folds.append([fX, y])
 
         # self.loss_ is shared by all subsequent calls to 'triplet_loss'
         process_fold = partial(triplet_loss, distance=self.loss_)
