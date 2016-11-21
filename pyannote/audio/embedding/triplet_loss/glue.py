@@ -77,10 +77,6 @@ class TripletLoss(BatchGlue):
             negative      |-----------|           |         |
             input    -->  | embedding | --> n --> |         |
             sequence      |-----------|           |---------|
-
-    Reference
-    ---------
-    Not yet written ;-)
     """
 
     def compute_derivatives(self, embeddings, labels):

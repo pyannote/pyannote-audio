@@ -32,8 +32,8 @@ from keras.models import Model
 from keras.layers import Input
 from keras.layers import merge
 
-from ..glue import Glue
-from .generator import TripletBatchGenerator
+from pyannote.audio.embedding.glue import Glue
+from pyannote.audio.embedding.legacy_triplet_loss.generators import TripletBatchGenerator
 
 
 class LegacyTripletLoss(Glue):
