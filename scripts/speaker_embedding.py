@@ -92,7 +92,7 @@ Configuration file:
           output_dim: 16              # of dimension 16
 
     glue:
-       name: TripletLoss
+       name: LegacyTripletLoss
        params:
           distance: sqeuclidean
           margin: 0.2
@@ -154,8 +154,6 @@ from pyannote.database import get_database
 from pyannote.audio.optimizers import SSMORMS3
 
 from pyannote.audio.embedding.base import SequenceEmbedding
-from pyannote.audio.embedding.triplet_loss.glue import TripletLoss
-from pyannote.audio.embedding.triplet_loss.generator import TripletBatchGenerator
 
 from pyannote.audio.generators.labels import FixedDurationSequences
 from pyannote.audio.generators.labels import VariableDurationSequences
