@@ -32,6 +32,7 @@ import multiprocessing
 from pyannote.audio.embedding.losses import unitary_cosine_triplet_loss
 from pyannote.audio.embedding.losses import unitary_euclidean_triplet_loss
 from pyannote.audio.embedding.losses import unitary_angular_triplet_loss
+from pyannote.audio.embedding.generators import DerivativeBatchGenerator
 
 
 class Glue(object):
