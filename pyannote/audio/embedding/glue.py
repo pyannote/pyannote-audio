@@ -92,7 +92,7 @@ class Glue(object):
         """
         raise NotImplementedError('')
 
-    def build_model(self, input_shape, design_embedding):
+    def build_model(self, input_shape, design_embedding, **kwargs):
         """Design the model for which the loss is optimized
 
         Parameters
