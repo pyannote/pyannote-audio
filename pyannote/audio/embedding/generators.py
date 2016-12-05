@@ -28,6 +28,7 @@
 # Grégory GELLY
 
 
+import h5py
 import numpy as np
 from pyannote.generators.batch import BaseBatchGenerator
 from pyannote.generators.indices import random_label_index
@@ -40,7 +41,7 @@ class SequenceGenerator(object):
 
     def __init__(self, feature_extractor, file_generator,
                  duration=3.0, min_duration=None, overlap=0.8,
-                 per_label=3):
+                 per_label=3, cache=None):
 
         super(SequenceGenerator, self).__init__()
 
@@ -50,6 +51,7 @@ class SequenceGenerator(object):
         self.min_duration = min_duration
         self.overlap = overlap
         self.per_label = per_label
+        self.cache = cache
 
         if self.min_duration is None:
             self.generator_ = FixedDurationSequences(
@@ -64,21 +66,69 @@ class SequenceGenerator(object):
                 min_duration=self.min_duration,
                 batch_size=-1)
 
-        self.sequence_generator_ = self.iter_sequences()
+        self.sequence_generator_ = self.iter_sequences(cache=self.cache)
 
         # consume first element of generator
         # this is meant to pre-generate all labeled sequences once and for all
         # and also to precompute the number of unique labels
         next(self.sequence_generator_)
 
+    def _precompute(self, Xy_generator, cache):
 
-    def iter_sequences(self):
+        with h5py.File(cache, mode='w', libver='latest') as fp:
+
+            # initialize with a fixed number of sequences
+            n_sequences = 1000
+
+            y = fp.create_dataset(
+                'y', shape=(n_sequences, ),
+                dtype=h5py.special_dtype(vlen=bytes),
+                maxshape=(None, ))
+
+            for i, (X_, y_) in enumerate(Xy_generator):
+
+                if i == 0:
+                    n_samples, n_features = X_.shape
+                    X = fp.create_dataset(
+                        'X', dtype=X_.dtype, compression='gzip',
+                        shape=(n_sequences, n_samples, n_features),
+                        chunks=(1, n_samples, n_features),
+                        maxshape=(None, n_samples, n_features))
+
+                # increase number of sequences on demand
+                if i == n_sequences:
+                    n_sequences = int(n_sequences * 1.1)
+                    y.resize(n_sequences, axis=0)
+                    X.resize(n_sequences, axis=0)
+
+                # store current X, y in file
+                y[i] = y_
+                X[i] = X_
+
+            # resize file to exactly match the number of sequences
+            y.resize(n_sequences, axis=0)
+            X.resize(n_sequences, axis=0)
+
+    def iter_sequences(self, cache=None):
 
         # pre-generate all labeled sequences (from the whole training set)
-        # this might be huge in memory
-        X, y = zip(*self.generator_(self.file_generator))
-        X = np.vstack(X)
-        y = np.hstack(y)
+
+        # in memory
+        if cache is None:
+            Xy_generator = self.generator_(self.file_generator)
+            X, y = zip(*Xy_generator)
+            X = np.vstack(X)
+            y = np.hstack(y)
+
+        # in HDF5 file
+        elif not os.path.isfile(cache):
+            Xy_generator = self.generator_(self.file_generator)
+            self._precompute(Xy_generator, cache)
+
+        if cache:
+            fp = h5py.File(cache, mode='r', libver='latest')
+            X = fp['X']
+            y = fp['y']
 
         # keep track of number of labels and rename labels to integers
         unique, y = np.unique(y, return_inverse=True)
@@ -93,6 +143,9 @@ class SequenceGenerator(object):
         while True:
             i = next(generator)
             yield X[i], y[i]
+
+        if cache:
+            fp.close()
 
     def __iter__(self):
         return self
@@ -146,16 +199,21 @@ class DerivativeBatchGenerator(BaseBatchGenerator):
         Number of folds per batch. Defaults to 12.
     n_threads: int, optional
         Defaults to 1.
+    cache: str, optional
+        Defaults to 'in-memory'
     """
 
     def __init__(self, feature_extractor, file_generator, compute_derivatives,
                  distance='angular', duration=3.0, min_duration=None,
-                 per_label=3, per_fold=20, per_batch=12, n_threads=1):
+                 per_label=3, per_fold=20, per_batch=12, n_threads=1,
+                 cache=None):
+
+        self.cache = cache
 
         self.sequence_generator_ = SequenceGenerator(
             feature_extractor, file_generator,
              duration=duration, min_duration=min_duration,
-             per_label=per_label)
+             per_label=per_label, cache=self.cache)
 
         self.n_labels = self.sequence_generator_.n_labels
         self.per_label = per_label

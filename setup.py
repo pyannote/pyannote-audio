@@ -45,7 +45,8 @@ setup(
         'keras >= 1.1.0',
         'theano >= 0.8.2',
         'scikit-optimize >= 0.2',
-        'pyYAML >= 3.12'
+        'pyYAML >= 3.12',
+        'h5py >= 2.6.0',
     ],
     # versioneer
     version=versioneer.get_version(),
