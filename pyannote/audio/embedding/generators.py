@@ -107,8 +107,8 @@ class SequenceGenerator(object):
                 X[i] = X_
 
             # resize file to exactly match the number of sequences
-            y.resize(n_sequences, axis=0)
-            X.resize(n_sequences, axis=0)
+            y.resize(i, axis=0)
+            X.resize(i, axis=0)
 
     def iter_sequences(self, cache=None):
 
