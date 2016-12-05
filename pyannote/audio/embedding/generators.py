@@ -59,13 +59,13 @@ class SequenceGenerator(object):
                 self.feature_extractor,
                 duration=self.duration,
                 step=(1 - self.overlap) * self.duration,
-                batch_size=-1)
+                batch_size=1 if self.cache else -1)
         else:
             self.generator_ = VariableDurationSequences(
                 self.feature_extractor,
                 max_duration=self.duration,
                 min_duration=self.min_duration,
-                batch_size=-1)
+                batch_size=1 if self.cache else -1)
 
         self.sequence_generator_ = self.iter_sequences(cache=self.cache)
 
@@ -89,7 +89,7 @@ class SequenceGenerator(object):
             for i, (X_, y_) in enumerate(Xy_generator):
 
                 if i == 0:
-                    n_samples, n_features = X_.shape
+                    n_samples, n_features, _ = X_.shape
                     X = fp.create_dataset(
                         'X', dtype=X_.dtype, compression='gzip',
                         shape=(n_sequences, n_samples, n_features),
