@@ -89,7 +89,7 @@ class SequenceGenerator(object):
             for i, (X_, y_) in enumerate(Xy_generator):
 
                 if i == 0:
-                    n_samples, n_features, _ = X_.shape
+                    _, n_samples, n_features = X_.shape
                     X = fp.create_dataset(
                         'X', dtype=X_.dtype, compression='gzip',
                         shape=(n_sequences, n_samples, n_features),
