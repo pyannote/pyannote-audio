@@ -27,7 +27,21 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 
+from cachetools import LRUCache
+CACHE_MAXSIZE = 12
+
+
 class YaafeMixin:
+
+    """
+    cache_preprocessed_ : bool
+        When True (default), features are computed only once for the same
+        file, and stored in memory. When False, features **might** be
+        recomputed (no warranty) computed when the same file is processed
+        again.
+    preprocessed_ : dict or LRUCache
+    """
+
 
     @property
     def shape(self):
@@ -45,11 +59,23 @@ class YaafeMixin:
             current_file, identifier=identifier)
 
     def yaafe_preprocess(self, current_file, identifier=None):
+        """
+        Parameters
+        ----------
+        current_file :
+        identifier :
+            Unique file identifier.
+        """
+
+        if not hasattr(self, 'cache_preprocessed_'):
+            self.cache_preprocessed_ = True
 
         if not hasattr(self, 'preprocessed_'):
             self.preprocessed_ = {}
+            self.preprocessed_['X'] = \
+                {} if self.cache_preprocessed_ else LRUCache(maxsize=CACHE_MAXSIZE)
 
-        if identifier in self.preprocessed_.setdefault('X', {}):
+        if identifier in self.preprocessed_['X']:
             return current_file
 
         wav = current_file['wav']
