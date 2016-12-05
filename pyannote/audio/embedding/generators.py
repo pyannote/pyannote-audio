@@ -67,6 +67,10 @@ class SequenceGenerator(object):
                 min_duration=self.min_duration,
                 batch_size=1 if self.cache else -1)
 
+        # there is no need to cache preprocessed features
+        # as the generator is iterated only once
+        self.generator_.cache_preprocessed_ = False
+
         self.sequence_generator_ = self.iter_sequences(cache=self.cache)
 
         # consume first element of generator
