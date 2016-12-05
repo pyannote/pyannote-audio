@@ -29,6 +29,7 @@
 
 
 import h5py
+import os.path
 import numpy as np
 from pyannote.generators.batch import BaseBatchGenerator
 from pyannote.generators.indices import random_label_index
