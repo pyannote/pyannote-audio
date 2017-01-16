@@ -91,7 +91,7 @@ class SpeechActivityDetection(Application):
         generator = batch_generator(train_files, infinite=True)
 
         labeling = SequenceLabeling()
-        labeling.fit(input_shape, architecture,
+        labeling.fit(input_shape, self.architecture_,
                      generator, samples_per_epoch, 1000,
                      optimizer=SSMORMS3(), log_dir=train_dir)
 
