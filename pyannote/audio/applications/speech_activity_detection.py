@@ -55,7 +55,7 @@ class SpeechActivityDetection(Application):
     @classmethod
     def from_train_dir(cls, train_dir, db_yml=None):
         experiment_dir = os.path.dirname(os.path.dirname(train_dir))
-        return cls.__init__(experiment_dir, db_yml=db_yml)
+        return cls(experiment_dir, db_yml=db_yml)
 
     def __init__(self, experiment_dir, db_yml=None):
 
