@@ -114,10 +114,13 @@ class Binarize(object):
 
         from pyannote.database.util import get_unique_identifier
         from pyannote.database.util import get_annotated
+        from pyannote.database import get_protocol
 
         if get_metric is None:
             from pyannote.metrics.detection import DetectionErrorRate
             get_metric = DetectionErrorRate
+
+        protocol = get_protocol(protocol_name, progress=False)
 
         def objective_function(params):
             onset, offset, = params

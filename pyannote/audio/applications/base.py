@@ -30,7 +30,6 @@
 import yaml
 import os.path
 
-from pyannote.database import get_database
 from pyannote.database.util import FileFinder
 
 
@@ -65,14 +64,6 @@ class Application(object):
         # as this does not bring any significant speed-up
         # but does consume (potentially) a LOT of memory
         self.cache_preprocessed_ = 'Precomputed' not in feature_extraction_name
-
-    def get_protocol(self, name, progress=False):
-        database_name, task_name, protocol_name = name.split('.')
-        database = get_database(database_name,
-                                preprocessors=self.preprocessors_)
-        protocol = database.get_protocol(task_name, protocol_name,
-                                         progress=progress)
-        return protocol
 
     def get_epochs(self, train_dir):
         """Get current number of completed epochs"""

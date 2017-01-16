@@ -39,6 +39,7 @@ from pyannote.audio.labeling.aggregation import SequenceLabelingAggregation
 from pyannote.audio.signal import Binarize
 from pyannote.database.util import get_unique_identifier
 from pyannote.database.util import get_annotated
+from pyannote.database import get_protocol
 
 from .base import Application
 
@@ -86,7 +87,7 @@ class SpeechActivityDetection(Application):
             batch_size=batch_size)
         batch_generator.cache_preprocessed_ = self.cache_preprocessed_
 
-        protocol = self.get_protocol(protocol_name, progress=False)
+        protocol = get_protocol(protocol_name, progress=False)
 
         # total train duration
         train_total = protocol.stats(subset)['annotated']
@@ -140,7 +141,7 @@ class SpeechActivityDetection(Application):
             aggregation = SequenceLabelingAggregation(
                 sequence_labeling, self.feature_extraction_,
                 duration=duration, step=step)
-            protocol = self.get_protocol(protocol_name, progress=False)
+            protocol = get_protocol(protocol_name, progress=False)
             predictions = {get_unique_identifier(item): aggregation.apply(item)
                            for item in getattr(protocol, subset)()}
 
