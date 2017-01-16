@@ -115,7 +115,7 @@ class SpeechActivityDetection(Application):
             protocol=protocol_name,
             subset=subset)
 
-        epoch = self.get_epoch(train_dir)
+        epoch = self.get_epochs(train_dir)
         space = [skopt.space.Integer(0, epoch - 1)]
 
         best_params = {}
