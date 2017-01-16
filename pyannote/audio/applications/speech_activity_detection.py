@@ -132,6 +132,9 @@ class SpeechActivityDetection(Application):
             sequence_labeling = SequenceLabeling.from_disk(
                 architecture_yml, weights_h5)
 
+            duration = self.config_['sequences']['duration']
+            step = self.config_['sequences']['step']
+
             # process each development file with that model
             # `predictions[uri]` contains soft sequence labeling
             aggregation = SequenceLabelingAggregation(
