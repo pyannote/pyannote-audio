@@ -64,7 +64,7 @@ class SpeechActivityDetection(Application):
         train_dir = self.TRAIN_DIR.format(
             experiment_dir=self.experiment_dir,
             protocol=protocol_name,
-            subset=subet)
+            subset=subset)
 
         # sequence batch generator
         batch_size = 8192
