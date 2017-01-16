@@ -106,7 +106,7 @@ class Binarize(object):
 
     @classmethod
     def tune(cls, predictions, protocol_name,
-             subset='development', n_calls=5, get_metric=None
+             subset='development', n_calls=5, get_metric=None,
              returns_metric=False):
 
         import skopt
