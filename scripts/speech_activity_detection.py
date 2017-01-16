@@ -149,6 +149,8 @@ import matplotlib.pyplot as plt
 import pyannote.core
 import pyannote.core.json
 
+from pyannote.audio.applications import SpeechActivityDetection
+
 from pyannote.audio.labeling.base import SequenceLabeling
 from pyannote.audio.generators.speech import SpeechActivityDetectionBatchGenerator
 
@@ -177,7 +179,6 @@ from pyannote.metrics import f_measure
 
 
 WEIGHTS_H5 = '{train_dir}/weights/{epoch:04d}.h5'
-
 
 
 def train(protocol, experiment_dir, train_dir, subset='train'):
@@ -585,32 +586,15 @@ if __name__ == '__main__':
 
     arguments = docopt(__doc__, version='Speech activity detection')
 
-    db_yml = os.path.expanduser(arguments['--database'])
-    preprocessors = {'wav': FileFinder(db_yml)}
-
-    if '<database.task.protocol>' in arguments:
-        protocol = arguments['<database.task.protocol>']
-        database_name, task_name, protocol_name = protocol.split('.')
-        database = get_database(database_name, preprocessors=preprocessors)
-        protocol = database.get_protocol(task_name, protocol_name,
-                                         progress=True)
-
+    protocol_name = arguments['<database.task.protocol>']
     subset = arguments['--subset']
 
     if arguments['train']:
         experiment_dir = arguments['<experiment_dir>']
-
         if subset is None:
             subset = 'train'
-
-        TRAIN_DIR = '{experiment_dir}/train/{protocol}.{subset}/{path}'
-        train_dir = TRAIN_DIR.format(
-            experiment_dir=experiment_dir,
-            protocol=arguments['<database.task.protocol>'],
-            subset=subset)
-
-        protocol.progress = False
-        train(protocol, experiment_dir, train_dir, subset=subset)
+        application = SpeechActivityDetection(experiment_dir, db_yml=db_yml)
+        application.train(protocol_name, subset=subset)
 
     if arguments['validation']:
         train_dir = arguments['<train_dir>']
