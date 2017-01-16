@@ -28,6 +28,7 @@
 
 
 import yaml
+import os.path
 
 from pyannote.database import get_database
 from pyannote.database.util import FileFinder
@@ -72,3 +73,16 @@ class Application(object):
         protocol = database.get_protocol(task_name, protocol_name,
                                          progress=progress)
         return protocol
+
+    def get_epochs(self, train_dir):
+        """Get current number of completed epochs"""
+
+        epoch = 0
+
+        while True:
+            weights_h5 = self.WEIGHTS_H5.format(train_dir=train_dir, epoch=epoch)
+            if not os.path.isfile(weights_h5):
+                break
+            epoch += 1
+
+        return epoch
