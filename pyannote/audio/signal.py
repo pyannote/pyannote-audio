@@ -104,6 +104,48 @@ class Binarize(object):
         self.pad_onset = 0.
         self.pad_offset = 0.
 
+    @classmethod
+    def tune(cls, predictions, protocol_name,
+             subset='development', n_calls=5, get_metric=None
+             returns_metric=False):
+
+        import skopt
+        import skopt.space
+
+        from pyannote.database.util import get_unique_identifier
+        from pyannote.database.util import get_annotated
+
+        if get_metric is None:
+            from pyannote.metrics.detection import DetectionErrorRate
+            get_metric = DetectionErrorRate
+
+        def objective_function(params):
+            onset, offset, = params
+            binarizer = cls(onset=onset, offset=offset)
+            metric = get_metric()
+            for item in getattr(protocol, subset)():
+                uri = get_unique_identifier(item)
+                uem = get_annotated(item)
+                reference = item['annotation']
+                hypothesis = binarizer.apply(predictions[uri], dimension=1)
+                _ = metric(reference, hypothesis, uem=uem)
+            return abs(metric)
+
+        space = [skopt.space.Real(0., 1., prior='uniform'),
+                 skopt.space.Real(0., 1., prior='uniform')]
+
+        res = skopt.gp_minimize(
+            objective_function, space,
+            n_calls=n_calls, n_random_starts=10,
+            random_state=1337, verbose=True)
+
+        params = {'onset': res.x[0], 'offset': res.x[1]}
+
+        if metric:
+            return params, res.fun
+        else:
+            return params
+
     def apply(self, predictions, dimension=0):
         """
         Parameters
