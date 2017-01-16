@@ -87,7 +87,8 @@ class SpeechActivityDetection(Application):
             batch_size=batch_size)
         batch_generator.cache_preprocessed_ = self.cache_preprocessed_
 
-        protocol = get_protocol(protocol_name, progress=False)
+        protocol = get_protocol(protocol_name, progress=False,
+                                preprocessors=self.preprocessors_)
 
         # total train duration
         train_total = protocol.stats(subset)['annotated']
@@ -141,7 +142,8 @@ class SpeechActivityDetection(Application):
             aggregation = SequenceLabelingAggregation(
                 sequence_labeling, self.feature_extraction_,
                 duration=duration, step=step)
-            protocol = get_protocol(protocol_name, progress=False)
+            protocol = get_protocol(protocol_name, progress=False,
+                                    preprocessors=self.preprocessors_)
             predictions = {get_unique_identifier(item): aggregation.apply(item)
                            for item in getattr(protocol, subset)()}
 
