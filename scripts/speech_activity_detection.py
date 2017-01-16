@@ -586,6 +586,7 @@ if __name__ == '__main__':
 
     arguments = docopt(__doc__, version='Speech activity detection')
 
+    db_yml = os.path.expanduser(arguments['--database'])
     protocol_name = arguments['<database.task.protocol>']
     subset = arguments['--subset']
 
