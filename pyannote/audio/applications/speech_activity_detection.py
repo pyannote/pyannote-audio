@@ -27,23 +27,34 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 
+import os.path
 import numpy as np
 
 from pyannote.audio.labeling.base import SequenceLabeling
 from pyannote.audio.generators.speech import \
     SpeechActivityDetectionBatchGenerator
-
 from pyannote.audio.optimizers import SSMORMS3
+
+from pyannote.audio.labeling.aggregation import SequenceLabelingAggregation
+from pyannote.audio.signal import Binarize
+from pyannote.database.util import get_unique_identifier
+from pyannote.database.util import get_annotated
+
 from .base import Application
+
+import skopt
+import skopt.space
+from pyannote.metrics.detection import DetectionErrorRate
 
 
 class SpeechActivityDetection(Application):
 
     TRAIN_DIR = '{experiment_dir}/train/{protocol}.{subset}'
+    TUNE_DIR = '{train_dir}/tune/{protocol}.{subset}'
 
     @classmethod
     def from_train_dir(cls, train_dir, db_yml=None):
-        experiment_dir = f(train_dir)
+        experiment_dir = os.path.dirname(os.path.dirname(train_dir))
         return cls.__init__(experiment_dir, db_yml=db_yml)
 
     def __init__(self, experiment_dir, db_yml=None):
@@ -96,3 +107,59 @@ class SpeechActivityDetection(Application):
                      optimizer=SSMORMS3(), log_dir=train_dir)
 
         return labeling
+
+    def tune(self, train_dir, protocol_name, subset='development'):
+
+        tune_dir = self.TUNE_DIR.format(
+            train_dir=train_dir,
+            protocol=protocol_name,
+            subset=subset)
+
+        epoch = self.get_epoch(train_dir)
+        space = [skopt.space.Integer(0, epoch - 1)]
+
+        best_params = {}
+
+        def objective_function(params):
+
+            epoch, = params
+
+            # load model obtained after that many training epochs
+            architecture_yml = self.ARCHITECTURE_YML.format(
+                train_dir=train_dir)
+            weights_h5 = self.WEIGHTS_H5.format(
+                train_dir=train_dir, epoch=epoch)
+            sequence_labeling = SequenceLabeling.from_disk(
+                architecture_yml, weights_h5)
+
+            # process each development file with that model
+            # `predictions[uri]` contains soft sequence labeling
+            aggregation = SequenceLabelingAggregation(
+                sequence_labeling, feature_extraction,
+                duration=duration, step=step)
+            protocol = self.get_protocol(protocol_name, progress=False)
+            predictions = {get_unique_identifier(item): aggregation.apply(item)
+                           for item in getattr(protocol, subset)()}
+
+            # tune Binarize thresholds (onset & offset)
+            # with respect to detection error rate
+            params, metric = Binarize.tune(
+                predictions, protocol_name, subset=subset, n_calls=20,
+                get_metric=DetectionErrorRate, returns_metric=True)
+
+            best_params[epoch] = params
+
+            print(epoch, metric, params)
+
+            # TODO store every trial
+
+            return metric
+
+        res = skopt.gp_minimize(
+            objective_function, space,
+            n_calls=3, x0=[epoch - 1], verbose=True,
+            n_random_starts=5, random_state=1337)
+
+        best_epoch = res.x[0]
+        print(best_params[best_epoch])
+        print(res.fun)
