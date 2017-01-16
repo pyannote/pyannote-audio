@@ -71,7 +71,7 @@ class SpeechActivityDetection(Application):
         duration = self.config_['sequences']['duration']
         step = self.config_['sequences']['step']
         self.generator_ = SpeechActivityDetectionBatchGenerator(
-            feature_extraction, duration=duration, step=step,
+            self.feature_extraction_, duration=duration, step=step,
             batch_size=batch_size)
         batch_generator.cache_preprocessed_ = self.cache_preprocessed_
 
