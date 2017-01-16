@@ -62,7 +62,7 @@ class SpeechActivityDetection(Application):
     def train(self, protocol_name, subset='train'):
 
         train_dir = self.TRAIN_DIR.format(
-            experiment_dir=self.experiment,
+            experiment_dir=self.experiment_dir,
             protocol=protocol_name,
             subset=subet)
 
