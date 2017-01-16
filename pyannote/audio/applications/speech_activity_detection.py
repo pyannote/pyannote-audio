@@ -135,7 +135,7 @@ class SpeechActivityDetection(Application):
             # process each development file with that model
             # `predictions[uri]` contains soft sequence labeling
             aggregation = SequenceLabelingAggregation(
-                sequence_labeling, feature_extraction,
+                sequence_labeling, self.feature_extraction_,
                 duration=duration, step=step)
             protocol = self.get_protocol(protocol_name, progress=False)
             predictions = {get_unique_identifier(item): aggregation.apply(item)
@@ -158,7 +158,7 @@ class SpeechActivityDetection(Application):
         res = skopt.gp_minimize(
             objective_function, space,
             n_calls=3, x0=[epoch - 1], verbose=True,
-            n_random_starts=5, random_state=1337)
+            n_random_starts=1, random_state=1337)
 
         best_epoch = res.x[0]
         print(best_params[best_epoch])
