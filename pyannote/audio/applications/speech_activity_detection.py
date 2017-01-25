@@ -41,6 +41,8 @@ from pyannote.database.util import get_unique_identifier
 from pyannote.database.util import get_annotated
 from pyannote.database import get_protocol
 
+from pyannote.audio.util import mkdir_p
+
 from .base import Application
 
 import skopt
@@ -118,6 +120,8 @@ class SpeechActivityDetection(Application):
             train_dir=self.train_dir_,
             protocol=protocol_name,
             subset=subset)
+
+        mkdir_p(tune_dir)
 
         epoch = self.get_epochs(self.train_dir_)
         space = [skopt.space.Integer(0, epoch - 1)]
