@@ -56,7 +56,9 @@ class SpeechActivityDetection(Application):
     @classmethod
     def from_train_dir(cls, train_dir, db_yml=None):
         experiment_dir = os.path.dirname(os.path.dirname(train_dir))
-        return cls(experiment_dir, db_yml=db_yml)
+        speech_activity_detection = cls(experiment_dir, db_yml=db_yml)
+        speech_activity_detection.train_dir_ = train_dir
+        return speech_activity_detection
 
     def __init__(self, experiment_dir, db_yml=None):
 
@@ -110,37 +112,49 @@ class SpeechActivityDetection(Application):
 
         return labeling
 
-    def tune(self, train_dir, protocol_name, subset='development'):
+    def tune(self, protocol_name, subset='development'):
 
         tune_dir = self.TUNE_DIR.format(
-            train_dir=train_dir,
+            train_dir=self.train_dir_,
             protocol=protocol_name,
             subset=subset)
 
-        epoch = self.get_epochs(train_dir)
+        epoch = self.get_epochs(self.train_dir_)
         space = [skopt.space.Integer(0, epoch - 1)]
 
-        best_params = {}
+        best_binarize_params = {}
         best_metric = {}
+
+        def callback(res):
+
+            # TODO add pretty convergence plots...
+
+            params = {'status': {'epochs': epoch, 'objective': res.fun},
+                      'epoch': int(res.x[0]),
+                      'onset': float(best_binarize_params[res.x][0]),
+                      'offset': float(best_binarize_params[res.x][1])
+                      }
+
+            with open(tune_dir + '/tune.yml', 'w') as fp:
+                yaml.dump(params, fp, default_flow_style=False)
 
         def objective_function(params):
 
             epoch, = params
 
             # do not rerun everything if epoch has already been tested
-            if epoch in best_metric:
-                return best_metric[epoch]
+            if params in best_metric:
+                return best_metric[params]
 
             # initialize protocol
             protocol = get_protocol(protocol_name, progress=False,
                                     preprocessors=self.preprocessors_)
 
-
             # load model for epoch 'epoch'
             architecture_yml = self.ARCHITECTURE_YML.format(
-                train_dir=train_dir)
+                train_dir=self.train_dir_)
             weights_h5 = self.WEIGHTS_H5.format(
-                train_dir=train_dir, epoch=epoch)
+                train_dir=self.train_dir_, epoch=epoch)
             sequence_labeling = SequenceLabeling.from_disk(
                 architecture_yml, weights_h5)
 
@@ -153,20 +167,23 @@ class SpeechActivityDetection(Application):
 
             # tune Binarize thresholds (onset & offset)
             # with respect to detection error rate
-            params, metric = Binarize.tune(getattr(protocol, subset)(),
-                                           aggregation.apply,
-                                           get_metric=DetectionErrorRate,
-                                           dimension=1)
+            binarize_params, metric = Binarize.tune(
+                getattr(protocol, subset)(),
+                aggregation.apply,
+                get_metric=DetectionErrorRate,
+                dimension=1)
 
             # remember outcome of this trial
-            best_params[epoch] = params
-            best_metric[epoch] = metric
+            best_binarize_params[params] = binarize_params
+            best_metric[params] = metric
 
             return metric
 
         res = skopt.gp_minimize(
-            objective_function, space,
-            n_calls=20, x0=[epoch - 1], verbose=True,
-            n_random_starts=10, random_state=1337)
+            objective_function, space, random_state=1337,
+            n_calls=20, n_random_starts=10, x0=[epoch - 1],
+            verbose=True, callback=callback)
+
+        tune_dir + '/tune.yml'
 
         return {'epoch': res.x[0]}, res.fun
