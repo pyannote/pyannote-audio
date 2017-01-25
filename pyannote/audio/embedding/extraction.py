@@ -106,5 +106,6 @@ class Extraction(PeriodicFeaturesMixin, FileBasedBatchGenerator):
         embeddings : SlidingWindowFeature
         """
         window = SlidingWindow(duration=self.duration, step=self.step, start=0.)
-        batches = [batch for batch in self.from_file(current_file)]
+        batches = [batch for batch in self.from_file(current_file,
+                                                     incomplete=True)]
         return SlidingWindowFeature(np.vstack(batches), window)
