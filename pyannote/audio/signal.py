@@ -92,7 +92,16 @@ class Peak(object):
 
 
 class Binarize(object):
-    """Binarize predictions using onset/offset thresholding"""
+    """Binarize predictions using onset/offset thresholding
+
+    Parameters
+    ----------
+    onset : float, optional
+        Defaults to 0.5.
+    offset : float, optional
+        Defaults to 0.5.
+
+    """
 
     def __init__(self, onset=0.7, offset=0.7):
 
@@ -105,9 +114,36 @@ class Binarize(object):
         self.pad_offset = 0.
 
     @classmethod
-    def tune(cls, predictions, protocol_name,
-             subset='development', n_calls=5, get_metric=None,
-             returns_metric=False):
+    def tune(cls, items, get_prediction, get_metric=None,
+             n_calls=20, n_random_starts=10, **kwargs):
+        """Find best set of hyper-parameters using skopt
+
+        Parameters
+        ----------
+        items : iterable
+            Protocol items used as development set. Typically, one would use
+            items = protocol.development()
+        get_prediction : callable
+            Callable that takes an item as input, and returns a prediction as
+            a SlidingWindowFeature instances.
+        get_metric : callable, optional
+            Callable that takes no input, and returns a fresh evaluation
+            metric. Defaults to pyannote.metrics.detection.DetectionErrorRate.
+        n_calls : int, optional
+            Number of trials for hyper-parameter optimization. Defaults to 20.
+        n_random_starts : int, optional
+            Number of trials with random initialization before being smart.
+            Defaults to 10.
+        **kwargs :
+            Optional keyword arguments passed to Binarize.apply().
+        
+        Returns
+        -------
+        best_parameters : dict
+            Best set of parameters.
+        best_metric : float (only when return_metric)
+            Best metric
+        """
 
         import skopt
         import skopt.space
@@ -120,17 +156,21 @@ class Binarize(object):
             from pyannote.metrics.detection import DetectionErrorRate
             get_metric = DetectionErrorRate
 
-        protocol = get_protocol(protocol_name, progress=False)
+        # compute predictions once and for all
+        # NOTE could multithreading speed things up? this is unclear as
+        # get_prediction is probably already multithreaded
+        predictions = [get_prediction(item) for item in items]
 
         def objective_function(params):
             onset, offset, = params
             binarizer = cls(onset=onset, offset=offset)
             metric = get_metric()
-            for item in getattr(protocol, subset)():
-                uri = get_unique_identifier(item)
+
+            # TODO multithreading (one file per thread)
+            for i, item in enumerate(items):
                 uem = get_annotated(item)
                 reference = item['annotation']
-                hypothesis = binarizer.apply(predictions[uri], dimension=1)
+                hypothesis = binarizer.apply(predictions[i], **kwargs)
                 _ = metric(reference, hypothesis, uem=uem)
             return abs(metric)
 
@@ -139,15 +179,10 @@ class Binarize(object):
 
         res = skopt.gp_minimize(
             objective_function, space,
-            n_calls=n_calls, n_random_starts=10,
-            random_state=1337, verbose=True)
+            n_calls=n_calls, n_random_starts=n_random_starts,
+            random_state=1337, verbose=False)
 
-        params = {'onset': res.x[0], 'offset': res.x[1]}
-
-        if metric:
-            return params, res.fun
-        else:
-            return params
+        return {'onset': res.x[0], 'offset': res.x[1]}, res.fun
 
     def apply(self, predictions, dimension=0):
         """
