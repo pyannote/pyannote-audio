@@ -26,7 +26,7 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
-
+import yaml
 import os.path
 import numpy as np
 
