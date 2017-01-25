@@ -34,7 +34,7 @@ Usage:
   speaker_embedding validation [--database=<db.yml> --subset=<subset>] <train_dir> <database.task.protocol>
   speaker_embedding tune [--database=<db.yml> --subset=<subset> --false-alarm=<beta>] <train_dir> <database.task.protocol>
   speaker_embedding test [--database=<db.yml> --subset=<subset> --false-alarm=<beta>] <tune_dir> <database.task.protocol>
-  speaker_embedding apply [--database=<db.yml> --subset=<subset> --step=<step> --layer=<index>] <tune_dir> <database.task.protocol>
+  speaker_embedding apply [--database=<db.yml> --subset=<subset> --step=<step> --internal=<index>] <tune_dir> <database.task.protocol>
   speaker_embedding -h | --help
   speaker_embedding --version
 
@@ -63,8 +63,9 @@ Options:
                              May be repeated.
   --false-alarm=<beta>       Set importance of false alarm with respect to
                              false rejection [default: 1.0]
-  --layer=<index>            Index of layer for which to return the activation.
-                             Defaults to final layer.
+  --internal=<index>         Index of layer for which to return the activation.
+                             Defaults (-1) to returning the activation of the
+                             final layer.
   -h --help                  Show this screen.
   --version                  Show version.
 
@@ -161,6 +162,7 @@ Configuration file:
 
 import time
 import yaml
+import h5py
 import pickle
 import os.path
 import datetime
@@ -201,8 +203,10 @@ from pyannote.metrics.plot.binary_classification import plot_distributions
 from pyannote.metrics.plot.binary_classification import plot_det_curve
 from pyannote.metrics.plot.binary_classification import plot_precision_recall_curve
 
+# embedding extraction
 from pyannote.audio.embedding.extraction import Extraction
 from pyannote.audio.embedding.aggregation import SequenceEmbeddingAggregation
+from pyannote.audio.features.utils import Precomputed
 
 # needed for register_custom_object to be called
 import pyannote.audio.embedding.models
@@ -301,9 +305,6 @@ def speaker_recognition_xp(aggregation, protocol, subset='development',
     # compare all possible (enroll, test) pairs at once
     D = cdist(enroll_fX, test_fX, metric=distance)
 
-    y_true = []
-    y_pred = []
-
     positive = D[np.where(keys == 1)]
     negative = D[np.where(keys == -1)]
     # untested = D[np.where(keys == 0)]
@@ -394,7 +395,7 @@ def validate(protocol, train_dir, validation_dir, subset='development'):
                 aggregation = SequenceEmbeddingAggregation(
                     sequence_embedding, feature_extraction,
                     duration=duration, min_duration=min_duration,
-                    step=step, layer_index=-2, batch_size=8192)
+                    step=step, internal=-2, batch_size=8192)
                 aggregation.cache_preprocessed_ = False
 
                 # compute equal error rate
@@ -689,14 +690,14 @@ def test(protocol, tune_dir, test_dir, subset, beta=1.0):
                                  fscore=actual_fscore,
                                  eer=eer))
 
-def embed(protocol, tune_dir, apply_dir, subset='test',
-          step=0.1, layer_index=None):
+
+def embed(protocol, tune_dir, apply_dir, subset='test', step=None, internal=None):
 
     os.makedirs(apply_dir)
 
     train_dir = os.path.dirname(os.path.dirname(tune_dir))
 
-    duration, min_duration, step = path_to_duration(os.path.basename(train_dir))
+    duration, _, _ = path_to_duration(os.path.basename(train_dir))
 
     config_dir = os.path.dirname(os.path.dirname(os.path.dirname(train_dir)))
     config_yml = config_dir + '/config.yml'
@@ -723,22 +724,41 @@ def embed(protocol, tune_dir, apply_dir, subset='test',
     sequence_embedding = SequenceEmbedding.from_disk(
         architecture_yml, weights_h5)
 
-    extraction = Extraction(sequence_embedding,
-                            feature_extraction,
-                            duration=duration, step=step,
-                            layer_index=layer_index)
+    dimension = sequence_embedding.embedding_.output_shape[-1]
 
-    EMBED_PKL = apply_dir + '/{uri}.pkl'
+    extraction = Extraction(sequence_embedding, feature_extraction,
+                            duration=duration, step=step, internal=internal)
 
-    for test_file in getattr(protocol, subset)():
-        embedding = extraction.apply(test_file)
+    dimension = extraction.dimension
+    sliding_window = extraction.sliding_window
 
-        uri = get_unique_identifier(test_file)
-        path = EMBED_PKL.format(uri=uri)
+    # create metadata file at root that contains
+    # sliding window and dimension information
+    path = Precomputed.get_config_path(apply_dir)
+    f = h5py.File(path)
+    f.attrs['start'] = sliding_window.start
+    f.attrs['duration'] = sliding_window.duration
+    f.attrs['step'] = sliding_window.step
+    f.attrs['dimension'] = dimension
+    f.close()
+
+    for item in getattr(protocol, subset)():
+
+        uri = get_unique_identifier(item)
+        path = Precomputed.get_path(apply_dir, item)
+
+        extracted = extraction.apply(item)
+
+        # create parent directory
         mkdir_p(os.path.dirname(path))
 
-        with open(path, 'w') as fp:
-            pickle.dump(embedding, fp)
+        f = h5py.File(path)
+        f.attrs['start'] = sliding_window.start
+        f.attrs['duration'] = sliding_window.duration
+        f.attrs['step'] = sliding_window.step
+        f.attrs['dimension'] = dimension
+        f.create_dataset('features', data=extracted.data)
+        f.close()
 
 # (5, None, None) ==> '5'
 # (5, 1, None) ==> '1-5'
@@ -840,15 +860,22 @@ if __name__ == '__main__':
 
     if arguments['apply']:
         tune_dir = arguments['<tune_dir>']
+
+        apply_dir = tune_dir + '/apply'
+
+        step = arguments['--step']
+        if step is not None:
+            step = float(step)
+            apply_dir += '/step_{step:g}'.format(step=step)
+
+        internal = arguments['--internal']
+        if internal is not None:
+            internal = int(internal)
+            apply_dir += '/internal_{internal:d}'.format(internal=internal)
+
         if subset is None:
             subset = 'test'
-        apply_dir = tune_dir + '/apply/' + arguments['<database.task.protocol>'] + '.' + subset
-        step = float(arguments['--step'])
-
-        layer_index = arguments['--layer']
-        if layer_index is not None:
-            layer_index = int(layer_index)
 
         embed(protocol, tune_dir, apply_dir,
               subset=subset, step=step,
-              layer_index=layer_index)
+              internal=internal)

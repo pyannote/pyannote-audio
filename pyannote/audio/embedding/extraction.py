@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2016 CNRS
+# Copyright (c) 2016-2017 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -26,6 +26,7 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
+import numpy as np
 from pyannote.core import SlidingWindow, SlidingWindowFeature
 from pyannote.generators.batch import FileBasedBatchGenerator
 from pyannote.generators.fragment import SlidingSegments
@@ -45,20 +46,21 @@ class Extraction(PeriodicFeaturesMixin, FileBasedBatchGenerator):
     step : float, optional
         Sliding window duration and step (in seconds).
         Defaults to 5s window with 50% step.
-    layer_index : int, optional
+    internal : int, optional
         Index of layer for which to return the activation.
-        Defaults to returning the activation of the final layer.
+        Defaults (-1) to returning the activation of the final layer.
 
     Usage
     -----
-    >>> sequence_embedding = SequenceEmbedding.from_disk('architecture_yml', 'weights.h5')
+    >>> sequence_embedding = SequenceEmbedding.from_disk('architecture_yml',
+    ...                                                  'weights.h5')
     >>> feature_extraction = YaafeFeatureExtractor(...)
     >>> extraction = Extraction(sequence_embedding, feature_extraction)
     >>> embedding = extraction.apply(current_file)
 
     """
     def __init__(self, sequence_embedding, feature_extractor,
-                 duration=1.000, step=None, layer_index=None):
+                 duration=1.000, step=None, internal=None):
 
         # feature sequence
         self.feature_extractor = feature_extractor
@@ -68,20 +70,29 @@ class Extraction(PeriodicFeaturesMixin, FileBasedBatchGenerator):
 
         # sliding window
         self.duration = duration
-        self.step = step
         generator = SlidingSegments(duration=duration, step=step, source='wav')
+        self.step = generator.step if step is None else step
 
-        self.layer_index = layer_index
+        self.internal = internal
 
-        super(Extraction, self).__init__(generator, batch_size=-1)
+        super(Extraction, self).__init__(generator, batch_size=32)
+
+    @property
+    def dimension(self):
+        internal = -1 if self.internal is None else self.internal
+        return self.sequence_embedding.embedding_.layers[internal].output_shape[1:]
+
+    @property
+    def sliding_window(self):
+        return SlidingWindow(start=0., duration=self.duration, step=self.step)
 
     def signature(self):
         shape = self.shape
         return {'type': 'sequence', 'shape': shape}
 
-    def postprocess_sequence(self, mono_batch):
+    def postprocess_sequence(self, batch):
         return self.sequence_embedding.transform(
-            mono_batch, layer_index=self.layer_index)
+            batch, internal=self.internal)
 
     def apply(self, current_file):
         """Compute embeddings on a sliding window
@@ -94,8 +105,6 @@ class Extraction(PeriodicFeaturesMixin, FileBasedBatchGenerator):
         -------
         embeddings : SlidingWindowFeature
         """
-
-        data = next(self.from_file(current_file))
-        window = SlidingWindow(duration=self.duration,
-                               step=self.step, start=0.)
-        return SlidingWindowFeature(data, window)
+        window = SlidingWindow(duration=self.duration, step=self.step, start=0.)
+        batches = [batch for batch in self.from_file(current_file)]
+        return SlidingWindowFeature(np.vstack(batches), window)

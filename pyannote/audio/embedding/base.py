@@ -212,16 +212,16 @@ class SequenceEmbedding(object):
             generator, samples_per_epoch, nb_epoch,
             verbose=1, callbacks=callbacks, max_q_size=max_q_size)
 
-    def transform(self, sequences, layer_index=None, batch_size=32):
+    def transform(self, sequences, internal=None, batch_size=32):
         """Apply pre-trained embedding to sequences
 
         Parameters
         ----------
         sequences : (n_samples, n_frames, n_features) array
             Array of sequences
-        layer_index : int, optional
+        internal : int, optional
             Index of layer for which to return the activation.
-            Defaults to returning the activation of the final layer.
+            Defaults to returning the activation of the final layer (-1).
         batch_size : int, optional
             Number of samples per batch
         verbose : int, optional
@@ -242,7 +242,7 @@ class SequenceEmbedding(object):
                     layer.output)
                 self.activation_.append(func)
 
-        if layer_index is not None:
-            return self.activation_[layer_index]([sequences, 0])
+        if internal is not None:
+            return self.activation_[internal]([sequences, 0])
 
         return self.embedding_.predict(sequences, batch_size=batch_size)

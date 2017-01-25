@@ -214,9 +214,9 @@ class SpeakerRecognitionValidation(Callback):
             duration=self.glue.duration,
             min_duration=self.glue.min_duration,
             step=self.glue.step,
-            layer_index=-2)
+            internal=-2)
 
-        # TODO / pass layer_index as parameter
+        # TODO / pass internal as parameter
         aggregation.cache_preprocessed_ = False
 
         # embed enroll and test recordings

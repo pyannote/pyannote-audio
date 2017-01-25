@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2016 CNRS
+# Copyright (c) 2016-2017 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -47,7 +47,7 @@ class SequenceEmbeddingAggregation(PeriodicFeaturesMixin,
     step : float, optional
         Sliding window duration and step (in seconds).
         Defaults to 5s window with 50% step.
-    layer_index : int, optional
+    internal : int, optional
         Index of layer for which to return the activation.
         Defaults to returning the activation of the final layer.
     batch_size : int, optional
@@ -63,7 +63,7 @@ class SequenceEmbeddingAggregation(PeriodicFeaturesMixin,
     """
     def __init__(self, sequence_embedding, feature_extractor,
                  duration=5.0, min_duration=None, step=None,
-                 layer_index=None, batch_size=32):
+                 internal=None, batch_size=32):
 
         # feature extractor (e.g. YaafeMFCC)
         self.feature_extractor = feature_extractor
@@ -78,7 +78,7 @@ class SequenceEmbeddingAggregation(PeriodicFeaturesMixin,
             duration=duration, min_duration=min_duration,
             step=step, source='annotation')
 
-        self.layer_index = layer_index
+        self.internal = internal
 
         self.apply_batch_size_ = batch_size
 
@@ -121,7 +121,7 @@ class SequenceEmbeddingAggregation(PeriodicFeaturesMixin,
         sequences, masks = mono_batch
         embeddings = self.sequence_embedding.transform(
             sequences,
-            layer_index=self.layer_index,
+            internal=self.internal,
             batch_size=self.apply_batch_size_)
         return embeddings, masks
 
