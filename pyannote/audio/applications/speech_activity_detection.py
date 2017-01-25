@@ -121,12 +121,22 @@ class SpeechActivityDetection(Application):
         space = [skopt.space.Integer(0, epoch - 1)]
 
         best_params = {}
+        best_metric = {}
 
         def objective_function(params):
 
             epoch, = params
 
-            # load model obtained after that many training epochs
+            # do not rerun everything if epoch has already been tested
+            if epoch in best_metric:
+                return best_metric[epoch]
+
+            # initialize protocol
+            protocol = get_protocol(protocol_name, progress=False,
+                                    preprocessors=self.preprocessors_)
+
+
+            # load model for epoch 'epoch'
             architecture_yml = self.ARCHITECTURE_YML.format(
                 train_dir=train_dir)
             weights_h5 = self.WEIGHTS_H5.format(
@@ -134,38 +144,29 @@ class SpeechActivityDetection(Application):
             sequence_labeling = SequenceLabeling.from_disk(
                 architecture_yml, weights_h5)
 
+            # initialize sequence labeling
             duration = self.config_['sequences']['duration']
             step = self.config_['sequences']['step']
-
-            # process each development file with that model
-            # `predictions[uri]` contains soft sequence labeling
             aggregation = SequenceLabelingAggregation(
                 sequence_labeling, self.feature_extraction_,
                 duration=duration, step=step)
-            protocol = get_protocol(protocol_name, progress=False,
-                                    preprocessors=self.preprocessors_)
-            predictions = {get_unique_identifier(item): aggregation.apply(item)
-                           for item in getattr(protocol, subset)()}
 
             # tune Binarize thresholds (onset & offset)
             # with respect to detection error rate
-            params, metric = Binarize.tune(
-                predictions, protocol_name, subset=subset, n_calls=20,
-                get_metric=DetectionErrorRate, returns_metric=True)
+            params, metric = Binarize.tune(getattr(protocol, subset)(),
+                                           aggregation.apply,
+                                           get_metric=DetectionErrorRate,
+                                           dimension=1)
 
+            # remember outcome of this trial
             best_params[epoch] = params
-
-            print(epoch, metric, params)
-
-            # TODO store every trial
+            best_metric[epoch] = metric
 
             return metric
 
         res = skopt.gp_minimize(
             objective_function, space,
-            n_calls=3, x0=[epoch - 1], verbose=True,
-            n_random_starts=1, random_state=1337)
+            n_calls=20, x0=[epoch - 1], verbose=True,
+            n_random_starts=10, random_state=1337)
 
-        best_epoch = res.x[0]
-        print(best_params[best_epoch])
-        print(res.fun)
+        return {'epoch': res.x[0]}, res.fun
