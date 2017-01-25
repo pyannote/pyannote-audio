@@ -693,7 +693,7 @@ def test(protocol, tune_dir, test_dir, subset, beta=1.0):
 
 def embed(protocol, tune_dir, apply_dir, subset='test', step=None, internal=None):
 
-    os.makedirs(apply_dir)
+    mkdir_p(apply_dir)
 
     train_dir = os.path.dirname(os.path.dirname(tune_dir))
 
