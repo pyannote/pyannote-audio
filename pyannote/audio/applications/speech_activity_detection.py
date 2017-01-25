@@ -131,8 +131,8 @@ class SpeechActivityDetection(Application):
 
             params = {'status': {'epochs': epoch, 'objective': res.fun},
                       'epoch': int(res.x[0]),
-                      'onset': float(best_binarize_params[tuple(res.x)][0]),
-                      'offset': float(best_binarize_params[tuple(res.x)][1])
+                      'onset': float(best_binarize_params[tuple(res.x)]['onset']),
+                      'offset': float(best_binarize_params[tuple(res.x)]['offset'])
                       }
 
             with open(tune_dir + '/tune.yml', 'w') as fp:
