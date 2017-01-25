@@ -140,6 +140,7 @@ class SpeechActivityDetection(Application):
 
         def objective_function(params):
 
+            params = tuple(params)
             epoch, = params
 
             # do not rerun everything if epoch has already been tested
