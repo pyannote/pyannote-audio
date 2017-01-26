@@ -133,7 +133,8 @@ class SpeechActivityDetection(Application):
 
             # TODO add pretty convergence plots...
 
-            params = {'status': {'epochs': epoch, 'objective': res.fun},
+            params = {'status': {'epochs': epoch,
+                                 'objective': float(res.fun)},
                       'epoch': int(res.x[0]),
                       'onset': float(best_binarize_params[tuple(res.x)]['onset']),
                       'offset': float(best_binarize_params[tuple(res.x)]['offset'])
