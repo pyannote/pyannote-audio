@@ -136,7 +136,7 @@ class Binarize(object):
             Defaults to 10.
         **kwargs :
             Optional keyword arguments passed to Binarize.apply().
-        
+
         Returns
         -------
         best_parameters : dict
@@ -155,6 +155,8 @@ class Binarize(object):
         if get_metric is None:
             from pyannote.metrics.detection import DetectionErrorRate
             get_metric = DetectionErrorRate
+
+        items = list(items)
 
         # compute predictions once and for all
         # NOTE could multithreading speed things up? this is unclear as
