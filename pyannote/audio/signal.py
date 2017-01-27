@@ -26,10 +26,17 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
-import scipy.signal
+import functools
+import itertools
 import numpy as np
+import scipy.signal
+from multiprocessing import cpu_count
+from multiprocessing import Pool
+
 from pyannote.core import Segment, Timeline, Annotation
 from pyannote.core.util import pairwise
+
+from pyannote.database.util import get_annotated
 
 
 class Peak(object):
@@ -91,6 +98,42 @@ class Peak(object):
         return segmentation
 
 
+def helper_binarize_tune(item_prediction,
+                         binarizer=None, metric=None, **kwargs):
+    """Apply binarizer on prediction and evaluate the result
+
+    Parameters
+    ----------
+    item : dict
+        Protocol item.
+    prediction : SlidingWindowFeature
+    binarizer : Binarize, optional
+    metric : BaseMetric, optional
+    **kwargs : dict
+        Passed to binarizer.apply()
+
+    Returns
+    -------
+    value : float
+        Metric value
+    """
+
+    item, prediction = item_prediction
+
+    uem = get_annotated(item)
+    reference = item['annotation']
+    hypothesis_timeline = binarizer.apply(prediction, **kwargs)
+
+    # convert from timeline to annnotation
+    hypothesis = Annotation(uri=hypothesis_timeline.uri)
+    for s, segment in enumerate(hypothesis_timeline):
+        hypothesis[segment] = s
+
+    result = metric(reference, hypothesis, uem=uem)
+
+    return result
+
+
 class Binarize(object):
     """Binarize predictions using onset/offset thresholding
 
@@ -115,7 +158,8 @@ class Binarize(object):
 
     @classmethod
     def tune(cls, items, get_prediction, get_metric=None,
-             n_calls=20, n_random_starts=10, **kwargs):
+             n_calls=20, n_random_starts=10, n_jobs=-1,
+             **kwargs):
         """Find best set of hyper-parameters using skopt
 
         Parameters
@@ -134,6 +178,10 @@ class Binarize(object):
         n_random_starts : int, optional
             Number of trials with random initialization before being smart.
             Defaults to 10.
+        n_jobs : int, optional
+            Number of parallel job to use. Set to 1 to not use multithreading.
+            Defaults to whichever is minimum between number of CPUs and number
+            of items.
         **kwargs :
             Optional keyword arguments passed to Binarize.apply().
 
@@ -148,32 +196,44 @@ class Binarize(object):
         import skopt
         import skopt.space
 
-        from pyannote.database.util import get_unique_identifier
-        from pyannote.database.util import get_annotated
-        from pyannote.database import get_protocol
-
         if get_metric is None:
             from pyannote.metrics.detection import DetectionErrorRate
             get_metric = DetectionErrorRate
 
+        # make sure items can be iterated over and over again
         items = list(items)
+
+        # defaults to whichever is minimum between
+        # number of CPUs and number of items
+        if n_jobs < 0:
+            n_jobs = min(cpu_count(), len(items))
+
+        if n_jobs > 1:
+            pool = Pool(n_jobs)
 
         # compute predictions once and for all
         # NOTE could multithreading speed things up? this is unclear as
-        # get_prediction is probably already multithreaded
+        # get_prediction is probably already multithreaded, or (better) even
+        # precomputed
         predictions = [get_prediction(item) for item in items]
 
         def objective_function(params):
             onset, offset, = params
             binarizer = cls(onset=onset, offset=offset)
-            metric = get_metric()
 
-            # TODO multithreading (one file per thread)
-            for i, item in enumerate(items):
-                uem = get_annotated(item)
-                reference = item['annotation']
-                hypothesis = binarizer.apply(predictions[i], **kwargs)
-                _ = metric(reference, hypothesis, uem=uem)
+            metric = get_metric()
+            process_one_file = functools.partial(helper_binarize_tune,
+                                                 binarizer=binarizer,
+                                                 metric=metric,
+                                                 **kwargs)
+
+            if n_jobs > 1:
+                results = list(pool.map(process_one_file,
+                                        zip(items, predictions)))
+            else:
+                results = [process_one_file(item_prediction)
+                           for item_prediction in zip(items, predictions)]
+
             return abs(metric)
 
         space = [skopt.space.Real(0., 1., prior='uniform'),
@@ -183,6 +243,9 @@ class Binarize(object):
             objective_function, space,
             n_calls=n_calls, n_random_starts=n_random_starts,
             random_state=1337, verbose=False)
+
+        if n_jobs > 1:
+            pool.terminate()
 
         return {'onset': res.x[0], 'offset': res.x[1]}, res.fun
 
