@@ -27,8 +27,9 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 import yaml
+import time
 import warnings
-from os.path import dirname
+from os.path import dirname, isfile
 import numpy as np
 
 from pyannote.audio.labeling.base import SequenceLabeling
@@ -57,14 +58,70 @@ import skopt.space
 from pyannote.metrics.detection import DetectionErrorRate
 
 
+def tune_binarizer(app, epoch, protocol_name, subset='development'):
+    """Tune binarizer
+
+    Parameters
+    ----------
+    app : SpeechActivityDetection
+    epoch : int
+        Epoch number.
+    protocol_name : str
+        E.g. 'Etape.SpeakerDiarization.TV'
+    subset : {'train', 'development', 'test'}, optional
+        Defaults to 'development'.
+
+    Returns
+    -------
+    params : dict
+        See Binarize.tune
+    metric : float
+        Best achieved detection error rate
+    """
+
+    # initialize protocol
+    protocol = get_protocol(protocol_name, progress=False,
+                            preprocessors=app.preprocessors_)
+
+    # load model for epoch 'epoch'
+    architecture_yml = app.ARCHITECTURE_YML.format(
+        train_dir=app.train_dir_)
+    weights_h5 = app.WEIGHTS_H5.format(
+        train_dir=app.train_dir_, epoch=epoch)
+    sequence_labeling = SequenceLabeling.from_disk(
+        architecture_yml, weights_h5)
+
+    # initialize sequence labeling
+    duration = app.config_['sequences']['duration']
+    step = app.config_['sequences']['step']
+    aggregation = SequenceLabelingAggregation(
+        sequence_labeling, app.feature_extraction_,
+        duration=duration, step=step)
+    aggregation.cache_preprocessed_ = False
+
+    # tune Binarize thresholds (onset & offset)
+    # with respect to detection error rate
+    binarize_params, metric = Binarize.tune(
+        getattr(protocol, subset)(),
+        aggregation.apply,
+        get_metric=DetectionErrorRate,
+        dimension=1)
+
+    return binarize_params, metric
+
+
 class SpeechActivityDetection(Application):
 
     TRAIN_DIR = '{experiment_dir}/train/{protocol}.{subset}'
     TUNE_DIR = '{train_dir}/tune/{protocol}.{subset}'
     APPLY_DIR = '{tune_dir}/apply'
-    TUNE_YML = '{tune_dir}/tune.yml'
 
-    HARD_JSON = '{apply_dir}/{uri}.json'
+    VALIDATE_TXT = '{train_dir}/validate/{protocol}.{subset}.txt'
+    VALIDATE_PNG = '{train_dir}/validate/{protocol}.{subset}.png'
+
+    TUNE_YML = '{tune_dir}/tune.yml'
+    TUNE_PNG = '{tune_dir}/tune.png'
+
     HARD_MDTM = '{apply_dir}/{protocol}.{subset}.mdtm'
 
     @classmethod
@@ -134,6 +191,66 @@ class SpeechActivityDetection(Application):
 
         return labeling
 
+    def validate(self, protocol_name, subset='development'):
+
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+
+        validation_txt = self.VALIDATE_TXT.format(
+            train_dir=self.train_dir_,
+            protocol=protocol_name,
+            subset=subset)
+
+        validation_png = self.VALIDATE_PNG.format(
+            train_dir=self.train_dir_,
+            protocol=protocol_name,
+            subset=subset)
+
+        mkdir_p(dirname(validation_txt))
+
+        TEMPLATE = '{epoch:04d} {onset:.3f} {offset:.3f} {metric:.6f}\n'
+        metrics = []
+
+        with open(validation_txt, mode='w') as fp:
+
+            epoch = 0
+            while epoch < 1000:
+
+                # wait until weight file is available
+                weights_h5 = self.WEIGHTS_H5.format(
+                    train_dir=self.train_dir_,
+                    epoch=epoch)
+                if not isfile(weights_h5):
+                    time.sleep(60)
+                    continue
+
+                params, metric = tune_binarizer(
+                    self, epoch, protocol_name, subset=subset)
+
+                fp.write(TEMPLATE.format(epoch=epoch, metric=metric, **params))
+                fp.flush()
+
+                metrics.append(metric)
+
+                # upldate plot metric = f(epoch)
+                best_epoch = np.argmin(metrics)
+                best_metric = np.min(metrics)
+                fig = plt.figure()
+                plt.plot(metrics, 'b')
+                plt.plot([best_epoch], [best_metric], 'bo')
+                plt.plot([0, epoch], [best_metric, best_metric], 'k--')
+                plt.grid(True)
+                plt.xlabel('epoch')
+                TITLE = '{protocol}.{subset} | DER = {best_metric:.5g} @ #{best_epoch:d}'
+                title = TITLE.format(protocol=protocol_name,
+                                     subset=subset,
+                                     best_metric=best_metric,
+                                     best_epoch=best_epoch)
+                plt.title(title)
+                plt.tight_layout()
+                plt.savefig(validation_png, dpi=150)
+                plt.close(fig)
 
     def tune(self, protocol_name, subset='development'):
 
@@ -150,10 +267,21 @@ class SpeechActivityDetection(Application):
         best_binarize_params = {}
         best_metric = {}
 
+        tune_yml = self.TUNE_YML.format(tune_dir=tune_dir)
+        tune_png = self.TUNE_PNG.format(tune_dir=tune_dir)
+
         def callback(res):
 
-            # TODO add pretty convergence plots...
+            # plot convergence
+            import matplotlib
+            matplotlib.use('Agg')
+            import matplotlib.pyplot as plt
+            import skopt.plots
+            _ = skopt.plots.plot_convergence(res)
+            plt.savefig(tune_png, dpi=150)
+            plt.close()
 
+            # save state
             params = {'status': {'epochs': epoch,
                                  'objective': float(res.fun)},
                       'epoch': int(res.x[0]),
@@ -161,7 +289,7 @@ class SpeechActivityDetection(Application):
                       'offset': float(best_binarize_params[tuple(res.x)]['offset'])
                       }
 
-            with open(tune_dir + '/tune.yml', 'w') as fp:
+            with open(tune_yml, 'w') as fp:
                 yaml.dump(params, fp, default_flow_style=False)
 
         def objective_function(params):
@@ -173,32 +301,9 @@ class SpeechActivityDetection(Application):
             if params in best_metric:
                 return best_metric[params]
 
-            # initialize protocol
-            protocol = get_protocol(protocol_name, progress=False,
-                                    preprocessors=self.preprocessors_)
-
-            # load model for epoch 'epoch'
-            architecture_yml = self.ARCHITECTURE_YML.format(
-                train_dir=self.train_dir_)
-            weights_h5 = self.WEIGHTS_H5.format(
-                train_dir=self.train_dir_, epoch=epoch)
-            sequence_labeling = SequenceLabeling.from_disk(
-                architecture_yml, weights_h5)
-
-            # initialize sequence labeling
-            duration = self.config_['sequences']['duration']
-            step = self.config_['sequences']['step']
-            aggregation = SequenceLabelingAggregation(
-                sequence_labeling, self.feature_extraction_,
-                duration=duration, step=step)
-
-            # tune Binarize thresholds (onset & offset)
-            # with respect to detection error rate
-            binarize_params, metric = Binarize.tune(
-                getattr(protocol, subset)(),
-                aggregation.apply,
-                get_metric=DetectionErrorRate,
-                dimension=1)
+            # tune binarizer
+            binarize_params, metric = tune_binarizer(
+                self, epoch, protocol_name, subset=subset)
 
             # remember outcome of this trial
             best_binarize_params[params] = binarize_params
@@ -290,9 +395,3 @@ class SpeechActivityDetection(Application):
                 segmentation = binarize.apply(prediction, dimension=1)
                 writer.write(segmentation.to_annotation(),
                              f=gp, uri=item['uri'], modality='speaker')
-
-                uri = get_unique_identifier(item)
-                path = self.HARD_JSON.format(apply_dir=apply_dir, uri=uri)
-                mkdir_p(dirname(path))
-                with open(path, mode='w') as fp:
-                    pyannote.core.json.dump(segmentation, fp)
