@@ -37,10 +37,11 @@ setup(
     namespace_packages=['pyannote'],
     packages=find_packages(),
     install_requires=[
-        'pyannote.core >= 0.11.1',
+        'pyannote.core >= 0.12',
         'pyannote.metrics >= 0.11',
         'pyannote.generators >= 0.9.1',
         'pyannote.database >= 0.11.1',
+        'pyannote.parser >= 0.6.2',
         'pysndfile >= 0.2.11',
         'keras >= 1.2.0',
         'theano >= 0.8.2',

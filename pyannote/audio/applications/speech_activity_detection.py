@@ -27,7 +27,8 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 import yaml
-import os.path
+import warnings
+from os.path import dirname
 import numpy as np
 
 from pyannote.audio.labeling.base import SequenceLabeling
@@ -41,7 +42,13 @@ from pyannote.database.util import get_unique_identifier
 from pyannote.database.util import get_annotated
 from pyannote.database import get_protocol
 
+from pyannote.parser import MDTMParser
+
 from pyannote.audio.util import mkdir_p
+import pyannote.core.json
+
+from pyannote.audio.features.utils import Precomputed
+import h5py
 
 from .base import Application
 
@@ -54,12 +61,25 @@ class SpeechActivityDetection(Application):
 
     TRAIN_DIR = '{experiment_dir}/train/{protocol}.{subset}'
     TUNE_DIR = '{train_dir}/tune/{protocol}.{subset}'
+    APPLY_DIR = '{tune_dir}/apply'
+    TUNE_YML = '{tune_dir}/tune.yml'
+
+    HARD_JSON = '{apply_dir}/{uri}.json'
+    HARD_MDTM = '{apply_dir}/{protocol}.{subset}.mdtm'
 
     @classmethod
     def from_train_dir(cls, train_dir, db_yml=None):
-        experiment_dir = os.path.dirname(os.path.dirname(train_dir))
+        experiment_dir = dirname(dirname(train_dir))
         speech_activity_detection = cls(experiment_dir, db_yml=db_yml)
         speech_activity_detection.train_dir_ = train_dir
+        return speech_activity_detection
+
+    @classmethod
+    def from_tune_dir(cls, tune_dir, db_yml=None):
+        train_dir = dirname(dirname(tune_dir))
+        speech_activity_detection = cls.from_train_dir(train_dir,
+                                                       db_yml=db_yml)
+        speech_activity_detection.tune_dir_ = tune_dir
         return speech_activity_detection
 
     def __init__(self, experiment_dir, db_yml=None):
@@ -113,6 +133,7 @@ class SpeechActivityDetection(Application):
                      optimizer=SSMORMS3(), log_dir=train_dir)
 
         return labeling
+
 
     def tune(self, protocol_name, subset='development'):
 
@@ -190,6 +211,88 @@ class SpeechActivityDetection(Application):
             n_calls=20, n_random_starts=10, x0=[epoch - 1],
             verbose=True, callback=callback)
 
-        tune_dir + '/tune.yml'
+        # TODO tune Binarize a bit longer with the best epoch
 
         return {'epoch': res.x[0]}, res.fun
+
+    def apply(self, protocol_name, subset='test'):
+
+        apply_dir = self.APPLY_DIR.format(tune_dir=self.tune_dir_)
+
+        mkdir_p(apply_dir)
+
+        # load tuning results
+        tune_yml = self.TUNE_YML.format(tune_dir=self.tune_dir_)
+        with open(tune_yml, 'r') as fp:
+            self.tune_ = yaml.load(fp)
+
+        # load model for epoch 'epoch'
+        epoch = self.tune_['epoch']
+        architecture_yml = self.ARCHITECTURE_YML.format(
+            train_dir=self.train_dir_)
+        weights_h5 = self.WEIGHTS_H5.format(
+            train_dir=self.train_dir_, epoch=epoch)
+        sequence_labeling = SequenceLabeling.from_disk(
+            architecture_yml, weights_h5)
+
+        # initialize sequence labeling
+        duration = self.config_['sequences']['duration']
+        step = self.config_['sequences']['step']
+        aggregation = SequenceLabelingAggregation(
+            sequence_labeling, self.feature_extraction_,
+            duration=duration, step=step)
+
+        # initialize protocol
+        protocol = get_protocol(protocol_name, progress=True,
+                                preprocessors=self.preprocessors_)
+
+        for i, item in enumerate(getattr(protocol, subset)()):
+
+            prediction = aggregation.apply(item)
+
+            if i == 0:
+                # create metadata file at root that contains
+                # sliding window and dimension information
+                path = Precomputed.get_config_path(apply_dir)
+                f = h5py.File(path)
+                f.attrs['start'] = prediction.sliding_window.start
+                f.attrs['duration'] = prediction.sliding_window.duration
+                f.attrs['step'] = prediction.sliding_window.step
+                f.attrs['dimension'] = 2
+                f.close()
+
+            path = Precomputed.get_path(apply_dir, item)
+
+            # create parent directory
+            mkdir_p(dirname(path))
+
+            f = h5py.File(path)
+            f.attrs['start'] = prediction.sliding_window.start
+            f.attrs['duration'] = prediction.sliding_window.duration
+            f.attrs['step'] = prediction.sliding_window.step
+            f.attrs['dimension'] = 2
+            f.create_dataset('features', data=prediction.data)
+            f.close()
+
+        # initialize binarizer
+        onset = self.tune_['onset']
+        offset = self.tune_['offset']
+        binarize = Binarize(onset=onset, offset=offset)
+
+        precomputed = Precomputed(root_dir=apply_dir)
+
+        writer = MDTMParser()
+        path = self.HARD_MDTM.format(apply_dir=apply_dir, protocol=protocol_name,
+                                subset=subset)
+        with open(path, mode='w') as gp:
+            for item in getattr(protocol, subset)():
+                prediction = precomputed(item)
+                segmentation = binarize.apply(prediction, dimension=1)
+                writer.write(segmentation.to_annotation(),
+                             f=gp, uri=item['uri'], modality='speaker')
+
+                uri = get_unique_identifier(item)
+                path = self.HARD_JSON.format(apply_dir=apply_dir, uri=uri)
+                mkdir_p(dirname(path))
+                with open(path, mode='w') as fp:
+                    pyannote.core.json.dump(segmentation, fp)
