@@ -53,12 +53,13 @@ class YaafeFeatureExtractor(object):
 
     """
 
-    def __init__(self, duration=0.025, step=0.010):
+    def __init__(self, duration=0.025, step=0.010, num_concatenate=1):
 
         super(YaafeFeatureExtractor, self).__init__()
 
         self.duration = duration
         self.step = step
+        self.num_concatenate = num_concatenate
 
         start = -0.5 * self.duration
         self.sliding_window_ = SlidingWindow(start=start,
@@ -116,6 +117,13 @@ class YaafeFeatureExtractor(object):
         # --- extract features
         features = self.engine_.processAudio(y)
         data = np.hstack([features[name] for name, _ in self.definition()])
+        a,b = data.shape
+        num_padding = self.num_concatenate//2
+        if self.num_concatenate % 2 == 0:
+            expanded_data = np.concatenate((np.zeros((num_padding,b))+data[0],data,np.zeros((num_padding-1,b))+data[-1]))
+        else:
+            expanded_data = np.concatenate((np.zeros((num_padding,b))+data[0],data,np.zeros((num_padding,b))+data[-1]))
+        data = np.lib.stride_tricks.as_strided(expanded_data, shape=(a, b*self.num_concatenate), strides=data.strides)        
 
         self.engine_.reset()
 
@@ -219,7 +227,7 @@ class YaafeMFCC(YaafeFeatureExtractor):
     """
 
     def __init__(
-        self, duration=0.025, step=0.010,
+        self, duration=0.025, step=0.010, num_concatenate=1,
         e=True, coefs=11, De=False, DDe=False, D=False, DD=False,
     ):
 
@@ -230,7 +238,7 @@ class YaafeMFCC(YaafeFeatureExtractor):
         self.D = D
         self.DD = DD
 
-        super(YaafeMFCC, self).__init__(duration=duration, step=step)
+        super(YaafeMFCC, self).__init__(duration=duration, step=step, num_concatenate=num_concatenate)
 
     def dimension(self):
 
@@ -242,7 +250,7 @@ class YaafeMFCC(YaafeFeatureExtractor):
         n_features += self.coefs * self.D
         n_features += self.coefs * self.DD
 
-        return n_features
+        return n_features*self.num_concatenate
 
     def definition(self):
 
