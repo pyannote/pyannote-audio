@@ -54,7 +54,7 @@ class StackedLSTM(object):
     n_classes : int, optional
         Number of output classes. Defaults to 2 (binary classification).
     """
-    def __init__(self, lstm=[16,], bidirectional=True,
+    def __init__(self, lstm=[16,], bidirectional='concat',
                  mlp=[16,], n_classes=2):
 
         super(StackedLSTM, self).__init__()
