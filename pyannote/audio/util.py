@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2014-2016 CNRS
+# Copyright (c) 2016 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -26,7 +26,29 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
+import os
+import errno
 
-from .legacy_triplet_loss.glue import LegacyTripletLoss
-from .triplet_loss.glue import TripletLoss
-from .center_loss.glue import CenterLoss
+
+def mkdir_p(path):
+    """Create directory and all its parents if they do not exist
+
+    This is the equivalent of Unix 'mkdir -p path'
+
+    Parameter
+    ---------
+    path : str
+        Path to new directory.
+
+    Reference
+    ---------
+    http://stackoverflow.com/questions/600268/mkdir-p-functionality-in-python
+    """
+
+    try:
+        os.makedirs(path)
+    except OSError as exc:  # Python >2.5
+        if exc.errno == errno.EEXIST and os.path.isdir(path):
+            pass
+        else:
+            raise exc

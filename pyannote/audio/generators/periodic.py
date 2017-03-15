@@ -27,15 +27,29 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 
-from scipy.stats import zscore
+from cachetools import LRUCache
+CACHE_MAXSIZE = 12
+
+from pyannote.audio.features.utils import PyannoteFeatureExtractionError
 
 
-class YaafeMixin:
+class PeriodicFeaturesMixin:
 
-    def get_shape(self):
-        return self.yaafe_get_shape()
+    """
+    cache_preprocessed_ : bool
+        When True (default), features are computed only once for the same
+        file, and stored in memory. When False, features **might** be
+        recomputed (no warranty) computed when the same file is processed
+        again.
+    preprocessed_ : dict or LRUCache
+    """
 
-    def yaafe_get_shape(self):
+
+    @property
+    def shape(self):
+        return self.periodic_get_shape()
+
+    def periodic_get_shape(self):
         n_samples = self.feature_extractor.sliding_window().samples(
             self.duration, mode='center')
         dimension = self.feature_extractor.dimension()
@@ -43,19 +57,41 @@ class YaafeMixin:
 
     # defaults to features pre-computing
     def preprocess(self, current_file, identifier=None):
-        return self.yaafe_preprocess(
+        return self.periodic_preprocess(
             current_file, identifier=identifier)
 
-    def yaafe_preprocess(self, current_file, identifier=None):
+    def periodic_preprocess(self, current_file, identifier=None):
+        """
+        Parameters
+        ----------
+        current_file :
+        identifier :
+            Unique file identifier.
+        """
+
+        if not hasattr(self, 'cache_preprocessed_'):
+            self.cache_preprocessed_ = True
 
         if not hasattr(self, 'preprocessed_'):
             self.preprocessed_ = {}
+            self.preprocessed_['X'] = \
+                {} if self.cache_preprocessed_ else LRUCache(maxsize=CACHE_MAXSIZE)
 
-        if identifier in self.preprocessed_.setdefault('X', {}):
+        if identifier in self.preprocessed_['X']:
             return current_file
 
-        wav = current_file['medium']['wav']
-        features = self.feature_extractor(wav)
+        wav = current_file['wav']
+
+        try:
+            features = self.feature_extractor(current_file)
+
+        except Exception as e:
+            msg = 'Cannot extract features from "{wav}".'
+            raise PyannoteFeatureExtractionError(msg.format(wav=wav))
+
+        if features is None:
+            msg = 'Cannot extract features from "{wav}".'
+            raise PyannoteFeatureExtractionError(msg.format(wav=wav))
 
         self.preprocessed_['X'][identifier] = features
 
@@ -63,16 +99,11 @@ class YaafeMixin:
 
     # defaults to extracting frames centered on segment
     def process_segment(self, segment, signature=None, identifier=None):
-        return self.yaafe_process_segment(
+        return self.periodic_process_segment(
             segment, signature=signature, identifier=identifier)
 
-    def yaafe_process_segment(self, segment, signature=None, identifier=None):
-
+    def periodic_process_segment(self, segment, signature=None,
+                                 identifier=None):
         duration = signature.get('duration', None)
-
-        X = self.preprocessed_['X'][identifier].crop(
+        return self.preprocessed_['X'][identifier].crop(
             segment, mode='center', fixed=duration)
-        if self.normalize:
-            X = zscore(X, axis=0)
-
-        return X

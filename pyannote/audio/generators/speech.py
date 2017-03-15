@@ -26,7 +26,7 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
-from .yaafe import YaafeMixin
+from pyannote.audio.generators.periodic import PeriodicFeaturesMixin
 from pyannote.core import SlidingWindowFeature
 from pyannote.generators.fragment import SlidingSegments
 from pyannote.generators.batch import FileBasedBatchGenerator
@@ -34,16 +34,15 @@ from scipy.stats import zscore
 import numpy as np
 
 
-class SpeechActivityDetectionBatchGenerator(YaafeMixin,
+class SpeechActivityDetectionBatchGenerator(PeriodicFeaturesMixin,
                                             FileBasedBatchGenerator):
 
-    def __init__(self, feature_extractor, duration=3.2, normalize=False,
-                 step=0.8, batch_size=32):
+    def __init__(self, feature_extractor,
+                 duration=3.2, step=0.8, batch_size=32):
 
         self.feature_extractor = feature_extractor
         self.duration = duration
         self.step = step
-        self.normalize = normalize
 
         segment_generator = SlidingSegments(duration=duration,
                                             step=step,
@@ -53,7 +52,7 @@ class SpeechActivityDetectionBatchGenerator(YaafeMixin,
 
     def signature(self):
 
-        shape = self.yaafe_get_shape()
+        shape = self.shape
         dimension = 2
 
         return [
@@ -64,30 +63,36 @@ class SpeechActivityDetectionBatchGenerator(YaafeMixin,
     def preprocess(self, current_file, identifier=None):
         """Pre-compute file-wise X and y"""
 
-        current_file = self.yaafe_preprocess(
+        # extract features for the whole file
+        # (if it has not been done already)
+        current_file = self.periodic_preprocess(
             current_file, identifier=identifier)
 
+        # if labels have already been extracted, do nothing
         if identifier in self.preprocessed_.setdefault('y', {}):
             return current_file
 
+        # get features as pyannote.core.SlidingWindowFeature instance
         X = self.preprocessed_['X'][identifier]
         sw = X.sliding_window
         n_samples = X.getNumber()
 
-        y = np.zeros((n_samples + 1, 2), dtype=np.int8)
+        y = np.zeros((n_samples + 4, 2), dtype=np.int8)
         # [0,1] ==> speech / [1, 0] ==> non speech / [0, 0] ==> unknown
 
-        annotated = current_file['annotated']
+        annotated = current_file.get('annotated', X.getExtent())
         annotation = current_file['annotation']
 
         coverage = annotation.get_timeline().coverage()
 
-        for gap in coverage.gaps(annotated):
-            indices = sw.crop(gap, mode='loose')
+        # iterate over non-speech regions
+        for non_speech in coverage.gaps(annotated):
+            indices = sw.crop(non_speech, mode='loose')
             y[indices, 0] = 1
 
-        for segment in coverage:
-            indices = sw.crop(segment, mode='loose')
+        # iterate over speech regions
+        for speech in coverage:
+            indices = sw.crop(speech, mode='loose')
             y[indices, 1] = 1
 
         y = SlidingWindowFeature(y[:-1], sw)
@@ -99,7 +104,7 @@ class SpeechActivityDetectionBatchGenerator(YaafeMixin,
     def process_segment(self, segment, signature=None, identifier=None):
         """Extract X and y subsequences"""
 
-        X = self.yaafe_process_segment(
+        X = self.periodic_process_segment(
             segment, signature=signature, identifier=identifier)
 
         duration = signature.get('duration', None)
@@ -110,16 +115,15 @@ class SpeechActivityDetectionBatchGenerator(YaafeMixin,
         return [X, y]
 
 
-class OverlappingSpeechDetectionBatchGenerator(YaafeMixin,
+class OverlappingSpeechDetectionBatchGenerator(PeriodicFeaturesMixin,
                                                FileBasedBatchGenerator):
 
-    def __init__(self, feature_extractor, duration=3.2, normalize=False,
+    def __init__(self, feature_extractor, duration=3.2,
                  step=0.8, batch_size=32):
 
         self.feature_extractor = feature_extractor
         self.duration = duration
         self.step = step
-        self.normalize = normalize
 
         # source = 'coverage' ensures only speech regions are covered
         segment_generator = SlidingSegments(duration=duration,
@@ -130,7 +134,7 @@ class OverlappingSpeechDetectionBatchGenerator(YaafeMixin,
 
     def signature(self):
 
-        shape = self.yaafe_get_shape()
+        shape = self.shape
         dimension = 2
 
         return [
@@ -141,7 +145,7 @@ class OverlappingSpeechDetectionBatchGenerator(YaafeMixin,
     def preprocess(self, current_file, identifier=None):
         """Pre-compute file-wise X and y"""
 
-        current_file = self.yaafe_preprocess(
+        current_file = self.periodic_preprocess(
             current_file, identifier=identifier)
 
         if identifier in self.preprocessed_.setdefault('y', {}):
@@ -183,7 +187,7 @@ class OverlappingSpeechDetectionBatchGenerator(YaafeMixin,
     def process_segment(self, segment, signature=None, identifier=None):
         """Extract X and y subsequences"""
 
-        X = self.yaafe_process_segment(
+        X = self.periodic_process_segment(
             segment, signature=signature, identifier=identifier)
 
         duration = signature.get('duration', None)

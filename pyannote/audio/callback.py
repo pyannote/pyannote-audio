@@ -49,24 +49,35 @@ class LoggingCallback(Callback):
     log_dir : str
     log : list of tuples, optional
         Defaults to [('train', 'loss')]
-    get_model : func
+    extract_embedding : func
         Function that takes Keras model as input and returns the actual model.
         This is useful for embedding that are not directly optimized by Keras.
         Defaults to identity function.
     """
 
-    def __init__(self, log_dir, log=None, get_model=None):
+    def __init__(self, log_dir, log=None, extract_embedding=None):
         super(LoggingCallback, self).__init__()
 
         # make sure path is absolute
         self.log_dir = os.path.realpath(log_dir)
 
-        if get_model is None:
-            get_model = lambda model: model
-        self.get_model = get_model
+        if extract_embedding is None:
+            extract_embedding = lambda model: model
+        self.extract_embedding = extract_embedding
 
         # create log_dir directory (and subdirectory)
-        os.makedirs(self.log_dir)
+        try:
+            os.makedirs(self.log_dir)
+        except OSError as e:
+            # this happens when log_dir already exists.
+            # we need this **not** to fail because this directory
+            # may contain pre-computed (cached) sequences
+            pass
+
+        # this will fail if the directory already exists
+        # and this is OK  because 'weights' directory
+        # usually contains the output of very long computations
+        # and you do not want to erase them by mistake :/
         os.makedirs(self.log_dir + '/weights')
 
         if log is None:
@@ -106,10 +117,18 @@ class LoggingCallback(Callback):
             return
 
         architecture = self.log_dir + '/architecture.yml'
-        model = self.get_model(self.model)
+        model = self.extract_embedding(self.model)
         yaml_string = model.to_yaml()
         with open(architecture, 'w') as fp:
             fp.write(yaml_string)
+
+        # save initial model
+        current_weights = self.log_dir + '/weights/init.h5'
+        try:
+            model = self.extract_embedding(self.model)
+            model.save_weights(current_weights, overwrite=True)
+        except Exception as e:
+            pass
 
     def on_epoch_end(self, epoch, logs={}):
         """Save weights (and various curves) after each epoch"""
@@ -123,7 +142,7 @@ class LoggingCallback(Callback):
 
         # save current weights
         try:
-            model = self.get_model(self.model)
+            model = self.extract_embedding(self.model)
             model.save_weights(current_weights, overwrite=True)
         except Exception as e:
             pass

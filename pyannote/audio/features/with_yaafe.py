@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2014-2016 CNRS
+# Copyright (c) 2014-2017 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -28,40 +28,15 @@
 
 from __future__ import unicode_literals
 
+import warnings
 import numpy as np
 import yaafelib
-import scipy.io.wavfile
+import pysndfile.sndio
 
 from pyannote.core.segment import SlidingWindow
 from pyannote.core.feature import SlidingWindowFeature
-
-
-class YaafeFrame(SlidingWindow):
-    """Yaafe frames
-
-    Parameters
-    ----------
-    blockSize : int, optional
-        Window size (in number of samples). Default is 512.
-    stepSize : int, optional
-        Step size (in number of samples). Default is 256.
-    sampleRate : int, optional
-        Sample rate (number of samples per second). Default is 16000.
-
-    References
-    ----------
-    http://yaafe.sourceforge.net/manual/quickstart.html
-
-    """
-    def __init__(self, blockSize=512, stepSize=256, sampleRate=16000):
-
-        duration = 1. * blockSize / sampleRate
-        step = 1. * stepSize / sampleRate
-        start = -0.5 * duration
-
-        super(YaafeFrame, self).__init__(
-            duration=duration, step=step, start=start
-        )
+from pyannote.audio.features.utils import PyannoteFeatureExtractionError
+from pyannote.database.util import get_unique_identifier
 
 
 class YaafeFeatureExtractor(object):
@@ -75,37 +50,38 @@ class YaafeFeatureExtractor(object):
         Defaults to 512.
     step_size : int, optional
         Defaults to 256.
+    stack : int, optional
+        Stack `stack` consecutive features. Defaults to 1.
 
     """
 
-    def __init__(
-        self, sample_rate=16000, block_size=512, step_size=256
-    ):
+    def __init__(self, duration=0.025, step=0.010, stack=1):
 
         super(YaafeFeatureExtractor, self).__init__()
 
-        self.sample_rate = sample_rate
-        self.block_size = block_size
-        self.step_size = step_size
+        self.duration = duration
+        self.step = step
+        self.stack = stack
 
-    def extract(self, wav):
-        return self.__call__(wav)
+        start = -0.5 * self.duration
+        self.sliding_window_ = SlidingWindow(start=start,
+                                             duration=self.duration,
+                                             step=self.step)
+
+        self.engine_ = yaafelib.Engine()
 
     def dimension(self):
         raise NotImplementedError('')
 
     def sliding_window(self):
-        return YaafeFrame(blockSize=self.block_size,
-                          stepSize=self.step_size,
-                          sampleRate=self.sample_rate)
+        return self.sliding_window_
 
-    def __call__(self, wav):
+    def __call__(self, item):
         """Extract features
 
         Parameters
         ----------
-        wav : string
-            Path to wav file.
+        item : dict
 
         Returns
         -------
@@ -113,50 +89,77 @@ class YaafeFeatureExtractor(object):
 
         """
 
-        definition = self.definition()
+        # --- load audio file
+        try:
+            wav = item['wav']
+            y, sample_rate, encoding = pysndfile.sndio.read(wav)
+        except IOError as e:
+            raise PyannoteFeatureExtractionError(e)
 
-        # --- prepare the feature plan
-        feature_plan = yaafelib.FeaturePlan(sample_rate=self.sample_rate)
-        for name, recipe in definition:
-            assert feature_plan.addFeature(
-                "{name}: {recipe}".format(name=name, recipe=recipe))
+        # --- update data_flow every time sample rate changes
+        if not hasattr(self, 'sample_rate_') or self.sample_rate_ != sample_rate:
+            self.sample_rate_ = sample_rate
+            feature_plan = yaafelib.FeaturePlan(sample_rate=self.sample_rate_)
+            for name, recipe in self.definition():
+                assert feature_plan.addFeature(
+                    "{name}: {recipe}".format(name=name, recipe=recipe))
+            data_flow = feature_plan.getDataFlow()
+            self.engine_.load(data_flow)
 
-        # --- prepare the Yaafe engine
-        data_flow = feature_plan.getDataFlow()
+        # reshape before selecting channel
+        if len(y.shape) < 2:
+            y = y.reshape((-1, 1))
 
-        engine = yaafelib.Engine()
-        engine.load(data_flow)
+        channel = item.get('channel', 1)
+        y = y[:, channel - 1]
 
-        sample_rate, raw_audio = scipy.io.wavfile.read(wav)
-        assert sample_rate == self.sample_rate, "sample rate mismatch"
+        # Yaafe needs this: float64, column-contiguous, 2-dimensional
+        y = np.array(y, dtype=np.float64, order='C').reshape((1, -1))
 
-        audio = np.array(raw_audio, dtype=np.float64, order='C').reshape(1, -1)
+        # --- extract features
+        features = self.engine_.processAudio(y)
+        data = np.hstack([features[name] for name, _ in self.definition()])
 
-        features = engine.processAudio(audio)
-        data = np.hstack([features[name] for name, _ in definition])
+        # --- stack features
+        n_samples, n_features = data.shape
+        zero_padding = self.stack // 2
+        if self.stack % 2 == 0:
+            expanded_data = np.concatenate(
+                (np.zeros((zero_padding, n_features)) + data[0],
+                data,
+                np.zeros((zero_padding - 1, n_features)) + data[-1]))
+        else:
+            expanded_data = np.concatenate((
+                np.zeros((zero_padding, n_features)) + data[0],
+                data,
+                np.zeros((zero_padding, n_features)) + data[-1]))
 
-        sliding_window = YaafeFrame(
-            blockSize=self.block_size, stepSize=self.step_size,
-            sampleRate=self.sample_rate)
+        data = np.lib.stride_tricks.as_strided(
+            expanded_data,
+            shape=(n_samples, n_features * self.stack),
+            strides=data.strides)
 
-        return SlidingWindowFeature(data, sliding_window)
+        self.engine_.reset()
+
+        # --- return as SlidingWindowFeature
+        if np.any(np.isnan(data)):
+            uri = get_unique_identifier(item)
+            msg = 'Features extracted from "{uri}" contain NaNs.'
+            warnings.warn(msg.format(uri=uri))
+
+        return SlidingWindowFeature(data, self.sliding_window_)
 
 
 class YaafeCompound(YaafeFeatureExtractor):
 
-    def __init__(
-        self, extractors,
-        sample_rate=16000, block_size=512, step_size=256
-    ):
+    def __init__(self, extractors, duration=0.025, step=0.010, stack=1):
 
-        assert all(e.sample_rate == sample_rate for e in extractors)
-        assert all(e.block_size == block_size for e in extractors)
-        assert all(e.step_size == step_size for e in extractors)
+        assert all(e.duration == duration for e in extractors)
+        assert all(e.step == step for e in extractors)
+        assert all(e.stack == stack for e in extractors)
 
-        super(YaafeCompound, self).__init__(
-            sample_rate=sample_rate,
-            block_size=block_size,
-            step_size=step_size)
+        super(YaafeCompound, self).__init__(duration=duration, step=step,
+                                            stack=stack)
 
         self.extractors = extractors
 
@@ -174,13 +177,16 @@ class YaafeCompound(YaafeFeatureExtractor):
 class YaafeZCR(YaafeFeatureExtractor):
 
     def dimension(self):
-        return 1
+        return self.stack
 
     def definition(self):
 
+        blockSize = int(self.sample_rate_ * self.duration)
+        stepSize = int(self.sample_rate_ * self.step)
+
         d = [(
             "zcr",
-            "ZCR blockSize=%d stepSize=%d" % (self.block_size, self.step_size)
+            "ZCR blockSize=%d stepSize=%d" % (blockSize, stepSize)
         )]
 
         return d
@@ -208,12 +214,10 @@ class YaafeMFCC(YaafeFeatureExtractor):
     Parameters
     ----------
 
-    sample_rate : int, optional
-        Defaults to 16000 (i.e. 16kHz)
-    block_size : int, optional
-        Defaults to 512.
-    step_size : int, optional
-        Defaults to 256.
+    duration : float, optional
+        Defaults to 0.025.
+    step : float, optional
+        Defaults to 0.010.
 
     e : bool, optional
         Energy. Defaults to True.
@@ -239,15 +243,9 @@ class YaafeMFCC(YaafeFeatureExtractor):
     """
 
     def __init__(
-        self, sample_rate=16000, block_size=512, step_size=256,
+        self, duration=0.025, step=0.010, stack=1,
         e=True, coefs=11, De=False, DDe=False, D=False, DD=False,
     ):
-
-        super(YaafeMFCC, self).__init__(
-            sample_rate=sample_rate,
-            block_size=block_size,
-            step_size=step_size
-        )
 
         self.e = e
         self.coefs = coefs
@@ -255,6 +253,8 @@ class YaafeMFCC(YaafeFeatureExtractor):
         self.DDe = DDe
         self.D = D
         self.DD = DD
+
+        super(YaafeMFCC, self).__init__(duration=duration, step=step, stack=stack)
 
     def dimension(self):
 
@@ -266,9 +266,12 @@ class YaafeMFCC(YaafeFeatureExtractor):
         n_features += self.coefs * self.D
         n_features += self.coefs * self.DD
 
-        return n_features
+        return n_features * self.stack
 
     def definition(self):
+
+        blockSize = int(self.sample_rate_ * self.duration)
+        stepSize = int(self.sample_rate_ * self.step)
 
         d = []
 
@@ -281,7 +284,7 @@ class YaafeMFCC(YaafeFeatureExtractor):
             "blockSize=%d stepSize=%d" % (
                 0 if self.e else 1,
                 self.coefs + self.e * 1,
-                self.block_size, self.step_size
+                blockSize, stepSize
             )))
 
         # --- 1st order derivatives
@@ -292,7 +295,7 @@ class YaafeMFCC(YaafeFeatureExtractor):
                 "blockSize=%d stepSize=%d > Derivate DOrder=1" % (
                     0 if self.De else 1,
                     self.D * self.coefs + self.De * 1,
-                    self.block_size, self.step_size
+                    blockSize, stepSize
                 )))
 
         # --- 2nd order derivatives
@@ -303,7 +306,7 @@ class YaafeMFCC(YaafeFeatureExtractor):
                 "blockSize=%d stepSize=%d > Derivate DOrder=2" % (
                     0 if self.DDe else 1,
                     self.DD * self.coefs + self.DDe * 1,
-                    self.block_size, self.step_size
+                    blockSize, stepSize
                 )))
 
         return d

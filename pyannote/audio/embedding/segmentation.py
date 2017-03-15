@@ -31,10 +31,10 @@ import numpy as np
 from pyannote.core import SlidingWindow, SlidingWindowFeature
 from pyannote.generators.batch import FileBasedBatchGenerator
 from pyannote.generators.fragment import TwinSlidingSegments
-from ..generators.yaafe import YaafeMixin
+from pyannote.audio.generators.periodic import PeriodicFeaturesMixin
 
 
-class Segmentation(YaafeMixin, FileBasedBatchGenerator):
+class Segmentation(PeriodicFeaturesMixin, FileBasedBatchGenerator):
     """Segmentation based on sequence embedding
 
     Computes the euclidean distance between the embeddings of two
@@ -46,8 +46,6 @@ class Segmentation(YaafeMixin, FileBasedBatchGenerator):
         Pre-trained sequence embedding.
     feature_extractor : YaafeFeatureExtractor
         Yaafe feature extractor
-    normalize : boolean, optional
-        Set to True to z-score normalize
     duration : float, optional
     step : float, optional
         Sliding window duration and step (in seconds).
@@ -58,7 +56,7 @@ class Segmentation(YaafeMixin, FileBasedBatchGenerator):
     >>> sequence_embedding = SequenceEmbedding.from_disk('architecture_yml', 'weights.h5')
     >>> feature_extractor = YaafeFeatureExtractor(...)
     >>> segmentation = Segmentation(sequence_embedding, feature_extractor)
-    >>> predictions = segmentation.apply('audio.wav')
+    >>> predictions = segmentation.apply(current_file)
     >>> segmentation = Peak().apply(predictions)
 
     See also
@@ -67,12 +65,11 @@ class Segmentation(YaafeMixin, FileBasedBatchGenerator):
     pyannote.audio.signal.Peak
 
     """
-    def __init__(self, sequence_embedding, feature_extractor, normalize=False,
+    def __init__(self, sequence_embedding, feature_extractor,
                  duration=1.000, step=0.100):
 
         # feature sequence
         self.feature_extractor = feature_extractor
-        self.normalize = normalize
 
         # sequence embedding
         self.sequence_embedding = sequence_embedding
@@ -82,11 +79,10 @@ class Segmentation(YaafeMixin, FileBasedBatchGenerator):
         self.step = step
         generator = TwinSlidingSegments(duration=duration, step=step)
 
-        super(Segmentation, self).__init__(generator,
-                                                            batch_size=-1)
+        super(Segmentation, self).__init__(generator, batch_size=-1)
 
     def signature(self):
-        shape = self.get_shape()
+        shape = self.shape
         return (
             {'type': 'timestamp'},
             {'type': 'sequence', 'shape': shape},
@@ -96,13 +92,12 @@ class Segmentation(YaafeMixin, FileBasedBatchGenerator):
     def postprocess_sequence(self, mono_batch):
         return self.sequence_embedding.transform(mono_batch)
 
-    def apply(self, wav):
+    def apply(self, current_file):
         """Computes distance between sliding windows embeddings
 
         Parameter
         ---------
-        wav : str
-            Path to wav audio file
+        current_file : dict
 
         Returns
         -------
@@ -110,11 +105,8 @@ class Segmentation(YaafeMixin, FileBasedBatchGenerator):
         """
 
         # apply sequence labeling to the whole file
-        current_file = {'uri': wav, 'medium': {'wav': wav}}
-
         t, left, right = next(self.from_file(current_file))
         y = np.sqrt(np.sum((left - right) ** 2, axis=-1))
-
 
         window = SlidingWindow(duration=2 * self.duration,
                                step=self.step, start=0.)

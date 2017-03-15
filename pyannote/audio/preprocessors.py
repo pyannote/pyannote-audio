@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2014-2016 CNRS
+# Copyright (c) 2016 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -26,7 +26,31 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
+import xml.dom.minidom
+from pyannote.database.util import FileFinder
+from pyannote.core import Segment, Annotation
 
-from .legacy_triplet_loss.glue import LegacyTripletLoss
-from .triplet_loss.glue import TripletLoss
-from .center_loss.glue import CenterLoss
+
+class GregoryGellySAD(object):
+
+    def __init__(self, sad_yml=None):
+        super(GregoryGellySAD, self).__init__()
+        self.sad_yml = sad_yml
+        self.file_finder_ = FileFinder(self.sad_yml)
+
+    def __call__(self, item):
+
+        speaker = item['speaker']
+        annotation = Annotation()
+
+        sad_xml = self.file_finder_(item)
+        with open(sad_xml, 'r') as fp:
+            content = xml.dom.minidom.parse(fp)
+        segments = content.getElementsByTagName('SpeechSegment')
+
+        for segment in segments:
+            start = float(segment.getAttribute('stime'))
+            end = float(segment.getAttribute('etime'))
+            annotation[Segment(start, end)] = speaker
+
+        return annotation

@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2016 CNRS
+# Copyright (c) 2016-2017 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -31,37 +31,40 @@ from keras.models import Model
 from keras.layers import Input
 from keras.layers import LSTM
 from keras.layers import Dense
-from keras.layers import merge
+from keras.layers.wrappers import Bidirectional
 from keras.layers.wrappers import TimeDistributed
 
 
 class StackedLSTM(object):
-    """Stacked LSTM
+    """Stacked LSTM sequence labeling
 
     Parameters
     ----------
-    n_classes : int, optional
-        Number of output classes. Defaults to 2 (binary classification).
     lstm: list, optional
         List of output dimension of stacked LSTMs.
         Defaults to [16, ] (i.e. one LSTM with output dimension 16)
-    bidirectional: boolean, optional
-        When True, use bi-directional LSTMs
-    dense: list, optional
-        Number of units of additionnal stacked dense layers.
-        Defaults to [16, ] (i.e. add one dense layer with 16 units)
+    bidirectional: {False, 'ave', 'concat'}, optional
+        Defines how the output of forward and backward LSTMs are merged.
+        'ave' stands for 'average', 'concat' (default) for concatenation.
+        See keras.layers.wrappers.Bidirectional for more information.
+        Use False to only use forward LSTMs.
+    mlp: list, optional
+        Number of units in additionnal stacked dense MLP layers.
+        Defaults to [16, ] (i.e. one dense MLP layers with 16 units)
+    n_classes : int, optional
+        Number of output classes. Defaults to 2 (binary classification).
     """
-    def __init__(self, n_classes=2, lstm=[16], bidirectional=True, dense=[16]):
+    def __init__(self, lstm=[16,], bidirectional='concat',
+                 mlp=[16,], n_classes=2):
 
         super(StackedLSTM, self).__init__()
-
         self.lstm = lstm
         self.bidirectional = bidirectional
-        self.dense = dense
+        self.mlp = mlp
         self.n_classes = n_classes
 
     def __call__(self, input_shape):
-        """Design labeling model
+        """Design labeling
 
         Parameters
         ----------
@@ -81,55 +84,33 @@ class StackedLSTM(object):
         n_lstm = len(self.lstm)
         for i, output_dim in enumerate(self.lstm):
 
-            if i:
-                # all but first LSTM
-                forward = LSTM(name='forward_{i:d}'.format(i=i),
-                               output_dim=output_dim,
-                               return_sequences=True,
-                               activation='tanh',
-                               dropout_W=0.0,
-                               dropout_U=0.0)(forward)
+            params = {
+                'name': 'lstm_{i:d}'.format(i=i),
+                'output_dim': output_dim,
+                'return_sequences': True,
+                'activation': 'tanh'
+            }
 
-                if self.bidirectional:
-                    backward = LSTM(name='backward_{i:d}'.format(i=i),
-                                    output_dim=output_dim,
-                                    return_sequences=True,
-                                    activation='tanh',
-                                    dropout_W=0.0,
-                                    dropout_U=0.0)(backward)
-            else:
-                # first LSTM
-                forward = LSTM(name='forward_{i:d}'.format(i=i),
-                               output_dim=output_dim,
-                               return_sequences=True,
-                               activation='tanh',
-                               dropout_W=0.0,
-                               dropout_U=0.0)(x)
+            # first LSTM needs to be given the input shape
+            if i == 0:
+                params['input_shape'] = input_shape
 
-                if self.bidirectional:
-                    backward = LSTM(name='backward_{i:d}'.format(i=i),
-                                    go_backwards=True,
-                                    output_dim=output_dim,
-                                    return_sequences=True,
-                                    activation='tanh',
-                                    dropout_W=0.0,
-                                    dropout_U=0.0)(x)
+            lstm = LSTM(**params)
+            if self.bidirectional:
+                lstm = Bidirectional(lstm, merge_mode=self.bidirectional)
 
-        # concatenate forward and backward
-        if self.bidirectional:
-            x = merge([forward, backward], mode='concat', concat_axis=2)
-        else:
-            x = forward
+            x = lstm(x)
 
         # stack dense layers
-        for i, output_dim in enumerate(self.dense):
+        for i, output_dim in enumerate(self.mlp):
             x = TimeDistributed(Dense(output_dim,
                                       activation='tanh',
-                                      name='dense_{i:d}'.format(i=i)))(x)
+                                      name='mlp_{i:d}'.format(i=i)))(x)
 
+        # stack final dense softmax layer
         # one dimension per class
         outputs = TimeDistributed(Dense(self.n_classes,
                                         activation='softmax',
-                                        name="labeling_output"))(x)
+                                        name='labeling_output'))(x)
 
         return Model(input=inputs, output=outputs)

@@ -31,10 +31,11 @@ import numpy as np
 from pyannote.core import SlidingWindow, SlidingWindowFeature
 from pyannote.generators.batch import FileBasedBatchGenerator
 from pyannote.generators.fragment import TwinSlidingSegments
-from .generators.yaafe import YaafeMixin
+from pyannote.audio.generators.periodic import PeriodicFeaturesMixin
 
 
-class GaussianDivergenceSegmentation(YaafeMixin, FileBasedBatchGenerator):
+class GaussianDivergenceSegmentation(PeriodicFeaturesMixin,
+                                     FileBasedBatchGenerator):
     """Segmentation based on gaussian divergence
 
     Computes the gaussian divergence between features of two (left and right)
@@ -44,8 +45,6 @@ class GaussianDivergenceSegmentation(YaafeMixin, FileBasedBatchGenerator):
     ----------
     feature_extractor : YaafeFeatureExtractor
         Yaafe feature extractor
-    normalize : boolean, optional
-        Set to True to z-score normalize
     duration : float, optional
     step : float, optional
         Sliding window duration and step (in seconds).
@@ -55,7 +54,7 @@ class GaussianDivergenceSegmentation(YaafeMixin, FileBasedBatchGenerator):
     -----
     >>> feature_extractor = YaafeFeatureExtractor(...)
     >>> segmentation = GaussianDivergenceSegmentation(feature_extractor)
-    >>> predictions = segmentation.apply('audio.wav')
+    >>> predictions = segmentation.apply(current_file)
     >>> segmentation = Peak().apply(predictions)
 
     See also
@@ -63,12 +62,11 @@ class GaussianDivergenceSegmentation(YaafeMixin, FileBasedBatchGenerator):
     pyannote.audio.signal.Peak
 
     """
-    def __init__(self, feature_extractor, normalize=False,
+    def __init__(self, feature_extractor,
                  duration=1.000, step=0.100):
 
         # feature sequence
         self.feature_extractor = feature_extractor
-        self.normalize = normalize
 
         # (left vs. right) sliding windows
         self.duration = duration
@@ -79,20 +77,19 @@ class GaussianDivergenceSegmentation(YaafeMixin, FileBasedBatchGenerator):
                                                              batch_size=-1)
 
     def signature(self):
-        shape = self.get_shape()
+        shape = self.shape
         return (
             {'type': 'timestamp'},
             {'type': 'sequence', 'shape': shape},
             {'type': 'sequence', 'shape': shape}
         )
 
-    def apply(self, wav):
+    def apply(self, current_file):
         """Computes distance between sliding windows embeddings
 
         Parameter
         ---------
-        wav : str
-            Path to wav audio file
+        current_file : dict
 
         Returns
         -------
@@ -101,7 +98,6 @@ class GaussianDivergenceSegmentation(YaafeMixin, FileBasedBatchGenerator):
 
         from pyannote.algorithms.stats.gaussian import Gaussian
 
-        current_file = {'uri': wav, 'medium': {'wav': wav}}
         t, left, right = next(self.from_file(current_file))
 
         y = []
@@ -117,7 +113,7 @@ class GaussianDivergenceSegmentation(YaafeMixin, FileBasedBatchGenerator):
         return SlidingWindowFeature(y, window)
 
 
-class BICSegmentation(YaafeMixin, FileBasedBatchGenerator):
+class BICSegmentation(PeriodicFeaturesMixin, FileBasedBatchGenerator):
     """Segmentation based on BIC
 
     Computes the BIC criterion between features of two (left and right)
@@ -127,8 +123,6 @@ class BICSegmentation(YaafeMixin, FileBasedBatchGenerator):
     ----------
     feature_extractor : YaafeFeatureExtractor
         Yaafe feature extractor
-    normalize : boolean, optional
-        Set to True to z-score normalize
     covariance_type : {'diag', 'full'}
         Covariance type. Defaults to 'full'.
     duration : float, optional
@@ -140,7 +134,7 @@ class BICSegmentation(YaafeMixin, FileBasedBatchGenerator):
     -----
     >>> feature_extractor = YaafeFeatureExtractor(...)
     >>> segmentation = BICSegmentation(feature_extractor)
-    >>> predictions = segmentation.apply('audio.wav')
+    >>> predictions = segmentation.apply(current_file)
     >>> segmentation = Peak().apply(predictions)
 
     See also
@@ -148,12 +142,11 @@ class BICSegmentation(YaafeMixin, FileBasedBatchGenerator):
     pyannote.audio.signal.Peak
 
     """
-    def __init__(self, feature_extractor, normalize=False,
-                 covariance_type='full', duration=1.000, step=0.100):
+    def __init__(self, feature_extractor, covariance_type='full',
+                 duration=1.000, step=0.100):
 
         # feature sequence
         self.feature_extractor = feature_extractor
-        self.normalize = normalize
 
         # (left vs. right) sliding windows
         self.duration = duration
@@ -165,20 +158,19 @@ class BICSegmentation(YaafeMixin, FileBasedBatchGenerator):
         super(BICSegmentation, self).__init__(generator, batch_size=-1)
 
     def signature(self):
-        shape = self.get_shape()
+        shape = self.shape
         return (
             {'type': 'timestamp'},
             {'type': 'sequence', 'shape': shape},
             {'type': 'sequence', 'shape': shape}
         )
 
-    def apply(self, wav):
-        """Computes distance between sliding windows embeddings
+    def apply(self, current_file):
+        """Computes BIC distance between sliding windows
 
         Parameter
         ---------
-        wav : str
-            Path to wav audio file
+        current_file : dict
 
         Returns
         -------
@@ -187,7 +179,6 @@ class BICSegmentation(YaafeMixin, FileBasedBatchGenerator):
 
         from pyannote.algorithms.stats.gaussian import Gaussian
 
-        current_file = {'uri': wav, 'medium': {'wav': wav}}
         t, left, right = next(self.from_file(current_file))
 
         y = []

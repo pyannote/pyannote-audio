@@ -32,11 +32,11 @@ from pyannote.core import SlidingWindow, SlidingWindowFeature
 from pyannote.generators.batch import FileBasedBatchGenerator
 from pyannote.generators.fragment import SlidingSegments
 
-from ..generators.yaafe import YaafeMixin
-from ..features.utils import get_wav_duration
+from pyannote.audio.generators.periodic import PeriodicFeaturesMixin
+from pyannote.audio.features.utils import get_wav_duration
 
 
-class SequenceLabelingAggregation(YaafeMixin, FileBasedBatchGenerator):
+class SequenceLabelingAggregation(PeriodicFeaturesMixin, FileBasedBatchGenerator):
     """Aggregate pre-trained sequence labeling predictions on overlapping windows
 
     Parameters
@@ -45,27 +45,24 @@ class SequenceLabelingAggregation(YaafeMixin, FileBasedBatchGenerator):
         Pre-trained sequence labeling.
     feature_extractor : YaafeFeatureExtractor
         Yaafe feature extractor
-    normalize : boolean, optional
-        Set to True to z-score normalize
     duration : float, optional
     step : float, optional
         Sliding window duration and step (in seconds).
-        Defaults to 3 seconds window with 750ms step.
+        Defaults to 3 seconds window with half step.
 
     Usage
     -----
     >>> sequence_labeling = SequenceLabeling.from_disk('architecture.yml', 'weights.h5')
     >>> feature_extractor = YaafeFeatureExtractor(...)
     >>> aggregation = SequenceLabelingAggregation(sequence_labeling, feature_extractor)
-    >>> predictions = aggregation.apply('audio.wav')
+    >>> predictions = aggregation.apply(current_file)
     """
 
     def __init__(self, sequence_labeling, feature_extractor,
-                 duration=3., step=0.75, normalize=False):
+                 duration=3., step=None):
 
         # feature sequence
         self.feature_extractor = feature_extractor
-        self.normalize = normalize
 
         # sequence labeling
         self.sequence_labeling = sequence_labeling
@@ -86,7 +83,7 @@ class SequenceLabelingAggregation(YaafeMixin, FileBasedBatchGenerator):
 
     def signature(self):
         """See `FileBasedBatchGenerator` base class for details"""
-        shape = self.get_shape()
+        shape = self.shape
         return {'type': 'sequence', 'shape': shape}
 
     def postprocess_sequence(self, mono_batch):
@@ -106,13 +103,12 @@ class SequenceLabelingAggregation(YaafeMixin, FileBasedBatchGenerator):
         """
         return self.sequence_labeling.predict(mono_batch)
 
-    def apply(self, wav):
+    def apply(self, current_file):
         """
 
         Parameter
         ---------
-        wav : str
-            Path to wav audio file
+        current_file : dict
 
         Returns
         -------
@@ -121,13 +117,13 @@ class SequenceLabelingAggregation(YaafeMixin, FileBasedBatchGenerator):
         """
 
         # apply sequence labeling to the whole file
-        current_file = {'uri': wav, 'medium': {'wav': wav}}
         predictions = next(self.from_file(current_file))
         n_sequences, _, n_classes = predictions.shape
 
         # estimate total number of frames (over the duration of the whole file)
         # based on feature extractor internal sliding window and file duration
         samples_window = self.feature_extractor.sliding_window()
+        wav = current_file['wav']
         n_samples = samples_window.samples(get_wav_duration(wav)) + 3
 
         # +3 is a hack to avoid later IndexError resulting from rounding error

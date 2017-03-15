@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2016 CNRS
+# Copyright (c) 2016-2017 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -37,16 +37,30 @@ setup(
     namespace_packages=['pyannote'],
     packages=find_packages(),
     install_requires=[
-        'pyannote.core >= 0.7.2',
-        'pyannote.generators >= 0.1.1',
-        'pyannote.database >= 0.3',
-        'keras >= 1.1.0',
+        'pyannote.core >= 0.13',
+        'pyannote.metrics >= 0.11',
+        'pyannote.generators >= 0.10',
+        'pyannote.database >= 0.11.1',
+        'pyannote.parser >= 0.6.2',
+        'pyannote.algorithms >= 0.6.7',
+        'pysndfile >= 0.2.11',
+        'keras >= 1.2.0',
         'theano >= 0.8.2',
+        'scikit-optimize >= 0.2',
+        'pyYAML >= 3.12',
+        'h5py >= 2.6.0',
+        'cachetools >= 2.0.0',
+        'librosa >= 0.4.3'
     ],
+    entry_points = {
+        'console_scripts': [
+            'pyannote-speech-feature=pyannote.audio.applications.feature_extraction:main',
+            'pyannote-speech-detection=pyannote.audio.applications.speech_detection:main',
+            'pyannote-bic-clustering=pyannote.audio.applications.bic_clustering:main']
+    },
     # versioneer
     version=versioneer.get_version(),
     cmdclass=versioneer.get_cmdclass(),
-
     # PyPI
     name='pyannote.audio',
     description=('Audio processing'),

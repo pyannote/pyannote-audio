@@ -24,144 +24,62 @@
 # SOFTWARE.
 
 # AUTHORS
+# Grégory GELLY
 # Hervé BREDIN - http://herve.niderb.fr
 
-
-import keras.backend as K
-from keras.models import Model
-
-from keras.layers import Input
-from keras.layers import merge
+import numpy as np
 
 
-class Loss(object):
-    """Loss function for sequence embedding training
+def unitary_angular_triplet_loss(anchor, positive, negative):
+    epsilon = 1e-6
 
-    Parameters
-    ----------
-    design_embedding : function or callable
-        This function should take input_shape as input and return a Keras model
-        that takes a sequence as input, and returns the embedding as output.
+    dotProdPosAnc = np.clip(np.sum(positive*anchor), -1.0, 1.0)
+    dotProdNegAnc = np.clip(np.sum(negative*anchor), -1.0, 1.0)
 
-    See also
-    --------
-    An example of `design_embedding` can be found in
-    pyannote.audio.embedding.models.TristouNet.__call__
-    """
-    def __init__(self, design_embedding, **kwargs):
-        super(Loss, self).__init__()
-        self.design_embedding = design_embedding
+    localCost = (np.arccos(dotProdPosAnc)-np.arccos(dotProdNegAnc)-np.pi/60.0)
+    coeffSlope = 1.0
+    coeffSlopeNegative = 1.0
+    if (localCost < 0.0):
+        coeffSlope = coeffSlopeNegative
+    coeffSlopeInternal = 10.0
+    localCost *= coeffSlopeInternal
+    localCost = 1.0/(1.0 + np.exp(-localCost))
 
-    def __call__(self, y_true, y_pred):
-        raise NotImplementedError('')
+    dotProdPosAnc = 1-dotProdPosAnc*dotProdPosAnc
+    dotProdNegAnc = 1-dotProdNegAnc*dotProdNegAnc
+    if (dotProdPosAnc < epsilon): dotProdPosAnc = epsilon
+    if (dotProdNegAnc < epsilon): dotProdNegAnc = epsilon
 
-    def design_model(self, input_shape):
-        """Design the model for which the loss is optimized
+    derivCoeff = localCost*(1.0-localCost)*coeffSlope*coeffSlopeInternal
+    localCost = coeffSlope*localCost+(coeffSlopeNegative-coeffSlope)*0.5
 
-        This method can (and should!) make use of `design_embedding` attribute
+    derivativeAnchor = (-positive/np.sqrt(dotProdPosAnc)+negative/np.sqrt(dotProdNegAnc))*derivCoeff
+    derivativePositive = -anchor/np.sqrt(dotProdPosAnc)*derivCoeff
+    derivativeNegative = (anchor/np.sqrt(dotProdNegAnc))*derivCoeff
 
-        Parameters
-        ----------
-        input_shape: (n_samples, n_features) tuple
-            Shape of input sequences.
+    return [localCost, derivativeAnchor, derivativePositive, derivativeNegative]
 
-        Returns
-        -------
-        model : Keras model
+def unitary_cosine_triplet_loss(anchor, positive, negative):
+    dotProdPosAnc = np.sum(positive*anchor)
+    dotProdNegAnc = np.sum(negative*anchor)
 
-        See also
-        --------
-        An example of such a method can be found in `TripletLoss` class
-        """
-        raise NotImplementedError('')
+    localCost = -dotProdPosAnc+dotProdNegAnc-1.0/30.0
+    localCost = 1.0/(1.0 + np.exp(-localCost))
 
-    def get_embedding(self, from_model):
-        """Extract embedding Keras model
+    derivCoeff = 1.0
+    derivativeAnchor = (-positive+negative)*derivCoeff
+    derivativePositive = -anchor*derivCoeff
+    derivativeNegative = anchor*derivCoeff
 
-        Parameters
-        ----------
-        from_model : Keras model
-            Current state of the model
+    return [localCost, derivativeAnchor, derivativePositive, derivativeNegative]
 
-        Returns
-        -------
-        embedding : Keras model
-        """
-        raise NotImplementedError('')
+def unitary_euclidean_triplet_loss(anchor, positive, negative):
 
+    localCost = np.sum(np.square(positive-anchor))-np.sum(np.square(negative-anchor))+0.2
+    localCost = 1.0/(1.0 + np.exp(-localCost))
 
-class TripletLoss(Loss):
-    """Triplet loss for sequence embedding
+    derivativeAnchor = -2.0*(positive-negative)
+    derivativePositive = -2.0*(anchor-positive)
+    derivativeNegative = -2.0*(negative-anchor)
 
-            anchor        |-----------|     |---------|
-            input    -->  | embedding | --> |         |
-            sequence      |-----------|     |         |
-                                            |         |
-            positive      |-----------|     | triplet |
-            input    -->  | embedding | --> |         | --> loss value
-            sequence      |-----------|     |  loss   |
-                                            |         |
-            negative      |-----------|     |         |
-            input    -->  | embedding | --> |         |
-            sequence      |-----------|     |---------|
-
-    Parameters
-    ----------
-    design_embedding : callable, or func
-        This function should take input_shape as input and return the embedding
-        as a Keras model
-    margin : float, optional
-        Triplet loss margin. Defaults to 0.2.
-
-    Reference
-    ---------
-    Hervé Bredin, "TristouNet: Triplet Loss for Speaker Turn Embedding"
-    Submitted to ICASSP 2017. https://arxiv.org/abs/1609.04301
-
-    See also
-    --------
-    An example of `design_embedding` can be found in
-    pyannote.audio.embedding.models.TristouNet.__call__
-    """
-    def __init__(self, design_embedding, margin=0.2):
-        super(TripletLoss, self).__init__(design_embedding)
-        self.margin = margin
-        # HACK https://github.com/fchollet/keras/issues/3833
-        self.__name__ = 'TripletLoss'
-
-    def _triplet_loss(self, inputs):
-        p = K.sum(K.square(inputs[0] - inputs[1]), axis=-1, keepdims=True)
-        n = K.sum(K.square(inputs[0] - inputs[2]), axis=-1, keepdims=True)
-        return K.maximum(0, p + self.margin - n)
-
-    @staticmethod
-    def _output_shape(input_shapes):
-        return (input_shapes[0][0], 1)
-
-    @staticmethod
-    def _identity_loss(y_true, y_pred):
-        return K.mean(y_pred - 0 * y_true)
-
-    def __call__(self, y_true, y_pred):
-        return self._identity_loss(y_true, y_pred)
-
-    def get_embedding(self, from_model):
-        return from_model.layers_by_depth[1][0]
-
-    def design_model(self, input_shape):
-        anchor = Input(shape=input_shape, name="anchor")
-        positive = Input(shape=input_shape, name="positive")
-        negative = Input(shape=input_shape, name="negative")
-
-        embedding = self.design_embedding(input_shape)
-        embedded_anchor = embedding(anchor)
-        embedded_positive = embedding(positive)
-        embedded_negative = embedding(negative)
-
-        distance = merge(
-            [embedded_anchor, embedded_positive, embedded_negative],
-            mode=self._triplet_loss, output_shape=self._output_shape)
-
-        model = Model(input=[anchor, positive, negative], output=distance)
-
-        return model
+    return [localCost, derivativeAnchor, derivativePositive, derivativeNegative]

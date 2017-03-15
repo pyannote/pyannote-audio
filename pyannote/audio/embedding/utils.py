@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2014-2016 CNRS
+# Copyright (c) 2016 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -27,6 +27,42 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 
-from .legacy_triplet_loss.glue import LegacyTripletLoss
-from .triplet_loss.glue import TripletLoss
-from .center_loss.glue import CenterLoss
+import numpy as np
+import scipy.spatial.distance
+
+
+def l2_normalize(fX):
+
+    norm = np.sqrt(np.sum(fX ** 2, axis=1))
+    norm[norm == 0] = 1.
+    return (fX.T / norm).T
+
+
+def get_range(metric='euclidean'):
+    return {
+        'angular': (0, np.pi),
+        'euclidean': (0, 2),
+        'sqeuclidean': (0, 4),
+        'cosine': (-1.0, 1.0)
+    }.get(metric, None)
+
+
+def pdist(fX, metric='euclidean', **kwargs):
+
+    if metric == 'angular':
+        cosine = scipy.spatial.distance.pdist(
+            fX, metric='cosine', **kwargs)
+        return np.arccos(np.clip(1.0 - cosine, -1.0, 1.0))
+
+    return scipy.spatial.distance.pdist(fX, metric=metric, **kwargs)
+
+
+def cdist(fX_trn, fX_tst, metric='euclidean', **kwargs):
+
+    if metric == 'angular':
+        cosine = scipy.spatial.distance.cdist(
+            fX_trn, fX_tst, metric='cosine', **kwargs)
+        return np.arccos(np.clip(1.0 - cosine, -1.0, 1.0))
+
+    return scipy.spatial.distance.cdist(
+        fX_trn, fX_tst, metric=metric, **kwargs)

@@ -31,8 +31,8 @@ import itertools
 import numpy as np
 from scipy.spatial.distance import pdist, squareform
 from pyannote.generators.batch import BaseBatchGenerator
-from pyannote.audio.generators.labels import \
-    LabeledFixedDurationSequencesBatchGenerator
+from pyannote.audio.generators.labels import FixedDurationSequences
+from pyannote.audio.embedding.callbacks import UpdateGeneratorEmbedding
 
 
 class TripletGenerator(object):
@@ -45,7 +45,7 @@ class TripletGenerator(object):
 
     and such that d(f(Xa), f(Xn)) < d(f(Xa), f(Xp)) + margin where
       * f is the current state of the embedding network (being optimized)
-      * d is the euclidean distance
+      * d is the (euclidean or cosine) distance
       * margin is the triplet loss margin (e.g. 0.2, typically)
 
     Parameters
@@ -54,46 +54,51 @@ class TripletGenerator(object):
         Yaafe feature extraction (e.g. YaafeMFCC instance)
     file_generator: iterable
         File generator (the training set, typically)
-    embedding: SequenceEmbedding
-        Sequence embedding (currently being optimized)
+    distance: {'sqeuclidean', 'cosine'}
+        Distance for which the embedding is optimized. Defaults to 'sqeuclidean'.
+    margin : float, optional
+        Defaults to 0.2.
     duration: float, optional
-        Sequence duration. Defaults to 3 seconds.
-    overlap: float, optional
-        Sequence overlap ratio. Defaults to 0 (no overlap).
-    normalize: boolean, optional
-        When True, normalize sequence (z-score). Defaults to False.
+    step: float, optional
+        Duration and step of sliding window (in seconds).
+        Default to 3s and half duration.
+    min_duration: float, optional
+        Sequence minimum duration. When provided, generates sequences with
+        random duration in range [min_duration, duration]. Defaults to
+        fixed-duration sequences.
     per_label: int, optional
         Number of samples per label. Defaults to 40.
     per_fold: int, optional
         When provided, randomly split the training set into
         fold of `per_fold` labels (e.g. 40) after each epoch.
-        Defaults to using the whole traning set.
+        Defaults to using the whole training set.
     batch_size: int, optional
         Batch size. Defaults to 32.
     """
 
-    def __init__(self, extractor, file_generator, embedding, margin=0.2,
-                 duration=3.0, overlap=0.0, normalize=False,
+    def __init__(self, extractor, file_generator,
+                 distance='sqeuclidean', margin=0.2,
+                 duration=3.0, min_duration=None, step=None,
                  per_fold=0, per_label=40, batch_size=32):
 
         super(TripletGenerator, self).__init__()
 
         self.extractor = extractor
         self.file_generator = file_generator
-        self.embedding = embedding
+        self.distance = distance
         self.margin = margin
         self.duration = duration
-        self.overlap = overlap
-        self.normalize = normalize
+        self.min_duration = min_duration
+        self.step = step
         self.per_fold = per_fold
         self.per_label = per_label
         self.batch_size = batch_size
 
-        self.generator_ = LabeledFixedDurationSequencesBatchGenerator(
+        self.generator_ = FixedDurationSequences(
             self.extractor,
             duration=self.duration,
-            normalize=self.normalize,
-            step=(1 - self.overlap) * self.duration,
+            min_duration=self.min_duration,
+            step=self.step,
             batch_size=-1)
 
         self.triplet_generator_ = self.iter_triplets()
@@ -102,7 +107,6 @@ class TripletGenerator(object):
         # this is meant to pre-generate all labeled sequences once and for all
         # and get the number of unique labels into self.n_labels
         next(self.triplet_generator_)
-
 
     def iter_triplets(self):
 
@@ -203,8 +207,9 @@ class TripletGenerator(object):
                 # their embeddings (using current state of embedding network)
                 embeddings = self.embedding.transform(
                     sequences, batch_size=self.batch_size)
-                # pairwise euclidean distances
-                distances = squareform(pdist(embeddings, metric='euclidean'))
+
+                # pairwise squared euclidean distances
+                distances = squareform(pdist(embeddings, metric=self.distance))
 
                 for i in range(self.per_fold):
 
@@ -240,11 +245,12 @@ class TripletGenerator(object):
     def __next__(self):
         return next(self.triplet_generator_)
 
-    def get_shape(self):
-        return self.generator_.get_shape()
+    @property
+    def shape(self):
+        return self.generator_.shape
 
     def signature(self):
-        shape = self.get_shape()
+        shape = self.shape
         return (
             [
                 {'type': 'sequence', 'shape': shape},
@@ -253,6 +259,11 @@ class TripletGenerator(object):
             ],
             {'type': 'boolean'}
         )
+
+    def callbacks(self, extract_embedding=None):
+        callback = UpdateGeneratorEmbedding(
+            self, extract_embedding=extract_embedding, name='embedding')
+        return [callback]
 
 
 class TripletBatchGenerator(BaseBatchGenerator):
@@ -274,14 +285,18 @@ class TripletBatchGenerator(BaseBatchGenerator):
         Yaafe feature extraction (e.g. YaafeMFCC instance)
     file_generator: iterable
         File generator (the training set, typically)
-    sequence_embedding: TripletLossSequenceEmbedding
-        Triplet loss sequence embedding (currently being optimized)
+    distance: {'sqeuclidean', 'cosine'}
+        Distance for which the embedding is optimized. Defaults to 'sqeuclidean'.
+    margin : float, optional
+        Defaults to 0.2.
     duration: float, optional
-        Sequence duration. Defaults to 3 seconds.
-    overlap: float, optional
-        Sequence overlap ratio. Defaults to 0 (no overlap).
-    normalize: boolean, optional
-        When True, normalize sequence (z-score). Defaults to False.
+    step: float, optional
+        Duration and step of sliding window (in seconds).
+        Default to 3s and half step.
+    min_duration: float, optional
+        Sequence minimum duration. When provided, generates sequences with
+        random duration in range [min_duration, duration]. Defaults to
+        fixed-duration sequences.
     per_label: int, optional
         Number of samples per label. Defaults to 40.
     per_fold: int, optional
@@ -290,13 +305,15 @@ class TripletBatchGenerator(BaseBatchGenerator):
     batch_size: int, optional
         Batch size. Defaults to 32.
     """
-    def __init__(self, feature_extractor, file_generator, sequence_embedding,
-                 margin=0.2, duration=3.0, overlap=0.5, normalize=False,
+    def __init__(self, feature_extractor, file_generator,
+                 distance='sqeuclidean', margin=0.2,
+                 duration=3.0, min_duration=None, step=None,
                  per_fold=0, per_label=40, batch_size=32):
 
         self.triplet_generator_ = TripletGenerator(
-            feature_extractor, file_generator, sequence_embedding,
-            duration=duration, overlap=overlap, normalize=normalize,
+            feature_extractor, file_generator,
+            margin=margin, distance=distance,
+            duration=duration, min_duration=min_duration, step=step,
             per_fold=per_fold, per_label=per_label, batch_size=batch_size)
 
         super(TripletBatchGenerator, self).__init__(
@@ -305,9 +322,27 @@ class TripletBatchGenerator(BaseBatchGenerator):
     def signature(self):
         return self.triplet_generator_.signature()
 
-    def get_shape(self):
-        return self.triplet_generator_.get_shape()
-
     @property
-    def n_labels(self):
-        return self.triplet_generator_.n_labels
+    def shape(self):
+        return self.triplet_generator_.shape
+
+    def get_samples_per_epoch(self, protocol, subset='train'):
+        """
+        Parameters
+        ----------
+        protocol : pyannote.database.protocol.protocol.Protocol
+        subset : {'train', 'development', 'test'}, optional
+
+        Returns
+        -------
+        samples_per_epoch : int
+            Number of samples per epoch.
+        """
+        n_labels = len(protocol.stats(subset)['labels'])
+        per_label = self.triplet_generator_.per_label
+        samples_per_epoch = per_label * (per_label - 1) * n_labels
+        return samples_per_epoch - (samples_per_epoch % self.batch_size)
+
+    def callbacks(self, extract_embedding=None):
+        return self.triplet_generator_.callbacks(
+            extract_embedding=extract_embedding)
