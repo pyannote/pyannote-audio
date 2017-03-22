@@ -96,7 +96,7 @@ class SequenceLabeling(object):
             self.labeling_.save_weights(weights, overwrite=overwrite)
 
     def fit(self, input_shape, design_labeling, generator,
-            samples_per_epoch, nb_epoch, optimizer='rmsprop', log_dir=None):
+            samples_per_epoch, nb_epoch, loss='categorical_crossentropy', optimizer='rmsprop', log_dir=None):
         """Train the model
 
         Parameters
@@ -144,7 +144,7 @@ class SequenceLabeling(object):
 
         self.labeling_ = design_labeling(input_shape)
         self.labeling_.compile(optimizer=optimizer,
-                               loss='categorical_crossentropy',
+                               loss=loss,
                                metrics=['accuracy'])
 
         return self.labeling_.fit_generator(

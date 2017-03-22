@@ -53,15 +53,18 @@ class StackedLSTM(object):
         Defaults to [16, ] (i.e. one dense MLP layers with 16 units)
     n_classes : int, optional
         Number of output classes. Defaults to 2 (binary classification).
+    final_activation : {'softmax', 'sigmoid'}, optional
+        Activation for output layer. Defaults to 'softmax'. 
     """
     def __init__(self, lstm=[16,], bidirectional='concat',
-                 mlp=[16,], n_classes=2):
+                 mlp=[16,], n_classes=2, final_activation='softmax'):
 
         super(StackedLSTM, self).__init__()
         self.lstm = lstm
         self.bidirectional = bidirectional
         self.mlp = mlp
         self.n_classes = n_classes
+        self.final_activation = final_activation
 
     def __call__(self, input_shape):
         """Design labeling
@@ -107,10 +110,10 @@ class StackedLSTM(object):
                                       activation='tanh',
                                       name='mlp_{i:d}'.format(i=i)))(x)
 
-        # stack final dense softmax layer
+        # stack final dense layer
         # one dimension per class
         outputs = TimeDistributed(Dense(self.n_classes,
-                                        activation='softmax',
+                                        activation=self.final_activation,
                                         name='labeling_output'))(x)
 
         return Model(input=inputs, output=outputs)
