@@ -95,7 +95,7 @@ class ChangeDetectionBatchGenerator(PeriodicFeaturesMixin,
 
 
         segments = []
-        for segment, _, _ in annotation.itertracks(label=True):
+        for segment, _ in annotation.itertracks():
             segments.append(Segment(segment.start - self.balance, segment.start + self.balance))
             segments.append(Segment(segment.end - self.balance, segment.end + self.balance))
         change_part = Timeline(segments).support().crop(annotated, mode='intersection')
