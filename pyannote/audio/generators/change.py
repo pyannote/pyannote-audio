@@ -11,6 +11,42 @@ import numpy as np
 class ChangeDetectionBatchGenerator(PeriodicFeaturesMixin,
                                             FileBasedBatchGenerator):
 
+    """(X_batch, y_batch) batch generator
+
+    Yields batches made of subsequences obtained using a sliding
+    window over the audio files.
+
+    Parameters
+    ----------
+    feature_extractor : YaafeFeatureExtractor
+    duration: float, optional
+        yield semgents of length `duration`
+        Default to 3.2s.
+    step: float, optional
+        Duration and step of sliding window (in seconds).
+        Default to 0.8s.
+    balance: float, optional
+        Frames within a context window centred by change 
+        point will be labeled by 1. The length of the context 
+        window is 2*balance.
+        Default to 0.01s.
+    batch_size: int, optional
+        Size of batch
+
+    Returns
+    -------
+    X_batch : (batch_size, n_samples, n_features) numpy array
+        Batch of feature sequences
+    y_batch : (batch_size, n_samples) numpy array
+        Batch of corresponding label sequences
+
+    Usage
+    -----
+    >>> batch_generator = ChangeDetectionBatchGenerator(feature_extractor)
+    >>> for X_batch, y_batch in batch_generator.from_file(current_file):
+    ...     # do something with
+    """
+
     def __init__(self, feature_extractor,
                  balance=0.01, duration=3.2, step=0.8, batch_size=32):
 
@@ -28,11 +64,10 @@ class ChangeDetectionBatchGenerator(PeriodicFeaturesMixin,
     def signature(self):
 
         shape = self.shape
-        dimension = 2
 
         return [
             {'type': 'sequence', 'shape': shape},
-            {'type': 'sequence', 'shape': (shape[0], dimension)}
+            {'type': 'sequence', 'shape': (shape[0], 2)}
         ]
 
     def preprocess(self, current_file, identifier=None):
@@ -63,8 +98,7 @@ class ChangeDetectionBatchGenerator(PeriodicFeaturesMixin,
         for segment, _, _ in annotation.itertracks(label=True):
             segments.append(Segment(segment.start - self.balance, segment.start + self.balance))
             segments.append(Segment(segment.end - self.balance, segment.end + self.balance))
-        change_part = Timeline(segments).coverage().crop(annotated, mode='intersection')
-        #coverage = annotation.get_timeline().coverage()
+        change_part = Timeline(segments).support().crop(annotated, mode='intersection')
 
         # iterate over non-change regions
         for non_changes in change_part.gaps(annotated):
