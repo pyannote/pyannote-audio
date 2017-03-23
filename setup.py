@@ -56,6 +56,7 @@ setup(
         'console_scripts': [
             'pyannote-speech-feature=pyannote.audio.applications.feature_extraction:main',
             'pyannote-speech-detection=pyannote.audio.applications.speech_detection:main',
+            'pyannote-change-detection=pyannote.audio.applications.change_detection:main',
             'pyannote-bic-clustering=pyannote.audio.applications.bic_clustering:main']
     },
     # versioneer
