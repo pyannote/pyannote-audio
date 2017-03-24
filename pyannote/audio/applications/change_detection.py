@@ -38,18 +38,18 @@ Usage:
 
 Options:
     <experiment_dir>           Set experiment root directory. This script expects
-                                                         a configuration file called "config.yml" to live
-                                                         in this directory. See "Configuration file"
-                                                         section below for more details.
+                               a configuration file called "config.yml" to live
+                               in this directory. See "Configuration file"
+                               section below for more details.
     <database.task.protocol>   Set evaluation protocol (e.g. "Etape.SpeakerDiarization.TV")
     <wav_template>             Set path to actual wave files. This path is
-                                                         expected to contain a {uri} placeholder that will
-                                                         be replaced automatically by the actual unique
-                                                         resource identifier (e.g. '/Etape/{uri}.wav').
+                               expected to contain a {uri} placeholder that will
+                               be replaced automatically by the actual unique
+                               resource identifier (e.g. '/Etape/{uri}.wav').
     <train_dir>                Set path to the directory containing pre-trained
-                                                         models (i.e. the output of "train" mode).
+                               models (i.e. the output of "train" mode).
     <tune_dir>                 Set path to the directory containing optimal
-                                                         hyper-parameters (i.e. the output of "tune" mode).
+                               hyper-parameters (i.e. the output of "tune" mode).
     --database=<db.yml>        Path to database configuration file.
                                [default: ~/.pyannote/db.yml]
     --subset=<subset>          Set subset (train|developement|test).
@@ -117,7 +117,7 @@ Configuration file:
         <database.task.protocol> protocol. By default, <subset> is "development".
 
 "apply" mode
-        Finally, one can apply speaker change detection using "segment" mode.
+        Finally, one can apply speaker change detection using "apply" mode.
         This will create the following files that contains the segmentation results 
         with a predetermined threshold:
                 <tune_dir>/segments/<database.task.protocol>.<subset>/<threshold>/{uri}.0.seg
