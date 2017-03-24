@@ -4,12 +4,11 @@ from pyannote.core import Segment
 from pyannote.core import Timeline
 from pyannote.generators.fragment import SlidingSegments
 from pyannote.generators.batch import FileBasedBatchGenerator
-from scipy.stats import zscore
+from pyannote.database.util import get_annotated
 import numpy as np
 
-
 class ChangeDetectionBatchGenerator(PeriodicFeaturesMixin,
-                                            FileBasedBatchGenerator):
+                                 FileBasedBatchGenerator):
 
     """(X_batch, y_batch) batch generator
 
@@ -20,18 +19,19 @@ class ChangeDetectionBatchGenerator(PeriodicFeaturesMixin,
     ----------
     feature_extractor : YaafeFeatureExtractor
     duration: float, optional
-        yield semgents of length `duration`
-        Default to 3.2s.
+        yield segments of length `duration`
+        Defaults to 3.2s.
     step: float, optional
-        Duration and step of sliding window (in seconds).
-        Default to 0.8s.
+        step of sliding window (in seconds).
+        Defaults to 0.8s.
     balance: float, optional
-        Frames within a context window centred by change 
-        point will be labeled by 1. The length of the context 
-        window is 2*balance.
-        Default to 0.01s.
+        Artificially increase the number of positive labels by 
+        labeling as positive every frame in the direct neighborhood 
+        (less than balance seconds apart) of each change point. 
+        Defaults to 0.01s (10 ms).
     batch_size: int, optional
         Size of batch
+        Defaults to 32
 
     Returns
     -------
@@ -90,7 +90,7 @@ class ChangeDetectionBatchGenerator(PeriodicFeaturesMixin,
         y = np.zeros((n_samples + 4, 1), dtype=np.int8)-1
         # [-1] ==> unknown / [0] ==> not change part / [1] ==> change part
 
-        annotated = current_file.get('annotated', X.getExtent())
+        annotated = get_annotated(current_file)
         annotation = current_file['annotation']
 
 
