@@ -31,8 +31,8 @@ change detection
 
 Usage:
     pyannote-change-detection train [--database=<db.yml> --subset=<subset>] <experiment_dir> <database.task.protocol>
-    pyannote-change-detection evaluate [--database=<db.yml> --subset=<subset>] <train_dir> <database.task.protocol>
-    pyannote-change-detection apply  [--database=<db.yml> --subset=<subset> --threshold=<threshold>] <train_dir> <database.task.protocol>
+    pyannote-change-detection evaluate [--database=<db.yml> --subset=<subset> --epoch=<epoch> --min_duration=<min_duration>] <train_dir> <database.task.protocol>
+    pyannote-change-detection apply  [--database=<db.yml> --subset=<subset> --threshold=<threshold> --epoch=<epoch>  --min_duration=<min_duration>] <train_dir> <database.task.protocol>
     pyannote-change-detection -h | --help
     pyannote-change-detection --version
 
@@ -57,6 +57,11 @@ Options:
                                In "validation" mode, default is "development".
                                In "tune" mode, default is "development".
                                In "apply" mode, default is "test".
+    --epoch=<epoch>            The epoch in training process
+    --threshold=<threshold>    Threshold for choosing change points 
+                               [default: 0.1]
+    --min_duration=<min_duration>]  min duration between two adjacent peaks
+                                    [default: 1.0]
     -h --help                  Show this screen.
     --version                  Show version.
 
@@ -76,7 +81,7 @@ Configuration file:
                     DDe: True                  # with 1st and 2nd derivatives
                     D: True                    # without energy, but with
                     DD: True                   # energy derivatives
-                    stack: 3
+                    stack: 1
  
         architecture:
              name: StackedLSTM
@@ -86,11 +91,6 @@ Configuration file:
                  mlp: [16]                   # LSTM is bidirectional
                  bidirectional: 'concat'
                  final_activation: 'sigmoid'
-
-        type:
-                name: type2
-                params:
-                    num_mfcc: 3
 
         sequences:
              duration: 3.2                 # this experiments relies
@@ -106,7 +106,7 @@ Configuration file:
 
         This means that the network was trained on the <subset> subset of the
         <database.task.protocol> protocol. By default, <subset> is "train".
-        This directory is called <train_dir> in the subsequent "tune" mode.
+        This directory is called <train_dir> in the subsequent "evaluate" and "apply" mode.
 
 "evaluate" mode:
         Then, one can evaluate the model with "evaluate" mode. This will create 
@@ -118,8 +118,9 @@ Configuration file:
 
 "apply" mode
         Finally, one can apply speaker change detection using "segment" mode.
-        This will create the following files that contains the segmentation results:
-                <tune_dir>/segments/<database.task.protocol>.<subset>/threshold/{uri}.0.seg
+        This will create the following files that contains the segmentation results 
+        with a predetermined threshold:
+                <tune_dir>/segments/<database.task.protocol>.<subset>/<threshold>/{uri}.0.seg
         This means that file whose unique resource identifier is {uri} has been
         processed.
 
@@ -149,72 +150,71 @@ from pyannote.audio.signal import Peak
 from pyannote.database import get_database
 from pyannote.audio.optimizers import SSMORMS3
 
-import skopt
-import skopt.utils
-import skopt.space
-import skopt.plots
 from pyannote.metrics.segmentation import SegmentationPurity
 from pyannote.metrics.segmentation import SegmentationCoverage
 from pyannote.metrics import f_measure
 
 from pyannote.database.util import FileFinder
 from pyannote.database.util import get_unique_identifier
+from pyannote.database import get_protocol
+
+from pyannote.audio.util import mkdir_p
+
 
 
 def train(protocol, experiment_dir, train_dir, subset='train'):
 
-        # -- TRAINING --
-        batch_size = 1024
-        nb_epoch = 2
-        optimizer = SSMORMS3()
+    # -- TRAINING --
+    batch_size = 1024
+    nb_epoch = 2
+    optimizer = SSMORMS3()
 
-        # load configuration file
-        config_yml = experiment_dir + '/config.yml'
-        with open(config_yml, 'r') as fp:
-                config = yaml.load(fp)
+    # load configuration file
+    config_yml = experiment_dir + '/config.yml'
+    with open(config_yml, 'r') as fp:
+            config = yaml.load(fp)
 
-        # -- FEATURE EXTRACTION --
-        feature_extraction_name = config['feature_extraction']['name']
-        features = __import__('pyannote.audio.features',
-                                                    fromlist=[feature_extraction_name])
-        FeatureExtraction = getattr(features, feature_extraction_name)
-        feature_extraction = FeatureExtraction(
-                **config['feature_extraction'].get('params', {}))
+    # -- FEATURE EXTRACTION --
+    feature_extraction_name = config['feature_extraction']['name']
+    features = __import__('pyannote.audio.features',
+        fromlist=[feature_extraction_name])
+    FeatureExtraction = getattr(features, feature_extraction_name)
+    feature_extraction = FeatureExtraction(
+            **config['feature_extraction'].get('params', {}))
 
-        # -- ARCHITECTURE --
-        architecture_name = config['architecture']['name']
-        models = __import__('pyannote.audio.labeling.models',
-                                                fromlist=[architecture_name])
-        Architecture = getattr(models, architecture_name)
-        architecture = Architecture(
-                **config['architecture'].get('params', {}))
+    # -- ARCHITECTURE --
+    architecture_name = config['architecture']['name']
+    models = __import__('pyannote.audio.labeling.models',
+        fromlist=[architecture_name])
+    Architecture = getattr(models, architecture_name)
+    architecture = Architecture(
+            **config['architecture'].get('params', {}))
 
-        # -- SEQUENCE GENERATOR --
-        duration = config['sequences']['duration']
-        step = config['sequences']['step']
-        balance = config['sequences']['balance']
-        generator = ChangeDetectionBatchGenerator(
-                feature_extraction,
-                duration=duration, step=step, batch_size=batch_size,balance=balance)
+    # -- SEQUENCE GENERATOR --
+    duration = config['sequences']['duration']
+    step = config['sequences']['step']
+    balance = config['sequences']['balance']
+    generator = ChangeDetectionBatchGenerator(
+            feature_extraction,
+            duration=duration, step=step, batch_size=batch_size,balance=balance)
 
-        # number of samples per epoch + round it to closest batch
-        seconds_per_epoch = protocol.stats(subset)['annotated']
-        samples_per_epoch = batch_size * \
-                int(np.ceil((seconds_per_epoch / step) / batch_size))
+    # number of samples per epoch + round it to closest batch
+    seconds_per_epoch = protocol.stats(subset)['annotated']
+    samples_per_epoch = batch_size * \
+            int(np.ceil((seconds_per_epoch / step) / batch_size))
 
-        # input shape (n_frames, n_features)
-        input_shape = generator.shape
- 
-        labeling = SequenceLabeling()
-        labeling.fit(input_shape, architecture,
-                                 generator(getattr(protocol, subset)(), infinite=True),
-                                 samples_per_epoch, nb_epoch, loss='binary_crossentropy',
-                                 optimizer=optimizer, log_dir=train_dir)
+    # input shape (n_frames, n_features)
+    input_shape = generator.shape
+
+    labeling = SequenceLabeling()
+    labeling.fit(input_shape, architecture,
+                generator(getattr(protocol, subset)(), infinite=True),
+                samples_per_epoch, nb_epoch, loss='binary_crossentropy',
+                optimizer=optimizer, log_dir=train_dir)
 
 
-
-def evaluate(protocol, train_dir, store_dir, subset='development'):
-    os.makedirs(store_dir)
+def evaluate(protocol, train_dir, store_dir, subset='development', epoch=None, min_duration=1.0):
+    mkdir_p(store_dir)
 
     # -- LOAD MODEL --
     architecture_yml = train_dir + '/architecture.yml'
@@ -223,17 +223,17 @@ def evaluate(protocol, train_dir, store_dir, subset='development'):
     while True:
         weights_h5 = WEIGHTS_H5.format(epoch=nb_epoch)
         if not os.path.isfile(weights_h5):
-                break
+            break
         nb_epoch += 1
     config_dir = os.path.dirname(os.path.dirname(train_dir))
     config_yml = config_dir + '/config.yml'
     with open(config_yml, 'r') as fp:
-            config = yaml.load(fp)
+        config = yaml.load(fp)
 
     # -- FEATURE EXTRACTION --
     feature_extraction_name = config['feature_extraction']['name']
     features = __import__('pyannote.audio.features',
-                                                fromlist=[feature_extraction_name])
+        fromlist=[feature_extraction_name])
     FeatureExtraction = getattr(features, feature_extraction_name)
     feature_extraction = FeatureExtraction(
             **config['feature_extraction'].get('params', {}))
@@ -244,14 +244,13 @@ def evaluate(protocol, train_dir, store_dir, subset='development'):
 
     groundtruth = {}
     for dev_file in getattr(protocol, subset)():
-                uri = dev_file['uri']
-                groundtruth[uri] = dev_file['annotation']
+        uri = dev_file['uri']
+        groundtruth[uri] = dev_file['annotation']
 
     def objective_function(epoch):
         weights_h5 = WEIGHTS_H5.format(epoch=epoch)
         sequence_labeling = SequenceLabeling.from_disk(
                 architecture_yml, weights_h5)
-
 
         aggregation = SequenceLabelingAggregation(
                 sequence_labeling, feature_extraction,
@@ -262,7 +261,6 @@ def evaluate(protocol, train_dir, store_dir, subset='development'):
 
         for dev_file in getattr(protocol, subset)():
             uri = dev_file['uri']
-            #wav = dev_file['wav']
             predictions[uri] = aggregation.apply(dev_file)
 
         alphas = np.linspace(0, 1, 20)
@@ -272,7 +270,7 @@ def evaluate(protocol, train_dir, store_dir, subset='development'):
 
         for i, alpha in enumerate(alphas):
             # initialize peak detection algorithm
-            peak = Peak(alpha=alpha, min_duration=1.0)
+            peak = Peak(alpha=alpha, min_duration=min_duration)
             for uri, reference in groundtruth.items():
                 # apply peak detection
                 hypothesis = peak.apply(predictions[uri])
@@ -280,7 +278,7 @@ def evaluate(protocol, train_dir, store_dir, subset='development'):
                 purity[i](reference, hypothesis)
                 coverage[i](reference, hypothesis)
 
-        TEMPLATE = '{alpha:.2f} {purity:.1f}% {coverage:.1f}%'
+        TEMPLATE = '{alpha:g} {purity:.3f}% {coverage:.3f}%'
         res = []
         for i, a in enumerate(alphas):
             p = 100 * abs(purity[i])
@@ -289,16 +287,17 @@ def evaluate(protocol, train_dir, store_dir, subset='development'):
             res.append((a,p,c))
         return res
 
-
-    res = objective_function(nb_epoch-1)
+    if epoch is None or epoch > nb_epoch:
+        res = objective_function(nb_epoch-1)
+    else:
+        res = objective_function(epoch)
 
     with open(store_dir + '/res.yml', 'w') as fp:
         yaml.dump(res, fp, default_flow_style=False)
 
 
-def apply(protocol, train_dir, store_dir, threshold, subset='development'):
-    #os.makedirs(store_dir)
-
+def apply(protocol, train_dir, store_dir, threshold, subset='development', epoch=None, min_duration=1.0):
+    
     # -- LOAD MODEL --
     architecture_yml = train_dir + '/architecture.yml'
     WEIGHTS_H5 = train_dir + '/weights/{epoch:04d}.h5'
@@ -306,7 +305,7 @@ def apply(protocol, train_dir, store_dir, threshold, subset='development'):
     while True:
         weights_h5 = WEIGHTS_H5.format(epoch=nb_epoch)
         if not os.path.isfile(weights_h5):
-                break
+            break
         nb_epoch += 1
     config_dir = os.path.dirname(os.path.dirname(train_dir))
     config_yml = config_dir + '/config.yml'
@@ -316,7 +315,7 @@ def apply(protocol, train_dir, store_dir, threshold, subset='development'):
     # -- FEATURE EXTRACTION --
     feature_extraction_name = config['feature_extraction']['name']
     features = __import__('pyannote.audio.features',
-                                                fromlist=[feature_extraction_name])
+        fromlist=[feature_extraction_name])
     FeatureExtraction = getattr(features, feature_extraction_name)
     feature_extraction = FeatureExtraction(
             **config['feature_extraction'].get('params', {}))
@@ -328,8 +327,8 @@ def apply(protocol, train_dir, store_dir, threshold, subset='development'):
     def saveSeg(filepath,filename,chn,segmentation):
         f = open(filepath,'w')
         for idx, val in enumerate(segmentation):
-                line = filename+' '+str(idx)+' '+str(chn)+' '+str(int(val[0]*100))+' '+str(int(val[1]*100-val[0]*100))+'\n'
-                f.write(line)
+            line = filename+' '+str(idx)+' '+str(chn)+' '+str(int(val[0]*100))+' '+str(int(val[1]*100-val[0]*100))+'\n'
+            f.write(line)
         f.close()
 
     def get_aggregation(epoch):
@@ -337,18 +336,19 @@ def apply(protocol, train_dir, store_dir, threshold, subset='development'):
         sequence_labeling = SequenceLabeling.from_disk(
                 architecture_yml, weights_h5)
 
-
         aggregation = SequenceLabelingAggregation(
                 sequence_labeling, feature_extraction,
                 duration=duration, step=step)
 
         return aggregation
 
-
     filepath = store_dir+'/'+str(threshold) +'/'
-    os.makedirs(filepath)
+    mkdir_p(filepath)
 
-    aggregation = get_aggregation(nb_epoch-1)
+    if epoch is None or epoch > nb_epoch:
+        aggregation = get_aggregation(nb_epoch-1)
+    else:
+        aggregation = get_aggregation(epoch)
 
     predictions = {}
     for dev_file in getattr(protocol, subset)():
@@ -356,7 +356,7 @@ def apply(protocol, train_dir, store_dir, threshold, subset='development'):
         predictions[uri] = aggregation.apply(dev_file)  
 
     # initialize peak detection algorithm
-    peak = Peak(alpha=threshold, min_duration=2.5)
+    peak = Peak(alpha=threshold, min_duration=min_duration)
 
     for dev_file in getattr(protocol, subset)():
         uri = dev_file['uri']
@@ -374,10 +374,9 @@ if __name__ == '__main__':
     preprocessors = {'wav': FileFinder(db_yml)}
 
     if '<database.task.protocol>' in arguments:
-        protocol = arguments['<database.task.protocol>']
-        database_name, task_name, protocol_name = protocol.split('.')
-        database = get_database(database_name, preprocessors=preprocessors)
-        protocol = database.get_protocol(task_name, protocol_name, progress=True)
+        protocol_name = arguments['<database.task.protocol>']
+        protocol = get_protocol(protocol_name, progress=True,
+            preprocessors=preprocessors)
 
     subset = arguments['--subset']
 
@@ -391,10 +390,17 @@ if __name__ == '__main__':
 
     if arguments['evaluate']:
         train_dir = arguments['<train_dir>']
+        epoch = arguments['--epoch']
+        min_duration= arguments['--min_duration']
         if subset is None:
-                subset = 'development'
+            subset = 'development'
+        if epoch is not None:
+            epoch = int(epoch)
+        
+        min_duration = float(min_duration)
         store_dir = train_dir + '/evaluate/' + arguments['<database.task.protocol>'] + '.' + subset
-        res = evaluate(protocol, train_dir, store_dir, subset=subset)
+        res = evaluate(protocol, train_dir, store_dir, subset=subset,
+            epoch=epoch, min_duration=min_duration)
 
 
     if arguments['apply']:
@@ -402,10 +408,13 @@ if __name__ == '__main__':
         if subset is None:
             subset = 'development'
         threshold = arguments['--threshold']
-        if threshold is None:
-            threshold = 0.7
-        else:
-            threshold = float(threshold)
+        threshold = float(threshold)
+        epoch = arguments['--epoch']
+        if epoch is not None:
+            epoch = int(epoch)
+        min_duration= arguments['--min_duration']
+        min_duration = float(min_duration)
         store_dir = train_dir + '/segments/' + arguments['<database.task.protocol>'] + '.' + subset
-        res = apply(protocol, train_dir, store_dir, threshold, subset=subset)
+        res = apply(protocol, train_dir, store_dir, threshold, subset=subset, 
+            epoch=epoch, min_duration=min_duration)
 
