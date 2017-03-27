@@ -59,7 +59,7 @@ class SequenceLabelingAggregation(PeriodicFeaturesMixin, FileBasedBatchGenerator
     """
 
     def __init__(self, sequence_labeling, feature_extractor,
-                 duration=3., step=None):
+                 duration=3., step=None, source='wav'):
 
         # feature sequence
         self.feature_extractor = feature_extractor
@@ -72,7 +72,7 @@ class SequenceLabelingAggregation(PeriodicFeaturesMixin, FileBasedBatchGenerator
         self.step = step
 
         # initialize segments generator
-        generator = SlidingSegments(duration=duration, step=step, source='wav')
+        generator = SlidingSegments(duration=duration, step=step, source=source)
 
         super(SequenceLabelingAggregation, self).__init__(generator, batch_size=-1)
         # TODO  setting batch_size to -1 results in one big mono_batch

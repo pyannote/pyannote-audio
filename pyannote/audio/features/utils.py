@@ -38,7 +38,6 @@ import pysndfile.sndio
 from pyannote.core import SlidingWindow, SlidingWindowFeature
 from pyannote.database.util import get_unique_identifier
 
-
 class PyannoteFeatureExtractionError(Exception):
     pass
 
@@ -47,6 +46,35 @@ def get_wav_duration(wav):
     y, sample_rate, _ = pysndfile.sndio.read(wav)
     n_samples = y.shape[0]
     return n_samples / sample_rate
+
+
+class RawAudio(object):
+
+    def __call__(self, item):
+
+        try:
+            wav = item['wav']
+            y, sample_rate, encoding = pysndfile.sndio.read(wav)
+        except IOError as e:
+            raise PyannoteFeatureExtractionError(e.message)
+
+        if np.any(np.isnan(y)):
+            uri = get_unique_identifier(item)
+            msg = 'pysndfile output contains NaNs for file "{uri}".'
+            raise PyannoteFeatureExtractionError(msg.format(uri=uri))
+
+        # reshape before selecting channel
+        if len(y.shape) < 2:
+            y = y.reshape(-1, 1)
+
+        channel = item.get('channel', 1)
+        y = y[:, channel - 1]
+
+        sliding_window = SlidingWindow(start=0.,
+                                       duration=1./sample_rate,
+                                       step=1./sample_rate)
+
+        return SlidingWindowFeature(y, sliding_window)
 
 
 class Precomputed(object):

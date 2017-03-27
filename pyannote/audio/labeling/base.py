@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2016 CNRS
+# Copyright (c) 2016-2017 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -96,7 +96,11 @@ class SequenceLabeling(object):
             self.labeling_.save_weights(weights, overwrite=overwrite)
 
     def fit(self, input_shape, design_labeling, generator,
+<<<<<<< HEAD
             samples_per_epoch, nb_epoch, loss='categorical_crossentropy', 
+=======
+            samples_per_epoch, nb_epoch, loss='categorical_crossentropy',
+>>>>>>> 64410ff4ffd9ab1898cf2553933c6428f88bc3fa
             optimizer='rmsprop', log_dir=None):
         """Train the model
 

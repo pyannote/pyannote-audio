@@ -114,6 +114,27 @@ class LibrosaFeatureExtractor(object):
         return SlidingWindowFeature(data.T, self.sliding_window_)
 
 
+class LibrosaRMSE(LibrosaFeatureExtractor):
+    """
+
+    Parameters
+    ----------
+    duration : float, optional
+        Defaults to 0.025 (25ms)
+    step : float, optional
+        Defaults to 0.01 (10ms)
+
+    """
+
+    def process(self, y, sample_rate):
+        n_fft = int(self.duration * sample_rate)
+        hop_length = int(self.step * sample_rate)
+        return librosa.feature.rmse(y=y, n_fft=n_fft, hop_length=hop_length)
+
+    def dimension(self):
+        return 1
+
+
 class LibrosaMFCC(LibrosaFeatureExtractor):
     """
         | e    |  energy

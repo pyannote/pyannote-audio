@@ -97,20 +97,26 @@ class SequenceEmbeddingAggregation(PeriodicFeaturesMixin,
                 {'type': 'sequence', 'shape': shape})
 
     def process_segment(self, segment, signature=None, identifier=None):
+        # replace segment by (segment, features)
         return (segment,
                 super(SequenceEmbeddingAggregation, self).process_segment(
                     segment, signature=signature, identifier=identifier))
 
     def pack_sequence(self, sequences):
+        #
         zero_padded = []
         masks = []
         for sequence in sequences:
+
+            # actual sequence length
             n_samples = min(self.shape_[0], sequence.shape[0])
 
+            # pad sequence with zeros
             zeros = np.zeros(self.shape_, dtype=np.float32)
             zeros[:n_samples, :] = sequence[:n_samples]
             zero_padded.append(zeros)
 
+            # mask 
             mask = np.zeros((self.shape_[0], 1), dtype=np.int8)
             mask[:n_samples] = 1
             masks.append(mask)
