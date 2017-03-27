@@ -58,7 +58,7 @@ Options:
     --epoch=<epoch>                 The epoch in training process
     --threshold=<threshold>         Threshold for choosing change points 
                                     [default: 0.1]
-    --min_duration=<min_duration>]  min duration between two adjacent peaks
+    --min_duration=<min_duration>   min duration between two adjacent peaks
                                     [default: 1.0]
     -h --help                       Show this screen.
     --version                       Show version.
@@ -158,7 +158,7 @@ def train(protocol, experiment_dir, train_dir, subset='train'):
 
     # -- TRAINING --
     batch_size = 1024
-    nb_epoch = 2
+    nb_epoch = 100
     optimizer = SSMORMS3()
 
     # load configuration file
@@ -241,8 +241,10 @@ def evaluate(protocol, train_dir, store_dir, subset='development',
         groundtruth[uri] = dev_file['annotation']
 
     # -- CHOOSE MODEL --
-    if epoch is None or epoch > nb_epoch:
-        epoch = nb_epoch-1
+    if epoch > nb_epoch:
+        raise ValueError('Epoch should be less than ' + str(nb_epoch))
+    if epoch is None:
+        epoch = nb_epoch - 1
 
     weights_h5 = WEIGHTS_H5.format(epoch=epoch)
     sequence_labeling = SequenceLabeling.from_disk(
@@ -252,7 +254,7 @@ def evaluate(protocol, train_dir, store_dir, subset='development',
             sequence_labeling, feature_extraction,
             duration=duration, step=step)
 
-    # -- PREDICITION --
+    # -- PREDICTION --
     predictions = {}
     for dev_file in getattr(protocol, subset)():
         uri = dev_file['uri']
@@ -319,25 +321,22 @@ def apply(protocol, train_dir, store_dir, threshold, subset='development',
             f.write(line)
         f.close()
 
-    def get_aggregation(epoch):
-        weights_h5 = WEIGHTS_H5.format(epoch=epoch)
-        sequence_labeling = SequenceLabeling.from_disk(
-                architecture_yml, weights_h5)
-
-        aggregation = SequenceLabelingAggregation(
-                sequence_labeling, feature_extraction,
-                duration=duration, step=step)
-
-        return aggregation
-
     filepath = store_dir+'/'+str(threshold) +'/'
     mkdir_p(filepath)
 
-    if epoch is None or epoch > nb_epoch:
-        aggregation = get_aggregation(nb_epoch-1)
-    else:
-        aggregation = get_aggregation(epoch)
+    # -- CHOOSE MODEL --
+    if epoch > nb_epoch:
+        raise ValueError('Epoch should be less than ' + str(nb_epoch))
+    if epoch is None:
+        epoch = nb_epoch - 1
+    weights_h5 = WEIGHTS_H5.format(epoch=epoch)
+    sequence_labeling = SequenceLabeling.from_disk(
+            architecture_yml, weights_h5)
+    aggregation = SequenceLabelingAggregation(
+            sequence_labeling, feature_extraction,
+            duration=duration, step=step)
 
+    # -- PREDICTION --
     predictions = {}
     for dev_file in getattr(protocol, subset)():
         uri = dev_file['uri']
