@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2016 CNRS
+# Copyright (c) 2016-2017 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -37,40 +37,37 @@ Usage:
     pyannote-change-detection --version
 
 Options:
-    <experiment_dir>           Set experiment root directory. This script expects
-                               a configuration file called "config.yml" to live
-                               in this directory. See "Configuration file"
-                               section below for more details.
-    <database.task.protocol>   Set evaluation protocol (e.g. "Etape.SpeakerDiarization.TV")
-    <wav_template>             Set path to actual wave files. This path is
-                               expected to contain a {uri} placeholder that will
-                               be replaced automatically by the actual unique
-                               resource identifier (e.g. '/Etape/{uri}.wav').
-    <train_dir>                Set path to the directory containing pre-trained
-                               models (i.e. the output of "train" mode).
-    <tune_dir>                 Set path to the directory containing optimal
-                               hyper-parameters (i.e. the output of "tune" mode).
-    --database=<db.yml>        Path to database configuration file.
-                               [default: ~/.pyannote/db.yml]
-    --subset=<subset>          Set subset (train|developement|test).
-                               In "train" mode, default is "train".
-                               In "validation" mode, default is "development".
-                               In "tune" mode, default is "development".
-                               In "apply" mode, default is "test".
-    --epoch=<epoch>            The epoch in training process
-    --threshold=<threshold>    Threshold for choosing change points 
-                               [default: 0.1]
+    <experiment_dir>                Set experiment root directory. This script expects
+                                    a configuration file called "config.yml" to live
+                                    in this directory. See "Configuration file"
+                                    section below for more details.
+    <database.task.protocol>        Set evaluation protocol (e.g. "Etape.SpeakerDiarization.TV")
+    <wav_template>                  Set path to actual wave files. This path is
+                                    expected to contain a {uri} placeholder that will
+                                    be replaced automatically by the actual unique
+                                    resource identifier (e.g. '/Etape/{uri}.wav').
+    <train_dir>                     Set path to the directory containing pre-trained
+                                    models (i.e. the output of "train" mode).
+    --database=<db.yml>             Path to database configuration file.
+                                    [default: ~/.pyannote/db.yml]
+    --subset=<subset>               Set subset (train|developement|test).
+                                    In "train" mode, default is "train".
+                                    In "validation" mode, default is "development".
+                                    In "tune" mode, default is "development".
+                                    In "apply" mode, default is "test".
+    --epoch=<epoch>                 The epoch in training process
+    --threshold=<threshold>         Threshold for choosing change points 
+                                    [default: 0.1]
     --min_duration=<min_duration>]  min duration between two adjacent peaks
                                     [default: 1.0]
-    -h --help                  Show this screen.
-    --version                  Show version.
+    -h --help                       Show this screen.
+    --version                       Show version.
 
 Configuration file:
         The configuration of each experiment is described in a file called
         <experiment_dir>/config.yml, that describes the architecture of the neural
-        network used for sequence labeling (0 vs. 1, non-speech vs. speech), the
-        feature extraction process (e.g. MFCCs) and the sequence generator used for
-        both training and testing.
+        network used for sequence labeling, the feature extraction process 
+        (e.g. MFCCs) and the sequence generator used for both training and applying.
 
         ................... <experiment_dir>/config.yml ...................
         feature_extraction:
@@ -82,6 +79,8 @@ Configuration file:
                     D: True                    # without energy, but with
                     DD: True                   # energy derivatives
                     stack: 1
+                    duration: 0.025
+                    step: 0.010
  
         architecture:
              name: StackedLSTM
@@ -119,8 +118,8 @@ Configuration file:
 "apply" mode
         Finally, one can apply speaker change detection using "apply" mode.
         This will create the following files that contains the segmentation results 
-        with a predetermined threshold:
-                <tune_dir>/segments/<database.task.protocol>.<subset>/<threshold>/{uri}.0.seg
+        with a requested threshold:
+                <train_dir>/segments/<database.task.protocol>.<subset>/<threshold>/{uri}.0.seg
         This means that file whose unique resource identifier is {uri} has been
         processed.
 
@@ -133,13 +132,6 @@ import functools
 import numpy as np
 
 from docopt import docopt
-
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-
-import pyannote.core
-import pyannote.core.json
 
 from pyannote.audio.labeling.base import SequenceLabeling
 from pyannote.audio.generators.change import ChangeDetectionBatchGenerator
@@ -196,7 +188,7 @@ def train(protocol, experiment_dir, train_dir, subset='train'):
     balance = config['sequences']['balance']
     generator = ChangeDetectionBatchGenerator(
             feature_extraction,
-            duration=duration, step=step, batch_size=batch_size,balance=balance)
+            duration=duration, step=step, batch_size=batch_size, balance=balance)
 
     # number of samples per epoch + round it to closest batch
     seconds_per_epoch = protocol.stats(subset)['annotated']
@@ -213,9 +205,10 @@ def train(protocol, experiment_dir, train_dir, subset='train'):
                 optimizer=optimizer, log_dir=train_dir)
 
 
-def evaluate(protocol, train_dir, store_dir, subset='development', epoch=None, min_duration=1.0):
-    mkdir_p(store_dir)
+def evaluate(protocol, train_dir, store_dir, subset='development', 
+    epoch=None, min_duration=1.0):
 
+    mkdir_p(store_dir)
     # -- LOAD MODEL --
     architecture_yml = train_dir + '/architecture.yml'
     WEIGHTS_H5 = train_dir + '/weights/{epoch:04d}.h5'
@@ -247,56 +240,51 @@ def evaluate(protocol, train_dir, store_dir, subset='development', epoch=None, m
         uri = dev_file['uri']
         groundtruth[uri] = dev_file['annotation']
 
-    def objective_function(epoch):
-        weights_h5 = WEIGHTS_H5.format(epoch=epoch)
-        sequence_labeling = SequenceLabeling.from_disk(
-                architecture_yml, weights_h5)
+    # -- CHOOSE MODEL --
+    if epoch is None or epoch > nb_epoch:
+        epoch = nb_epoch-1
 
-        aggregation = SequenceLabelingAggregation(
-                sequence_labeling, feature_extraction,
-                duration=duration, step=step)
+    weights_h5 = WEIGHTS_H5.format(epoch=epoch)
+    sequence_labeling = SequenceLabeling.from_disk(
+            architecture_yml, weights_h5)
 
+    aggregation = SequenceLabelingAggregation(
+            sequence_labeling, feature_extraction,
+            duration=duration, step=step)
 
-        predictions = {}
+    # -- PREDICITION --
+    predictions = {}
+    for dev_file in getattr(protocol, subset)():
+        uri = dev_file['uri']
+        predictions[uri] = aggregation.apply(dev_file)
 
-        for dev_file in getattr(protocol, subset)():
-            uri = dev_file['uri']
-            predictions[uri] = aggregation.apply(dev_file)
+    alphas = np.linspace(0, 1, 20)
 
-        alphas = np.linspace(0, 1, 20)
+    purity = [SegmentationPurity(parallel=False) for alpha in alphas]
+    coverage = [SegmentationCoverage(parallel=False) for alpha in alphas]
 
-        purity = [SegmentationPurity(parallel=False) for alpha in alphas]
-        coverage = [SegmentationCoverage(parallel=False) for alpha in alphas]
+    # -- SAVE RESULTS --
+    for i, alpha in enumerate(alphas):
+        # initialize peak detection algorithm
+        peak = Peak(alpha=alpha, min_duration=min_duration)
+        for uri, reference in groundtruth.items():
+            # apply peak detection
+            hypothesis = peak.apply(predictions[uri])
+            # compute purity and coverage
+            purity[i](reference, hypothesis)
+            coverage[i](reference, hypothesis)
 
-        for i, alpha in enumerate(alphas):
-            # initialize peak detection algorithm
-            peak = Peak(alpha=alpha, min_duration=min_duration)
-            for uri, reference in groundtruth.items():
-                # apply peak detection
-                hypothesis = peak.apply(predictions[uri])
-                # compute purity and coverage
-                purity[i](reference, hypothesis)
-                coverage[i](reference, hypothesis)
-
-        TEMPLATE = '{alpha:g} {purity:.3f}% {coverage:.3f}%'
-        res = []
+    TEMPLATE = '{alpha:g} {purity:.3f}% {coverage:.3f}%'
+    with open(store_dir + '/res.txt', 'a') as fp:
         for i, a in enumerate(alphas):
             p = 100 * abs(purity[i])
             c = 100 * abs(coverage[i])
             print(TEMPLATE.format(alpha=a, purity=p, coverage=c))
-            res.append((a,p,c))
-        return res
+            fp.write(TEMPLATE.format(alpha=a, purity=p, coverage=c)+'\n')
+    
 
-    if epoch is None or epoch > nb_epoch:
-        res = objective_function(nb_epoch-1)
-    else:
-        res = objective_function(epoch)
-
-    with open(store_dir + '/res.yml', 'w') as fp:
-        yaml.dump(res, fp, default_flow_style=False)
-
-
-def apply(protocol, train_dir, store_dir, threshold, subset='development', epoch=None, min_duration=1.0):
+def apply(protocol, train_dir, store_dir, threshold, subset='development', 
+    epoch=None, min_duration=1.0):
     
     # -- LOAD MODEL --
     architecture_yml = train_dir + '/architecture.yml'
