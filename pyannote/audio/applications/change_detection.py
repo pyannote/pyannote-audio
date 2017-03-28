@@ -354,7 +354,7 @@ def apply(protocol, train_dir, store_dir, threshold, subset='development',
         saveSeg(filepath,uri,chn,hypothesis)
 
 
-if __name__ == '__main__':
+def main():
 
     arguments = docopt(__doc__, version='Speaker change detection')
     db_yml = os.path.expanduser(arguments['--database'])
