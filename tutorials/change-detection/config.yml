@@ -1,0 +1,23 @@
+feature_extraction:
+   name: YaafeMFCC
+   params:
+      e: False                   # this experiments relies
+      De: True                   # on 11 MFCC coefficients
+      DDe: True                  # with 1st and 2nd derivatives
+      D: True                    # without energy, but with
+      DD: True                   # energy derivatives
+      stack: 1
+
+architecture:
+   name: StackedLSTM
+   params:                       # this experiments relies
+     n_classes: 1                # on one LSTM layer (16 outputs)
+     lstm: [16]                  # and one dense layer.
+     mlp: [16]                   # LSTM is bidirectional
+     bidirectional: 'concat'
+     final_activation: 'sigmoid'
+
+sequences:
+   duration: 3.2                 # this experiments relies
+   step: 0.8                     # on sliding windows of 3.2s
+   balance: 0.05                 # with a step of 0.8s
