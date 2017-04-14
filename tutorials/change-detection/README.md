@@ -23,17 +23,17 @@
 > AUTHOR  
 > Ruiqing Yin
 
-# Change detection with `pyannote.audio`
+# Speaker change detection with `pyannote.audio`
 
-In this tutorial, you will learn how to train and test a change point detector based on MFCCs and LSTMs, using `pyannote-change-detection` command line tool.
+In this tutorial, you will learn how to train and test a speaker change detection model based on MFCCs and LSTMs, using `pyannote-chang-detection` command line tool.
 
 ## Installation
 
 ```bash
-$ conda create --name py27-pyannote-audio python=2.7 anaconda
-$ source activate py27-pyannote-audio
+$ conda create --name py35-pyannote-audio python=3.5 anaconda
+$ ource activate py35-pyannote-audio
 $ conda install gcc
-$ conda install -c yaafe yaafe=0.65
+$ conda install -c conda-forge yaafe
 $ pip install "pyannote.audio==0.2.1"
 $ pip install pyannote.db.etape
 ```
@@ -74,9 +74,9 @@ architecture:
      final_activation: 'sigmoid'
 
 sequences:
-   duration: 3.2                 # this experiments relies
-   step: 0.8                     # on sliding windows of 3.2s
-   balance: 0.05                 # with a step of 0.8s
+   duration: 3.2                 # this experiments relies on sliding windows
+   step: 0.8                     # of 3.2s with a step of 0.8s
+   balance: 0.05                 # and balancing neighborhood size of 0.05s
 
 ```
 
@@ -110,7 +110,7 @@ Now that the network is trained, we get different models for different epochs. W
 ```bash
 $ export TRAIN_DIR=${EXPERIMENT_DIR}/train/Etape.SpeakerDiarization.TV.train
 $ pyannote-change-detection evaluate \
-         --epoch 49 \
+         --epoch=49 \
          ${TRAIN_DIR} \               # <train_dir>
          Etape.SpeakerDiarization.TV  # <database.task.protocol> 
 ```
@@ -140,7 +140,8 @@ We can choose the best model according to the evaluation results and  apply it o
 
 ```bash
 $ pyannote-speech-detection apply \
-          --epoch 49 \
+          --epoch=49 \
+          --threshold=0.1 \
           ${TRAIN_DIR} \               #<train_dir>
           Etape.SpeakerDiarization.TV  # <database.task.protocol>
 ```
@@ -150,11 +151,13 @@ this will create a list of files in `APPLY_DIR` (defined below) containing segme
 ```bash
 $ export APPLY_DIR=${TRAIN_DIR}/segment/Etape.SpeakerDiarization.TV.development/0.1/
 $ head -n 5 $APPLY_DIR/BFMTV_BFMStory_2011-03-17_175900.0.seg
-BFMTV_BFMStory_2011-03-17_175900 0 1 -1 560
-BFMTV_BFMStory_2011-03-17_175900 1 1 559 356
-BFMTV_BFMStory_2011-03-17_175900 2 1 915 204
-BFMTV_BFMStory_2011-03-17_175900 3 1 1119 160
-BFMTV_BFMStory_2011-03-17_175900 4 1 1279 398
+            file_id              seg_id  channel start length
+-------------------------------- ------- ------- ----- ------
+BFMTV_BFMStory_2011-03-17_175900    0      1      -1     560
+BFMTV_BFMStory_2011-03-17_175900    1      1      559    356
+BFMTV_BFMStory_2011-03-17_175900    2      1      915    204
+BFMTV_BFMStory_2011-03-17_175900    3      1      1119   160
+BFMTV_BFMStory_2011-03-17_175900    4      1      1279   398
 ```
 
 ## Going further...

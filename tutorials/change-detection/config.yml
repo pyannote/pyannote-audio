@@ -18,6 +18,6 @@ architecture:
      final_activation: 'sigmoid'
 
 sequences:
-   duration: 3.2                 # this experiments relies
-   step: 0.8                     # on sliding windows of 3.2s
-   balance: 0.05                 # with a step of 0.8s
+   duration: 3.2                 # this experiments relies on sliding windows
+   step: 0.8                     # of 3.2s with a step of 0.8s
+   balance: 0.05                 # and balancing neighborhood size of 0.05s
