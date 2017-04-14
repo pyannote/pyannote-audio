@@ -25,7 +25,7 @@
 
 # Speaker change detection with `pyannote.audio`
 
-In this tutorial, you will learn how to train and test a speaker change detection model based on MFCCs and LSTMs, using `pyannote-chang-detection` command line tool.
+In this tutorial, you will learn how to train and test a speaker change detection model based on MFCCs and LSTMs, using `pyannote-change-detection` command line tool.
 
 ## Installation
 
