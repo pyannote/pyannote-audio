@@ -49,6 +49,8 @@ class Extraction(PeriodicFeaturesMixin, FileBasedBatchGenerator):
         Subsequence duration, in seconds.
     step : float, optional
         Subsequence step, in seconds. Defaults to 25% of `duration`.
+    internal : bool, optional
+        Extract internal representation.
 
     Usage
     -----
@@ -60,21 +62,30 @@ class Extraction(PeriodicFeaturesMixin, FileBasedBatchGenerator):
 
     """
     def __init__(self, embedding, feature_extraction, duration,
-                 step=None, batch_size=32):
+                 step=None, batch_size=32, internal=False):
 
         self.embedding = embedding
         self.feature_extractor = feature_extraction
         self.duration = duration
         self.batch_size = batch_size
+        self.internal = internal
 
         generator = SlidingSegments(duration=duration, step=step, source='wav')
         self.step = generator.step if step is None else step
 
         # build function that takes batch of sequences as input
-        # and returns their internal embedding
+        # and returns their (internal) embedding
+        if self.internal:
+            output_layer = self.embedding.get_layer(name='internal')
+            if output_layer is None:
+                raise ValueError(
+                    'Model does not support extraction of internal representation.')
+        else:
+            output_layer = self.embedding.get_layer(index=-1)
+
+        input_layer = self.embedding.get_layer(name='input')
         K_func = K.function(
-            [self.embedding.get_layer(name='input').input, K.learning_phase()],
-            [self.embedding.get_layer(name='internal').output])
+            [input_layer.input, K.learning_phase()], [output_layer.output])
         def embed(batch):
             return K_func([batch, 0])[0]
         self.embed_ = embed
@@ -127,6 +138,11 @@ class Extraction(PeriodicFeaturesMixin, FileBasedBatchGenerator):
             [batch for batch in self.from_file(current_file,
                                                incomplete=True)])
 
+        subsequences = SlidingWindow(duration=self.duration, step=self.step)
+
+        if not self.internal:
+            return SlidingWindowFeature(fX, subsequences)
+
         # get total number of frames
         identifier = get_unique_identifier(current_file)
         n_frames = self.preprocessed_['X'][identifier].data.shape[0]
@@ -139,7 +155,6 @@ class Extraction(PeriodicFeaturesMixin, FileBasedBatchGenerator):
 
         # frame and sub-sequence sliding windows
         frames = self.feature_extractor.sliding_window()
-        subsequences = SlidingWindow(duration=self.duration, step=self.step)
 
         for subsequence, fX_ in zip(subsequences, fX):
 

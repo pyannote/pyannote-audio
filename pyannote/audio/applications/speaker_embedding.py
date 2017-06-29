@@ -33,7 +33,7 @@ Usage:
   pyannote-speaker-embedding data [--database=<db.yml> --duration=<duration> --step=<step> --heterogeneous] <root_dir> <database.task.protocol>
   pyannote-speaker-embedding train [--subset=<subset> --start=<epoch> --end=<epoch>] <experiment_dir> <database.task.protocol>
   pyannote-speaker-embedding validate [--subset=<subset> --aggregate --every=<epoch> --from=<epoch>] <train_dir> <database.task.protocol>
-  pyannote-speaker-embedding apply [--database=<db.yml> --step=<step>] <validate.txt> <database.task.protocol> <output_dir>
+  pyannote-speaker-embedding apply [--database=<db.yml> --step=<step> --internal] <validate.txt> <database.task.protocol> <output_dir>
   pyannote-speaker-embedding -h | --help
   pyannote-speaker-embedding --version
 
@@ -64,6 +64,7 @@ Options:
   --every=<epoch>            Defaults to every epoch [default: 1].
   --from=<epoch>             Start at this epoch [default: 0].
   <train_dir>                Path to directory created by "train" mode.
+  --internal                 Extract internal representation.
   -h --help                  Show this screen.
   --version                  Show version.
 
@@ -653,7 +654,7 @@ class SpeakerEmbedding(Application):
 
         progress_bar.close()
 
-    def apply(self, protocol_name, output_dir, step=None):
+    def apply(self, protocol_name, output_dir, step=None, internal=False):
 
         # load best performing model
         with open(self.validate_txt_, 'r') as fp:
@@ -671,7 +672,8 @@ class SpeakerEmbedding(Application):
         # initialize embedding extraction
         batch_size = self.approach_.batch_size
         extraction = Extraction(embedding, self.feature_extraction_, duration,
-                                step=step, batch_size=batch_size)
+                                step=step, batch_size=batch_size,
+                                internal=internal)
         sliding_window = extraction.sliding_window
         dimension = extraction.dimension
 
@@ -781,5 +783,8 @@ def main():
         if step is not None:
             step = float(step)
 
+        internal = arguments['--internal']
+
         application = SpeakerEmbedding.from_validate_txt(validate_txt)
-        application.apply(protocol_name, output_dir, step=step)
+        application.apply(protocol_name, output_dir, step=step,
+                          internal=internal)
