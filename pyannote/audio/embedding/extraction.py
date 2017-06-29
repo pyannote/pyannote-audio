@@ -98,7 +98,10 @@ class Extraction(PeriodicFeaturesMixin, FileBasedBatchGenerator):
 
     @property
     def sliding_window(self):
-        return self.feature_extractor.sliding_window()
+        if self.internal:
+            return self.feature_extractor.sliding_window()
+        else:
+            return SlidingWindow(duration=self.duration, step=self.step)
 
     def signature(self):
         shape = self.shape
