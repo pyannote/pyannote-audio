@@ -68,7 +68,7 @@ class TripletLoss(SequenceEmbedding):
     per_batch : int, optional
         Number of folds per batch. Defaults to 1.
         Has no effect when `per_fold` is not provided.
-    sampling : {'all', 'hard', 'hardest'}
+    sampling : {'all', 'semi-hard', 'hard', 'hardest'}
         Negative sampling strategy.
     learn_to_aggregate : boolean, optional
     gradient_factor : float, optional
@@ -303,7 +303,8 @@ class TripletLoss(SequenceEmbedding):
                                                  distance=distance)
 
         elif self.sampling == 'semi-hard':
-            raise NotImplementedError('')
+            return self.triplet_sampling_semi_hard(y, anchor, positive,
+                                                   distance=distance)
 
     def triplet_sampling_all(self, y, anchor, positive, **kwargs):
         for negative, y_negative in enumerate(y):
@@ -313,7 +314,8 @@ class TripletLoss(SequenceEmbedding):
 
     def triplet_sampling_hard(self, y, anchor, positive, distance=None):
         """Choose negative at random such that
-        d(anchor, negative) < d(anchor, positive) + margin
+
+0 < d(anchor, positive) - d(anchor, negative) + margin
         """
 
         # find hard cases (loss > 0)
@@ -328,9 +330,32 @@ class TripletLoss(SequenceEmbedding):
                 yield negative
                 break
 
-    def triplet_sampling_hardest(self, y, anchor, positive, distance=None):
+
+    def triplet_sampling_semi_hard(self, y, anchor, positive, distance=None):
         """Choose negative at random such that
-        d(anchor, negative) < d(anchor, positive) + margin
+
+0 < d(anchor, positive) - d(anchor, negative) + margin < margin
+        """
+
+        # find hard cases (loss > 0)
+        loss = self.triplet_loss(distance, anchor, positive, clamp=False)
+        semi_hard_cases = np.where(
+            (loss > 0) * (loss < self.margin * self.metric_max_))[0]
+
+        # choose at random == shuffle and choose the first one
+        shuffle(semi_hard_cases)
+        for negative in semi_hard_cases:
+            # make sure it is not actually a positive sample
+            if y[negative] != y[anchor]:
+                yield negative
+                break
+
+
+    def triplet_sampling_hardest(self, y, anchor, positive, distance=None):
+        """Choose negative such that
+
+* 0 < d(anchor, positive) - d(anchor, negative) + margin
+* negative = argmin(d(anchor, negative))
         """
 
         # find hard cases (loss > 0)
