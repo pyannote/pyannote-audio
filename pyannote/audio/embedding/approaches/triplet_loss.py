@@ -337,7 +337,7 @@ class TripletLoss(SequenceEmbedding):
 0 < d(anchor, positive) - d(anchor, negative) + margin < margin
         """
 
-        # find hard cases (loss > 0)
+        # find semi-hard cases (margin > loss > 0)
         loss = self.triplet_loss(distance, anchor, positive, clamp=False)
         semi_hard_cases = np.where(
             (loss > 0) * (loss < self.margin * self.metric_max_))[0]
