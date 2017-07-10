@@ -40,6 +40,7 @@ from pyannote.generators.indices import random_label_index
 from pyannote.generators.batch import batchify
 
 from pyannote.core.util import pairwise
+from random import shuffle
 
 
 class TripletLoss(SequenceEmbedding):
