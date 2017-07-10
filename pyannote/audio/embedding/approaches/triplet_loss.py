@@ -67,6 +67,8 @@ class TripletLoss(SequenceEmbedding):
     per_batch : int, optional
         Number of folds per batch. Defaults to 1.
         Has no effect when `per_fold` is not provided.
+    sampling : {'all', 'hard'}
+        Negative sampling strategy.
     learn_to_aggregate : boolean, optional
     gradient_factor : float, optional
         Multiply gradient by this number. Defaults to 1.
@@ -76,7 +78,7 @@ class TripletLoss(SequenceEmbedding):
     """
 
     def __init__(self, metric='sqeuclidean', margin=0.1, clamp='positive',
-                 per_batch=1, per_label=3, per_fold=None,
+                 per_batch=1, per_label=3, per_fold=None, sampling='all',
                  learn_to_aggregate=False, **kwargs):
 
         self.margin = margin
@@ -84,6 +86,7 @@ class TripletLoss(SequenceEmbedding):
         self.per_batch = per_batch
         self.per_label = per_label
         self.per_fold = per_fold
+        self.sampling = sampling
         self.learn_to_aggregate = learn_to_aggregate
         super(TripletLoss, self).__init__(**kwargs)
 
@@ -242,6 +245,62 @@ class TripletLoss(SequenceEmbedding):
 
         return loss / n_comparisons
 
+    def triplet_loss(self, distance, anchor, positive, negative=None):
+
+        loss = distance[anchor, positive]
+
+        if negative is None:
+            loss = loss - distance[anchor, :]
+        else:
+            loss = loss - distance[anchor, negative]
+
+        if self.clamp == 'positive':
+            loss = loss + self.margin * self.metric_max_
+            loss = ag_np.maximum(loss, 0.)
+
+        elif self.clamp == 'sigmoid':
+            loss = loss - self.margin * self.metric_max_
+            loss = 1. / (1. + ag_np.exp(-10. * loss))
+
+        return loss
+
+    def triplet_sampling(self, y, anchor, positive, distance=None):
+
+        if self.sampling == 'all':
+            return self.triplet_sampling_all(y, anchor, positive)
+
+        elif self.sampling == 'hard':
+            raise NotImplementedError('')
+
+        elif self.sampling == 'hardest':
+            raise NotImplementedError('')
+
+        elif self.sampling == 'semi-hard':
+            raise NotImplementedError('')
+
+    def triplet_sampling_all(self, y, anchor, positive, **kwargs):
+        for negative, y_negative in enumerate(y):
+            if y_negative == y[anchor]:
+                continue
+            yield negative
+
+    def triplet_sampling_hard(self, y, anchor, positive, distance=None):
+        """Choose negative at random such that
+        d(anchor, negative) < d(anchor, positive) + margin
+        """
+
+        # find hard cases (loss > 0)
+        loss = self.triplet_loss(distance, anchor, positive)
+        hard_cases = np.where(loss > 0)[0]
+
+        # choose at random == shuffle and choose the first one
+        shuffle(hard_cases)
+        for negative in hard_cases:
+            # make sure it is not actually a positive sample
+            if y[negative] != y[anchor]:
+                yield negative
+                break
+
     def loss_y_fold(self, fX, y):
         """Differentiable loss
 
@@ -273,22 +332,13 @@ class TripletLoss(SequenceEmbedding):
                 if (anchor == positive) or (y_anchor != y_positive):
                     continue
 
-                for negative, y_negative in enumerate(y):
+                for negative in self.triplet_sampling(y, anchor, positive,
+                                                      distance=distance):
 
-                    # if same label, skip
-                    if y_negative == y_positive:
-                        continue
-
-                    loss_ = distance[anchor, positive] - \
-                            distance[anchor, negative]
-
-                    if self.clamp == 'positive':
-                        loss_ = loss_ + self.margin * self.metric_max_
-                        loss_ = ag_np.maximum(loss_, 0.)
-
-                    elif self.clamp == 'sigmoid':
-                        loss_ = loss_ - self.margin * self.metric_max_
-                        loss_ = 1. / (1. + ag_np.exp(-10. * loss_))
+                    loss_ = self.triplet_loss(distance,
+                                              anchor,
+                                              positive,
+                                              negative)
 
                     # do not use += because autograd does not support it
                     loss = loss + loss_
