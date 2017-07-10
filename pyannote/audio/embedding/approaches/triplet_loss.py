@@ -270,7 +270,8 @@ class TripletLoss(SequenceEmbedding):
             return self.triplet_sampling_all(y, anchor, positive)
 
         elif self.sampling == 'hard':
-            raise NotImplementedError('')
+            return self.triplet_sampling_hard(y, anchor, positive,
+                                              distance=distance)
 
         elif self.sampling == 'hardest':
             raise NotImplementedError('')
