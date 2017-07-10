@@ -246,7 +246,28 @@ class TripletLoss(SequenceEmbedding):
 
         return loss / n_comparisons
 
-    def triplet_loss(self, distance, anchor, positive, negative=None):
+    def triplet_loss(self, distance, anchor, positive, negative=None,
+                     clamp=True):
+        """
+
+        Parameters
+        ----------
+        distance : (n_samples, n_samples) array-like
+            Precomputed distances between embedding
+        anchor : int
+        positive : int
+            Index of anchor and positive samples.
+        negative : int, optional
+            Index of negative samples.
+            Defaults to computing loss for all negatives.
+        clamp : bool, optional
+            Whether to apply clamping or not. Defaults to True.
+
+        Returns
+        -------
+        loss : float or (n_samples, ) array
+            Triplet loss.
+        """
 
         loss = distance[anchor, positive]
 
@@ -254,6 +275,9 @@ class TripletLoss(SequenceEmbedding):
             loss = loss - distance[anchor, :]
         else:
             loss = loss - distance[anchor, negative]
+
+        if not clamp:
+            return loss
 
         if self.clamp == 'positive':
             loss = loss + self.margin * self.metric_max_
@@ -292,7 +316,7 @@ class TripletLoss(SequenceEmbedding):
         """
 
         # find hard cases (loss > 0)
-        loss = self.triplet_loss(distance, anchor, positive)
+        loss = self.triplet_loss(distance, anchor, positive, clamp=False)
         hard_cases = np.where(loss > 0)[0]
 
         # choose at random == shuffle and choose the first one
@@ -340,7 +364,8 @@ class TripletLoss(SequenceEmbedding):
                     loss_ = self.triplet_loss(distance,
                                               anchor,
                                               positive,
-                                              negative)
+                                              negative=negative,
+                                              clamp=True)
 
                     # do not use += because autograd does not support it
                     loss = loss + loss_
