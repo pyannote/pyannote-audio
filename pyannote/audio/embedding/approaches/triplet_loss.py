@@ -70,6 +70,9 @@ class TripletLoss(SequenceEmbedding):
         Has no effect when `per_fold` is not provided.
     sampling : {'all', 'semi-hard', 'hard', 'hardest'}
         Negative sampling strategy.
+    n_negative : int, optional
+        Number of negatives to sample per (anchor, positive) pair.
+        Defaults to sample every valid negative.
     learn_to_aggregate : boolean, optional
     gradient_factor : float, optional
         Multiply gradient by this number. Defaults to 1.
@@ -80,7 +83,7 @@ class TripletLoss(SequenceEmbedding):
 
     def __init__(self, metric='sqeuclidean', margin=0.1, clamp='positive',
                  per_batch=1, per_label=3, per_fold=None, sampling='all',
-                 learn_to_aggregate=False, **kwargs):
+                 n_negative=None, learn_to_aggregate=False, **kwargs):
 
         self.margin = margin
         self.clamp = clamp
@@ -88,6 +91,7 @@ class TripletLoss(SequenceEmbedding):
         self.per_label = per_label
         self.per_fold = per_fold
         self.sampling = sampling
+        self.n_negative = np.inf if n_negative is None else n_negative
         self.learn_to_aggregate = learn_to_aggregate
         super(TripletLoss, self).__init__(**kwargs)
 
@@ -322,14 +326,13 @@ class TripletLoss(SequenceEmbedding):
         loss = self.triplet_loss(distance, anchor, positive, clamp=False)
         hard_cases = np.where(loss > 0)[0]
 
-        # choose at random == shuffle and choose the first one
+        # choose at random == shuffle and choose the first ones
         shuffle(hard_cases)
         for negative in hard_cases:
             # make sure it is not actually a positive sample
-            if y[negative] != y[anchor]:
-                yield negative
-                break
-
+            if y[negative] == y[anchor]:
+                continue
+            yield negative
 
     def triplet_sampling_semi_hard(self, y, anchor, positive, distance=None):
         """Choose negative at random such that
@@ -346,10 +349,9 @@ class TripletLoss(SequenceEmbedding):
         shuffle(semi_hard_cases)
         for negative in semi_hard_cases:
             # make sure it is not actually a positive sample
-            if y[negative] != y[anchor]:
-                yield negative
-                break
-
+            if y[negative] == y[anchor]:
+                continue
+            yield negative
 
     def triplet_sampling_hardest(self, y, anchor, positive, distance=None):
         """Choose negative such that
@@ -403,8 +405,13 @@ class TripletLoss(SequenceEmbedding):
                 if (anchor == positive) or (y_anchor != y_positive):
                     continue
 
-                for negative in self.triplet_sampling(y, anchor, positive,
-                                                      distance=distance):
+                for i, negative in enumerate(
+                    self.triplet_sampling(y, anchor, positive,
+                                          distance=distance)):
+
+                    # at most n_negative negative samples
+                    if i + 1 > self.n_negative:
+                        break
 
                     loss_ = self.triplet_loss(distance,
                                               anchor,
