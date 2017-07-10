@@ -68,7 +68,7 @@ class TripletLoss(SequenceEmbedding):
     per_batch : int, optional
         Number of folds per batch. Defaults to 1.
         Has no effect when `per_fold` is not provided.
-    sampling : {'all', 'hard'}
+    sampling : {'all', 'hard', 'hardest'}
         Negative sampling strategy.
     learn_to_aggregate : boolean, optional
     gradient_factor : float, optional
@@ -299,7 +299,8 @@ class TripletLoss(SequenceEmbedding):
                                               distance=distance)
 
         elif self.sampling == 'hardest':
-            raise NotImplementedError('')
+            return self.triplet_sampling_hardest(y, anchor, positive,
+                                                 distance=distance)
 
         elif self.sampling == 'semi-hard':
             raise NotImplementedError('')
@@ -326,6 +327,25 @@ class TripletLoss(SequenceEmbedding):
             if y[negative] != y[anchor]:
                 yield negative
                 break
+
+    def triplet_sampling_hardest(self, y, anchor, positive, distance=None):
+        """Choose negative at random such that
+        d(anchor, negative) < d(anchor, positive) + margin
+        """
+
+        # find hard cases (loss > 0)
+        loss = self.triplet_loss(distance, anchor, positive, clamp=False)
+
+        for negative in reversed(np.argsort(loss)):
+            # make sure it is not actually a positive sample
+            if y[negative] == y[anchor]:
+                continue
+
+            # if the hardest case is not even a hard case, stop here.
+            if loss[negative] < 0:
+                break
+
+            yield negative
 
     def loss_y_fold(self, fX, y):
         """Differentiable loss
