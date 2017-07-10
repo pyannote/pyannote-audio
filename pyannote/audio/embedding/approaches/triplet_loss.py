@@ -48,15 +48,19 @@ class TripletLoss(SequenceEmbedding):
 
     loss = d(anchor, positive) - d(anchor, negative)
 
-    * 'positive' clamping >= 0: loss = max(0, loss + margin)
-    * 'sigmoid' clamping [0, 1]: loss = sigmoid(10 * (loss - margin))
+    * with 'positive' clamping:
+        loss = max(0, loss + margin x D)
+    * with 'sigmoid' clamping:
+        loss = sigmoid(10 * (loss - margin x D))
+
+    where d(x, y) varies in range [0, D] (e.g. D=2 for euclidean distance).
 
     Parameters
     ----------
     metric : {'sqeuclidean', 'euclidean', 'cosine', 'angular'}, optional
         Defaults to 'sqeuclidean'.
     margin: float, optional
-        Defaults to 0.1.
+        Margin factor. Defaults to 0.1.
     clamp: {None, 'positive', 'sigmoid'}, optional
         If 'positive' (default), loss = max(0, loss)
         If 'sigmoid', loss = sigmoid(loss)
@@ -78,7 +82,6 @@ class TripletLoss(SequenceEmbedding):
         Multiply gradient by this number. Defaults to 1.
     batch_size : int, optional
         Batch size. Defaults to 32.
-
     """
 
     def __init__(self, metric='sqeuclidean', margin=0.1, clamp='positive',

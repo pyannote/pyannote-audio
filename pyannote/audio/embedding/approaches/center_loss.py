@@ -56,34 +56,43 @@ class CenterLoss(TripletLoss):
 
     loss = d(anchor, center) - d(anchor, other_center)
 
-    * 'positive' clamping >= 0: loss = max(0, loss + margin)
-    * 'sigmoid' clamping [0, 1]: loss = sigmoid(10 * (loss - margin))
+    * with 'positive' clamping:
+        loss = max(0, loss + margin x D)
+    * with 'sigmoid' clamping:
+        loss = sigmoid(10 * (loss - margin x D))
+
+    where d(x, y) varies in range [0, D] (e.g. D=2 for euclidean distance).
 
     Parameters
     ----------
     metric : {'sqeuclidean', 'euclidean', 'cosine', 'angular'}, optional
-        Defaults to 'sqeuclidean'.
+        Defaults to 'angular'.
     margin: float, optional
-        Defaults to 0.0
+        Margin factor. Defaults to 0.
     clamp: {None, 'positive', 'sigmoid'}, optional
-        If 'positive', loss = max(0, loss + margin).
-        If 'sigmoid' (default), loss = sigmoid(10 * (loss - margin)).
+        If 'positive', loss = max(0, loss)
+        If 'sigmoid' (default), loss = sigmoid(loss)
     per_label : int, optional
         Number of sequences per speaker. Defaults to 3.
     per_fold : int, optional
         If provided, sample triplets from groups of `per_fold` speakers at a
-        time. Defaults to sample triplets from the whole speaker set.
+        time. Defaults to 20.
     per_batch : int, optional
         Number of folds per batch. Defaults to 1.
         Has no effect when `per_fold` is not provided.
-    update_centers : {'batch', 'all'}
-        Whether to only update centers in current 'batch' (default), or to
-        update 'all' centers (even though they are not part of current batch).
+    sampling : {'all', 'semi-hard', 'hard', 'hardest'}
+        Negative sampling strategy. Defaults to 'all'.
+    n_negative : int, optional
+        Number of other centers to sample per (anchor, center) pair.
+        Defaults to sample every valid centers.
     learn_to_aggregate : boolean, optional
     gradient_factor : float, optional
         Multiply gradient by this number. Defaults to 1.
     batch_size : int, optional
         Batch size. Defaults to 32.
+    update_centers : {'batch', 'all'}
+        Whether to only update centers in current 'batch' (default), or to
+        update 'all' centers (even though they are not part of current batch).
     """
 
     WEIGHTS_H5 = LoggingCallback.WEIGHTS_H5[:-3] + '.centers.h5'
