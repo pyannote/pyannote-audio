@@ -493,22 +493,32 @@ class SpeakerEmbedding(Application):
                                       protocol=protocol_name,
                                       subset=subset)
 
+
+        # to avoid using overlapping sequences in validation set,
+        # find the smallest integer greater than duration / step.
+        directory = basename(dirname(self.experiment_dir))
+        duration_sec, _, step_sec, _ = self._directory_to_params(directory)
+        if step_sec is None:
+            step_sec = 0.5 * duration_sec
+
+        step = int(np.ceil(1. * duration_sec / step_sec))
+
         with h5py.File(data_h5, mode='r') as fp:
 
             X = fp['X']
             y = fp['y']
 
-            # randomly select (at most) 100 sequences from each speaker to ensure
-            # all speakers have the same importance in the evaluation
-            unique, y, counts = np.unique(y, return_inverse=True,
+            # randomly select (at most) 10 sequences from each speaker to ensure
+            # all speakers have about the same importance in the evaluation
+            unique, y_step, counts = np.unique(y[::step], return_inverse=True,
                                           return_counts=True)
             n_speakers = len(unique)
             indices = []
             for speaker in range(n_speakers):
-                i = np.random.choice(np.where(y == speaker)[0],
-                                     size=min(100, counts[speaker]),
+                i = np.random.choice(np.where(y_step == speaker)[0],
+                                     size=min(10, counts[speaker]),
                                      replace=False)
-                indices.append(i)
+                indices.append(step * i)
             # indices have to be sorted because of h5py indexing limitations
             indices = sorted(np.hstack(indices))
 
