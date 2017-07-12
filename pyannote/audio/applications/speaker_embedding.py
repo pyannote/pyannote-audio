@@ -510,7 +510,7 @@ class SpeakerEmbedding(Application):
 
             # randomly select (at most) 10 sequences from each speaker to ensure
             # all speakers have about the same importance in the evaluation
-            unique, y_step, counts = np.unique(y[::step], return_inverse=True,
+            unique, y, counts = np.unique(y[::step], return_inverse=True,
                                           return_counts=True)
             n_speakers = len(unique)
             indices = []
@@ -518,11 +518,11 @@ class SpeakerEmbedding(Application):
                 i = np.random.choice(np.where(y_step == speaker)[0],
                                      size=min(10, counts[speaker]),
                                      replace=False)
-                indices.append(step * i)
+                indices.append(i)
             # indices have to be sorted because of h5py indexing limitations
-            indices = sorted(np.hstack(indices))
+            indices = np.sort(np.hstack(indices))
 
-            X = np.array(X[indices])
+            X = np.array(X[step * indices])
             y = np.array(y[indices, np.newaxis])
 
         return X, y
