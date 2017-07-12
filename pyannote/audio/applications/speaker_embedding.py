@@ -522,7 +522,7 @@ class SpeakerEmbedding(Application):
             # indices have to be sorted because of h5py indexing limitations
             indices = np.sort(np.hstack(indices))
 
-            X = np.array(X[step * indices])
+            X = np.array(X[list(step * indices)])
             y = np.array(y[indices, np.newaxis])
 
         return X, y
