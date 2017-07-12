@@ -515,7 +515,7 @@ class SpeakerEmbedding(Application):
             n_speakers = len(unique)
             indices = []
             for speaker in range(n_speakers):
-                i = np.random.choice(np.where(y_step == speaker)[0],
+                i = np.random.choice(np.where(y == speaker)[0],
                                      size=min(10, counts[speaker]),
                                      replace=False)
                 indices.append(i)
