@@ -30,7 +30,6 @@
 import yaml
 import os.path
 from glob import glob
-
 from pyannote.database.util import FileFinder
 
 
@@ -96,3 +95,60 @@ class Application(object):
         return number_of_epochs, first_epoch if return_first \
                                              else number_of_epochs
 
+    def epoch_iter(self, start=0, step=1, sleep=60):
+        """Usage:
+
+        >>> # initialize epoch generator
+        >>> for epoch in app.epoch_iter():
+        ...     validate(epoch)
+        """
+
+        processed_epochs = set()
+        next_epoch_to_process_in_order = start
+
+        # wait for first epoch to complete
+        while True:
+
+            _, first_epoch = self.get_number_of_epochs(return_first=True)
+            if first_epoch is None:
+                time.sleep(sleep)
+                continue
+
+            # corner case: make sure this does not wait forever
+            # for epoch 'start' as it might never happen, in case
+            # training is started after n pre-existing epochs
+            if next_epoch_to_process_in_order < first_epoch:
+                next_epoch_to_process_in_order = first_epoch
+
+            # first epoch has completed
+            break
+
+        while True:
+
+            # check last completed epoch
+            last_completed_epoch = self.get_number_of_epochs() - 1
+
+            # if last completed epoch has not been processed yet,
+            # always process it first
+            if last_completed_epoch not in processed_epochs:
+                next_epoch_to_process = last_completed_epoch
+
+            # in case no new epoch has completed since last time
+            # process the next epoch in chronological order (if available)
+            elif next_epoch_to_process_in_order < last_completed_epoch:
+                next_epoch_to_process = next_epoch_to_process_in_order
+
+            #  otherwise, just wait for a new epoch to complete
+            else:
+                time.sleep(sleep)
+                continue
+
+            # yield next epoch to process
+            yield next_epoch_to_process
+
+            # remember which epoch was processed
+            processed_epochs.add(next_epoch_to_process)
+
+            # increment 'in_order' processing
+            if next_epoch_to_process_in_order == next_epoch_to_process:
+                next_epoch_to_process_in_order += step

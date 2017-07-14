@@ -552,47 +552,21 @@ class SpeakerEmbedding(Application):
         else:
             X, y = self._validation_set_y(protocol_name, subset=subset)
 
-        # list of equal error rates, and epoch to process
-        eers, epoch = SortedDict(), start
+        # list of equal error rates
+        eers = SortedDict()
 
         desc_format = ('Best EER = {best_eer:.2f}% @ epoch #{best_epoch:d} ::'
                        ' EER = {eer:.2f}% @ epoch #{epoch:d} :')
-
         progress_bar = tqdm(unit='epoch')
 
         with open(validate_txt, mode='w') as fp:
 
-            # watch and evaluate forever
-            while True:
-
-                # last completed epochs
-                completed_epochs = self.get_number_of_epochs(self.train_dir_) - 1
-
-                if completed_epochs < epoch:
-                    time.sleep(60)
-                    continue
-
-                # if last completed epoch has already been processed
-                # go back to first epoch that hasn't been processed yet
-                process_epoch = epoch if completed_epochs in eers \
-                                      else completed_epochs
-
-                # do not validate this epoch if it has been done before...
-                if process_epoch == epoch and epoch in eers:
-                    epoch += every
-                    progress_bar.update(every)
-                    continue
+            for epoch in self.epoch_iter(start=start, step=every):
 
                 weights_h5 = LoggingCallback.WEIGHTS_H5.format(
-                    log_dir=self.train_dir_, epoch=process_epoch)
+                    log_dir=self.train_dir_, epoch=epoch)
 
-                # this is needed for corner case when training is started from
-                # an epoch > 0
-                if not isfile(weights_h5):
-                    time.sleep(60)
-                    continue
-
-                # sleep 5 seconds to let the checkpoint callback finish
+                # HACK sleep 5 seconds to let the checkpoint callback finish
                 time.sleep(5)
 
                 embedding = keras.models.load_model(
@@ -623,11 +597,11 @@ class SpeakerEmbedding(Application):
                 y_true = pdist(y, metric='chebyshev') < 1
                 # estimate equal error rate
                 _, _, _, eer = det_curve(y_true, y_pred, distances=True)
-                eers[process_epoch] = eer
+                eers[epoch] = eer
 
                 # save equal error rate to file
                 fp.write(self.VALIDATE_TXT_TEMPLATE.format(
-                    epoch=process_epoch, eer=eer))
+                    epoch=epoch, eer=eer))
                 fp.flush()
 
                 # keep track of best epoch so far
@@ -635,9 +609,11 @@ class SpeakerEmbedding(Application):
                 best_eer = eers[best_epoch]
 
                 progress_bar.set_description(
-                    desc_format.format(epoch=process_epoch, eer=100*eer,
+                    desc_format.format(epoch=epoch, eer=100*eer,
                                        best_epoch=best_epoch,
                                        best_eer=100*best_eer))
+
+                progress_bar.update(1)
 
                 # plot
                 fig = plt.figure()
@@ -656,13 +632,6 @@ class SpeakerEmbedding(Application):
                 plt.savefig(validate_png, dpi=75)
                 plt.savefig(validate_eps)
                 plt.close(fig)
-
-                # go to next epoch
-                if epoch == process_epoch:
-                    epoch += every
-                    progress_bar.update(every)
-                else:
-                    progress_bar.update(0)
 
         progress_bar.close()
 
