@@ -92,8 +92,8 @@ class Application(object):
             number_of_epochs = int(os.path.basename(weights_h5[-1])[:-3]) + 1
             first_epoch = int(os.path.basename(weights_h5[0])[:-3])
 
-        return number_of_epochs, first_epoch if return_first \
-                                             else number_of_epochs
+        return (number_of_epochs, first_epoch) if return_first \
+                                               else number_of_epochs
 
     def epoch_iter(self, start=0, step=1, sleep=60):
         """Usage:
