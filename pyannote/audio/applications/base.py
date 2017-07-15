@@ -182,7 +182,7 @@ class Application(object):
                     minimize[metric] = details.get('minimize', True)
                     values[metric] = SortedDict()
 
-            description = '{epoch}'.format(epoch=epoch)
+            description = 'Epoch #{epoch}'.format(epoch=epoch)
 
             for metric, details in sorted(metrics.items()):
                 value = details['value']
@@ -200,10 +200,18 @@ class Application(object):
                     png=validate_png[metric],
                     eps=validate_eps[metric])
 
-                addon = ' : {metric} = {value} ({best_value} @ {best_epoch})'
-                description += addon.format(metric=metric, value=value,
-                                            best_value=best_value,
-                                            best_epoch=best_epoch)
+                if abs(best_value) < 1:
+                    addon = (' : {metric} = {value:.3f}% '
+                             '[{best_value:.3f}%, #{best_epoch}]')
+                    description += addon.format(metric=metric, value=100 * value,
+                                                best_value=100 * best_value,
+                                                best_epoch=best_epoch)
+                else:
+                    addon = (' : {metric} = {value:.3f} '
+                             '[{best_value:.3f}, #{best_epoch}]')
+                    description += addon.format(metric=metric, value=value,
+                                                best_value=best_value,
+                                                best_epoch=best_epoch)
 
             progress_bar.set_description(description)
             progress_bar.update(1)
