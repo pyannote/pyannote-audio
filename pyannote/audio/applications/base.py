@@ -29,6 +29,7 @@
 import time
 import yaml
 import os.path
+from tqdm import tqdm
 from glob import glob
 from pyannote.database.util import FileFinder
 
@@ -37,6 +38,13 @@ class Application(object):
 
     CONFIG_YML = '{experiment_dir}/config.yml'
     WEIGHTS_H5 = '{train_dir}/weights/{epoch:04d}.h5'
+
+    # created by "validate" mode
+    VALIDATE_DIR = '{train_dir}/validate/{protocol}'
+    VALIDATE_TXT = '{validate_dir}/{subset}.{metric}.txt'
+    VALIDATE_TXT_TEMPLATE = '{epoch:04d} {value:5f}\n'
+    VALIDATE_PNG = '{validate_dir}/{subset}.{metric}.png'
+    VALIDATE_EPS = '{validate_dir}/{subset}.{metric}.eps'
 
     def __init__(self, experiment_dir, db_yml=None):
         super(Application, self).__init__()
@@ -95,16 +103,128 @@ class Application(object):
         return (number_of_epochs, first_epoch) if return_first \
                                                else number_of_epochs
 
-    def epoch_iter(self, start=0, step=1, sleep=60):
-        """Usage:
+    def validate_init(self, protocol_name, subset='development'):
+        return None
 
-        >>> # initialize epoch generator
-        >>> for epoch in app.epoch_iter():
-        ...     validate(epoch)
+    def validate_epoch(self, epoch, validation_data):
+        pass
+
+    def validate_plot(self, metric, values, minimize=True, png=None, eps=None):
+
+        # keep track of best epoch so far
+        if minimize:
+            best_epoch = \
+                values.iloc[np.argmin(values.values())]
+        else:
+            best_epoch = \
+                values.iloc[np.argmax(values.values())]
+
+        # corresponding metric value
+        best_value = values[best_epoch]
+
+        fig, ax = plt.subplots()
+        ax.plot(values.keys(), values.values(), 'b')
+        ax.plot([best_epoch], [best_value], 'bo')
+        ax.plot([values.iloc[0], values.iloc[-1]],
+                [best_value, best_value], 'k--')
+        ax.grid()
+        ax.set_xlabel('epoch')
+        ax.set_title('{metric} = {value:.3f} @ epoch #{epoch}'.format(
+            metric=metric, value=best_value, epoch=best_epoch))
+
+        fig.tight_layout()
+
+        if png is not None:
+            fig.savefig(png, dpi=75)
+        if eps is not None:
+            fig.savefig(eps)
+        plt.close(fig)
+
+
+    def validate(self, protocol_name, subset='development',
+                 every=1, start=0, **kwargs):
+
+
+        validate_txt, validate_png, validate_eps = {}, {}, {}
+        minimize, values, best_epoch, best_value = {}, {}, {}, {}
+
+        validate_dir = self.VALIDATE_DIR.format(train_dir=self.train_dir_,
+                                                protocol=protocol_name)
+
+        validation_data = self.validate_init(protocol_name, subset=subset)
+
+        progress_bar = tqdm(unit='epoch')
+
+        # desc_format = ('Best EER = {best_eer:.2f}% @ epoch #{best_epoch:d} ::'
+        #                ' EER = {eer:.2f}% @ epoch #{epoch:d} :')
+
+        for i, epoch in enumerate(self.validate_iter(start=start, step=every)):
+
+            # {'metric1': {'minimize': True, 'value': 0.2},
+            #  'metric2': {'minimize': False, 'value': 0.9}}
+            metrics = self.validate_epoch(epoch, validation_data)
+
+            if i == 0:
+                for metric, details in metrics.items():
+                    params = {'validate_dir': validate_dir,
+                              'subset': subset,
+                              'metric': metric}
+                    validate_txt[metric] = open(
+                        self.VALIDATE_TXT.format(**params), 'w')
+                    validate_png[metric] = self.VALIDATE_PNG.format(**params)
+                    validate_eps[metric] = self.VALIDATE_EPS.format(**params)
+                    minimize[metric] = details.get('minimize', True)
+                    values[metric] = SortedDict()
+
+            for metric, details in metrics.items():
+                values[metric][epoch] = details['value']
+
+                # save metric value to file
+                line = self.VALIDATE_TXT_TEMPLATE.format(
+                    epoch=epoch, value=values[metric][epoch])
+                validate_txt[metric].write(line)
+                validate_txt[metric].flush()
+
+                self.validate_plot(metric, values[metric],
+                                   minimize=minimize[metric],
+                                   png=validate_png[metric],
+                                   eps=validate_eps[metric])
+
+            # progress_bar.set_description(
+            #     desc_format.format(epoch=epoch, eer=100*eer,
+            #                        best_epoch=best_epoch,
+            #                        best_eer=100*best_eer))
+
+            progress_bar.update(1)
+
+
+
+    def validate_iter(self, start=0, step=1, sleep=60):
+        """Continuously watches `train_dir` for newly completed epochs
+        and yields them for validation
+
+        Note that epochs will not necessarily be yielded in order.
+        The very last completed epoch will always be first on the list.
+
+        Parameters
+        ----------
+        start : int, optional
+            Start validating after `start` epochs. Defaults to 0.
+        step : int, optional
+            Validate every `step`th epoch. Defaults to 1.
+
+        sleep : int, optional
+
+        Usage
+        -----
+        >>> for epoch in app.validate_iter():
+        ...     app.validate(epoch)
+
+
         """
 
-        processed_epochs = set()
-        next_epoch_to_process_in_order = start
+        validated_epochs = set()
+        next_epoch_to_validate_in_order = start
 
         # wait for first epoch to complete
         while True:
@@ -117,8 +237,8 @@ class Application(object):
             # corner case: make sure this does not wait forever
             # for epoch 'start' as it might never happen, in case
             # training is started after n pre-existing epochs
-            if next_epoch_to_process_in_order < first_epoch:
-                next_epoch_to_process_in_order = first_epoch
+            if next_epoch_to_validate_in_order < first_epoch:
+                next_epoch_to_validate_in_order = first_epoch
 
             # first epoch has completed
             break
@@ -130,13 +250,14 @@ class Application(object):
 
             # if last completed epoch has not been processed yet,
             # always process it first
-            if last_completed_epoch not in processed_epochs:
-                next_epoch_to_process = last_completed_epoch
+            if last_completed_epoch not in validated_epochs:
+                next_epoch_to_validate = last_completed_epoch
+                time.sleep(5)  # HACK give checkpoint time to save weights
 
             # in case no new epoch has completed since last time
             # process the next epoch in chronological order (if available)
-            elif next_epoch_to_process_in_order < last_completed_epoch:
-                next_epoch_to_process = next_epoch_to_process_in_order
+        elif next_epoch_to_validate_in_order < last_completed_epoch:
+                next_epoch_to_validate = next_epoch_to_validate_in_order
 
             #  otherwise, just wait for a new epoch to complete
             else:
@@ -144,11 +265,11 @@ class Application(object):
                 continue
 
             # yield next epoch to process
-            yield next_epoch_to_process
+            yield next_epoch_to_validate
 
             # remember which epoch was processed
-            processed_epochs.add(next_epoch_to_process)
+            validated_epochs.add(next_epoch_to_validate)
 
             # increment 'in_order' processing
-            if next_epoch_to_process_in_order == next_epoch_to_process:
-                next_epoch_to_process_in_order += step
+            if next_epoch_to_validate_in_order == next_epoch_to_validate:
+                next_epoch_to_validate_in_order += step

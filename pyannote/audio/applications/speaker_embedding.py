@@ -32,7 +32,7 @@ Speaker embedding
 Usage:
   pyannote-speaker-embedding data [--database=<db.yml> --duration=<duration> --step=<step> --heterogeneous] <root_dir> <database.task.protocol>
   pyannote-speaker-embedding train [--subset=<subset> --start=<epoch> --end=<epoch>] <experiment_dir> <database.task.protocol>
-  pyannote-speaker-embedding validate [--subset=<subset> --aggregate --every=<epoch> --from=<epoch>] <train_dir> <database.task.protocol>
+  pyannote-speaker-embedding validate [--subset=<subset> --every=<epoch> --from=<epoch>] <train_dir> <database.task.protocol>
   pyannote-speaker-embedding apply [--database=<db.yml> --step=<step> --internal] <validate.txt> <database.task.protocol> <output_dir>
   pyannote-speaker-embedding compare (<validate.txt> <legend>)... <output.png>
   pyannote-speaker-embedding -h | --help
@@ -61,7 +61,6 @@ Options:
   --subset=<subset>          Set subset (train|developement|test).
                              In "train" mode, defaults subset is "train".
                              In "validate" mode, defaults to "development".
-  --aggregate                Aggregate
   --every=<epoch>            Defaults to every epoch [default: 1].
   --from=<epoch>             Start at this epoch [default: 0].
   <train_dir>                Path to directory created by "train" mode.
@@ -187,14 +186,6 @@ class SpeakerEmbedding(Application):
 
     # created by "train" mode
     TRAIN_DIR = '{experiment_dir}/train/{protocol}.{subset}'
-
-    # created by "validate" mode
-    VALIDATE_DIR = '{train_dir}/validate/{protocol}'
-    VALIDATE_TXT = '{validate_dir}/{subset}.{aggregate}eer.txt'
-    VALIDATE_TXT_TEMPLATE = '{epoch:04d} {eer:5f}\n'
-
-    VALIDATE_PNG = '{validate_dir}/{subset}.{aggregate}eer.png'
-    VALIDATE_EPS = '{validate_dir}/{subset}.{aggregate}eer.eps'
 
     @classmethod
     def from_root_dir(cls, root_dir, db_yml=None):
@@ -438,7 +429,7 @@ class SpeakerEmbedding(Application):
                            epochs=end, log_dir=train_dir,
                            optimizer=SSMORMS3())
 
-    def _validation_set_z(self, protocol_name, subset='development'):
+    def validate_init(self, protocol_name, subset='development'):
 
         # reproducibility
         np.random.seed(1337)
@@ -466,7 +457,7 @@ class SpeakerEmbedding(Application):
             unique, y, counts = np.unique(y_groups, return_inverse=True,
                                           return_counts=True)
             n_speakers = len(unique)
-            X, N, Y = [], [], []
+            XX, X, N, Y = [], [], [], []
             for speaker in range(n_speakers):
                 I = np.random.choice(np.where(y == speaker)[0],
                                      size=min(10, counts[speaker]),
@@ -474,166 +465,60 @@ class SpeakerEmbedding(Application):
                 for i in I:
                     selector = z_groups.get_group(i).index
                     x = h5_X[selector]
-                    X.append(x)
+                    XX.append(x)
+                    X.append(x[len(x) // 2])
                     N.append(x.shape[0])
                     Y.append(y[i])
 
-        return np.vstack(X), np.array(N),  np.array(Y)[:, np.newaxis]
+        return {'XX': np.vstack(XX),
+                'X': np.vstack(X),
+                'n': np.array(N),
+                'y': np.array(Y)[:, np.newaxis]}
 
-    def _validation_set_y(self, protocol_name, subset='development'):
-
-        # reproducibility
-        np.random.seed(1337)
-
-        data_dir = dirname(dirname(dirname(self.train_dir_)))
-        data_h5 = self.DATA_H5.format(data_dir=data_dir,
-                                      protocol=protocol_name,
-                                      subset=subset)
-
-
-        # to avoid using overlapping sequences in validation set,
-        # find the smallest integer greater than duration / step.
-        directory = basename(dirname(self.experiment_dir))
-        duration_sec, _, step_sec, _ = self._directory_to_params(directory)
-        if step_sec is None:
-            step_sec = 0.5 * duration_sec
-
-        step = int(np.ceil(1. * duration_sec / step_sec))
-
-        with h5py.File(data_h5, mode='r') as fp:
-
-            X = fp['X']
-            y = fp['y']
-
-            # randomly select (at most) 10 sequences from each speaker to ensure
-            # all speakers have about the same importance in the evaluation
-            unique, y, counts = np.unique(y[::step], return_inverse=True,
-                                          return_counts=True)
-            n_speakers = len(unique)
-            indices = []
-            for speaker in range(n_speakers):
-                i = np.random.choice(np.where(y == speaker)[0],
-                                     size=min(10, counts[speaker]),
-                                     replace=False)
-                indices.append(i)
-            # indices have to be sorted because of h5py indexing limitations
-            indices = np.sort(np.hstack(indices))
-
-            X = np.array(X[list(step * indices)])
-            y = np.array(y[indices, np.newaxis])
-
-        return X, y
-
-    def validate(self, protocol_name, subset='development',
-                 aggregate=False, every=1, start=0):
+    def validate_epoch(self, epoch, validation_data):
 
         from pyannote.core.util import pairwise
         import keras.backend as K
 
-        # prepare paths
-        validate_dir = self.VALIDATE_DIR.format(train_dir=self.train_dir_,
-                                                protocol=protocol_name)
-        validate_txt = self.VALIDATE_TXT.format(
-            validate_dir=validate_dir, subset=subset,
-            aggregate='aggregate.' if aggregate else '')
-        validate_png = self.VALIDATE_PNG.format(
-            validate_dir=validate_dir, subset=subset,
-            aggregate='aggregate.' if aggregate else '')
-        validate_eps = self.VALIDATE_EPS.format(
-            validate_dir=validate_dir, subset=subset,
-            aggregate='aggregate.' if aggregate else '')
+        metrics = {}
 
-        # create validation directory
-        mkdir_p(validate_dir)
+        # compute pairwise groundtruth
+        y = validation_data['y']
+        y_true = pdist(y, metric='chebyshev') < 1
 
-        # Build validation set
-        if aggregate:
-            X, n, y = self._validation_set_z(protocol_name, subset=subset)
-        else:
-            X, y = self._validation_set_y(protocol_name, subset=subset)
+        # load embedding
+        weights_h5 = LoggingCallback.WEIGHTS_H5.format(
+            log_dir=self.train_dir_, epoch=epoch)
+        embedding = keras.models.load_model(
+            weights_h5, custom_objects=CUSTOM_OBJECTS, compile=False)
 
-        # list of equal error rates
-        eers = SortedDict()
+        X = validation_data['X']
+        fX = embedding.predict(X)
+        y_pred = pdist(fX, metric=self.approach_.metric)
+        _, _, _, eer = det_curve(y_true, y_pred, distances=True)
+        metrics['EER'] = {'minimize': True, 'value': eer}
 
-        desc_format = ('Best EER = {best_eer:.2f}% @ epoch #{best_epoch:d} ::'
-                       ' EER = {eer:.2f}% @ epoch #{epoch:d} :')
-        progress_bar = tqdm(unit='epoch')
+        # internal embeddings
+        def embed(XX):
+            func = K.function(
+                [embedding.get_layer(name='input').input, K.learning_phase()],
+                [embedding.get_layer(name='internal').output])
+            return func([XX, 0])[0]
 
-        with open(validate_txt, mode='w') as fp:
+        XX = validation_data['XX']
+        fX = embed(XX)
 
-            for epoch in self.epoch_iter(start=start, step=every):
+        # groupwise sum of all internal embeddings
+        indices = np.hstack([[0], np.cumsum(validation_data['n'])])
+        fX = np.stack([np.sum(np.sum(fX[i:j], axis=0), axis=0)
+                                for i, j in pairwise(indices)])
+        fX = l2_normalize(fX)
 
-                weights_h5 = LoggingCallback.WEIGHTS_H5.format(
-                    log_dir=self.train_dir_, epoch=epoch)
+        y_pred = pdist(fX, metric=self.approach_.metric)
+        _, _, _, eer = det_curve(y_true, y_pred, distances=True)
+        metrics['EER_Agg'] = {'minimize': True, 'value': eer}
 
-                # HACK sleep 5 seconds to let the checkpoint callback finish
-                time.sleep(5)
-
-                embedding = keras.models.load_model(
-                    weights_h5, custom_objects=CUSTOM_OBJECTS,
-                    compile=False)
-
-                if aggregate:
-                    def embed(X):
-                        func = K.function(
-                            [embedding.get_layer(name='input').input, K.learning_phase()],
-                            [embedding.get_layer(name='internal').output])
-                        return func([X, 0])[0]
-                else:
-                    embed = embedding.predict
-
-                # embed all validation sequences
-                fX = embed(X)
-
-                if aggregate:
-                    indices = np.hstack([[0], np.cumsum(n)])
-                    fX = np.stack([np.sum(np.sum(fX[i:j], axis=0), axis=0)
-                                   for i, j in pairwise(indices)])
-                    fX = l2_normalize(fX)
-
-                # compute pairwise distances
-                y_pred = pdist(fX, metric=self.approach_.metric)
-                # compute pairwise groundtruth
-                y_true = pdist(y, metric='chebyshev') < 1
-                # estimate equal error rate
-                _, _, _, eer = det_curve(y_true, y_pred, distances=True)
-                eers[epoch] = eer
-
-                # save equal error rate to file
-                fp.write(self.VALIDATE_TXT_TEMPLATE.format(
-                    epoch=epoch, eer=eer))
-                fp.flush()
-
-                # keep track of best epoch so far
-                best_epoch = eers.iloc[np.argmin(eers.values())]
-                best_eer = eers[best_epoch]
-
-                progress_bar.set_description(
-                    desc_format.format(epoch=epoch, eer=100*eer,
-                                       best_epoch=best_epoch,
-                                       best_eer=100*best_eer))
-
-                progress_bar.update(1)
-
-                # plot
-                fig = plt.figure()
-                plt.plot(eers.keys(), eers.values(), 'b')
-                plt.plot([best_epoch], [best_eer], 'bo')
-                plt.plot([eers.iloc[0], eers.iloc[-1]], [best_eer, best_eer], 'k--')
-                plt.grid(True)
-                plt.xlabel('epoch')
-                plt.ylabel('EER on {subset}'.format(subset=subset))
-                TITLE = '{best_eer:.5g} @ epoch #{best_epoch:d}'
-                title = TITLE.format(best_eer=best_eer,
-                                     best_epoch=best_epoch,
-                                     subset=subset)
-                plt.title(title)
-                plt.tight_layout()
-                plt.savefig(validate_png, dpi=75)
-                plt.savefig(validate_eps)
-                plt.close(fig)
-
-        progress_bar.close()
+        return metrics
 
     def apply(self, protocol_name, output_dir, step=None, internal=False):
 
@@ -745,14 +630,12 @@ def main():
         if subset is None:
             subset = 'development'
 
-        aggregate = arguments['--aggregate']
         every = int(arguments['--every'])
         start = int(arguments['--from'])
 
         application = SpeakerEmbedding.from_train_dir(train_dir)
         application.validate(protocol_name, subset=subset,
-                             aggregate=aggregate, every=every,
-                             start=start)
+                             every=every, start=start)
 
     if arguments['apply']:
         validate_txt = arguments['<validate.txt>']
