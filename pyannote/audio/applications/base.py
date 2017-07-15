@@ -107,17 +107,17 @@ class Application(object):
                                                else number_of_epochs
 
     def validate_init(self, protocol_name, subset='development'):
-        return None
+        pass
 
     def validate_epoch(self, epoch, validation_data):
-        pass
+        raise NotImplementedError('')
 
     def validate_plot(self, metric, values, minimize=True, png=None, eps=None):
 
         import matplotlib
         matplotlib.use('Agg')
         import matplotlib.pyplot as plt
-        
+
         # keep track of best epoch so far
         if minimize:
             best_epoch = \
@@ -147,6 +147,7 @@ class Application(object):
             fig.savefig(eps)
         plt.close(fig)
 
+        return best_value, best_epoch
 
     def validate(self, protocol_name, subset='development',
                  every=1, start=0, **kwargs):
@@ -158,13 +159,10 @@ class Application(object):
         validate_dir = self.VALIDATE_DIR.format(train_dir=self.train_dir_,
                                                 protocol=protocol_name)
         mkdir_p(validate_dir)
-        
+
         validation_data = self.validate_init(protocol_name, subset=subset)
 
         progress_bar = tqdm(unit='epoch')
-
-        # desc_format = ('Best EER = {best_eer:.2f}% @ epoch #{best_epoch:d} ::'
-        #                ' EER = {eer:.2f}% @ epoch #{epoch:d} :')
 
         for i, epoch in enumerate(self.validate_iter(start=start, step=every)):
 
@@ -184,8 +182,11 @@ class Application(object):
                     minimize[metric] = details.get('minimize', True)
                     values[metric] = SortedDict()
 
-            for metric, details in metrics.items():
-                values[metric][epoch] = details['value']
+            description = '{epoch}'.format(epoch)
+
+            for metric, details in sorted(metrics.items()):
+                value = details['value']
+                values[metric][epoch] = value
 
                 # save metric value to file
                 line = self.VALIDATE_TXT_TEMPLATE.format(
@@ -193,18 +194,19 @@ class Application(object):
                 validate_txt[metric].write(line)
                 validate_txt[metric].flush()
 
-                self.validate_plot(metric, values[metric],
-                                   minimize=minimize[metric],
-                                   png=validate_png[metric],
-                                   eps=validate_eps[metric])
+                best_value, best_epoch = self.validate_plot(
+                    metric, values[metric],
+                    minimize=minimize[metric],
+                    png=validate_png[metric],
+                    eps=validate_eps[metric])
 
-            # progress_bar.set_description(
-            #     desc_format.format(epoch=epoch, eer=100*eer,
-            #                        best_epoch=best_epoch,
-            #                        best_eer=100*best_eer))
+                addon = ' : {metric} = {value} ({best_value} @ {best_epoch})'
+                description += addon.format(metric=metric, value=value,
+                                            best_value=best_value,
+                                            best_epoch=best_epoch)
 
+            progress_bar.set_description(description)
             progress_bar.update(1)
-
 
 
     def validate_iter(self, start=0, step=1, sleep=60):
