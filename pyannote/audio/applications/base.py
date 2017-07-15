@@ -182,7 +182,7 @@ class Application(object):
                     minimize[metric] = details.get('minimize', True)
                     values[metric] = SortedDict()
 
-            description = '{epoch}'.format(epoch)
+            description = '{epoch}'.format(epoch=epoch)
 
             for metric, details in sorted(metrics.items()):
                 value = details['value']
