@@ -479,7 +479,8 @@ class SpeakerEmbedding(Application):
 
         from pyannote.core.util import pairwise
         import keras.backend as K
-
+        batch_size = 2048
+        
         metrics = {}
 
         # compute pairwise groundtruth
@@ -493,7 +494,7 @@ class SpeakerEmbedding(Application):
             weights_h5, custom_objects=CUSTOM_OBJECTS, compile=False)
 
         X = validation_data['X']
-        fX = embedding.predict(X)
+        fX = embedding.predict(X, batch_size=batch_size)
         y_pred = pdist(fX, metric=self.approach_.metric)
         _, _, _, eer = det_curve(y_true, y_pred, distances=True)
         metrics['EER'] = {'minimize': True, 'value': eer}
@@ -505,10 +506,15 @@ class SpeakerEmbedding(Application):
                 [embedding.get_layer(name='internal').output])
             return func([XX, 0])[0]
 
+        # embed internal embedding using batches
         XX = validation_data['XX']
-        fX = embed(XX)
-
-        # groupwise sum of all internal embeddings
+        # `batches` is meant to contain batches boundaries
+        batches = list(np.arange(0, len(XX), batch_size))
+        if len(XX) % batch_size:
+            batches += [len(XX)]
+        fX = np.vstack(embed(XX[i:j]) for i, j in pairwise(batches))
+        
+        # sum of all internal embeddings of each group
         indices = np.hstack([[0], np.cumsum(validation_data['n'])])
         fX = np.stack([np.sum(np.sum(fX[i:j], axis=0), axis=0)
                                 for i, j in pairwise(indices)])
