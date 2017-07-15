@@ -497,7 +497,7 @@ class SpeakerEmbedding(Application):
         fX = embedding.predict(X, batch_size=batch_size)
         y_pred = pdist(fX, metric=self.approach_.metric)
         _, _, _, eer = det_curve(y_true, y_pred, distances=True)
-        metrics['EER'] = {'minimize': True, 'value': eer}
+        metrics['EER.1seq'] = {'minimize': True, 'value': eer}
 
         # internal embeddings
         def embed(XX):
@@ -522,7 +522,7 @@ class SpeakerEmbedding(Application):
 
         y_pred = pdist(fX, metric=self.approach_.metric)
         _, _, _, eer = det_curve(y_true, y_pred, distances=True)
-        metrics['EERAgg'] = {'minimize': True, 'value': eer}
+        metrics['EER.Xseq'] = {'minimize': True, 'value': eer}
 
         return metrics
 
