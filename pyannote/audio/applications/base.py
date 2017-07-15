@@ -29,9 +29,12 @@
 import time
 import yaml
 import os.path
+import numpy as np
 from tqdm import tqdm
 from glob import glob
 from pyannote.database.util import FileFinder
+from pyannote.audio.util import mkdir_p
+from sortedcontainers import SortedDict
 
 
 class Application(object):
@@ -111,6 +114,10 @@ class Application(object):
 
     def validate_plot(self, metric, values, minimize=True, png=None, eps=None):
 
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+        
         # keep track of best epoch so far
         if minimize:
             best_epoch = \
@@ -150,7 +157,8 @@ class Application(object):
 
         validate_dir = self.VALIDATE_DIR.format(train_dir=self.train_dir_,
                                                 protocol=protocol_name)
-
+        mkdir_p(validate_dir)
+        
         validation_data = self.validate_init(protocol_name, subset=subset)
 
         progress_bar = tqdm(unit='epoch')
@@ -256,7 +264,7 @@ class Application(object):
 
             # in case no new epoch has completed since last time
             # process the next epoch in chronological order (if available)
-        elif next_epoch_to_validate_in_order < last_completed_epoch:
+            elif next_epoch_to_validate_in_order < last_completed_epoch:
                 next_epoch_to_validate = next_epoch_to_validate_in_order
 
             #  otherwise, just wait for a new epoch to complete

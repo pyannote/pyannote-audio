@@ -471,7 +471,7 @@ class SpeakerEmbedding(Application):
                     Y.append(y[i])
 
         return {'XX': np.vstack(XX),
-                'X': np.vstack(X),
+                'X': np.stack(X),
                 'n': np.array(N),
                 'y': np.array(Y)[:, np.newaxis]}
 
