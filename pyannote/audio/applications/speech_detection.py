@@ -84,7 +84,7 @@ Configuration file:
          n_classes: 2                # on one LSTM layer (16 outputs)
          lstm: [16]                  # and one dense layer.
          mlp: [16]                   # LSTM is bidirectional
-         bidirectional: True
+         bidirectional: ave
 
     sequences:
        duration: 3.2                 # this experiments relies
