@@ -31,6 +31,7 @@ from __future__ import division
 
 import h5py
 import os.path
+import warnings
 from glob import glob
 import numpy as np
 from struct import unpack
@@ -56,7 +57,7 @@ def get_audio_duration(current_file):
             current_file['audio'] = current_file['wav']
             warnings.warn('"wav" key is deprecated in favor of "audio". '
                           'Please update your code.')
-        path = current_file['audio']
+    path = current_file['audio']
 
     with audioread.audio_open(path) as f:
         duration = f.duration
