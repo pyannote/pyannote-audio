@@ -63,6 +63,9 @@ def get_audio_duration(current_file):
 
     return duration
 
+# HACK until all packages are updated to the new API
+get_wav_duration = get_audio_duration
+
 def read_audio(current_file, sample_rate=None, mono=True):
     """
 
