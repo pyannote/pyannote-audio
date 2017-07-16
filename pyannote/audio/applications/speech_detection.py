@@ -337,16 +337,15 @@ class SpeechActivityDetection(Application):
             duration=duration, step=.25 * duration)
         aggregation.cache_preprocessed_ = False
 
-
         protocol = get_protocol(protocol_name, progress=False,
                                 preprocessors=self.preprocessors_)
         file_generator = getattr(protocol, subset)()
         for current_file in file_generator:
 
             predictions = aggregation.apply(current_file)
-            hypothesis = binarizer.apply(predictions, dimension=1)
+            hypothesis = binarizer.apply(predictions, dimension=1).to_annotation()
 
-            reference = current_file['annotation'].get_timeline().support()
+            reference = current_file['annotation']
             uem = get_annotated(current_file)
             _ = der(reference, hypothesis, uem=uem)
 
