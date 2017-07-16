@@ -59,7 +59,7 @@ class SequenceLabelingAggregation(PeriodicFeaturesMixin, FileBasedBatchGenerator
     """
 
     def __init__(self, sequence_labeling, feature_extractor,
-                 duration=3., step=None, source='audio'):
+                 duration=3., step=None, source='wav'):
 
         # feature sequence
         self.feature_extractor = feature_extractor
