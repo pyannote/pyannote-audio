@@ -53,7 +53,7 @@ class Application(object):
         super(Application, self).__init__()
 
         self.db_yml = db_yml
-        self.preprocessors_ = {'wav': FileFinder(self.db_yml)}
+        self.preprocessors_ = {'audio': FileFinder(self.db_yml)}
 
         self.experiment_dir = experiment_dir
 

@@ -70,7 +70,7 @@ class Extraction(PeriodicFeaturesMixin, FileBasedBatchGenerator):
         self.batch_size = batch_size
         self.internal = internal
 
-        generator = SlidingSegments(duration=duration, step=step, source='wav')
+        generator = SlidingSegments(duration=duration, step=step, source='audio')
         self.step = generator.step if step is None else step
 
         # build function that takes batch of sequences as input

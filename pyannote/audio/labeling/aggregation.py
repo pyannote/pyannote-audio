@@ -33,7 +33,7 @@ from pyannote.generators.batch import FileBasedBatchGenerator
 from pyannote.generators.fragment import SlidingSegments
 
 from pyannote.audio.generators.periodic import PeriodicFeaturesMixin
-from pyannote.audio.features.utils import get_wav_duration
+from pyannote.audio.features.utils import get_audio_duration
 
 
 class SequenceLabelingAggregation(PeriodicFeaturesMixin, FileBasedBatchGenerator):
@@ -59,7 +59,7 @@ class SequenceLabelingAggregation(PeriodicFeaturesMixin, FileBasedBatchGenerator
     """
 
     def __init__(self, sequence_labeling, feature_extractor,
-                 duration=3., step=None, source='wav'):
+                 duration=3., step=None, source='audio'):
 
         # feature sequence
         self.feature_extractor = feature_extractor
@@ -123,8 +123,8 @@ class SequenceLabelingAggregation(PeriodicFeaturesMixin, FileBasedBatchGenerator
         # estimate total number of frames (over the duration of the whole file)
         # based on feature extractor internal sliding window and file duration
         samples_window = self.feature_extractor.sliding_window()
-        wav = current_file['wav']
-        n_samples = samples_window.samples(get_wav_duration(wav)) + 3
+        n_samples = samples_window.samples(
+            get_audio_duration(current_file)) + 3
 
         # +3 is a hack to avoid later IndexError resulting from rounding error
         # when cropping samples_window

@@ -34,10 +34,8 @@ import os.path
 from glob import glob
 import numpy as np
 from struct import unpack
-try:
-    import pysndfile.sndio
-except ImportError as e:
-    pass
+import audioread
+import librosa
 from pyannote.core import SlidingWindow, SlidingWindowFeature
 from pyannote.database.util import get_unique_identifier
 
@@ -45,33 +43,99 @@ class PyannoteFeatureExtractionError(Exception):
     pass
 
 
-def get_wav_duration(wav):
-    y, sample_rate, _ = pysndfile.sndio.read(wav)
-    n_samples = y.shape[0]
-    return n_samples / sample_rate
+def get_audio_duration(current_file):
+
+    # HACK until all packages are updated to new API
+    # now expects a dict [was: path string]
+    if not isinstance(current_file, dict):
+        current_file = {'audio': current_file}
+        warnings.warn('"get_audio_duration" now expects a dict. '
+                      'Please update your code.')
+    else:
+        if 'audio' not in current_file and 'wav' in current_file:
+            current_file['audio'] = current_file['wav']
+            warnings.warn('"wav" key is deprecated in favor of "audio". '
+                          'Please update your code.')
+        path = current_file['audio']
+
+    with audioread.audio_open(path) as f:
+        duration = f.duration
+
+    return duration
+
+def read_audio(current_file, sample_rate=None, mono=True):
+    """
+
+    Parameters
+    ----------
+    current_file : dict
+    sample_rate: int, optional
+        Target sampling rate. Defaults to using native sampling rate.
+    mono : int, optional
+        Convert multi-channel to mono. Defaults to True.
+
+    Returns
+    -------
+    y : (n_samples, n_channels) np.array
+        Audio samples.
+    sample_rate : int
+        Sampling rate.
+
+    Notes
+    -----
+    In case `current_file` contains a `channel` key, data of this (1-indexed)
+    channel will be returned.
+
+    """
+
+    # HACK until all packages are updated to use 'audio' instead of 'wav'
+    if 'audio' not in current_file and 'wav' in current_file:
+        current_file['audio'] = current_file['wav']
+        warnings.warn('"wav" key is deprecated in favor of "audio". '
+                      'Please update your code.')
+
+    y, sample_rate = librosa.load(current_file['audio'],
+                                  sr=sample_rate,
+                                  mono=False)
+
+    # reshape mono files to (1, n) [was (n, )]
+    if y.ndim == 1:
+        y = y.reshape(1, -1)
+
+    # extract specific channel if requested
+    if 'channel' in current_file:
+        channel = current_file['channel']
+        y = y[channel - 1, :]
+
+    # convert to mono
+    if mono:
+        y = librosa.to_mono(y)
+
+    return y.T, sample_rate
 
 
 class RawAudio(object):
+    """
 
-    def __call__(self, item):
+    Parameters
+    ----------
+    sample_rate: int, optional
+        Target sampling rate. Defaults to using native sampling rate.
+    mono : int, optional
+        Convert multi-channel to mono. Defaults to True.
 
-        try:
-            wav = item['wav']
-            y, sample_rate, encoding = pysndfile.sndio.read(wav)
-        except IOError as e:
-            raise PyannoteFeatureExtractionError(e.message)
+    """
 
-        if np.any(np.isnan(y)):
-            uri = get_unique_identifier(item)
-            msg = 'pysndfile output contains NaNs for file "{uri}".'
-            raise PyannoteFeatureExtractionError(msg.format(uri=uri))
+    def __init__(self, sample_rate=None, mono=True):
+        super(RawAudio, self).__init__()
+        self.sample_rate = sample_rate
+        self.mono = mono
 
-        # reshape before selecting channel
-        if len(y.shape) < 2:
-            y = y.reshape(-1, 1)
+    def __call__(self, current_file):
 
-        channel = item.get('channel', 1)
-        y = y[:, channel - 1]
+        y, sample_rate = read_audio(current_file,
+                                    sample_rate=self.sample_rate,
+                                    mono=self.mono)
 
         sliding_window = SlidingWindow(start=0.,
                                        duration=1./sample_rate,

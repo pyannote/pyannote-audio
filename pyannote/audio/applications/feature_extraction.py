@@ -185,7 +185,7 @@ def main():
     arguments = docopt(__doc__, version='Feature extraction')
 
     db_yml = os.path.expanduser(arguments['--database'])
-    preprocessors = {'wav': FileFinder(db_yml)}
+    preprocessors = {'audio': FileFinder(db_yml)}
 
     database_name, task_name, protocol_name = arguments['<database.task.protocol>'].split('.')
     experiment_dir = arguments['<experiment_dir>']

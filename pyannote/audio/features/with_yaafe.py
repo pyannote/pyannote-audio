@@ -30,12 +30,9 @@ from __future__ import unicode_literals
 
 import warnings
 import numpy as np
-import yaafelib
 
-try:
-    import pysndfile.sndio
-except ImportError as e:
-    pass
+import yaafelib
+from pyannote.audio.features.utils import read_audio
 
 from pyannote.core.segment import SlidingWindow
 from pyannote.core.feature import SlidingWindowFeature
@@ -50,19 +47,19 @@ class YaafeFeatureExtractor(object):
     ----------
     sample_rate : int, optional
         Defaults to 16000 (i.e. 16kHz)
-    block_size : int, optional
-        Defaults to 512.
-    step_size : int, optional
-        Defaults to 256.
+    duration : float, optional
+        Defaults to 0.025.
+    step : float, optional
+        Defaults to 0.010.
     stack : int, optional
         Stack `stack` consecutive features. Defaults to 1.
-
     """
 
-    def __init__(self, duration=0.025, step=0.010, stack=1):
+    def __init__(self, sample_rate=16000, duration=0.025, step=0.010, stack=1):
 
         super(YaafeFeatureExtractor, self).__init__()
 
+        self.sample_rate = sample_rate
         self.duration = duration
         self.step = step
         self.stack = stack
@@ -94,11 +91,9 @@ class YaafeFeatureExtractor(object):
         """
 
         # --- load audio file
-        try:
-            wav = item['wav']
-            y, sample_rate, encoding = pysndfile.sndio.read(wav)
-        except IOError as e:
-            raise PyannoteFeatureExtractionError(e)
+        y, sample_rate = read_audio(item,
+                                    sample_rate=self.sample_rate,
+                                    mono=True)
 
         # --- update data_flow every time sample rate changes
         if not hasattr(self, 'sample_rate_') or self.sample_rate_ != sample_rate:
@@ -109,13 +104,6 @@ class YaafeFeatureExtractor(object):
                     "{name}: {recipe}".format(name=name, recipe=recipe))
             data_flow = feature_plan.getDataFlow()
             self.engine_.load(data_flow)
-
-        # reshape before selecting channel
-        if len(y.shape) < 2:
-            y = y.reshape((-1, 1))
-
-        channel = item.get('channel', 1)
-        y = y[:, channel - 1]
 
         # Yaafe needs this: float64, column-contiguous, 2-dimensional
         y = np.array(y, dtype=np.float64, order='C').reshape((1, -1))
@@ -156,8 +144,10 @@ class YaafeFeatureExtractor(object):
 
 class YaafeCompound(YaafeFeatureExtractor):
 
-    def __init__(self, extractors, duration=0.025, step=0.010, stack=1):
+    def __init__(self, extractors, sample_rate=16000,
+                 duration=0.025, step=0.010, stack=1):
 
+        assert all(e.sample_rate == sample_rate for e in extractors)
         assert all(e.duration == duration for e in extractors)
         assert all(e.step == step for e in extractors)
         assert all(e.stack == stack for e in extractors)
@@ -217,7 +207,8 @@ class YaafeMFCC(YaafeFeatureExtractor):
 
     Parameters
     ----------
-
+    sample_rate : int, optional
+        Defaults to 16000.
     duration : float, optional
         Defaults to 0.025.
     step : float, optional
@@ -247,7 +238,7 @@ class YaafeMFCC(YaafeFeatureExtractor):
     """
 
     def __init__(
-        self, duration=0.025, step=0.010, stack=1,
+        self, sample_rate=16000, duration=0.025, step=0.010, stack=1,
         e=True, coefs=11, De=False, DDe=False, D=False, DD=False,
     ):
 
@@ -258,7 +249,9 @@ class YaafeMFCC(YaafeFeatureExtractor):
         self.D = D
         self.DD = DD
 
-        super(YaafeMFCC, self).__init__(duration=duration, step=step, stack=stack)
+        super(YaafeMFCC, self).__init__(sample_rate=sample_rate,
+                                        duration=duration, step=step,
+                                        stack=stack)
 
     def dimension(self):
 

@@ -361,7 +361,7 @@ def main():
 
     arguments = docopt(__doc__, version='Speaker change detection')
     db_yml = os.path.expanduser(arguments['--database'])
-    preprocessors = {'wav': FileFinder(db_yml)}
+    preprocessors = {'audio': FileFinder(db_yml)}
 
     if '<database.task.protocol>' in arguments:
         protocol_name = arguments['<database.task.protocol>']

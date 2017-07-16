@@ -34,11 +34,8 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import librosa
+from pyannote.audio.features.utils import read_audio
 
-try:
-    import pysndfile.sndio
-except ImportError as e:
-    pass
 
 from pyannote.core.segment import SlidingWindow
 from pyannote.core.feature import SlidingWindowFeature
@@ -60,10 +57,11 @@ class LibrosaFeatureExtractor(object):
 
     """
 
-    def __init__(self, duration=0.025, step=0.01):
+    def __init__(self, sample_rate=16000, duration=0.025, step=0.01):
 
         super(LibrosaFeatureExtractor, self).__init__()
 
+        self.sample_rate = sample_rate
         self.duration = duration
         self.step = step
 
@@ -90,23 +88,10 @@ class LibrosaFeatureExtractor(object):
 
         """
 
-        try:
-            wav = item['wav']
-            y, sample_rate, encoding = pysndfile.sndio.read(wav)
-        except IOError as e:
-            raise PyannoteFeatureExtractionError(e.message)
-
-        if np.any(np.isnan(y)):
-            uri = get_unique_identifier(item)
-            msg = 'pysndfile output contains NaNs for file "{uri}".'
-            raise PyannoteFeatureExtractionError(msg.format(uri=uri))
-
-        # reshape before selecting channel
-        if len(y.shape) < 2:
-            y = y.reshape(-1, 1)
-
-        channel = item.get('channel', 1)
-        y = y[:, channel - 1]
+        # --- load audio file
+        y, sample_rate = read_audio(item,
+                                    sample_rate=self.sample_rate,
+                                    mono=True)
 
         data = self.process(y, sample_rate)
 
@@ -123,6 +108,8 @@ class LibrosaRMSE(LibrosaFeatureExtractor):
 
     Parameters
     ----------
+    sample_rate : int, optional
+        Sampling rate.
     duration : float, optional
         Defaults to 0.025 (25ms)
     step : float, optional
@@ -160,7 +147,8 @@ class LibrosaMFCC(LibrosaFeatureExtractor):
 
     Parameters
     ----------
-
+    sample_rate : int, optional
+        Sampling rate.
     duration : float, optional
         Defaults to 0.025 (25ms)
     step : float, optional
@@ -188,12 +176,13 @@ class LibrosaMFCC(LibrosaFeatureExtractor):
 
     """
 
-    def __init__(self, duration=0.025, step=0.01,
+    def __init__(self, sample_rate=16000, duration=0.025, step=0.01,
                  e=False, De=True, DDe=True,
                  coefs=19, D=True, DD=True,
                  fmin=0.0, fmax=None, n_mels=40):
 
-        super(LibrosaMFCC, self).__init__(duration=duration, step=step)
+        super(LibrosaMFCC, self).__init__(sample_rate=sample_rate,
+                                          duration=duration, step=step)
 
         self.e = e
         self.coefs = coefs
