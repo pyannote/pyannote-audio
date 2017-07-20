@@ -156,10 +156,10 @@ class Peak(object):
 
             purity_metric = DiarizationPurity()
             coverage_metric = DiarizationCoverage()
-            process_one_file = functools.partial(helper_peak_tune,
-                                                 peak=peak,
-                                                 purity=purity_metric,
-                                                 coverage=coverage_metric)
+            process_one_file = functools.partial(
+                helper_peak_tune, peak=peak,
+                purity_metric=purity_metric,
+                coverage_metric=coverage_metric)
 
             if n_jobs > 1:
                 results = list(pool.map(process_one_file,
