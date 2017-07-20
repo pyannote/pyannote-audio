@@ -39,6 +39,42 @@ from pyannote.core.util import pairwise
 from pyannote.database.util import get_annotated
 
 
+
+def helper_peak_tune(item_prediction,
+                     peak=None, metric=None, **kwargs):
+    """Apply peak detection on prediction and evaluate the result
+
+    Parameters
+    ----------
+    item : dict
+        Protocol item.
+    prediction : SlidingWindowFeature
+    peaker : Peak, optional
+    metric : BaseMetric, optional
+    **kwargs : dict
+        Passed to peak.apply()
+
+    Returns
+    -------
+    value : float
+        Metric value
+    """
+
+    current_file, predictions = item_prediction
+
+    reference = current_file['annotation']
+
+    hypothesis = peak.apply(predictions, **kwargs).to_annotation()
+    # remove (reference) non-speech regions
+    hypothesis = hypothesis.crop(reference.get_timeline().support(),
+                                 mode='intersection')
+
+    uem = get_annotated(current_file)
+    result = metric(reference, hypothesis, uem=uem)
+
+    return result
+
+
 class Peak(object):
     """Peak detection
 
@@ -58,6 +94,107 @@ class Peak(object):
         super(Peak, self).__init__()
         self.alpha = alpha
         self.min_duration = min_duration
+
+    @classmethod
+    def tune(cls, items, get_prediction, get_metric=None, minimize=True,
+             n_calls=20, n_random_starts=10, n_jobs=-1,
+             **kwargs):
+        """Find best set of hyper-parameters using skopt
+
+        Parameters
+        ----------
+        items : iterable
+            Protocol items used as development set. Typically, one would use
+            items = protocol.development()
+        get_prediction : callable
+            Callable that takes an item as input, and returns a prediction as
+            a SlidingWindowFeature instances.
+        get_metric : callable, optional
+            Callable that takes no input, and returns a fresh evaluation
+            metric. Defaults to DiarizationPurityCoverageFMeasure
+        minimize : bool, optional
+            Whether to minimize (True, default) or maximize the metric (False).
+        n_calls : int, optional
+            Number of trials for hyper-parameter optimization. Defaults to 20.
+        n_random_starts : int, optional
+            Number of trials with random initialization before being smart.
+            Defaults to 10.
+        n_jobs : int, optional
+            Number of parallel job to use. Set to 1 to not use multithreading.
+            Defaults to whichever is minimum between number of CPUs and number
+            of items.
+        **kwargs :
+            Optional keyword arguments passed to Peak.apply().
+
+        Returns
+        -------
+        best_parameters : dict
+            Best set of parameters.
+        best_metric : float
+            Best metric
+        """
+
+        import skopt
+        import skopt.space
+
+        if get_metric is None:
+            from pyannote.metrics.diarization import DiarizationPurityCoverageFMeasure
+            get_metric = DiarizationPurityCoverageFMeasure
+
+        # make sure items can be iterated over and over again
+        items = list(items)
+
+        # defaults to whichever is minimum between
+        # number of CPUs and number of items
+        if n_jobs < 0:
+            n_jobs = min(cpu_count(), len(items))
+
+        if n_jobs > 1:
+            pool = Pool(n_jobs)
+
+        # compute predictions once and for all
+        # NOTE could multithreading speed things up? this is unclear as
+        # get_prediction is probably already multithreaded, or (better) even
+        # precomputed
+        predictions = [get_prediction(item) for item in items]
+
+        def objective_function(params):
+            alpha, min_duration, = params
+            peak = cls(alpha=alpha, min_duration=min_duration)
+
+            metric = get_metric()
+            process_one_file = functools.partial(helper_peak_tune,
+                                                 peak=peak,
+                                                 metric=metric,
+                                                 **kwargs)
+
+            if n_jobs > 1:
+                results = list(pool.map(process_one_file,
+                                        zip(items, predictions)))
+            else:
+                results = [process_one_file(item_prediction)
+                           for item_prediction in zip(items, predictions)]
+
+            if minimize:
+                return abs(metric)
+            else:
+                return -abs(metric)
+
+        # 0 < alpha < 1 || 500ms < min_duration < 5s
+        space = [skopt.space.Real(0., 1., prior='uniform'),
+                 skopt.space.Real(0.5, 5., prior='uniform')]
+
+        res = skopt.gp_minimize(
+            objective_function, space,
+            n_calls=n_calls, n_random_starts=n_random_starts,
+            random_state=1337, verbose=False)
+
+        if n_jobs > 1:
+            pool.terminate()
+
+        return {'alpha': res.x[0], 'min_duration': res.x[1]}, \
+               res.fun if minimize else -res.fun
+
 
     def apply(self, predictions, dimension=0):
         """Peak detection
