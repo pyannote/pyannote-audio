@@ -171,7 +171,8 @@ class Application(object):
                                                 protocol=protocol_name)
         mkdir_p(validate_dir)
 
-        validation_data = self.validate_init(protocol_name, subset=subset)
+        validation_data = self.validate_init(protocol_name, subset=subset,
+                                             **kwargs)
 
         progress_bar = tqdm(unit='epoch')
 

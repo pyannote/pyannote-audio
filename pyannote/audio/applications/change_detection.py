@@ -31,8 +31,8 @@ Speaker change detection
 
 Usage:
   pyannote-change-detection train [--database=<db.yml> --subset=<subset>] <experiment_dir> <database.task.protocol>
-  pyannote-change-detection validate [--database=<db.yml> --subset=<subset> --from=<epoch> --to=<epoch> --every=<epoch>] <train_dir> <database.task.protocol>
-  pyannote-change-detection tune [--database=<db.yml> --subset=<subset> --from=<epoch> --to=<epoch>] <train_dir> <database.task.protocol>
+  pyannote-change-detection validate [--database=<db.yml> --subset=<subset> --from=<epoch> --to=<epoch> --every=<epoch> --beta=<beta>] <train_dir> <database.task.protocol>
+  pyannote-change-detection tune [--database=<db.yml> --subset=<subset> --from=<epoch> --to=<epoch> --beta=<beta>] <train_dir> <database.task.protocol>
   pyannote-change-detection apply [--database=<db.yml> --subset=<subset>] <tune_dir> <database.task.protocol>
   pyannote-change-detection -h | --help
   pyannote-change-detection --version
@@ -51,6 +51,9 @@ Common options:
   --to=<epoch>               End validation/tuning at epoch <epoch>.
                              In "validate" mode, defaults to never stop.
                              In "tune" mode, defaults to last available epoch at launch time.
+  --beta=<beta>              Set beta < 1 to give more importance to purity,
+                             and beta > 1 to give more importance to coverage.
+                             [defaults: 0.2].
 
 "train" mode:
   <experiment_dir>           Set experiment root directory. This script expects
@@ -204,6 +207,8 @@ from tqdm import tqdm
 import skopt
 import skopt.space
 
+from functools import partial
+
 
 def helper_tune_peak(item_prediction,
                      peak=None, metric=None, **kwargs):
@@ -234,7 +239,7 @@ def helper_tune_peak(item_prediction,
     return result
 
 
-def tune_peak(app, epoch, protocol_name, subset='development'):
+def tune_peak(app, epoch, protocol_name, subset='development', beta=1.):
     """Tune peak detection
 
     Parameters
@@ -246,6 +251,7 @@ def tune_peak(app, epoch, protocol_name, subset='development'):
         E.g. 'Etape.SpeakerDiarization.TV'
     subset : {'train', 'development', 'test'}, optional
         Defaults to 'development'.
+    beta : float, optional
 
     Returns
     -------
@@ -276,7 +282,7 @@ def tune_peak(app, epoch, protocol_name, subset='development'):
     peak_params, metric = Peak.tune(
         getattr(protocol, subset)(),
         aggregation.apply,
-        get_metric=DiarizationPurityCoverageFMeasure,
+        get_metric=partial(DiarizationPurityCoverageFMeasure, beta=beta),
         minimize=False)
 
     return peak_params, metric
@@ -363,11 +369,11 @@ class SpeakerChangeDetection(Application):
 
         return labeling
 
-    def validate_init(self, protocol_name, subset='development'):
+    def validate_init(self, protocol_name, subset='development', beta=1.):
 
         from pyannote.metrics.diarization import DiarizationPurityCoverageFMeasure
 
-        metric = DiarizationPurityCoverageFMeasure()
+        metric = DiarizationPurityCoverageFMeasure(beta=beta)
 
         protocol = get_protocol(protocol_name, progress=False,
                                 preprocessors=self.preprocessors_)
@@ -379,7 +385,7 @@ class SpeakerChangeDetection(Application):
             hypothesis = reference.get_timeline().segmentation().to_annotation()
             _ = metric(reference, hypothesis, uem=uem)
 
-        return {'PurityCoverageFMeasure': abs(metric)}
+        return {'baseline': abs(metric), 'beta': beta}
 
     def validate_epoch(self, epoch, protocol_name, subset='development',
                        validation_data=None):
@@ -387,7 +393,9 @@ class SpeakerChangeDetection(Application):
         from pyannote.metrics.diarization import DiarizationPurityCoverageFMeasure
         from pyannote.audio.signal import Peak
 
-        metric = DiarizationPurityCoverageFMeasure(weighted=True, beta=1.)
+        beta = validation_data['beta']
+
+        metric = DiarizationPurityCoverageFMeasure(beta=beta)
         peak = Peak(alpha=0.5, min_duration=1.0)
 
         # load model for current epoch
@@ -419,10 +427,11 @@ class SpeakerChangeDetection(Application):
 
         return {'PurityCoverageFMeasure': {
             'minimize': False, 'value': abs(metric),
-            'baseline': validation_data['PurityCoverageFMeasure']}
+            'baseline': validation_data['baseline']}
         }
 
-    def tune(self, protocol_name, subset='development', start=None, end=None):
+    def tune(self, protocol_name, subset='development', start=None, end=None,
+             beta=1.):
 
         # FIXME -- make sure "subset" is not empty
 
@@ -482,7 +491,7 @@ class SpeakerChangeDetection(Application):
 
             # tune peak detection
             peak_params, metric = tune_peak(
-                self, epoch, protocol_name, subset=subset)
+                self, epoch, protocol_name, subset=subset, beta=beta)
 
             # remember outcome of this trial
             best_peak_params[params] = peak_params
@@ -602,7 +611,7 @@ def main():
             start = 0
         else:
             start = int(start)
-        
+
         # stop validating at this epoch (defaults to None)
         end = arguments['--to']
         if end is not None:
@@ -611,10 +620,13 @@ def main():
         # validate every that many epochs (defaults to 1)
         every = int(arguments['--every'])
 
+        beta = float(arguments['--beta'])
+
         application = SpeakerChangeDetection.from_train_dir(
             train_dir, db_yml=db_yml)
         application.validate(protocol_name, subset=subset,
-                             start=start, end=end, every=every)
+                             start=start, end=end, every=every,
+                             beta=beta)
 
     if arguments['tune']:
         train_dir = arguments['<train_dir>']
@@ -632,10 +644,12 @@ def main():
         if end is not None:
             end = int(end)
 
+        beta = float(arguments['--beta'])
+
         application = SpeakerChangeDetection.from_train_dir(
             train_dir, db_yml=db_yml)
         application.tune(protocol_name, subset=subset,
-                         start=start, end=end)
+                         start=start, end=end, beta=beta)
 
     if arguments['apply']:
         tune_dir = arguments['<tune_dir>']
