@@ -31,8 +31,8 @@ Speaker change detection
 
 Usage:
   pyannote-change-detection train [--database=<db.yml> --subset=<subset>] <experiment_dir> <database.task.protocol>
-  pyannote-change-detection validate [--database=<db.yml> --subset=<subset> --from=<epoch> --to=<epoch> --every=<epoch> --beta=<beta>] <train_dir> <database.task.protocol>
-  pyannote-change-detection tune [--database=<db.yml> --subset=<subset> --from=<epoch> --to=<epoch> --beta=<beta>] <train_dir> <database.task.protocol>
+  pyannote-change-detection validate [--database=<db.yml> --subset=<subset> --from=<epoch> --to=<epoch> --every=<epoch>] <train_dir> <database.task.protocol>
+  pyannote-change-detection tune [--database=<db.yml> --subset=<subset> --from=<epoch> --to=<epoch> --purity=<purity>] <train_dir> <database.task.protocol>
   pyannote-change-detection apply [--database=<db.yml> --subset=<subset>] <tune_dir> <database.task.protocol>
   pyannote-change-detection -h | --help
   pyannote-change-detection --version
@@ -51,9 +51,6 @@ Common options:
   --to=<epoch>               End validation/tuning at epoch <epoch>.
                              In "validate" mode, defaults to never stop.
                              In "tune" mode, defaults to last available epoch at launch time.
-  --beta=<beta>              Set beta < 1 to give more importance to purity,
-                             and beta > 1 to give more importance to coverage.
-                             [default: 0.2].
 
 "train" mode:
   <experiment_dir>           Set experiment root directory. This script expects
@@ -69,6 +66,7 @@ Common options:
 "tune" mode:
   <train_dir>                Path to the directory containing pre-trained
                              models (i.e. the output of "train" mode).
+  --purity=<purity>          Target purity [default: 0.95].
 
 "apply" mode:
   <tune_dir>                 Path to the directory containing optimal
@@ -239,7 +237,7 @@ def helper_tune_peak(item_prediction,
     return result
 
 
-def tune_peak(app, epoch, protocol_name, subset='development', beta=1.):
+def tune_peak(app, epoch, protocol_name, subset='development', purity=0.95):
     """Tune peak detection
 
     Parameters
@@ -251,14 +249,15 @@ def tune_peak(app, epoch, protocol_name, subset='development', beta=1.):
         E.g. 'Etape.SpeakerDiarization.TV'
     subset : {'train', 'development', 'test'}, optional
         Defaults to 'development'.
-    beta : float, optional
+    purity : float, optional
+        Target purity. Defaults to 0.95.
 
     Returns
     -------
     params : dict
         See Peak.tune
     metric : float
-        Best achieved performance
+        Best achieved coverage (at target purity)
     """
 
     # initialize protocol
@@ -431,7 +430,7 @@ class SpeakerChangeDetection(Application):
         }
 
     def tune(self, protocol_name, subset='development', start=None, end=None,
-             beta=1.):
+             purity=0.95):
 
         # FIXME -- make sure "subset" is not empty
 
@@ -490,14 +489,14 @@ class SpeakerChangeDetection(Application):
                 return best_metric[params]
 
             # tune peak detection
-            peak_params, metric = tune_peak(
-                self, epoch, protocol_name, subset=subset, beta=beta)
+            peak_params, coverage = tune_peak(
+                self, epoch, protocol_name, subset=subset, purity=purity)
 
             # remember outcome of this trial
             best_peak_params[params] = peak_params
-            best_metric[params] = metric
+            best_metric[params] = coverage
 
-            return -metric
+            return 1. - coverage
 
         res = skopt.gp_minimize(
             objective_function, space, random_state=1337,
@@ -506,7 +505,7 @@ class SpeakerChangeDetection(Application):
 
         # TODO tune Peak a bit longer with the best epoch
 
-        return {'epoch': res.x[0]}, -res.fun
+        return {'epoch': res.x[0]}, 1.- res.fun
 
     def apply(self, protocol_name, subset='test'):
 
@@ -620,13 +619,10 @@ def main():
         # validate every that many epochs (defaults to 1)
         every = int(arguments['--every'])
 
-        beta = float(arguments['--beta'])
-
         application = SpeakerChangeDetection.from_train_dir(
             train_dir, db_yml=db_yml)
         application.validate(protocol_name, subset=subset,
-                             start=start, end=end, every=every,
-                             beta=beta)
+                             start=start, end=end, every=every)
 
     if arguments['tune']:
         train_dir = arguments['<train_dir>']
@@ -644,12 +640,12 @@ def main():
         if end is not None:
             end = int(end)
 
-        beta = float(arguments['--beta'])
+        purity = float(arguments['--purity'])
 
         application = SpeakerChangeDetection.from_train_dir(
             train_dir, db_yml=db_yml)
         application.tune(protocol_name, subset=subset,
-                         start=start, end=end, beta=beta)
+                         start=start, end=end, purity=purity)
 
     if arguments['apply']:
         tune_dir = arguments['<tune_dir>']

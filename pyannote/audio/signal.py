@@ -40,8 +40,8 @@ from pyannote.database.util import get_annotated
 
 
 
-def helper_peak_tune(item_prediction,
-                     peak=None, metric=None, **kwargs):
+def helper_peak_tune(item_prediction, peak=None,
+                     purity_metric=None, coverage_metric=None):
     """Apply peak detection on prediction and evaluate the result
 
     Parameters
@@ -49,30 +49,29 @@ def helper_peak_tune(item_prediction,
     item : dict
         Protocol item.
     prediction : SlidingWindowFeature
-    peaker : Peak, optional
-    metric : BaseMetric, optional
-    **kwargs : dict
-        Passed to peak.apply()
+    peak : Peak, optional
+    purity_metric : DiarizationPurity, optional
+    coverage_metric : DiarizationCoverage, optional
 
     Returns
     -------
-    value : float
-        Metric value
+    results : dict
+        {'purity': purity, 'coverage': coverage}
     """
 
     current_file, predictions = item_prediction
 
     reference = current_file['annotation']
 
-    hypothesis = peak.apply(predictions, **kwargs).to_annotation()
+    hypothesis = peak.apply(predictions).to_annotation()
     # remove (reference) non-speech regions
     hypothesis = hypothesis.crop(reference.get_timeline().support(),
                                  mode='intersection')
 
     uem = get_annotated(current_file)
-    result = metric(reference, hypothesis, uem=uem)
 
-    return result
+    return {'purity': purity_metric(reference, hypothesis, uem=uem),
+            'coverage': coverage_metric(reference, hypothesis, uem=uem)}
 
 
 class Peak(object):
@@ -96,9 +95,8 @@ class Peak(object):
         self.min_duration = min_duration
 
     @classmethod
-    def tune(cls, items, get_prediction, get_metric=None, minimize=True,
-             n_calls=20, n_random_starts=10, n_jobs=-1,
-             **kwargs):
+    def tune(cls, items, get_prediction, purity=0.95,
+             n_calls=20, n_random_starts=10, n_jobs=-1):
         """Find best set of hyper-parameters using skopt
 
         Parameters
@@ -109,11 +107,8 @@ class Peak(object):
         get_prediction : callable
             Callable that takes an item as input, and returns a prediction as
             a SlidingWindowFeature instances.
-        get_metric : callable, optional
-            Callable that takes no input, and returns a fresh evaluation
-            metric. Defaults to DiarizationPurityCoverageFMeasure
-        minimize : bool, optional
-            Whether to minimize (True, default) or maximize the metric (False).
+        purity : float, optional
+            Target purity. Defaults to 0.95.
         n_calls : int, optional
             Number of trials for hyper-parameter optimization. Defaults to 20.
         n_random_starts : int, optional
@@ -123,23 +118,20 @@ class Peak(object):
             Number of parallel job to use. Set to 1 to not use multithreading.
             Defaults to whichever is minimum between number of CPUs and number
             of items.
-        **kwargs :
-            Optional keyword arguments passed to Peak.apply().
 
         Returns
         -------
         best_parameters : dict
             Best set of parameters.
-        best_metric : float
-            Best metric
+        best_coverage : float
+            Best coverage
         """
 
         import skopt
         import skopt.space
 
-        if get_metric is None:
-            from pyannote.metrics.diarization import DiarizationPurityCoverageFMeasure
-            get_metric = DiarizationPurityCoverageFMeasure
+        from pyannote.metrics.diarization import DiarizationPurity
+        from pyannote.metrics.diarization import DiarizationCoverage
 
         # make sure items can be iterated over and over again
         items = list(items)
@@ -162,11 +154,12 @@ class Peak(object):
             alpha, min_duration, = params
             peak = cls(alpha=alpha, min_duration=min_duration)
 
-            metric = get_metric()
+            purity_metric = DiarizationPurity()
+            coverage_metric = DiarizationCoverage()
             process_one_file = functools.partial(helper_peak_tune,
                                                  peak=peak,
-                                                 metric=metric,
-                                                 **kwargs)
+                                                 purity=purity_metric,
+                                                 coverage=coverage_metric)
 
             if n_jobs > 1:
                 results = list(pool.map(process_one_file,
@@ -175,10 +168,10 @@ class Peak(object):
                 results = [process_one_file(item_prediction)
                            for item_prediction in zip(items, predictions)]
 
-            if minimize:
-                return abs(metric)
+            if abs(purity_metric) < purity:
+                return 1.
             else:
-                return -abs(metric)
+                return 1. - abs(coverage_metric)
 
         # 0 < alpha < 1 || 0 < min_duration < 5s
         space = [skopt.space.Real(0., 1., prior='uniform'),
@@ -192,8 +185,7 @@ class Peak(object):
         if n_jobs > 1:
             pool.terminate()
 
-        return {'alpha': res.x[0], 'min_duration': res.x[1]}, \
-               res.fun if minimize else -res.fun
+        return {'alpha': res.x[0], 'min_duration': res.x[1]}, 1. - res.fun
 
 
     def apply(self, predictions, dimension=0):
