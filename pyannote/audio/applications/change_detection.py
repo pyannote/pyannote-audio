@@ -53,7 +53,7 @@ Common options:
                              In "tune" mode, defaults to last available epoch at launch time.
   --beta=<beta>              Set beta < 1 to give more importance to purity,
                              and beta > 1 to give more importance to coverage.
-                             [defaults: 0.2].
+                             [default: 0.2].
 
 "train" mode:
   <experiment_dir>           Set experiment root directory. This script expects
