@@ -621,8 +621,12 @@ def main():
             subset = 'development'
 
         # start validating at this epoch (defaults to 0)
-        start = int(arguments['--from'])
-
+        start = arguments['--from']
+        if start is None:
+            start = 0
+        else:
+            start = int(start)
+        
         # stop validating at this epoch (defaults to None)
         end = arguments['--to']
         if end is not None:
