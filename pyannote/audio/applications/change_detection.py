@@ -442,7 +442,7 @@ class SpeakerChangeDetection(Application):
             _ = metric(reference, hypothesis, uem=uem)
 
         return {'PurityCoverageFMeasure': {
-            'maximize': True, 'value': abs(metric),
+            'minimize': False, 'value': abs(metric),
             'baseline': validation_data['PurityCoverageFMeasure']}
         }
 
