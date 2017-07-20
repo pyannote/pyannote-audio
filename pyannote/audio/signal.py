@@ -39,7 +39,6 @@ from pyannote.core.util import pairwise
 from pyannote.database.util import get_annotated
 
 
-
 def helper_peak_tune(item_prediction, peak=None,
                      purity_metric=None, coverage_metric=None):
     """Apply peak detection on prediction and evaluate the result
@@ -70,6 +69,8 @@ def helper_peak_tune(item_prediction, peak=None,
 
     uem = get_annotated(current_file)
 
+    # TODO if way too many segments, bypass this and return 0 coverage...
+
     return {'purity': purity_metric(reference, hypothesis, uem=uem),
             'coverage': coverage_metric(reference, hypothesis, uem=uem)}
 
@@ -85,13 +86,17 @@ class Peak(object):
     ----------
     alpha : float, optional
         Adaptative threshold coefficient. Defaults to 0.5
+    percentile : bool, optional
+        When False (default), alpha = 0 correspond to min and = 1 to max
+        When True, alpha = 0 corresponds to p(1) and = 1 to p(99).
     min_duration : float, optional
         Defaults to 1 second.
 
     """
-    def __init__(self, alpha=0.5, min_duration=1.0):
+    def __init__(self, alpha=0.5, min_duration=1.0, percentile=False):
         super(Peak, self).__init__()
         self.alpha = alpha
+        self.percentile = percentile
         self.min_duration = min_duration
 
     @classmethod
@@ -215,8 +220,8 @@ class Peak(object):
         order = max(1, int(np.rint(self.min_duration / precision)))
         indices = scipy.signal.argrelmax(y, order=order)[0]
 
-        mini = np.nanpercentile(y, 1)
-        maxi = np.nanpercentile(y, 99)
+        mini = np.nanpercentile(y, 1) if self.percentile else np.nanmin(y)
+        maxi = np.nanpercentile(y, 99) if self.percentile else np.nanmax(y)
         threshold = mini + self.alpha * (maxi - mini)
 
         peak_time = np.array([sw[i].middle for i in indices if y[i] > threshold])
