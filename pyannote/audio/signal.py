@@ -220,7 +220,7 @@ class Peak(object):
         sw = predictions.sliding_window
 
         precision = sw.step
-        order = int(np.rint(self.min_duration / precision))
+        order = max(1, int(np.rint(self.min_duration / precision)))
         indices = scipy.signal.argrelmax(y, order=order)[0]
 
         mini = np.nanpercentile(y, 1)
