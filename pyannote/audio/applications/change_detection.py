@@ -277,12 +277,9 @@ def tune_peak(app, epoch, protocol_name, subset='development', purity=0.95):
     aggregation.cache_preprocessed_ = False
 
     # tune Peak parameters (alpha & min_duration)
-    # with respect to purity/coverage f-measure (maximize)
+    # with respect to coverage @ given purity
     peak_params, metric = Peak.tune(
-        getattr(protocol, subset)(),
-        aggregation.apply,
-        get_metric=partial(DiarizationPurityCoverageFMeasure, beta=beta),
-        minimize=False)
+        getattr(protocol, subset)(), aggregation.apply, purity=purity)
 
     return peak_params, metric
 
