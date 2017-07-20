@@ -180,9 +180,9 @@ class Peak(object):
             else:
                 return -abs(metric)
 
-        # 0 < alpha < 1 || 500ms < min_duration < 5s
+        # 0 < alpha < 1 || 0 < min_duration < 5s
         space = [skopt.space.Real(0., 1., prior='uniform'),
-                 skopt.space.Real(0.5, 5., prior='uniform')]
+                 skopt.space.Real(0., 5., prior='uniform')]
 
         res = skopt.gp_minimize(
             objective_function, space,
