@@ -187,6 +187,7 @@ from pyannote.database.util import get_annotated
 from pyannote.database import get_protocol
 
 from pyannote.metrics.binary_classification import det_curve
+from pyannote.metrics.diarization import DiarizationPurityCoverageFMeasure
 
 from pyannote.parser import MDTMParser
 
@@ -270,38 +271,13 @@ def tune_peak(app, epoch, protocol_name, subset='development'):
         duration=duration, step=step)
     aggregation.cache_preprocessed_ = False
 
-    predictions = []
-    for current_file in getattr(protocol, subset)():
-        predictions.append(aggregation.apply(current_file))
-
-    def objective_function(params):
-        alpha, min_duration, = params
-        peak = cls(alpha=alpha, min_duration=min_duration)
-
-        metric = get_metric()
-        process_one_file = functools.partial(helper_tune_peak,
-                                             peak=peak,
-                                             metric=metric,
-                                             **kwargs)
-
-        if n_jobs > 1:
-            results = list(pool.map(process_one_file,
-                                    zip(items, predictions)))
-        else:
-            results = [process_one_file(item_prediction)
-                       for item_prediction in zip(items, predictions)]
-
-        return abs(metric)
-
-
-
     # tune Peak parameters (alpha & min_duration)
-    # with respect to detection error rate
+    # with respect to purity/coverage f-measure (maximize)
     peak_params, metric = Peak.tune(
         getattr(protocol, subset)(),
         aggregation.apply,
-        get_metric=DetectionErrorRate,
-        dimension=1)
+        get_metric=DiarizationPurityCoverageFMeasure,
+        minimize=False)
 
     return peak_params, metric
 
@@ -512,7 +488,7 @@ class SpeakerChangeDetection(Application):
             best_peak_params[params] = peak_params
             best_metric[params] = metric
 
-            return metric
+            return -metric
 
         res = skopt.gp_minimize(
             objective_function, space, random_state=1337,
@@ -521,7 +497,7 @@ class SpeakerChangeDetection(Application):
 
         # TODO tune Peak a bit longer with the best epoch
 
-        return {'epoch': res.x[0]}, res.fun
+        return {'epoch': res.x[0]}, -res.fun
 
     def apply(self, protocol_name, subset='test'):
 
