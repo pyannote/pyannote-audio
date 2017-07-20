@@ -270,10 +270,9 @@ def tune_peak(app, epoch, protocol_name, subset='development', purity=0.95):
 
     # initialize sequence labeling
     duration = app.config_['sequences']['duration']
-    step = app.config_['sequences']['step']
     aggregation = SequenceLabelingAggregation(
         sequence_labeling, app.feature_extraction_,
-        duration=duration, step=step)
+        duration=duration, step=.9 * duration)
     aggregation.cache_preprocessed_ = False
 
     # tune Peak parameters (alpha & min_duration)
@@ -402,7 +401,7 @@ class SpeakerChangeDetection(Application):
         duration = self.config_['sequences']['duration']
         aggregation = SequenceLabelingAggregation(
             sequence_labeling, self.feature_extraction_,
-            duration=duration, step=.25 * duration)
+            duration=duration, step=.9 * duration)
         aggregation.cache_preprocessed_ = False
 
         protocol = get_protocol(protocol_name, progress=False,
