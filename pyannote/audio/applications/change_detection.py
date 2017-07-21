@@ -364,11 +364,10 @@ class SpeakerChangeDetection(Application):
 
         return labeling
 
-    def validate_init(self, protocol_name, subset='development', beta=1.):
+    def validate_init(self, protocol_name, subset='development'):
 
         from pyannote.metrics.diarization import DiarizationPurityCoverageFMeasure
-
-        metric = DiarizationPurityCoverageFMeasure(beta=beta)
+        metric = DiarizationPurityCoverageFMeasure()
 
         protocol = get_protocol(protocol_name, progress=False,
                                 preprocessors=self.preprocessors_)
@@ -380,7 +379,10 @@ class SpeakerChangeDetection(Application):
             hypothesis = reference.get_timeline().segmentation().to_annotation()
             _ = metric(reference, hypothesis, uem=uem)
 
-        return {'baseline': abs(metric), 'beta': beta}
+        purity, coverage, fscore = metric.compute_metrics()
+        return {'DiarizationPurity': purity,
+                'DiarizationCoverage': coverage,
+                'DiarizationPurityCoverageFMeasure': fscore}
 
     def validate_epoch(self, epoch, protocol_name, subset='development',
                        validation_data=None):
@@ -388,9 +390,7 @@ class SpeakerChangeDetection(Application):
         from pyannote.metrics.diarization import DiarizationPurityCoverageFMeasure
         from pyannote.audio.signal import Peak
 
-        beta = validation_data['beta']
-
-        metric = DiarizationPurityCoverageFMeasure(beta=beta)
+        metric = DiarizationPurityCoverageFMeasure()
         peak = Peak(alpha=0.5, min_duration=1.0)
 
         # load model for current epoch
@@ -420,9 +420,21 @@ class SpeakerChangeDetection(Application):
 
             _ = metric(reference, hypothesis, uem=uem)
 
-        return {'PurityCoverageFMeasure': {
-            'minimize': False, 'value': abs(metric),
-            'baseline': validation_data['baseline']}
+        purity, coverage, fscore = metric.compute_metrics()
+
+        return {
+            'DiarizationPurity': {
+                'minimize': False, 'value': purity,
+                'baseline': validation_data['DiarizationPurity']
+            },
+            'DiarizationCoverage': {
+                'minimize': False, 'value': coverage,
+                'baseline': validation_data['DiarizationCoverage']
+            },
+            'DiarizationPurityCoverageFMeasure': {
+                'minimize': False, 'value': coverage,
+                'baseline': validation_data['DiarizationPurityCoverageFMeasure']
+            }
         }
 
     def tune(self, protocol_name, subset='development', start=None, end=None,

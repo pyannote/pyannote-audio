@@ -39,8 +39,7 @@ from pyannote.core.util import pairwise
 from pyannote.database.util import get_annotated
 
 
-def helper_peak_tune(item_prediction, peak=None,
-                     purity_metric=None, coverage_metric=None):
+def helper_peak_tune(item_prediction, peak=None, metric=None):
     """Apply peak detection on prediction and evaluate the result
 
     Parameters
@@ -49,13 +48,11 @@ def helper_peak_tune(item_prediction, peak=None,
         Protocol item.
     prediction : SlidingWindowFeature
     peak : Peak, optional
-    purity_metric : DiarizationPurity, optional
-    coverage_metric : DiarizationCoverage, optional
+    metric : DiarizationPurityCoverageFMeasure, optional
 
     Returns
     -------
-    results : dict
-        {'purity': purity, 'coverage': coverage}
+    fscore : float
     """
 
     current_file, predictions = item_prediction
@@ -69,10 +66,10 @@ def helper_peak_tune(item_prediction, peak=None,
 
     uem = get_annotated(current_file)
 
-    # TODO if way too many segments, bypass this and return 0 coverage...
-
-    return {'purity': purity_metric(reference, hypothesis, uem=uem),
-            'coverage': coverage_metric(reference, hypothesis, uem=uem)}
+    # TODO this might take a very long time when hypothesis contains
+    # a large number of segments -- find a way to bypass this call
+    # and make sure the internal components are accumulated accordingly
+    return metric(reference, hypothesis, uem=uem)
 
 
 class Peak(object):
@@ -135,8 +132,7 @@ class Peak(object):
         import skopt
         import skopt.space
 
-        from pyannote.metrics.diarization import DiarizationPurity
-        from pyannote.metrics.diarization import DiarizationCoverage
+        from pyannote.metrics.diarization import DiarizationPurityCoverageFMeasure
 
         # make sure items can be iterated over and over again
         items = list(items)
@@ -159,12 +155,9 @@ class Peak(object):
             alpha, min_duration, = params
             peak = cls(alpha=alpha, min_duration=min_duration)
 
-            purity_metric = DiarizationPurity()
-            coverage_metric = DiarizationCoverage()
+            metric = DiarizationPurityCoverageFMeasure()
             process_one_file = functools.partial(
-                helper_peak_tune, peak=peak,
-                purity_metric=purity_metric,
-                coverage_metric=coverage_metric)
+                helper_peak_tune, peak=peak, metric=metric)
 
             if n_jobs > 1:
                 results = list(pool.map(process_one_file,
@@ -173,10 +166,12 @@ class Peak(object):
                 results = [process_one_file(item_prediction)
                            for item_prediction in zip(items, predictions)]
 
-            if abs(purity_metric) < purity:
+            p, c, f = metric.compute_metrics()
+
+            if p < purity:
                 return 1.
             else:
-                return 1. - abs(coverage_metric)
+                return 1. - c
 
         # 0 < alpha < 1 || 0 < min_duration < 5s
         space = [skopt.space.Real(0., 1., prior='uniform'),
