@@ -24,6 +24,7 @@
 # SOFTWARE.
 
 # AUTHORS
+# Ruiqing YIN
 # Hervé BREDIN - http://herve.niderb.fr
 
 """
