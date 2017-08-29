@@ -84,14 +84,14 @@ class PeriodicFeaturesMixin:
             features = self.feature_extractor(current_file)
 
         except Exception as e:
-            wav = current_file['audio']
-            msg = 'Cannot extract features from "{wav}".'
-            raise PyannoteFeatureExtractionError(msg.format(wav=wav))
+            audio = current_file['audio']
+            msg = 'Cannot extract features from "{audio}".'
+            raise PyannoteFeatureExtractionError(msg.format(audio=audio))
 
         if features is None:
-            wav = current_file['audio']
-            msg = 'Cannot extract features from "{wav}".'
-            raise PyannoteFeatureExtractionError(msg.format(wav=wav))
+            audio = current_file['audio']
+            msg = 'Cannot extract features from "{audio}".'
+            raise PyannoteFeatureExtractionError(msg.format(audio=audio))
 
         self.preprocessed_['X'][identifier] = features
 

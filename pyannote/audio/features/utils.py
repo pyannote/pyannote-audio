@@ -45,18 +45,18 @@ class PyannoteFeatureExtractionError(Exception):
 
 
 def get_audio_duration(current_file):
+    """Return audio file duration
 
-    # HACK until all packages are updated to new API
-    # now expects a dict [was: path string]
-    if not isinstance(current_file, dict):
-        current_file = {'audio': current_file}
-        warnings.warn('"get_audio_duration" now expects a dict. '
-                      'Please update your code.')
-    else:
-        if 'audio' not in current_file and 'wav' in current_file:
-            current_file['audio'] = current_file['wav']
-            warnings.warn('"wav" key is deprecated in favor of "audio". '
-                          'Please update your code.')
+    Parameters
+    ----------
+    current_file : dict
+        Dictionary given by pyannote.database.
+
+    Returns
+    -------
+    duration : float
+        Audio file duration.
+    """
     path = current_file['audio']
 
     with audioread.audio_open(path) as f:
@@ -64,15 +64,14 @@ def get_audio_duration(current_file):
 
     return duration
 
-# HACK until all packages are updated to the new API
-get_wav_duration = get_audio_duration
 
 def read_audio(current_file, sample_rate=None, mono=True):
-    """
+    """Read audio file
 
     Parameters
     ----------
     current_file : dict
+        Dictionary given by pyannote.database.
     sample_rate: int, optional
         Target sampling rate. Defaults to using native sampling rate.
     mono : int, optional
@@ -91,12 +90,6 @@ def read_audio(current_file, sample_rate=None, mono=True):
     channel will be returned.
 
     """
-
-    # HACK until all packages are updated to use 'audio' instead of 'wav'
-    if 'audio' not in current_file and 'wav' in current_file:
-        current_file['audio'] = current_file['wav']
-        warnings.warn('"wav" key is deprecated in favor of "audio". '
-                      'Please update your code.')
 
     y, sample_rate = librosa.load(current_file['audio'],
                                   sr=sample_rate,
