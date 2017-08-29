@@ -33,7 +33,7 @@ Speaker change detection
 Usage:
   pyannote-change-detection train [--database=<db.yml> --subset=<subset>] <experiment_dir> <database.task.protocol>
   pyannote-change-detection validate [--database=<db.yml> --subset=<subset> --from=<epoch> --to=<epoch> --every=<epoch>] <train_dir> <database.task.protocol>
-  pyannote-change-detection tune [--database=<db.yml> --subset=<subset> --from=<epoch> --to=<epoch> --purity=<purity>] <train_dir> <database.task.protocol>
+  pyannote-change-detection tune [--database=<db.yml> --subset=<subset> [--from=<epoch> --to=<epoch> | --at=<epoch>] --purity=<purity>] <train_dir> <database.task.protocol>
   pyannote-change-detection apply [--database=<db.yml> --subset=<subset>] <tune_dir> <database.task.protocol>
   pyannote-change-detection -h | --help
   pyannote-change-detection --version
@@ -438,8 +438,8 @@ class SpeakerChangeDetection(Application):
             }
         }
 
-    def tune(self, protocol_name, subset='development', start=None, end=None,
-             purity=0.95):
+    def tune(self, protocol_name, subset='development',
+             start=None, end=None, at=None, purity=0.95):
 
         # FIXME -- make sure "subset" is not empty
 
@@ -452,10 +452,17 @@ class SpeakerChangeDetection(Application):
 
         epoch, first_epoch = self.get_number_of_epochs(self.train_dir_,
                                                        return_first=True)
-        if start is None:
-            start = first_epoch
-        if end is None:
-            end = epoch - 1
+
+        if at is None:
+            if start is None:
+                start = first_epoch
+            if end is None:
+                end = epoch - 1
+
+        else:
+            start = at
+            end = at
+
         space = [skopt.space.Integer(start, end)]
 
         best_peak_params = {}
@@ -512,9 +519,14 @@ class SpeakerChangeDetection(Application):
             n_calls=20, n_random_starts=10, x0=[end],
             verbose=True, callback=callback)
 
-        # TODO tune Peak a bit longer with the best epoch
+        epoch = res.x[0]
 
-        return {'epoch': res.x[0]}, 1.- res.fun
+        # TODO tune Peak a bit longer with the best epoch
+        # tune peak detection
+        peak_params, coverage = tune_peak(
+            self, epoch, protocol_name, subset=subset, purity=purity)
+
+        return {'epoch': epoch}, 1.- res.fun
 
     def apply(self, protocol_name, subset='test'):
 
@@ -649,12 +661,17 @@ def main():
         if end is not None:
             end = int(end)
 
+        at == arguments['--at']
+        if at is not None:
+            at = int(at)
+
         purity = float(arguments['--purity'])
 
         application = SpeakerChangeDetection.from_train_dir(
             train_dir, db_yml=db_yml)
         application.tune(protocol_name, subset=subset,
-                         start=start, end=end, purity=purity)
+                         start=start, end=end, at=at,
+                         purity=purity)
 
     if arguments['apply']:
         tune_dir = arguments['<tune_dir>']
