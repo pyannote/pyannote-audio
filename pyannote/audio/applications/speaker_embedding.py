@@ -32,7 +32,7 @@ Speaker embedding
 Usage:
   pyannote-speaker-embedding data [--database=<db.yml> --duration=<duration> --step=<step> --heterogeneous] <root_dir> <database.task.protocol>
   pyannote-speaker-embedding train [--subset=<subset> --start=<epoch> --end=<epoch>] <experiment_dir> <database.task.protocol>
-  pyannote-speaker-embedding validate [--subset=<subset> --every=<epoch> --from=<epoch>] <train_dir> <database.task.protocol>
+  pyannote-speaker-embedding validate [--subset=<subset> --from=<epoch> --to=<epoch> --every=<epoch>] <train_dir> <database.task.protocol>
   pyannote-speaker-embedding apply [--database=<db.yml> --step=<step> --internal] <validate.txt> <database.task.protocol> <output_dir>
   pyannote-speaker-embedding compare (<validate.txt> <legend>)... <output.png>
   pyannote-speaker-embedding -h | --help
@@ -639,10 +639,13 @@ def main():
 
         every = int(arguments['--every'])
         start = int(arguments['--from'])
+        end = arguments['--to']
+        if end is not None:
+            end = int(end)
 
         application = SpeakerEmbedding.from_train_dir(train_dir)
         application.validate(protocol_name, subset=subset,
-                             every=every, start=start)
+                             every=every, start=start, end=end)
 
     if arguments['apply']:
         validate_txt = arguments['<validate.txt>']
