@@ -30,7 +30,7 @@ from pyannote.audio.generators.periodic import PeriodicFeaturesMixin
 from pyannote.core import SlidingWindowFeature
 from pyannote.generators.fragment import SlidingSegments
 from pyannote.generators.batch import FileBasedBatchGenerator
-from pyannote.databse.util import get_annotated
+from pyannote.database.util import get_annotated
 import numpy as np
 
 
