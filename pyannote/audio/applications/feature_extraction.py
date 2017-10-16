@@ -31,6 +31,7 @@ Feature extraction
 
 Usage:
   pyannote-speech-feature [--robust --parallel --database=<db.yml>] <experiment_dir> <database.task.protocol>
+  pyannote-speech-feature check [--database=<db.yml>] <experiment_dir> <database.task.protocol>
   pyannote-speech-feature -h | --help
   pyannote-speech-feature --version
 
@@ -86,6 +87,7 @@ from pyannote.database import get_protocol
 
 from pyannote.audio.util import mkdir_p
 from pyannote.audio.features.utils import Precomputed
+from pyannote.audio.features.utils import get_audio_duration
 from pyannote.audio.features.utils import PyannoteFeatureExtractionError
 
 from multiprocessing import cpu_count, Pool
@@ -237,6 +239,42 @@ def extract(protocol_name, file_finder, experiment_dir,
                 continue
             print(result)
 
+def check(protocol_name, file_finder, experiment_dir):
+
+    protocol = get_protocol(protocol_name)
+    precomputed = Precomputed(experiment_dir)
+
+    for subset in ['development', 'test', 'train']:
+
+        try:
+            file_generator = getattr(protocol, subset)()
+            first_item = next(file_generator)
+        except NotImplementedError as e:
+            continue
+
+        for current_file in getattr(protocol, subset)():
+
+            try:
+                audio = file_finder(current_file)
+                current_file['audio'] = audio
+            except ValueError as e:
+                print(e)
+                continue
+
+            duration = get_audio_duration(current_file)
+
+            try:
+                features = precomputed(current_file)
+            except PyannoteFeatureExtractionError as e:
+                print(e)
+                continue
+
+            if not np.isclose(duration,
+                              features.getExtent().duration,
+                              atol=1.):
+                uri = get_unique_identifier(current_file)
+                print('Duration mismatch for "{uri}"'.format(uri=uri))
+
 
 def main():
 
@@ -248,7 +286,10 @@ def main():
     protocol_name = arguments['<database.task.protocol>']
     experiment_dir = arguments['<experiment_dir>']
 
-    robust = arguments['--robust']
-    parallel = arguments['--parallel']
-    extract(protocol_name, file_finder, experiment_dir,
-            robust=robust, parallel=parallel)
+    if arguments['check']:
+        check(protocol_name, file_finder, experiment_dir)
+    else:
+        robust = arguments['--robust']
+        parallel = arguments['--parallel']
+        extract(protocol_name, file_finder, experiment_dir, 
+                robust=robust, parallel=parallel)
