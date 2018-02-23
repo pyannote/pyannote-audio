@@ -340,6 +340,7 @@ class Application(object):
             # wait for first epoch to complete
             _, first_epoch = self.get_number_of_epochs(return_first=True)
             if first_epoch is None:
+                print('waiting for first epoch to complete...')
                 time.sleep(sleep)
                 continue
 
