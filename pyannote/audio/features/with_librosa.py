@@ -102,6 +102,36 @@ class LibrosaFeatureExtractor(object):
         return SlidingWindowFeature(data.T, self.sliding_window_)
 
 
+class LibrosaSpectrogram(LibrosaFeatureExtractor):
+
+    def __init__(self, sample_rate=16000, duration=0.025, step=0.010,
+                 n_fft=None):
+
+        super(LibrosaSpectrogram, self).__init__(
+            sample_rate=sample_rate,
+            duration=duration,
+            step=step)
+
+        if n_fft is None:
+            n_fft = int(self.duration * sample_rate)
+        self.n_fft = n_fft
+
+        self.hop_length_ = int(self.step * sample_rate)
+        self.win_length_ = int(self.duration * sample_rate)
+
+    def process(self, y, sample_rate):
+
+        fft = librosa.core.stft(y=y, n_fft=self.n_fft,
+                                hop_length=self.hop_length_,
+                                win_length=self.win_length_,
+                                center=True, window='hamming')
+
+        return np.abs(fft)
+
+    def dimension(self):
+        return self.n_fft // 2 + 1
+
+
 class LibrosaRMSE(LibrosaFeatureExtractor):
     """
 

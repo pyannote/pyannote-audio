@@ -35,6 +35,67 @@ import warnings
 
 
 
+class VGGVox(nn.Module):
+
+    def __init__(self, n_features, output_dim=128):
+
+        super(VGGVox, self).__init__()
+        self.n_features = n_features
+        self.output_dim = output_dim
+
+        self.conv1_ = nn.Conv2d(1, 96, (7, 7), stride=(2, 2), padding=1)
+        self.bn1_ = nn.BatchNorm2d(96)
+        self.mpool1_ = nn.MaxPool2d((3, 3), stride=(2, 2))
+        self.conv2_ = nn.Conv2d(96, 256, (5, 5), stride=(2, 2), padding=1)
+        self.bn2_ = nn.BatchNorm2d(256)
+        self.mpool2_ = nn.MaxPool2d((3, 3), stride=(2, 2))
+        self.conv3_ = nn.Conv2d(256, 256, (3, 3), stride=(1, 1), padding=1)
+        self.bn3_ = nn.BatchNorm2d(256)
+        self.conv4_ = nn.Conv2d(256, 256, (3, 3), stride=(1, 1), padding=1)
+        self.bn4_ = nn.BatchNorm2d(256)
+        self.conv5_ = nn.Conv2d(256, 256, (3, 3), stride=(1, 1), padding=1)
+        self.bn5_ = nn.BatchNorm2d(256)
+        self.mpool5_ = nn.MaxPool2d((5, 3), stride=(3, 2))
+        self.fc6_ = nn.Conv2d(256, 4096, (9, 1), stride=(1, 1))
+        self.bn6_ = nn.BatchNorm2d(4096)
+        self.fc7_ = nn.Conv2d(4096, 1024, (1, 1), stride=(1, 1))
+        self.bn7_ = nn.BatchNorm2d(1024)
+        self.fc8_ = nn.Conv2d(1024, self.output_dim, (1, 1), stride=(1, 1))
+        self.bn8_ = nn.BatchNorm2d(self.output_dim)
+
+    def forward(self, sequences):
+        """Embed sequences
+
+        Parameters
+        ----------
+        sequences : torch.autograd.Variable (batch_size, n_samples, n_features)
+            Batch of sequences.
+
+        Returns
+        -------
+        embeddings : torch.autograd.Variable (batch_size, output_dim)
+            Batch of embeddings.
+
+        """
+
+        batch_size, n_samples, n_features = sequences.size()
+        x = torch.transpose(sequences, 1, 2).view(
+            batch_size, 1, n_features, n_samples)
+        x = F.relu(self.bn1_(self.conv1_(x)))
+        x = self.mpool1_(x)
+        x = F.relu(self.bn2_(self.conv2_(x)))
+        x = self.mpool2_(x)
+        x = F.relu(self.bn3_(self.conv3_(x)))
+        x = F.relu(self.bn4_(self.conv4_(x)))
+        x = F.relu(self.bn5_(self.conv5_(x)))
+        x = self.mpool5_(x)
+        x = F.relu(self.bn6_(self.fc6_(x)))
+        x = torch.mean(x, dim=-1, keepdim=True)
+        x = F.relu(self.bn7_(self.fc7_(x)))
+        x = F.relu(self.bn8_(self.fc8_(x))).view(-1, self.output_dim)
+
+        return x
+
 
 class ClopiNet(nn.Module):
     """ClopiNet sequence embedding
