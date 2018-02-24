@@ -131,6 +131,31 @@ class LibrosaSpectrogram(LibrosaFeatureExtractor):
     def dimension(self):
         return self.n_fft // 2 + 1
 
+class LibrosaMelSpectrogram(LibrosaFeatureExtractor):
+
+    def __init__(self, sample_rate=16000, duration=0.025, step=0.010,
+                 n_mels=96):
+
+        super(LibrosaMelSpectrogram, self).__init__(
+            sample_rate=sample_rate,
+            duration=duration,
+            step=step)
+
+        self.n_mels = n_mels
+        self.n_fft_ = int(self.duration * self.sample_rate)
+        self.hop_length_ = int(self.step * self.sample_rate)
+
+    def process(self, y, sample_rate):
+
+        X = librosa.feature.melspectrogram(
+            y, sr=sample_rate, n_mels=self.n_mels,
+            n_fft=self.n_fft_, hop_length=self.hop_length_,
+            power=2.0)
+
+        return librosa.amplitude_to_db(X, ref=1.0, amin=1e-5, top_db=80.0)
+
+    def dimension(self):
+        return self.n_mels
 
 class LibrosaRMSE(LibrosaFeatureExtractor):
     """

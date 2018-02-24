@@ -27,7 +27,7 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 from .with_yaafe import YaafeCompound, YaafeZCR, YaafeMFCC
-from .with_librosa import LibrosaMFCC, LibrosaRMSE, LibrosaSpectrogram
+from .with_librosa import LibrosaMFCC, LibrosaRMSE, LibrosaSpectrogram, LibrosaMelSpectrogram
 from .utils import Precomputed
 from .utils import PrecomputedHTK
 from .utils import RawAudio
