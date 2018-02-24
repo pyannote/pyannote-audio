@@ -485,12 +485,15 @@ class TripletLoss(object):
                 log_positive = np.hstack(log_positive)
                 log_negative = np.hstack(log_negative)
                 bins = np.linspace(0, self.max_distance, 50)
-                writer.add_histogram(
-                    'train/distance/intra_class', log_positive,
-                    global_step=epoch, bins=bins)
-                writer.add_histogram(
-                    'train/distance/inter_class', log_negative,
-                    global_step=epoch, bins=bins)
+                try:
+                    writer.add_histogram(
+                        'train/distance/intra_class', log_positive,
+                        global_step=epoch, bins=bins)
+                    writer.add_histogram(
+                        'train/distance/inter_class', log_negative,
+                        global_step=epoch, bins=bins)
+                except ValueError as e:
+                    pass
 
                 _, _, _, eer = det_curve(
                     np.hstack([np.ones(len(log_positive)),
@@ -501,14 +504,20 @@ class TripletLoss(object):
 
                 log_delta = np.vstack(log_delta)
                 bins = np.linspace(-self.max_distance, self.max_distance, 50)
-                writer.add_histogram(
-                    'train/triplet/delta', log_delta,
-                    global_step=epoch, bins=bins)
+                try:
+                    writer.add_histogram(
+                        'train/triplet/delta', log_delta,
+                        global_step=epoch, bins=bins)
+                except ValueError as e:
+                    pass
 
                 log_norm = np.hstack(log_norm)
-                writer.add_histogram(
-                    'train/embedding/norm', log_norm,
-                    global_step=epoch, bins='doane')
+                try:
+                    writer.add_histogram(
+                        'train/embedding/norm', log_norm,
+                        global_step=epoch, bins='doane')
+                except ValueError as e:
+                    pass
 
                 log_embedding_X = np.vstack(log_embedding_X)
                 log_embedding_y = np.hstack(log_embedding_y)
