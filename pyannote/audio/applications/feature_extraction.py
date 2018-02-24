@@ -265,6 +265,7 @@ def check(protocol_name, file_finder, experiment_dir):
                 print('Duration mismatch for "{uri}"'.format(uri=uri))
 
             if np.any(np.isnan(features.data)):
+                uri = get_unique_identifier(current_file)
                 print('NaN for "{uri}"'.format(uri=uri))
 
 
