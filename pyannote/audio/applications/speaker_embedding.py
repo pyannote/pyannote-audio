@@ -134,42 +134,31 @@ Configuration file:
     protocol, task, or database).
 """
 
-import io
-import yaml
+import torch
 import itertools
-from os.path import expanduser, dirname, basename
-
-from docopt import docopt
 import numpy as np
-
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-
-from pyannote.database import get_annotated
-from pyannote.database import get_protocol
-from pyannote.database import get_unique_identifier
-from pyannote.database import FileFinder
-
-from pyannote.audio.util import mkdir_p
-
-from pyannote.audio.features.utils import Precomputed
-from pyannote.audio.embedding.extraction import SequenceEmbedding
-
+from docopt import docopt
 from .base import Application
-from sortedcontainers import SortedDict
+from os.path import expanduser
+from torch.autograd import Variable
+from pyannote.database import FileFinder
+from pyannote.database import get_protocol
+from pyannote.audio.embedding.utils import pdist
+from pyannote.audio.embedding.utils import cdist
+from pyannote.database import get_unique_identifier
+from pyannote.audio.features.utils import Precomputed
+from pyannote.metrics.binary_classification import det_curve
+from pyannote.audio.embedding.extraction import SequenceEmbedding
+from pyannote.audio.generators.speaker import SpeechSegmentGenerator
+from pyannote.audio.generators.speaker import SpeechTurnSubSegmentGenerator
 
 
 class SpeakerEmbedding(Application):
 
-    # created by "train" mode
-    TRAIN_DIR = '{experiment_dir}/train/{protocol}.{subset}'
-    APPLY_DIR = '{tune_dir}/apply'
-
     def __init__(self, experiment_dir, db_yml=None):
 
         super(SpeakerEmbedding, self).__init__(
-            experiment_dir, db_yml=db_yml, backend='pytorch')
+            experiment_dir, db_yml=db_yml)
 
         # architecture
         architecture_name = self.config_['architecture']['name']
@@ -226,10 +215,6 @@ class SpeakerEmbedding(Application):
 
     def _validate_init_turn(self, protocol_name, subset='development'):
 
-        from pyannote.audio.generators.speaker import SpeechTurnSubSegmentGenerator
-        from pyannote.audio.embedding.utils import pdist
-
-        import numpy as np
         np.random.seed(1337)
 
         protocol = get_protocol(protocol_name, progress=False,
@@ -258,16 +243,12 @@ class SpeakerEmbedding(Application):
         y = np.array(y).reshape((-1, 1))
 
         # precompute same/different groundtruth
-        y = pdist(y, metric='chebyshev') < 1
+        y = pdist(y, metric='equal')
 
         return {'X': X, 'y': y, 'z': z}
 
     def _validate_init_segment(self, protocol_name, subset='development'):
 
-        from pyannote.audio.generators.speaker import SpeechSegmentGenerator
-        from pyannote.audio.embedding.utils import pdist
-
-        import numpy as np
         np.random.seed(1337)
 
         protocol = get_protocol(protocol_name, progress=False,
@@ -283,7 +264,7 @@ class SpeakerEmbedding(Application):
         y = batch['y'].reshape((-1, 1))
 
         # precompute same/different groundtruth
-        y = pdist(y, metric='chebyshev') < 1
+        y = pdist(y, metric='equal')
         return {'X': X, 'y': y}
 
     def validate_epoch(self, epoch, protocol_name, subset='development',
@@ -330,8 +311,6 @@ class SpeakerEmbedding(Application):
         metrics : dict
         """
 
-        from pyannote.metrics.binary_classification import det_curve
-        from pyannote.audio.embedding.utils import cdist
 
         # load current model
         model = self.load_model(epoch)
@@ -344,11 +323,6 @@ class SpeakerEmbedding(Application):
 
         duration = self.approach_.duration
         step = .5 * duration
-
-        protocol = get_protocol(
-            protocol_name, progress=False, preprocessors=self.preprocessors_)
-
-        batch_size = self.batch_size
 
         if isinstance(self.feature_extraction_, Precomputed):
             self.feature_extraction_.use_memmap = False
@@ -419,12 +393,6 @@ class SpeakerEmbedding(Application):
                                 subset='development',
                                 validation_data=None):
 
-        import numpy as np
-        import torch
-        from torch.autograd import Variable
-        from pyannote.metrics.binary_classification import det_curve
-        from pyannote.audio.embedding.utils import pdist
-
         model = self.load_model(epoch)
         if self.gpu:
             model = model.cuda()
@@ -446,12 +414,6 @@ class SpeakerEmbedding(Application):
     def _validate_epoch_turn(self, epoch, protocol_name,
                              subset='development',
                              validation_data=None):
-
-        import numpy as np
-        import torch
-        from torch.autograd import Variable
-        from pyannote.metrics.binary_classification import det_curve
-        from pyannote.audio.embedding.utils import pdist
 
         model = self.load_model(epoch)
         if self.gpu:
@@ -496,8 +458,7 @@ class SpeakerEmbedding(Application):
     def apply(self, protocol_name, output_dir, step=None,
               internal=False, normalize=False):
 
-        chosen_epoch = int(basename(self.model_pt_)[:-3])
-        model = self.load_model(chosen_epoch)
+        model = self.model_
 
         if self.gpu:
             model = model.cuda()
@@ -508,8 +469,6 @@ class SpeakerEmbedding(Application):
         if normalize is not None:
             model.normalize = normalize
 
-        # guess sequence duration from path (.../3.2+0.8/...)
-        directory = basename(dirname(self.experiment_dir))
         duration = self.approach_.duration
         if step is None:
             step = 0.5 * duration
@@ -624,7 +583,8 @@ def main():
         normalize = arguments['--normalize']
         batch_size = int(arguments['--batch'])
 
-        application = SpeakerEmbedding.from_model_pt(model_pt)
+        application = SpeakerEmbedding.from_model_pt(
+            model_pt, db_yml=db_yml)
         application.gpu = gpu
         application.batch_size = batch_size
         application.apply(protocol_name, output_dir, step=step,
