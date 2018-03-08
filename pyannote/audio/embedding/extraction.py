@@ -28,7 +28,7 @@
 
 import numpy as np
 from pyannote.core import SlidingWindow, SlidingWindowFeature
-from ..labeling.base import SequenceLabeling
+from pyannote.audio.labeling.extraction import SequenceLabeling
 from pyannote.generators.batch import batchify
 
 from torch.autograd import Variable
@@ -51,7 +51,7 @@ class SequenceEmbedding(SequenceLabeling):
     batch_size : int, optional
         Defaults to 32.
     gpu : boolean, optional
-        Run on GPU. Only works with pytorch backend.
+        Run on GPU.
     """
 
     def __init__(self, model, feature_extraction, duration,
@@ -103,7 +103,7 @@ class SequenceEmbedding(SequenceLabeling):
                 if not getattr(self.model, 'batch_first', True):
                     fX = np.rollaxis(fX, 1, 0)
             return fX
-            
+
         batches = batchify(iter(X), {'type': 'ndarray'},
                            batch_size=self.batch_size,
                            incomplete=True, prefetch=0)
