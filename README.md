@@ -5,13 +5,14 @@ Audio processing
 ## Installation
 
 ```bash
-$ conda create --name pyannote python=3.5 anaconda
+$ conda create --name pyannote python=3.6 anaconda
 $ source activate pyannote
 $ conda install -c conda-forge yaafe
 $ pip install -U pip setuptools
 $ pip install pyannote.audio
-$ pip install tensorflow   # or tensorflow-gpu
 ```
+
+[install pytorch from source](https://github.com/pytorch/pytorch#from-source)
 
 ## Citation
 
