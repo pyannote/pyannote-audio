@@ -33,7 +33,7 @@ from torch.autograd import Variable
 import torch.nn as nn
 import torch.nn.functional as F
 from pyannote.audio.generators.speaker import SpeechSegmentGenerator
-from pyannote.audio.callback import LoggingCallbackPytorch
+from pyannote.audio.checkpoint import Checkpoint
 from torch.optim import Adam
 from scipy.spatial.distance import pdist
 from .triplet_loss import TripletLoss
@@ -88,8 +88,8 @@ class WTFTripletLoss(TripletLoss):
         import tensorboardX
         writer = tensorboardX.SummaryWriter(log_dir=log_dir)
 
-        logging_callback = LoggingCallbackPytorch(log_dir=log_dir,
-                                                  restart=restart > 0)
+        checkpoint = Checkpoint(log_dir=log_dir,
+                                      restart=restart > 0)
 
         batch_generator = SpeechSegmentGenerator(
             feature_extraction,
@@ -101,7 +101,7 @@ class WTFTripletLoss(TripletLoss):
         batches_per_epoch = batch_generator.batches_per_epoch
 
         if restart > 0:
-            weights_pt = logging_callback.WEIGHTS_PT.format(
+            weights_pt = checkpoint.WEIGHTS_PT.format(
                 log_dir=log_dir, epoch=restart)
             model.load_state_dict(torch.load(weights_pt))
 
@@ -150,7 +150,7 @@ class WTFTripletLoss(TripletLoss):
 
         optimizer = Adam(parameters)
         if restart > 0:
-            optimizer_pt = logging_callback.OPTIMIZER_PT.format(
+            optimizer_pt = checkpoint.OPTIMIZER_PT.format(
                 log_dir=log_dir, epoch=restart)
             optimizer.load_state_dict(torch.load(optimizer_pt))
             if gpu:
@@ -402,9 +402,7 @@ class WTFTripletLoss(TripletLoss):
                     'delta', log_delta,
                     global_step=epoch, bins='doane')
 
-            logging_callback.model = model
-            logging_callback.optimizer = optimizer
-            logging_callback.on_epoch_end(epoch)
+            checkpoint.on_epoch_end(epoch, model, optimizer)
 
             if hasattr(self, 'norm_bn'):
                 confidence_pt = self.CONFIDENCE_PT.format(
