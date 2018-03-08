@@ -39,7 +39,7 @@ In this tutorial, you will learn how to perform feature extraction using `pyanno
 ## Installation
 ([↑up to table of contents](#table-of-contents))
 
-Follow installation instructions available [here](..)
+Follow installation instructions available [here](../..)
 
 ```bash
 $ source activate pyannote
