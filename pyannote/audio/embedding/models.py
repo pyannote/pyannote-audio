@@ -34,6 +34,151 @@ import torch.nn.functional as F
 import warnings
 
 
+class TristouNet(nn.Module):
+    """TristouNet sequence embedding
+
+    RNN ( » ... » RNN ) » temporal pooling › ( MLP › ... › ) MLP › normalize
+
+    Parameters
+    ----------
+    n_features : int
+        Input feature dimension
+    rnn : {'LSTM', 'GRU'}, optional
+        Defaults to 'LSTM'.
+    recurrent: list, optional
+        List of output dimension of stacked RNNs.
+        Defaults to [16, ] (i.e. one RNN with output dimension 16)
+    bidirectional : bool, optional
+        Use bidirectional recurrent layers. Defaults to False.
+    pooling : {'sum', 'max'}
+        Temporal pooling strategy. Defaults to 'sum'.
+    linear : list, optional
+        List of hidden dimensions of linear layers. Defaults to [16, 16].
+
+    Reference
+    ---------
+    Hervé Bredin. "TristouNet: Triplet Loss for Speaker Turn Embedding."
+    ICASSP 2017 (https://arxiv.org/abs/1609.04301)
+    """
+
+    def __init__(self, n_features,
+                 rnn='LSTM', recurrent=[16], bidirectional=False,
+                 pooling='sum', linear=[16, 16]):
+
+        super(TristouNet, self).__init__()
+
+        self.n_features = n_features
+        self.rnn = rnn
+        self.recurrent = recurrent
+        self.bidirectional = bidirectional
+        self.pooling = pooling
+        self.linear = [] if linear is None else linear
+
+        self.num_directions_ = 2 if self.bidirectional else 1
+
+        if self.pooling not in {'sum', 'max'}:
+            raise ValueError('"pooling" must be one of {"sum", "max"}')
+
+        # create list of recurrent layers
+        self.recurrent_layers_ = []
+        input_dim = self.n_features
+        for i, hidden_dim in enumerate(self.recurrent):
+            if self.rnn == 'LSTM':
+                recurrent_layer = nn.LSTM(input_dim, hidden_dim,
+                                          bidirectional=self.bidirectional)
+            elif self.rnn == 'GRU':
+                recurrent_layer = nn.GRU(input_dim, hidden_dim,
+                                         bidirectional=self.bidirectional)
+            else:
+                raise ValueError('"rnn" must be one of {"LSTM", "GRU"}.')
+            self.add_module('recurrent_{0}'.format(i), recurrent_layer)
+            self.recurrent_layers_.append(recurrent_layer)
+            input_dim = hidden_dim
+
+        # create list of linear layers
+        self.linear_layers_ = []
+        for i, hidden_dim in enumerate(self.linear):
+            linear_layer = nn.Linear(input_dim, hidden_dim, bias=True)
+            self.add_module('linear_{0}'.format(i), linear_layer)
+            self.linear_layers_.append(linear_layer)
+            input_dim = hidden_dim
+
+    @property
+    def batch_first(self):
+        return False
+
+    @property
+    def output_dim(self):
+        if self.linear:
+            return self.linear[-1]
+        return self.recurrent[-1]
+
+    def forward(self, sequence):
+
+        # check input feature dimension
+        n_samples, batch_size, n_features = sequence.size()
+        if n_features != self.n_features:
+            msg = 'Wrong feature dimension. Found {0}, should be {1}'
+            raise ValueError(msg.format(n_features, self.n_features))
+
+        output = sequence
+        # n_samples, batch_size, n_features
+        gpu = sequence.is_cuda
+
+        # recurrent layers
+        for hidden_dim, layer in zip(self.recurrent, self.recurrent_layers_):
+
+            if self.rnn == 'LSTM':
+
+                # initial hidden and cell states
+                h = torch.zeros(self.num_directions_, batch_size, hidden_dim)
+                c = torch.zeros(self.num_directions_, batch_size, hidden_dim)
+                if gpu:
+                    h = h.cuda()
+                    c = c.cuda()
+                hidden = (Variable(h, requires_grad=False),
+                          Variable(c, requires_grad=False))
+
+            elif self.rnn == 'GRU':
+                # initial hidden state
+                h = torch.zeros(self.num_directions_, batch_size, hidden_dim)
+                if gpu:
+                    h = h.cuda()
+                hidden = Variable(h, requires_grad=False)
+
+            # apply current recurrent layer and get output sequence
+            output, _ = layer(output, hidden)
+
+            # average both directions in case of bidirectional layers
+            if self.bidirectional:
+                output = .5 * (output[:, :, :hidden_dim] + \
+                               output[:, :, hidden_dim:])
+
+        # average temporal pooling
+        if self.pooling == 'sum':
+            output = output.sum(dim=0)
+        elif self.pooling == 'max':
+            output, _ = output.max(dim=0)
+
+        # batch_size, dimension
+
+        # stack linear layers
+        for hidden_dim, layer in zip(self.linear, self.linear_layers_):
+
+            # apply current linear layer
+            output = layer(output)
+
+            # apply non-linear activation function
+            output = F.tanh(output)
+
+        # batch_size, dimension
+
+        # unit-normalize
+        norm = torch.norm(output, 2, 1, keepdim=True)
+        output = output / norm
+
+        return output
+
 
 class VGGVox(nn.Module):
 
@@ -223,6 +368,7 @@ class ClopiNet(nn.Module):
             self.add_module('attention_{0}'.format(len(self.attention)),
                             attention_layer)
             self.attention_layers_.append(attention_layer)
+
     @property
     def batch_first(self):
         return False
