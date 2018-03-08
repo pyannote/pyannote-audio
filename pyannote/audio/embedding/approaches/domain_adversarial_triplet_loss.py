@@ -33,7 +33,7 @@ from torch.autograd import Variable, Function
 import torch.nn.functional as F
 import torch.nn as nn
 from pyannote.audio.generators.speaker import SpeechSegmentGenerator
-from pyannote.audio.callback import LoggingCallbackPytorch
+from pyannote.audio.checkpoint import Checkpoint
 from torch.optim import Adam
 from .triplet_loss import TripletLoss
 from scipy.spatial.distance import pdist, squareform
@@ -115,7 +115,7 @@ class DomainAdversarialTripletLoss(TripletLoss):
         import tensorboardX
         writer = tensorboardX.SummaryWriter(log_dir=log_dir)
 
-        logging_callback = LoggingCallbackPytorch(
+        checkpoint = Checkpoint(
             log_dir=log_dir, restart=(False if restart is None else True))
         try:
             batch_generator = SpeechSegmentGenerator(
@@ -139,7 +139,7 @@ class DomainAdversarialTripletLoss(TripletLoss):
         batches_per_epoch = int(np.ceil(duration_per_epoch / duration_per_batch))
 
         if restart is not None:
-            weights_pt = logging_callback.WEIGHTS_PT.format(
+            weights_pt = checkpoint.WEIGHTS_PT.format(
                 log_dir=log_dir, epoch=restart)
             model.load_state_dict(torch.load(weights_pt))
 
@@ -160,7 +160,7 @@ class DomainAdversarialTripletLoss(TripletLoss):
 
         optimizer = Adam(list(model.parameters()) + list(domain_clf.parameters()))
         if restart is not None:
-            optimizer_pt = logging_callback.OPTIMIZER_PT.format(
+            optimizer_pt = checkpoint.OPTIMIZER_PT.format(
                 log_dir=log_dir, epoch=restart)
             optimizer.load_state_dict(torch.load(optimizer_pt))
             if gpu:
@@ -324,6 +324,4 @@ class DomainAdversarialTripletLoss(TripletLoss):
                     'embedding/norm', norms,
                     global_step=epoch, bins='auto')
 
-            logging_callback.model = model
-            logging_callback.optimizer = optimizer
-            logging_callback.on_epoch_end(epoch)
+            checkpoint.on_epoch_end(epoch, model, optimizer)

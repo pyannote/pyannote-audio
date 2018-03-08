@@ -38,7 +38,7 @@ setup(
     packages=find_packages(),
     install_requires=[
         'pyannote.core >= 1.3.1',
-        'pyannote.metrics >= 1.3',
+        'pyannote.metrics >= 1.6.1',
         'pyannote.generators >= 0.17.1',
         'pyannote.database >= 1.3',
         'pyannote.parser >= 0.7',
@@ -47,8 +47,6 @@ setup(
         'audioread >= 2.1.5',
         'librosa >= 0.5.1',
         'sphfile == 1.0.0',
-        'keras == 2.0.8',
-        'autograd == 1.1.13',
         'scikit-optimize >= 0.2',
         'pyYAML >= 3.12',
         'h5py >= 2.6.0',
@@ -56,7 +54,7 @@ setup(
         'tqdm >= 4.11.2',
         'sortedcontainers >= 1.5.9',
         'sortedcollections >= 0.5.3',
-        'tensorboardX >= 0.8',
+        'tensorboardX >= 1.1',
     ],
     entry_points = {
         'console_scripts': [

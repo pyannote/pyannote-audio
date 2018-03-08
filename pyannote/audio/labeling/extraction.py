@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2016-2017 CNRS
+# Copyright (c) 2016-2018 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -29,16 +29,11 @@
 import numpy as np
 
 from pyannote.core import SlidingWindow, SlidingWindowFeature
-
 from pyannote.generators.batch import FileBasedBatchGenerator
 from pyannote.generators.fragment import SlidingSegments
-
 from pyannote.audio.generators.periodic import PeriodicFeaturesMixin
-from pyannote.audio.callback import LoggingCallback
-
 from pyannote.database import get_unique_identifier
 
-import torch.nn as nn
 from torch.autograd import Variable
 import torch
 
@@ -48,7 +43,7 @@ class SequenceLabeling(PeriodicFeaturesMixin, FileBasedBatchGenerator):
 
     Parameters
     ----------
-    model : keras.Model
+    model : nn.Module
         Pre-trained sequence labeling model.
     feature_extraction : callable
         Feature extractor
@@ -59,7 +54,7 @@ class SequenceLabeling(PeriodicFeaturesMixin, FileBasedBatchGenerator):
     batch_size : int, optional
         Defaults to 32.
     gpu : boolean, optional
-        Run on GPU. Only works witht pytorch backend.
+        Run on GPU.
 
     Usage
     -----
@@ -86,15 +81,12 @@ class SequenceLabeling(PeriodicFeaturesMixin, FileBasedBatchGenerator):
 
     @property
     def dimension(self):
-        if isinstance(self.model, nn.Module):
-            if hasattr(self.model, 'n_classes'):
-                return self.model.n_classes
-            elif hasattr(self.model, 'output_dim'):
-                return self.model.output_dim
-            else:
-                raise ValueError('Model has no n_classes nor output_dim attribute.')
+        if hasattr(self.model, 'n_classes'):
+            return self.model.n_classes
+        elif hasattr(self.model, 'output_dim'):
+            return self.model.output_dim
         else:
-            return self.model.output_shape[-1]
+            raise ValueError('Model has no n_classes nor output_dim attribute.')
 
     @property
     def sliding_window(self):
@@ -117,19 +109,19 @@ class SequenceLabeling(PeriodicFeaturesMixin, FileBasedBatchGenerator):
         prediction : (batch_size, n_samples, dimension) numpy array
             Batch of sequence labelings.
         """
-        if isinstance(self.model, nn.Module):
-            if not getattr(self.model, 'batch_first', True):
-                X = np.rollaxis(X, 0, 2)
-            X = np.array(X, dtype=np.float32)
-            X = Variable(torch.from_numpy(X))
 
-            if self.gpu:
-                prediction = self.model(X.cuda()).data.cpu().numpy()
-            else:
-                prediction = self.model(X).data.numpy()
-            return np.rollaxis(prediction, 1, 0)
+        if not getattr(self.model, 'batch_first', True):
+            X = np.rollaxis(X, 0, 2)
+        X = np.array(X, dtype=np.float32)
+        X = Variable(torch.from_numpy(X))
+
+        if self.gpu:
+            prediction = self.model(X.cuda()).data.cpu().numpy()
         else:
-            return self.model.predict(X)
+            prediction = self.model(X).data.numpy()
+        if not getattr(self.model, 'batch_first', True):
+            prediction = np.rollaxis(prediction, 1, 0)
+        return prediction
 
     def apply(self, current_file):
         """Compute predictions on a sliding window
@@ -184,61 +176,3 @@ class SequenceLabeling(PeriodicFeaturesMixin, FileBasedBatchGenerator):
         data = data / np.maximum(k, 1)
 
         return SlidingWindowFeature(data, frames)
-
-    @classmethod
-    def train(cls, input_shape, design_model, generator, steps_per_epoch,
-              epochs, loss='categorical_crossentropy', optimizer='rmsprop',
-              log_dir=None):
-        """Train the model
-
-        Parameters
-        ----------
-        input_shape : (n_frames, n_features) tuple
-            Shape of input sequence
-        design_model : function or callable
-            This function should take input_shape as input and return a Keras
-            model that takes a sequence as input, and returns the labeling as
-            output.
-        generator : iterable
-            The output of the generator must be a tuple (inputs, targets) or a
-            tuple (inputs, targets, sample_weights). All arrays should contain
-            the same number of samples. The generator is expected to loop over
-            its data indefinitely. An epoch finishes when `steps_per_epoch`
-            samples have been seen by the model.
-        steps_per_epoch : int
-            Number of batches to process before going to the next epoch.
-        epochs : int
-            Total number of iterations on the data
-        optimizer: str, optional
-            Keras optimizer. Defaults to 'rmsprop'.
-        log_dir: str, optional
-            When provided, log status after each epoch into this directory.
-            This will create several files, including loss plots and weights
-            files.
-
-        See also
-        --------
-        keras.engine.training.Model.fit_generator
-        """
-
-        callbacks = []
-
-        if log_dir is not None:
-            log = [('train', 'loss'), ('train', 'accuracy')]
-            callback = LoggingCallback(log_dir, log=log)
-            callbacks.append(callback)
-
-        # in case the {generator | optimizer} define their own
-        # callbacks, append them as well. this might be useful.
-        for stuff in [generator, optimizer]:
-            if hasattr(stuff, 'callbacks'):
-                callbacks.extend(stuff.callbacks())
-
-        model = design_model(input_shape)
-        model.compile(optimizer=optimizer,
-                               loss=loss,
-                               metrics=['accuracy'])
-
-        return model.fit_generator(
-            generator, steps_per_epoch, epochs=epochs,
-            verbose=1, callbacks=callbacks)

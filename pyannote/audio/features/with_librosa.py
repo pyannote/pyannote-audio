@@ -104,32 +104,26 @@ class LibrosaFeatureExtractor(object):
 
 class LibrosaSpectrogram(LibrosaFeatureExtractor):
 
-    def __init__(self, sample_rate=16000, duration=0.025, step=0.010,
-                 n_fft=None):
+    def __init__(self, sample_rate=16000, duration=0.025, step=0.010):
 
         super(LibrosaSpectrogram, self).__init__(
             sample_rate=sample_rate,
             duration=duration,
             step=step)
 
-        if n_fft is None:
-            n_fft = int(self.duration * sample_rate)
-        self.n_fft = n_fft
-
-        self.hop_length_ = int(self.step * sample_rate)
-        self.win_length_ = int(self.duration * sample_rate)
+        self.n_fft_ = int(self.duration * self.sample_rate)
+        self.hop_length_ = int(self.step * self.sample_rate)
 
     def process(self, y, sample_rate):
 
-        fft = librosa.core.stft(y=y, n_fft=self.n_fft,
+        fft = librosa.core.stft(y=y, n_fft=self.n_fft_,
                                 hop_length=self.hop_length_,
-                                win_length=self.win_length_,
                                 center=True, window='hamming')
-
         return np.abs(fft)
 
     def dimension(self):
-        return self.n_fft // 2 + 1
+        return self.n_fft_ // 2 + 1
+
 
 class LibrosaMelSpectrogram(LibrosaFeatureExtractor):
 

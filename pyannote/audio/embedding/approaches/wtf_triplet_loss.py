@@ -33,7 +33,7 @@ from torch.autograd import Variable
 import torch.nn as nn
 import torch.nn.functional as F
 from pyannote.audio.generators.speaker import SpeechSegmentGenerator
-from pyannote.audio.callback import LoggingCallbackPytorch
+from pyannote.audio.checkpoint import Checkpoint
 from torch.optim import Adam
 from scipy.spatial.distance import pdist
 from .triplet_loss import TripletLoss
@@ -58,11 +58,6 @@ class WTFTripletLoss(TripletLoss):
     per_fold : int, optional
         If provided, sample triplets from groups of `per_fold` speakers at a
         time. Defaults to sample triplets from the whole speaker set.
-    trim : float, optional
-        Do not use speech segments that are that close to the beginning/end of
-        the annotated region. Useful when features are short-term normalized,
-        as this can result in weird feature distribution at the boundaries.
-        Defaults to 0s (i.e. do no trim).
     parallel : int, optional
         Number of prefetching background generators. Defaults to 1.
         Each generator will prefetch enough batches to cover a whole epoch.
@@ -72,12 +67,12 @@ class WTFTripletLoss(TripletLoss):
     CONFIDENCE_PT = '{log_dir}/weights/{epoch:04d}.confidence.pt'
 
     def __init__(self, variant=1, duration=3.2, sampling='all',
-                 per_label=3, per_fold=None, trim=0, parallel=1):
+                 per_label=3, per_fold=None, parallel=1):
 
         super(WTFTripletLoss, self).__init__(
             duration=duration, metric='angular', clamp='sigmoid',
             sampling=sampling, per_label=per_label, per_fold=per_fold,
-            trim=trim, parallel=parallel)
+            parallel=parallel)
 
         self.variant = variant
 
@@ -88,20 +83,20 @@ class WTFTripletLoss(TripletLoss):
         import tensorboardX
         writer = tensorboardX.SummaryWriter(log_dir=log_dir)
 
-        logging_callback = LoggingCallbackPytorch(log_dir=log_dir,
-                                                  restart=restart > 0)
+        checkpoint = Checkpoint(log_dir=log_dir,
+                                      restart=restart > 0)
 
         batch_generator = SpeechSegmentGenerator(
             feature_extraction,
             per_label=self.per_label, per_fold=self.per_fold,
-            duration=self.duration, trim=self.trim, parallel=self.parallel)
+            duration=self.duration, parallel=self.parallel)
         batches = batch_generator(protocol, subset=subset)
         batch = next(batches)
 
         batches_per_epoch = batch_generator.batches_per_epoch
 
         if restart > 0:
-            weights_pt = logging_callback.WEIGHTS_PT.format(
+            weights_pt = checkpoint.WEIGHTS_PT.format(
                 log_dir=log_dir, epoch=restart)
             model.load_state_dict(torch.load(weights_pt))
 
@@ -150,7 +145,7 @@ class WTFTripletLoss(TripletLoss):
 
         optimizer = Adam(parameters)
         if restart > 0:
-            optimizer_pt = logging_callback.OPTIMIZER_PT.format(
+            optimizer_pt = checkpoint.OPTIMIZER_PT.format(
                 log_dir=log_dir, epoch=restart)
             optimizer.load_state_dict(torch.load(optimizer_pt))
             if gpu:
@@ -402,9 +397,7 @@ class WTFTripletLoss(TripletLoss):
                     'delta', log_delta,
                     global_step=epoch, bins='doane')
 
-            logging_callback.model = model
-            logging_callback.optimizer = optimizer
-            logging_callback.on_epoch_end(epoch)
+            checkpoint.on_epoch_end(epoch, model, optimizer)
 
             if hasattr(self, 'norm_bn'):
                 confidence_pt = self.CONFIDENCE_PT.format(

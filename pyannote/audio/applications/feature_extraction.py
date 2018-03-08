@@ -72,20 +72,15 @@ Configuration file:
 """
 
 import yaml
-import h5py
 import os.path
 import numpy as np
 import functools
-import itertools
 from docopt import docopt
 
-import pyannote.core
-import pyannote.database
 from pyannote.database import FileFinder
 from pyannote.database import get_unique_identifier
 from pyannote.database import get_protocol
 
-from pyannote.audio.util import mkdir_p
 from pyannote.audio.features.utils import Precomputed
 from pyannote.audio.features.utils import get_audio_duration
 from pyannote.audio.features.utils import PyannoteFeatureExtractionError

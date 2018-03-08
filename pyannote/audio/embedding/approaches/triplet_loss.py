@@ -26,14 +26,13 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
-import itertools
 import numpy as np
 from tqdm import tqdm
 import torch
 from torch.autograd import Variable
 import torch.nn.functional as F
 from pyannote.audio.generators.speaker import SpeechSegmentGenerator
-from pyannote.audio.callback import LoggingCallbackPytorch
+from pyannote.audio.checkpoint import Checkpoint
 from torch.optim import Adam
 from pyannote.audio.embedding.utils import to_condensed, pdist, l2_normalize
 from scipy.spatial.distance import squareform
@@ -353,8 +352,8 @@ class TripletLoss(object):
         import tensorboardX
         writer = tensorboardX.SummaryWriter(log_dir=log_dir)
 
-        logging_callback = LoggingCallbackPytorch(log_dir=log_dir,
-                                                  restart=restart > 0)
+        checkpoint = Checkpoint(log_dir=log_dir,
+                                      restart=restart > 0)
 
         batch_generator = self.get_batch_generator(feature_extraction)
         batches = batch_generator(protocol, subset=subset)
@@ -363,7 +362,7 @@ class TripletLoss(object):
         batches_per_epoch = batch_generator.batches_per_epoch
 
         if restart > 0:
-            weights_pt = logging_callback.WEIGHTS_PT.format(
+            weights_pt = checkpoint.WEIGHTS_PT.format(
                 log_dir=log_dir, epoch=restart)
             model.load_state_dict(torch.load(weights_pt))
 
@@ -374,7 +373,7 @@ class TripletLoss(object):
 
         optimizer = Adam(model.parameters())
         if restart > 0:
-            optimizer_pt = logging_callback.OPTIMIZER_PT.format(
+            optimizer_pt = checkpoint.OPTIMIZER_PT.format(
                 log_dir=log_dir, epoch=restart)
             optimizer.load_state_dict(torch.load(optimizer_pt))
             if gpu:
@@ -526,6 +525,4 @@ class TripletLoss(object):
                                      global_step=epoch,
                                      tag='train/embedding/samples')
 
-            logging_callback.model = model
-            logging_callback.optimizer = optimizer
-            logging_callback.on_epoch_end(epoch)
+            checkpoint.on_epoch_end(epoch, model, optimizer)

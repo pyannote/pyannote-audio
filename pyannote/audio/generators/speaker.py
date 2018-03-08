@@ -265,6 +265,9 @@ class SpeechSegmentGenerator(object):
 
         return int(np.ceil(duration_per_epoch / duration_per_batch))
 
+    @property
+    def n_classes(self):
+        return len(self.data_)
 
     def __call__(self, protocol, subset='train'):
 
