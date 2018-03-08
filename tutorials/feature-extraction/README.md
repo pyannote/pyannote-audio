@@ -28,7 +28,6 @@
 In this tutorial, you will learn how to perform feature extraction using `pyannote-speech-feature` command line tool.
 
 ## Table of contents
-- [Installation](#installation)
 - [ETAPE database](#etape-database)
 - [Configuration](#configuration)
 - [Extraction](#extraction)
@@ -36,18 +35,13 @@ In this tutorial, you will learn how to perform feature extraction using `pyanno
   - [In other command line tools](#in-other-command-line-tools)
   - [In your own code](#in-your-own-code)
 
-## Installation
+## ETAPE database
 ([↑up to table of contents](#table-of-contents))
-
-Follow installation instructions available [here](../..)
 
 ```bash
 $ source activate pyannote
 $ pip install pyannote.db.etape
 ```
-
-## ETAPE database
-([↑up to table of contents](#table-of-contents))
 
 This tutorial relies on the [ETAPE database](http://islrn.org/resources/425-777-374-455-4/). We first need to tell `pyannote` where the audio files are located:
 
