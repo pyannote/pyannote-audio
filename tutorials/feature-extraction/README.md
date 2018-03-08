@@ -1,6 +1,6 @@
 > The MIT License (MIT)
 >
-> Copyright (c) 2017 CNRS
+> Copyright (c) 2017-2018 CNRS
 >
 > Permission is hereby granted, free of charge, to any person obtaining a copy
 > of this software and associated documentation files (the "Software"), to deal
@@ -39,13 +39,10 @@ In this tutorial, you will learn how to perform feature extraction using `pyanno
 ## Installation
 ([↑up to table of contents](#table-of-contents))
 
+Follow installation instructions available [here](..)
+
 ```bash
-$ conda create --name py35-pyannote-audio python=3.5 anaconda
-$ source activate py35-pyannote-audio
-$ conda install -c conda-forge yaafe
-$ pip install -U pip setuptools
-$ pip install pyannote.audio
-$ pip install tensorflow   # or tensorflow-gpu
+$ source activate pyannote
 $ pip install pyannote.db.etape
 ```
 
@@ -59,7 +56,7 @@ $ cat ~/.pyannote/db.yml
 Etape: /path/to/Etape/corpus/{uri}.wav
 ```
 
-If you want to train the network using a different database, you might need to create your own [`pyannote.database`](http://github.com/pyannote/pyannote-database) plugin.
+If you want to use a different database, you might need to create your own [`pyannote.database`](http://github.com/pyannote/pyannote-database) plugin.
 See [github.com/pyannote/pyannote-db-template](https://github.com/pyannote/pyannote-db-template) for details on how to do so.
 
 ## Configuration
@@ -70,16 +67,22 @@ To ensure reproducibility, `pyannote-speech-feature` relies on a configuration f
 ```bash
 $ cat tutorials/feature-extraction/config.yml
 feature_extraction:
-   name: YaafeMFCC               # extract MFCC using Yaafe
+   name: YaafeMFCC                  # extract MFCCs using Yaafe
    params:
-      coefs: 11                  # 11 coefs
-      D: True                    # with coefs 1st derivative
-      DD: True                   # with coefs 2nd derivative
-      e: False                   # without energy
-      De: True                   # with energy 1st derivative
-      DDe: True                  # with energy 2nd derivative
-      step: 0.010                # every 10ms
-      duration: 0.020            # using 20ms-long windows
+      e: False                      # no energy
+      De: True                      # energy 1st derivative
+      DDe: True                     # energy 2nd derivative
+      coefs: 19                     # 19 coefficients
+      D: True                       # with 1st derivatives
+      DD: True                      # and 2nd derivatives
+      duration: 0.025               # one 25ms-long windows
+      step: 0.010                   # and a step of 10ms
+      sample_rate: 16000
+
+normalization:
+   name: ShortTermStandardization   # apply short term standardization
+   params:
+      duration: 3                   # using a 3s-long sliding window
 ```
 
 ## Extraction
