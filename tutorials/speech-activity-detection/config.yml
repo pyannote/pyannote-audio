@@ -1,6 +1,6 @@
 # The MIT License (MIT)
 #
-# Copyright (c) 2017 CNRS
+# Copyright (c) 2018 CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -23,25 +23,25 @@
 # AUTHOR
 # Hervé Bredin - http://herve.niderb.fr
 
-feature_extraction:
-   name: YaafeMFCC
+# train the network for speech activity detection
+# see pyannote.audio.labeling.tasks for more details
+task:
+   name: SpeechActivityDetection
    params:
-      e: False                   # this experiments relies
-      De: True                   # on 11 MFCC coefficients
-      DDe: True                  # with 1st and 2nd derivatives
-      D: True                    # without energy, but with
-      DD: True                   # energy derivatives
+      duration: 3.2
 
+# use precomputed features (from feature extraction tutorials)
+feature_extraction:
+   name: Precomputed
+   params:
+      root_dir: /path/to/tutorials/feature-extraction
+
+# use the StackedRNN architecture.
+# see pyannote.audio.labeling.models for more details
 architecture:
-   name: StackedLSTM
-   params:                       # this experiments relies
-     n_classes: 2                # on one LSTM layer (16 outputs)
-     lstm: [16]                  # and one dense layer.
-     mlp: [16]                   # LSTM is bidirectional
-     bidirectional: concat
-
-sequences:
-   duration: 3.2                 # this experiments relies
-   step: 0.8                     # on sliding windows of 3.2s
-                                 # with a step of 0.8s
-   batch_size: 1024
+   name: StackedRNN
+   params:
+     rnn: LSTM
+     recurrent: [16]
+     bidirectional: True
+     linear: [16]
