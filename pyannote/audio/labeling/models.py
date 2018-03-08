@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2016-2017 CNRS
+# Copyright (c) 2017-2018 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -27,111 +27,135 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 
-from keras.models import Model
-from keras.layers import Input
-from keras.layers import LSTM
-from keras.layers import Dense
-from keras.layers.wrappers import Bidirectional
-from keras.layers.wrappers import TimeDistributed
+import torch
+from torch.autograd import Variable
+import torch.nn as nn
 
 
-class StackedLSTM(object):
-    """Stacked LSTM sequence labeling
+class StackedRNN(nn.Module):
+    """Stacked recurrent neural network
 
     Parameters
     ----------
-    lstm: list, optional
-        List of output dimension of stacked LSTMs.
-        Defaults to [16, ] (i.e. one LSTM with output dimension 16)
-    bidirectional: {False, 'ave', 'concat'}, optional
-        Defines how the output of forward and backward LSTMs are merged.
-        'ave' stands for 'average', 'concat' (default) for concatenation.
-        See keras.layers.wrappers.Bidirectional for more information.
-        Use False to only use forward LSTMs.
-    mlp: list, optional
-        Number of units in additionnal stacked dense MLP layers.
-        Defaults to [16, ] (i.e. one dense MLP layers with 16 units)
-    n_classes : int, optional
-        Number of output classes. Defaults to 2 (binary classification).
-    final_activation : {'softmax', 'sigmoid'}, optional
-        Activation for output layer. Defaults to 'softmax'.
+    n_features : int
+        Input feature dimension.
+    n_classes : int
+        Set number of classes.
+    rnn : {'LSTM', 'GRU'}, optional
+        Defaults to 'LSTM'.
+    recurrent : list, optional
+        List of hidden dimensions of stacked recurrent layers. Defaults to
+        [16, ], i.e. one recurrent layer with hidden dimension of 16.
+    bidirectional : bool, optional
+        Use bidirectional recurrent layers. Defaults to False, i.e. use
+        mono-directional RNNs.
+    linear : list, optional
+        List of hidden dimensions of linear layers. Defaults to [16, ], i.e.
+        one linear layer with hidden dimension of 16.
     """
-    def __init__(self, lstm=[16,], bidirectional='concat',
-                 mlp=[16,], n_classes=2, final_activation='softmax'):
 
-        super(StackedLSTM, self).__init__()
-        self.lstm = lstm
+    def __init__(self, n_features, n_classes,
+                 rnn='LSTM', recurrent=[16,], bidirectional=False,
+                 linear=[16, ]):
+
+        super(StackedRNN, self).__init__()
+
+        self.n_features = n_features
+        self.rnn = rnn
+        self.recurrent = recurrent
         self.bidirectional = bidirectional
-        self.mlp = mlp
         self.n_classes = n_classes
-        self.final_activation = final_activation
+        self.linear = linear
 
-    def __call__(self, input_shape):
-        """Design labeling
+        self.num_directions_ = 2 if self.bidirectional else 1
 
-        Parameters
-        ----------
-        input_shape : (n_frames, n_features) tuple
-            Shape of input sequence.
+        # create list of recurrent layers
+        self.recurrent_layers_ = []
+        input_dim = self.n_features
+        for i, hidden_dim in enumerate(self.recurrent):
+            if self.rnn == 'LSTM':
+                recurrent_layer = nn.LSTM(input_dim, hidden_dim,
+                                          bidirectional=self.bidirectional)
+            elif self.rnn == 'GRU':
+                recurrent_layer = nn.GRU(input_dim, hidden_dim,
+                                         bidirectional=self.bidirectional)
+            else:
+                raise ValueError('"rnn" must be one of {"LSTM", "GRU"}.')
+            self.add_module('recurrent_{0}'.format(i), recurrent_layer)
+            self.recurrent_layers_.append(recurrent_layer)
+            input_dim = hidden_dim
 
-        Returns
-        -------
-        model : Keras model
-        """
+        # create list of linear layers
+        self.linear_layers_ = []
+        for i, hidden_dim in enumerate(self.linear):
+            linear_layer = nn.Linear(input_dim, hidden_dim, bias=True)
+            self.add_module('linear_{0}'.format(i), linear_layer)
+            self.linear_layers_.append(linear_layer)
+            input_dim = hidden_dim
 
-        inputs = Input(shape=input_shape,
-                       name="labeling_input")
-        x = inputs
+        # define post-linear activation
+        self.tanh_ = nn.Tanh()
 
-        # stack LSTM layers
-        n_lstm = len(self.lstm)
-        for i, output_dim in enumerate(self.lstm):
+        # create final classification layer (with log-softmax activation)
+        self.final_layer_ = nn.Linear(input_dim, self.n_classes)
+        self.softmax_ = nn.LogSoftmax(dim=2)
 
-            params = {
-                'name': 'lstm_{i:d}'.format(i=i),
-                'return_sequences': True,
-                # 'go_backwards': False,
-                # 'stateful': False,
-                # 'unroll': False,
-                # 'implementation': 0,
-                'activation': 'tanh',
-                # 'recurrent_activation': 'hard_sigmoid',
-                # 'use_bias': True,
-                # 'kernel_initializer': 'glorot_uniform',
-                # 'recurrent_initializer': 'orthogonal',
-                # 'bias_initializer': 'zeros',
-                # 'unit_forget_bias': True,
-                # 'kernel_regularizer': None,
-                # 'recurrent_regularizer': None,
-                # 'bias_regularizer': None,
-                # 'activity_regularizer': None,
-                # 'kernel_constraint': None,
-                # 'recurrent_constraint': None,
-                # 'bias_constraint': None,
-                # 'dropout': 0.0,
-                # 'recurrent_dropout': 0.0,
-            }
+    @property
+    def batch_first(self):
+        return False
 
-            # first LSTM needs to be given the input shape
-            if i == 0:
-                params['input_shape'] = input_shape
+    def get_loss(self):
+        return nn.NLLLoss()
 
-            lstm = LSTM(output_dim, **params)
+    def forward(self, sequence):
+
+        # check input feature dimension
+        n_samples, batch_size, n_features = sequence.size()
+        if n_features != self.n_features:
+            msg = 'Wrong feature dimension. Found {0}, should be {1}'
+            raise ValueError(msg.format(n_features, self.n_features))
+
+        output = sequence
+
+        # stack recurrent layers
+        for hidden_dim, layer in zip(self.recurrent, self.recurrent_layers_):
+
+            if self.rnn == 'LSTM':
+                # initial hidden and cell states
+                hidden = (
+                    Variable(torch.zeros(
+                        self.num_directions_, batch_size, hidden_dim),
+                        requires_grad=False),
+                    Variable(torch.zeros(
+                        self.num_directions_, batch_size, hidden_dim),
+                        requires_grad=False)
+                )
+
+            elif self.rnn == 'GRU':
+                # initial hidden state
+                hidden = Variable(torch.zeros(
+                    self.num_directions_, batch_size, hidden_dim),
+                    requires_grad=False)
+
+            # apply current recurrent layer and get output sequence
+            output, _ = layer(output, hidden)
+
+            # average both directions in case of bidirectional layers
             if self.bidirectional:
-                lstm = Bidirectional(lstm, merge_mode=self.bidirectional)
+                output = .5 * (output[:, :, :hidden_dim] + \
+                               output[:, :, hidden_dim:])
 
-            x = lstm(x)
+        # stack linear layers
+        for hidden_dim, layer in zip(self.linear, self.linear_layers_):
 
-        # stack dense layers
-        for i, output_dim in enumerate(self.mlp):
-            x = TimeDistributed(Dense(output_dim,
-                                      activation='tanh',
-                                      name='mlp_{i:d}'.format(i=i)))(x)
+            # apply current linear layer
+            output = layer(output)
 
-        # stack final dense layer
-        # one dimension per class
-        outputs = TimeDistributed(Dense(self.n_classes,
-                                        activation=self.final_activation,
-                                        name='labeling_output'))(x)
+            # apply non-linear activation function
+            output = self.tanh_(output)
 
-        return Model(inputs=inputs, outputs=outputs)
+        # apply final classification layer
+        output = self.final_layer_(output)
+
+        # apply softmax
+        return self.softmax_(output)

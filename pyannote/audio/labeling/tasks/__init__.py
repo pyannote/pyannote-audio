@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2016 CNRS
+# Copyright (c) 2018 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -26,19 +26,5 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
-CUSTOM_OBJECTS = {}
-
-def register_custom_object(key, value):
-    CUSTOM_OBJECTS[key] = value
-
-import keras.models
-def load_model(weights_h5, compile=False):
-
-    # needed to register pyannote.audio's own Keras layers
-    import pyannote.audio.embedding.models
-    # needed to register pyannote.audio's own Keras optimizers
-    import pyannote.audio.optimizers
-
-    model = keras.models.load_model(weights_h5,
-        custom_objects=CUSTOM_OBJECTS, compile=compile)
-    return model
+from .speech_activity_detection import SpeechActivityDetection
+from .speaker_change_detection import SpeakerChangeDetection

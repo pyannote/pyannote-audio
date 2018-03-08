@@ -35,14 +35,14 @@ from glob import glob
 from pyannote.database.util import FileFinder
 from pyannote.audio.util import mkdir_p
 from sortedcontainers import SortedDict
-from ..keras_utils import CUSTOM_OBJECTS
 import tensorboardX
 
 
 class Application(object):
 
     CONFIG_YML = '{experiment_dir}/config.yml'
-    WEIGHTS_H5 = '{train_dir}/weights/{epoch:04d}.h5'
+
+    TRAIN_DIR = '{experiment_dir}/train/{protocol}.{subset}'
     WEIGHTS_PT = '{train_dir}/weights/{epoch:04d}.pt'
 
     # created by "validate" mode
@@ -71,13 +71,14 @@ class Application(object):
         train_dir = dirname(dirname(model_pt))
         app = cls.from_train_dir(train_dir, db_yml=db_yml)
         app.model_pt_ = model_pt
+        epoch = int(basename(app.model_pt_)[:-3])
+        app.model_ = app.load_model(epoch, train_dir=train_dir)
         return app
 
-    def __init__(self, experiment_dir, db_yml=None, backend='keras'):
+    def __init__(self, experiment_dir, db_yml=None):
         super(Application, self).__init__()
 
         self.db_yml = db_yml
-        self.backend = backend
 
         self.preprocessors_ = {'audio': FileFinder(self.db_yml)}
 
@@ -102,7 +103,7 @@ class Application(object):
             # but does consume (potentially) a LOT of memory
             self.cache_preprocessed_ = 'Precomputed' not in extraction_name
 
-    def load_model(self, epoch, train_dir=None, compile=True):
+    def load_model(self, epoch, train_dir=None):
         """Load pretrained model
 
         Parameters
@@ -111,28 +112,16 @@ class Application(object):
             Which epoch to load.
         train_dir : str, optional
             Path to train directory. Defaults to self.train_dir_.
-        compile : bool, optional
-            For `keras` backend only.
         """
 
         if train_dir is None:
             train_dir = self.train_dir_
 
-        if self.backend == 'keras':
-            import keras.models
-            weights_h5 = self.WEIGHTS_H5.format(
-                train_dir=train_dir, epoch=epoch)
-            model = keras.models.load_model(weights_h5,
-                custom_objects=CUSTOM_OBJECTS, compile=compile)
-            model.epoch = epoch
-            return model
-
-        elif self.backend == 'pytorch':
-            import torch
-            weights_pt = self.WEIGHTS_PT.format(
-                train_dir=train_dir, epoch=epoch)
-            self.model_.load_state_dict(torch.load(weights_pt))
-            return self.model_
+        import torch
+        weights_pt = self.WEIGHTS_PT.format(
+            train_dir=train_dir, epoch=epoch)
+        self.model_.load_state_dict(torch.load(weights_pt))
+        return self.model_
 
     def get_number_of_epochs(self, train_dir=None, return_first=False):
         """Get information about completed epochs
@@ -150,13 +139,8 @@ class Application(object):
         if train_dir is None:
             train_dir = self.train_dir_
 
-        if self.backend == 'keras':
-            directory = self.WEIGHTS_H5.format(train_dir=train_dir, epoch=0)[:-7]
-            weights = glob(directory + '*[0-9][0-9][0-9][0-9].h5')
-
-        elif self.backend == 'pytorch':
-            directory = self.WEIGHTS_PT.format(train_dir=train_dir, epoch=0)[:-7]
-            weights = glob(directory + '*[0-9][0-9][0-9][0-9].pt')
+        directory = self.WEIGHTS_PT.format(train_dir=train_dir, epoch=0)[:-7]
+        weights = sorted(glob(directory + '*[0-9][0-9][0-9][0-9].pt'))
 
         if not weights:
             number_of_epochs = 0
@@ -223,7 +207,6 @@ class Application(object):
 
     def validate(self, protocol_name, subset='development',
                  every=1, start=0, end=None, in_order=False, **kwargs):
-
 
         validate_txt, validate_png, validate_eps = {}, {}, {}
         minimize, baseline, values, best_epoch, best_value = {}, {}, {}, {}, {}
