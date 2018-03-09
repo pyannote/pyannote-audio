@@ -191,7 +191,8 @@ class SpeakerChangeDetection(SpeechActivityDetection):
 
         for _ in range(10):
             current_alpha = .5 * (lower_alpha + upper_alpha)
-            peak = Peak(alpha=current_alpha, min_duration=0.0)
+            peak = Peak(alpha=current_alpha, min_duration=0.0,
+                        log_scale=model.logsoftmax)
             metric = DiarizationPurityCoverageFMeasure()
 
             for current_file in getattr(protocol, subset)():
