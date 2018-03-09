@@ -52,11 +52,13 @@ class StackedRNN(nn.Module):
     linear : list, optional
         List of hidden dimensions of linear layers. Defaults to [16, ], i.e.
         one linear layer with hidden dimension of 16.
+    logsoftmax : bool, optional
+        Defaults to True (i.e. apply log-softmax).
     """
 
     def __init__(self, n_features, n_classes,
                  rnn='LSTM', recurrent=[16,], bidirectional=False,
-                 linear=[16, ]):
+                 linear=[16, ], logsoftmax=True):
 
         super(StackedRNN, self).__init__()
 
@@ -66,6 +68,7 @@ class StackedRNN(nn.Module):
         self.bidirectional = bidirectional
         self.n_classes = n_classes
         self.linear = linear
+        self.logsoftmax = logsoftmax
 
         self.num_directions_ = 2 if self.bidirectional else 1
 
@@ -98,14 +101,19 @@ class StackedRNN(nn.Module):
 
         # create final classification layer (with log-softmax activation)
         self.final_layer_ = nn.Linear(input_dim, self.n_classes)
-        self.softmax_ = nn.LogSoftmax(dim=2)
+
+        if self.logsoftmax:
+            self.logsoftmax_ = nn.LogSoftmax(dim=2)
 
     @property
     def batch_first(self):
         return False
 
     def get_loss(self):
-        return nn.NLLLoss()
+        if self.logsoftmax:
+            return nn.NLLLoss()
+        else:
+            return nn.CrossEntropyLoss()
 
     def forward(self, sequence):
 
@@ -158,4 +166,7 @@ class StackedRNN(nn.Module):
         output = self.final_layer_(output)
 
         # apply softmax
-        return self.softmax_(output)
+        if self.logsoftmax:
+            output = self.logsoftmax_(output)
+
+        return output
