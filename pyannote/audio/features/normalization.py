@@ -78,6 +78,8 @@ class ShortTermStandardization(object):
             mu[-i - 1] = np.mean(data, axis=0)
             sigma[-i - 1] = np.std(data, axis=0, ddof=1)
 
+        sigma[sigma == 0.] = 1e-6
+
         # return standardized data
         return SlidingWindowFeature((features.data - mu) / sigma,
                                     features.sliding_window)
