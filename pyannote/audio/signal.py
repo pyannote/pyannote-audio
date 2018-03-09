@@ -88,13 +88,18 @@ class Peak(object):
         When True, alpha = 0 corresponds to p(1) and = 1 to p(99).
     min_duration : float, optional
         Defaults to 1 second.
+    log_scale : bool, optional
+        Set to True to indicate that binarized scores are log scaled.
+        Defaults to False.
 
     """
-    def __init__(self, alpha=0.5, min_duration=1.0, percentile=False):
+    def __init__(self, alpha=0.5, min_duration=1.0, percentile=False,
+                 log_scale=False):
         super(Peak, self).__init__()
         self.alpha = alpha
         self.percentile = percentile
         self.min_duration = min_duration
+        self.log_scale = log_scale
 
     @classmethod
     def tune(cls, items, get_prediction, purity=0.95,
@@ -209,6 +214,9 @@ class Peak(object):
             y = predictions.data[:, 0]
         else:
             y = predictions.data[:, dimension]
+
+        if self.log_scale:
+            y = np.exp(y)
 
         sw = predictions.sliding_window
 
