@@ -285,9 +285,15 @@ class Binarize(object):
     Parameters
     ----------
     onset : float, optional
-        Defaults to 0.5.
+        Relative onset threshold. Defaults to 0.5.
     offset : float, optional
-        Defaults to 0.5.
+        Relative offset threshold. Defaults to 0.5.
+    percentile : bool, optional
+        When False (default), onset = 0 correspond to min and = 1 to max
+        When True, onset = 0 corresponds to p(1) and = 1 to p(99).
+    log_scale : bool, optional
+        Set to True to indicate that binarized scores are log scaled.
+        Defaults to False.
 
     Reference
     ---------
@@ -295,11 +301,13 @@ class Binarize(object):
     RNN-based Voice Activity Detection", InterSpeech 2015.
     """
 
-    def __init__(self, onset=0.7, offset=0.7):
+    def __init__(self, onset=0.5, offset=0.5, percentile=False, log_scale=False):
 
         super(Binarize, self).__init__()
         self.onset = onset
         self.offset = offset
+        self.percentile = percentile
+        self.log_scale = log_scale
 
         self.min_duration = [0., 0.]
         self.pad_onset = 0.
@@ -416,6 +424,9 @@ class Binarize(object):
         else:
             data = predictions.data[:, dimension]
 
+        if self.log_scale:
+            data = np.exp(data)
+
         n_samples = predictions.getNumber()
         window = predictions.sliding_window
         timestamps = [window[i].middle for i in range(n_samples)]
@@ -423,6 +434,11 @@ class Binarize(object):
         # initial state
         start = timestamps[0]
         label = data[0] > self.onset
+
+        mini = np.nanpercentile(data, 1) if self.percentile else np.nanmin(data)
+        maxi = np.nanpercentile(data, 99) if self.percentile else np.nanmax(data)
+        onset = mini + self.onset * (maxi - mini)
+        offset = mini + self.offset * (maxi - mini)
 
         # timeline meant to store 'active' segments
         active = Timeline()
@@ -432,7 +448,7 @@ class Binarize(object):
             # currently active
             if label:
                 # switching from active to inactive
-                if y < self.offset:
+                if y < offset:
                     segment = Segment(start - self.pad_onset,
                                       t + self.pad_offset)
                     active.add(segment)
@@ -442,7 +458,7 @@ class Binarize(object):
             # currently inactive
             else:
                 # switching from inactive to active
-                if y > self.onset:
+                if y > onset:
                     start = t
                     label = True
 

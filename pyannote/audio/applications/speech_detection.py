@@ -205,14 +205,17 @@ class SpeechActivityDetection(Application):
     def validate_epoch(self, epoch, protocol_name, subset='development',
                        validation_data=None):
 
-        der = DetectionErrorRate()
-        binarizer = Binarize(onset=np.log(0.5), offset=np.log(0.5))
 
         # load model for current epoch
         model = self.load_model(epoch)
         if self.gpu:
             model = model.cuda()
         model.eval()
+
+        der = DetectionErrorRate()
+
+        binarizer = Binarize(onset=0.5, offset=0.5,
+                             log_scale=model.logsoftmax)
 
         if isinstance(self.feature_extraction_, Precomputed):
             self.feature_extraction_.use_memmap = False
