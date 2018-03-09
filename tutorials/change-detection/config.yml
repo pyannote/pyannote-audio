@@ -1,24 +1,48 @@
-feature_extraction:
-   name: YaafeMFCC
+# The MIT License (MIT)
+#
+# Copyright (c) 2018 CNRS
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+#
+# AUTHOR
+# Hervé Bredin - http://herve.niderb.fr
+
+# train the network for speaker change detection
+# see pyannote.audio.labeling.tasks for more details
+task:
+   name: SpeakerChangeDetection
    params:
-      e: False                   # this experiments relies
-      De: True                   # on 11 MFCC coefficients
-      DDe: True                  # with 1st and 2nd derivatives
-      D: True                    # without energy, but with
-      DD: True                   # energy derivatives
-      stack: 1
+      duration: 3.2
+      balance: 0.050
 
+# use precomputed features (from feature extraction tutorials)
+feature_extraction:
+   name: Precomputed
+   params:
+      root_dir: /path/to/tutorials/feature-extraction
+
+# use the StackedRNN architecture.
+# see pyannote.audio.labeling.models for more details
 architecture:
-   name: StackedLSTM
-   params:                       # this experiments relies
-     n_classes: 1                # on one LSTM layer (16 outputs)
-     lstm: [16]                  # and one dense layer.
-     mlp: [16]                   # LSTM is bidirectional
-     bidirectional: 'concat'
-     final_activation: 'sigmoid'
-
-sequences:
-   duration: 3.2                 # this experiments relies on sliding windows
-   step: 0.8                     # of 3.2s with a step of 0.8s
-   balance: 0.05                 # and balancing neighborhood size of 0.05s
-   batch_size: 32
+   name: StackedRNN
+   params:
+     rnn: LSTM
+     recurrent: [32, 20]
+     bidirectional: True
+     linear: [40, 10]
