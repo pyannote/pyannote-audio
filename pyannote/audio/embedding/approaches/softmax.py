@@ -113,17 +113,14 @@ class Softmax(object):
         followed by a softmax. Use this option to provide hidden dimensions of
         (optional) additional linear layer (e.g. [100, 1000] to 3 layers:
         n_dimension > 100 > 1000 > n_classes).
-    metric : {'euclidean', 'cosine', 'angular'}, optional
-        Defaults to 'cosine'. Only used for validation purposes.
     """
 
     CLASSES_TXT = '{log_dir}/classes.txt'
     CLASSIFIER_PT = '{log_dir}/weights/{epoch:04d}.classifier.pt'
 
-    def __init__(self, duration=3.2, metric='cosine', per_label=1,
+    def __init__(self, duration=3.2, per_label=1,
                  per_fold=None, parallel=1, linear=[]):
         super(Softmax, self).__init__()
-        self.metric = metric
         self.per_fold = per_fold
         self.per_label = per_label
         self.duration = duration

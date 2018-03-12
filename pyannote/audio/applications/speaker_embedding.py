@@ -31,7 +31,7 @@ Speaker embedding
 
 Usage:
   pyannote-speaker-embedding train [options] <experiment_dir> <database.task.protocol>
-  pyannote-speaker-embedding validate [options] [--every=<epoch> --chronological --turn] <train_dir> <database.task.protocol>
+  pyannote-speaker-embedding validate [options] [--every=<epoch> --chronological --turn --metric=<metric>] <train_dir> <database.task.protocol>
   pyannote-speaker-embedding apply [options] [--step=<step> --internal --normalize] <model.pt> <database.task.protocol> <output_dir>
   pyannote-speaker-embedding -h | --help
   pyannote-speaker-embedding --version
@@ -65,6 +65,9 @@ Common options:
                              level. Default is to use fixed duration segments.
   <train_dir>                Path to the directory containing pre-trained
                              models (i.e. the output of "train" mode).
+  --metric=<metric>          Use this metric (e.g. "cosine" or "euclidean") to
+                             compare embeddings. Defaults to the metric defined
+                             in "config.yml" configuration file.
 
 "apply" mode:
   <model.pt>                 Path to the pretrained model.
@@ -379,7 +382,7 @@ class SpeakerEmbedding(Application):
                 trial_models[h] = model
 
             distance = cdist(enrolment_models[model_id], model,
-                             metric=self.approach_.metric)[0, 0]
+                             metric=self.metric)[0, 0]
             y_pred.append(distance)
             y_true.append(trial['reference'])
 
@@ -404,7 +407,7 @@ class SpeakerEmbedding(Application):
             batch_size=self.batch_size, gpu=self.gpu)
 
         fX = sequence_embedding.apply(validation_data['X'])
-        y_pred = pdist(fX, metric=self.approach_.metric)
+        y_pred = pdist(fX, metric=self.metric)
         _, _, _, eer = det_curve(validation_data['y'], y_pred,
                                  distances=True)
 
@@ -448,7 +451,7 @@ class SpeakerEmbedding(Application):
             fX_avg.append(np.mean(fX[indices], axis=0))
 
         fX = np.vstack(fX_avg)
-        y_pred = pdist(fX, metric=self.approach_.metric)
+        y_pred = pdist(fX, metric=self.metric)
         _, _, _, eer = det_curve(validation_data['y'], y_pred,
                                  distances=True)
         metrics = {}
@@ -564,6 +567,16 @@ def main():
         application.gpu = gpu
         application.turn = turn
         application.batch_size = batch_size
+
+        metric = arguments['--metric']
+        if metric is None:
+            metric = getattr(application.approach_, 'metric', None)
+            if metric is None:
+                msg = ("Approach has no 'metric' defined. "
+                       "Use '--metric' option to provide one.")
+                raise ValueError(msg)
+
+        application.metric = metric
         application.validate(protocol_name, subset=subset,
                              start=start, end=end, every=every,
                              in_order=in_order)
