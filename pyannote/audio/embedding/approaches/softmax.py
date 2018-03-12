@@ -88,6 +88,7 @@ class Classifier(nn.Module):
 
         # apply final linear layer
         output = self.final_layer_(output)
+        output = self.tanh_(output)
         output = self.logsoftmax_(output)
 
         return output
