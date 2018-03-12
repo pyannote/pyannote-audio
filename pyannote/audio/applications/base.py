@@ -342,14 +342,14 @@ class Application(object):
             last_completed_epoch = self.get_number_of_epochs() - 1
 
             # if last completed epoch has not been processed yet,
-            # always process it first
+            # always process it first (except if 'in order')
             if (not in_order) and (last_completed_epoch not in validated_epochs):
                 next_epoch_to_validate = last_completed_epoch
                 time.sleep(5)  # HACK give checkpoint time to save weights
 
             # in case no new epoch has completed since last time
             # process the next epoch in chronological order (if available)
-            elif next_epoch_to_validate_in_order < last_completed_epoch:
+            elif next_epoch_to_validate_in_order <= last_completed_epoch:
                 next_epoch_to_validate = next_epoch_to_validate_in_order
 
             # otherwise, just wait for a new epoch to complete
