@@ -65,7 +65,7 @@ class Checkpoint(object):
             weights_dir = self.WEIGHTS_DIR.format(log_dir=self.log_dir)
             os.makedirs(weights_dir)
 
-    def on_epoch_end(self, epoch, model, optimizer):
+    def on_epoch_end(self, epoch, model, optimizer, extra=None):
 
         weights_pt = self.WEIGHTS_PT.format(
             log_dir=self.log_dir, epoch=epoch)
@@ -74,3 +74,8 @@ class Checkpoint(object):
         optimizer_pt = self.OPTIMIZER_PT.format(
             log_dir=self.log_dir, epoch=epoch)
         torch.save(optimizer.state_dict(), optimizer_pt)
+
+        if extra is not None:
+            for extra_pt, extra_module in extra.items():
+                path = extra_pt.format(log_dir=self.log_dir, epoch=epoch)
+                torch.save(extra_module.state_dict(), path)

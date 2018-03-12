@@ -269,6 +269,12 @@ class SpeechSegmentGenerator(object):
     def n_classes(self):
         return len(self.data_)
 
+    @property
+    def labels(self):
+        labels, _ = zip(*sorted(self.labels_.items(),
+                                key=lambda x: x[1]))
+        return labels
+
     def __call__(self, protocol, subset='train'):
 
         self.initialize(protocol, subset=subset)
