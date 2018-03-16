@@ -301,17 +301,23 @@ class Binarize(object):
     RNN-based Voice Activity Detection", InterSpeech 2015.
     """
 
-    def __init__(self, onset=0.5, offset=0.5, percentile=False, log_scale=False):
+    def __init__(self, onset=0.5, offset=0.5, percentile=False, log_scale=False,
+                 pad_onset=0., pad_offset=0., min_duration_on=0.,
+                 min_duration_off=0.):
 
         super(Binarize, self).__init__()
+
         self.onset = onset
         self.offset = offset
         self.percentile = percentile
         self.log_scale = log_scale
 
-        self.min_duration = [0., 0.]
-        self.pad_onset = 0.
-        self.pad_offset = 0.
+        self.pad_onset = pad_onset
+        self.pad_offset = pad_offset
+
+        self.min_duration_on = min_duration_on
+        self.min_duration_off = min_duration_off
+
 
     @classmethod
     def tune(cls, items, get_prediction, get_metric=None,
@@ -473,12 +479,12 @@ class Binarize(object):
 
         # remove short 'active' segments
         active = Timeline(
-            [s for s in active if s.duration > self.min_duration[1]])
+            [s for s in active if s.duration > self.min_duration_on])
 
         # fill short 'inactive' segments
         inactive = active.gaps()
         for s in inactive:
-            if s.duration < self.min_duration[0]:
+            if s.duration < self.min_duration_off:
                 active.add(s)
         active = active.support()
 
