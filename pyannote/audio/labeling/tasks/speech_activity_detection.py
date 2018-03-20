@@ -196,15 +196,33 @@ class SpeechActivityDetectionGenerator(object):
 
 
 class SpeechActivityDetection(LabelingTask):
+    """
 
-    def __init__(self, duration=3.2, batch_size=32, parallel=1):
+    Parameters
+    ----------
+    duration : float, optional
+        Use fixed duration segments with this `duration`.
+    per_epoch : float, optional
+        Total audio duration per epoch, in seconds.
+        Defaults to one hour (3600).
+    batch_size : int, optional
+        Batch size. Defaults to 32.
+    parallel : int, optional
+        Number of prefetching background generators. Defaults to 1.
+        Each generator will prefetch enough batches to cover a whole epoch.
+        Set `parallel` to 0 to not use background generators.
+
+    """
+    def __init__(self, duration=3.2, batch_size=32, per_epoch=3600,
+                 parallel=1):
         super(SpeechActivityDetection, self).__init__(duration=duration,
                                                       batch_size=batch_size,
+                                                      per_epoch=per_epoch,
                                                       parallel=parallel)
 
     def get_batch_generator(self, precomputed):
         return SpeechActivityDetectionGenerator(
-            precomputed, duration=self.duration,
+            precomputed, duration=self.duration, per_epoch=self.per_epoch,
             batch_size=self.batch_size, parallel=self.parallel)
 
     @property

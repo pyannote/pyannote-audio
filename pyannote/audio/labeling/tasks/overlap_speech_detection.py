@@ -78,14 +78,15 @@ class OverlapSpeechDetectionGenerator(SpeechActivityDetectionGenerator):
 
 class OverlapSpeechDetection(LabelingTask):
 
-    def __init__(self, duration=3.2, batch_size=32, parallel=1):
+    def __init__(self, duration=3.2, batch_size=32, per_epoch=3600, parallel=1):
         super(OverlapSpeechDetection, self).__init__(duration=duration,
-                                                      batch_size=batch_size,
-                                                      parallel=parallel)
+                                                     batch_size=batch_size,
+                                                     per_epoch=3600,
+                                                     parallel=parallel)
 
     def get_batch_generator(self, precomputed):
         return OverlapSpeechDetectionGenerator(
-            precomputed, duration=self.duration,
+            precomputed, duration=self.duration, per_epoch=self.per_epoch,
             batch_size=self.batch_size, parallel=self.parallel)
 
     @property

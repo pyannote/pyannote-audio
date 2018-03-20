@@ -44,16 +44,21 @@ class LabelingTask(object):
         Defautls to 3.2 seconds.
     batch_size : int, optional
         Defaults to 32.
+    per_epoch : float, optional
+        Total audio duration per epoch, in seconds.
+        Defaults to one hour (3600).
     parallel : int, optional
         Number of prefetching background generators. Defaults to 1.
         Each generator will prefetch enough batches to cover a whole epoch.
         Set `parallel` to 0 to not use background generators.
     """
 
-    def __init__(self, duration=3.2, batch_size=32, parallel=1):
+    def __init__(self, duration=3.2, batch_size=32, per_epoch=3600,
+                 parallel=1):
         super(LabelingTask, self).__init__()
         self.duration = duration
         self.batch_size = batch_size
+        self.per_epoch = per_epoch
         self.parallel = parallel
 
     def get_batch_generator(self, precomputed):

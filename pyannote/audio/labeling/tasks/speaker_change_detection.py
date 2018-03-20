@@ -102,16 +102,20 @@ class SpeakerChangeDetection(LabelingTask):
         Defaults to 0.1 (= 100 ms).
     batch_size : int, optional
         Batch size. Defaults to 32.
+    per_epoch : float, optional
+        Total audio duration per epoch, in seconds.
+        Defaults to one hour (3600).
     parallel : int, optional
         Number of prefetching background generators. Defaults to 1.
         Each generator will prefetch enough batches to cover a whole epoch.
         Set `parallel` to 0 to not use background generators.
     """
 
-    def __init__(self, duration=3.2, balance=0.1, batch_size=32, parallel=1):
+    def __init__(self, duration=3.2, balance=0.1, batch_size=32,
+                 per_epoch=3600, parallel=1):
         super(SpeakerChangeDetection, self).__init__(
             duration=duration, batch_size=batch_size,
-            parallel=parallel)
+            per_epoch=self.per_epoch, parallel=parallel)
         self.balance = balance
 
     def get_batch_generator(self, precomputed):
@@ -123,7 +127,8 @@ class SpeakerChangeDetection(LabelingTask):
         """
         return SpeakerChangeDetectionGenerator(
             precomputed, balance=self.balance, duration=self.duration,
-            batch_size=self.batch_size, parallel=self.parallel)
+            batch_size=self.batch_size, per_epoch=self.per_epoch,
+            parallel=self.parallel)
 
     @property
     def n_classes(self):
