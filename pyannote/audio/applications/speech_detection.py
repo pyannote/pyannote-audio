@@ -156,6 +156,7 @@ from pyannote.database import FileFinder
 from pyannote.database import get_protocol
 from pyannote.audio.signal import Binarize
 from pyannote.database import get_annotated
+from pyannote.core import SlidingWindowFeature
 from pyannote.audio.features.utils import Precomputed
 from pyannote.metrics.detection import DetectionErrorRate
 from pyannote.audio.labeling.extraction import SequenceLabeling
