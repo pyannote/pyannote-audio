@@ -215,7 +215,7 @@ class SpeechActivityDetection(Application):
         der = DetectionErrorRate()
 
         binarizer = Binarize(onset=0.5, offset=0.5,
-                             log_scale=model.logsoftmax)
+                             log_scale=False)
 
         if isinstance(self.feature_extraction_, Precomputed):
             self.feature_extraction_.use_memmap = False
@@ -234,8 +234,20 @@ class SpeechActivityDetection(Application):
 
         file_generator = getattr(protocol, subset)()
         for current_file in file_generator:
+
             predictions = sequence_labeling.apply(current_file)
-            hypothesis = binarizer.apply(predictions, dimension=1).to_annotation()
+
+            if model.logsoftmax:
+                predictions = SlidingWindowFeature(
+                    1. - np.exp(predictions.data[:, 0]),
+                    predictions.sliding_window)
+            else:
+                predictions = SlidingWindowFeature(
+                    1. - predictions.data[:, 0],
+                    predictions.sliding_window)
+
+            hypothesis = binarizer.apply(
+                predictions, dimension=0).to_annotation()
 
             reference = current_file['annotation']
             uem = get_annotated(current_file)
