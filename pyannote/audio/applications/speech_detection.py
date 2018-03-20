@@ -149,6 +149,7 @@ Configuration file:
 """
 
 import numpy as np
+import scipy.optimize
 from docopt import docopt
 from .base import Application
 from os.path import expanduser
@@ -157,6 +158,7 @@ from pyannote.database import get_protocol
 from pyannote.audio.signal import Binarize
 from pyannote.database import get_annotated
 from pyannote.core import SlidingWindowFeature
+from pyannote.database import get_unique_identifier
 from pyannote.audio.features.utils import Precomputed
 from pyannote.metrics.detection import DetectionErrorRate
 from pyannote.audio.labeling.extraction import SequenceLabeling
@@ -203,6 +205,7 @@ class SpeechActivityDetection(Application):
                        train_dir, subset=subset, epochs=epochs,
                        restart=restart, gpu=self.gpu)
 
+
     def validate_epoch(self, epoch, protocol_name, subset='development',
                        validation_data=None):
 
@@ -212,11 +215,6 @@ class SpeechActivityDetection(Application):
         if self.gpu:
             model = model.cuda()
         model.eval()
-
-        der = DetectionErrorRate()
-
-        binarizer = Binarize(onset=0.5, offset=0.5,
-                             log_scale=False)
 
         if isinstance(self.feature_extraction_, Precomputed):
             self.feature_extraction_.use_memmap = False
@@ -233,28 +231,55 @@ class SpeechActivityDetection(Application):
         protocol = get_protocol(protocol_name, progress=False,
                                 preprocessors=self.preprocessors_)
 
+        metric = DetectionErrorRate()
+
+        predictions = {}
+
         file_generator = getattr(protocol, subset)()
         for current_file in file_generator:
-
-            predictions = sequence_labeling.apply(current_file)
+            uri = get_unique_identifier(current_file)
+            scores = sequence_labeling.apply(current_file)
 
             if model.logsoftmax:
-                predictions = SlidingWindowFeature(
-                    1. - np.exp(predictions.data[:, 0]),
-                    predictions.sliding_window)
+                scores = SlidingWindowFeature(
+                    1. - np.exp(scores.data[:, 0]),
+                    scores.sliding_window)
             else:
-                predictions = SlidingWindowFeature(
-                    1. - predictions.data[:, 0],
-                    predictions.sliding_window)
+                scores = SlidingWindowFeature(
+                    1. - scores.data[:, 0],
+                    scores.sliding_window)
 
-            hypothesis = binarizer.apply(
-                predictions, dimension=0).to_annotation()
+            predictions[uri] = scores
 
-            reference = current_file['annotation']
-            uem = get_annotated(current_file)
-            _ = der(reference, hypothesis, uem=uem)
+        def fun(threshold):
 
-        return {'DetectionErrorRate': {'minimize': True, 'value': abs(der)}}
+            binarizer = Binarize(onset=threshold,
+                                 offset=threshold,
+                                 log_scale=False)
+
+            protocol = get_protocol(protocol_name, progress=False,
+                                    preprocessors=self.preprocessors_)
+
+            metric = DetectionErrorRate()
+
+            file_generator = getattr(protocol, subset)()
+            for current_file in file_generator:
+
+                uri = get_unique_identifier(current_file)
+                hypothesis = binarizer.apply(
+                    predictions[uri], dimension=0).to_annotation()
+                reference = current_file['annotation']
+                uem = get_annotated(current_file)
+                _ = metric(reference, hypothesis, uem=uem)
+
+            return abs(metric)
+
+        res = scipy.optimize.minimize_scalar(
+            fun, bounds=(0., 1.), method='bounded', options={'maxiter': 10})
+
+        return {
+            'detection_error_rate': {'minimize': True, 'value': res.fun},
+            'binarize/threshold': {'minimize': 'NA', 'value': res.x}}
 
     def apply(self, protocol_name, output_dir, step=None):
 
