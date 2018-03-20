@@ -160,56 +160,10 @@ class Application(object):
                        validation_data=None):
         raise NotImplementedError('')
 
-    def validate_plot(self, metric, values, minimize=True, baseline=None,
-                      png=None, eps=None):
-
-        import matplotlib
-        matplotlib.use('Agg')
-        import matplotlib.pyplot as plt
-
-        # keep track of best epoch so far
-        if minimize:
-            best_epoch = \
-                values.iloc[np.argmin(values.values())]
-        else:
-            best_epoch = \
-                values.iloc[np.argmax(values.values())]
-
-        # corresponding metric value
-        best_value = values[best_epoch]
-
-        fig, ax = plt.subplots()
-        # plot value = f(epoch)
-        ax.plot(values.keys(), values.values(), 'b')
-        # mark best epoch
-        ax.plot([best_epoch], [best_value], 'bo')
-        # horizontal line at best value
-        ax.plot([values.iloc[0], values.iloc[-1]],
-                [best_value, best_value], 'k--')
-        # horizontal line at baseline value
-        if baseline is not None:
-            ax.plot([values.iloc[0], values.iloc[-1]],
-                    [baseline, baseline], 'k', label='baseline')
-        ax.grid()
-        ax.set_xlabel('epoch')
-        ax.set_title('{metric} = {value:.6f} @ epoch #{epoch}'.format(
-            metric=metric, value=best_value, epoch=best_epoch))
-
-        fig.tight_layout()
-
-        if png is not None:
-            fig.savefig(png, dpi=75)
-        if eps is not None:
-            fig.savefig(eps)
-        plt.close(fig)
-
-        return best_value, best_epoch
-
     def validate(self, protocol_name, subset='development',
                  every=1, start=0, end=None, in_order=False, **kwargs):
 
-        validate_txt, validate_png, validate_eps = {}, {}, {}
-        minimize, baseline, values, best_epoch, best_value = {}, {}, {}, {}, {}
+        minimize, values, best_epoch, best_value = {}, {}, {}, {}
 
         validate_dir = self.VALIDATE_DIR.format(train_dir=self.train_dir_,
                                                 protocol=protocol_name)
@@ -225,22 +179,14 @@ class Application(object):
             self.validate_iter(start=start, end=end, step=every,
                                in_order=in_order)):
 
-            # {'metric1': {'minimize': True, 'value': 0.2, 'baseline': 0.1},
+            # {'metric1': {'minimize': True, 'value': 0.2},
             #  'metric2': {'minimize': False, 'value': 0.9}}
             metrics = self.validate_epoch(epoch, protocol_name, subset=subset,
                                           validation_data=validation_data)
 
             if i == 0:
                 for metric, details in metrics.items():
-                    params = {'validate_dir': validate_dir,
-                              'subset': subset,
-                              'metric': metric}
-                    validate_txt[metric] = open(
-                        self.VALIDATE_TXT.format(**params), 'w')
-                    validate_png[metric] = self.VALIDATE_PNG.format(**params)
-                    validate_eps[metric] = self.VALIDATE_EPS.format(**params)
                     minimize[metric] = details.get('minimize', True)
-                    baseline[metric] = details.get('baseline', None)
                     values[metric] = SortedDict()
 
             description = 'Epoch #{epoch}'.format(epoch=epoch)
@@ -249,21 +195,24 @@ class Application(object):
                 value = details['value']
                 values[metric][epoch] = value
 
-                # save metric value to file
-                line = self.VALIDATE_TXT_TEMPLATE.format(
-                    epoch=epoch, value=values[metric][epoch])
-                validate_txt[metric].write(line)
-                validate_txt[metric].flush()
-
                 writer.add_scalar(
-                    metric, values[metric][epoch], global_step=epoch)
+                    f'validation/{metric}', values[metric][epoch],
+                    global_step=epoch)
 
-                best_value, best_epoch = self.validate_plot(
-                    metric, values[metric],
-                    minimize=minimize[metric],
-                    baseline=baseline[metric],
-                    png=validate_png[metric],
-                    eps=validate_eps[metric])
+                # keep track of best epoch so far
+                if minimize[metric] == 'NA':
+                    best_value = 'NA'
+                elif minimize[metric]:
+                    best_epoch = \
+                        values[metric].iloc[np.argmin(values[metric].values())]
+                    best_value = values[metric][best_epoch]
+                else:
+                    best_epoch = \
+                        values[metric].iloc[np.argmax(values[metric].values())]
+                    best_value = values[metric][best_epoch]
+
+                if best_value  == 'NA':
+                    continue
 
                 if abs(best_value) < 1:
                     addon = (' : {metric} = {value:.3f}% '
