@@ -28,10 +28,10 @@
 
 
 from .base import LabelingTask
-from .speaker_change_detection import SpeakerChangeDetectionGenerator
+from .speech_activity_detection import SpeechActivityDetectionGenerator
 
 
-class OverlapSpeechDetectionGenerator(SpeakerChangeDetectionGenerator):
+class OverlapSpeechDetectionGenerator(SpeechActivityDetectionGenerator):
     """Generate batch of segments with associated frame-wise labels
 
     Parameters
@@ -40,6 +40,9 @@ class OverlapSpeechDetectionGenerator(SpeakerChangeDetectionGenerator):
         Precomputed features
     duration : float, optional
         Use fixed duration segments with this `duration`.
+    per_epoch : float, optional
+        Total audio duration per epoch, in seconds.
+        Defaults to one hour (3600).
     batch_size : int, optional
         Batch size. Defaults to 32.
     parallel : int, optional

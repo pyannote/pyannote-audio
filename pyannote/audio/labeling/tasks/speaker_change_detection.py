@@ -41,6 +41,9 @@ class SpeakerChangeDetectionGenerator(SpeechActivityDetectionGenerator):
         Precomputed features
     duration : float, optional
         Use fixed duration segments with this `duration`.
+    per_epoch : float, optional
+        Total audio duration per epoch, in seconds.
+        Defaults to one hour (3600).
     balance: float, optional
         Artificially increase the number of positive labels by
         labeling as positive every frame in the direct neighborhood
@@ -54,12 +57,12 @@ class SpeakerChangeDetectionGenerator(SpeechActivityDetectionGenerator):
         Set `parallel` to 0 to not use background generators.
     """
 
-    def __init__(self, precomputed, duration=3.2, balance=0.1,
-                 batch_size=32, parallel=1):
+    def __init__(self, precomputed, duration=3.2, per_epoch=3600,
+                 balance=0.1, batch_size=32, parallel=1):
 
         super(SpeakerChangeDetectionGenerator, self).__init__(
             precomputed, duration=duration, batch_size=batch_size,
-            parallel=parallel)
+            per_epoch=per_epoch, parallel=parallel)
         self.balance = balance
 
     def fill_y(self, y, sequence, current_file):

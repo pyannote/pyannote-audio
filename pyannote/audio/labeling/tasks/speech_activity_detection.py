@@ -48,6 +48,9 @@ class SpeechActivityDetectionGenerator(object):
         Precomputed features
     duration : float, optional
         Use fixed duration segments with this `duration`.
+    per_epoch : float, optional
+        Total audio duration per epoch, in seconds.
+        Defaults to one hour (3600).
     batch_size : int, optional
         Batch size. Defaults to 32.
     parallel : int, optional
@@ -56,13 +59,15 @@ class SpeechActivityDetectionGenerator(object):
         Set `parallel` to 0 to not use background generators.
     """
 
-    def __init__(self, precomputed, duration=3.2, batch_size=32, parallel=1):
+    def __init__(self, precomputed, duration=3.2, batch_size=32,
+                 per_epoch=3600, parallel=1):
 
         super(SpeechActivityDetectionGenerator, self).__init__()
 
         self.precomputed = precomputed
         self.duration = duration
         self.batch_size = batch_size
+        self.per_epoch = per_epoch
         self.parallel = parallel
 
     def initialize(self, protocol, subset='train'):
@@ -158,10 +163,8 @@ class SpeechActivityDetectionGenerator(object):
 
     @property
     def batches_per_epoch(self):
-        # one hour per epoch
-        duration_per_epoch = 3600
         duration_per_batch = self.duration * self.batch_size
-        return int(np.ceil(duration_per_epoch / duration_per_batch))
+        return int(np.ceil(self.per_epoch / duration_per_batch))
 
     def __call__(self, protocol, subset='train'):
 
