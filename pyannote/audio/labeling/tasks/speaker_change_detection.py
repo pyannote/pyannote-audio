@@ -115,7 +115,7 @@ class SpeakerChangeDetection(LabelingTask):
                  per_epoch=3600, parallel=1):
         super(SpeakerChangeDetection, self).__init__(
             duration=duration, batch_size=batch_size,
-            per_epoch=self.per_epoch, parallel=parallel)
+            per_epoch=per_epoch, parallel=parallel)
         self.balance = balance
 
     def get_batch_generator(self, precomputed):
