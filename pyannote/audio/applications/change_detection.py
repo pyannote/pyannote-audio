@@ -187,7 +187,9 @@ class SpeakerChangeDetection(SpeechActivityDetection):
 
         lower_alpha = 0.
         upper_alpha = 1.
+        best_alpha = .5 * (lower_alpha + upper_alpha)
         best_coverage = 0.
+
 
         for _ in range(10):
             current_alpha = .5 * (lower_alpha + upper_alpha)
@@ -209,10 +211,14 @@ class SpeakerChangeDetection(SpeechActivityDetection):
                 upper_alpha = current_alpha
             else:
                 lower_alpha = current_alpha
-                best_coverage = max(coverage, best_coverage)
+                if coverage > best_coverage:
+                    best_coverage = coverage
+                    best_alpha = current_alpha
 
         metric_name = f'DiarizationCoverageAt{target_purity:.2f}Purity'
-        return {metric_name: {'minimize': False, 'value': best_coverage}}
+        return {
+            metric_name: {'minimize': False, 'value': best_coverage},
+            'peak/alpha': {'minimize': 'NA', 'value': best_alpha}}
 
 def main():
 
