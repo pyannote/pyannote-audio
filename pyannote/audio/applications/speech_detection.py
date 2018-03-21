@@ -279,7 +279,7 @@ class SpeechActivityDetection(Application):
 
         return {
             'detection_error_rate': {'minimize': True, 'value': res.fun},
-            'binarize/threshold': {'minimize': 'NA', 'value': res.x}}
+            'binarize/speech/threshold': {'minimize': 'NA', 'value': res.x}}
 
     def apply(self, protocol_name, output_dir, step=None):
 

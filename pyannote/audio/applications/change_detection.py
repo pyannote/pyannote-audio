@@ -147,13 +147,10 @@ from pyannote.metrics.diarization import DiarizationPurityCoverageFMeasure
 
 class SpeakerChangeDetection(SpeechActivityDetection):
 
-    def validate_init(self, protocol_name, subset='development', purity=0.9):
-        return {'purity': purity}
-
     def validate_epoch(self, epoch, protocol_name, subset='development',
                        validation_data=None):
 
-        target_purity = validation_data['purity']
+        target_purity = self.purity
 
         # load model for current epoch
         model = self.load_model(epoch)
@@ -281,9 +278,10 @@ def main():
             train_dir, db_yml=db_yml)
         application.gpu = gpu
         application.batch_size = batch_size
+        application.purity = purity
         application.validate(protocol_name, subset=subset,
                              start=start, end=end, every=every,
-                             in_order=in_order, purity=purity)
+                             in_order=in_order)
 
     if arguments['apply']:
 
