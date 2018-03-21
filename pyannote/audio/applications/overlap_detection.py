@@ -212,15 +212,14 @@ class OverlapDetection(SpeechActivityDetection):
         best_alpha = .5 * (lower_alpha + upper_alpha)
         best_recall = 0.
 
-
         for _ in range(10):
             current_alpha = .5 * (lower_alpha + upper_alpha)
             binarizer = Binarize(onset=current_alpha,
                                  offset=current_alpha,
                                  log_scale=False)
 
-            precision = DetectionRecall()
-            recall = DetectionPrecision()
+            precision = DetectionPrecision()
+            recall = DetectionRecall()
 
             for current_file in getattr(protocol, subset)():
                 uri = get_unique_identifier(current_file)
