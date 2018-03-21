@@ -75,17 +75,14 @@ def helper_peak_tune(item_prediction, peak=None, metric=None):
 class Peak(object):
     """Peak detection
 
-    Peaks are detected on min_duration windows.
-    Only peaks greater than p(1) + alpha * (p(99) - p(1)) are kept
-    where p(x) is xth percentile.
-
     Parameters
     ----------
     alpha : float, optional
         Adaptative threshold coefficient. Defaults to 0.5
-    percentile : bool, optional
-        When False (default), alpha = 0 correspond to min and = 1 to max
-        When True, alpha = 0 corresponds to p(1) and = 1 to p(99).
+    scale : {'absolute', 'relative', 'percentile'}
+        Set to 'relative' to make onset/offset relative to min/max.
+        Set to 'percentile' to make them relative 1% and 99% percentiles.
+        Defaults to 'absolute'.
     min_duration : float, optional
         Defaults to 1 second.
     log_scale : bool, optional
@@ -93,11 +90,11 @@ class Peak(object):
         Defaults to False.
 
     """
-    def __init__(self, alpha=0.5, min_duration=1.0, percentile=False,
+    def __init__(self, alpha=0.5, min_duration=1.0, scale='absolute',
                  log_scale=False):
         super(Peak, self).__init__()
         self.alpha = alpha
-        self.percentile = percentile
+        self.scale = scale
         self.min_duration = min_duration
         self.log_scale = log_scale
 
@@ -224,8 +221,18 @@ class Peak(object):
         order = max(1, int(np.rint(self.min_duration / precision)))
         indices = scipy.signal.argrelmax(y, order=order)[0]
 
-        mini = np.nanpercentile(y, 1) if self.percentile else np.nanmin(y)
-        maxi = np.nanpercentile(y, 99) if self.percentile else np.nanmax(y)
+        if self.scale == 'absolute':
+            mini = 0
+            maxi = 1
+
+        elif self.scale == 'relative':
+            mini = np.nanmin(data)
+            maxi = np.nanmax(data)
+
+        elif self.scale == 'percentile':
+            mini = np.nanpercentile(data, 1)
+            maxi = np.nanpercentile(data, 99)
+
         threshold = mini + self.alpha * (maxi - mini)
 
         peak_time = np.array([sw[i].middle for i in indices if y[i] > threshold])
@@ -288,12 +295,13 @@ class Binarize(object):
         Relative onset threshold. Defaults to 0.5.
     offset : float, optional
         Relative offset threshold. Defaults to 0.5.
-    percentile : bool, optional
-        When False (default), onset = 0 correspond to min and = 1 to max
-        When True, onset = 0 corresponds to p(1) and = 1 to p(99).
+    scale : {'absolute', 'relative', 'percentile'}
+        Set to 'relative' to make onset/offset relative to min/max.
+        Set to 'percentile' to make them relative 1% and 99% percentiles.
+        Defaults to 'absolute'.
     log_scale : bool, optional
         Set to True to indicate that binarized scores are log scaled.
-        Defaults to False.
+        Will apply exponential first. Defaults to False.
 
     Reference
     ---------
@@ -301,7 +309,7 @@ class Binarize(object):
     RNN-based Voice Activity Detection", InterSpeech 2015.
     """
 
-    def __init__(self, onset=0.5, offset=0.5, percentile=False, log_scale=False,
+    def __init__(self, onset=0.5, offset=0.5, scale='absolute', log_scale=False,
                  pad_onset=0., pad_offset=0., min_duration_on=0.,
                  min_duration_off=0.):
 
@@ -309,7 +317,7 @@ class Binarize(object):
 
         self.onset = onset
         self.offset = offset
-        self.percentile = percentile
+        self.scale = scale
         self.log_scale = log_scale
 
         self.pad_onset = pad_onset
@@ -441,8 +449,18 @@ class Binarize(object):
         start = timestamps[0]
         label = data[0] > self.onset
 
-        mini = np.nanpercentile(data, 1) if self.percentile else np.nanmin(data)
-        maxi = np.nanpercentile(data, 99) if self.percentile else np.nanmax(data)
+        if self.scale == 'absolute':
+            mini = 0
+            maxi = 1
+
+        elif self.scale == 'relative':
+            mini = np.nanmin(data)
+            maxi = np.nanmax(data)
+
+        elif self.scale == 'percentile':
+            mini = np.nanpercentile(data, 1)
+            maxi = np.nanpercentile(data, 99)
+
         onset = mini + self.onset * (maxi - mini)
         offset = mini + self.offset * (maxi - mini)
 
