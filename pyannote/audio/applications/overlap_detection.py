@@ -227,12 +227,13 @@ class OverlapDetection(SpeechActivityDetection):
                 hypothesis = binarizer.apply(predictions[uri], dimension=0)
                 hypothesis = hypothesis.to_annotation()
                 uem = get_annotated(current_file)
-                p = precision(reference, hypothesis, uem=uem)
-                r = recall(reference, hypothesis, uem=uem)
+                _ = precision(reference, hypothesis, uem=uem)
+                _ = recall(reference, hypothesis, uem=uem)
 
-            if p < target_precision:
+            if abs(precision) < target_precision:
                 upper_alpha = current_alpha
             else:
+                r = abs(recall)
                 lower_alpha = current_alpha
                 if r > best_recall:
                     best_recall = r
