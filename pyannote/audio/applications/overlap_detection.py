@@ -31,7 +31,7 @@ Overlap speech detection
 
 Usage:
   pyannote-overlap-detection train [options] <experiment_dir> <database.task.protocol>
-  pyannote-overlap-detection validate [options] [--every=<epoch> --chronological] <train_dir> <database.task.protocol>
+  pyannote-overlap-detection validate [options] [--every=<epoch> --chronological --precision=<precision>] <train_dir> <database.task.protocol>
   pyannote-overlap-detection apply [options] [--step=<step>] <model.pt> <database.task.protocol> <output_dir>
   pyannote-overlap-detection -h | --help
   pyannote-overlap-detection --version
@@ -63,6 +63,7 @@ Common options:
   --chronological            Force validation in chronological order.
   <train_dir>                Path to the directory containing pre-trained
                              models (i.e. the output of "train" mode).
+  --precision=<precision>    Target precision [default: 0.9].
 
 "apply" mode:
   <model.pt>                 Path to the pretrained model.
@@ -134,7 +135,17 @@ Configuration file:
 import numpy as np
 from docopt import docopt
 from os.path import expanduser
+from pyannote.core import Timeline
+from pyannote.database import get_protocol
+from pyannote.audio.signal import Binarize
+from pyannote.database import get_annotated
+from pyannote.core import SlidingWindowFeature
+from pyannote.audio.features import Precomputed
+from pyannote.database import get_unique_identifier
 from .speech_detection import SpeechActivityDetection
+from pyannote.metrics.detection import DetectionRecall
+from pyannote.metrics.detection import DetectionPrecision
+from pyannote.audio.labeling.extraction import SequenceLabeling
 
 
 class OverlapDetection(SpeechActivityDetection):
@@ -142,7 +153,97 @@ class OverlapDetection(SpeechActivityDetection):
     def validate_epoch(self, epoch, protocol_name, subset='development',
                        validation_data=None):
 
-        raise NotImplementedError('')
+        target_precision = self.precision
+
+        # load model for current epoch
+        model = self.load_model(epoch)
+        if self.gpu:
+            model = model.cuda()
+        model.eval()
+
+        if isinstance(self.feature_extraction_, Precomputed):
+            self.feature_extraction_.use_memmap = False
+
+        duration = self.task_.duration
+        step = .25 * duration
+        sequence_labeling = SequenceLabeling(
+            model, self.feature_extraction_, duration,
+            step=.25 * duration, batch_size=self.batch_size,
+            source='audio', gpu=self.gpu)
+
+        sequence_labeling.cache_preprocessed_ = False
+
+        protocol = get_protocol(protocol_name, progress=False,
+                                preprocessors=self.preprocessors_)
+
+        predictions = {}
+        references = {}
+
+        file_generator = getattr(protocol, subset)()
+        for current_file in file_generator:
+            uri = get_unique_identifier(current_file)
+
+            # build overlap reference
+            reference = Timeline(uri=uri)
+            annotation = current_file['annotation']
+            for track1, track2 in annotation.co_iter(annotation):
+                if track1 == track2:
+                    continue
+                reference.add(track1[0] & track2[0])
+            references[uri] = reference.to_annotation()
+
+            # extract overlap scores
+            scores = sequence_labeling.apply(current_file)
+
+            if model.logsoftmax:
+                scores = SlidingWindowFeature(
+                    np.exp(scores.data[:, 2]), scores.sliding_window)
+            else:
+                scores = SlidingWindowFeature(
+                    scores.data[:, 2], scores.sliding_window)
+
+            predictions[uri] = scores
+
+        # dichotomic search to find threshold that maximizes recall
+        # while having at least `target_precision`
+
+        lower_alpha = 0.
+        upper_alpha = 1.
+        best_alpha = .5 * (lower_alpha + upper_alpha)
+        best_recall = 0.
+
+
+        for _ in range(10):
+            current_alpha = .5 * (lower_alpha + upper_alpha)
+            binarizer = Binarize(onset=current_alpha,
+                                 offset=current_alpha,
+                                 log_scale=False)
+
+            precision = DetectionRecall()
+            recall = DetectionPrecision()
+
+            for current_file in getattr(protocol, subset)():
+                uri = get_unique_identifier(current_file)
+                reference = references[uri]
+                hypothesis = binarizer.apply(predictions[uri], dimension=0)
+                hypothesis = hypothesis.to_annotation()
+                uem = get_annotated(current_file)
+                p = precision(reference, hypothesis, uem=uem)
+                r = recall(reference, hypothesis, uem=uem)
+
+            if p < target_precision:
+                upper_alpha = current_alpha
+            else:
+                lower_alpha = current_alpha
+                if r > best_recall:
+                    best_recall = r
+                    best_alpha = current_alpha
+
+        metric_name = f'validation/RecallAt{target_precision:.2f}Precision'
+        return {
+            metric_name: {'minimize': False, 'value': best_recall},
+            'validation/binarize/threshold': {'minimize': 'NA',
+                                              'value': best_alpha}}
 
 def main():
 
@@ -199,10 +300,13 @@ def main():
         # batch size
         batch_size = int(arguments['--batch'])
 
+        precision = float(arguments['--precision'])
+
         application = OverlapDetection.from_train_dir(
             train_dir, db_yml=db_yml)
         application.gpu = gpu
         application.batch_size = batch_size
+        application.precision = precision
         application.validate(protocol_name, subset=subset,
                              start=start, end=end, every=every,
                              in_order=in_order)
