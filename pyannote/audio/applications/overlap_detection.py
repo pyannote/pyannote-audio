@@ -240,10 +240,10 @@ class OverlapDetection(SpeechActivityDetection):
                     best_recall = r
                     best_alpha = current_alpha
 
-        metric_name = f'validation/RecallAt{target_precision:.2f}Precision'
+        metric_name = f'RecallAt{target_precision:.2f}Precision'
         return {
             metric_name: {'minimize': False, 'value': best_recall},
-            'validation/binarize/threshold': {'minimize': 'NA',
+            'binarize/threshold': {'minimize': 'NA',
                                               'value': best_alpha}}
 
 def main():
