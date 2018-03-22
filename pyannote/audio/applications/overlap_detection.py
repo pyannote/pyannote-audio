@@ -231,10 +231,11 @@ class OverlapDetection(SpeechActivityDetection):
                 _ = recall(reference, hypothesis, uem=uem)
 
             if abs(precision) < target_precision:
-                upper_alpha = current_alpha
-            else:
-                r = abs(recall)
+                # precision is not high enough: try higher thresholds
                 lower_alpha = current_alpha
+            else:
+                upper_alpha = current_alpha
+                r = abs(recall)
                 if r > best_recall:
                     best_recall = r
                     best_alpha = current_alpha
