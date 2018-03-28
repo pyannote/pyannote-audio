@@ -157,9 +157,10 @@ class VariableDurationSequences(PeriodicFeaturesMixin,
 
     def signature(self):
         return (
-            {'type': 'ndarray', 'shape': self.shape},
+            {'type': 'sequences', 'shape': self.shape},
             {'type': 'label'}
         )
+        
 
     def pack_sequence(self, sequences):
         """
