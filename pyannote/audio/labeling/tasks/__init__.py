@@ -28,3 +28,4 @@
 
 from .speech_activity_detection import SpeechActivityDetection
 from .speaker_change_detection import SpeakerChangeDetection
+from .resegmentation import Resegmentation
