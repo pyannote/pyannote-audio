@@ -28,4 +28,3 @@
 
 from .speech_activity_detection import SpeechActivityDetection
 from .speaker_change_detection import SpeakerChangeDetection
-from .overlap_speech_detection import OverlapSpeechDetection

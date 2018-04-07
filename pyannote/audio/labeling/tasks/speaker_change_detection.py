@@ -26,80 +26,105 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
+"""Speaker change detection"""
+
 import numpy as np
 from .base import LabelingTask
-from pyannote.core import Segment
-from .speech_activity_detection import SpeechActivityDetectionGenerator
+from .base import LabelingTaskGenerator
+import scipy.signal
 
 
-class SpeakerChangeDetectionGenerator(SpeechActivityDetectionGenerator):
-    """Generate batch of segments with associated frame-wise labels
+class SpeakerChangeDetectionGenerator(LabelingTaskGenerator):
+    """Batch generator for training speaker change detection
 
     Parameters
     ----------
-    precomputed : pyannote.audio.features.Precomputed
+    precomputed : `pyannote.audio.features.Precomputed`
         Precomputed features
+    collar : float, optional
+        Duration of "change" collar, in seconds. Default to 100ms (0.1).
     duration : float, optional
-        Use fixed duration segments with this `duration`.
+        Duration of sub-sequences. Defaults to 3.2s.
+    batch_size : int, optional
+        Batch size. Defaults to 32.
     per_epoch : float, optional
         Total audio duration per epoch, in seconds.
         Defaults to one hour (3600).
-    balance: float, optional
-        Artificially increase the number of positive labels by
-        labeling as positive every frame in the direct neighborhood
-        (less than `balance` seconds apart) of each change point.
-        Defaults to 0.1 (= 100 ms).
-    batch_size : int, optional
-        Batch size. Defaults to 32.
     parallel : int, optional
         Number of prefetching background generators. Defaults to 1.
         Each generator will prefetch enough batches to cover a whole epoch.
         Set `parallel` to 0 to not use background generators.
+
+    Usage
+    -----
+    # precomputed features
+    >>> from pyannote.audio.features import Precomputed
+    >>> precomputed = Precomputed('/path/to/mfcc')
+
+    # instantiate batch generator
+    >>> batches = SpeakerChangeDetectionGenerator(precomputed)
+
+    # evaluation protocol
+    >>> from pyannote.database import get_protocol
+    >>> protocol = get_protocol('Etape.SpeakerDiarization.TV')
+
+    # iterate over training set
+    >>> for batch in batches(protocol, subset='train'):
+    >>>     # batch['X'] is a (batch_size, n_samples, n_features) numpy array
+    >>>     # batch['y'] is a (batch_size, n_samples, 1) numpy array
+    >>>     pass
     """
 
-    def __init__(self, precomputed, duration=3.2, per_epoch=3600,
-                 balance=0.1, batch_size=32, parallel=1):
+    def __init__(self, precomputed, collar=0.100, **kwargs):
 
         super(SpeakerChangeDetectionGenerator, self).__init__(
-            precomputed, duration=duration, batch_size=batch_size,
-            per_epoch=per_epoch, parallel=parallel)
-        self.balance = balance
+            precomputed, **kwargs)
 
-    def fill_y(self, y, sequence, current_file):
+        self.collar = collar
 
-        n_samples = len(y)
-        sw = self.precomputed.sliding_window()
-        left, _ = sw.crop(sequence, mode='center', return_ranges=True)[0]
+        # convert duration to number of samples
+        M = self.precomputed.sliding_window().durationToSamples(self.collar)
 
-        # extend sequence on both sides to **not** miss any speaker change
-        x_sequence = Segment(sequence.start - self.balance,
-                            sequence.end + self.balance)
-        x_turns = current_file['annotation']
-        x_turns = x_turns.crop(x_sequence).get_timeline()
+        # triangular window
+        self.window_ = scipy.signal.tukey(M)[:, np.newaxis]
 
-        for segment in x_turns:
-            for boundary in segment:
-                window = Segment(boundary - self.balance,
-                                 boundary + self.balance)
-                l, r = sw.crop(window, mode='center', return_ranges=True)[0]
-                l = max(0, l - left)
-                r = min(r - left, n_samples)
-                y[l:r] = 1
+    def postprocess_y(self, Y):
+        """Generate labels for speaker change detection
 
-        return
+        Parameters
+        ----------
+        Y : (n_samples, n_speakers) numpy.ndarray
+            Discretized annotation returned by `pyannote.audio.util.to_numpy`.
+
+        Returns
+        -------
+        y : (n_samples, 1) numpy.ndarray
+
+        See also
+        --------
+        `pyannote.audio.util.to_numpy`
+        """
+
+        # True = change. False = no change
+        y = np.sum(np.abs(np.diff(Y, axis=0)), axis=1, keepdims=True)
+        y = np.vstack(([[0]], y > 0))
+
+        # mark change points neighborhood as positive
+        y = np.minimum(1, scipy.signal.convolve(y, self.window_, mode='same'))
+
+        # TODO. add option to not binarize
+        return np.int64(y > 0)
+
 
 class SpeakerChangeDetection(LabelingTask):
-    """
+    """Train speaker change detection
 
     Parameters
     ----------
+    collar : float, optional
+        Duration of "change" collar, in seconds. Default to 100ms (0.1).
     duration : float, optional
-        Use fixed duration segments with this `duration`.
-    balance: float, optional
-        Artificially increase the number of positive labels by
-        labeling as positive every frame in the direct neighborhood
-        (less than `balance` seconds apart) of each change point.
-        Defaults to 0.1 (= 100 ms).
+        Duration of sub-sequences. Defaults to 3.2s.
     batch_size : int, optional
         Batch size. Defaults to 32.
     per_epoch : float, optional
@@ -109,24 +134,36 @@ class SpeakerChangeDetection(LabelingTask):
         Number of prefetching background generators. Defaults to 1.
         Each generator will prefetch enough batches to cover a whole epoch.
         Set `parallel` to 0 to not use background generators.
+
+    Usage
+    -----
+    >>> task = SpeakerChangeDetection()
+
+    # precomputed features
+    >>> from pyannote.audio.features import Precomputed
+    >>> precomputed = Precomputed('/path/to/features')
+
+    # model architecture
+    >>> from pyannote.audio.labeling.models import StackedRNN
+    >>> model = StackedRNN(precomputed.dimension, task.n_classes)
+
+    # evaluation protocol
+    >>> from pyannote.database import get_protocol
+    >>> protocol = get_protocol('Etape.SpeakerDiarization.TV')
+
+    # train model using protocol training set
+    >>> for epoch, model in task.fit_iter(model, precomputed, protocol):
+    ...     pass
+
     """
 
-    def __init__(self, duration=3.2, balance=0.1, batch_size=32,
-                 per_epoch=3600, parallel=1):
-        super(SpeakerChangeDetection, self).__init__(
-            duration=duration, batch_size=batch_size,
-            per_epoch=per_epoch, parallel=parallel)
-        self.balance = balance
+    def __init__(self, collar=0.100, **kwargs):
+        super(SpeakerChangeDetection, self).__init__(**kwargs)
+        self.collar = collar
 
     def get_batch_generator(self, precomputed):
-        """
-        Parameters
-        ----------
-        precomputed : pyannote.audio.features.Precomputed
-            Precomputed features
-        """
         return SpeakerChangeDetectionGenerator(
-            precomputed, balance=self.balance, duration=self.duration,
+            precomputed, collar=self.collar, duration=self.duration,
             batch_size=self.batch_size, per_epoch=self.per_epoch,
             parallel=self.parallel)
 

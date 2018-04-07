@@ -26,205 +26,142 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
-
-from pyannote.generators.fragment import random_segment
-from pyannote.generators.fragment import random_subsegment
-from pyannote.generators.batch import batchify
-
-from pyannote.database import get_annotated
-from pyannote.database import get_unique_identifier
+"""Speech activity detection"""
 
 import numpy as np
-import torch.nn as nn
 from .base import LabelingTask
+from .base import LabelingTaskGenerator
 
 
-class SpeechActivityDetectionGenerator(object):
-    """Generate batch of segments with associated frame-wise labels
+class SpeechActivityDetectionGenerator(LabelingTaskGenerator):
+    """Batch generator for training speech activity detection
 
     Parameters
     ----------
-    precomputed : pyannote.audio.features.Precomputed
+    precomputed : `pyannote.audio.features.Precomputed`
         Precomputed features
+    overlap : bool, optional
+        Switch to 3 classes "non-speech vs. one speaker vs. 2+ speakers".
+        Defaults to 2 classes "non-speech vs. speech".
     duration : float, optional
-        Use fixed duration segments with this `duration`.
+        Duration of sub-sequences. Defaults to 3.2s.
+    batch_size : int, optional
+        Batch size. Defaults to 32.
     per_epoch : float, optional
         Total audio duration per epoch, in seconds.
         Defaults to one hour (3600).
-    batch_size : int, optional
-        Batch size. Defaults to 32.
     parallel : int, optional
         Number of prefetching background generators. Defaults to 1.
         Each generator will prefetch enough batches to cover a whole epoch.
         Set `parallel` to 0 to not use background generators.
+
+    Usage
+    -----
+    # precomputed features
+    >>> from pyannote.audio.features import Precomputed
+    >>> precomputed = Precomputed('/path/to/mfcc')
+
+    # instantiate batch generator
+    >>> batches = SpeechActivityDetectionGenerator(precomputed)
+
+    # evaluation protocol
+    >>> from pyannote.database import get_protocol
+    >>> protocol = get_protocol('Etape.SpeakerDiarization.TV')
+
+    # iterate over training set
+    >>> for batch in batches(protocol, subset='train'):
+    >>>     # batch['X'] is a (batch_size, n_samples, n_features) numpy array
+    >>>     # batch['y'] is a (batch_size, n_samples, 1) numpy array
+    >>>     pass
     """
 
-    def __init__(self, precomputed, duration=3.2, batch_size=32,
-                 per_epoch=3600, parallel=1):
+    def __init__(self, precomputed, overlap=False, **kwargs):
+        super(SpeechActivityDetectionGenerator, self).__init__(
+            precomputed, **kwargs)
+        self.overlap = overlap
 
-        super(SpeechActivityDetectionGenerator, self).__init__()
+    def postprocess_y(self, Y):
+        """Generate labels for speech activity detection
 
-        self.precomputed = precomputed
-        self.duration = duration
-        self.batch_size = batch_size
-        self.per_epoch = per_epoch
-        self.parallel = parallel
+        Parameters
+        ----------
+        Y : (n_samples, n_speakers) numpy.ndarray
+            Discretized annotation returned by `pyannote.audio.util.to_numpy`.
 
-    def initialize(self, protocol, subset='train'):
+        Returns
+        -------
+        y : (n_samples, 1) numpy.ndarray
 
-        self.data_ = {}
-        databases = set()
+        See also
+        --------
+        `pyannote.audio.util.to_numpy`
+        """
 
-        # loop once on all files
-        for current_file in getattr(protocol, subset)():
+        # number of speakers for each frame
+        speaker_count = np.sum(Y, axis=1, keepdims=True)
 
-            # keep track of database
-            database = current_file['database']
-            databases.add(database)
+        # mark speech regions as such
+        speech = np.int64(speaker_count > 0)
+        if self.overlap:
+            # mark overlap regions as such
+            overlap = np.int64(speaker_count > 1)
+            return speech + overlap
 
-            annotated = get_annotated(current_file)
-
-            if not self.precomputed.use_memmap:
-                msg = ('Loading all precomputed features in memory. '
-                       'Set "use_memmap" to True if you run out of memory.')
-                warnings.warn(msg)
-
-            segments = [s for s in annotated if s.duration > self.duration]
-
-            # corner case where no segment is long enough
-            # and we removed them all...
-            if not segments:
-                continue
-
-            # total duration of label in current_file (after removal of
-            # short segments).
-            duration = sum(s.duration for s in segments)
-
-            # store all these in data_ dictionary
-            # datum = (segment_generator, duration, current_file, features)
-            datum = {'segments': segments,
-                     'duration': duration,
-                     'current_file': current_file}
-            uri = get_unique_identifier(current_file)
-            self.data_[uri] = datum
-
-    def fill_y(self, y, sequence, current_file):
-
-        n_samples = len(y)
-        sw = self.precomputed.sliding_window()
-        left, _ = sw.crop(sequence, mode='center', return_ranges=True)[0]
-
-        turns = current_file['annotation']
-        turns = turns.crop(sequence).get_timeline().support()
-        for speech in turns:
-            l, r = sw.crop(speech, mode='center', return_ranges=True)[0]
-            l = max(0, l - left)
-            r = min(r - left, n_samples)
-            y[l:r] = 1
-
-        return
-
-    def generator(self):
-
-        uris = list(self.data_)
-        durations = np.array([self.data_[uri]['duration'] for uri in uris])
-        probabilities = durations / np.sum(durations)
-
-        while True:
-
-            # choose file at random with probability
-            # proportional to its (annotated) duration
-            uri = uris[np.random.choice(len(uris), p=probabilities)]
-
-            datum = self.data_[uri]
-            current_file = datum['current_file']
-
-            # choose one segment at random with probability
-            # proportional to its duration
-            segment = next(random_segment(datum['segments'], weighted=True))
-
-            # choose fixed-duration subsegment at random
-            sequence = next(random_subsegment(segment, self.duration))
-
-            X = self.precomputed.crop(current_file,
-                                      sequence, mode='center',
-                                      fixed=self.duration)
-
-            n_samples, _ = X.shape
-            y = np.zeros((n_samples, ), dtype=int)
-            self.fill_y(y, sequence, current_file)
-
-            yield {'X': X, 'y': y}
-
-    @property
-    def signature(self):
-        return {'X': {'type': 'ndarray'},
-                'y': {'type': 'ndarray'}}
-
-    @property
-    def batches_per_epoch(self):
-        duration_per_batch = self.duration * self.batch_size
-        return int(np.ceil(self.per_epoch / duration_per_batch))
-
-    def __call__(self, protocol, subset='train'):
-
-        self.initialize(protocol, subset=subset)
-
-        batch_size = self.batch_size
-        signature = self.signature
-        batches_per_epoch = self.batches_per_epoch
-
-        generators = []
-        if self.parallel:
-
-            for i in range(self.parallel):
-                generator = self.generator()
-                batches = batchify(generator, signature, batch_size=batch_size,
-                                   prefetch=batches_per_epoch)
-                generators.append(batches)
-        else:
-            generator = self.generator()
-            batches = batchify(generator, signature, batch_size=batch_size,
-                               prefetch=0)
-            generators.append(batches)
-
-        while True:
-            # get `batches_per_epoch` batches from each generator
-            for batches in generators:
-                for _ in range(batches_per_epoch):
-                    yield next(batches)
+        return speech
 
 
 class SpeechActivityDetection(LabelingTask):
-    """
+    """Train speech activity (and overlap) detection
 
     Parameters
     ----------
+    overlap : bool, optional
+        Switch to 3 classes "non-speech vs. one speaker vs. 2+ speakers".
+        Defaults to 2 classes "non-speech vs. speech".
     duration : float, optional
-        Use fixed duration segments with this `duration`.
+        Duration of sub-sequences. Defaults to 3.2s.
+    batch_size : int, optional
+        Batch size. Defaults to 32.
     per_epoch : float, optional
         Total audio duration per epoch, in seconds.
         Defaults to one hour (3600).
-    batch_size : int, optional
-        Batch size. Defaults to 32.
     parallel : int, optional
         Number of prefetching background generators. Defaults to 1.
         Each generator will prefetch enough batches to cover a whole epoch.
         Set `parallel` to 0 to not use background generators.
 
+    Usage
+    -----
+    >>> task = SpeechActivityDetection()
+
+    # precomputed features
+    >>> from pyannote.audio.features import Precomputed
+    >>> precomputed = Precomputed('/path/to/features')
+
+    # model architecture
+    >>> from pyannote.audio.labeling.models import StackedRNN
+    >>> model = StackedRNN(precomputed.dimension, task.n_classes)
+
+    # evaluation protocol
+    >>> from pyannote.database import get_protocol
+    >>> protocol = get_protocol('Etape.SpeakerDiarization.TV')
+
+    # train model using protocol training set
+    >>> for epoch, model in task.fit_iter(model, precomputed, protocol):
+    ...     pass
+
     """
-    def __init__(self, duration=3.2, batch_size=32, per_epoch=3600,
-                 parallel=1):
-        super(SpeechActivityDetection, self).__init__(duration=duration,
-                                                      batch_size=batch_size,
-                                                      per_epoch=per_epoch,
-                                                      parallel=parallel)
+
+    def __init__(self, overlap=False, **kwargs):
+        super(SpeechActivityDetection, self).__init__(**kwargs)
+        self.overlap = overlap
 
     def get_batch_generator(self, precomputed):
         return SpeechActivityDetectionGenerator(
-            precomputed, duration=self.duration, per_epoch=self.per_epoch,
-            batch_size=self.batch_size, parallel=self.parallel)
+            precomputed, overlap=self.overlap, duration=self.duration,
+            per_epoch=self.per_epoch, batch_size=self.batch_size,
+            parallel=self.parallel)
 
     @property
     def n_classes(self):
-        return 2
+        return 3 if self.overlap else 2
