@@ -272,6 +272,13 @@ class Precomputed(object):
         del memmap
         return result
 
+    def shape(self, item):
+        """Faster version of precomputed(item).data.shape"""
+        memmap = open_memmap(self.get_path(item), mode='r')
+        shape = memmap.shape
+        del memmap
+        return shape
+
     def dump(self, item, features):
         path = self.get_path(item)
         mkdir_p(os.path.dirname(path))
