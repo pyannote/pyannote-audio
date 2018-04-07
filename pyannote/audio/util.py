@@ -154,7 +154,7 @@ def from_numpy(y, window, labels=None):
             if diff[t, k] > 0:
                 onset_t = window[t].middle
             else:
-                segment = Segment(onset_t, window[t - 1].middle)
+                segment = Segment(onset_t, window[t].middle)
                 annotation[segment, k] = label
 
     return annotation
