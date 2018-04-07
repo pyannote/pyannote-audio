@@ -33,6 +33,7 @@ from pyannote.core import Segment
 from pyannote.core import Annotation
 from pyannote.core import SlidingWindowFeature
 from pyannote.core.util import string_generator
+from pyannote.database import get_label_identifier
 
 
 def mkdir_p(path):
@@ -58,15 +59,14 @@ def mkdir_p(path):
         else:
             raise exc
 
-def to_numpy(annotation, features, labels=None):
+
+def to_numpy(current_file, precomputed, labels=None):
     """Convert annotation to numpy array
 
     Parameters
     ----------
-    annotation : pyannote.core.Annotation
-        Annotation
-    features : pyannote.core.SlidingWindowFeature
-        Corresponding features.
+    current_file : dict
+    precomputed : Precomputed
     labels : list, optional
         Predefined list of labels.  Defaults to using `annotation` labels.
 
@@ -82,19 +82,23 @@ def to_numpy(annotation, features, labels=None):
     See `from_numpy` to convert `y` back to a pyannote.core.Annotation instance
     """
 
+    annotation = current_file['annotation']
+
     if labels is None:
-        labels = annotation.labels()
+        labels = [get_label_identifier(label, current_file)
+                  for label in annotation.labels()]
     indices = {label: i for i, label in enumerate(labels)}
 
     # number of samples
-    N = len(features)
+    N, _ = precomputed.shape(current_file)
     # number of classes
     K = len(labels)
     # one-hot encoding
-    y = np.zeros((N, K), dtype=np.int8)
+    y = np.zeros((N, K), dtype=np.uint8)
 
-    sw = features.sliding_window
+    sw = precomputed.sliding_window()
     for segment, _, label in annotation.itertracks(yield_label=True):
+        label = get_label_identifier(label, current_file)
         try:
             k = indices[label]
         except KeyError as e:
