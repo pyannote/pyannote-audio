@@ -252,6 +252,10 @@ class LabelingTaskGenerator(object):
         duration_per_batch = self.duration * self.batch_size
         return int(np.ceil(self.per_epoch / duration_per_batch))
 
+    @property
+    def labels(self):
+        return list(self.labels_)
+
     def __call__(self, protocol, subset='train'):
         """(Parallelized) batch generator"""
 
