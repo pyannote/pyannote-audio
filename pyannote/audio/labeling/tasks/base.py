@@ -27,6 +27,7 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 import torch
+import random
 import numpy as np
 from tqdm import tqdm
 from torch.optim import Adam
@@ -37,11 +38,14 @@ from pyannote.database import get_unique_identifier
 from pyannote.database import get_label_identifier
 from pyannote.database import get_annotated
 from pyannote.audio.util import to_numpy
+from pyannote.core import Segment
+from pyannote.core import Timeline
 from pyannote.core import SlidingWindowFeature
 
 from pyannote.generators.batch import batchify
 from pyannote.generators.fragment import random_segment
 from pyannote.generators.fragment import random_subsegment
+from pyannote.generators.fragment import SlidingSegments
 
 
 class LabelingTaskGenerator(object):
@@ -64,10 +68,13 @@ class LabelingTaskGenerator(object):
         Number of prefetching background generators. Defaults to 1.
         Each generator will prefetch enough batches to cover a whole epoch.
         Set `parallel` to 0 to not use background generators.
+    exhaustive : bool, optional
+        Ensure training files are covered exhaustively (useful in case of
+        non-uniform and unbalanced label distribution).
     """
 
     def __init__(self, precomputed, duration=3.2, batch_size=32,
-                 per_epoch=3600, parallel=1):
+                 per_epoch=3600, parallel=1, exhaustive=False):
 
         super(LabelingTaskGenerator, self).__init__()
 
@@ -76,6 +83,7 @@ class LabelingTaskGenerator(object):
         self.batch_size = batch_size
         self.per_epoch = per_epoch
         self.parallel = parallel
+        self.exhaustive = exhaustive
 
     def initialize(self, protocol, subset='train'):
         """Gather the following information about the training subset:
@@ -150,8 +158,14 @@ class LabelingTaskGenerator(object):
         It should be overriden by subclasses."""
         return Y
 
-    def generator(self):
-        """Sample generator
+    def samples(self):
+        if self.exhaustive:
+            return self.random_samples()
+        else:
+            return self.sliding_samples()
+
+    def random_samples(self):
+        """Random samples
 
         Returns
         -------
@@ -187,6 +201,45 @@ class LabelingTaskGenerator(object):
 
             yield {'X': X, 'y': np.squeeze(y)}
 
+    def sliding_samples(self):
+
+        uris = list(self.data_)
+        durations = np.array([self.data_[uri]['duration'] for uri in uris])
+        probabilities = durations / np.sum(durations)
+
+        sliding_segments = SlidingSegments(duration=self.duration,
+                                           step=self.duration,
+                                           source='annotated')
+
+        while True:
+
+            random.shuffle(uris)
+
+            # loop on all files
+            for uri in uris:
+                datum = self.data_[uri]
+
+                # make a copy of current file
+                current_file = dict(datum['current_file'])
+
+                # randomly shift 'annotated' segments start time so that
+                # we avoid generating exactly the same subsequence twice
+                annotated = Timeline(
+                    [Segment(s.start + random.random() * self.duration,
+                             s.end) for s in get_annotated(current_file)])
+                current_file['annotated'] = annotated
+
+                for sequence in sliding_segments.from_file(current_file):
+
+                    X = self.precomputed.crop(current_file,
+                                              sequence, mode='center',
+                                              fixed=self.duration)
+
+                    y = datum['y'].crop(sequence, mode='center',
+                                        fixed=self.duration)
+
+                    yield {'X': X, 'y': np.squeeze(y)}
+
     @property
     def signature(self):
         """Generator signature"""
@@ -214,11 +267,11 @@ class LabelingTaskGenerator(object):
             for _ in range(self.parallel):
 
                 # initialize one sample generator
-                generator = self.generator()
+                samples = self.samples()
 
                 # batchify it and make sure at least
                 # `batches_per_epoch` batches are prefetched.
-                batches = batchify(generator, self.signature,
+                batches = batchify(samples, self.signature,
                                    batch_size=self.batch_size,
                                    prefetch=batches_per_epoch)
 
@@ -227,10 +280,10 @@ class LabelingTaskGenerator(object):
         else:
 
             # initialize one sample generator
-            generator = self.generator()
+            samples = self.samples()
 
             # batchify it without prefetching
-            batches = batchify(generator, self.signature,
+            batches = batchify(samples, self.signature,
                                batch_size=self.batch_size, prefetch=0)
 
             # add it to the list of generators
@@ -264,15 +317,19 @@ class LabelingTask(object):
         Number of prefetching background generators. Defaults to 1.
         Each generator will prefetch enough batches to cover a whole epoch.
         Set `parallel` to 0 to not use background generators.
+    exhaustive : bool, optional
+        Ensure training files are covered exhaustively (useful in case of
+        non-uniform and unbalanced label distribution).
     """
 
     def __init__(self, duration=3.2, batch_size=32, per_epoch=3600,
-                 parallel=1):
+                 parallel=1, exhaustive=False):
         super(LabelingTask, self).__init__()
         self.duration = duration
         self.batch_size = batch_size
         self.per_epoch = per_epoch
         self.parallel = parallel
+        self.exhaustive = exhaustive
 
     def get_batch_generator(self, precomputed):
         """This method should be overriden by subclass
@@ -287,7 +344,8 @@ class LabelingTask(object):
         """
         return LabelingTaskGenerator(
             precomputed, duration=self.duration, per_epoch=self.per_epoch,
-            batch_size=self.batch_size, parallel=self.parallel)
+            batch_size=self.batch_size, parallel=self.parallel,
+            exhaustive=self.exhaustive)
 
     @property
     def n_classes(self):
