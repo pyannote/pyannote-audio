@@ -139,7 +139,10 @@ def from_numpy(y, precomputed, labels=None):
 
     if len(y.shape) < 2:
         N, = y.shape
-        K = np.max(y)
+        if labels is not None:
+            K = len(labels)
+        else:
+            K = np.max(y)
 
         y_ = np.zeros((N, K), dtype=np.int8)
         for t, k in enumerate(y):
