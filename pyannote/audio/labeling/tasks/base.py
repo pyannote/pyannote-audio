@@ -388,15 +388,15 @@ class LabelingTask(object):
             Trained model.
         """
 
-        models = self.fit_iter(model, feature_extraction,
-                               protocol, log_dir=log_dir,
-                               subset=subset, epochs=epochs,
-                               restart=restart, gpu=gpu)
+        iterations = self.fit_iter(model, feature_extraction,
+                                   protocol, log_dir=log_dir,
+                                   subset=subset, epochs=epochs,
+                                   restart=restart, gpu=gpu)
 
-        for current_epoch, current_model in models:
+        for iteration in iterations:
             pass
 
-        return current_model
+        return iteration['model']
 
     def fit_iter(self, model, feature_extraction, protocol,
             log_dir=None, subset='train', epochs=1000,
@@ -405,10 +405,10 @@ class LabelingTask(object):
 
         Yields
         ------
-        current_epoch : int
-            Current epoch.
-        current_model : nn.Module
-            Current model
+        iteration : dict
+            'epoch': <int>
+            'model': <nn.Module>
+            'loss': <float>
         """
 
         if log_dir is None and restart > 0:
@@ -429,11 +429,11 @@ class LabelingTask(object):
             writer = tensorboardX.SummaryWriter(
                 log_dir=log_dir)
 
-        batch_generator = self.get_batch_generator(feature_extraction)
-        batches = batch_generator(protocol, subset=subset)
+        self.batch_generator_ = self.get_batch_generator(feature_extraction)
+        batches = self.batch_generator_(protocol, subset=subset)
         batch = next(batches)
 
-        batches_per_epoch = batch_generator.batches_per_epoch
+        batches_per_epoch = self.batch_generator_.batches_per_epoch
 
         if restart > 0:
             weights_pt = checkpoint.WEIGHTS_PT.format(
@@ -539,4 +539,4 @@ class LabelingTask(object):
             if log:
                 checkpoint.on_epoch_end(epoch, model, optimizer)
 
-            yield epoch, model
+            yield {'epoch': epoch, 'model': model, 'loss': loss}
