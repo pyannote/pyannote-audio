@@ -71,7 +71,7 @@ class Resegmentation(LabelingTask):
 
     def __init__(self, precomputed, epochs=10, rnn='LSTM', recurrent=[16, ],
                  bidirectional=True, linear=[16, ], **kwargs):
-        super(Resegmentation, self).__init__(**kwargs)
+        super(Resegmentation, self).__init__(exhaustive=True, **kwargs)
         self.precomputed = precomputed
         self.epochs = epochs
 
@@ -113,9 +113,10 @@ class Resegmentation(LabelingTask):
             step=.25*self.duration, batch_size=self.batch_size,
             source='audio', gpu=gpu)
 
-        scores = sequence_labeling.apply(current_file)
-        y = np.argmax(scores.data, axis=1)
-        return from_numpy(y, self.precomputed)
+        self.scores_ = sequence_labeling.apply(current_file)
+        self.y_ = np.argmax(self.scores_.data, axis=1)
+        return from_numpy(self.y_, self.precomputed,
+                          labels=self.batch_generator_.labels)
 
     def apply_iter(self, current_file, hypothesis,
                    partial=True, gpu=False,
@@ -143,15 +144,17 @@ class Resegmentation(LabelingTask):
             uri = get_unique_identifier(current_file)
             log_dir = 'f{log_dir}/{uri}'
 
-        for epoch, model in self.fit_iter(model, self.precomputed, protocol,
-                                          log_dir=log_dir, epochs=self.epochs,
-                                          gpu=gpu):
+        for iteration in self.fit_iter(model, self.precomputed, protocol,
+                                       log_dir=log_dir, epochs=self.epochs,
+                                       gpu=gpu):
             if partial:
-                hypothesis = self.get_hypothesis(model, current_file, gpu=gpu)
+                hypothesis = self.get_hypothesis(iteration['model'],
+                                                 current_file, gpu=gpu)
                 yield hypothesis
 
         if not partial:
-            hypothesis = self.get_hypothesis(model, current_file, gpu=gpu)
+            hypothesis = self.get_hypothesis(iteration['model'], current_file,
+                                             gpu=gpu)
 
         yield hypothesis
 
