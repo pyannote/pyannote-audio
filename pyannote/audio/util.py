@@ -28,6 +28,7 @@
 
 import os
 import errno
+import collections
 import numpy as np
 from pyannote.core import Segment
 from pyannote.core import Annotation
@@ -173,3 +174,78 @@ def from_numpy(y, precomputed, labels=None):
     return annotation
 
 
+class DavisKingScheduler(object):
+    """Automatic Learning Rate Scheduling That Really Works
+
+    http://blog.dlib.net/2018/02/automatic-learning-rate-scheduling-that.html
+
+    Parameters
+    ----------
+    optimizer : Optimizer
+        Wrapped optimizer.
+    factor : float, optional
+        Factor by which the learning rate will be reduced.
+        new_lr = old_lr * factor. Defaults to 0.5
+    patience : int, optional
+        Number of batches with no improvement after which learning rate will
+        be reduced. Defaults to 1000.
+
+    Usage
+    -----
+    >>> optimizer = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9)
+    >>> scheduler = DavisKingScheduler(optimizer)
+    >>> for mini_batch in batches:
+    ...     mini_loss = train(mini_batch, optimizer)
+    ...     scheduler.step(mini_loss)
+    """
+
+    def __init__(self, optimizer, factor=0.5, patience=1000):
+
+        super(DavisKingScheduler, self).__init__()
+
+        if factor >= 1.0:
+            raise ValueError('Factor should be < 1.0.')
+        self.factor = factor
+
+        self.optimizer = optimizer
+
+        self.patience = patience
+
+        self.lr_ = [float(grp['lr']) for grp in self.optimizer.param_groups]
+        self.losses_ = collections.deque([], maxlen=self.patience + 1)
+
+    @property
+    def lr(self):
+        return tuple(self.lr_)
+
+    def step(self, loss):
+
+        from dlib import count_steps_without_decrease
+        from dlib import count_steps_without_decrease_robust
+        from dlib import probability_that_sequence_is_increasing
+
+        self.losses_.append(loss)
+
+        count = count_steps_without_decrease(self.losses_)
+        count_robust = count_steps_without_decrease_robust(self.losses_)
+
+        if len(self.losses_) > max(10, .1 * self.patience):
+            increasing = probability_that_sequence_is_increasing(self.losses_)
+        else:
+            increasing = np.NAN
+
+        if count > self.patience and count_robust > self.patience:
+            self._reduce_lr()
+            self.losses_.clear()
+
+        return {'steps_without_decrease': count,
+                'steps_without_decrease_robust': count_robust,
+                'increasing_probability': increasing}
+
+    def _reduce_lr(self):
+        self.lr_ = []
+        for i, param_group in enumerate(self.optimizer.param_groups):
+            old_lr = float(param_group['lr'])
+            new_lr = old_lr * self.factor
+            param_group['lr'] = new_lr
+            self.lr_.append(new_lr)

@@ -55,6 +55,7 @@ setup(
         'sortedcontainers >= 1.5.9',
         'sortedcollections >= 0.5.3',
         'tensorboardX >= 1.1',
+        'dlib == 19.10.0',
     ],
     entry_points = {
         'console_scripts': [
