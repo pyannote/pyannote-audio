@@ -528,7 +528,7 @@ class LabelingTask(object):
 
             if log:
                 loss_avg /= batches_per_epoch
-                writer.add_scalar('train/loss/epoch', loss_avg,
+                writer.add_scalar('train/loss', loss_avg,
                                   global_step=epoch)
                 writer.add_scalar('train/scheduler/lr', scheduler.lr[0],
                                   global_step=epoch)
