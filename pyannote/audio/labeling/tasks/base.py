@@ -30,7 +30,7 @@ import torch
 import random
 import numpy as np
 from tqdm import tqdm
-from torch.optim import Adam
+from torch.optim import SGD
 from torch.autograd import Variable
 from pyannote.audio.checkpoint import Checkpoint
 from pyannote.metrics.binary_classification import det_curve
@@ -46,6 +46,8 @@ from pyannote.generators.batch import batchify
 from pyannote.generators.fragment import random_segment
 from pyannote.generators.fragment import random_subsegment
 from pyannote.generators.fragment import SlidingSegments
+
+from pyannote.audio.util import DavisKingScheduler
 
 
 class LabelingTaskGenerator(object):
@@ -443,7 +445,8 @@ class LabelingTask(object):
         if gpu:
             model = model.cuda()
 
-        optimizer = Adam(model.parameters())
+        optimizer = SGD(model.parameters(), lr=0.1, momentum=0.9)
+
         if restart > 0:
             optimizer_pt = checkpoint.OPTIMIZER_PT.format(log_dir=log_dir,
                                                     epoch=restart)
@@ -453,6 +456,9 @@ class LabelingTask(object):
                     for k, v in state.items():
                         if torch.is_tensor(v):
                             state[k] = v.cuda()
+
+        scheduler = DavisKingScheduler(optimizer, factor=0.5,
+                                       patience=20 * batches_per_epoch)
 
         loss_func = model.get_loss()
 
@@ -465,8 +471,7 @@ class LabelingTask(object):
             log_epoch = (epoch < 10) or (epoch % 5 == 0)
             log_epoch = log and log_epoch
 
-            if log:
-                loss_avg = 0.
+            loss_avg = 0.
 
             if log_epoch:
                 log_y_pred = []
@@ -510,20 +515,26 @@ class LabelingTask(object):
                 loss = torch.mean(losses)
 
                 # log loss
-                if log:
-                    if gpu:
-                        loss_ = float(loss.data.cpu().numpy())
-                    else:
-                        loss_ = float(loss.data.numpy())
-                    loss_avg += loss_
+                if gpu:
+                    loss_ = float(loss.data.cpu().numpy())
+                else:
+                    loss_ = float(loss.data.numpy())
+                loss_avg += loss_
 
                 loss.backward()
                 optimizer.step()
 
+                scheduler_state = scheduler.step(loss_)
+
             if log:
                 loss_avg /= batches_per_epoch
-                writer.add_scalar('train/loss', loss_avg,
+                writer.add_scalar('train/loss/epoch', loss_avg,
                                   global_step=epoch)
+                writer.add_scalar('train/scheduler/lr', scheduler.lr[0],
+                                  global_step=epoch)
+                for name, value in scheduler_state.items():
+                    writer.add_scalar(f'train/scheduler/{name}', value,
+                                      global_step=epoch)
 
             if log_epoch:
                 log_y_pred = np.hstack(log_y_pred)
