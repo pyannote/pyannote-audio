@@ -458,7 +458,7 @@ class LabelingTask(object):
                             state[k] = v.cuda()
 
         scheduler = DavisKingScheduler(optimizer, factor=0.5,
-                                       patience=20 * batches_per_epoch)
+                                       patience=10 * batches_per_epoch)
 
         loss_func = model.get_loss()
 
