@@ -83,7 +83,8 @@ class TripletLoss(object):
 
     def __init__(self, duration=3.2,
                  metric='cosine', margin=0.2, clamp='positive',
-                 sampling='all', per_label=3, per_fold=None, parallel=1):
+                 sampling='all', per_label=3, per_fold=None, parallel=1,
+                 optimizer='rmsprop'):
 
         super(TripletLoss, self).__init__()
 
