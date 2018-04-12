@@ -33,10 +33,14 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 from pyannote.audio.generators.speaker import SpeechSegmentGenerator
 from pyannote.audio.checkpoint import Checkpoint
+from torch.optim import SGD
 from torch.optim import Adam
+from torch.optim import RMSprop
 from pyannote.audio.embedding.utils import to_condensed, pdist, l2_normalize
 from scipy.spatial.distance import squareform
 from pyannote.metrics.binary_classification import det_curve
+
+from pyannote.audio.util import DavisKingScheduler
 
 
 class TripletLoss(object):
@@ -72,6 +76,9 @@ class TripletLoss(object):
         Number of prefetching background generators. Defaults to 1.
         Each generator will prefetch enough batches to cover a whole epoch.
         Set `parallel` to 0 to not use background generators.
+    optimizer : {'sgd', 'rmsprop', 'adam'}
+        Defaults to 'rmsprop'.
+
     """
 
     def __init__(self, duration=3.2,
@@ -99,6 +106,7 @@ class TripletLoss(object):
         self.per_label = per_label
         self.duration = duration
         self.parallel = parallel
+        self.optimizer = optimizer
 
     @property
     def max_distance(self):
@@ -353,7 +361,7 @@ class TripletLoss(object):
         writer = tensorboardX.SummaryWriter(log_dir=log_dir)
 
         checkpoint = Checkpoint(log_dir=log_dir,
-                                      restart=restart > 0)
+                                restart=restart > 0)
 
         batch_generator = self.get_batch_generator(feature_extraction)
         batches = batch_generator(protocol, subset=subset)
@@ -369,9 +377,18 @@ class TripletLoss(object):
         if gpu:
             model = model.cuda()
 
+        if self.optimizer == 'sgd':
+            optimizer = SGD(model.parameters(), lr=1e-2, momentum=0.9,
+                            nesterov=True)
+
+        elif self.optimizer == 'adam':
+            optimizer = Adam(model.parameters())
+
+        elif self.optimizer == 'rmsprop':
+            optimizer = RMSprop(model.parameters())
+
         model.internal = False
 
-        optimizer = Adam(model.parameters())
         if restart > 0:
             optimizer_pt = checkpoint.OPTIMIZER_PT.format(
                 log_dir=log_dir, epoch=restart)
@@ -381,6 +398,10 @@ class TripletLoss(object):
                     for k, v in state.items():
                         if torch.is_tensor(v):
                             state[k] = v.cuda()
+
+        if self.optimizer == 'sgd':
+            scheduler = DavisKingScheduler(optimizer, factor=0.5,
+                                           patience=100 * batches_per_epoch)
 
         epoch = restart if restart > 0 else -1
         while True:
@@ -397,8 +418,8 @@ class TripletLoss(object):
                 log_negative = []
                 log_delta = []
                 log_norm = []
-                log_embedding_X = []
-                log_embedding_y = []
+                # log_embedding_X = []
+                # log_embedding_y = []
 
             desc = 'Epoch #{0}'.format(epoch)
             for i in tqdm(range(batches_per_epoch), desc=desc):
@@ -429,9 +450,9 @@ class TripletLoss(object):
                     norm_npy = np.linalg.norm(fX_npy, axis=1)
                     log_norm.append(norm_npy)
 
-                    # log l2_normalized embeddings
-                    log_embedding_X.append(l2_normalize(fX_npy))
-                    log_embedding_y.append(batch['y'])
+                    # # log l2_normalized embeddings
+                    # log_embedding_X.append(l2_normalize(fX_npy))
+                    # log_embedding_y.append(batch['y'])
 
                 batch['fX'] = fX
                 batch = self.aggregate(batch)
@@ -475,9 +496,19 @@ class TripletLoss(object):
                 loss.backward()
                 optimizer.step()
 
+                if self.optimizer == 'sgd':
+                    scheduler_state = scheduler.step(loss_)
+
             tloss_avg /= batches_per_epoch
             writer.add_scalar('train/triplet/loss', tloss_avg,
                               global_step=epoch)
+
+            if self.optimizer == 'sgd':
+                writer.add_scalar('train/scheduler/lr', scheduler.lr[0],
+                                  global_step=epoch)
+                for name, value in scheduler_state.items():
+                    writer.add_scalar(f'train/scheduler/{name}', value,
+                                      global_step=epoch)
 
             if log_epoch:
 
@@ -518,11 +549,19 @@ class TripletLoss(object):
                 except ValueError as e:
                     pass
 
-                log_embedding_X = np.vstack(log_embedding_X)
-                log_embedding_y = np.hstack(log_embedding_y)
-                writer.add_embedding(torch.from_numpy(log_embedding_X),
-                                     metadata=log_embedding_y,
-                                     global_step=epoch,
-                                     tag='train/embedding/samples')
+                # log_embedding_X = np.vstack(log_embedding_X)
+                # log_embedding_y = np.hstack(log_embedding_y)
+                # writer.add_embedding(torch.from_numpy(log_embedding_X),
+                #                      metadata=log_embedding_y,
+                #                      global_step=epoch,
+                #                      tag='train/embedding/samples')
 
             checkpoint.on_epoch_end(epoch, model, optimizer)
+
+            if self.optimizer != 'sgd':
+                continue
+
+            if scheduler_state['increasing_probability'] > 0.99:
+                # TODO. implement backtracking
+                print('TODO: implement backtracking')
+                pass
