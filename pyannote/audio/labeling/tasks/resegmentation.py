@@ -69,6 +69,8 @@ class ResegmentationGenerator(LabelingTaskGenerator):
 
 class Resegmentation(LabelingTask):
 
+    # TODO -- ensemble of last K epochs
+
     def __init__(self, precomputed, epochs=10, rnn='LSTM', recurrent=[16, ],
                  bidirectional=True, linear=[16, ], **kwargs):
         super(Resegmentation, self).__init__(exhaustive=True, **kwargs)
