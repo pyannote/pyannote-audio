@@ -31,6 +31,8 @@ import random
 import numpy as np
 from tqdm import tqdm
 from torch.optim import SGD
+from torch.optim import Adam
+from torch.optim import RMSprop
 from torch.autograd import Variable
 from pyannote.audio.checkpoint import Checkpoint
 from pyannote.metrics.binary_classification import det_curve
@@ -326,16 +328,19 @@ class LabelingTask(object):
     exhaustive : bool, optional
         Ensure training files are covered exhaustively (useful in case of
         non-uniform and unbalanced label distribution).
+    optimizer : {'sgd', 'rmsprop', 'adam'}
+        Defaults to 'rmsprop'.
     """
 
     def __init__(self, duration=3.2, batch_size=32, per_epoch=3600,
-                 parallel=1, exhaustive=False):
+                 parallel=1, optimizer='rmsprop', exhaustive=False):
         super(LabelingTask, self).__init__()
         self.duration = duration
         self.batch_size = batch_size
         self.per_epoch = per_epoch
         self.parallel = parallel
         self.exhaustive = exhaustive
+        self.optimizer = optimizer
 
     def get_batch_generator(self, precomputed):
         """This method should be overriden by subclass
@@ -445,7 +450,15 @@ class LabelingTask(object):
         if gpu:
             model = model.cuda()
 
-        optimizer = SGD(model.parameters(), lr=0.1, momentum=0.9)
+        if self.optimizer == 'sgd':
+            optimizer = SGD(model.parameters(), lr=1e-2, momentum=0.9,
+                            nesterov=True)
+
+        elif self.optimizer == 'adam':
+            optimizer = Adam(model.parameters())
+
+        elif self.optimizer == 'rmsprop':
+            optimizer = RMSprop(model.parameters())
 
         if restart > 0:
             optimizer_pt = checkpoint.OPTIMIZER_PT.format(log_dir=log_dir,
@@ -457,8 +470,9 @@ class LabelingTask(object):
                         if torch.is_tensor(v):
                             state[k] = v.cuda()
 
-        scheduler = DavisKingScheduler(optimizer, factor=0.5,
-                                       patience=10 * batches_per_epoch)
+        if self.optimizer == 'sgd':
+            scheduler = DavisKingScheduler(optimizer, factor=0.5,
+                                           patience=100 * batches_per_epoch)
 
         loss_func = model.get_loss()
 
@@ -524,17 +538,20 @@ class LabelingTask(object):
                 loss.backward()
                 optimizer.step()
 
-                scheduler_state = scheduler.step(loss_)
+                if self.optimizer == 'sgd':
+                    scheduler_state = scheduler.step(loss_)
 
             if log:
                 loss_avg /= batches_per_epoch
                 writer.add_scalar('train/loss', loss_avg,
                                   global_step=epoch)
-                writer.add_scalar('train/scheduler/lr', scheduler.lr[0],
-                                  global_step=epoch)
-                for name, value in scheduler_state.items():
-                    writer.add_scalar(f'train/scheduler/{name}', value,
+
+                if self.optimizer == 'sgd':
+                    writer.add_scalar('train/scheduler/lr', scheduler.lr[0],
                                       global_step=epoch)
+                    for name, value in scheduler_state.items():
+                        writer.add_scalar(f'train/scheduler/{name}', value,
+                                          global_step=epoch)
 
             if log_epoch:
                 log_y_pred = np.hstack(log_y_pred)

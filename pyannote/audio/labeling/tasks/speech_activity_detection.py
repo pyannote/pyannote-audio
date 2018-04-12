@@ -55,6 +55,7 @@ class SpeechActivityDetectionGenerator(LabelingTaskGenerator):
         Each generator will prefetch enough batches to cover a whole epoch.
         Set `parallel` to 0 to not use background generators.
 
+
     Usage
     -----
     # precomputed features
@@ -129,6 +130,8 @@ class SpeechActivityDetection(LabelingTask):
         Number of prefetching background generators. Defaults to 1.
         Each generator will prefetch enough batches to cover a whole epoch.
         Set `parallel` to 0 to not use background generators.
+    optimizer : {'sgd', 'rmsprop', 'adam'}
+        Defaults to 'rmsprop'.
 
     Usage
     -----
