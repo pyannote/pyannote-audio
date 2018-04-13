@@ -65,15 +65,22 @@ class Checkpoint(object):
             weights_dir = self.WEIGHTS_DIR.format(log_dir=self.log_dir)
             os.makedirs(weights_dir)
 
+    def weights_dir(self):
+        """Return path to weights directory"""
+        return self.WEIGHTS_DIR.format(log_dir=self.log_dir)
+
+    def weights_pt(self, epoch):
+        """Return path to weights file"""
+        return self.WEIGHTS_PT.format(log_dir=self.log_dir, epoch=epoch)
+
+    def optimizer_pt(self, epoch):
+        """Return path to optimizer file"""
+        return self.OPTIMIZER_PT.format(log_dir=self.log_dir, epoch=epoch)
+
     def on_epoch_end(self, epoch, model, optimizer, extra=None):
 
-        weights_pt = self.WEIGHTS_PT.format(
-            log_dir=self.log_dir, epoch=epoch)
-        torch.save(model.state_dict(), weights_pt)
-
-        optimizer_pt = self.OPTIMIZER_PT.format(
-            log_dir=self.log_dir, epoch=epoch)
-        torch.save(optimizer.state_dict(), optimizer_pt)
+        torch.save(model.state_dict(), self.weights_pt(epoch))
+        torch.save(optimizer.state_dict(), self.optimizer_pt(epoch))
 
         if extra is not None:
             for extra_pt, extra_module in extra.items():
