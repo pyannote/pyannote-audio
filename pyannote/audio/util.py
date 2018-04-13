@@ -189,6 +189,8 @@ class DavisKingScheduler(object):
     patience : int, optional
         Number of batches with no improvement after which learning rate will
         be reduced. Defaults to 1000.
+    active : bool, optional
+        Set to False to not update learning rate.
 
     Usage
     -----
@@ -199,7 +201,7 @@ class DavisKingScheduler(object):
     ...     scheduler.step(mini_loss)
     """
 
-    def __init__(self, optimizer, factor=0.5, patience=1000):
+    def __init__(self, optimizer, factor=0.5, patience=1000, active=True):
 
         super(DavisKingScheduler, self).__init__()
 
@@ -208,8 +210,8 @@ class DavisKingScheduler(object):
         self.factor = factor
 
         self.optimizer = optimizer
-
         self.patience = patience
+        self.active = active
 
         self.lr_ = [float(grp['lr']) for grp in self.optimizer.param_groups]
         self.losses_ = collections.deque([], maxlen=self.patience + 1)
@@ -229,12 +231,12 @@ class DavisKingScheduler(object):
         count = count_steps_without_decrease(self.losses_)
         count_robust = count_steps_without_decrease_robust(self.losses_)
 
-        if len(self.losses_) > max(10, .1 * self.patience):
+        if len(self.losses_) > 2:
             increasing = probability_that_sequence_is_increasing(self.losses_)
         else:
             increasing = np.NAN
 
-        if count > self.patience and count_robust > self.patience:
+        if self.active and count > self.patience and count_robust > self.patience:
             self._reduce_lr()
             self.losses_.clear()
 
