@@ -387,6 +387,11 @@ class TripletLoss(object):
             patience=100 * self.batches_per_epoch_,
             active=self.optimizer == 'sgd')
 
+    def to_numpy(self, variable):
+        if self.gpu_:
+            return variable.data.cpu().numpy()
+        return variable.data.numpy()
+
     def fit(self, model, feature_extraction, protocol, log_dir, subset='train',
             epochs=1000, restart=0, gpu=False):
         """Train model
@@ -409,6 +414,7 @@ class TripletLoss(object):
         gpu : bool, optional
         """
 
+        # initialize tensorboard support
         import tensorboardX
         writer = tensorboardX.SummaryWriter(log_dir=log_dir)
 
@@ -426,62 +432,60 @@ class TripletLoss(object):
         self.backtrack(restart)
 
         epoch = restart if restart > 0 else -1
-        iteration = 0
-        backtrack_to = restart
+        backtrack, iteration = False, 0
 
         while True:
-            epoch += 1
+            # keep track of actual number of iterations
             iteration += 1
+
+            # keep track of current epoch
+            # due to backtracking, this may lag a bit behind `iteration`
+            epoch += 1
             if epoch > epochs:
                 break
 
+            # log backtracking
             writer.add_scalar('train/scheduler/backtrack', epoch,
                               global_step=iteration)
 
             tloss_avg = 0.
 
-            log_epoch = (epoch < 10) or (epoch % 5 == 0)
+            # detailed logging to Tensorboard
+            # for first 10 epochs then every other 5 epochs
+            detailed_log = (epoch < 10) or (epoch % 5 == 0)
 
-            if log_epoch:
+            if detailed_log:
                 log_positive = []
                 log_negative = []
                 log_delta = []
                 log_norm = []
-                # log_embedding_X = []
-                # log_embedding_y = []
 
             desc = 'Epoch #{0}'.format(epoch)
             for i in tqdm(range(self.batches_per_epoch_), desc=desc):
 
+                # zero gradients
                 self.model_.zero_grad()
 
+                # process next batch
                 batch = next(batches)
 
+                # update batch['X'] to be usable by torch
                 X = batch['X']
                 if not getattr(self.model_, 'batch_first', True):
                     X = np.rollaxis(X, 0, 2)
                 X = np.array(X, dtype=np.float32)
                 X = Variable(torch.from_numpy(X))
-
                 if gpu:
                     X = X.cuda()
                 batch['X'] = X
 
+                # forward pass
                 fX = self.model_(batch['X'])
 
-                if log_epoch:
-                    if gpu:
-                        fX_npy = fX.data.cpu().numpy()
-                    else:
-                        fX_npy = fX.data.numpy()
-
-                    # log embedding norms
-                    norm_npy = np.linalg.norm(fX_npy, axis=1)
+                # log embedding norms
+                if detailed_log:
+                    norm_npy = np.linalg.norm(self.to_numpy(fX), axis=1)
                     log_norm.append(norm_npy)
-
-                    # # log l2_normalized embeddings
-                    # log_embedding_X.append(l2_normalize(fX_npy))
-                    # log_embedding_y.append(batch['y'])
 
                 batch['fX'] = fX
                 batch = self.aggregate(batch)
@@ -496,49 +500,56 @@ class TripletLoss(object):
                 triplets = getattr(self, 'batch_{0}'.format(self.sampling))
                 anchors, positives, negatives = triplets(y, distances)
 
-                # compute triplet loss
+                # compute loss for each triplet
                 losses, deltas, _, _ = self.triplet_loss(
                     distances, anchors, positives, negatives,
                     return_delta=True)
-
+                # average over all triplets
                 loss = torch.mean(losses)
 
-                if log_epoch:
-                    if gpu:
-                        pdist_npy = distances.data.cpu().numpy()
-                        delta_npy = deltas.data.cpu().numpy()
-                    else:
-                        pdist_npy = distances.data.numpy()
-                        delta_npy = deltas.data.numpy()
+                if detailed_log:
+                    pdist_npy = self.to_numpy(distances)
+                    delta_npy = self.to_numpy(deltas)
                     same_speaker = pdist(y.reshape((-1, 1)), metric='equal')
                     log_positive.append(pdist_npy[np.where(same_speaker)])
                     log_negative.append(pdist_npy[np.where(~same_speaker)])
                     log_delta.append(delta_npy)
 
-                # log loss
-                if gpu:
-                    loss_ = float(loss.data.cpu().numpy())
-                else:
-                    loss_ = float(loss.data.numpy())
+                # accumulate loss over the whole epoch
+                loss_ = float(self.to_numpy(loss))
                 tloss_avg += loss_
 
+                # back-propagation
                 loss.backward()
                 self.optimizer_.step()
 
+                # send loss of current batch to scheduler
+                # and receive information about loss trend
                 scheduler_state = self.scheduler_.step(loss_)
 
-            tloss_avg /= self.batches_per_epoch_
-            writer.add_scalar('train/triplet/loss', tloss_avg,
+                # remember to backtrack after the epoch has completed
+                # in case it looks like loss is increasing
+                if scheduler_state['increasing_probability'] > 0.99:
+                    backtrack = True
+
+            # log loss to tensorboard
+            writer.add_scalar('train/triplet/loss',
+                              tloss_avg / self.batches_per_epoch_,
                               global_step=epoch)
 
-            writer.add_scalar('train/scheduler/lr', self.scheduler_.lr[0],
+            # log current learning rate to tensorboard
+            writer.add_scalar('train/scheduler/lr',
+                              self.scheduler_.lr[0],
                               global_step=epoch)
+
+            # log loss trend statistics to tensorboard
             for name, value in scheduler_state.items():
-                writer.add_scalar(f'train/scheduler/{name}', value,
-                                  global_step=epoch)
+                writer.add_scalar(f'train/scheduler/{name}',
+                                  value, global_step=epoch)
 
-            if log_epoch:
+            if detailed_log:
 
+                # log intra class vs. inter class distance distributions
                 log_positive = np.hstack(log_positive)
                 log_negative = np.hstack(log_negative)
                 bins = np.linspace(0, self.max_distance, 50)
@@ -552,6 +563,7 @@ class TripletLoss(object):
                 except ValueError as e:
                     pass
 
+                # log same/different experiment on training samples
                 _, _, _, eer = det_curve(
                     np.hstack([np.ones(len(log_positive)),
                                np.zeros(len(log_negative))]),
@@ -559,6 +571,7 @@ class TripletLoss(object):
                     distances=True)
                 writer.add_scalar('train/estimate/eer', eer, global_step=epoch)
 
+                # log raw triplet loss (before max(0, .))
                 log_delta = np.vstack(log_delta)
                 bins = np.linspace(-self.max_distance, self.max_distance, 50)
                 try:
@@ -568,6 +581,7 @@ class TripletLoss(object):
                 except ValueError as e:
                     pass
 
+                # log distribution of embedding norms
                 log_norm = np.hstack(log_norm)
                 try:
                     writer.add_histogram(
@@ -576,21 +590,10 @@ class TripletLoss(object):
                 except ValueError as e:
                     pass
 
-                # log_embedding_X = np.vstack(log_embedding_X)
-                # log_embedding_y = np.hstack(log_embedding_y)
-                # writer.add_embedding(torch.from_numpy(log_embedding_X),
-                #                      metadata=log_embedding_y,
-                #                      global_step=epoch,
-                #                      tag='train/embedding/samples')
-
+            # save model weights (and optimizer state) to disk
             self.checkpoint_.on_epoch_end(epoch, self.model_, self.optimizer_)
 
-            # backtrack if loss is increasing
-            p = scheduler_state['increasing_probability']
-            if p > 0.99:
-                epoch = backtrack_to
-                self.backtrack(epoch)
-
-            # keep track of the last epoch when loss was **not** increasing
-            elif p < 0.01:
-                backtrack_to = epoch
+            # backtrack in case loss has increased
+            if backtrack:
+                backtrack = False
+                self.backtrack(epoch - 1)
