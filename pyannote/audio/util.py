@@ -240,8 +240,8 @@ class DavisKingScheduler(object):
             self._reduce_lr()
             self.losses_.clear()
 
-        return {'steps_without_decrease': count,
-                'steps_without_decrease_robust': count_robust,
+        return {'steps_without_decrease': count / self.patience,
+                'steps_without_decrease_robust': count_robust / self.patience,
                 'increasing_probability': increasing}
 
     def _reduce_lr(self):
