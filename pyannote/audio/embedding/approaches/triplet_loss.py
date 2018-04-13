@@ -336,6 +336,57 @@ class TripletLoss(object):
     def aggregate(self, batch):
         return batch
 
+    def backtrack(self, epoch):
+        """Backtrack to `epoch` state
+
+        This assumes that the following attributes have been set already:
+
+        * checkpoint_
+        * model_
+        * gpu_
+        * batches_per_epoch_
+
+        This will set/update the following hidden attributes:
+
+        * model_
+        * optimizer_
+        * scheduler_
+
+        """
+
+        if epoch > 0:
+            weights_pt = self.checkpoint_.weights_pt(epoch)
+            self.model_.load_state_dict(torch.load(weights_pt))
+
+        if self.gpu_:
+            self.model_ = self.model_.cuda()
+
+        if self.optimizer == 'sgd':
+            self.optimizer_ = SGD(self.model_.parameters(), lr=1e-2,
+                                  momentum=0.9, nesterov=True)
+
+        elif self.optimizer == 'adam':
+            self.optimizer_ = Adam(self.model_.parameters())
+
+        elif self.optimizer == 'rmsprop':
+            self.optimizer_ = RMSprop(self.model_.parameters())
+
+        self.model_.internal = False
+
+        if epoch > 0:
+            optimizer_pt = self.checkpoint_.optimizer_pt(epoch)
+            self.optimizer_.load_state_dict(torch.load(optimizer_pt))
+            if self.gpu_:
+                for state in self.optimizer_.state.values():
+                    for k, v in state.items():
+                        if torch.is_tensor(v):
+                            state[k] = v.cuda()
+
+        self.scheduler_ = DavisKingScheduler(
+            self.optimizer_, factor=0.5,
+            patience=100 * self.batches_per_epoch_,
+            active=self.optimizer == 'sgd')
+
     def fit(self, model, feature_extraction, protocol, log_dir, subset='train',
             epochs=1000, restart=0, gpu=False):
         """Train model
@@ -361,54 +412,31 @@ class TripletLoss(object):
         import tensorboardX
         writer = tensorboardX.SummaryWriter(log_dir=log_dir)
 
-        checkpoint = Checkpoint(log_dir=log_dir,
-                                restart=restart > 0)
+        self.checkpoint_ = Checkpoint(
+            log_dir=log_dir, restart=restart > 0)
+        self.model_ = model
+        self.gpu_ = gpu
 
         batch_generator = self.get_batch_generator(feature_extraction)
         batches = batch_generator(protocol, subset=subset)
         batch = next(batches)
+        self.batches_per_epoch_ = batch_generator.batches_per_epoch
 
-        batches_per_epoch = batch_generator.batches_per_epoch
-
-        if restart > 0:
-            weights_pt = checkpoint.WEIGHTS_PT.format(
-                log_dir=log_dir, epoch=restart)
-            model.load_state_dict(torch.load(weights_pt))
-
-        if gpu:
-            model = model.cuda()
-
-        if self.optimizer == 'sgd':
-            optimizer = SGD(model.parameters(), lr=1e-2, momentum=0.9,
-                            nesterov=True)
-
-        elif self.optimizer == 'adam':
-            optimizer = Adam(model.parameters())
-
-        elif self.optimizer == 'rmsprop':
-            optimizer = RMSprop(model.parameters())
-
-        model.internal = False
-
-        if restart > 0:
-            optimizer_pt = checkpoint.OPTIMIZER_PT.format(
-                log_dir=log_dir, epoch=restart)
-            optimizer.load_state_dict(torch.load(optimizer_pt))
-            if gpu:
-                for state in optimizer.state.values():
-                    for k, v in state.items():
-                        if torch.is_tensor(v):
-                            state[k] = v.cuda()
-
-        if self.optimizer == 'sgd':
-            scheduler = DavisKingScheduler(optimizer, factor=0.5,
-                                           patience=100 * batches_per_epoch)
+        # initialize model, optimizer, and scheduler
+        self.backtrack(restart)
 
         epoch = restart if restart > 0 else -1
+        iteration = 0
+        backtrack_to = restart
+
         while True:
             epoch += 1
+            iteration += 1
             if epoch > epochs:
                 break
+
+            writer.add_scalar('train/scheduler/backtrack', epoch,
+                              global_step=iteration)
 
             tloss_avg = 0.
 
@@ -423,14 +451,14 @@ class TripletLoss(object):
                 # log_embedding_y = []
 
             desc = 'Epoch #{0}'.format(epoch)
-            for i in tqdm(range(batches_per_epoch), desc=desc):
+            for i in tqdm(range(self.batches_per_epoch_), desc=desc):
 
-                model.zero_grad()
+                self.model_.zero_grad()
 
                 batch = next(batches)
 
                 X = batch['X']
-                if not getattr(model, 'batch_first', True):
+                if not getattr(self.model_, 'batch_first', True):
                     X = np.rollaxis(X, 0, 2)
                 X = np.array(X, dtype=np.float32)
                 X = Variable(torch.from_numpy(X))
@@ -439,7 +467,7 @@ class TripletLoss(object):
                     X = X.cuda()
                 batch['X'] = X
 
-                fX = model(batch['X'])
+                fX = self.model_(batch['X'])
 
                 if log_epoch:
                     if gpu:
@@ -495,21 +523,19 @@ class TripletLoss(object):
                 tloss_avg += loss_
 
                 loss.backward()
-                optimizer.step()
+                self.optimizer_.step()
 
-                if self.optimizer == 'sgd':
-                    scheduler_state = scheduler.step(loss_)
+                scheduler_state = self.scheduler_.step(loss_)
 
-            tloss_avg /= batches_per_epoch
+            tloss_avg /= self.batches_per_epoch_
             writer.add_scalar('train/triplet/loss', tloss_avg,
                               global_step=epoch)
 
-            if self.optimizer == 'sgd':
-                writer.add_scalar('train/scheduler/lr', scheduler.lr[0],
+            writer.add_scalar('train/scheduler/lr', self.scheduler_.lr[0],
+                              global_step=epoch)
+            for name, value in scheduler_state.items():
+                writer.add_scalar(f'train/scheduler/{name}', value,
                                   global_step=epoch)
-                for name, value in scheduler_state.items():
-                    writer.add_scalar(f'train/scheduler/{name}', value,
-                                      global_step=epoch)
 
             if log_epoch:
 
@@ -557,12 +583,14 @@ class TripletLoss(object):
                 #                      global_step=epoch,
                 #                      tag='train/embedding/samples')
 
-            checkpoint.on_epoch_end(epoch, model, optimizer)
+            self.checkpoint_.on_epoch_end(epoch, self.model_, self.optimizer_)
 
-            if self.optimizer != 'sgd':
-                continue
+            # backtrack if loss is increasing
+            p = scheduler_state['increasing_probability']
+            if p > 0.99:
+                epoch = backtrack_to
+                self.backtrack(epoch)
 
-            if scheduler_state['increasing_probability'] > 0.99:
-                # TODO. implement backtracking
-                print('TODO: implement backtracking')
-                pass
+            # keep track of the last epoch when loss was **not** increasing
+            elif p < 0.01:
+                backtrack_to = epoch
