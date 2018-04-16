@@ -343,16 +343,19 @@ class LabelingTask(object):
         Set `parallel` to 0 to not use background generators.
     optimizer : {'sgd', 'rmsprop', 'adam'}
         Defaults to 'rmsprop'.
+    learning_rate : float, optional
+        Learning rate. Defaults to 0.01.
     """
 
     def __init__(self, duration=3.2, batch_size=32, per_epoch=3600,
-                 parallel=1, optimizer='rmsprop'):
+                 parallel=1, optimizer='rmsprop', learning_rate=1e-2):
         super(LabelingTask, self).__init__()
         self.duration = duration
         self.batch_size = batch_size
         self.per_epoch = per_epoch
         self.parallel = parallel
         self.optimizer = optimizer
+        self.learning_rate = learning_rate
 
     def get_batch_generator(self, precomputed):
         """This method should be overriden by subclass
@@ -462,14 +465,16 @@ class LabelingTask(object):
             model = model.cuda()
 
         if self.optimizer == 'sgd':
-            optimizer = SGD(model.parameters(), lr=1e-2, momentum=0.9,
-                            nesterov=True)
+            optimizer = SGD(model.parameters(), lr=self.learning_rate,
+                            momentum=0.9, nesterov=True)
 
         elif self.optimizer == 'adam':
-            optimizer = Adam(model.parameters())
+            optimizer = Adam(model.parameters(),
+                             lr=self.learning_rate)
 
         elif self.optimizer == 'rmsprop':
-            optimizer = RMSprop(model.parameters())
+            optimizer = RMSprop(model.parameters(),
+                                lr=self.learning_rate)
 
         if restart > 0:
             optimizer_pt = checkpoint.OPTIMIZER_PT.format(log_dir=log_dir,
