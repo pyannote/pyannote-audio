@@ -383,9 +383,8 @@ class TripletLoss(object):
                             state[k] = v.cuda()
 
         self.scheduler_ = DavisKingScheduler(
-            self.optimizer_, factor=0.5,
-            patience=100 * self.batches_per_epoch_,
-            active=self.optimizer == 'sgd')
+            self.optimizer_, self.batches_per_epoch_, factor=0.5,
+            patience=10, active=self.optimizer == 'sgd')
 
     def to_numpy(self, variable):
         if self.gpu_:

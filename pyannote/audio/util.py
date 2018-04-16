@@ -183,25 +183,29 @@ class DavisKingScheduler(object):
     ----------
     optimizer : Optimizer
         Wrapped optimizer.
+    batches_per_epoch : int
+        Number of batches per epoch.
     factor : float, optional
         Factor by which the learning rate will be reduced.
         new_lr = old_lr * factor. Defaults to 0.5
     patience : int, optional
-        Number of batches with no improvement after which learning rate will
-        be reduced. Defaults to 1000.
+        Number of epochs with no improvement after which learning rate will
+        be reduced. Defaults to 10.
     active : bool, optional
         Set to False to not update learning rate.
 
     Usage
     -----
     >>> optimizer = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9)
-    >>> scheduler = DavisKingScheduler(optimizer)
+    >>> batches_per_epoch = 1000
+    >>> scheduler = DavisKingScheduler(optimizer, batches_per_epoch)
     >>> for mini_batch in batches:
     ...     mini_loss = train(mini_batch, optimizer)
     ...     scheduler.step(mini_loss)
     """
 
-    def __init__(self, optimizer, factor=0.5, patience=1000, active=True):
+    def __init__(self, optimizer, batches_per_epoch, factor=0.5, patience=10,
+                 active=True):
 
         super(DavisKingScheduler, self).__init__()
 
@@ -211,10 +215,12 @@ class DavisKingScheduler(object):
 
         self.optimizer = optimizer
         self.patience = patience
+        self.batches_per_epoch = batches_per_epoch
         self.active = active
 
         self.lr_ = [float(grp['lr']) for grp in self.optimizer.param_groups]
-        self.losses_ = collections.deque([], maxlen=self.patience + 1)
+        self.losses_ = collections.deque(
+            [], maxlen=self.patience * self.batches_per_epoch)
 
     @property
     def lr(self):
@@ -232,7 +238,10 @@ class DavisKingScheduler(object):
         count_robust = count_steps_without_decrease_robust(self.losses_)
 
         if len(self.losses_) > 2:
-            increasing = probability_that_sequence_is_increasing(self.losses_)
+            # only consider batches from last epoch
+            # https://github.com/davisking/dlib/issues/1257
+            losses = list(self.losses_)[-self.batches_per_epoch:]
+            increasing = probability_that_sequence_is_increasing(losses)
         else:
             increasing = np.NAN
 
@@ -240,9 +249,12 @@ class DavisKingScheduler(object):
             self._reduce_lr()
             self.losses_.clear()
 
-        return {'steps_without_decrease': count / self.patience,
-                'steps_without_decrease_robust': count_robust / self.patience,
-                'increasing_probability': increasing}
+        return {
+            'steps_without_decrease': \
+                count / (self.patience * self.batches_per_epoch),
+            'steps_without_decrease_robust': \
+                count_robust / (self.patience * self.batches_per_epoch),
+            'increasing_probability': increasing}
 
     def _reduce_lr(self):
         self.lr_ = []
