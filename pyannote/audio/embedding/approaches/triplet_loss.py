@@ -527,6 +527,15 @@ class TripletLoss(object):
                 # and receive information about loss trend
                 scheduler_state = self.scheduler_.step(loss_)
 
+                # log loss trend statistics to tensorboard
+                for name, value in scheduler_state.items():
+                    writer.add_scalar(
+                        f'train/scheduler/{name}', value,
+                        global_step=epoch * self.batches_per_epoch_ + i)
+                writer.add_scalar(
+                    f'train/scheduler/loss', loss_,
+                    global_step=epoch * self.batches_per_epoch_ + i)
+
                 # remember to backtrack after the epoch has completed
                 # in case it looks like loss is increasing
                 if scheduler_state['increasing_probability'] > 0.99:
@@ -542,10 +551,10 @@ class TripletLoss(object):
                               self.scheduler_.lr[0],
                               global_step=epoch)
 
-            # log loss trend statistics to tensorboard
-            for name, value in scheduler_state.items():
-                writer.add_scalar(f'train/scheduler/{name}',
-                                  value, global_step=epoch)
+            # # log loss trend statistics to tensorboard
+            # for name, value in scheduler_state.items():
+            #     writer.add_scalar(f'train/scheduler/{name}',
+            #                       value, global_step=epoch)
 
             if detailed_log:
 
