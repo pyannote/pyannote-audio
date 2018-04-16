@@ -325,21 +325,17 @@ class LabelingTask(object):
         Number of prefetching background generators. Defaults to 1.
         Each generator will prefetch enough batches to cover a whole epoch.
         Set `parallel` to 0 to not use background generators.
-    exhaustive : bool, optional
-        Ensure training files are covered exhaustively (useful in case of
-        non-uniform and unbalanced label distribution).
     optimizer : {'sgd', 'rmsprop', 'adam'}
         Defaults to 'rmsprop'.
     """
 
     def __init__(self, duration=3.2, batch_size=32, per_epoch=3600,
-                 parallel=1, optimizer='rmsprop', exhaustive=False):
+                 parallel=1, optimizer='rmsprop'):
         super(LabelingTask, self).__init__()
         self.duration = duration
         self.batch_size = batch_size
         self.per_epoch = per_epoch
         self.parallel = parallel
-        self.exhaustive = exhaustive
         self.optimizer = optimizer
 
     def get_batch_generator(self, precomputed):
@@ -355,8 +351,7 @@ class LabelingTask(object):
         """
         return LabelingTaskGenerator(
             precomputed, duration=self.duration, per_epoch=self.per_epoch,
-            batch_size=self.batch_size, parallel=self.parallel,
-            exhaustive=self.exhaustive)
+            batch_size=self.batch_size, parallel=self.parallel)
 
     @property
     def n_classes(self):
