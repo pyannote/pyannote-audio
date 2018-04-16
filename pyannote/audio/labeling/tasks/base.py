@@ -74,11 +74,13 @@ class LabelingTaskGenerator(object):
         Set `parallel` to 0 to not use background generators.
     exhaustive : bool, optional
         Ensure training files are covered exhaustively (useful in case of
-        non-uniform and unbalanced label distribution).
+        non-uniform label distribution).
+    shuffle : bool, optional
+        Shuffle exhaustive samples. Defaults to False.
     """
 
     def __init__(self, precomputed, duration=3.2, batch_size=32,
-                 per_epoch=3600, parallel=1, exhaustive=False):
+                 per_epoch=3600, parallel=1, exhaustive=False, shuffle=False):
 
         super(LabelingTaskGenerator, self).__init__()
 
@@ -88,6 +90,7 @@ class LabelingTaskGenerator(object):
         self.per_epoch = per_epoch
         self.parallel = parallel
         self.exhaustive = exhaustive
+        self.shuffle = shuffle
 
     def initialize(self, protocol, subset='train'):
         """Gather the following information about the training subset:
@@ -233,6 +236,9 @@ class LabelingTaskGenerator(object):
                              s.end) for s in get_annotated(current_file)])
                 current_file['annotated'] = annotated
 
+                if self.shuffle:
+                    samples = []
+
                 for sequence in sliding_segments.from_file(current_file):
 
                     X = self.precomputed.crop(current_file,
@@ -242,7 +248,17 @@ class LabelingTaskGenerator(object):
                     y = datum['y'].crop(sequence, mode='center',
                                         fixed=self.duration)
 
-                    yield {'X': X, 'y': np.squeeze(y)}
+                    sample = {'X': X, 'y': np.squeeze(y)}
+
+                    if self.shuffle:
+                        samples.append(sample)
+                    else:
+                        yield sample
+
+                if self.shuffle:
+                    random.shuffle(samples)
+                    for sample in samples:
+                        yield sample
 
     @property
     def signature(self):

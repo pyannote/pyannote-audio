@@ -43,7 +43,7 @@ class ResegmentationGenerator(LabelingTaskGenerator):
 
     def __init__(self, precomputed, **kwargs):
         super(ResegmentationGenerator, self).__init__(
-            precomputed, exhaustive=True, **kwargs)
+            precomputed, exhaustive=True, shuffle=True, **kwargs)
 
     def postprocess_y(self, Y):
         """Generate labels for resegmentation
