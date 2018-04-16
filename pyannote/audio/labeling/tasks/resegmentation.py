@@ -28,6 +28,7 @@
 
 """Resegmentation"""
 
+import collections
 import numpy as np
 from .base import LabelingTask
 from .base import LabelingTaskGenerator
@@ -73,14 +74,24 @@ class ResegmentationGenerator(LabelingTaskGenerator):
 
 
 class Resegmentation(LabelingTask):
+    """
+
+    Parameters
+    ----------
+    epochs : int, optional
+        (Self-)train for that many epochs. Defaults to 10.
+    ensemble : int, optional
+
+    """
 
     # TODO -- ensemble of last K epochs
 
-    def __init__(self, precomputed, epochs=10, rnn='LSTM', recurrent=[16, ],
-                 bidirectional=True, linear=[16, ], **kwargs):
+    def __init__(self, precomputed, epochs=10, ensemble=1, rnn='LSTM',
+                 recurrent=[16, ], bidirectional=True, linear=[16, ], **kwargs):
         super(Resegmentation, self).__init__(**kwargs)
         self.precomputed = precomputed
         self.epochs = epochs
+        self.ensemble = ensemble
 
         self.rnn = rnn
         self.recurrent = recurrent
@@ -120,8 +131,14 @@ class Resegmentation(LabelingTask):
             step=.25*self.duration, batch_size=self.batch_size,
             source='audio', gpu=gpu)
 
-        self.scores_ = sequence_labeling.apply(current_file)
-        self.y_ = np.argmax(self.scores_.data, axis=1)
+        # add scores of current epoch to ensemble
+        self.scores_.append(sequence_labeling.apply(current_file))
+
+        # get ensemble scores (average of last self.ensemble epochs)
+        scores = sum(s.data for s in self.scores_) / len(self.scores_)
+
+        # TODO. replace argmax by Viterbi decoding
+        self.y_ = np.argmax(scores, axis=1)
         return from_numpy(self.y_, self.precomputed,
                           labels=self.batch_generator_.labels)
 
@@ -151,9 +168,12 @@ class Resegmentation(LabelingTask):
             uri = get_unique_identifier(current_file)
             log_dir = 'f{log_dir}/{uri}'
 
+        self.scores_ = collections.deque([], maxlen=self.ensemble)
+
         for iteration in self.fit_iter(model, self.precomputed, protocol,
                                        log_dir=log_dir, epochs=self.epochs,
                                        gpu=gpu):
+
             if partial:
                 hypothesis = self.get_hypothesis(iteration['model'],
                                                  current_file, gpu=gpu)
