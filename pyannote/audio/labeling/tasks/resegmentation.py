@@ -40,6 +40,11 @@ from pyannote.audio.labeling.extraction import SequenceLabeling
 
 
 class ResegmentationGenerator(LabelingTaskGenerator):
+
+    def __init__(self, precomputed, **kwargs):
+        super(ResegmentationGenerator, self).__init__(
+            precomputed, exhaustive=True, **kwargs)
+
     def postprocess_y(self, Y):
         """Generate labels for resegmentation
 
@@ -73,7 +78,7 @@ class Resegmentation(LabelingTask):
 
     def __init__(self, precomputed, epochs=10, rnn='LSTM', recurrent=[16, ],
                  bidirectional=True, linear=[16, ], **kwargs):
-        super(Resegmentation, self).__init__(exhaustive=True, **kwargs)
+        super(Resegmentation, self).__init__(**kwargs)
         self.precomputed = precomputed
         self.epochs = epochs
 
