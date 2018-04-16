@@ -604,4 +604,4 @@ class TripletLoss(object):
             # backtrack in case loss has increased
             if backtrack:
                 backtrack = False
-                self.backtrack(epoch - 1)
+                self.backtrack(max(0, epoch - 2))
