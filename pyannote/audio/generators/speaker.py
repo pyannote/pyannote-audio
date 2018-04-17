@@ -47,6 +47,9 @@ class SpeechSegmentGenerator(object):
         Precomputed features
     per_label : int, optional
         Number of speech turns per speaker in each batch. Defaults to 3.
+    label_min_duration : float, optional
+        Remove speakers with less than `label_min_duration` seconds of speech.
+        Defaults to 0 (i.e. keep it all).
     per_fold : int, optional
         Number of speakers in each batch. Defaults to all speakers.
     duration : float, optional
@@ -64,7 +67,7 @@ class SpeechSegmentGenerator(object):
 
     def __init__(self, precomputed, per_label=3, per_fold=None,
                  duration=None, min_duration=None, max_duration=None,
-                 parallel=1):
+                 label_min_duration=0., parallel=1):
 
         super(SpeechSegmentGenerator, self).__init__()
 
@@ -73,6 +76,7 @@ class SpeechSegmentGenerator(object):
         self.per_fold = per_fold
         self.duration = duration
         self.parallel = parallel
+        self.label_min_duration = label_min_duration
 
         if self.duration is None:
             self.min_duration = min_duration
@@ -131,6 +135,17 @@ class SpeechSegmentGenerator(object):
                 datum = (segments, duration, current_file)
                 l = get_label_identifier(label, current_file)
                 self.data_.setdefault(l, []).append(datum)
+
+        # remove labels with less than 'label_min_duration' of speech
+        # otherwise those may generate the same segments over and over again
+        dropped_labels = set()
+        for label, data in self.data_.items():
+            total_duration = sum(datum[1] for datum in data)
+            if total_duration < self.label_min_duration:
+                dropped_labels.add(label)
+
+        for label in dropped_labels:
+            self.data_.pop(label)
 
         self.labels_ = {label: i for i, label in enumerate(self.data_)}
 
