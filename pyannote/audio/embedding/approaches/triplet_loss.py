@@ -451,7 +451,7 @@ class TripletLoss(object):
 
             # detailed logging to Tensorboard
             # for first 10 epochs then every other 5 epochs
-            detailed_log = (epoch < 10) or (epoch % 5 == 0)
+            detailed_log = (iteration < 10) or (iteration % 5 == 0)
 
             if detailed_log:
                 log_positive = []
@@ -459,7 +459,7 @@ class TripletLoss(object):
                 log_delta = []
                 log_norm = []
 
-            desc = 'Epoch #{0}'.format(epoch)
+            desc = 'Epoch #{0}'.format(iteration)
             for i in tqdm(range(self.batches_per_epoch_), desc=desc):
 
                 # zero gradients
@@ -530,10 +530,10 @@ class TripletLoss(object):
                 for name, value in scheduler_state.items():
                     writer.add_scalar(
                         f'train/scheduler/{name}', value,
-                        global_step=epoch * self.batches_per_epoch_ + i)
+                        global_step=iteration * self.batches_per_epoch_ + i)
                 writer.add_scalar(
                     f'train/scheduler/loss', loss_,
-                    global_step=epoch * self.batches_per_epoch_ + i)
+                    global_step=iteration * self.batches_per_epoch_ + i)
 
                 # remember to backtrack after the epoch has completed
                 # in case it looks like loss is increasing
@@ -543,17 +543,17 @@ class TripletLoss(object):
             # log loss to tensorboard
             writer.add_scalar('train/triplet/loss',
                               tloss_avg / self.batches_per_epoch_,
-                              global_step=epoch)
+                              global_step=iteration)
 
             # log current learning rate to tensorboard
             writer.add_scalar('train/scheduler/lr',
                               self.scheduler_.lr[0],
-                              global_step=epoch)
+                              global_step=iteration)
 
             # # log loss trend statistics to tensorboard
             # for name, value in scheduler_state.items():
             #     writer.add_scalar(f'train/scheduler/{name}',
-            #                       value, global_step=epoch)
+            #                       value, global_step=iteration)
 
             if detailed_log:
 
@@ -564,10 +564,10 @@ class TripletLoss(object):
                 try:
                     writer.add_histogram(
                         'train/distance/intra_class', log_positive,
-                        global_step=epoch, bins=bins)
+                        global_step=iteration, bins=bins)
                     writer.add_histogram(
                         'train/distance/inter_class', log_negative,
-                        global_step=epoch, bins=bins)
+                        global_step=iteration, bins=bins)
                 except ValueError as e:
                     pass
 
@@ -577,7 +577,8 @@ class TripletLoss(object):
                                np.zeros(len(log_negative))]),
                     np.hstack([log_positive, log_negative]),
                     distances=True)
-                writer.add_scalar('train/estimate/eer', eer, global_step=epoch)
+                writer.add_scalar('train/estimate/eer', eer,
+                                  global_step=iteration)
 
                 # log raw triplet loss (before max(0, .))
                 log_delta = np.vstack(log_delta)
@@ -585,7 +586,7 @@ class TripletLoss(object):
                 try:
                     writer.add_histogram(
                         'train/triplet/delta', log_delta,
-                        global_step=epoch, bins=bins)
+                        global_step=iteration, bins=bins)
                 except ValueError as e:
                     pass
 
@@ -594,12 +595,13 @@ class TripletLoss(object):
                 try:
                     writer.add_histogram(
                         'train/embedding/norm', log_norm,
-                        global_step=epoch, bins='doane')
+                        global_step=iteration, bins='doane')
                 except ValueError as e:
                     pass
 
             # save model weights (and optimizer state) to disk
-            self.checkpoint_.on_epoch_end(epoch, self.model_, self.optimizer_)
+            self.checkpoint_.on_epoch_end(iteration, self.model_,
+                                          self.optimizer_)
 
             # backtrack in case loss has increased
             if backtrack:
