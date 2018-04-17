@@ -110,6 +110,19 @@ class Resegmentation(LabelingTask):
         return self.n_classes_
 
     def get_dummy_protocol(self, current_file):
+        """Get dummy protocol containing only `current_file`
+
+        Parameters
+        ----------
+        current_file : pyannote.database dict
+
+        Returns
+        -------
+        protocol : SpeakerDiarizationProtocol instance
+            Dummy protocol containing only `current_file` in both train,
+            dev., and test sets.
+
+        """
 
         class DummyProtocol(SpeakerDiarizationProtocol):
 
@@ -124,27 +137,78 @@ class Resegmentation(LabelingTask):
 
         return DummyProtocol()
 
-    def get_hypothesis(self, model, current_file, gpu=False):
+    def _score(self, model, current_file, gpu=False):
+        """Apply current model on current file
 
+        Parameters
+        ----------
+        model : nn.Module
+            Current state of the model.
+        current_file : pyannote.database dict
+            Current file.
+        gpu : bool, optional
+            Process on GPU. Defaults to False.
+
+        Returns
+        -------
+        scores : SlidingWindowFeature
+            Sequence labeling scores.
+        """
+
+        # initialize sequence labeling with model and features
         sequence_labeling = SequenceLabeling(
             model, self.precomputed, self.duration,
             step=.25*self.duration, batch_size=self.batch_size,
             source='audio', gpu=gpu)
 
-        # add scores of current epoch to ensemble
-        self.scores_.append(sequence_labeling.apply(current_file))
+        return sequence_labeling.apply(current_file)
+
+    def _decode(self, scores):
+        """Decoding
+
+        Parameters
+        ----------
+        scores : iterable of SlidingWindowFeature instances
+            Raw scores.
+
+        Returns
+        -------
+        hypothesis : pyannote.core.Annotation
+            Decoded scores.
+        """
 
         # get ensemble scores (average of last self.ensemble epochs)
-        scores = sum(s.data for s in self.scores_) / len(self.scores_)
+        avg_scores = sum(s.data for s in scores) / len(scores)
 
         # TODO. replace argmax by Viterbi decoding
-        self.y_ = np.argmax(scores, axis=1)
+        self.y_ = np.argmax(avg_scores, axis=1)
         return from_numpy(self.y_, self.precomputed,
                           labels=self.batch_generator_.labels)
 
     def apply_iter(self, current_file, hypothesis,
                    partial=True, gpu=False,
                    log_dir=None):
+        """Yield re-segmentation results for each epoch
+
+        Parameters
+        ----------
+        current_file : pyannote.database dict
+            Currently processed file
+        hypothesis : pyannote.core.Annotation
+            Input segmentation
+        partial : bool, optional
+            Set to False to only yield final re-segmentation.
+            Set to True to yield re-segmentation after each epoch.
+        gpu : bool, optional
+            Process on GPU.
+        log_dir : str, optional
+            Path to log directory.
+
+        Yields
+        ------
+        resegmented : pyannote.core.Annotation
+            Resegmentation results after each epoch.
+        """
 
         current_file = dict(current_file)
         current_file['annotation'] = hypothesis
@@ -168,22 +232,30 @@ class Resegmentation(LabelingTask):
             uri = get_unique_identifier(current_file)
             log_dir = 'f{log_dir}/{uri}'
 
-        self.scores_ = collections.deque([], maxlen=self.ensemble)
+        scores = collections.deque([], maxlen=self.ensemble)
 
-        for iteration in self.fit_iter(model, self.precomputed, protocol,
-                                       log_dir=log_dir, epochs=self.epochs,
-                                       gpu=gpu):
+        iterations = self.fit_iter(model, self.precomputed, protocol,
+                                   log_dir=log_dir, epochs=self.epochs,
+                                   gpu=gpu)
 
+        for i, iteration in enumerate(iterations):
+
+            # if 'partial', compute scores for every iteration
+            # if not, compute scores for last 'ensemble' iterations only
+            if partial or (i + 1 > self.epochs - self.ensemble):
+                iteration_score = self._score(iteration['model'],
+                                              current_file, gpu=gpu)
+                scores.append(iteration_score)
+
+            # if 'partial', generate (and yield) hypothesis
             if partial:
-                hypothesis = self.get_hypothesis(iteration['model'],
-                                                 current_file, gpu=gpu)
+                hypothesis = self._decode(scores)
                 yield hypothesis
 
+        # generate (and yield) hypothesis in case it's not already
         if not partial:
-            hypothesis = self.get_hypothesis(iteration['model'], current_file,
-                                             gpu=gpu)
-
-        yield hypothesis
+            hypothesis = self._decode(scores)
+            yield hypothesis
 
     def apply(self, current_file, hypothesis, gpu=False, log_dir=None):
         for hypothesis in self.apply_iter(current_file, hypothesis,
