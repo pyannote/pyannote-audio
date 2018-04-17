@@ -600,7 +600,7 @@ class TripletLoss(object):
                     pass
 
             # save model weights (and optimizer state) to disk
-            self.checkpoint_.on_epoch_end(iteration, self.model_,
+            self.checkpoint_.on_epoch_end(epoch, self.model_,
                                           self.optimizer_)
 
             # backtrack in case loss has increased
