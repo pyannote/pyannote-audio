@@ -78,13 +78,15 @@ class TripletLoss(object):
         Set `parallel` to 0 to not use background generators.
     optimizer : {'sgd', 'rmsprop', 'adam'}
         Defaults to 'rmsprop'.
+    learning_rate : float, optional
+        Defaults to 1e-2.
 
     """
 
     def __init__(self, duration=3.2,
                  metric='cosine', margin=0.2, clamp='positive',
                  sampling='all', per_label=3, per_fold=None, parallel=1,
-                 optimizer='rmsprop'):
+                 optimizer='rmsprop', learning_rate=1e-2):
 
         super(TripletLoss, self).__init__()
 
@@ -108,6 +110,7 @@ class TripletLoss(object):
         self.duration = duration
         self.parallel = parallel
         self.optimizer = optimizer
+        self.learning_rate = learning_rate
 
     @property
     def max_distance(self):
@@ -362,14 +365,17 @@ class TripletLoss(object):
             self.model_ = self.model_.cuda()
 
         if self.optimizer == 'sgd':
-            self.optimizer_ = SGD(self.model_.parameters(), lr=1e-2,
+            self.optimizer_ = SGD(self.model_.parameters(),
+                                  lr=self.learning_rate,
                                   momentum=0.9, nesterov=True)
 
         elif self.optimizer == 'adam':
-            self.optimizer_ = Adam(self.model_.parameters())
+            self.optimizer_ = Adam(self.model_.parameters(),
+                                   lr=self.learning_rate)
 
         elif self.optimizer == 'rmsprop':
-            self.optimizer_ = RMSprop(self.model_.parameters())
+            self.optimizer_ = RMSprop(self.model_.parameters(),
+                                      lr=self.learning_rate)
 
         self.model_.internal = False
 
