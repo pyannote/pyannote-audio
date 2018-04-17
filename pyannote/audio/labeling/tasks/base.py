@@ -30,11 +30,7 @@ import torch
 import random
 import numpy as np
 from tqdm import tqdm
-from torch.optim import SGD
-from torch.optim import Adam
-from torch.optim import RMSprop
 from torch.autograd import Variable
-from pyannote.audio.checkpoint import Checkpoint
 from pyannote.metrics.binary_classification import det_curve
 from pyannote.database import get_unique_identifier
 from pyannote.database import get_label_identifier
@@ -49,7 +45,9 @@ from pyannote.generators.fragment import random_segment
 from pyannote.generators.fragment import random_subsegment
 from pyannote.generators.fragment import SlidingSegments
 
-from pyannote.audio.util import DavisKingScheduler
+from collections import deque
+
+from pyannote.audio.train import Trainer
 
 
 class LabelingTaskGenerator(object):
@@ -323,7 +321,7 @@ class LabelingTaskGenerator(object):
                     yield next(batches)
 
 
-class LabelingTask(object):
+class LabelingTask(Trainer):
     """Base class for various labeling tasks
 
     This class should be inherited from: it should not be used directy
@@ -345,10 +343,13 @@ class LabelingTask(object):
         Defaults to 'rmsprop'.
     learning_rate : float, optional
         Learning rate. Defaults to 0.01.
+    enable_backtrack : bool, optional
+        Defaults to False.
     """
 
     def __init__(self, duration=3.2, batch_size=32, per_epoch=3600,
-                 parallel=1, optimizer='rmsprop', learning_rate=1e-2):
+                 parallel=1, optimizer='rmsprop', learning_rate=1e-2,
+                 enable_backtrack=False):
         super(LabelingTask, self).__init__()
         self.duration = duration
         self.batch_size = batch_size
@@ -356,6 +357,7 @@ class LabelingTask(object):
         self.parallel = parallel
         self.optimizer = optimizer
         self.learning_rate = learning_rate
+        self.enable_backtrack = enable_backtrack
 
     def get_batch_generator(self, precomputed):
         """This method should be overriden by subclass
@@ -378,210 +380,52 @@ class LabelingTask(object):
         msg = 'LabelingTask subclass must define `n_classes` property.'
         raise NotImplementedError(msg)
 
-    def fit(self, model, feature_extraction, protocol,
-            log_dir=None, subset='train', epochs=1000,
-            restart=0, gpu=False):
-        """Train model
+    def on_train_start(self):
 
-        Parameters
-        ----------
-        model : torch.nn.Module
-            Sequence labeling model.
-        feature_extraction : pyannote.audio.features.Precomputed
-            Precomputed features.
-        protocol : pyannote.database.Protocol
-            Evaluation protocol.
-        subset : {'train', 'development', 'test'}, optional
-            Subset to use for training. Defaults to "train".
-        log_dir : str, optional
-            Directory where models and other log files are stored.
-            Defaults to not store anything.
-        epochs : int, optional
-            Train model for that many epochs. Defaults to 1000.
-        restart : int, optional
-            Restart training at this epoch. Defaults to train from scratch.
-        gpu : bool, optional
-            Use GPU. Defaults to CPU.
-
-        Returns
-        -------
-        model : torch.nn.Module
-            Trained model.
-        """
-
-        iterations = self.fit_iter(model, feature_extraction,
-                                   protocol, log_dir=log_dir,
-                                   subset=subset, epochs=epochs,
-                                   restart=restart, gpu=gpu)
-
-        for iteration in iterations:
-            pass
-
-        return iteration['model']
-
-    def fit_iter(self, model, feature_extraction, protocol,
-            log_dir=None, subset='train', epochs=1000,
-            restart=0, gpu=False):
-        """Same as `fit` except it returns an iterator
-
-        Yields
-        ------
-        iteration : dict
-            'epoch': <int>
-            'model': <nn.Module>
-            'loss': <float>
-        """
-
-        if log_dir is None and restart > 0:
-            msg = ('One must provide `log_dir` when '
-                   'using `restart` option.')
-            raise ValueError(msg)
-
-        log = log_dir is not None
-
-        if model.n_classes != self.n_classes:
+        if self.model_.n_classes != self.n_classes:
             raise ValueError('n_classes mismatch')
-        n_classes = model.n_classes
 
-        if log:
-            checkpoint = Checkpoint(
-                log_dir, restart=restart > 0)
-            import tensorboardX
-            writer = tensorboardX.SummaryWriter(
-                log_dir=log_dir)
+        self.loss_func_ = self.model_.get_loss()
 
-        self.batch_generator_ = self.get_batch_generator(feature_extraction)
-        batches = self.batch_generator_(protocol, subset=subset)
-        batch = next(batches)
+        self.log_y_pred_ = deque([], maxlen=self.batches_per_epoch_)
+        self.log_y_true_ = deque([], maxlen=self.batches_per_epoch_)
 
-        batches_per_epoch = self.batch_generator_.batches_per_epoch
+    def process_batch(self, batch):
 
-        if restart > 0:
-            weights_pt = checkpoint.WEIGHTS_PT.format(
-                log_dir=log_dir, epoch=restart)
-            model.load_state_dict(torch.load(weights_pt))
+        X, y = batch['X'], batch['y']
+        if not getattr(self.model_, 'batch_first', True):
+            X = np.rollaxis(X, 0, 2)
+            y = y.T
+        X = np.array(X, dtype=np.float32)
+        X = Variable(torch.from_numpy(X))
+        y = Variable(torch.from_numpy(y))
 
-        if gpu:
-            model = model.cuda()
+        if self.gpu_:
+            X = X.cuda()
+            y = y.cuda()
 
-        if self.optimizer == 'sgd':
-            optimizer = SGD(model.parameters(), lr=self.learning_rate,
-                            momentum=0.9, nesterov=True)
+        fX = self.model_(X)
 
-        elif self.optimizer == 'adam':
-            optimizer = Adam(model.parameters(),
-                             lr=self.learning_rate)
+        losses = self.loss_func_(fX.view((-1, self.n_classes)),
+                           y.contiguous().view((-1, )))
 
-        elif self.optimizer == 'rmsprop':
-            optimizer = RMSprop(model.parameters(),
-                                lr=self.learning_rate)
+        if self.detailed_log_:
+            self.log_y_pred_.append(self.to_numpy(fX))
+            self.log_y_true_.append(self.to_numpy(y))
 
-        if restart > 0:
-            optimizer_pt = checkpoint.OPTIMIZER_PT.format(log_dir=log_dir,
-                                                    epoch=restart)
-            optimizer.load_state_dict(torch.load(optimizer_pt))
-            if gpu:
-                for state in optimizer.state.values():
-                    for k, v in state.items():
-                        if torch.is_tensor(v):
-                            state[k] = v.cuda()
+        return torch.mean(losses)
 
-        if self.optimizer == 'sgd':
-            scheduler = DavisKingScheduler(optimizer, batches_per_epoch,
-                                           factor=0.5, patience=20,
-                                           active=True)
+    def on_epoch_end(self, epoch):
 
-        loss_func = model.get_loss()
+        if not self.detailed_log_:
+            return
 
-        epoch = restart if restart > 0 else -1
-        while True:
-            epoch += 1
-            if epoch > epochs:
-                break
-
-            log_epoch = (epoch < 10) or (epoch % 5 == 0)
-            log_epoch = log and log_epoch
-
-            loss_avg = 0.
-
-            if log_epoch:
-                log_y_pred = []
-                log_y_true = []
-
-            desc = 'Epoch #{0}'.format(epoch)
-            for i in tqdm(range(batches_per_epoch), desc=desc):
-
-                model.zero_grad()
-
-                batch = next(batches)
-
-                X = batch['X']
-                y = batch['y']
-                if not getattr(model, 'batch_first', True):
-                    X = np.rollaxis(X, 0, 2)
-                    y = y.T
-                X = np.array(X, dtype=np.float32)
-                X = Variable(torch.from_numpy(X))
-                y = Variable(torch.from_numpy(y))
-
-                if gpu:
-                    X = X.cuda()
-                    y = y.cuda()
-
-                fX = model(X)
-
-                if log_epoch:
-                    y_pred = fX.data
-                    y_true = y.data
-                    if gpu:
-                        y_pred = y_pred.cpu()
-                        y_true = y_true.cpu()
-                    y_pred = y_pred.numpy()
-                    y_true = y_true.numpy()
-                    log_y_pred.append(y_pred)
-                    log_y_true.append(y_true)
-
-                losses = loss_func(fX.view((-1, n_classes)),
-                                   y.contiguous().view((-1, )))
-                loss = torch.mean(losses)
-
-                # log loss
-                if gpu:
-                    loss_ = float(loss.data.cpu().numpy())
-                else:
-                    loss_ = float(loss.data.numpy())
-                loss_avg += loss_
-
-                loss.backward()
-                optimizer.step()
-
-                if self.optimizer == 'sgd':
-                    scheduler_state = scheduler.step(loss_)
-
-            if log:
-                loss_avg /= batches_per_epoch
-                writer.add_scalar('train/loss', loss_avg,
-                                  global_step=epoch)
-
-                if self.optimizer == 'sgd':
-                    writer.add_scalar('train/scheduler/lr', scheduler.lr[0],
-                                      global_step=epoch)
-                    for name, value in scheduler_state.items():
-                        writer.add_scalar(f'train/scheduler/{name}', value,
-                                          global_step=epoch)
-
-            if log_epoch:
-                log_y_pred = np.hstack(log_y_pred)
-                log_y_true = np.hstack(log_y_true)
-                log_y_pred = log_y_pred.reshape((-1, n_classes))
-                log_y_true = log_y_true.reshape((-1, ))
-                for k in range(n_classes):
-                    _, _, _, eer = det_curve(log_y_true == k,
-                                             log_y_pred[:, k])
-                    writer.add_scalar(f'train/estimate/eer/{k}',
-                        eer, global_step=epoch)
-
-            if log:
-                checkpoint.on_epoch_end(epoch, model, optimizer)
-
-            yield {'epoch': epoch, 'model': model, 'loss': loss}
+        log_y_pred = np.hstack(self.log_y_pred_)
+        log_y_true = np.hstack(self.log_y_true_)
+        log_y_pred = log_y_pred.reshape((-1, self.n_classes))
+        log_y_true = log_y_true.reshape((-1, ))
+        for k in range(self.n_classes):
+            _, _, _, eer = det_curve(log_y_true == k,
+                                     log_y_pred[:, k])
+            self.writer_.add_scalar(f'train/estimate/eer/{k}',
+                eer, global_step=epoch)

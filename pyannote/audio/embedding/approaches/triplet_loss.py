@@ -27,23 +27,18 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 import numpy as np
-from tqdm import tqdm
 import torch
 from torch.autograd import Variable
 import torch.nn.functional as F
 from pyannote.audio.generators.speaker import SpeechSegmentGenerator
-from pyannote.audio.checkpoint import Checkpoint
-from torch.optim import SGD
-from torch.optim import Adam
-from torch.optim import RMSprop
-from pyannote.audio.embedding.utils import to_condensed, pdist, l2_normalize
+from pyannote.audio.embedding.utils import to_condensed, pdist
 from scipy.spatial.distance import squareform
 from pyannote.metrics.binary_classification import det_curve
+from collections import deque
+from pyannote.audio.train import Trainer
 
-from pyannote.audio.util import DavisKingScheduler
 
-
-class TripletLoss(object):
+class TripletLoss(Trainer):
     """
 
     delta = d(anchor, positive) - d(anchor, negative)
@@ -83,6 +78,8 @@ class TripletLoss(object):
         Defaults to 'rmsprop'.
     learning_rate : float, optional
         Defaults to 1e-2.
+    enable_backtrack : bool, optional
+        Defaults to True.
 
     """
 
@@ -90,7 +87,8 @@ class TripletLoss(object):
                  metric='cosine', margin=0.2, clamp='positive',
                  sampling='all', per_label=3, per_fold=None, parallel=1,
                  label_min_duration=0.,
-                 optimizer='rmsprop', learning_rate=1e-2):
+                 optimizer='rmsprop', learning_rate=1e-2,
+                 enable_backtrack=True):
 
         super(TripletLoss, self).__init__()
 
@@ -116,6 +114,7 @@ class TripletLoss(object):
         self.parallel = parallel
         self.optimizer = optimizer
         self.learning_rate = learning_rate
+        self.enable_backtrack = enable_backtrack
 
     @property
     def max_distance(self):
@@ -327,6 +326,7 @@ class TripletLoss(object):
 
         elif self.clamp == 'sigmoid':
             # TODO. tune this "10" hyperparameter
+            # TODO. log-sigmoid
             loss = F.sigmoid(10 * (delta + self.margin_))
 
         # return triplet losses
@@ -344,278 +344,96 @@ class TripletLoss(object):
     def aggregate(self, batch):
         return batch
 
-    def backtrack(self, epoch):
-        """Backtrack to `epoch` state
+    def on_train_start(self):
 
-        This assumes that the following attributes have been set already:
+        self.log_positive_ = deque([], maxlen=self.batches_per_epoch_)
+        self.log_negative_ = deque([], maxlen=self.batches_per_epoch_)
+        self.log_delta_ = deque([], maxlen=self.batches_per_epoch_)
+        self.log_norm_ = deque([], maxlen=self.batches_per_epoch_)
 
-        * checkpoint_
-        * model_
-        * gpu_
-        * batches_per_epoch_
+    def process_batch(self, batch):
 
-        This will set/update the following hidden attributes:
-
-        * model_
-        * optimizer_
-        * scheduler_
-
-        """
-
-        if epoch > 0:
-            weights_pt = self.checkpoint_.weights_pt(epoch)
-            self.model_.load_state_dict(torch.load(weights_pt))
-
+        # update batch['X'] to be usable by torch
+        X = batch['X']
+        if not getattr(self.model_, 'batch_first', True):
+            X = np.rollaxis(X, 0, 2)
+        X = np.array(X, dtype=np.float32)
+        X = Variable(torch.from_numpy(X))
         if self.gpu_:
-            self.model_ = self.model_.cuda()
+            X = X.cuda()
+        batch['X'] = X
 
-        if self.optimizer == 'sgd':
-            self.optimizer_ = SGD(self.model_.parameters(),
-                                  lr=self.learning_rate,
-                                  momentum=0.9, nesterov=True)
+        # forward pass
+        fX = self.model_(batch['X'])
 
-        elif self.optimizer == 'adam':
-            self.optimizer_ = Adam(self.model_.parameters(),
-                                   lr=self.learning_rate)
+        # log embedding norms
+        if self.detailed_log_:
+            norm_npy = np.linalg.norm(self.to_numpy(fX), axis=1)
+            self.log_norm_.append(norm_npy)
 
-        elif self.optimizer == 'rmsprop':
-            self.optimizer_ = RMSprop(self.model_.parameters(),
-                                      lr=self.learning_rate)
+        batch['fX'] = fX
+        batch = self.aggregate(batch)
 
-        self.model_.internal = False
+        fX = batch['fX']
+        y = batch['y']
 
-        if epoch > 0:
-            optimizer_pt = self.checkpoint_.optimizer_pt(epoch)
-            self.optimizer_.load_state_dict(torch.load(optimizer_pt))
-            if self.gpu_:
-                for state in self.optimizer_.state.values():
-                    for k, v in state.items():
-                        if torch.is_tensor(v):
-                            state[k] = v.cuda()
+        # pre-compute pairwise distances
+        distances = self.pdist(fX)
 
-        self.scheduler_ = DavisKingScheduler(
-            self.optimizer_, self.batches_per_epoch_, factor=0.5,
-            patience=10, active=self.optimizer == 'sgd')
+        # sample triplets
+        triplets = getattr(self, 'batch_{0}'.format(self.sampling))
+        anchors, positives, negatives = triplets(y, distances)
 
-    def to_numpy(self, variable):
-        if self.gpu_:
-            return variable.data.cpu().numpy()
-        return variable.data.numpy()
+        # compute loss for each triplet
+        losses, deltas, _, _ = self.triplet_loss(
+            distances, anchors, positives, negatives,
+            return_delta=True)
 
-    def fit(self, model, feature_extraction, protocol, log_dir, subset='train',
-            epochs=1000, restart=0, gpu=False):
-        """Train model
+        if self.detailed_log_:
+            pdist_npy = self.to_numpy(distances)
+            delta_npy = self.to_numpy(deltas)
+            same_speaker = pdist(y.reshape((-1, 1)), metric='equal')
+            self.log_positive_.append(pdist_npy[np.where(same_speaker)])
+            self.log_negative_.append(pdist_npy[np.where(~same_speaker)])
+            self.log_delta_.append(delta_npy)
 
-        Parameters
-        ----------
-        model : nn.Module
-            Embedding model
-        feature_extraction :
-            Feature extraction.
-        protocol : pyannote.database.Protocol
-        log_dir : str
-            Directory where models and other log files are stored.
-        subset : {'train', 'development', 'test'}, optional
-            Defaults to 'train'.
-        epochs : int, optional
-            Train model for that many epochs.
-        restart : int, optional
-            Restart training at this epoch. Defaults to train from scratch.
-        gpu : bool, optional
-        """
+        # average over all triplets
+        return torch.mean(losses)
 
-        # initialize tensorboard support
-        import tensorboardX
-        writer = tensorboardX.SummaryWriter(log_dir=log_dir)
+    def on_epoch_end(self, epoch):
 
-        self.checkpoint_ = Checkpoint(
-            log_dir=log_dir, restart=restart > 0)
-        self.model_ = model
-        self.gpu_ = gpu
+        if not self.detailed_log_:
+            return
 
-        batch_generator = self.get_batch_generator(feature_extraction)
-        batches = batch_generator(protocol, subset=subset)
-        batch = next(batches)
-        self.batches_per_epoch_ = batch_generator.batches_per_epoch
+        # log intra class vs. inter class distance distributions
+        log_positive = np.hstack(self.log_positive_)
+        log_negative = np.hstack(self.log_negative_)
+        bins = np.linspace(0, self.max_distance, 50)
+        self.writer_.add_histogram(
+            'train/distance/intra_class', log_positive,
+            global_step=epoch, bins=bins)
+        self.writer_.add_histogram(
+            'train/distance/inter_class', log_negative,
+            global_step=epoch, bins=bins)
 
-        # initialize model, optimizer, and scheduler
-        self.backtrack(restart)
+        # log same/different experiment on training samples
+        _, _, _, eer = det_curve(
+            np.hstack([np.ones(len(log_positive)),
+                       np.zeros(len(log_negative))]),
+            np.hstack([log_positive, log_negative]),
+            distances=True)
+        self.writer_.add_scalar('train/estimate/eer', eer,
+                                global_step=epoch)
 
-        epoch = restart if restart > 0 else -1
-        backtrack, iteration = False, 0
+        # log raw triplet loss (before max(0, .))
+        log_delta = np.vstack(self.log_delta_)
+        bins = np.linspace(-self.max_distance, self.max_distance, 50)
+        self.writer_.add_histogram(
+            'train/triplet/delta', log_delta,
+            global_step=epoch, bins=bins)
 
-        while True:
-            # keep track of actual number of iterations
-            iteration += 1
-
-            # keep track of current epoch
-            # due to backtracking, this may lag a bit behind `iteration`
-            epoch += 1
-            if epoch > epochs:
-                break
-
-            # log backtracking
-            writer.add_scalar('train/scheduler/backtrack', epoch,
-                              global_step=iteration)
-
-            tloss_avg = 0.
-
-            # detailed logging to Tensorboard
-            # for first 10 epochs then every other 5 epochs
-            detailed_log = (iteration < 10) or (iteration % 5 == 0)
-
-            if detailed_log:
-                log_positive = []
-                log_negative = []
-                log_delta = []
-                log_norm = []
-
-            desc = 'Epoch #{0}'.format(iteration)
-            for i in tqdm(range(self.batches_per_epoch_), desc=desc):
-
-                # zero gradients
-                self.model_.zero_grad()
-
-                # process next batch
-                batch = next(batches)
-
-                # update batch['X'] to be usable by torch
-                X = batch['X']
-                if not getattr(self.model_, 'batch_first', True):
-                    X = np.rollaxis(X, 0, 2)
-                X = np.array(X, dtype=np.float32)
-                X = Variable(torch.from_numpy(X))
-                if gpu:
-                    X = X.cuda()
-                batch['X'] = X
-
-                # forward pass
-                fX = self.model_(batch['X'])
-
-                # log embedding norms
-                if detailed_log:
-                    norm_npy = np.linalg.norm(self.to_numpy(fX), axis=1)
-                    log_norm.append(norm_npy)
-
-                batch['fX'] = fX
-                batch = self.aggregate(batch)
-
-                fX = batch['fX']
-                y = batch['y']
-
-                # pre-compute pairwise distances
-                distances = self.pdist(fX)
-
-                # sample triplets
-                triplets = getattr(self, 'batch_{0}'.format(self.sampling))
-                anchors, positives, negatives = triplets(y, distances)
-
-                # compute loss for each triplet
-                losses, deltas, _, _ = self.triplet_loss(
-                    distances, anchors, positives, negatives,
-                    return_delta=True)
-                # average over all triplets
-                loss = torch.mean(losses)
-
-                if detailed_log:
-                    pdist_npy = self.to_numpy(distances)
-                    delta_npy = self.to_numpy(deltas)
-                    same_speaker = pdist(y.reshape((-1, 1)), metric='equal')
-                    log_positive.append(pdist_npy[np.where(same_speaker)])
-                    log_negative.append(pdist_npy[np.where(~same_speaker)])
-                    log_delta.append(delta_npy)
-
-                # accumulate loss over the whole epoch
-                loss_ = float(self.to_numpy(loss))
-                tloss_avg += loss_
-
-                # back-propagation
-                loss.backward()
-                self.optimizer_.step()
-
-                # send loss of current batch to scheduler
-                # and receive information about loss trend
-                scheduler_state = self.scheduler_.step(loss_)
-
-                # log loss trend statistics to tensorboard
-                for name, value in scheduler_state.items():
-                    writer.add_scalar(
-                        f'train/scheduler/{name}', value,
-                        global_step=iteration * self.batches_per_epoch_ + i)
-                writer.add_scalar(
-                    f'train/scheduler/loss', loss_,
-                    global_step=iteration * self.batches_per_epoch_ + i)
-
-                # remember to backtrack after the epoch has completed
-                # in case it looks like loss is increasing
-                if scheduler_state['increasing_probability'] > 0.99:
-                    backtrack = True
-
-            # log loss to tensorboard
-            writer.add_scalar('train/triplet/loss',
-                              tloss_avg / self.batches_per_epoch_,
-                              global_step=iteration)
-
-            # log current learning rate to tensorboard
-            writer.add_scalar('train/scheduler/lr',
-                              self.scheduler_.lr[0],
-                              global_step=iteration)
-
-            # # log loss trend statistics to tensorboard
-            # for name, value in scheduler_state.items():
-            #     writer.add_scalar(f'train/scheduler/{name}',
-            #                       value, global_step=iteration)
-
-            if detailed_log:
-
-                # log intra class vs. inter class distance distributions
-                log_positive = np.hstack(log_positive)
-                log_negative = np.hstack(log_negative)
-                bins = np.linspace(0, self.max_distance, 50)
-                try:
-                    writer.add_histogram(
-                        'train/distance/intra_class', log_positive,
-                        global_step=iteration, bins=bins)
-                    writer.add_histogram(
-                        'train/distance/inter_class', log_negative,
-                        global_step=iteration, bins=bins)
-                except ValueError as e:
-                    pass
-
-                # log same/different experiment on training samples
-                _, _, _, eer = det_curve(
-                    np.hstack([np.ones(len(log_positive)),
-                               np.zeros(len(log_negative))]),
-                    np.hstack([log_positive, log_negative]),
-                    distances=True)
-                writer.add_scalar('train/estimate/eer', eer,
-                                  global_step=iteration)
-
-                # log raw triplet loss (before max(0, .))
-                log_delta = np.vstack(log_delta)
-                bins = np.linspace(-self.max_distance, self.max_distance, 50)
-                try:
-                    writer.add_histogram(
-                        'train/triplet/delta', log_delta,
-                        global_step=iteration, bins=bins)
-                except ValueError as e:
-                    pass
-
-                # log distribution of embedding norms
-                log_norm = np.hstack(log_norm)
-                try:
-                    writer.add_histogram(
-                        'train/embedding/norm', log_norm,
-                        global_step=iteration, bins='doane')
-                except ValueError as e:
-                    pass
-
-            # save model weights (and optimizer state) to disk
-            self.checkpoint_.on_epoch_end(epoch, self.model_,
-                                          self.optimizer_)
-
-            # backtrack in case loss has increased
-            if backtrack:
-                backtrack = False
-                epoch = max(0, epoch - 3)
-                self.backtrack(epoch)
+        # log distribution of embedding norms
+        log_norm = np.hstack(self.log_norm_)
+        self.writer_.add_histogram(
+            'train/embedding/norm', log_norm,
+            global_step=epoch, bins='doane')
