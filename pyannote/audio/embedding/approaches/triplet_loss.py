@@ -69,6 +69,9 @@ class TripletLoss(object):
         Triplet sampling strategy.
     per_label : int, optional
         Number of sequences per speaker in each batch. Defaults to 3.
+    label_min_duration : float, optional
+        Remove speakers with less than `label_min_duration` seconds of speech.
+        Defaults to 0 (i.e. keep them all).
     per_fold : int, optional
         If provided, sample triplets from groups of `per_fold` speakers at a
         time. Defaults to sample triplets from the whole speaker set.
@@ -86,6 +89,7 @@ class TripletLoss(object):
     def __init__(self, duration=3.2,
                  metric='cosine', margin=0.2, clamp='positive',
                  sampling='all', per_label=3, per_fold=None, parallel=1,
+                 label_min_duration=0.,
                  optimizer='rmsprop', learning_rate=1e-2):
 
         super(TripletLoss, self).__init__()
@@ -107,6 +111,7 @@ class TripletLoss(object):
 
         self.per_fold = per_fold
         self.per_label = per_label
+        self.label_min_duration = label_min_duration
         self.duration = duration
         self.parallel = parallel
         self.optimizer = optimizer
@@ -332,7 +337,7 @@ class TripletLoss(object):
 
     def get_batch_generator(self, feature_extraction):
         return SpeechSegmentGenerator(
-            feature_extraction,
+            feature_extraction, label_min_duration=self.label_min_duration,
             per_label=self.per_label, per_fold=self.per_fold,
             duration=self.duration, parallel=self.parallel)
 
