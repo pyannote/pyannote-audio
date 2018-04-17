@@ -105,7 +105,8 @@ def init_feature_extraction(experiment_dir):
     return feature_extraction
 
 def process_current_file(current_file, file_finder=None, precomputed=None,
-                         feature_extraction=None, normalization=None):
+                         feature_extraction=None, normalization=None,
+                         robust=False):
 
     try:
         current_file['audio'] = file_finder(current_file)
@@ -153,7 +154,8 @@ def helper_extract(current_file, file_finder=None, experiment_dir=None,
     return process_current_file(current_file, file_finder=file_finder,
                                 precomputed=precomputed,
                                 feature_extraction=feature_extraction,
-                                normalization=normalization)
+                                normalization=normalization,
+                                robust=robust)
 
 def extract(protocol_name, file_finder, experiment_dir,
             robust=False, parallel=False):
