@@ -47,7 +47,6 @@ setup(
         'audioread >= 2.1.5',
         'librosa >= 0.5.1',
         'sphfile == 1.0.0',
-        'scikit-optimize >= 0.2',
         'pyYAML >= 3.12',
         'h5py >= 2.6.0',
         'cachetools >= 2.0.0',
@@ -55,6 +54,10 @@ setup(
         'sortedcontainers >= 1.5.9',
         'sortedcollections >= 0.5.3',
         'tensorboardX >= 1.1',
+        # chocolate,
+        # install it manually until there is a proper release
+        # see https://github.com/AIworx-Labs/chocolate/issues/16
+        'filelock >= 3.0.4',
         'dlib == 19.10.0',
     ],
     entry_points = {
@@ -64,7 +67,7 @@ setup(
             'pyannote-change-detection=pyannote.audio.applications.change_detection:main',
             'pyannote-overlap-detection=pyannote.audio.applications.overlap_detection:main',
             'pyannote-speaker-embedding=pyannote.audio.applications.speaker_embedding:main',
-            'pyannote-bic-clustering=pyannote.audio.applications.bic_clustering:main']
+            'pyannote-pipeline=pyannote.audio.applications.pipeline:main']
     },
     # versioneer
     version=versioneer.get_version(),

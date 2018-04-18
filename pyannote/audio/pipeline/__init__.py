@@ -25,3 +25,5 @@
 
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
+
+from .speech_activity_detection import SpeechActivityDetection
