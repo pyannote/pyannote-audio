@@ -87,7 +87,8 @@ class DavisKingScheduler(object):
         self.active = active
 
         self.lr_ = [float(grp['lr']) for grp in self.optimizer.param_groups]
-        self.losses_ = deque([], maxlen=self.patience * self.batches_per_epoch)
+        self.losses_ = deque(
+            [], maxlen=self.patience * self.batches_per_epoch + 1)
 
     @property
     def lr(self):
