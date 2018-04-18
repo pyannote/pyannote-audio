@@ -232,7 +232,7 @@ class Resegmentation(LabelingTask):
             uri = get_unique_identifier(current_file)
             log_dir = 'f{log_dir}/{uri}'
 
-        scores = collections.deque([], maxlen=self.ensemble)
+        self.scores_ = collections.deque([], maxlen=self.ensemble)
 
         iterations = self.fit_iter(model, self.precomputed, protocol,
                                    log_dir=log_dir, epochs=self.epochs,
@@ -245,16 +245,16 @@ class Resegmentation(LabelingTask):
             if partial or (i + 1 > self.epochs - self.ensemble):
                 iteration_score = self._score(iteration['model'],
                                               current_file, gpu=gpu)
-                scores.append(iteration_score)
+                self.scores_.append(iteration_score)
 
             # if 'partial', generate (and yield) hypothesis
             if partial:
-                hypothesis = self._decode(scores)
+                hypothesis = self._decode(self.scores_)
                 yield hypothesis
 
         # generate (and yield) hypothesis in case it's not already
         if not partial:
-            hypothesis = self._decode(scores)
+            hypothesis = self._decode(self.scores_)
             yield hypothesis
 
     def apply(self, current_file, hypothesis, gpu=False, log_dir=None):
