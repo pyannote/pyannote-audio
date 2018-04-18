@@ -104,14 +104,14 @@ class DavisKingScheduler(object):
         count = count_steps_without_decrease(self.losses_)
         count_robust = count_steps_without_decrease_robust(self.losses_)
 
-        if len(self.losses_) > 2:
+        patience = self.patience_up * self.batches_per_epoch
+        if len(self.losses_) > patience:
             # only consider batches from last patience_up epoch
             # https://github.com/davisking/dlib/issues/1257
-            patience = self.patience_up * self.batches_per_epoch
             losses = list(self.losses_)[-patience:]
             increasing = probability_that_sequence_is_increasing(losses)
         else:
-            increasing = np.NAN
+            increasing = -0.1
 
         patience = self.patience_down * self.batches_per_epoch
         if (self.active and count > patience and count_robust > patience):
@@ -293,27 +293,18 @@ class Trainer:
                 # and receive information about loss trend
                 scheduler_state = self.scheduler_.step(loss_)
 
-                # log loss trend statistics to tensorboard
-                if self.detailed_log_:
-                    for name, value in scheduler_state.items():
-                        self.writer_.add_scalar(
-                            f'train/scheduler/{name}', value,
-                            global_step=iteration * self.batches_per_epoch_ + i)
-                    self.writer_.add_scalar(
-                        f'train/scheduler/loss', loss_,
-                        global_step=iteration * self.batches_per_epoch_ + i)
-
-                # remember to backtrack after the epoch has completed
-                # in case it looks like loss is increasing
-                if scheduler_state['increasing_probability'] > 0.99:
-                    backtrack = True
-
             if log:
 
                 # log loss to tensorboard
                 self.writer_.add_scalar('train/loss',
                                         loss_avg / self.batches_per_epoch_,
                                         global_step=iteration)
+
+                # log loss trend statistics to tensorboard
+                for name, value in scheduler_state.items():
+                    self.writer_.add_scalar(
+                        f'train/scheduler/{name}', value,
+                        global_step=iteration)
 
                 # log current learning rate to tensorboard
                 self.writer_.add_scalar('train/scheduler/lr',
@@ -329,8 +320,8 @@ class Trainer:
             yield {'epoch': epoch, 'iteration': iteration, 'model': model}
 
             # backtrack in case loss has increased
-            if getattr(self, 'enable_backtrack', False) and backtrack:
-                backtrack = False
+            if getattr(self, 'enable_backtrack', False) and \
+               scheduler_state['increasing_probability'] > 0.99:
                 epoch = max(0, epoch - self.scheduler_.patience_up - 2)
                 self.backtrack(epoch)
 
