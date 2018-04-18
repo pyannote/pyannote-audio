@@ -56,9 +56,11 @@ class DavisKingScheduler(object):
     factor : float, optional
         Factor by which the learning rate will be reduced.
         new_lr = old_lr * factor. Defaults to 0.5
-    patience : int, optional
+    patience_down : int, optional
         Number of epochs with no improvement after which learning rate will
         be reduced. Defaults to 20.
+    patience_up : int, optional
+        Defaults to 2.
     active : bool, optional
         Set to False to not update learning rate.
 
@@ -72,8 +74,8 @@ class DavisKingScheduler(object):
     ...     scheduler.step(mini_loss)
     """
 
-    def __init__(self, optimizer, batches_per_epoch, factor=0.5, patience=20,
-                 active=True):
+    def __init__(self, optimizer, batches_per_epoch, factor=0.5,
+                 patience_down=20, patience_up=2, active=True):
 
         super(DavisKingScheduler, self).__init__()
 
@@ -82,13 +84,14 @@ class DavisKingScheduler(object):
         self.factor = factor
 
         self.optimizer = optimizer
-        self.patience = patience
+        self.patience_down = patience_down
+        self.patience_up = patience_up
         self.batches_per_epoch = batches_per_epoch
         self.active = active
 
         self.lr_ = [float(grp['lr']) for grp in self.optimizer.param_groups]
-        self.losses_ = deque(
-            [], maxlen=self.patience * self.batches_per_epoch + 1)
+        patience = max(self.patience_down, self.patience_up)
+        self.losses_ = deque([], maxlen=patience * self.batches_per_epoch + 1)
 
     @property
     def lr(self):
@@ -102,16 +105,16 @@ class DavisKingScheduler(object):
         count_robust = count_steps_without_decrease_robust(self.losses_)
 
         if len(self.losses_) > 2:
-            # only consider batches from last epoch
+            # only consider batches from last patience_up epoch
             # https://github.com/davisking/dlib/issues/1257
-            losses = list(self.losses_)[-self.batches_per_epoch:]
+            patience = self.patience_up * self.batches_per_epoch
+            losses = list(self.losses_)[-patience:]
             increasing = probability_that_sequence_is_increasing(losses)
         else:
             increasing = np.NAN
 
-        if (self.active and \
-            count > self.patience * self.batches_per_epoch and \
-            count_robust > self.patience * self.batches_per_epoch):
+        patience = self.patience_down * self.batches_per_epoch
+        if (self.active and count > patience and count_robust > patience):
             self._reduce_lr()
             self.losses_.clear()
 
@@ -328,7 +331,7 @@ class Trainer:
             # backtrack in case loss has increased
             if getattr(self, 'enable_backtrack', False) and backtrack:
                 backtrack = False
-                epoch = max(0, epoch - 3)
+                epoch = max(0, epoch - self.scheduler_.patience_up - 2)
                 self.backtrack(epoch)
 
 
@@ -383,4 +386,4 @@ class Trainer:
 
         self.scheduler_ = DavisKingScheduler(
             self.optimizer_, self.batches_per_epoch_, factor=0.5,
-            patience=20, active=self.optimizer == 'sgd')
+            patience_down=20, active=self.optimizer == 'sgd')
