@@ -236,7 +236,7 @@ class Resegmentation(LabelingTask):
 
         iterations = self.fit_iter(model, self.precomputed, protocol,
                                    log_dir=log_dir, epochs=self.epochs,
-                                   gpu=gpu)
+                                   gpu=gpu, quiet=True)
 
         for i, iteration in enumerate(iterations):
 
