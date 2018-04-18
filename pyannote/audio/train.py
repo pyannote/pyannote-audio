@@ -58,7 +58,7 @@ class DavisKingScheduler(object):
         new_lr = old_lr * factor. Defaults to 0.5
     patience : int, optional
         Number of epochs with no improvement after which learning rate will
-        be reduced. Defaults to 10.
+        be reduced. Defaults to 20.
     active : bool, optional
         Set to False to not update learning rate.
 
@@ -72,7 +72,7 @@ class DavisKingScheduler(object):
     ...     scheduler.step(mini_loss)
     """
 
-    def __init__(self, optimizer, batches_per_epoch, factor=0.5, patience=10,
+    def __init__(self, optimizer, batches_per_epoch, factor=0.5, patience=20,
                  active=True):
 
         super(DavisKingScheduler, self).__init__()
@@ -383,4 +383,4 @@ class Trainer:
 
         self.scheduler_ = DavisKingScheduler(
             self.optimizer_, self.batches_per_epoch_, factor=0.5,
-            patience=10, active=self.optimizer == 'sgd')
+            patience=20, active=self.optimizer == 'sgd')
