@@ -80,7 +80,7 @@ class SpeakerChangeDetectionGenerator(LabelingTaskGenerator):
     def __init__(self, precomputed, collar=0.100, window='plateau', **kwargs):
 
         super(SpeakerChangeDetectionGenerator, self).__init__(
-            precomputed, **kwargs)
+            precomputed, exhaustive=True, **kwargs)
 
         self.collar = collar
         self.window = window
@@ -123,7 +123,6 @@ class SpeakerChangeDetectionGenerator(LabelingTaskGenerator):
             return 1 * (y > 1e-10)
         elif self.window == 'triangle':
             return y
-
 
 
 class SpeakerChangeDetection(LabelingTask):
