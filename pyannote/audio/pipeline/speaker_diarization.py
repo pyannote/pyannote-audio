@@ -257,19 +257,19 @@ class SpeakerDiarization(Pipeline):
                     cls_damping=0.8):
 
         # initialize speech activity detection
-        self.sad_ = Precomputed(sad)
+        self.sad_ = Precomputed(self.sad)
         self.sad_onset = sad_onset
         self.sad_offset = sad_offset
         self.sad_binarize_ = Binarize(onset=sad_onset, offset=sad_offset)
 
         # initialize speaker change detection
-        self.scd_ = Precomputed(scd)
+        self.scd_ = Precomputed(self.scd)
         self.scd_alpha = scd_alpha
         self.scd_min_duration = scd_min_duration
         self.scd_peak_ = Peak(alpha=scd_alpha, min_duration=scd_min_duration)
 
         # initialize speech turn embedding
-        self.emb_ = Precomputed(emb)
+        self.emb_ = Precomputed(self.emb)
 
         # initialize clustering module
         self.cls_damping = cls_damping
