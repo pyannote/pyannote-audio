@@ -55,12 +55,12 @@ class DavisKingScheduler(object):
         Number of batches per epoch.
     factor : float, optional
         Factor by which the learning rate will be reduced.
-        new_lr = old_lr * factor. Defaults to 0.5
+        new_lr = old_lr * factor. Defaults to 0.1
     patience_down : int, optional
         Number of epochs with no improvement after which learning rate will
-        be reduced. Defaults to 20.
+        be reduced. Defaults to 50.
     patience_up : int, optional
-        Defaults to 2.
+        Defaults to 5.
     active : bool, optional
         Set to False to not update learning rate.
 
@@ -74,8 +74,8 @@ class DavisKingScheduler(object):
     ...     scheduler.step(mini_loss)
     """
 
-    def __init__(self, optimizer, batches_per_epoch, factor=0.5,
-                 patience_down=20, patience_up=2, active=True):
+    def __init__(self, optimizer, batches_per_epoch, factor=0.1,
+                 patience_down=50, patience_up=5, active=True):
 
         super(DavisKingScheduler, self).__init__()
 
@@ -376,5 +376,5 @@ class Trainer:
                             state[k] = v.cuda()
 
         self.scheduler_ = DavisKingScheduler(
-            self.optimizer_, self.batches_per_epoch_, factor=0.5,
-            patience_down=20, active=self.optimizer == 'sgd')
+            self.optimizer_, self.batches_per_epoch_,
+            active=self.optimizer == 'sgd')
