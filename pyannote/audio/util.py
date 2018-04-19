@@ -95,7 +95,7 @@ def to_numpy(current_file, precomputed, labels=None):
     # number of classes
     K = len(labels)
     # one-hot encoding
-    y = np.zeros((N, K), dtype=np.uint8)
+    y = np.zeros((N, K), dtype=np.int64)
 
     sw = precomputed.sliding_window()
     for segment, _, label in annotation.itertracks(yield_label=True):
@@ -145,7 +145,7 @@ def from_numpy(y, precomputed, labels=None):
         else:
             K = np.max(y)
 
-        y_ = np.zeros((N, K), dtype=np.int8)
+        y_ = np.zeros((N, K), dtype=np.int64)
         for t, k in enumerate(y):
             if k == 0:
                 continue
@@ -160,7 +160,7 @@ def from_numpy(y, precomputed, labels=None):
 
     annotation = Annotation()
 
-    y_off = np.zeros((1, K), dtype=np.int8)
+    y_off = np.zeros((1, K), dtype=np.int64)
     y = np.vstack((y_off, y, y_off))
     diff = np.diff(y, axis=0)
     for k, label in enumerate(labels):

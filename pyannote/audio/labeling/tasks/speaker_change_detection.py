@@ -43,6 +43,8 @@ class SpeakerChangeDetectionGenerator(LabelingTaskGenerator):
         Precomputed features
     collar : float, optional
         Duration of "change" collar, in seconds. Default to 100ms (0.1).
+    window : {'plateau', 'triangle'}, optional
+        Defaults to 'plateau'.
     duration : float, optional
         Duration of sub-sequences. Defaults to 3.2s.
     batch_size : int, optional
@@ -75,18 +77,22 @@ class SpeakerChangeDetectionGenerator(LabelingTaskGenerator):
     >>>     pass
     """
 
-    def __init__(self, precomputed, collar=0.100, **kwargs):
+    def __init__(self, precomputed, collar=0.100, window='plateau', **kwargs):
 
         super(SpeakerChangeDetectionGenerator, self).__init__(
             precomputed, **kwargs)
 
         self.collar = collar
+        self.window = window
+        if window not in {'plateau', 'triangle'}:
+            msg = "'window' must be one of {'plateau', 'triangle'}."
+            raise ValueError(msg)
 
         # convert duration to number of samples
         M = self.precomputed.sliding_window().durationToSamples(self.collar)
 
         # triangular window
-        self.window_ = scipy.signal.tukey(M)[:, np.newaxis]
+        self.window_ = scipy.signal.triang(M)[:, np.newaxis]
 
     def postprocess_y(self, Y):
         """Generate labels for speaker change detection
@@ -112,8 +118,12 @@ class SpeakerChangeDetectionGenerator(LabelingTaskGenerator):
         # mark change points neighborhood as positive
         y = np.minimum(1, scipy.signal.convolve(y, self.window_, mode='same'))
 
-        # TODO. add option to not binarize
-        return np.int64(y > 0)
+        if self.window == 'plateau':
+            # HACK for some reason, y rarely equals zero
+            return 1 * (y > 1e-10)
+        elif self.window == 'triangle':
+            return y
+
 
 
 class SpeakerChangeDetection(LabelingTask):
@@ -123,6 +133,8 @@ class SpeakerChangeDetection(LabelingTask):
     ----------
     collar : float, optional
         Duration of "change" collar, in seconds. Default to 100ms (0.1).
+    window : {'plateau', 'triangle'}, optional
+        Defaults to 'plateau'.
     duration : float, optional
         Duration of sub-sequences. Defaults to 3.2s.
     batch_size : int, optional
@@ -164,16 +176,23 @@ class SpeakerChangeDetection(LabelingTask):
 
     """
 
-    def __init__(self, collar=0.100, **kwargs):
+    def __init__(self, collar=0.100, window='plateau', **kwargs):
         super(SpeakerChangeDetection, self).__init__(**kwargs)
         self.collar = collar
+        self.window = window
+        if window not in {'plateau', 'triangle'}:
+            msg = "'window' must be one of {'plateau', 'triangle'}."
+            raise ValueError(msg)
 
     def get_batch_generator(self, precomputed):
         return SpeakerChangeDetectionGenerator(
-            precomputed, collar=self.collar, duration=self.duration,
-            batch_size=self.batch_size, per_epoch=self.per_epoch,
-            parallel=self.parallel)
+            precomputed, collar=self.collar, window=self.window,
+            duration=self.duration, batch_size=self.batch_size,
+            per_epoch=self.per_epoch, parallel=self.parallel)
 
     @property
     def n_classes(self):
-        return 2
+        if self.window == 'plateau':
+            return 2
+        elif self.window == 'triangle':
+            return 1
