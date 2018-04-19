@@ -40,6 +40,9 @@ from pyannote.database import get_annotated
 
 from pyannote.metrics.diarization import GreedyDiarizationErrorRate
 
+from .base import Pipeline
+
+
 # class SpeakerDiarization(object):
 #     """Speaker diarization pipeline
 #
