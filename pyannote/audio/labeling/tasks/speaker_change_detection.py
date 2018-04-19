@@ -135,7 +135,12 @@ class SpeakerChangeDetection(LabelingTask):
         Each generator will prefetch enough batches to cover a whole epoch.
         Set `parallel` to 0 to not use background generators.
     optimizer : {'sgd', 'rmsprop', 'adam'}
-        Defaults to 'rmsprop'.
+        Defaults to 'sgd'.
+    learning_rate : float, optional
+        Learning rate. Defaults to 0.01.
+    enable_backtrack : bool, optional
+        Defaults to True.
+
 
     Usage
     -----
