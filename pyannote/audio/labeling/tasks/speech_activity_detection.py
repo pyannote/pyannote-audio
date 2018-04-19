@@ -84,7 +84,7 @@ class SpeechActivityDetectionGenerator(LabelingTaskGenerator):
 
     def __init__(self, precomputed, overlap=False, **kwargs):
         super(SpeechActivityDetectionGenerator, self).__init__(
-            precomputed, **kwargs)
+            precomputed, exhaustive=True, **kwargs)
         self.overlap = overlap
 
     def postprocess_y(self, Y):
