@@ -295,7 +295,7 @@ class SpeakerDiarization(Pipeline):
 
         return self
 
-    def __call__(self, current_file, annotated=False):
+    def apply(self, current_file):
 
         # Speech Activity Detection
 
@@ -349,8 +349,7 @@ class SpeakerDiarization(Pipeline):
         speech_turns = hard_scd.crop(hard_sad)
 
         # only process the annotated part
-        if annotated:
-            speech_turns = speech_turns.crop(get_annotated(current_file))
+        speech_turns = speech_turns.crop(get_annotated(current_file))
 
         # initialize the hypothesized annotation
         hypothesis = Annotation(uri=current_file['uri'])
