@@ -41,6 +41,7 @@ from pyannote.database import get_annotated
 from pyannote.metrics.diarization import GreedyDiarizationErrorRate
 
 from .base import Pipeline
+import chocolate
 
 
 # class SpeakerDiarization(object):
