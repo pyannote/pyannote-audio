@@ -36,6 +36,7 @@ from pyannote.audio.features import Precomputed
 from pyannote.audio.signal import Binarize, Peak
 
 from pyannote.core import Annotation
+from pyannote.core import SlidingWindowFeature
 from pyannote.database import get_annotated
 
 from pyannote.metrics.diarization import GreedyDiarizationErrorRate
