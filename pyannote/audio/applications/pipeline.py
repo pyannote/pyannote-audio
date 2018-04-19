@@ -30,7 +30,7 @@
 Pipeline
 
 Usage:
-  pyannote-pipeline train [(--forever | --trials=<trials>) --subset=<subset>] <experiment_dir> <database.task.protocol>
+  pyannote-pipeline train [options] [(--forever | --trials=<trials>)] <experiment_dir> <database.task.protocol>
   pyannote-pipeline -h | --help
   pyannote-pipeline --version
 
