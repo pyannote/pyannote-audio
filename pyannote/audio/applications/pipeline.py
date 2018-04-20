@@ -154,7 +154,7 @@ class Pipeline(Application):
 
             # progress bar
             desc = f"Trial #{s+1}"
-            loss = status['latest']['loss'](0)
+            loss = status['latest']['loss']
             if abs(loss) < 1:
                 desc += f" = {100 * loss:.3f}%"
                 desc += f" : Best = {100 * best_loss:.3f}% after {n_trials} trials"
