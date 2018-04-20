@@ -134,8 +134,13 @@ class Pipeline(Application):
 
         writer = SummaryWriter(log_dir=train_dir)
 
+        progress_bar = tqdm(unit='trial')
+        progress_bar.set_description('Trial #1 : ...')
+        progress_bar.update(0)
+
         iterations = self.pipeline_.tune_iter(tune_db, protocol, subset=subset)
-        for s, status in tqdm(enumerate(iterations)):
+
+        for s, status in enumerate(iterations):
 
             if s+1 == n_calls:
                 break
@@ -144,7 +149,21 @@ class Pipeline(Application):
                 _ = self.dump(status['new_best'], params_yml, params_yml_lock)
                 writer.add_scalar('loss', status['new_best']['loss'],
                                   global_step=status['new_best']['n_trials'])
+                best_loss = status['new_best']['loss']
+                n_trials = status['new_best']['n_trials']
 
+            # progress bar
+            desc = f"Trial #{s+1}"
+            loss = status['latest']['loss'](0)
+            if abs(loss) < 1:
+                desc += f" = {100 * loss:.3f}%"
+                desc += f" : Best = {100 * best_loss:.3f}% after {n_trials} trials"
+            else:
+                desc += f" = {loss:.3f}"
+                desc += f" : Best = {best_loss:.3f} after {n_trials} trials"
+
+            progress_bar.set_description(desc=desc)
+            progress_bar.update(1)
 
         best = self.pipeline_.best(tune_db)
         content = self.dump(best, params_yml, params_yml_lock)
