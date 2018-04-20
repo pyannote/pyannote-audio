@@ -72,6 +72,7 @@ Configuration file:
 
 """
 
+import os
 import yaml
 import numpy as np
 from tqdm import tqdm
@@ -132,7 +133,8 @@ class Pipeline(Application):
         params_yml = f'{train_dir}/params.yml'
         params_yml_lock = f'{train_dir}/params.yml.lock'
 
-        writer = SummaryWriter(log_dir=train_dir)
+        pid = os.getpid()
+        writer = SummaryWriter(log_dir=f"{train_dir}/{pid}")
 
         progress_bar = tqdm(unit='trial')
         progress_bar.set_description('Trial #1 : ...')
@@ -145,12 +147,14 @@ class Pipeline(Application):
             if s+1 == n_calls:
                 break
 
+            loss = status['latest']['loss']
+            writer.add_scalar('pipeline/train/loss/latest', loss, global_step=s + 1)
+
             if 'new_best' in status:
                 _ = self.dump(status['new_best'], params_yml, params_yml_lock)
-                writer.add_scalar('loss', status['new_best']['loss'],
-                                  global_step=status['new_best']['n_trials'])
-                best_loss = status['new_best']['loss']
                 n_trials = status['new_best']['n_trials']
+                best_loss = status['new_best']['loss']
+                writer.add_scalar('pipeline/train/loss/best', best_loss, global_step=n_trials)
 
             # progress bar
             desc = f"Trial #{s+1}"
