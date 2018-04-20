@@ -53,12 +53,20 @@ class Pipeline:
 
     def objective(self, protocol, subset='development'):
         metric = self.get_tune_metric()
+        value, duration = [], []
         for current_file in getattr(protocol, subset)():
             reference = current_file['annotation']
             uem = get_annotated(current_file)
             hypothesis = self.apply(current_file)
-            metric(reference, hypothesis, uem=uem, detailed=False)
-        return abs(metric)
+            value.append(metric(reference, hypothesis, uem=uem))
+            duration.append(uem.duration())
+
+        # support for pyannote.metrics
+        if hasattr(metric, '__abs__'):
+            return abs(metric)
+        # support for any other metric
+        else:
+            return np.average(value, weights=duration)
 
     def best(self, tune_db=None, connection=None):
         """
