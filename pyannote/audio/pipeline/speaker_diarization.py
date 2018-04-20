@@ -373,6 +373,8 @@ class SpeakerDiarization(Pipeline):
         clusters = self.cls_.fit_predict(affinity)
 
         for speech_turn, cluster in zip(speech_turns, clusters):
+            # HACK find why fit_predict returns NaN sometimes and fix it.
+            cluster = -1 if np.isnan(cluster) else cluster
             hypothesis[speech_turn] = cluster
 
         return hypothesis
