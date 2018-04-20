@@ -173,7 +173,7 @@ class Pipeline:
             # tell the optimizer what was the result
             sampler.update(token, loss)
 
-            if loss < best['loss']:
+            if loss < best['loss'] or i == 1:
                 # if loss is better than previous known best
                 # check in the database what is the current best
                 best = self.best(connection=connection)
