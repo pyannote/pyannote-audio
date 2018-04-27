@@ -9,7 +9,7 @@ $ conda create --name pyannote python=3.6 anaconda
 $ source activate pyannote
 $ conda install -c conda-forge yaafe
 $ pip install -U pip setuptools
-$ pip install pyannote.audio
+$ pip install --process-dependency-links pyannote.audio
 ```
 
 [install pytorch from source](https://github.com/pytorch/pytorch#from-source)

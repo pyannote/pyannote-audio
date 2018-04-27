@@ -54,11 +54,12 @@ setup(
         'sortedcontainers >= 1.5.9',
         'sortedcollections >= 0.5.3',
         'tensorboardX >= 1.1',
-        # chocolate,
-        # install it manually until there is a proper release
-        # see https://github.com/AIworx-Labs/chocolate/issues/16
+        'chocolate >= 0.6',
         'filelock >= 3.0.4',
         'dlib == 19.10.0',
+    ],
+    dependency_links=[
+        'git+https://github.com/AIworx-Labs/chocolate.git@master#egg=chocolate-0.6'
     ],
     entry_points = {
         'console_scripts': [
