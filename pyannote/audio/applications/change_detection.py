@@ -132,6 +132,7 @@ Configuration file:
 
 """
 
+import torch
 import numpy as np
 from docopt import docopt
 from os.path import expanduser
@@ -153,9 +154,7 @@ class SpeakerChangeDetection(SpeechActivityDetection):
         target_purity = self.purity
 
         # load model for current epoch
-        model = self.load_model(epoch)
-        if self.gpu:
-            model = model.cuda()
+        model = self.load_model(epoch).to(self.device)
         model.eval()
 
         if isinstance(self.feature_extraction_, Precomputed):
@@ -166,7 +165,7 @@ class SpeakerChangeDetection(SpeechActivityDetection):
         sequence_labeling = SequenceLabeling(
             model, self.feature_extraction_, duration,
             step=.25 * duration, batch_size=self.batch_size,
-            source='audio', gpu=self.gpu)
+            source='audio', device=self.device)
 
         sequence_labeling.cache_preprocessed_ = False
 
@@ -186,7 +185,6 @@ class SpeakerChangeDetection(SpeechActivityDetection):
         upper_alpha = 1.
         best_alpha = .5 * (lower_alpha + upper_alpha)
         best_coverage = 0.
-
 
         for _ in range(10):
             current_alpha = .5 * (lower_alpha + upper_alpha)
@@ -225,6 +223,7 @@ def main():
     protocol_name = arguments['<database.task.protocol>']
     subset = arguments['--subset']
     gpu = arguments['--gpu']
+    device = torch.device('cuda') if gpu else torch.device('cpu')
 
     if arguments['train']:
         experiment_dir = arguments['<experiment_dir>']
@@ -243,7 +242,7 @@ def main():
             epochs = int(epochs)
 
         application = SpeakerChangeDetection(experiment_dir, db_yml=db_yml)
-        application.gpu = gpu
+        application.device = device
         application.train(protocol_name, subset=subset,
                           restart=restart, epochs=epochs)
 
@@ -276,7 +275,7 @@ def main():
 
         application = SpeakerChangeDetection.from_train_dir(
             train_dir, db_yml=db_yml)
-        application.gpu = gpu
+        application.device = device
         application.batch_size = batch_size
         application.purity = purity
         application.validate(protocol_name, subset=subset,
@@ -298,6 +297,6 @@ def main():
 
         application = SpeakerChangeDetection.from_model_pt(
             model_pt, db_yml=db_yml)
-        application.gpu = gpu
+        application.device = device
         application.batch_size = batch_size
         application.apply(protocol_name, output_dir, step=step)

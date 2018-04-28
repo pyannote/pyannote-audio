@@ -148,6 +148,7 @@ Configuration file:
 
 """
 
+import torch
 import numpy as np
 import scipy.optimize
 from docopt import docopt
@@ -203,7 +204,7 @@ class SpeechActivityDetection(Application):
 
         self.task_.fit(self.model_, self.feature_extraction_, protocol,
                        train_dir, subset=subset, epochs=epochs,
-                       restart=restart, gpu=self.gpu)
+                       restart=restart, device=self.device)
 
 
     def validate_epoch(self, epoch, protocol_name, subset='development',
@@ -211,9 +212,7 @@ class SpeechActivityDetection(Application):
 
 
         # load model for current epoch
-        model = self.load_model(epoch)
-        if self.gpu:
-            model = model.cuda()
+        model = self.load_model(epoch).to(self.device)
         model.eval()
 
         if isinstance(self.feature_extraction_, Precomputed):
@@ -224,7 +223,7 @@ class SpeechActivityDetection(Application):
         sequence_labeling = SequenceLabeling(
             model, self.feature_extraction_, duration,
             step=.25 * duration, batch_size=self.batch_size,
-            source='audio', gpu=self.gpu)
+            source='audio', device=self.device)
 
         sequence_labeling.cache_preprocessed_ = False
 
@@ -283,10 +282,7 @@ class SpeechActivityDetection(Application):
 
     def apply(self, protocol_name, output_dir, step=None):
 
-        model = self.model_
-
-        if self.gpu:
-            model = model.cuda()
+        model = self.model_.to(self.device)
         model.eval()
 
         duration = self.task_.duration
@@ -301,7 +297,7 @@ class SpeechActivityDetection(Application):
         sequence_labeling = SequenceLabeling(
             model, self.feature_extraction_, duration,
             step=.25 * duration, batch_size=self.batch_size,
-            source='audio', gpu=self.gpu)
+            source='audio', device=self.device)
 
         sliding_window = sequence_labeling.sliding_window
         n_classes = self.task_.n_classes
@@ -332,6 +328,7 @@ def main():
     protocol_name = arguments['<database.task.protocol>']
     subset = arguments['--subset']
     gpu = arguments['--gpu']
+    device = torch.device('cuda') if gpu else torch.device('cpu')
 
     if arguments['train']:
         experiment_dir = arguments['<experiment_dir>']
@@ -350,7 +347,7 @@ def main():
             epochs = int(epochs)
 
         application = SpeechActivityDetection(experiment_dir, db_yml=db_yml)
-        application.gpu = gpu
+        application.device = device
         application.train(protocol_name, subset=subset,
                           restart=restart, epochs=epochs)
 
@@ -381,7 +378,7 @@ def main():
 
         application = SpeechActivityDetection.from_train_dir(
             train_dir, db_yml=db_yml)
-        application.gpu = gpu
+        application.device = device
         application.batch_size = batch_size
         application.validate(protocol_name, subset=subset,
                              start=start, end=end, every=every,
@@ -402,6 +399,6 @@ def main():
 
         application = SpeechActivityDetection.from_model_pt(
             model_pt, db_yml=db_yml)
-        application.gpu = gpu
+        application.device = device
         application.batch_size = batch_size
         application.apply(protocol_name, output_dir, step=step)

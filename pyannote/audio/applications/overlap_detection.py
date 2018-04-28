@@ -53,6 +53,7 @@ Common options:
   --precision=<precision>    Target precision [default: 0.9].
 """
 
+import torch
 import numpy as np
 from docopt import docopt
 from os.path import expanduser
@@ -77,9 +78,7 @@ class OverlapDetection(SpeechActivityDetection):
         target_precision = self.precision
 
         # load model for current epoch
-        model = self.load_model(epoch)
-        if self.gpu:
-            model = model.cuda()
+        model = self.load_model(epoch).to(self.device)
         model.eval()
 
         if isinstance(self.feature_extraction_, Precomputed):
@@ -90,7 +89,7 @@ class OverlapDetection(SpeechActivityDetection):
         sequence_labeling = SequenceLabeling(
             model, self.feature_extraction_, duration,
             step=.25 * duration, batch_size=self.batch_size,
-            source='audio', gpu=self.gpu)
+            source='audio', device=self.device)
 
         sequence_labeling.cache_preprocessed_ = False
 
@@ -175,6 +174,7 @@ def main():
     protocol_name = arguments['<database.task.protocol>']
     subset = arguments['--subset']
     gpu = arguments['--gpu']
+    device = torch.device('cuda') if gpu else torch.device('cpu')
 
     if arguments['validate']:
         train_dir = arguments['<train_dir>']
@@ -205,7 +205,7 @@ def main():
 
         application = OverlapDetection.from_train_dir(
             train_dir, db_yml=db_yml)
-        application.gpu = gpu
+        application.device = device
         application.batch_size = batch_size
         application.precision = precision
         application.validate(protocol_name, subset=subset,

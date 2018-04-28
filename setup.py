@@ -43,6 +43,7 @@ setup(
         'pyannote.database >= 1.3',
         'pyannote.parser >= 0.7',
         'pyannote.algorithms >= 0.7.3',
+        'torch == 0.4',
         'pandas >= 0.18.0',
         'audioread >= 2.1.5',
         'librosa >= 0.5.1',

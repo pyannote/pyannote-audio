@@ -30,7 +30,6 @@ import torch
 import random
 import numpy as np
 from tqdm import tqdm
-from torch.autograd import Variable
 from pyannote.metrics.binary_classification import det_curve
 from pyannote.database import get_unique_identifier
 from pyannote.database import get_label_identifier
@@ -393,21 +392,18 @@ class LabelingTask(Trainer):
     def process_batch(self, batch):
 
         X, y = batch['X'], batch['y']
+
         if not getattr(self.model_, 'batch_first', True):
             X = np.rollaxis(X, 0, 2)
             y = y.T
-        X = np.array(X, dtype=np.float32)
-        X = Variable(torch.from_numpy(X))
-        y = Variable(torch.from_numpy(y))
 
-        if self.gpu_:
-            X = X.cuda()
-            y = y.cuda()
+        X = torch.tensor(X, dtype=torch.float32, device=self.device_)
+        y = torch.tensor(y, dtype=torch.int64, device=self.device_)
 
-        fX = self.model_(X)
+        fX = self.model_(X.requires_grad_())
 
         losses = self.loss_func_(fX.view((-1, self.n_classes)),
-                           y.contiguous().view((-1, )))
+                                 y.contiguous().view((-1, )))
 
         if self.detailed_log_:
             self.log_y_pred_.append(self.to_numpy(fX))

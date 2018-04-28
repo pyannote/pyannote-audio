@@ -162,15 +162,15 @@ class Trainer:
     def on_epoch_end(self, epoch):
         pass
 
-    def to_numpy(self, variable):
-        """Convert torch.Variable to numpy array"""
-        if self.gpu_:
             return variable.data.cpu().numpy()
-        return variable.data.numpy()
+    def to_numpy(self, tensor):
+        """Convert torch.Tensor to numpy array"""
+        cpu = torch.device('cpu')
+        return tensor.detach().to(cpu).numpy()
 
     def fit(self, model, feature_extraction, protocol,
             log_dir=None, subset='train', epochs=1000,
-            restart=0, gpu=False):
+            restart=0, device=None):
         """Train model
 
         Parameters
@@ -190,8 +190,8 @@ class Trainer:
             Train model for that many epochs. Defaults to 1000.
         restart : int, optional
             Restart training at this epoch. Defaults to train from scratch.
-        gpu : bool, optional
-            Use GPU. Defaults to CPU.
+        device : torch.device, optional
+            Defaults to torch.device('cpu')
 
         Returns
         -------
@@ -202,7 +202,7 @@ class Trainer:
         iterations = self.fit_iter(model, feature_extraction,
                                    protocol, log_dir=log_dir,
                                    subset=subset, epochs=epochs,
-                                   restart=restart, gpu=gpu)
+                                   restart=restart, device=device)
 
         for iteration in iterations:
             pass
@@ -213,7 +213,7 @@ class Trainer:
     def fit_iter(self, model, feature_extraction,
                  protocol, subset='train',
                  epochs=1000, restart=0,
-                 log_dir=None, gpu=False, quiet=False):
+                 log_dir=None, device=None, quiet=False):
 
         if log_dir is None and restart > 0:
             msg = ('One must provide `log_dir` when '
@@ -227,7 +227,7 @@ class Trainer:
                 log_dir, restart=restart > 0)
             self.writer_ = SummaryWriter(log_dir=log_dir)
 
-        self.gpu_ = gpu
+        self.device_ = torch.device('cpu') if device is None else device
 
         self.batch_generator_ = self.get_batch_generator(feature_extraction)
         batches = self.batch_generator_(protocol, subset=subset)
@@ -333,7 +333,7 @@ class Trainer:
 
         * checkpoint_
         * model_
-        * gpu_
+        * device_
         * batches_per_epoch_
 
         This will set/update the following hidden attributes:
@@ -348,8 +348,7 @@ class Trainer:
             weights_pt = self.checkpoint_.weights_pt(epoch)
             self.model_.load_state_dict(torch.load(weights_pt))
 
-        if self.gpu_:
-            self.model_ = self.model_.cuda()
+        self.model_ = self.model_.to(self.device_)
 
         if self.optimizer == 'sgd':
             self.optimizer_ = SGD(self.model_.parameters(),
@@ -369,11 +368,10 @@ class Trainer:
         if epoch > 0:
             optimizer_pt = self.checkpoint_.optimizer_pt(epoch)
             self.optimizer_.load_state_dict(torch.load(optimizer_pt))
-            if self.gpu_:
-                for state in self.optimizer_.state.values():
-                    for k, v in state.items():
-                        if torch.is_tensor(v):
-                            state[k] = v.cuda()
+            for state in self.optimizer_.state.values():
+                for k, v in state.items():
+                    if torch.is_tensor(v):
+                        state[k] = v.to(self.device_)
 
         self.scheduler_ = DavisKingScheduler(
             self.optimizer_, self.batches_per_epoch_,

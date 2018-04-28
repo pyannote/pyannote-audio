@@ -12,8 +12,6 @@ $ pip install -U pip setuptools
 $ pip install --process-dependency-links pyannote.audio
 ```
 
-[install pytorch from source](https://github.com/pytorch/pytorch#from-source)
-
 ## Citation
 
 If you use `pyannote.audio` in your research, please use the following citation (until a regular paper is published):

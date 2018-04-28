@@ -28,6 +28,7 @@
 
 """Resegmentation"""
 
+import torch
 import collections
 import numpy as np
 from .base import LabelingTask
@@ -137,7 +138,7 @@ class Resegmentation(LabelingTask):
 
         return DummyProtocol()
 
-    def _score(self, model, current_file, gpu=False):
+    def _score(self, model, current_file, device=None):
         """Apply current model on current file
 
         Parameters
@@ -146,8 +147,7 @@ class Resegmentation(LabelingTask):
             Current state of the model.
         current_file : pyannote.database dict
             Current file.
-        gpu : bool, optional
-            Process on GPU. Defaults to False.
+        device : torch.device
 
         Returns
         -------
@@ -159,7 +159,7 @@ class Resegmentation(LabelingTask):
         sequence_labeling = SequenceLabeling(
             model, self.precomputed, self.duration,
             step=.25*self.duration, batch_size=self.batch_size,
-            source='audio', gpu=gpu)
+            source='audio', device=device)
 
         return sequence_labeling.apply(current_file)
 
@@ -186,7 +186,7 @@ class Resegmentation(LabelingTask):
                           labels=self.batch_generator_.labels)
 
     def apply_iter(self, current_file, hypothesis,
-                   partial=True, gpu=False,
+                   partial=True, device=None,
                    log_dir=None):
         """Yield re-segmentation results for each epoch
 
@@ -199,8 +199,8 @@ class Resegmentation(LabelingTask):
         partial : bool, optional
             Set to False to only yield final re-segmentation.
             Set to True to yield re-segmentation after each epoch.
-        gpu : bool, optional
-            Process on GPU.
+        device : torch.device, optional
+            Defaults to torch.device('cpu')
         log_dir : str, optional
             Path to log directory.
 
@@ -209,6 +209,8 @@ class Resegmentation(LabelingTask):
         resegmented : pyannote.core.Annotation
             Resegmentation results after each epoch.
         """
+
+        device = torch.device('cpu') if device is None else device
 
         current_file = dict(current_file)
         current_file['annotation'] = hypothesis
@@ -236,7 +238,7 @@ class Resegmentation(LabelingTask):
 
         iterations = self.fit_iter(model, self.precomputed, protocol,
                                    log_dir=log_dir, epochs=self.epochs,
-                                   gpu=gpu, quiet=True)
+                                   device=device, quiet=True)
 
         for i, iteration in enumerate(iterations):
 
@@ -244,7 +246,7 @@ class Resegmentation(LabelingTask):
             # if not, compute scores for last 'ensemble' iterations only
             if partial or (i + 1 > self.epochs - self.ensemble):
                 iteration_score = self._score(iteration['model'],
-                                              current_file, gpu=gpu)
+                                              current_file, device=device)
                 self.scores_.append(iteration_score)
 
             # if 'partial', generate (and yield) hypothesis
@@ -257,10 +259,9 @@ class Resegmentation(LabelingTask):
             hypothesis = self._decode(self.scores_)
             yield hypothesis
 
-    def apply(self, current_file, hypothesis, gpu=False, log_dir=None):
+    def apply(self, current_file, hypothesis, device=None, log_dir=None):
         for hypothesis in self.apply_iter(current_file, hypothesis,
-                                          partial=False, gpu=gpu):
+                                          partial=False, device=device):
             pass
 
         return hypothesis
-

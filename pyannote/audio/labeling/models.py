@@ -32,6 +32,8 @@ from torch.autograd import Variable
 import torch.nn as nn
 
 
+
+
 class StackedRNN(nn.Module):
     """Stacked recurrent neural network
 
@@ -124,27 +126,24 @@ class StackedRNN(nn.Module):
             raise ValueError(msg.format(n_features, self.n_features))
 
         output = sequence
-        gpu = sequence.is_cuda
+        device = sequence.device
 
         # stack recurrent layers
         for hidden_dim, layer in zip(self.recurrent, self.recurrent_layers_):
 
             if self.rnn == 'LSTM':
                 # initial hidden and cell states
-                h = torch.zeros(self.num_directions_, batch_size, hidden_dim)
-                c = torch.zeros(self.num_directions_, batch_size, hidden_dim)
-                if gpu:
-                    h = h.cuda()
-                    c = c.cuda()
-                hidden = (Variable(h, requires_grad=False),
-                          Variable(c, requires_grad=False))
+                h = torch.zeros(self.num_directions_, batch_size, hidden_dim,
+                                device=device, requires_grad=False)
+                c = torch.zeros(self.num_directions_, batch_size, hidden_dim,
+                                device=device, requires_grad=False)
+                hidden = (h, c)
 
             elif self.rnn == 'GRU':
                 # initial hidden state
-                h = torch.zeros(self.num_directions_, batch_size, hidden_dim)
-                if gpu:
-                    h = h.cuda()
-                hidden = Variable(h, requires_grad=False)
+                hidden = torch.zeros(
+                    self.num_directions_, batch_size, hidden_dim,
+                    device=device, requires_grad=False)
 
             # apply current recurrent layer and get output sequence
             output, _ = layer(output, hidden)

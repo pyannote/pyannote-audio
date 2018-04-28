@@ -33,8 +33,6 @@ from pyannote.generators.batch import FileBasedBatchGenerator
 from pyannote.generators.fragment import SlidingSegments
 from pyannote.audio.generators.periodic import PeriodicFeaturesMixin
 from pyannote.database import get_unique_identifier
-
-from torch.autograd import Variable
 import torch
 
 
@@ -53,8 +51,8 @@ class SequenceLabeling(PeriodicFeaturesMixin, FileBasedBatchGenerator):
         Subsequence step, in seconds. Defaults to 50% of `duration`.
     batch_size : int, optional
         Defaults to 32.
-    gpu : boolean, optional
-        Run on GPU.
+    device : torch.device, optional
+        Defaults to CPU.
 
     Usage
     -----
@@ -65,13 +63,13 @@ class SequenceLabeling(PeriodicFeaturesMixin, FileBasedBatchGenerator):
     """
 
     def __init__(self, model, feature_extraction, duration,
-                 step=None, batch_size=32, source='audio', gpu=False):
+                 step=None, batch_size=32, source='audio', device=None):
 
-        self.model = model.cuda() if gpu else model
         self.feature_extractor = feature_extraction
         self.duration = duration
         self.batch_size = batch_size
-        self.gpu = gpu
+        self.device = torch.device('cpu') if device is None else device
+        self.model = model.to(self.device)
 
         generator = SlidingSegments(duration=duration, step=step, source=source)
         self.step = generator.step if step is None else step
@@ -112,13 +110,8 @@ class SequenceLabeling(PeriodicFeaturesMixin, FileBasedBatchGenerator):
 
         if not getattr(self.model, 'batch_first', True):
             X = np.rollaxis(X, 0, 2)
-        X = np.array(X, dtype=np.float32)
-        X = Variable(torch.from_numpy(X))
-
-        if self.gpu:
-            prediction = self.model(X.cuda()).data.cpu().numpy()
-        else:
-            prediction = self.model(X).data.numpy()
+        X = torch.tensor(X, dtype=torch.float32, device=self.device)
+        prediction = self.model(X).data.to('cpu').numpy()
         if not getattr(self.model, 'batch_first', True):
             prediction = np.rollaxis(prediction, 1, 0)
         return prediction
