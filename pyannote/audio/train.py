@@ -162,7 +162,6 @@ class Trainer:
     def on_epoch_end(self, epoch):
         pass
 
-            return variable.data.cpu().numpy()
     def to_numpy(self, tensor):
         """Convert torch.Tensor to numpy array"""
         cpu = torch.device('cpu')
