@@ -30,8 +30,6 @@ import numpy as np
 from pyannote.core import SlidingWindow, SlidingWindowFeature
 from pyannote.audio.labeling.extraction import SequenceLabeling
 from pyannote.generators.batch import batchify
-
-from torch.autograd import Variable
 import torch
 
 
@@ -50,18 +48,18 @@ class SequenceEmbedding(SequenceLabeling):
         Subsequence step, in seconds. Defaults to 50% of `duration`.
     batch_size : int, optional
         Defaults to 32.
-    gpu : boolean, optional
-        Run on GPU.
+    device : torch.device, optional
+        Defaults to CPU.
     """
 
     def __init__(self, model, feature_extraction, duration,
                  step=None, batch_size=32, source='audio',
-                 gpu=False):
+                 device=None):
 
         super(SequenceEmbedding, self).__init__(
             model, feature_extraction, duration,
             step=step, source=source,
-            batch_size=batch_size, gpu=gpu)
+            batch_size=batch_size, device=device)
 
     @property
     def sliding_window(self):
@@ -91,13 +89,8 @@ class SequenceEmbedding(SequenceLabeling):
         if batch_size <= self.batch_size:
             if not getattr(self.model, 'batch_first', True):
                 X = np.rollaxis(X, 0, 2)
-            X = np.array(X, dtype=np.float32)
-            X = Variable(torch.from_numpy(X))
-
-            if self.gpu:
-                fX = self.model(X.cuda()).data.cpu().numpy()
-            else:
-                fX = self.model(X).data.numpy()
+            X = torch.tensor(X, dtype=torch.float32, device=self.device)
+            fX = self.model(X).to('cpu').numpy()
 
             if fX.ndim == 3:
                 if not getattr(self.model, 'batch_first', True):

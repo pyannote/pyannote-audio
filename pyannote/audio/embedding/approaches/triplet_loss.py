@@ -28,7 +28,6 @@
 
 import numpy as np
 import torch
-from torch.autograd import Variable
 import torch.nn.functional as F
 from pyannote.audio.generators.speaker import SpeechSegmentGenerator
 from pyannote.audio.embedding.utils import to_condensed, pdist
@@ -134,12 +133,12 @@ class TripletLoss(Trainer):
 
         Parameters
         ----------
-        fX : (n, d) torch.autograd.Variable
+        fX : (n, d) torch.Tensor
             Embeddings.
 
         Returns
         -------
-        distances : (n * (n-1) / 2,) torch.autograd.Variable
+        distances : (n * (n-1) / 2,) torch.Tensor
             Condensed pairwise distance matrix
         """
 
@@ -172,7 +171,7 @@ class TripletLoss(Trainer):
         ----------
         y : list
             Sequence labels.
-        distances : (n * (n-1) / 2,) torch.autograd.Variable
+        distances : (n * (n-1) / 2,) torch.Tensor
             Condensed pairwise distance matrix
 
         Returns
@@ -183,10 +182,7 @@ class TripletLoss(Trainer):
 
         anchors, positives, negatives = [], [], []
 
-        if distances.is_cuda:
-            distances = squareform(distances.data.cpu().numpy())
-        else:
-            distances = squareform(distances.data.numpy())
+        distances = squareform(self.to_numpy(distances))
         y = np.array(y)
 
         for anchor, y_anchor in enumerate(y):
@@ -215,7 +211,7 @@ class TripletLoss(Trainer):
         ----------
         y : list
             Sequence labels.
-        distances : (n * (n-1) / 2,) torch.autograd.Variable
+        distances : (n * (n-1) / 2,) torch.Tensor
             Condensed pairwise distance matrix
 
         Returns
@@ -226,10 +222,7 @@ class TripletLoss(Trainer):
 
         anchors, positives, negatives = [], [], []
 
-        if distances.is_cuda:
-            distances = squareform(distances.data.cpu().numpy())
-        else:
-            distances = squareform(distances.data.numpy())
+        distances = squareform(self.to_numpy(distances))
         y = np.array(y)
 
         for anchor, y_anchor in enumerate(y):
@@ -256,7 +249,7 @@ class TripletLoss(Trainer):
         ----------
         y : list
             Sequence labels.
-        distances : (n * (n-1) / 2,) torch.autograd.Variable
+        distances : (n * (n-1) / 2,) torch.Tensor
             Condensed pairwise distance matrix
 
         Returns
@@ -291,7 +284,7 @@ class TripletLoss(Trainer):
 
         Parameters
         ----------
-        distances : torch.autograd.Variable
+        distances : torch.Tensor
             Condensed matrix of pairwise distances.
         anchors, positives, negatives : list of int
             Triplets indices.
@@ -300,7 +293,7 @@ class TripletLoss(Trainer):
 
         Returns
         -------
-        loss : torch.autograd.Variable
+        loss : torch.Tensor
             Triplet loss.
         """
 
@@ -357,11 +350,7 @@ class TripletLoss(Trainer):
         X = batch['X']
         if not getattr(self.model_, 'batch_first', True):
             X = np.rollaxis(X, 0, 2)
-        X = np.array(X, dtype=np.float32)
-        X = Variable(torch.from_numpy(X))
-        if self.gpu_:
-            X = X.cuda()
-        batch['X'] = X
+        batch['X'] = torch.tensor(X, dtype=torch.float32, device=self.device_)
 
         # forward pass
         fX = self.model_(batch['X'])

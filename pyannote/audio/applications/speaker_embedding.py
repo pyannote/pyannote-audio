@@ -143,7 +143,6 @@ import numpy as np
 from docopt import docopt
 from .base import Application
 from os.path import expanduser
-from torch.autograd import Variable
 from pyannote.database import FileFinder
 from pyannote.database import get_protocol
 from pyannote.audio.embedding.utils import pdist
@@ -191,7 +190,7 @@ class SpeakerEmbedding(Application):
 
         self.approach_.fit(self.model_, self.feature_extraction_, protocol,
                            train_dir, subset=subset, epochs=epochs,
-                           restart=restart, gpu=self.gpu)
+                           restart=restart, device=self.device)
 
     def validate_init(self, protocol_name, subset='development'):
 
@@ -316,9 +315,7 @@ class SpeakerEmbedding(Application):
 
 
         # load current model
-        model = self.load_model(epoch)
-        if self.gpu:
-            model = model.cuda()
+        model = self.load_model(epoch).to(self.device)
         model.eval()
 
         # use final representation (not internal ones)
@@ -333,7 +330,8 @@ class SpeakerEmbedding(Application):
         # initialize embedding extraction
         sequence_embedding = SequenceEmbedding(
             model, self.feature_extraction_, duration,
-            step=step, batch_size=self.batch_size, gpu=self.gpu)
+            step=step, batch_size=self.batch_size,
+            device=self.device)
 
         metrics = {}
         protocol = get_protocol(protocol_name, progress=False,
@@ -396,15 +394,13 @@ class SpeakerEmbedding(Application):
                                 subset='development',
                                 validation_data=None):
 
-        model = self.load_model(epoch)
-        if self.gpu:
-            model = model.cuda()
+        model = self.load_model(epoch).to(self.device)
         model.eval()
 
         duration = self.approach_.duration
         sequence_embedding = SequenceEmbedding(
             model, self.feature_extraction_, duration,
-            batch_size=self.batch_size, gpu=self.gpu)
+            batch_size=self.batch_size, device=self.device)
 
         fX = sequence_embedding.apply(validation_data['X'])
         y_pred = pdist(fX, metric=self.metric)
@@ -418,17 +414,15 @@ class SpeakerEmbedding(Application):
                              subset='development',
                              validation_data=None):
 
-        model = self.load_model(epoch)
-        if self.gpu:
-            model = model.cuda()
+        model = self.load_model(epoch).to(self.device)
         model.eval()
 
-        X = validation_data['X']
-        if not getattr(model, 'batch_first', True):
-            X = np.rollaxis(X, 0, 2)
-        X = torch.from_numpy(np.array(X, dtype=np.float32))
-        X = Variable(X, requires_grad=False)
-        fX = model(X).data.numpy()
+        duration = self.approach_.duration
+        sequence_embedding = SequenceEmbedding(
+            model, self.feature_extraction_, duration,
+            batch_size=self.batch_size, device=self.device)
+
+        fX = sequence_embedding.apply(validation_data['X'])
 
         z = validation_data['z']
 
@@ -461,10 +455,7 @@ class SpeakerEmbedding(Application):
     def apply(self, protocol_name, output_dir, step=None,
               internal=False, normalize=False):
 
-        model = self.model_
-
-        if self.gpu:
-            model = model.cuda()
+        model = self.model_.to(self.device)
         model.eval()
 
         if internal is not None:
@@ -483,7 +474,7 @@ class SpeakerEmbedding(Application):
         # initialize embedding extraction
         sequence_embedding = SequenceEmbedding(
             model, self.feature_extraction_, duration,
-            step=step, batch_size=self.batch_size, gpu=self.gpu)
+            step=step, batch_size=self.batch_size, device=self.device)
         sliding_window = sequence_embedding.sliding_window
         dimension = sequence_embedding.dimension
 
@@ -512,6 +503,8 @@ def main():
     protocol_name = arguments['<database.task.protocol>']
     subset = arguments['--subset']
     gpu = arguments['--gpu']
+    device = torch.device('cuda') if gpu else torch.device('cpu')
+
 
     if arguments['train']:
         experiment_dir = arguments['<experiment_dir>']
@@ -530,7 +523,7 @@ def main():
             epochs = int(epochs)
 
         application = SpeakerEmbedding(experiment_dir, db_yml=db_yml)
-        application.gpu = gpu
+        application.device = device
         application.train(protocol_name, subset=subset,
                           restart=restart, epochs=epochs)
 
@@ -564,7 +557,7 @@ def main():
 
         application = SpeakerEmbedding.from_train_dir(
             train_dir, db_yml=db_yml)
-        application.gpu = gpu
+        application.device = device
         application.turn = turn
         application.batch_size = batch_size
 
@@ -598,7 +591,7 @@ def main():
 
         application = SpeakerEmbedding.from_model_pt(
             model_pt, db_yml=db_yml)
-        application.gpu = gpu
+        application.device = device
         application.batch_size = batch_size
         application.apply(protocol_name, output_dir, step=step,
                           internal=internal, normalize=normalize)
