@@ -285,7 +285,7 @@ class Trainer:
                 self.optimizer_.step()
 
                 # keep track of loss
-                loss_ = float(self.to_numpy(loss))
+                loss_ = loss.item()
                 loss_avg += loss_
 
                 # send loss of current batch to scheduler
