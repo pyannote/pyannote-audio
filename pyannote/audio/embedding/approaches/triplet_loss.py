@@ -35,6 +35,9 @@ from scipy.spatial.distance import squareform
 from pyannote.metrics.binary_classification import det_curve
 from collections import deque
 from pyannote.audio.train import Trainer
+from torch.nn.utils.rnn import pad_sequence
+from torch.nn.utils.rnn import pack_padded_sequence
+from torch.nn.utils.rnn import pad_packed_sequence
 
 
 class TripletLoss(Trainer):
@@ -52,7 +55,12 @@ class TripletLoss(Trainer):
     Parameters
     ----------
     duration : float, optional
-        Defautls to 3.2 seconds.
+        Use fixed duration segments with this `duration`.
+        Defaults (None) to using variable duration segments.
+    min_duration : float, optional
+        In case `duration` is None, set segment minimum duration.
+    max_duration : float, optional
+        In case `duration` is None, set segment maximum duration.
     metric : {'euclidean', 'cosine', 'angular'}, optional
         Defaults to 'cosine'.
     margin: float, optional
@@ -82,7 +90,7 @@ class TripletLoss(Trainer):
 
     """
 
-    def __init__(self, duration=3.2,
+    def __init__(self, duration=None, min_duration=None, max_duration=None,
                  metric='cosine', margin=0.2, clamp='positive',
                  sampling='all', per_label=3, per_fold=None, parallel=1,
                  label_min_duration=0.,
@@ -109,7 +117,11 @@ class TripletLoss(Trainer):
         self.per_fold = per_fold
         self.per_label = per_label
         self.label_min_duration = label_min_duration
+
         self.duration = duration
+        self.min_duration = min_duration
+        self.max_duration = max_duration
+
         self.parallel = parallel
         self.optimizer = optimizer
         self.learning_rate = learning_rate
@@ -332,7 +344,8 @@ class TripletLoss(Trainer):
         return SpeechSegmentGenerator(
             feature_extraction, label_min_duration=self.label_min_duration,
             per_label=self.per_label, per_fold=self.per_fold,
-            duration=self.duration, parallel=self.parallel)
+            duration=self.duration, min_duration=self.min_duration,
+            max_duration=self.max_duration, parallel=self.parallel)
 
     def aggregate(self, batch):
         return batch
@@ -346,12 +359,31 @@ class TripletLoss(Trainer):
 
     def process_batch(self, batch):
 
-        # update batch['X'] to be usable by torch
-        X = batch['X']
-        batch['X'] = torch.tensor(X, dtype=torch.float32, device=self.device_)
+        variable_length = isinstance(batch['X'], (list, tuple))
+
+        if variable_length:
+
+            lengths = torch.tensor([len(x) for x in batch['X']])
+            sorted_lengths, sort = torch.sort(lengths, descending=True)
+            _, unsort = torch.sort(sort)
+
+            sequences = [torch.tensor(batch['X'][i],
+                                      dtype=torch.float32,
+                                      device=self.device_) for i in sort]
+            padded = pad_sequence(sequences, batch_first=True, padding_value=0)
+            packed = pack_padded_sequence(padded, sorted_lengths,
+                                          batch_first=True)
+            batch['X'] = packed
+
+        else:
+            batch['X'] = torch.tensor(batch['X'], dtype=torch.float32,
+                                      device=self.device_)
 
         # forward pass
         fX = self.model_(batch['X'])
+
+        if variable_length:
+            fX = fX[unsort]
 
         # log embedding norms
         if self.detailed_log_:

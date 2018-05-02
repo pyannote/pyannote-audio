@@ -31,6 +31,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import warnings
+from torch.nn.utils.rnn import PackedSequence
+from torch.nn.utils.rnn import pad_packed_sequence
 
 
 class TristouNet(nn.Module):
@@ -94,7 +96,7 @@ class TristouNet(nn.Module):
                 raise ValueError('"rnn" must be one of {"LSTM", "GRU"}.')
             self.add_module('recurrent_{0}'.format(i), recurrent_layer)
             self.recurrent_layers_.append(recurrent_layer)
-            input_dim = hidden_dim
+            input_dim = hidden_dim * (2 if self.bidirectional else 1)
 
         # create list of linear layers
         self.linear_layers_ = []
@@ -119,15 +121,22 @@ class TristouNet(nn.Module):
 
         """
 
-        # check input feature dimension
-        batch_size, n_samples, n_features = sequence.size()
+        packed_sequences = isinstance(sequence, PackedSequence)
+
+        if packed_sequences:
+            _, n_features = sequence.data.size()
+            batch_size = sequence.batch_sizes[0].item()
+            device = sequence.data.device
+        else:
+            # check input feature dimension
+            batch_size, _, n_features = sequence.size()
+            device = sequence.device
+
         if n_features != self.n_features:
             msg = 'Wrong feature dimension. Found {0}, should be {1}'
             raise ValueError(msg.format(n_features, self.n_features))
 
         output = sequence
-        # batch_size, n_samples, n_features
-        device = sequence.device
 
         # recurrent layers
         for hidden_dim, layer in zip(self.recurrent, self.recurrent_layers_):
@@ -149,10 +158,8 @@ class TristouNet(nn.Module):
             # apply current recurrent layer and get output sequence
             output, _ = layer(output, hidden)
 
-            # average both directions in case of bidirectional layers
-            if self.bidirectional:
-                output = .5 * (output[:, :, :hidden_dim] + \
-                               output[:, :, hidden_dim:])
+        if packed_sequences:
+            output, lengths = pad_packed_sequence(output, batch_first=True)
 
         # batch_size, n_samples, dimension
 
@@ -160,6 +167,10 @@ class TristouNet(nn.Module):
         if self.pooling == 'sum':
             output = output.sum(dim=1)
         elif self.pooling == 'max':
+            if packed_sequences:
+                msg = ('"max" pooling is not yet implemented '
+                       'for variable length sequences.')
+                raise NotImplementedError(msg)
             output, _ = output.max(dim=1)
 
         # batch_size, dimension
@@ -329,12 +340,12 @@ class ClopiNet(nn.Module):
                 raise ValueError('"rnn" must be one of {"LSTM", "GRU"}.')
             self.add_module('recurrent_{0}'.format(i), recurrent_layer)
             self.recurrent_layers_.append(recurrent_layer)
-            input_dim = hidden_dim
+            input_dim = hidden_dim * (2 if self.bidirectional else 1)
 
         # the output of recurrent layers are concatenated so the input
         # dimension of subsequent linear layers is the sum of their output
         # dimension
-        input_dim = sum(self.recurrent)
+        input_dim = sum(self.recurrent) * (2 if self.bidirectional else 1)
 
         if self.weighted:
             self.alphas_ = nn.Parameter(torch.ones(input_dim))
@@ -381,16 +392,22 @@ class ClopiNet(nn.Module):
 
     def forward(self, sequence):
 
-        # check input feature dimension
-        batch_size, n_samples, n_features = sequence.size()
+        packed_sequences = isinstance(sequence, PackedSequence)
+
+        if packed_sequences:
+            _, n_features = sequence.data.size()
+            batch_size = sequence.batch_sizes[0].item()
+            device = sequence.data.device
+        else:
+            # check input feature dimension
+            batch_size, _, n_features = sequence.size()
+            device = sequence.device
 
         if n_features != self.n_features:
             msg = 'Wrong feature dimension. Found {0}, should be {1}'
             raise ValueError(msg.format(n_features, self.n_features))
 
         output = sequence
-
-        device = sequence.device
 
         if self.weighted:
             self.alphas_ = self.alphas_.to(device)
@@ -416,12 +433,11 @@ class ClopiNet(nn.Module):
             # apply current recurrent layer and get output sequence
             output, _ = layer(output, hidden)
 
-            # average both directions in case of bidirectional layers
-            if self.bidirectional:
-                output = .5 * (output[:, :, :hidden_dim] + \
-                               output[:, :, hidden_dim:])
-
             outputs.append(output)
+
+        if packed_sequences:
+            outputs, lengths = zip(*[pad_packed_sequence(o, batch_first=True)
+                                     for o in outputs])
 
         # concatenate outputs
         output = torch.cat(outputs, dim=2)
@@ -453,6 +469,11 @@ class ClopiNet(nn.Module):
                                          self.attention + [1]):
                 attn = layer(attn)
                 attn = F.tanh(attn)
+
+            if packed_sequences:
+                msg = ('attention is not yet implemented '
+                       'for variable length sequences.')
+                raise NotImplementedError(msg)
             attn = F.softmax(attn, dim=1)
             output = output * attn
 
@@ -460,6 +481,10 @@ class ClopiNet(nn.Module):
         if self.pooling == 'sum':
             output = output.sum(dim=1)
         elif self.pooling == 'max':
+            if packed_sequences:
+                msg = ('"max" pooling is not yet implemented '
+                       'for variable length sequences.')
+                raise NotImplementedError(msg)
             output, _ = output.max(dim=1)
 
         # batch_size, dimension

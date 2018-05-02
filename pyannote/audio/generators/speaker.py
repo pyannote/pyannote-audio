@@ -251,11 +251,15 @@ class SpeechSegmentGenerator(object):
 
     @property
     def signature(self):
-
         signature_extra = {'label': {'type': 'str'},
                            'database': {'type': 'str'}}
 
-        signature = {'X': {'type': 'ndarray'},
+        # in case of variable-length sequences (self.duration == None)
+        # using "sequence" instead of "ndarray" will prevent "batchify"
+        # to try and stack sequences with np.stack (that would result in
+        # an error)
+        X_type = 'sequence' if self.duration is None else 'ndarray'
+        signature = {'X': {'type': X_type},
                      'y': {'type': 'scalar'},
                      'y_database': {'type': 'scalar'},
                      'extra': signature_extra}
@@ -275,8 +279,13 @@ class SpeechSegmentGenerator(object):
             segments_per_batch = self.per_label * self.per_fold
 
         # duration per batch
-        # FIXME: won't work when self.duration is not set
-        duration_per_batch = self.duration * segments_per_batch
+        if self.duration is None:
+            if self.min_duration is None:
+                duration_per_batch = self.max_duration * segments_per_batch
+            else:
+                duration_per_batch = self.min_duration * segments_per_batch
+        else:
+            duration_per_batch = self.duration * segments_per_batch
 
         return int(np.ceil(duration_per_epoch / duration_per_batch))
 
