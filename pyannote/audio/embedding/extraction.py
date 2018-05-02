@@ -87,19 +87,14 @@ class SequenceEmbedding(SequenceLabeling):
         batch_size, n_samples, n_features = X.shape
 
         if batch_size <= self.batch_size:
-            if not getattr(self.model, 'batch_first', True):
-                X = np.rollaxis(X, 0, 2)
             X = torch.tensor(X, dtype=torch.float32, device=self.device)
-            fX = self.model(X).to('cpu').numpy()
-
-            if fX.ndim == 3:
-                if not getattr(self.model, 'batch_first', True):
-                    fX = np.rollaxis(fX, 1, 0)
+            fX = self.model(X).to('cpu').detach().numpy()
             return fX
 
         batches = batchify(iter(X), {'type': 'ndarray'},
                            batch_size=self.batch_size,
                            incomplete=True, prefetch=0)
+
         return np.vstack(self.postprocess_ndarray(x) for x in batches)
 
     def apply(self, current_file):
