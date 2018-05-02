@@ -80,10 +80,12 @@ class StackedRNN(nn.Module):
         for i, hidden_dim in enumerate(self.recurrent):
             if self.rnn == 'LSTM':
                 recurrent_layer = nn.LSTM(input_dim, hidden_dim,
-                                          bidirectional=self.bidirectional)
+                                          bidirectional=self.bidirectional,
+                                          batch_first=True)
             elif self.rnn == 'GRU':
                 recurrent_layer = nn.GRU(input_dim, hidden_dim,
-                                         bidirectional=self.bidirectional)
+                                         bidirectional=self.bidirectional,
+                                         batch_first=True)
             else:
                 raise ValueError('"rnn" must be one of {"LSTM", "GRU"}.')
             self.add_module('recurrent_{0}'.format(i), recurrent_layer)
@@ -107,10 +109,6 @@ class StackedRNN(nn.Module):
         if self.logsoftmax:
             self.logsoftmax_ = nn.LogSoftmax(dim=2)
 
-    @property
-    def batch_first(self):
-        return False
-
     def get_loss(self):
         if self.logsoftmax:
             return nn.NLLLoss()
@@ -120,7 +118,7 @@ class StackedRNN(nn.Module):
     def forward(self, sequence):
 
         # check input feature dimension
-        n_samples, batch_size, n_features = sequence.size()
+        batch_size, n_samples, n_features = sequence.size()
         if n_features != self.n_features:
             msg = 'Wrong feature dimension. Found {0}, should be {1}'
             raise ValueError(msg.format(n_features, self.n_features))

@@ -84,10 +84,12 @@ class TristouNet(nn.Module):
         for i, hidden_dim in enumerate(self.recurrent):
             if self.rnn == 'LSTM':
                 recurrent_layer = nn.LSTM(input_dim, hidden_dim,
-                                          bidirectional=self.bidirectional)
+                                          bidirectional=self.bidirectional,
+                                          batch_first=True)
             elif self.rnn == 'GRU':
                 recurrent_layer = nn.GRU(input_dim, hidden_dim,
-                                         bidirectional=self.bidirectional)
+                                         bidirectional=self.bidirectional,
+                                         batch_first=True)
             else:
                 raise ValueError('"rnn" must be one of {"LSTM", "GRU"}.')
             self.add_module('recurrent_{0}'.format(i), recurrent_layer)
@@ -103,25 +105,28 @@ class TristouNet(nn.Module):
             input_dim = hidden_dim
 
     @property
-    def batch_first(self):
-        return False
-
-    @property
     def output_dim(self):
         if self.linear:
             return self.linear[-1]
         return self.recurrent[-1]
 
     def forward(self, sequence):
+        """
+
+        Parameters
+        ----------
+        sequence : (batch_size, n_samples, n_features) torch.Tensor
+
+        """
 
         # check input feature dimension
-        n_samples, batch_size, n_features = sequence.size()
+        batch_size, n_samples, n_features = sequence.size()
         if n_features != self.n_features:
             msg = 'Wrong feature dimension. Found {0}, should be {1}'
             raise ValueError(msg.format(n_features, self.n_features))
 
         output = sequence
-        # n_samples, batch_size, n_features
+        # batch_size, n_samples, n_features
         device = sequence.device
 
         # recurrent layers
@@ -149,11 +154,13 @@ class TristouNet(nn.Module):
                 output = .5 * (output[:, :, :hidden_dim] + \
                                output[:, :, hidden_dim:])
 
+        # batch_size, n_samples, dimension
+
         # average temporal pooling
         if self.pooling == 'sum':
-            output = output.sum(dim=0)
+            output = output.sum(dim=1)
         elif self.pooling == 'max':
-            output, _ = output.max(dim=0)
+            output, _ = output.max(dim=1)
 
         # batch_size, dimension
 
@@ -312,10 +319,12 @@ class ClopiNet(nn.Module):
         for i, hidden_dim in enumerate(self.recurrent):
             if self.rnn == 'LSTM':
                 recurrent_layer = nn.LSTM(input_dim, hidden_dim,
-                                          bidirectional=self.bidirectional)
+                                          bidirectional=self.bidirectional,
+                                          batch_first=True)
             elif self.rnn == 'GRU':
                 recurrent_layer = nn.GRU(input_dim, hidden_dim,
-                                         bidirectional=self.bidirectional)
+                                         bidirectional=self.bidirectional,
+                                         batch_first=True)
             else:
                 raise ValueError('"rnn" must be one of {"LSTM", "GRU"}.')
             self.add_module('recurrent_{0}'.format(i), recurrent_layer)
@@ -365,10 +374,6 @@ class ClopiNet(nn.Module):
             self.attention_layers_.append(attention_layer)
 
     @property
-    def batch_first(self):
-        return False
-
-    @property
     def output_dim(self):
         if self.linear:
             return self.linear[-1]
@@ -377,13 +382,14 @@ class ClopiNet(nn.Module):
     def forward(self, sequence):
 
         # check input feature dimension
-        n_samples, batch_size, n_features = sequence.size()
+        batch_size, n_samples, n_features = sequence.size()
+
         if n_features != self.n_features:
             msg = 'Wrong feature dimension. Found {0}, should be {1}'
             raise ValueError(msg.format(n_features, self.n_features))
 
         output = sequence
-        # n_samples, batch_size, n_features
+
         device = sequence.device
 
         if self.weighted:
@@ -419,7 +425,7 @@ class ClopiNet(nn.Module):
 
         # concatenate outputs
         output = torch.cat(outputs, dim=2)
-        # n_samples, batch_size, dimension
+        # batch_size, n_samples, dimension
 
         if self.weighted:
             output = output * self.alphas_
@@ -447,14 +453,14 @@ class ClopiNet(nn.Module):
                                          self.attention + [1]):
                 attn = layer(attn)
                 attn = F.tanh(attn)
-            attn = F.softmax(attn, dim=0)
+            attn = F.softmax(attn, dim=1)
             output = output * attn
 
         # average temporal pooling
         if self.pooling == 'sum':
-            output = output.sum(dim=0)
+            output = output.sum(dim=1)
         elif self.pooling == 'max':
-            output, _ = output.max(dim=0)
+            output, _ = output.max(dim=1)
 
         # batch_size, dimension
 

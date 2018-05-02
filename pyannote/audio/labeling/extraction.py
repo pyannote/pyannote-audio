@@ -107,13 +107,8 @@ class SequenceLabeling(PeriodicFeaturesMixin, FileBasedBatchGenerator):
         prediction : (batch_size, n_samples, dimension) numpy array
             Batch of sequence labelings.
         """
-
-        if not getattr(self.model, 'batch_first', True):
-            X = np.rollaxis(X, 0, 2)
         X = torch.tensor(X, dtype=torch.float32, device=self.device)
         prediction = self.model(X).data.to('cpu').numpy()
-        if not getattr(self.model, 'batch_first', True):
-            prediction = np.rollaxis(prediction, 1, 0)
         return prediction
 
     def apply(self, current_file):

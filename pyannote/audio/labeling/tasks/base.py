@@ -391,14 +391,8 @@ class LabelingTask(Trainer):
 
     def process_batch(self, batch):
 
-        X, y = batch['X'], batch['y']
-
-        if not getattr(self.model_, 'batch_first', True):
-            X = np.rollaxis(X, 0, 2)
-            y = y.T
-
-        X = torch.tensor(X, dtype=torch.float32, device=self.device_)
-        y = torch.tensor(y, dtype=torch.int64, device=self.device_)
+        X = torch.tensor(batch['X'], dtype=torch.float32, device=self.device_)
+        y = torch.tensor(batch['y'], dtype=torch.int64, device=self.device_)
 
         fX = self.model_(X.requires_grad_())
 

@@ -348,8 +348,6 @@ class TripletLoss(Trainer):
 
         # update batch['X'] to be usable by torch
         X = batch['X']
-        if not getattr(self.model_, 'batch_first', True):
-            X = np.rollaxis(X, 0, 2)
         batch['X'] = torch.tensor(X, dtype=torch.float32, device=self.device_)
 
         # forward pass
