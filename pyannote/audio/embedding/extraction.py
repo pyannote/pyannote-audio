@@ -88,8 +88,8 @@ class SequenceEmbedding(SequenceLabeling):
 
         if batch_size <= self.batch_size:
             X = torch.tensor(X, dtype=torch.float32, device=self.device)
-            fX = self.model(X).to('cpu').detach().numpy()
-            return fX
+            cpu = torch.device('cpu')
+            return self.model(X).detach().to(cpu).numpy()
 
         batches = batchify(iter(X), {'type': 'ndarray'},
                            batch_size=self.batch_size,

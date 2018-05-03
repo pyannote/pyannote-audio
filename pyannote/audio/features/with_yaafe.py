@@ -31,7 +31,6 @@ from __future__ import unicode_literals
 import warnings
 import numpy as np
 
-import yaafelib
 from pyannote.audio.features.utils import read_audio
 
 from pyannote.core.segment import SlidingWindow
@@ -69,6 +68,7 @@ class YaafeFeatureExtractor(object):
                                              duration=self.duration,
                                              step=self.step)
 
+        import yaafelib
         self.engine_ = yaafelib.Engine()
 
     def dimension(self):
