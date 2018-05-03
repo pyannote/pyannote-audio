@@ -43,7 +43,7 @@ class SequenceEmbedding(SequenceLabeling):
     feature_extraction : callable
         Feature extractor
     duration : float
-        Subsequence duration, in seconds.
+        Subsequence duration, in seconds. Defaults to 1s.
     step : float, optional
         Subsequence step, in seconds. Defaults to 50% of `duration`.
     batch_size : int, optional
@@ -52,7 +52,7 @@ class SequenceEmbedding(SequenceLabeling):
         Defaults to CPU.
     """
 
-    def __init__(self, model, feature_extraction, duration,
+    def __init__(self, model, feature_extraction, duration=1,
                  step=None, batch_size=32, source='audio',
                  device=None):
 

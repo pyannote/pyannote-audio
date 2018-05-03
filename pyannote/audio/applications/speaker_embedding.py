@@ -31,8 +31,8 @@ Speaker embedding
 
 Usage:
   pyannote-speaker-embedding train [options] <experiment_dir> <database.task.protocol>
-  pyannote-speaker-embedding validate [options] [--every=<epoch> --chronological --turn --metric=<metric>] <train_dir> <database.task.protocol>
-  pyannote-speaker-embedding apply [options] [--step=<step> --internal --normalize] <model.pt> <database.task.protocol> <output_dir>
+  pyannote-speaker-embedding validate [options] [--duration=<duration> --every=<epoch> --chronological --turn --metric=<metric>] <train_dir> <database.task.protocol>
+  pyannote-speaker-embedding apply [options] [--duration=<duration> --step=<step> --internal --normalize] <model.pt> <database.task.protocol> <output_dir>
   pyannote-speaker-embedding -h | --help
   pyannote-speaker-embedding --version
 
@@ -51,6 +51,9 @@ Common options:
                              effect in "apply" mode. [default: 0]
   --to=<epochs>              End {train|validat}ing at epoch <epoch>.
                              Defaults to keep going forever.
+  --duration=<duration>      {Validate|apply} using subsequences with that
+                             duration. Defaults to embedding fixed duration
+                             when available.
 
 "train" mode:
   <experiment_dir>           Set experiment root directory. This script expects
@@ -223,7 +226,7 @@ class SpeakerEmbedding(Application):
                                 preprocessors=self.preprocessors_)
 
         batch_generator = SpeechTurnSubSegmentGenerator(
-            self.feature_extraction_, self.approach_.duration,
+            self.feature_extraction_, self.duration,
             per_label=10, per_turn=5)
         batch = next(batch_generator(protocol, subset=subset))
 
@@ -256,10 +259,8 @@ class SpeakerEmbedding(Application):
         protocol = get_protocol(protocol_name, progress=False,
                                 preprocessors=self.preprocessors_)
 
-        # gather 10 (fixed-duration) segments per speaker
         batch_generator = SpeechSegmentGenerator(
-            self.feature_extraction_, per_label=10,
-            duration=self.approach_.duration)
+            self.feature_extraction_, per_label=10, duration=self.duration)
         batch = next(batch_generator(protocol, subset=subset))
 
         X = batch['X']
@@ -397,7 +398,6 @@ class SpeakerEmbedding(Application):
         model = self.load_model(epoch).to(self.device)
         model.eval()
 
-        duration = self.approach_.duration
         sequence_embedding = SequenceEmbedding(
             model, self.feature_extraction_,
             batch_size=self.batch_size, device=self.device)
@@ -407,7 +407,7 @@ class SpeakerEmbedding(Application):
         _, _, _, eer = det_curve(validation_data['y'], y_pred,
                                  distances=True)
 
-        return {'EER.{0:g}s'.format(duration): {'minimize': True,
+        return {'EER.{0:g}s'.format(self.duration): {'minimize': True,
                                                 'value': eer}}
 
     def _validate_epoch_turn(self, epoch, protocol_name,
@@ -417,7 +417,6 @@ class SpeakerEmbedding(Application):
         model = self.load_model(epoch).to(self.device)
         model.eval()
 
-        duration = self.approach_.duration
         sequence_embedding = SequenceEmbedding(
             model, self.feature_extraction_,
             batch_size=self.batch_size, device=self.device)
@@ -463,7 +462,7 @@ class SpeakerEmbedding(Application):
         if normalize is not None:
             model.normalize = normalize
 
-        duration = self.approach_.duration
+        duration = self.duration
         if step is None:
             step = 0.5 * duration
 
@@ -568,8 +567,19 @@ def main():
                 msg = ("Approach has no 'metric' defined. "
                        "Use '--metric' option to provide one.")
                 raise ValueError(msg)
-
         application.metric = metric
+
+        duration = arguments['--duration']
+        if duration is None:
+            duration = getattr(application.approach_, 'duration', None)
+            if duration is None:
+                msg = ("Approach has no 'duration' defined. "
+                       "Use '--duration' option to provide one.")
+                raise ValueError(msg)
+        else:
+            duration = float(duration)
+        application.duration = duration
+
         application.validate(protocol_name, subset=subset,
                              start=start, end=end, every=every,
                              in_order=in_order)
@@ -593,5 +603,17 @@ def main():
             model_pt, db_yml=db_yml)
         application.device = device
         application.batch_size = batch_size
+
+        duration = arguments['--duration']
+        if duration is None:
+            duration = getattr(application.approach_, 'duration', None)
+            if duration is None:
+                msg = ("Approach has no 'duration' defined. "
+                       "Use '--duration' option to provide one.")
+                raise ValueError(msg)
+        else:
+            duration = float(duration)
+        application.duration = duration
+
         application.apply(protocol_name, output_dir, step=step,
                           internal=internal, normalize=normalize)
