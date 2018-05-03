@@ -329,7 +329,7 @@ class SpeakerEmbedding(Application):
 
         # initialize embedding extraction
         sequence_embedding = SequenceEmbedding(
-            model, self.feature_extraction_, duration,
+            model, self.feature_extraction_, duration=duration,
             step=step, batch_size=self.batch_size,
             device=self.device)
 
@@ -399,7 +399,7 @@ class SpeakerEmbedding(Application):
 
         duration = self.approach_.duration
         sequence_embedding = SequenceEmbedding(
-            model, self.feature_extraction_, duration,
+            model, self.feature_extraction_,
             batch_size=self.batch_size, device=self.device)
 
         fX = sequence_embedding.apply(validation_data['X'])
@@ -419,7 +419,7 @@ class SpeakerEmbedding(Application):
 
         duration = self.approach_.duration
         sequence_embedding = SequenceEmbedding(
-            model, self.feature_extraction_, duration,
+            model, self.feature_extraction_,
             batch_size=self.batch_size, device=self.device)
 
         fX = sequence_embedding.apply(validation_data['X'])
@@ -473,7 +473,7 @@ class SpeakerEmbedding(Application):
 
         # initialize embedding extraction
         sequence_embedding = SequenceEmbedding(
-            model, self.feature_extraction_, duration,
+            model, self.feature_extraction_, duration=duration,
             step=step, batch_size=self.batch_size, device=self.device)
         sliding_window = sequence_embedding.sliding_window
         dimension = sequence_embedding.dimension

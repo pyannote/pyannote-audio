@@ -57,7 +57,7 @@ class SequenceEmbedding(SequenceLabeling):
                  device=None):
 
         super(SequenceEmbedding, self).__init__(
-            model, feature_extraction, duration,
+            model, feature_extraction, duration=duration,
             step=step, source=source,
             batch_size=batch_size, device=device)
 

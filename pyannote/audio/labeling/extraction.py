@@ -45,8 +45,8 @@ class SequenceLabeling(PeriodicFeaturesMixin, FileBasedBatchGenerator):
         Pre-trained sequence labeling model.
     feature_extraction : callable
         Feature extractor
-    duration : float
-        Subsequence duration, in seconds.
+    duration : float, optional
+        Subsequence duration, in seconds. Defaults to 1s.
     step : float, optional
         Subsequence step, in seconds. Defaults to 50% of `duration`.
     batch_size : int, optional
@@ -54,15 +54,13 @@ class SequenceLabeling(PeriodicFeaturesMixin, FileBasedBatchGenerator):
     device : torch.device, optional
         Defaults to CPU.
 
-    Usage
-    -----
-    >>> model = keras.models.load_model(...)
-    >>> feature_extraction = YaafeMFCC(...)
-    >>> sequence_labeling = SequenceLabeling(model, feature_extraction, duration)
-    >>> sequence_labeling.apply(current_file)
+    Example
+    -------
+    >>> labeler = SequenceLabeling(model, feature_extraction)
+    >>> predictions = labeler.apply(current_file)
     """
 
-    def __init__(self, model, feature_extraction, duration,
+    def __init__(self, model, feature_extraction, duration=1,
                  step=None, batch_size=32, source='audio', device=None):
 
         self.feature_extractor = feature_extraction
@@ -71,7 +69,8 @@ class SequenceLabeling(PeriodicFeaturesMixin, FileBasedBatchGenerator):
         self.device = torch.device('cpu') if device is None else device
         self.model = model.to(self.device)
 
-        generator = SlidingSegments(duration=duration, step=step, source=source)
+        generator = SlidingSegments(duration=duration, step=step,
+                                    source=source)
         self.step = generator.step if step is None else step
 
         super(SequenceLabeling, self).__init__(

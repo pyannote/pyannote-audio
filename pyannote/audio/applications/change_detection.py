@@ -163,7 +163,7 @@ class SpeakerChangeDetection(SpeechActivityDetection):
         duration = self.task_.duration
         step = .25 * duration
         sequence_labeling = SequenceLabeling(
-            model, self.feature_extraction_, duration,
+            model, self.feature_extraction_, duration=duration,
             step=.25 * duration, batch_size=self.batch_size,
             source='audio', device=self.device)
 
