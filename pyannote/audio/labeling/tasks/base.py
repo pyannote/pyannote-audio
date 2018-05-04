@@ -259,9 +259,8 @@ class LabelingTaskGenerator(object):
 
     @property
     def signature(self):
-        """Generator signature"""
-        return {'X': {'type': 'ndarray'},
-                'y': {'type': 'ndarray'}}
+        return {'X': {'@': (None, np.stack)},
+                'y': {'@': (None, np.stack)}}
 
     @property
     def batches_per_epoch(self):

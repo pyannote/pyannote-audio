@@ -250,23 +250,6 @@ class SpeechSegmentGenerator(object):
         return self.per_label * len(self.data_)
 
     @property
-    def signature(self):
-        signature_extra = {'label': {'type': 'str'},
-                           'database': {'type': 'str'}}
-
-        # in case of variable-length sequences (self.duration == None)
-        # using "sequence" instead of "ndarray" will prevent "batchify"
-        # to try and stack sequences with np.stack (that would result in
-        # an error)
-        X_type = 'sequence' if self.duration is None else 'ndarray'
-        signature = {'X': {'type': X_type},
-                     'y': {'type': 'scalar'},
-                     'y_database': {'type': 'scalar'},
-                     'extra': signature_extra}
-
-        return signature
-
-    @property
     def batches_per_epoch(self):
 
         # one minute per speaker
@@ -299,12 +282,19 @@ class SpeechSegmentGenerator(object):
                                 key=lambda x: x[1]))
         return labels
 
+    @property
+    def signature(self):
+        return {'X': {'@': (None, None)},
+                'y': {'@': (None, np.stack)},
+                'y_database': {'@': (None, np.stack)},
+                'extra': {'label': {'@': (None, None)},
+                         'database': {'@': (None, None)}}}
+
     def __call__(self, protocol, subset='train'):
 
         self.initialize(protocol, subset=subset)
 
         batch_size = self.batch_size
-        signature = self.signature
         batches_per_epoch = self.batches_per_epoch
 
         generators = []
@@ -312,13 +302,14 @@ class SpeechSegmentGenerator(object):
 
             for i in range(self.parallel):
                 generator = self.generator()
-                batches = batchify(generator, signature, batch_size=batch_size,
+                batches = batchify(generator, self.signature,
+                                   batch_size=batch_size,
                                    prefetch=batches_per_epoch)
                 generators.append(batches)
         else:
             generator = self.generator()
-            batches = batchify(generator, signature, batch_size=batch_size,
-                               prefetch=0)
+            batches = batchify(generator, self.signature,
+                               batch_size=batch_size, prefetch=0)
             generators.append(batches)
 
         while True:
@@ -439,17 +430,13 @@ class SpeechTurnSubSegmentGenerator(SpeechSegmentGenerator):
 
     @property
     def signature(self):
-
-        signature_extra = {'label': {'type': 'str'},
-                           'database': {'type': 'str'}}
-
-        signature = {'X': {'type': 'ndarray'},
-                     'y': {'type': 'scalar'},
-                     'z': {'type': 'scalar'},
-                     'y_database': {'type': 'scalar'},
-                     'extra': signature_extra}
-
-        return signature
+        return {'X': {'@': (None, None)},
+                'y': {'@': (None, np.stack)},
+                'z': {'@': (None, np.stack)},
+                'y_database': {'@': (None, np.stack)},
+                'extra': {
+                    'label': {'@': (None, None)},
+                    'database': {'@': (None, None)}}}
 
     @property
     def batches_per_epoch(self):

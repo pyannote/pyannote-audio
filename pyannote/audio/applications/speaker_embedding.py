@@ -203,6 +203,15 @@ class SpeakerEmbedding(Application):
                                                     subset=subset)
 
         elif task == 'SpeakerDiarization':
+
+            if self.duration is None:
+                duration = getattr(self.approach_, 'duration', None)
+                if duration is None:
+                    msg = ("Approach has no 'duration' defined. "
+                           "Use '--duration' option to provide one.")
+                    raise ValueError(msg)
+                self.duration = duration
+
             if self.turn:
                 return self._validate_init_turn(protocol_name,
                                                 subset=subset)
@@ -230,9 +239,9 @@ class SpeakerEmbedding(Application):
             per_label=10, per_turn=5)
         batch = next(batch_generator(protocol, subset=subset))
 
-        X = batch['X']
-        y = batch['y']
-        z = batch['z']
+        X = np.stack(batch['X'])
+        y = np.stack(batch['y'])
+        z = np.stack(batch['z'])
 
         # get list of labels from list of repeated labels:
         # z 0 0 0 1 1 1 2 2 2 2 3 3 3 3
@@ -263,8 +272,8 @@ class SpeakerEmbedding(Application):
             self.feature_extraction_, per_label=10, duration=self.duration)
         batch = next(batch_generator(protocol, subset=subset))
 
-        X = batch['X']
-        y = batch['y'].reshape((-1, 1))
+        X = np.stack(batch['X'])
+        y = np.stack(batch['y']).reshape((-1, 1))
 
         # precompute same/different groundtruth
         y = pdist(y, metric='equal')
@@ -322,7 +331,13 @@ class SpeakerEmbedding(Application):
         # use final representation (not internal ones)
         model.internal = False
 
-        duration = self.approach_.duration
+        if self.approach_.duration is None:
+            duration = self.max_duration
+            min_duration = self.min_duration
+        else:
+            duration = self.approach_.duration
+            min_duration = None
+
         step = .5 * duration
 
         if isinstance(self.feature_extraction_, Precomputed):
@@ -331,8 +346,8 @@ class SpeakerEmbedding(Application):
         # initialize embedding extraction
         sequence_embedding = SequenceEmbedding(
             model, self.feature_extraction_, duration=duration,
-            step=step, batch_size=self.batch_size,
-            device=self.device)
+            step=step, min_duration=min_duration,
+            batch_size=self.batch_size, device=self.device)
 
         metrics = {}
         protocol = get_protocol(protocol_name, progress=False,
@@ -341,11 +356,11 @@ class SpeakerEmbedding(Application):
         enrolment_models, enrolment_khashes = {}, {}
         enrolments = getattr(protocol, '{0}_enrolment'.format(subset))()
         for i, enrolment in enumerate(enrolments):
+            data = sequence_embedding.apply(enrolment,
+                                            crop=enrolment['enrol_with'])
             model_id = enrolment['model_id']
-            embedding = sequence_embedding.apply(enrolment)
-            data = embedding.crop(enrolment['enrol_with'],
-                                  mode='center', return_data=True)
-            enrolment_models[model_id] = np.mean(data, axis=0, keepdims=True)
+            model = np.mean(np.stack(data), axis=0, keepdims=True)
+            enrolment_models[model_id] = model
 
             # in some specific speaker verification protocols,
             # enrolment data may be  used later as trial data.
@@ -373,9 +388,7 @@ class SpeakerEmbedding(Application):
                 model = trial_models[h]
 
             else:
-                embedding = sequence_embedding.apply(trial)
-                data = embedding.crop(trial['try_with'],
-                                      mode='center', return_data=True)
+                data = sequence_embedding.apply(trial, crop=trial['try_with'])
                 model = np.mean(data, axis=0, keepdims=True)
                 # cache trial model for later re-use
                 trial_models[h] = model
@@ -401,6 +414,7 @@ class SpeakerEmbedding(Application):
         sequence_embedding = SequenceEmbedding(
             model, self.feature_extraction_,
             batch_size=self.batch_size, device=self.device)
+
 
         fX = sequence_embedding.apply(validation_data['X'])
         y_pred = pdist(fX, metric=self.metric)
@@ -570,13 +584,7 @@ def main():
         application.metric = metric
 
         duration = arguments['--duration']
-        if duration is None:
-            duration = getattr(application.approach_, 'duration', None)
-            if duration is None:
-                msg = ("Approach has no 'duration' defined. "
-                       "Use '--duration' option to provide one.")
-                raise ValueError(msg)
-        else:
+        if duration is not None:
             duration = float(duration)
         application.duration = duration
 

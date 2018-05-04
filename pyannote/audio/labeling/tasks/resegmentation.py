@@ -157,7 +157,7 @@ class Resegmentation(LabelingTask):
 
         # initialize sequence labeling with model and features
         sequence_labeling = SequenceLabeling(
-            model, self.precomputed, self.duration,
+            model, self.precomputed, duration=self.duration,
             step=.25*self.duration, batch_size=self.batch_size,
             source='audio', device=device)
 

@@ -37,7 +37,6 @@ from collections import deque
 from pyannote.audio.train import Trainer
 from torch.nn.utils.rnn import pad_sequence
 from torch.nn.utils.rnn import pack_padded_sequence
-from torch.nn.utils.rnn import pad_packed_sequence
 
 
 class TripletLoss(Trainer):
@@ -87,7 +86,6 @@ class TripletLoss(Trainer):
         Defaults to 1e-2.
     enable_backtrack : bool, optional
         Defaults to True.
-
     """
 
     def __init__(self, duration=None, min_duration=None, max_duration=None,
@@ -359,11 +357,11 @@ class TripletLoss(Trainer):
 
     def process_batch(self, batch):
 
-        variable_length = isinstance(batch['X'], (list, tuple))
+        lengths = torch.tensor([len(x) for x in batch['X']])
+        variable_lengths = len(set(lengths)) > 1
 
-        if variable_length:
+        if variable_lengths:
 
-            lengths = torch.tensor([len(x) for x in batch['X']])
             sorted_lengths, sort = torch.sort(lengths, descending=True)
             _, unsort = torch.sort(sort)
 
@@ -374,15 +372,15 @@ class TripletLoss(Trainer):
             packed = pack_padded_sequence(padded, sorted_lengths,
                                           batch_first=True)
             batch['X'] = packed
-
         else:
-            batch['X'] = torch.tensor(batch['X'], dtype=torch.float32,
+            batch['X'] = torch.tensor(np.stack(batch['X']),
+                                      dtype=torch.float32,
                                       device=self.device_)
 
         # forward pass
         fX = self.model_(batch['X'])
 
-        if variable_length:
+        if variable_lengths:
             fX = fX[unsort]
 
         # log embedding norms
