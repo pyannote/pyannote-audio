@@ -64,8 +64,8 @@ class DavisKingScheduler(object):
     active : bool, optional
         Set to False to not update learning rate.
 
-    Usage
-    -----
+    Example
+    -------
     >>> optimizer = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9)
     >>> batches_per_epoch = 1000
     >>> scheduler = DavisKingScheduler(optimizer, batches_per_epoch)
@@ -82,16 +82,22 @@ class DavisKingScheduler(object):
         if factor >= 1.0:
             raise ValueError('Factor should be < 1.0.')
         self.factor = factor
-
-        self.optimizer = optimizer
         self.patience_down = patience_down
         self.patience_up = patience_up
         self.batches_per_epoch = batches_per_epoch
         self.active = active
+        self.reset(optimizer)
 
+        patience = self.patience_down * self.batches_per_epoch
+        self.decreasing_losses_ = deque([], maxlen=patience + 1)
+
+    def reset(self, optimizer):
+
+        self.optimizer = optimizer
         self.lr_ = [float(grp['lr']) for grp in self.optimizer.param_groups]
-        patience = max(self.patience_down, self.patience_up)
-        self.losses_ = deque([], maxlen=patience * self.batches_per_epoch + 1)
+
+        patience = self.patience_up * self.batches_per_epoch
+        self.increasing_losses_ = deque([], maxlen=patience + 1)
 
     @property
     def lr(self):
@@ -99,16 +105,14 @@ class DavisKingScheduler(object):
 
     def step(self, loss):
 
-        self.losses_.append(loss)
+        self.decreasing_losses_.append(loss)
+        self.increasing_losses_.append(loss)
 
-        count = count_steps_without_decrease(self.losses_)
-        count_robust = count_steps_without_decrease_robust(self.losses_)
+        count = count_steps_without_decrease(self.decreasing_losses_)
+        count_robust = count_steps_without_decrease_robust(self.decreasing_losses_)
 
-        patience = self.patience_up * self.batches_per_epoch
-        if len(self.losses_) > patience:
-            # only consider batches from last patience_up epoch
-            # https://github.com/davisking/dlib/issues/1257
-            losses = list(self.losses_)[-patience:]
+        losses = self.increasing_losses_
+        if len(losses) > self.patience_up * self.batches_per_epoch:
             increasing = probability_that_sequence_is_increasing(losses)
         else:
             increasing = -0.1
@@ -116,7 +120,7 @@ class DavisKingScheduler(object):
         patience = self.patience_down * self.batches_per_epoch
         if (self.active and count > patience and count_robust > patience):
             self._reduce_lr()
-            self.losses_.clear()
+            self.decreasing_losses_.clear()
 
         return {
             'epochs_without_decrease': count / self.batches_per_epoch,
@@ -134,6 +138,7 @@ class DavisKingScheduler(object):
 
 
 class Trainer:
+    """Trainer"""
     __metaclass__ = ABCMeta
 
     @abstractmethod
@@ -152,6 +157,7 @@ class Trainer:
 
     @abstractmethod
     def on_train_start(self):
+        """This method should be overriden by subclass"""
         pass
 
     @abstractmethod
@@ -324,7 +330,6 @@ class Trainer:
                 epoch = max(0, epoch - self.scheduler_.patience_up - 2)
                 self.backtrack(epoch)
 
-
     def backtrack(self, epoch):
         """Backtrack to `epoch` state
 
@@ -371,7 +376,9 @@ class Trainer:
                 for k, v in state.items():
                     if torch.is_tensor(v):
                         state[k] = v.to(self.device_)
+            self.scheduler_.reset(self.optimizer_)
 
-        self.scheduler_ = DavisKingScheduler(
-            self.optimizer_, self.batches_per_epoch_,
-            active=self.optimizer == 'sgd')
+        else:
+            self.scheduler_ = DavisKingScheduler(
+                self.optimizer_, self.batches_per_epoch_,
+                active=self.optimizer == 'sgd')
