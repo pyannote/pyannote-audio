@@ -103,6 +103,20 @@ class Application(object):
             # but does consume (potentially) a LOT of memory
             self.cache_preprocessed_ = 'Precomputed' not in extraction_name
 
+    def train(self, protocol_name, subset='train', restart=None, epochs=1000):
+
+        train_dir = self.TRAIN_DIR.format(
+            experiment_dir=self.experiment_dir,
+            protocol=protocol_name,
+            subset=subset)
+
+        protocol = get_protocol(protocol_name, progress=True,
+                                preprocessors=self.preprocessors_)
+
+        self.task_.fit(self.model_, self.feature_extraction_, protocol,
+                           train_dir, subset=subset, epochs=epochs,
+                           restart=restart, device=self.device)
+
     def load_model(self, epoch, train_dir=None):
         """Load pretrained model
 

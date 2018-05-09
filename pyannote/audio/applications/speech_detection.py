@@ -192,21 +192,6 @@ class SpeechActivityDetection(Application):
             n_features, n_classes,
             **self.config_['architecture'].get('params', {}))
 
-    def train(self, protocol_name, subset='train', restart=None, epochs=1000):
-
-        train_dir = self.TRAIN_DIR.format(
-            experiment_dir=self.experiment_dir,
-            protocol=protocol_name,
-            subset=subset)
-
-        protocol = get_protocol(protocol_name, progress=True,
-                                preprocessors=self.preprocessors_)
-
-        self.task_.fit(self.model_, self.feature_extraction_, protocol,
-                       train_dir, subset=subset, epochs=epochs,
-                       restart=restart, device=self.device)
-
-
     def validate_epoch(self, epoch, protocol_name, subset='development',
                        validation_data=None):
 

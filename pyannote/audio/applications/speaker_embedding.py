@@ -178,22 +178,9 @@ class SpeakerEmbedding(Application):
         approaches = __import__('pyannote.audio.embedding.approaches',
                                 fromlist=[approach_name])
         Approach = getattr(approaches, approach_name)
-        self.approach_ = Approach(
+        self.task_ = Approach(
             **self.config_['approach'].get('params', {}))
 
-    def train(self, protocol_name, subset='train', restart=None, epochs=1000):
-
-        train_dir = self.TRAIN_DIR.format(
-            experiment_dir=self.experiment_dir,
-            protocol=protocol_name,
-            subset=subset)
-
-        protocol = get_protocol(protocol_name, progress=True,
-                                preprocessors=self.preprocessors_)
-
-        self.approach_.fit(self.model_, self.feature_extraction_, protocol,
-                           train_dir, subset=subset, epochs=epochs,
-                           restart=restart, device=self.device)
 
     def validate_init(self, protocol_name, subset='development'):
 
@@ -205,7 +192,7 @@ class SpeakerEmbedding(Application):
         elif task == 'SpeakerDiarization':
 
             if self.duration is None:
-                duration = getattr(self.approach_, 'duration', None)
+                duration = getattr(self.task_, 'duration', None)
                 if duration is None:
                     msg = ("Approach has no 'duration' defined. "
                            "Use '--duration' option to provide one.")
@@ -331,11 +318,11 @@ class SpeakerEmbedding(Application):
         # use final representation (not internal ones)
         model.internal = False
 
-        if self.approach_.duration is None:
+        if self.duration is None:
             duration = self.max_duration
             min_duration = self.min_duration
         else:
-            duration = self.approach_.duration
+            duration = self.duration
             min_duration = None
 
         step = .5 * duration
