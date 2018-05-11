@@ -114,9 +114,11 @@ class Application(object):
         protocol = get_protocol(protocol_name, progress=True,
                                 preprocessors=self.preprocessors_)
 
-        self.task_.fit(self.model_, self.feature_extraction_, protocol,
-                       train_dir, subset=subset, epochs=epochs,
-                       restart=restart, device=self.device)
+        self.task_.fit(self.model_, self.feature_extraction_,
+                       protocol, subset=subset,
+                       epochs=epochs,
+                       restart=restart, log_dir=train_dir, 
+                       device=self.device)
 
     def load_model(self, epoch, train_dir=None):
         """Load pretrained model

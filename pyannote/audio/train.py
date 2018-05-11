@@ -70,12 +70,25 @@ class DavisKingScheduler(object):
     ...     scheduler.step(mini_loss)
     """
 
-    def __init__(self, optimizer, batches_per_epoch, factor=0.9,
-                 patience=20):
+    def __init__(self, optimizer, batches_per_epoch,
+                 learning_rate=None, factor=0.9, patience=20):
 
         super(DavisKingScheduler, self).__init__()
         self.batches_per_epoch = batches_per_epoch
+
         self.optimizer = optimizer
+        self.learning_rate = learning_rate
+
+        # initialize optimizer learning rate
+        if learning_rate is None:
+            lrs = [g['lr'] for g in self.optimizer.param_groups]
+        if isinstance(learning_rate, (list, tuple)):
+            lrs = learning_rate
+        else:
+            lrs = [learning_rate] * len(self.optimizer.param_groups)
+        for param_group, lr in zip(self.optimizer.param_groups, lrs):
+            param_group['lr'] = lr
+
         self.factor = factor
         self.patience = patience
 
@@ -99,8 +112,7 @@ class DavisKingScheduler(object):
 
             # decrease optimizer learning rate
             for param_group in self.optimizer.param_groups:
-                old_lr = param_group['lr']
-                param_group['lr'] = old_lr * self.factor
+                param_group['lr'] *= self.factor
 
             # reset batch loss trend
             self.batch_losses_.clear()
