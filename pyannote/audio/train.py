@@ -41,6 +41,9 @@ from dlib import count_steps_without_decrease
 from dlib import count_steps_without_decrease_robust
 from dlib import probability_that_sequence_is_increasing
 
+ARBITRARY_LR = 0.1
+
+
 
 class DavisKingScheduler(object):
     """Automatic Learning Rate Scheduling That Really Works
@@ -179,9 +182,11 @@ class Trainer:
         cpu = torch.device('cpu')
         return tensor.detach().to(cpu).numpy()
 
-    def fit(self, model, feature_extraction, protocol,
-            log_dir=None, subset='train', epochs=1000,
-            restart=0, device=None):
+    def fit(self, model, feature_extraction,
+            protocol, subset='train',
+            epochs=1000, learning_rate='auto',
+            restart=0, log_dir=None,
+            device=None):
         """Train model
 
         Parameters
@@ -194,13 +199,15 @@ class Trainer:
             Evaluation protocol.
         subset : {'train', 'development', 'test'}, optional
             Subset to use for training. Defaults to "train".
+        epochs : int, optional
+            Train model for that many epochs. Defaults to 1000.
+        learning_rate : float, optional
+            Defaults to 'auto'.
+        restart : int, optional
+            Restart training at this epoch. Defaults to train from scratch.
         log_dir : str, optional
             Directory where models and other log files are stored.
             Defaults to not store anything.
-        epochs : int, optional
-            Train model for that many epochs. Defaults to 1000.
-        restart : int, optional
-            Restart training at this epoch. Defaults to train from scratch.
         device : torch.device, optional
             Defaults to torch.device('cpu')
 
@@ -211,20 +218,106 @@ class Trainer:
         """
 
         iterations = self.fit_iter(model, feature_extraction,
-                                   protocol, log_dir=log_dir,
-                                   subset=subset, epochs=epochs,
-                                   restart=restart, device=device)
+                                   protocol, subset=subset,
+                                   epochs=epochs, learning_rate=learning_rate,
+                                   restart=restart, log_dir=log_dir,
+                                   device=device)
 
         for iteration in iterations:
             pass
 
         return iteration['model']
 
+    def find_lr(self, model, optimizer, batches,
+                min_lr=1e-6, max_lr=1e3,
+                n_batches=500, beta=0.98,
+                writer=None, device=None):
+        """
+        https://gist.github.com/hbredin/1d617586017837acb35b090f50f7a22b
+        https://sgugger.github.io/how-do-you-find-a-good-learning-rate.html
+        """
+
+        self.on_train_start(model, batches_per_epoch=n_batches)
+
+        # initialize optimizer with a low learning rate
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = min_lr
+
+        # `factor` by which the learning rate is multiplied after every batch,
+        # to get from `min_lr` to `max_lr` in `n_batches` step.
+        factor = (max_lr / min_lr) ** (1 / n_batches)
+
+        # `K` batches to increase the learning rate by one order of magnitude
+        K = int(np.log(10) / np.log(factor))
+
+        avg_loss, best_loss, losses = 0., 0., []
+
+        # progress bar showing current (best) loss/learning rate
+        pbar = tqdm(desc='Learning rate', total=n_batches,
+                    postfix={'lr': '...', 'loss': '...',
+                             'best_loss': '...', 'best lr': '...'})
+
+        # loop on n_batches batches
+        for i in range(n_batches):
+            batch = next(batches)
+
+            model.zero_grad()
+            loss = self.batch_loss(batch, model, device)
+            lr = optimizer.param_groups[0]['lr']
+
+            raw_loss = loss.item()
+            avg_loss = beta * avg_loss + (1 - beta) * raw_loss
+            smoothed_loss = avg_loss / (1 - beta ** (i + 1))
+
+            # stop early if loss starts to get out of control
+            if i > 0 and smoothed_loss > 5 * best_loss:
+                break
+
+            if smoothed_loss < best_loss or i == 0:
+                best_loss = smoothed_loss
+                best_lr = lr
+
+            pbar.update(1)
+            pbar.set_postfix(
+                ordered_dict={'lr': lr, 'loss': smoothed_loss,
+                              'best_lr': best_lr, 'best_loss': best_loss})
+
+            losses.append(smoothed_loss)
+
+            writer.add_scalar(f'train/find_lr/raw_loss', raw_loss, global_step=i)
+            writer.add_scalar(f'train/find_lr/smoothed_loss', smoothed_loss,
+                              global_step=i)
+            writer.add_scalar(
+                f'train/find_lr/lr',
+                min_lr * factor ** (i - 1), global_step=i)
+
+            loss.backward()
+            optimizer.step()
+
+            for param_group in optimizer.param_groups:
+                param_group['lr'] *= factor
+
+        losses = np.array(losses)
+
+        # loss reaches its minimum at this learning rate
+        argmin_lr = np.argmin(losses)
+
+        # probability that loss has increased in the last `K` steps.
+        probability = [probability_that_sequence_is_increasing(losses[i-K:i])
+                       if i > K else np.NAN for i in range(len(losses))]
+        probability = np.array(probability)
+
+        # loss starts increasing again at this learning rate
+        increasing_lr = np.where(probability[argmin_lr:] > 0.1)[0][0] + argmin_lr
+
+        return 0.1 * min_lr * factor ** (increasing_lr - 1)
+
 
     def fit_iter(self, model, feature_extraction,
                  protocol, subset='train',
-                 epochs=1000, restart=0,
-                 log_dir=None, device=None, quiet=False):
+                 epochs=1000, learning_rate='auto',
+                 restart=0, log_dir=None,
+                 device=None):
 
         if log_dir is None and restart > 0:
             msg = ('One must provide `log_dir` when '
@@ -243,15 +336,7 @@ class Trainer:
         writer = SummaryWriter(log_dir=log_dir)
 
         device = torch.device('cpu') if device is None else device
-
         model = model.to(device)
-
-        optimizer = SGD(model.parameters(),
-                        lr=self.learning_rate,
-                        momentum=0.9,
-                        dampening=0,
-                        weight_decay=0,
-                        nesterov=True)
 
         if restart > 0:
 
@@ -261,14 +346,46 @@ class Trainer:
                 map_location=lambda storage, loc: storage)
             model.load_state_dict(model_state)
 
+            optimizer = SGD(model.parameters(),
+                            lr=ARBITRARY_LR,
+                            momentum=0.9,
+                            dampening=0,
+                            weight_decay=0,
+                            nesterov=True)
+
             # load optimizer
             optimizer_state = torch.load(
                 checkpoint.optimizer_pt(restart),
                 map_location=lambda storage, loc: storage)
             optimizer.load_state_dict(optimizer_state)
 
+            learning_rate = [g['lr'] for g in optimizer.param_groups]
+
+        # find optimal learning rate automagically
+        elif learning_rate == 'auto':
+
+            optimizer = SGD(model.parameters(),
+                            lr=ARBITRARY_LR,
+                            momentum=0.9,
+                            dampening=0,
+                            weight_decay=0,
+                            nesterov=True)
+
+            learning_rate = self.find_lr(model, optimizer, batches,
+                                         writer=writer, device=device)
+
+        else:
+
+            optimizer = SGD(model.parameters(),
+                            lr=learning_rate,
+                            momentum=0.9,
+                            dampening=0,
+                            weight_decay=0,
+                            nesterov=True)
+
         # Davis King's scheduler "that just works"
         scheduler = DavisKingScheduler(optimizer, batches_per_epoch,
+                                       learning_rate=learning_rate,
                                        factor=0.5, patience=20)
 
         self.on_train_start(model, batches_per_epoch=batches_per_epoch)
