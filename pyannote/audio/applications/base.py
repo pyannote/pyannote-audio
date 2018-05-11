@@ -32,7 +32,8 @@ from os.path import dirname, basename
 import numpy as np
 from tqdm import tqdm
 from glob import glob
-from pyannote.database.util import FileFinder
+from pyannote.database import FileFinder
+from pyannote.database import get_protocol
 from pyannote.audio.util import mkdir_p
 from sortedcontainers import SortedDict
 import tensorboardX
@@ -114,8 +115,8 @@ class Application(object):
                                 preprocessors=self.preprocessors_)
 
         self.task_.fit(self.model_, self.feature_extraction_, protocol,
-                           train_dir, subset=subset, epochs=epochs,
-                           restart=restart, device=self.device)
+                       train_dir, subset=subset, epochs=epochs,
+                       restart=restart, device=self.device)
 
     def load_model(self, epoch, train_dir=None):
         """Load pretrained model

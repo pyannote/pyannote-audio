@@ -378,35 +378,35 @@ class LabelingTask(Trainer):
         msg = 'LabelingTask subclass must define `n_classes` property.'
         raise NotImplementedError(msg)
 
-    def on_train_start(self):
+    def on_train_start(self, model, batches_per_epoch=None, **kwargs):
 
-        if self.model_.n_classes != self.n_classes:
+        if model.n_classes != self.n_classes:
             raise ValueError('n_classes mismatch')
 
-        self.loss_func_ = self.model_.get_loss()
+        self.loss_func_ = model.get_loss()
 
-        self.log_y_pred_ = deque([], maxlen=self.batches_per_epoch_)
-        self.log_y_true_ = deque([], maxlen=self.batches_per_epoch_)
+        self.log_y_pred_ = deque([], maxlen=batches_per_epoch)
+        self.log_y_true_ = deque([], maxlen=batches_per_epoch)
 
-    def process_batch(self, batch):
+    def batch_loss(self, batch, model, device, writer=None, **kwargs):
 
-        X = torch.tensor(batch['X'], dtype=torch.float32, device=self.device_)
-        y = torch.tensor(batch['y'], dtype=torch.int64, device=self.device_)
+        X = torch.tensor(batch['X'], dtype=torch.float32, device=device)
+        y = torch.tensor(batch['y'], dtype=torch.int64, device=device)
 
-        fX = self.model_(X.requires_grad_())
+        fX = model(X.requires_grad_())
 
         losses = self.loss_func_(fX.view((-1, self.n_classes)),
                                  y.contiguous().view((-1, )))
 
-        if self.detailed_log_:
+        if writer is not None:
             self.log_y_pred_.append(self.to_numpy(fX))
             self.log_y_true_.append(self.to_numpy(y))
 
         return torch.mean(losses)
 
-    def on_epoch_end(self, epoch):
+    def on_epoch_end(self, iteration, writer=None, **kwargs):
 
-        if not self.detailed_log_:
+        if writer is None:
             return
 
         log_y_pred = np.hstack(self.log_y_pred_)
@@ -416,5 +416,5 @@ class LabelingTask(Trainer):
         for k in range(self.n_classes):
             _, _, _, eer = det_curve(log_y_true == k,
                                      log_y_pred[:, k])
-            self.writer_.add_scalar(f'train/estimate/eer/{k}',
-                eer, global_step=epoch)
+            writer.add_scalar(f'train/estimate/eer/{k}',
+                eer, global_step=iteration)
