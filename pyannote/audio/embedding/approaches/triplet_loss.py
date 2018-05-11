@@ -348,14 +348,13 @@ class TripletLoss(Trainer):
     def aggregate(self, batch):
         return batch
 
-    def on_train_start(self):
+    def on_train_start(self, model, batches_per_epoch=None, **kwargs):
+        self.log_positive_ = deque([], maxlen=batches_per_epoch)
+        self.log_negative_ = deque([], maxlen=batches_per_epoch)
+        self.log_delta_ = deque([], maxlen=batches_per_epoch)
+        self.log_norm_ = deque([], maxlen=batches_per_epoch)
 
-        self.log_positive_ = deque([], maxlen=self.batches_per_epoch_)
-        self.log_negative_ = deque([], maxlen=self.batches_per_epoch_)
-        self.log_delta_ = deque([], maxlen=self.batches_per_epoch_)
-        self.log_norm_ = deque([], maxlen=self.batches_per_epoch_)
-
-    def process_batch(self, batch):
+    def batch_loss(self, batch, model, device, writer=None, **kwargs):
 
         lengths = torch.tensor([len(x) for x in batch['X']])
         variable_lengths = len(set(lengths)) > 1
@@ -367,7 +366,7 @@ class TripletLoss(Trainer):
 
             sequences = [torch.tensor(batch['X'][i],
                                       dtype=torch.float32,
-                                      device=self.device_) for i in sort]
+                                      device=device) for i in sort]
             padded = pad_sequence(sequences, batch_first=True, padding_value=0)
             packed = pack_padded_sequence(padded, sorted_lengths,
                                           batch_first=True)
@@ -375,16 +374,16 @@ class TripletLoss(Trainer):
         else:
             batch['X'] = torch.tensor(np.stack(batch['X']),
                                       dtype=torch.float32,
-                                      device=self.device_)
+                                      device=device)
 
         # forward pass
-        fX = self.model_(batch['X'])
+        fX = model(batch['X'])
 
         if variable_lengths:
             fX = fX[unsort]
 
         # log embedding norms
-        if self.detailed_log_:
+        if writer is not None:
             norm_npy = np.linalg.norm(self.to_numpy(fX), axis=1)
             self.log_norm_.append(norm_npy)
 
@@ -406,7 +405,7 @@ class TripletLoss(Trainer):
             distances, anchors, positives, negatives,
             return_delta=True)
 
-        if self.detailed_log_:
+        if writer is not None:
             pdist_npy = self.to_numpy(distances)
             delta_npy = self.to_numpy(deltas)
             same_speaker = pdist(y.reshape((-1, 1)), metric='equal')
@@ -417,21 +416,20 @@ class TripletLoss(Trainer):
         # average over all triplets
         return torch.mean(losses)
 
-    def on_epoch_end(self, epoch):
+    def on_epoch_end(self, iteration, writer=None, **kwargs):
 
-        if not self.detailed_log_:
+        if writer is None:
             return
 
         # log intra class vs. inter class distance distributions
         log_positive = np.hstack(self.log_positive_)
         log_negative = np.hstack(self.log_negative_)
-        bins = np.linspace(0, self.max_distance, 50)
-        self.writer_.add_histogram(
+        writer.add_histogram(
             'train/distance/intra_class', log_positive,
-            global_step=epoch, bins=bins)
-        self.writer_.add_histogram(
+            global_step=iteration, bins='doane')
+        writer.add_histogram(
             'train/distance/inter_class', log_negative,
-            global_step=epoch, bins=bins)
+            global_step=iteration, bins='doane')
 
         # log same/different experiment on training samples
         _, _, _, eer = det_curve(
@@ -439,18 +437,17 @@ class TripletLoss(Trainer):
                        np.zeros(len(log_negative))]),
             np.hstack([log_positive, log_negative]),
             distances=True)
-        self.writer_.add_scalar('train/estimate/eer', eer,
-                                global_step=epoch)
+        writer.add_scalar('train/estimate/eer', eer,
+                                global_step=iteration)
 
         # log raw triplet loss (before max(0, .))
         log_delta = np.vstack(self.log_delta_)
-        bins = np.linspace(-self.max_distance, self.max_distance, 50)
-        self.writer_.add_histogram(
+        writer.add_histogram(
             'train/triplet/delta', log_delta,
-            global_step=epoch, bins=bins)
+            global_step=iteration, bins='doane')
 
         # log distribution of embedding norms
         log_norm = np.hstack(self.log_norm_)
-        self.writer_.add_histogram(
+        writer.add_histogram(
             'train/embedding/norm', log_norm,
-            global_step=epoch, bins='doane')
+            global_step=iteration, bins='doane')

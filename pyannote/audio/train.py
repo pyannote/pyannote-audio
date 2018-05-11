@@ -56,13 +56,9 @@ class DavisKingScheduler(object):
     factor : float, optional
         Factor by which the learning rate will be reduced.
         new_lr = old_lr * factor. Defaults to 0.9
-    patience_down : int, optional
+    patience : int, optional
         Number of epochs with no improvement after which learning rate will
-        be reduced. Defaults to 50.
-    patience_up : int, optional
-        Defaults to 5.
-    active : bool, optional
-        Set to False to not update learning rate.
+        be reduced. Defaults to 20.
 
     Example
     -------
@@ -75,66 +71,46 @@ class DavisKingScheduler(object):
     """
 
     def __init__(self, optimizer, batches_per_epoch, factor=0.9,
-                 patience_down=50, patience_up=5, active=True):
+                 patience=20):
 
         super(DavisKingScheduler, self).__init__()
-
-        if factor >= 1.0:
-            raise ValueError('Factor should be < 1.0.')
-        self.factor = factor
-        self.patience_down = patience_down
-        self.patience_up = patience_up
         self.batches_per_epoch = batches_per_epoch
-        self.active = active
-        self.reset(optimizer)
-
-        patience = self.patience_down * self.batches_per_epoch
-        self.decreasing_losses_ = deque([], maxlen=patience + 1)
-
-    def reset(self, optimizer):
-
         self.optimizer = optimizer
-        self.lr_ = [float(grp['lr']) for grp in self.optimizer.param_groups]
+        self.factor = factor
+        self.patience = patience
 
-        patience = self.patience_up * self.batches_per_epoch
-        self.increasing_losses_ = deque([], maxlen=patience + 1)
+        # TODO check in dlib's code whether patience * batches_per_epoch + 1
+        # would actually be enough
+        maxlen = 10 * self.patience * self.batches_per_epoch
+        self.batch_losses_ = deque([], maxlen=maxlen)
 
-    @property
-    def lr(self):
-        return tuple(self.lr_)
+    def batch_step(self, batch_loss):
 
-    def step(self, loss):
+        # store current batch loss
+        self.batch_losses_.append(batch_loss)
 
-        self.decreasing_losses_.append(loss)
-        self.increasing_losses_.append(loss)
+        # compute statistics on batch loss trend
+        count = count_steps_without_decrease(self.batch_losses_)
+        count_robust = count_steps_without_decrease_robust(self.batch_losses_)
 
-        count = count_steps_without_decrease(self.decreasing_losses_)
-        count_robust = count_steps_without_decrease_robust(self.decreasing_losses_)
+        # if batch loss hasn't been decreasing for a while
+        patience = self.patience * self.batches_per_epoch
+        if count > patience and count_robust > patience:
 
-        losses = self.increasing_losses_
-        if len(losses) > self.patience_up * self.batches_per_epoch:
-            increasing = probability_that_sequence_is_increasing(losses)
-        else:
-            increasing = -0.1
+            # decrease optimizer learning rate
+            for param_group in self.optimizer.param_groups:
+                old_lr = param_group['lr']
+                param_group['lr'] = old_lr * self.factor
 
-        patience = self.patience_down * self.batches_per_epoch
-        if (self.active and count > patience and count_robust > patience):
-            self._reduce_lr()
-            self.decreasing_losses_.clear()
+            # reset batch loss trend
+            self.batch_losses_.clear()
 
         return {
             'epochs_without_decrease': count / self.batches_per_epoch,
             'epochs_without_decrease_robust': \
-                count_robust / self.batches_per_epoch,
-            'increasing_probability': increasing}
+                count_robust / self.batches_per_epoch}
 
-    def _reduce_lr(self):
-        self.lr_ = []
-        for i, param_group in enumerate(self.optimizer.param_groups):
-            old_lr = float(param_group['lr'])
-            new_lr = old_lr * self.factor
-            param_group['lr'] = new_lr
-            self.lr_.append(new_lr)
+
 
 
 class Trainer:
@@ -147,7 +123,7 @@ class Trainer:
 
         Parameters
         ----------
-        precomputed : `pyannote.audio.features.Precomputed`
+        precomputed : :class:`~pyannote.audio.features.Precomputed`
 
         Returns
         -------
@@ -156,16 +132,34 @@ class Trainer:
         pass
 
     @abstractmethod
-    def on_train_start(self):
+    def on_train_start(self, model, **kwargs):
         """This method should be overriden by subclass"""
         pass
 
     @abstractmethod
-    def process_batch(self, batch):
+    def batch_loss(self, batch, model, device, writer=None, **kwargs):
+        """
+        Parameters
+        ----------
+        batch :
+        model :
+        device :
+        writer : SummaryWriter, optional
+
+        Returns
+        -------
+        loss :
+        """
         pass
 
     @abstractmethod
-    def on_epoch_end(self, epoch):
+    def on_epoch_end(self, iteration, writer=None, **kwargs):
+        """
+        Parameters
+        ----------
+        iteration : int
+        writer : SummaryWriter, optional
+        """
         pass
 
     def to_numpy(self, tensor):
@@ -225,160 +219,169 @@ class Trainer:
                    'using `restart` option.')
             raise ValueError(msg)
 
-        log = log_dir is not None
-
-        if log:
-            self.checkpoint_ = Checkpoint(
-                log_dir, restart=restart > 0)
-            self.writer_ = SummaryWriter(log_dir=log_dir)
-
-        self.device_ = torch.device('cpu') if device is None else device
-
-        self.batch_generator_ = self.get_batch_generator(feature_extraction)
-        batches = self.batch_generator_(protocol, subset=subset)
+        # initialize batch generator
+        batch_generator = self.get_batch_generator(feature_extraction)
+        batches = batch_generator(protocol, subset=subset)
         batch = next(batches)
-        self.batches_per_epoch_ = self.batch_generator_.batches_per_epoch
+        batches_per_epoch = getattr(batch_generator, 'batches_per_epoch', None)
 
-        # initialize model, optimizer, and scheduler
-        self.model_ = model
-        self.backtrack(restart)
+        # FIXME. log_dir = tmp directory
 
-        self.on_train_start()
+        checkpoint = Checkpoint(log_dir, restart=restart > 0)
+        writer = SummaryWriter(log_dir=log_dir)
+
+        device = torch.device('cpu') if device is None else device
+
+        model = model.to(device)
+
+        optimizer = SGD(model.parameters(),
+                        lr=self.learning_rate,
+                        momentum=0.9,
+                        dampening=0,
+                        weight_decay=0,
+                        nesterov=True)
+
+        if restart > 0:
+
+            # load model
+            model_state = torch.load(
+                checkpoint.weights_pt(restart),
+                map_location=lambda storage, loc: storage)
+            model.load_state_dict(model_state)
+
+            # load optimizer
+            optimizer_state = torch.load(
+                checkpoint.optimizer_pt(restart),
+                map_location=lambda storage, loc: storage)
+            optimizer.load_state_dict(optimizer_state)
+
+        # Davis King's scheduler "that just works"
+        scheduler = DavisKingScheduler(optimizer, batches_per_epoch,
+                                       factor=0.5, patience=20)
+
+        self.on_train_start(model, batches_per_epoch=batches_per_epoch)
 
         epoch = restart if restart > 0 else -1
-        backtrack, iteration = False, 0
+        iteration = -1
+
+        # Buffer containing batch losses for last few epochs
+        # It will be used at the end of each epoch to detect
+        # whenever the loss is exploding. When that happens,
+        # backtracking is triggered to revert the model back
+        # to a previous state where it was still going fine.
+        backtrack_patience = 3
+        batch_losses = deque([], backtrack_patience * batches_per_epoch)
+
+        epoch_pbar = tqdm(desc='Iteration', total=epochs - restart,
+                          position=0, unit='epoch',
+                          postfix={'loss': '...', 'epoch': '...'})
+        batch_pbar = tqdm(desc='Batch', total=batches_per_epoch,
+                          position=1, unit='batch',
+                          postfix={'loss': '...'})
 
         while True:
+
             # keep track of actual number of iterations
             iteration += 1
+
+            # detailed logging to tensorboard
+            # for first 10 iterations then every other 5 iteration.
+            log = iteration < 10 or iteration % 5 == 0
 
             # keep track of current epoch
             # due to backtracking, this may lag a bit behind `iteration`
             epoch += 1
+
+            # stop training when that many epochs
             if epoch > epochs:
                 break
 
-            # log backtracking
-            if log:
-                self.writer_.add_scalar('train/scheduler/backtrack', epoch,
-                                  global_step=iteration)
-
-            # detailed logging to Tensorboard
-            # for first 10 epochs then every other 5 epochs
-            self.detailed_log_ = log and ((iteration < 10) or (iteration % 5 == 0))
+            # tensorboard: backtracking
+            writer.add_scalar('train/backtracking/epoch',
+                              epoch, global_step=iteration)
 
             loss_avg = 0.
 
-            if quiet:
-                counter = range(self.batches_per_epoch_)
-            else:
-                desc = 'Epoch #{0}'.format(epoch)
-                counter = tqdm(range(self.batches_per_epoch_), desc=desc)
-
-            for i in counter:
-                # zero gradients
-                self.model_.zero_grad()
-
-                # process next batch
+            for i in range(batches_per_epoch):
                 batch = next(batches)
 
-                loss = self.process_batch(batch)
-
-                # back-propagation
+                model.zero_grad()
+                loss = self.batch_loss(batch, model, device,
+                                       writer=writer if log else None)
                 loss.backward()
-
-                # gradient descent
-                self.optimizer_.step()
+                optimizer.step()
 
                 # keep track of loss
-                loss_ = loss.item()
-                loss_avg += loss_
+                batch_losses.append(loss.item())
+                loss_avg += loss.item()
 
                 # send loss of current batch to scheduler
-                # and receive information about loss trend
-                scheduler_state = self.scheduler_.step(loss_)
+                # 'scheduler_state' is a dictionary that
+                # is logged to tensorboard at each epoch.
+                scheduler_state = scheduler.batch_step(loss.item())
 
-            if log:
+                batch_pbar.set_postfix(ordered_dict={'loss': loss.item()})
+                batch_pbar.update(1)
 
-                # log loss to tensorboard
-                self.writer_.add_scalar('train/loss',
-                                        loss_avg / self.batches_per_epoch_,
-                                        global_step=iteration)
+            # tensorboard: average loss
+            loss_avg /= batches_per_epoch
+            writer.add_scalar('train/loss', loss_avg, global_step=iteration)
 
-                # log loss trend statistics to tensorboard
-                for name, value in scheduler_state.items():
-                    self.writer_.add_scalar(
-                        f'train/scheduler/{name}', value,
-                        global_step=iteration)
+            epoch_pbar.set_postfix(
+                ordered_dict={'loss': loss_avg, 'epoch': epoch})
+            epoch_pbar.update(1)
 
-                # log current learning rate to tensorboard
-                self.writer_.add_scalar('train/scheduler/lr',
-                                        self.scheduler_.lr[0],
-                                        global_step=iteration)
+            batch_pbar.close()
+            batch_pbar = tqdm(desc='Batch', total=batches_per_epoch,
+                              position=1, unit='batch',
+                              postfix={'loss': '...'})
 
-                # save model to disk
-                self.checkpoint_.on_epoch_end(epoch, self.model_,
-                                              self.optimizer_)
+            # tensorboard: learning rate
+            writer.add_scalar('train/learning_rate',
+                              optimizer.param_groups[0]['lr'],
+                              global_step=iteration)
 
-            self.on_epoch_end(iteration)
+            # tensorboard: scheduler
+            for name, value in scheduler_state.items():
+                writer.add_scalar(
+                    f'train/scheduler/{name}', value,
+                    global_step=iteration)
+
+            # save model to disk
+            checkpoint.on_epoch_end(epoch, model, optimizer)
+            # TODO. save scheduler state as well
+
+            self.on_epoch_end(iteration,
+                              writer=writer if log else None)
 
             yield {'epoch': epoch, 'iteration': iteration, 'model': model}
 
-            # backtrack in case loss has increased
-            if getattr(self, 'enable_backtrack', False) and \
-               scheduler_state['increasing_probability'] > 0.99:
-                epoch = max(0, epoch - self.scheduler_.patience_up - 2)
-                self.backtrack(epoch)
+            # tensorboard: backtracking probability
+            backtrack_p = probability_that_sequence_is_increasing(batch_losses)
+            writer.add_scalar('train/backtracking/probability',
+                              backtrack_p, global_step=iteration)
 
-    def backtrack(self, epoch):
-        """Backtrack to `epoch` state
+            # backtrack to previous epoch when loss has been increasing
+            if backtrack_p > 0.99:
 
-        This assumes that the following attributes have been set already:
+                # backtrack
+                epoch = max(0, epoch - backtrack_patience - 2)
 
-        * checkpoint_
-        * model_
-        * device_
-        * batches_per_epoch_
+                # load model
+                model_state = torch.load(
+                    checkpoint.weights_pt(epoch),
+                    map_location=lambda storage, loc: storage)
+                model.load_state_dict(model_state)
 
-        This will set/update the following hidden attributes:
+                # load optimizer
+                optimizer_state = torch.load(
+                    checkpoint.optimizer_pt(epoch),
+                    map_location=lambda storage, loc: storage)
+                optimizer.load_state_dict(optimizer_state)
 
-        * model_
-        * optimizer_
-        * scheduler_
+                # TODO. load scheduler as well
+                # scheduler_state = checkpoint.scheduler_pt(epoch)
+                # scheduler.load_state_dict(scheduler_state)
 
-        """
-
-        if epoch > 0:
-            weights_pt = self.checkpoint_.weights_pt(epoch)
-            self.model_.load_state_dict(torch.load(weights_pt))
-
-        self.model_ = self.model_.to(self.device_)
-
-        if self.optimizer == 'sgd':
-            self.optimizer_ = SGD(self.model_.parameters(),
-                                  lr=self.learning_rate,
-                                  momentum=0.9, nesterov=True)
-
-        elif self.optimizer == 'adam':
-            self.optimizer_ = Adam(self.model_.parameters(),
-                                   lr=self.learning_rate)
-
-        elif self.optimizer == 'rmsprop':
-            self.optimizer_ = RMSprop(self.model_.parameters(),
-                                      lr=self.learning_rate)
-
-        self.model_.internal = False
-
-        if epoch > 0:
-            optimizer_pt = self.checkpoint_.optimizer_pt(epoch)
-            self.optimizer_.load_state_dict(torch.load(optimizer_pt))
-            for state in self.optimizer_.state.values():
-                for k, v in state.items():
-                    if torch.is_tensor(v):
-                        state[k] = v.to(self.device_)
-            self.scheduler_.reset(self.optimizer_)
-
-        else:
-            self.scheduler_ = DavisKingScheduler(
-                self.optimizer_, self.batches_per_epoch_,
-                active=self.optimizer == 'sgd')
+                # reset batch loss trend
+                batch_losses.clear()
