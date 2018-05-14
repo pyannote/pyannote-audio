@@ -224,6 +224,7 @@ class Trainer:
                 writer.add_scalar(f'auto_lr/loss', losses[-1], global_step=i)
                 writer.add_scalar(f'auto_lr/lr', lrs[-1], global_step=i)
 
+            # increase learning rate
             for param_group in optimizer.param_groups:
                 param_group['lr'] *= factor
 
@@ -333,7 +334,7 @@ class Trainer:
         # whenever the loss is exploding. When that happens,
         # backtracking is triggered to revert the model back
         # to a previous state where it was still going fine.
-        backtrack_patience = 3
+        backtrack_patience = 2
         batch_losses = deque([], backtrack_patience * batches_per_epoch)
 
         while True:

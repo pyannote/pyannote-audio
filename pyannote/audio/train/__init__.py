@@ -25,3 +25,8 @@
 
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
+
+
+from .trainer import Trainer
+from .schedulers import DavisKingScheduler
+from .checkpoint import Checkpoint
