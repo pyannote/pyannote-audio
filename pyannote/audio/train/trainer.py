@@ -176,10 +176,6 @@ class Trainer:
         https://sgugger.github.io/how-do-you-find-a-good-learning-rate.html
         """
 
-        # backup model and opimtize states
-        model_state =  model.state_dict()
-        optimizer_state = optimizer.state_dict()
-
         if device is None:
             device = torch.device('cpu')
 
@@ -226,10 +222,6 @@ class Trainer:
             # increase learning rate
             for param_group in optimizer.param_groups:
                 param_group['lr'] *= factor
-
-        # revert model and optimizer states
-        model.load_state_dict(model_state)
-        optimizer.load_state_dict(optimizer_state)
 
         losses = np.array(losses)
 
@@ -297,8 +289,22 @@ class Trainer:
             optimizer = get_optimizer(model.parameters(),
                                       lr=ARBITRARY_LR)
 
+            # save model and optimizer states before "auto_lr"
+            checkpoint.on_epoch_end(0, model, optimizer)
+
             learning_rate = self.auto_lr(model, optimizer, batches,
                                          writer=writer, device=device)
+
+            # reload model and optimizer states after "auto_lr"
+            model_state = torch.load(
+                checkpoint.weights_pt(0),
+                map_location=lambda storage, loc: storage)
+            model.load_state_dict(model_state)
+
+            optimizer_state = torch.load(
+                checkpoint.optimizer_pt(0),
+                map_location=lambda storage, loc: storage)
+            optimizer.load_state_dict(optimizer_state)
 
         else:
 
