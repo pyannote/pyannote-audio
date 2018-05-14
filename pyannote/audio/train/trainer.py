@@ -388,10 +388,11 @@ class Trainer:
                               global_step=iteration)
 
             # tensorboard: scheduler
-            for name, value in scheduler_state.items():
-                writer.add_scalar(
-                    f'train/scheduler/{name}', value,
-                    global_step=iteration)
+            if isinstance(scheduler_state, dict):
+                for name, value in scheduler_state.items():
+                    writer.add_scalar(
+                        f'train/scheduler/{name}', value,
+                        global_step=iteration)
 
             # save model to disk
             checkpoint.on_epoch_end(epoch, model, optimizer)
