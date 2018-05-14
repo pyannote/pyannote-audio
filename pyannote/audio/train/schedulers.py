@@ -175,3 +175,5 @@ class OneCycle(object):
                             self.min_lrs_,  self.max_lrs_)
         for param_group, min_lr, max_lr in group_min_max:
             param_group['lr'] = min_lr + (max_lr - min_lr) * rho
+
+        self.n_batches_ += 1
