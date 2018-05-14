@@ -563,7 +563,7 @@ def main():
 
         metric = arguments['--metric']
         if metric is None:
-            metric = getattr(application.approach_, 'metric', None)
+            metric = getattr(application.task_, 'metric', None)
             if metric is None:
                 msg = ("Approach has no 'metric' defined. "
                        "Use '--metric' option to provide one.")
@@ -601,7 +601,7 @@ def main():
 
         duration = arguments['--duration']
         if duration is None:
-            duration = getattr(application.approach_, 'duration', None)
+            duration = getattr(application.task_, 'duration', None)
             if duration is None:
                 msg = ("Approach has no 'duration' defined. "
                        "Use '--duration' option to provide one.")
