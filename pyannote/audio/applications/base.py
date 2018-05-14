@@ -37,6 +37,7 @@ from pyannote.database import get_protocol
 from pyannote.audio.util import mkdir_p
 from sortedcontainers import SortedDict
 import tensorboardX
+from functools import partial
 
 
 class Application(object):
@@ -90,6 +91,31 @@ class Application(object):
         with open(config_yml, 'r') as fp:
             self.config_ = yaml.load(fp)
 
+        # scheduler
+        SCHEDULER_DEFAULT = {'name': 'DavisKingScheduler',
+                             'params': {'learning_rate': 'auto'}}
+        scheduler_cfg = self.config_.get('scheduler', SCHEDULER_DEFAULT)
+        scheduler_name = scheduler_cfg['name']
+        schedulers = __import__('pyannote.audio.train.schedulers',
+                                fromlist=[scheduler_name])
+        Scheduler = getattr(schedulers, scheduler_name)
+        scheduler_params = scheduler_cfg.get('params', {})
+        self.get_scheduler_ = partial(Scheduler, **scheduler_params)
+        self.learning_rate_ = scheduler_params.get('learning_rate', 'auto')
+
+        # optimizer
+        OPTIMIZER_DEFAULT = {
+            'name': 'SGD',
+            'params': {'momentum': 0.9, 'dampening': 0, 'weight_decay': 0,
+                       'nesterov': True}}
+        optimizer_cfg = self.config_.get('optimizer', OPTIMIZER_DEFAULT)
+        optimizer_name = optimizer_cfg['name']
+        optimizers = __import__('torch.optim',
+                                fromlist=[optimizer_name])
+        Optimizer = getattr(optimizers, optimizer_name)
+        optimizer_params = optimizer_cfg.get('params', {})
+        self.get_optimizer_ = partial(Optimizer, **optimizer_params)
+
         # feature extraction
         if 'feature_extraction' in self.config_:
             extraction_name = self.config_['feature_extraction']['name']
@@ -104,6 +130,7 @@ class Application(object):
             # but does consume (potentially) a LOT of memory
             self.cache_preprocessed_ = 'Precomputed' not in extraction_name
 
+
     def train(self, protocol_name, subset='train', restart=None, epochs=1000):
 
         train_dir = self.TRAIN_DIR.format(
@@ -114,11 +141,13 @@ class Application(object):
         protocol = get_protocol(protocol_name, progress=True,
                                 preprocessors=self.preprocessors_)
 
-        self.task_.fit(self.model_, self.feature_extraction_,
-                       protocol, subset=subset,
-                       epochs=epochs,
-                       restart=restart, log_dir=train_dir, 
-                       device=self.device)
+        self.task_.fit(
+            self.model_, self.feature_extraction_,
+            protocol, subset=subset, restart=restart, epochs=epochs,
+            get_optimizer=self.get_optimizer_,
+            get_scheduler=self.get_scheduler_,
+            learning_rate=self.learning_rate_,
+            log_dir=train_dir, device=self.device)
 
     def load_model(self, epoch, train_dir=None):
         """Load pretrained model

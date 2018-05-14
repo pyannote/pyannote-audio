@@ -96,10 +96,9 @@ class Trainer:
         return tensor.detach().to(cpu).numpy()
 
     def fit(self, model, feature_extraction,
-            protocol, subset='train',
-            epochs=1000, learning_rate='auto',
-            restart=0, log_dir=None,
-            device=None):
+            protocol, subset='train', restart=0, epochs=1000,
+            get_optimizer=None, get_scheduler=None, learning_rate='auto',
+            log_dir=None, device=None):
         """Train model
 
         Parameters
@@ -130,11 +129,11 @@ class Trainer:
             Trained model.
         """
 
-        iterations = self.fit_iter(model, feature_extraction,
-                                   protocol, subset=subset,
-                                   epochs=epochs, learning_rate=learning_rate,
-                                   restart=restart, log_dir=log_dir,
-                                   device=device)
+        iterations = self.fit_iter(
+            model, feature_extraction,
+            protocol, subset=subset, restart=restart, epochs=epochs,
+            get_optimizer=get_optimizer, get_scheduler=get_scheduler,
+            learning_rate=learning_rate, log_dir=log_dir, device=device)
 
         for iteration in iterations:
             pass
@@ -250,10 +249,9 @@ class Trainer:
         return lrs[stop - K]
 
     def fit_iter(self, model, feature_extraction,
-                 protocol, subset='train',
-                 epochs=1000, learning_rate='auto',
-                 restart=0, log_dir=None,
-                 device=None):
+                 protocol, subset='train', restart=0, epochs=1000,
+                 get_optimizer=None, get_scheduler=None, learning_rate='auto',
+                 log_dir=None, device=None):
 
         if log_dir is None and restart > 0:
             msg = ('One must provide `log_dir` when '
@@ -282,12 +280,8 @@ class Trainer:
                 map_location=lambda storage, loc: storage)
             model.load_state_dict(model_state)
 
-            optimizer = SGD(model.parameters(),
-                            lr=ARBITRARY_LR,
-                            momentum=0.9,
-                            dampening=0,
-                            weight_decay=0,
-                            nesterov=True)
+            optimizer = get_optimizer(model.parameters(),
+                                      lr=ARBITRARY_LR)
 
             # load optimizer
             optimizer_state = torch.load(
@@ -300,29 +294,20 @@ class Trainer:
         # find optimal learning rate automagically
         elif learning_rate == 'auto':
 
-            optimizer = SGD(model.parameters(),
-                            lr=ARBITRARY_LR,
-                            momentum=0.9,
-                            dampening=0,
-                            weight_decay=0,
-                            nesterov=True)
+            optimizer = get_optimizer(model.parameters(),
+                                      lr=ARBITRARY_LR)
 
             learning_rate = self.auto_lr(model, optimizer, batches,
                                          writer=writer, device=device)
 
         else:
 
-            optimizer = SGD(model.parameters(),
-                            lr=learning_rate,
-                            momentum=0.9,
-                            dampening=0,
-                            weight_decay=0,
-                            nesterov=True)
+            optimizer = get_optimizer(model.parameters(),
+                                      lr=learning_rate)
 
         # Davis King's scheduler "that just works"
-        scheduler = DavisKingScheduler(optimizer, batches_per_epoch,
-                                       learning_rate=learning_rate,
-                                       factor=0.5, patience=20)
+        scheduler = get_scheduler(optimizer, batches_per_epoch,
+                                  learning_rate=learning_rate)
 
         self.on_train_start(model, batches_per_epoch=batches_per_epoch)
 
