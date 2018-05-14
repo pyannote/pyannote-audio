@@ -228,14 +228,48 @@ class Trainer:
 
         return iteration['model']
 
-    def find_lr(self, model, optimizer, batches,
-                min_lr=1e-6, max_lr=1e3,
-                n_batches=500, beta=0.98,
-                writer=None, device=None):
-        """
+    def auto_lr(self, model, optimizer, batches,
+                min_lr=1e-6, max_lr=1e3, n_batches=500,
+                device=None, writer=None, onset=1e-6, offset=1e-1):
+        """Automagically find a "good" learning rate upper bound
+
+        Parameters
+        ----------
+        model : nn.Module
+
+        optimizer : torch.optim.Optimizer
+        batches : generator
+            Batch generator. `next(batches)` will be called `n_batches` times.
+        min_lr, max_lr : float, optional
+            Learning rate will be increased exponentially from `min_lr` to
+            `max_lr`.
+        n_batches : int, optional
+            Number of batches needed to increase from `min_lr` to `max_lr`.
+        writer : tensorboardX.SummaryWriter, optional
+            When provided, log learning rate and loss to tensorboard.
+        device : torch.Device, optional
+            Device to use. Defaults to `torch.device('cpu')`.
+        onset, offset : float, optional
+            Onset & offset probability thresholds. This is used for detecting
+            when loss starts (resp. stops) decreasing.
+
+        Returns
+        -------
+        learning_rate : float
+            "Good" learning rate upper bound.
+
+        Reference
+        ---------
         https://gist.github.com/hbredin/1d617586017837acb35b090f50f7a22b
         https://sgugger.github.io/how-do-you-find-a-good-learning-rate.html
         """
+
+        # backup model and opimtize states
+        model_state =  model.state_dict()
+        optimizer_state = optimizer.state_dict()
+
+        if device is None:
+            device = torch.device('cpu')
 
         self.on_train_start(model, batches_per_epoch=n_batches)
 
@@ -250,68 +284,56 @@ class Trainer:
         # `K` batches to increase the learning rate by one order of magnitude
         K = int(np.log(10) / np.log(factor))
 
-        avg_loss, best_loss, losses = 0., 0., []
+        # progress bar
+        pbar = tqdm(desc='Auto LR', total=n_batches,
+                    postfix={'lr': '...', 'loss': '...'})
 
-        # progress bar showing current (best) loss/learning rate
-        pbar = tqdm(desc='Learning rate', total=n_batches,
-                    postfix={'lr': '...', 'loss': '...',
-                             'best_loss': '...', 'best lr': '...'})
+        losses, lrs = [], []
 
         # loop on n_batches batches
         for i in range(n_batches):
-            batch = next(batches)
 
+            batch = next(batches)
             model.zero_grad()
             loss = self.batch_loss(batch, model, device)
-            lr = optimizer.param_groups[0]['lr']
-
-            raw_loss = loss.item()
-            avg_loss = beta * avg_loss + (1 - beta) * raw_loss
-            smoothed_loss = avg_loss / (1 - beta ** (i + 1))
-
-            # stop early if loss starts to get out of control
-            if i > 0 and smoothed_loss > 5 * best_loss:
-                break
-
-            if smoothed_loss < best_loss or i == 0:
-                best_loss = smoothed_loss
-                best_lr = lr
-
-            pbar.update(1)
-            pbar.set_postfix(
-                ordered_dict={'lr': lr, 'loss': smoothed_loss,
-                              'best_lr': best_lr, 'best_loss': best_loss})
-
-            losses.append(smoothed_loss)
-
-            writer.add_scalar(f'train/find_lr/raw_loss', raw_loss, global_step=i)
-            writer.add_scalar(f'train/find_lr/smoothed_loss', smoothed_loss,
-                              global_step=i)
-            writer.add_scalar(
-                f'train/find_lr/lr',
-                min_lr * factor ** (i - 1), global_step=i)
-
             loss.backward()
             optimizer.step()
+
+            lrs.append(optimizer.param_groups[0]['lr'])
+            losses.append(loss.item())
+
+            # update progress bar
+            pbar.update(1)
+            pbar.set_postfix(ordered_dict={'lr': lrs[-1], 'loss': losses[-1]})
+
+            # update tensorboard
+            if writer is not None:
+                writer.add_scalar(f'auto_lr/loss', losses[-1], global_step=i)
+                writer.add_scalar(f'auto_lr/lr', lrs[-1], global_step=i)
 
             for param_group in optimizer.param_groups:
                 param_group['lr'] *= factor
 
-        losses = np.array(losses)
+        # revert model and optimizer states
+        model.load_state_dict(model_state)
+        optimizer.load_state_dict(optimizer_state)
 
-        # loss reaches its minimum at this learning rate
-        argmin_lr = np.argmin(losses)
+        losses = np.array(losses)
 
         # probability that loss has increased in the last `K` steps.
         probability = [probability_that_sequence_is_increasing(losses[i-K:i])
                        if i > K else np.NAN for i in range(len(losses))]
         probability = np.array(probability)
 
-        # loss starts increasing again at this learning rate
-        increasing_lr = np.where(probability[argmin_lr:] > 0.1)[0][0] + argmin_lr
+        # loss starts decreasing
+        start = np.where(probability < onset)[0][0]
 
-        return 0.1 * min_lr * factor ** (increasing_lr - 1)
+        # loss stops decreasing
+        stop = start + np.where(probability[start:] > offset)[0][0]
 
+        # return learning rate upper bound
+        # (0.1 times the learning rate for which loss stops decreasing)
+        return lrs[stop - K]
 
     def fit_iter(self, model, feature_extraction,
                  protocol, subset='train',
@@ -371,7 +393,7 @@ class Trainer:
                             weight_decay=0,
                             nesterov=True)
 
-            learning_rate = self.find_lr(model, optimizer, batches,
+            learning_rate = self.auto_lr(model, optimizer, batches,
                                          writer=writer, device=device)
 
         else:
@@ -401,13 +423,6 @@ class Trainer:
         backtrack_patience = 3
         batch_losses = deque([], backtrack_patience * batches_per_epoch)
 
-        epoch_pbar = tqdm(desc='Iteration', total=epochs - restart,
-                          position=0, unit='epoch',
-                          postfix={'loss': '...', 'epoch': '...'})
-        batch_pbar = tqdm(desc='Batch', total=batches_per_epoch,
-                          position=1, unit='batch',
-                          postfix={'loss': '...'})
-
         while True:
 
             # keep track of actual number of iterations
@@ -431,9 +446,12 @@ class Trainer:
 
             loss_avg = 0.
 
-            for i in range(batches_per_epoch):
-                batch = next(batches)
+            pbar = tqdm(desc=f'Iteration #{iteration}', total=batches_per_epoch,
+                        unit='batch', postfix={'loss': '...', 'lr': ...})
 
+            for i in range(batches_per_epoch):
+
+                batch = next(batches)
                 model.zero_grad()
                 loss = self.batch_loss(batch, model, device,
                                        writer=writer if log else None)
@@ -444,29 +462,27 @@ class Trainer:
                 batch_losses.append(loss.item())
                 loss_avg += loss.item()
 
-                # send loss of current batch to scheduler
-                # 'scheduler_state' is a dictionary that
-                # is logged to tensorboard at each epoch.
-                scheduler_state = scheduler.batch_step(loss.item())
+                # update progress bar with loss for current batch
+                pbar.set_postfix(ordered_dict={'loss': batch_losses[-1]})
+                pbar.update(1)
 
-                batch_pbar.set_postfix(ordered_dict={'loss': loss.item()})
-                batch_pbar.update(1)
+                # send loss of current batch to scheduler
+                # 'scheduler_state' is a dictionary that is logged to
+                # tensorboard at the end of each epoch.
+                scheduler_state = scheduler.batch_step(batch_losses[-1])
+
+            # progress bar (loss for current epoch, current learning rate)
+            pbar.set_postfix(
+                ordered_dict={'loss': loss_avg,
+                              'lr': optimizer.param_groups[0]['lr']})
+            pbar.update(0)
 
             # tensorboard: average loss
             loss_avg /= batches_per_epoch
             writer.add_scalar('train/loss', loss_avg, global_step=iteration)
 
-            epoch_pbar.set_postfix(
-                ordered_dict={'loss': loss_avg, 'epoch': epoch})
-            epoch_pbar.update(1)
-
-            batch_pbar.close()
-            batch_pbar = tqdm(desc='Batch', total=batches_per_epoch,
-                              position=1, unit='batch',
-                              postfix={'loss': '...'})
-
             # tensorboard: learning rate
-            writer.add_scalar('train/learning_rate',
+            writer.add_scalar('train/lr',
                               optimizer.param_groups[0]['lr'],
                               global_step=iteration)
 
