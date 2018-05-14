@@ -199,7 +199,7 @@ class Trainer:
 
         # progress bar
         pbar = tqdm(desc='Auto LR', total=n_batches,
-                    postfix={'lr': '...', 'loss': '...'})
+                    postfix={'loss': '...', 'lr': '...'})
 
         losses, lrs = [], []
 
@@ -217,7 +217,7 @@ class Trainer:
 
             # update progress bar
             pbar.update(1)
-            pbar.set_postfix(ordered_dict={'lr': lrs[-1], 'loss': losses[-1]})
+            pbar.set_postfix(ordered_dict={'loss': losses[-1], 'lr': lrs[-1]})
 
             # update tensorboard
             if writer is not None:
