@@ -44,6 +44,8 @@ class DavisKingScheduler(object):
         Wrapped optimizer.
     batches_per_epoch : int
         Number of batches per epoch.
+    learning_rate : {float, list}, optional
+        Initial learning rate. Defaults to using optimizer's own learning rate.
     factor : float, optional
         Factor by which the learning rate will be reduced.
         new_lr = old_lr * factor. Defaults to 0.9
