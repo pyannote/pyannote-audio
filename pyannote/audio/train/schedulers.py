@@ -73,7 +73,7 @@ class DavisKingScheduler(object):
         # initialize optimizer learning rate
         if learning_rate is None:
             lrs = [g['lr'] for g in self.optimizer.param_groups]
-        if isinstance(learning_rate, (list, tuple)):
+        elif isinstance(learning_rate, (list, tuple)):
             lrs = learning_rate
         else:
             lrs = [learning_rate] * len(self.optimizer.param_groups)
