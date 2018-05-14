@@ -32,100 +32,13 @@ import numpy as np
 from tqdm import tqdm
 from collections import deque
 from torch.optim import SGD
-from torch.optim import Adam
-from torch.optim import RMSprop
 from abc import ABCMeta, abstractmethod
-from pyannote.audio.checkpoint import Checkpoint
+from pyannote.audio.train.schedulers import DavisKingScheduler
+from pyannote.audio.train.checkpoint import Checkpoint
 from tensorboardX import SummaryWriter
-from dlib import count_steps_without_decrease
-from dlib import count_steps_without_decrease_robust
 from dlib import probability_that_sequence_is_increasing
 
 ARBITRARY_LR = 0.1
-
-
-
-class DavisKingScheduler(object):
-    """Automatic Learning Rate Scheduling That Really Works
-
-    http://blog.dlib.net/2018/02/automatic-learning-rate-scheduling-that.html
-
-    Parameters
-    ----------
-    optimizer : Optimizer
-        Wrapped optimizer.
-    batches_per_epoch : int
-        Number of batches per epoch.
-    factor : float, optional
-        Factor by which the learning rate will be reduced.
-        new_lr = old_lr * factor. Defaults to 0.9
-    patience : int, optional
-        Number of epochs with no improvement after which learning rate will
-        be reduced. Defaults to 20.
-
-    Example
-    -------
-    >>> optimizer = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9)
-    >>> batches_per_epoch = 1000
-    >>> scheduler = DavisKingScheduler(optimizer, batches_per_epoch)
-    >>> for mini_batch in batches:
-    ...     mini_loss = train(mini_batch, optimizer)
-    ...     scheduler.step(mini_loss)
-    """
-
-    def __init__(self, optimizer, batches_per_epoch,
-                 learning_rate=None, factor=0.9, patience=20):
-
-        super(DavisKingScheduler, self).__init__()
-        self.batches_per_epoch = batches_per_epoch
-
-        self.optimizer = optimizer
-        self.learning_rate = learning_rate
-
-        # initialize optimizer learning rate
-        if learning_rate is None:
-            lrs = [g['lr'] for g in self.optimizer.param_groups]
-        if isinstance(learning_rate, (list, tuple)):
-            lrs = learning_rate
-        else:
-            lrs = [learning_rate] * len(self.optimizer.param_groups)
-        for param_group, lr in zip(self.optimizer.param_groups, lrs):
-            param_group['lr'] = lr
-
-        self.factor = factor
-        self.patience = patience
-
-        # TODO check in dlib's code whether patience * batches_per_epoch + 1
-        # would actually be enough
-        maxlen = 10 * self.patience * self.batches_per_epoch
-        self.batch_losses_ = deque([], maxlen=maxlen)
-
-    def batch_step(self, batch_loss):
-
-        # store current batch loss
-        self.batch_losses_.append(batch_loss)
-
-        # compute statistics on batch loss trend
-        count = count_steps_without_decrease(self.batch_losses_)
-        count_robust = count_steps_without_decrease_robust(self.batch_losses_)
-
-        # if batch loss hasn't been decreasing for a while
-        patience = self.patience * self.batches_per_epoch
-        if count > patience and count_robust > patience:
-
-            # decrease optimizer learning rate
-            for param_group in self.optimizer.param_groups:
-                param_group['lr'] *= self.factor
-
-            # reset batch loss trend
-            self.batch_losses_.clear()
-
-        return {
-            'epochs_without_decrease': count / self.batches_per_epoch,
-            'epochs_without_decrease_robust': \
-                count_robust / self.batches_per_epoch}
-
-
 
 
 class Trainer:
