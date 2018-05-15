@@ -44,7 +44,7 @@ class DavisKingScheduler(object):
         Wrapped optimizer.
     batches_per_epoch : int
         Number of batches per epoch.
-    learning_rate : {float, list}, optional
+    max_lr : {float, list}, optional
         Initial learning rate. Defaults to using optimizer's own learning rate.
     factor : float, optional
         Factor by which the learning rate will be reduced.
@@ -63,22 +63,22 @@ class DavisKingScheduler(object):
     ...     scheduler.step(mini_loss)
     """
 
-    def __init__(self, optimizer, batches_per_epoch,
-                 learning_rate=None, factor=0.9, patience=10):
+    def __init__(self, optimizer, batches_per_epoch, max_lr=None,
+                 factor=0.3, patience=10, **kwargs):
 
         super(DavisKingScheduler, self).__init__()
         self.batches_per_epoch = batches_per_epoch
 
         self.optimizer = optimizer
-        self.learning_rate = learning_rate
+        self.max_lr = max_lr
 
         # initialize optimizer learning rate
-        if learning_rate is None:
+        if max_lr is None:
             lrs = [g['lr'] for g in self.optimizer.param_groups]
-        elif isinstance(learning_rate, (list, tuple)):
-            lrs = learning_rate
+        elif isinstance(max_lr, (list, tuple)):
+            lrs = max_lr
         else:
-            lrs = [learning_rate] * len(self.optimizer.param_groups)
+            lrs = [max_lr] * len(self.optimizer.param_groups)
         for param_group, lr in zip(self.optimizer.param_groups, lrs):
             param_group['lr'] = lr
 
@@ -125,33 +125,41 @@ class OneCycle(object):
         Wrapped optimizer.
     batches_per_epoch : int
         Number of batches per epoch.
-    learning_rate : {float, list}, optional
-        Learning rate upper bound. Defaults to using optimizer's own learning
-        rate.
+    min_lr, max_lr : {float, list}, optional
+        Learning rate bounds.
     epochs_per_cycle : int, optional
         Number of epochs per cycle.
     """
 
-    def __init__(self, optimizer, batches_per_epoch, learning_rate=None,
-                 epochs_per_cycle=20):
+    def __init__(self, optimizer, batches_per_epoch, min_lr=None, max_lr=None,
+                 epochs_per_cycle=20, **kwargs):
 
         super(OneCycle, self).__init__()
         self.batches_per_epoch = batches_per_epoch
         self.optimizer = optimizer
-        self.learning_rate = learning_rate
+        self.min_lr = min_lr
+        self.max_lr = max_lr
         self.epochs_per_cycle = epochs_per_cycle
 
-        if learning_rate is None:
+        # learning rate upper bound
+        if self.max_lr is None:
             self.max_lrs_ = [g['lr'] for g in self.optimizer.param_groups]
 
-        elif isinstance(learning_rate, (list, tuple)):
-            self.max_lrs_ = [lr for lr in learning_rate]
+        elif isinstance(max_lr, (list, tuple)):
+            self.max_lrs_ = [lr for lr in self.max_lr]
 
         else:
-            self.max_lrs_ = [learning_rate] * len(self.optimizer.param_groups)
+            self.max_lrs_ = [self.max_lr] * len(self.optimizer.param_groups)
 
-        # TODO. make 0.1 tunable
-        self.min_lrs_ = [0.1 * lr for lr in self.max_lrs_]
+        # learning rate lower bound
+        if self.min_lr is None:
+            self.min_lrs_ = [0.1 * lr for lr in self.max_lrs_]
+
+        elif isinstance(min_lr, (list, tuple)):
+            self.min_lrs_ = [lr for lr in self.min_lr]
+
+        else:
+            self.min_lrs_ = [self.min_lr] * len(self.optimizer.param_groups)
 
         # initialize omptimizer learning rate to lower value
         for param_group, lr in zip(self.optimizer.param_groups, self.min_lrs_):

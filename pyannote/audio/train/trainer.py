@@ -113,7 +113,7 @@ class Trainer:
             Subset to use for training. Defaults to "train".
         epochs : int, optional
             Train model for that many epochs. Defaults to 1000.
-        learning_rate : float, optional
+        learning_rate : {float, 'auto'}, optional
             Defaults to 'auto'.
         restart : int, optional
             Restart training at this epoch. Defaults to train from scratch.
@@ -167,8 +167,8 @@ class Trainer:
 
         Returns
         -------
-        learning_rate : float
-            "Good" learning rate upper bound.
+        min_lr, max_lr : float
+            "Good" learning rate bounds.
 
         Reference
         ---------
@@ -238,7 +238,7 @@ class Trainer:
 
         # return learning rate upper bound
         # (0.1 times the learning rate for which loss stops decreasing)
-        return lrs[stop - K]
+        return lrs[start], lrs[stop]
 
     def fit_iter(self, model, feature_extraction,
                  protocol, subset='train', restart=0, epochs=1000,
@@ -263,6 +263,7 @@ class Trainer:
 
         device = torch.device('cpu') if device is None else device
         model = model.to(device)
+        optimizer = get_optimizer(model.parameters(), lr=ARBITRARY_LR)
 
         if restart > 0:
 
@@ -272,28 +273,20 @@ class Trainer:
                 map_location=lambda storage, loc: storage)
             model.load_state_dict(model_state)
 
-            optimizer = get_optimizer(model.parameters(),
-                                      lr=ARBITRARY_LR)
-
             # load optimizer
             optimizer_state = torch.load(
                 checkpoint.optimizer_pt(restart),
                 map_location=lambda storage, loc: storage)
             optimizer.load_state_dict(optimizer_state)
 
-            learning_rate = [g['lr'] for g in optimizer.param_groups]
-
         # find optimal learning rate automagically
-        elif learning_rate == 'auto':
-
-            optimizer = get_optimizer(model.parameters(),
-                                      lr=ARBITRARY_LR)
+        if learning_rate == 'auto':
 
             # save model and optimizer states before "auto_lr"
             checkpoint.on_epoch_end(0, model, optimizer)
 
-            learning_rate = self.auto_lr(model, optimizer, batches,
-                                         writer=writer, device=device)
+            min_lr, max_lr = self.auto_lr(model, optimizer, batches,
+                                          writer=writer, device=device)
 
             # reload model and optimizer states after "auto_lr"
             model_state = torch.load(
@@ -306,14 +299,12 @@ class Trainer:
                 map_location=lambda storage, loc: storage)
             optimizer.load_state_dict(optimizer_state)
 
+        # ... or use the one provided by the user
         else:
+            min_lr, max_lr = None, learning_rate
 
-            optimizer = get_optimizer(model.parameters(),
-                                      lr=learning_rate)
-
-        # Davis King's scheduler "that just works"
         scheduler = get_scheduler(optimizer, batches_per_epoch,
-                                  learning_rate=learning_rate)
+                                  min_lr=min_lr, max_lr=max_lr)
 
         self.on_train_start(model, batches_per_epoch=batches_per_epoch)
 
