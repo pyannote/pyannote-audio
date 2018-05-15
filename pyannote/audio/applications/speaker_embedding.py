@@ -318,12 +318,20 @@ class SpeakerEmbedding(Application):
         # use final representation (not internal ones)
         model.internal = False
 
+        
+        # use user-provided --duration when available
+        # otherwise use 'duration' used for training
         if self.duration is None:
-            duration = self.max_duration
-            min_duration = self.min_duration
+            duration = self.task_.duration
         else:
             duration = self.duration
-            min_duration = None
+        min_duration = None
+
+        # if 'duration' is still None, it means that
+        # network was trained with variable lengths
+        if duration is None:
+            duration = self.task_.max_duration
+            min_duration = self.task_.min_duration
 
         step = .5 * duration
 
