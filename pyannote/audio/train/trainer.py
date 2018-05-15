@@ -394,6 +394,9 @@ class Trainer:
 
             yield {'epoch': epoch, 'iteration': iteration, 'model': model}
 
+            if not scheduler.allow_backtrack:
+                continue
+
             # tensorboard: backtracking probability
             backtrack_p = probability_that_sequence_is_increasing(batch_losses)
             writer.add_scalar('train/backtracking/probability',

@@ -52,6 +52,8 @@ class DavisKingScheduler(object):
     patience : int, optional
         Number of epochs with no improvement after which learning rate will
         be reduced. Defaults to 10.
+    allow_backtrack : bool, optional
+        Defaults to True
 
     Example
     -------
@@ -64,7 +66,7 @@ class DavisKingScheduler(object):
     """
 
     def __init__(self, optimizer, batches_per_epoch, max_lr=None,
-                 factor=0.3, patience=10, **kwargs):
+                 factor=0.3, patience=10, allow_backtrack=True, **kwargs):
 
         super(DavisKingScheduler, self).__init__()
         self.batches_per_epoch = batches_per_epoch
@@ -84,6 +86,7 @@ class DavisKingScheduler(object):
 
         self.factor = factor
         self.patience = patience
+        self.allow_backtrack = allow_backtrack
 
         # TODO check in dlib's code whether patience * batches_per_epoch + 1
         # would actually be enough
@@ -128,11 +131,13 @@ class OneCycle(object):
     min_lr, max_lr : {float, list}, optional
         Learning rate bounds.
     epochs_per_cycle : int, optional
-        Number of epochs per cycle.
+        Number of epochs per cycle. Defaults to 20.
+    allow_backtrack : bool, optional
+        Defaults to False.
     """
 
     def __init__(self, optimizer, batches_per_epoch, min_lr=None, max_lr=None,
-                 epochs_per_cycle=20, **kwargs):
+                 epochs_per_cycle=20, allow_backtrack=False, **kwargs):
 
         super(OneCycle, self).__init__()
         self.batches_per_epoch = batches_per_epoch
@@ -140,6 +145,7 @@ class OneCycle(object):
         self.min_lr = min_lr
         self.max_lr = max_lr
         self.epochs_per_cycle = epochs_per_cycle
+        self.allow_backtrack = allow_backtrack
 
         # learning rate upper bound
         if self.max_lr is None:
