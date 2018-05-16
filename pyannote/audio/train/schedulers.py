@@ -119,7 +119,7 @@ class DavisKingScheduler(object):
                 count_robust / self.batches_per_epoch}
 
 
-class OneCycle(object):
+class CyclicScheduler(object):
     """
 
     Parameters
@@ -139,7 +139,7 @@ class OneCycle(object):
     def __init__(self, optimizer, batches_per_epoch, min_lr=None, max_lr=None,
                  epochs_per_cycle=20, allow_backtrack=False, **kwargs):
 
-        super(OneCycle, self).__init__()
+        super(CyclicScheduler, self).__init__()
         self.batches_per_epoch = batches_per_epoch
         self.optimizer = optimizer
         self.min_lr = min_lr
