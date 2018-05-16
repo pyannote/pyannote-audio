@@ -48,10 +48,6 @@ class Application(object):
     WEIGHTS_PT = '{train_dir}/weights/{epoch:04d}.pt'
 
     # created by "validate" mode
-    VALIDATE_TXT = '{validate_dir}/{subset}.{metric}.txt'
-    VALIDATE_TXT_TEMPLATE = '{epoch:04d} {value:.6f}\n'
-    VALIDATE_PNG = '{validate_dir}/{subset}.{metric}.png'
-    VALIDATE_EPS = '{validate_dir}/{subset}.{metric}.eps'
     VALIDATE_DIR = '{train_dir}/validate/{protocol}.{subset}'
 
     @classmethod
