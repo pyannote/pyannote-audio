@@ -27,7 +27,6 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 import torch
-import random
 import numpy as np
 from tqdm import tqdm
 from pyannote.metrics.binary_classification import det_curve
@@ -217,7 +216,7 @@ class LabelingTaskGenerator(object):
 
         while True:
 
-            random.shuffle(uris)
+            np.random.shuffle(uris)
 
             # loop on all files
             for uri in uris:
@@ -229,7 +228,7 @@ class LabelingTaskGenerator(object):
                 # randomly shift 'annotated' segments start time so that
                 # we avoid generating exactly the same subsequence twice
                 annotated = Timeline(
-                    [Segment(s.start + random.random() * self.duration,
+                    [Segment(s.start + np.random.random() * self.duration,
                              s.end) for s in get_annotated(current_file)])
                 current_file['annotated'] = annotated
 
@@ -253,7 +252,7 @@ class LabelingTaskGenerator(object):
                         yield sample
 
                 if self.shuffle:
-                    random.shuffle(samples)
+                    np.random.shuffle(samples)
                     for sample in samples:
                         yield sample
 
