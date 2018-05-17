@@ -233,13 +233,13 @@ class Trainer:
         start = np.where(probability < onset)[0][0]
 
         # loss starts increasing
-        # heuristic: 1st time prob. goes above 0.5 after it initially decreased
-        stop = start + np.where(probability[start:] > 0.5)[0][0]
+        # heuristic: 1st time prob. goes above 0.9 after it initially decreased
+        stop = start + np.where(probability[start:] > 0.9)[0][0]
 
         # upper bound
         # heuristic: loss increased between stop-K and stop
-        # so we'd rather bound the learning rate at stop-K
-        upper = lrs[stop - K]
+        # so we'd rather bound the learning rate around mid-range
+        upper = lrs[stop - K // 2]
 
         # lower bound. make sure there is at least one order of magnitude
         # between lower and upper bounds
