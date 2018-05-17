@@ -61,7 +61,7 @@ target/
 #Ipython Notebook
 .ipynb_checkpoints
 
-notebooks
+notebook
 models
 experiments
 *~
