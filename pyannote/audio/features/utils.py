@@ -42,7 +42,7 @@ import librosa
 from pyannote.core import SlidingWindow, SlidingWindowFeature
 from pyannote.database.util import get_unique_identifier
 from pyannote.audio.util import mkdir_p
-
+import tempfile
 
 
 class PyannoteFeatureExtractionError(Exception):
@@ -117,16 +117,18 @@ def read_audio(current_file, sample_rate=None, mono=True):
 
     """
 
+    # sphere files
     if current_file['audio'][-4:] == '.sph':
+
+        # dump sphere file to a temporary wav file
+        # and load it from here...
         from sphfile import SPHFile
         sph = SPHFile(current_file['audio'])
-        y = sph.content
-        sample_rate_ = sph.format['sample_rate']
-        if sample_rate is not None and sample_rate_ != sample_rate:
-            y = librosa.resample(y, sample_rate_, sample_rate)
-        else:
-            sample_rate = sample_rate_
+        with tempfile.NamedTemporaryFile() as f:
+            sph.write_wav(f.name)
+            y, sample_rate = librosa.load(f.name, sr=sample_rate, mono=False)
 
+    # all other files
     else:
         y, sample_rate = librosa.load(current_file['audio'],
                                       sr=sample_rate,
