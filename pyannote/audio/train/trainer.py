@@ -161,9 +161,6 @@ class Trainer:
             When provided, log learning rate and loss to tensorboard.
         device : torch.Device, optional
             Device to use. Defaults to `torch.device('cpu')`.
-        onset, offset : float, optional
-            Onset & offset probability thresholds. This is used for detecting
-            when loss starts (resp. stops) decreasing.
 
         Returns
         -------
@@ -231,14 +228,25 @@ class Trainer:
         probability = np.array(probability)
 
         # loss starts decreasing
+        # heuristic: 1st time prob. goes below half (in log-scale) its minimum
+        onset = np.sqrt(max(1e-12, np.nanmin(probability)))
         start = np.where(probability < onset)[0][0]
 
-        # loss stops decreasing
-        stop = start + np.where(probability[start:] > offset)[0][0]
+        # loss starts increasing
+        # heuristic: 1st time prob. goes above 0.5 after it initially decreased
+        stop = start + np.where(probability[start:] > 0.5)[0][0]
 
-        # return learning rate upper bound
-        # (0.1 times the learning rate for which loss stops decreasing)
-        return lrs[start], lrs[stop]
+        # upper bound
+        # heuristic: loss increased between stop-K and stop
+        # so we'd rather bound the learning rate at stop-K
+        upper = lrs[stop - K]
+
+        # lower bound. make sure there is at least one order of magnitude
+        # between lower and upper bounds
+        lower = min(lrs[start], 0.1 * upper)
+
+        # return learning rate bounds
+        return lower, upper
 
     def fit_iter(self, model, feature_extraction,
                  protocol, subset='train', restart=0, epochs=1000,
