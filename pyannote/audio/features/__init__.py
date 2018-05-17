@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2014-2017 CNRS
+# Copyright (c) 2014-2018 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -26,8 +26,13 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
+"""
+"""
+
+
 from .with_yaafe import YaafeCompound, YaafeZCR, YaafeMFCC
 from .with_librosa import LibrosaMFCC, LibrosaRMSE, LibrosaSpectrogram, LibrosaMelSpectrogram
+from .with_python_speech_features import PySpeechFeaturesMFCC
 from .utils import Precomputed
 from .utils import PrecomputedHTK
 from .utils import RawAudio

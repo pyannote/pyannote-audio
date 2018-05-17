@@ -47,6 +47,7 @@ setup(
         'pandas >= 0.18.0',
         'audioread >= 2.1.5',
         'librosa >= 0.5.1',
+        'python_speech_features == 0.6',
         'sphfile == 1.0.0',
         'pyYAML >= 3.12',
         'h5py >= 2.6.0',
