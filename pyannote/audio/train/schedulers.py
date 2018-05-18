@@ -130,20 +130,26 @@ class CyclicScheduler(object):
         Number of batches per epoch.
     min_lr, max_lr : {float, list}, optional
         Learning rate bounds.
+    min_momentum, max_momentum : float, optional
+        Momentum bounds.
     epochs_per_cycle : int, optional
         Number of epochs per cycle. Defaults to 20.
     allow_backtrack : bool, optional
         Defaults to False.
+
     """
 
     def __init__(self, optimizer, batches_per_epoch, min_lr=None, max_lr=None,
-                 epochs_per_cycle=20, allow_backtrack=False, **kwargs):
+                 min_momentum=0.85, max_momentum=0.95, epochs_per_cycle=20,
+                 allow_backtrack=False, **kwargs):
 
         super(CyclicScheduler, self).__init__()
         self.batches_per_epoch = batches_per_epoch
         self.optimizer = optimizer
         self.min_lr = min_lr
         self.max_lr = max_lr
+        self.min_momentum = min_momentum
+        self.max_momentum = max_momentum
         self.epochs_per_cycle = epochs_per_cycle
         self.allow_backtrack = allow_backtrack
 
@@ -167,9 +173,11 @@ class CyclicScheduler(object):
         else:
             self.min_lrs_ = [self.min_lr] * len(self.optimizer.param_groups)
 
-        # initialize omptimizer learning rate to lower value
+        # initialize optimizer learning rate to lower value
+        # and momentum to higher value
         for param_group, lr in zip(self.optimizer.param_groups, self.min_lrs_):
             param_group['lr'] = lr
+            param_group['momentum'] = self.max_momentum
 
         self.n_batches_ = 0
 
@@ -184,10 +192,16 @@ class CyclicScheduler(object):
         # position within current cycle
         rho = max(0, 1 - np.abs(self.n_batches_ / bpc - 2 * cycle + 1))
 
-        # update learning rates
+        # update learning rates and momentum
+        momentum = self.max_momentum - \
+            (self.max_momentum - self.min_momentum) * rho
         group_min_max = zip(self.optimizer.param_groups,
                             self.min_lrs_,  self.max_lrs_)
         for param_group, min_lr, max_lr in group_min_max:
-            param_group['lr'] = min_lr + (max_lr - min_lr) * rho
+            lr = min_lr + (max_lr - min_lr) * rho
+            param_group['lr'] = lr
+            param_group['momentum'] = momentum
 
         self.n_batches_ += 1
+
+        return {'lr': lr, 'momentum': momentum}
