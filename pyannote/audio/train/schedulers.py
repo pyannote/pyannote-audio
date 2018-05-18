@@ -108,12 +108,14 @@ class DavisKingScheduler(object):
 
             # decrease optimizer learning rate
             for param_group in self.optimizer.param_groups:
-                param_group['lr'] *= self.factor
+                lr = param_group['lr'] * self.factor
+                param_group['lr'] = lr
 
             # reset batch loss trend
             self.batch_losses_.clear()
 
         return {
+            'lr': lr,
             'epochs_without_decrease': count / self.batches_per_epoch,
             'epochs_without_decrease_robust': \
                 count_robust / self.batches_per_epoch}

@@ -366,25 +366,20 @@ class Trainer:
                 batch_losses.append(loss.item())
                 loss_avg += loss.item()
 
-                # update progress bar with loss for current batch
-                pbar.set_postfix(
-                    ordered_dict={'loss': loss_avg / (i+1),
-                                  'lr': optimizer.param_groups[0]['lr']})
-                pbar.update(1)
-
                 # send loss of current batch to scheduler
                 # 'scheduler_state' is a dictionary that is logged to
                 # tensorboard at the end of each epoch.
                 scheduler_state = scheduler.batch_step(batch_losses[-1])
 
+                # update progress bar with loss for current batch
+                pbar.set_postfix(
+                    ordered_dict={'loss': loss_avg / (i+1),
+                                  'lr': scheduler_state['lr']})
+                pbar.update(1)
+
             # tensorboard: average loss
             loss_avg /= batches_per_epoch
             writer.add_scalar('train/loss', loss_avg, global_step=iteration)
-
-            # tensorboard: learning rate
-            writer.add_scalar('train/lr',
-                              optimizer.param_groups[0]['lr'],
-                              global_step=iteration)
 
             # tensorboard: scheduler
             if isinstance(scheduler_state, dict):
