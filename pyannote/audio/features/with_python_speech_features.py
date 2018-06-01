@@ -125,7 +125,7 @@ class PySpeechFeaturesMFCC(PySpeechFeaturesExtractor):
     def process(self, y, sample_rate):
 
         return python_speech_features.mfcc(
-            y, samplerate=sample_rate, winlen=self.duration, winstep=self.step,
+            32768 * y, samplerate=sample_rate, winlen=self.duration, winstep=self.step,
             numcep=self.coefs)
 
     def dimension(self):
