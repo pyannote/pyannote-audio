@@ -53,12 +53,12 @@ setup(
         'h5py >= 2.6.0',
         'cachetools >= 2.0.0',
         'tqdm >= 4.11.2',
-        'sortedcontainers >= 1.5.9',
-        'sortedcollections >= 0.5.3',
+        'sortedcontainers >= 2.0.4',
+        'sortedcollections >= 1.0.1',
         'tensorboardX >= 1.1',
         'chocolate >= 0.6',
         'filelock >= 3.0.4',
-        'dlib == 19.10.0',
+        'dlib >= 19.12.0',
     ],
     dependency_links=[
         'git+https://github.com/AIworx-Labs/chocolate.git@master#egg=chocolate-0.6'
