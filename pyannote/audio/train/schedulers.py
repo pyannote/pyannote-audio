@@ -138,12 +138,13 @@ class CyclicScheduler(object):
         Number of epochs per cycle. Defaults to 20.
     allow_backtrack : bool, optional
         Defaults to False.
-
+    decay : float, optional
+        Defaults to 1 (i.e. no decay).
     """
 
     def __init__(self, optimizer, batches_per_epoch, min_lr=None, max_lr=None,
                  min_momentum=0.85, max_momentum=0.95, epochs_per_cycle=20,
-                 allow_backtrack=False, **kwargs):
+                 decay=1., allow_backtrack=False, **kwargs):
 
         super(CyclicScheduler, self).__init__()
         self.batches_per_epoch = batches_per_epoch
@@ -153,6 +154,7 @@ class CyclicScheduler(object):
         self.min_momentum = min_momentum
         self.max_momentum = max_momentum
         self.epochs_per_cycle = epochs_per_cycle
+        self.decay = decay
         self.allow_backtrack = allow_backtrack
 
         # learning rate upper bound
@@ -200,6 +202,9 @@ class CyclicScheduler(object):
         group_min_max = zip(self.optimizer.param_groups,
                             self.min_lrs_,  self.max_lrs_)
         for param_group, min_lr, max_lr in group_min_max:
+
+            # cycle decay
+            max_lr = self.decay ** (cycle - 1) * max_lr
             lr = min_lr + (max_lr - min_lr) * rho
             param_group['lr'] = lr
             param_group['momentum'] = momentum
