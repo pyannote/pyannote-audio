@@ -238,8 +238,8 @@ class Trainer:
 
         # upper bound
         # heuristic: loss increased between stop-K and stop
-        # so we'd rather bound the learning rate around mid-range
-        upper = lrs[stop - K // 2]
+        # so we'd rather bound the learning rate at stop-K.
+        upper = lrs[stop - K]
 
         # lower bound. make sure there is at least one order of magnitude
         # between lower and upper bounds
