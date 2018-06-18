@@ -110,7 +110,7 @@ class TristouNet(nn.Module):
     def output_dim(self):
         if self.linear:
             return self.linear[-1]
-        return self.recurrent[-1]
+        return self.recurrent[-1] * (2 if self.bidirectional else 1)
 
     def forward(self, sequence):
         """
@@ -388,7 +388,7 @@ class ClopiNet(nn.Module):
     def output_dim(self):
         if self.linear:
             return self.linear[-1]
-        return sum(self.recurrent)
+        return sum(self.recurrent) * (2 if self.bidirectional else 1)
 
     def forward(self, sequence):
 
