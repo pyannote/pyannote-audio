@@ -412,7 +412,7 @@ class LabelingTask(Trainer):
         log_y_true = np.hstack(self.log_y_true_)
         log_y_pred = log_y_pred.reshape((-1, self.n_classes))
         log_y_true = log_y_true.reshape((-1, ))
-        if len(self.n_classes) < 3:
+        if self.n_classes < 3:
             _, _, _, eer = det_curve(log_y_true == 0,
                                      log_y_pred[:, 0])
             writer.add_scalar(f'train/eer',
