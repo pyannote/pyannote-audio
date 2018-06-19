@@ -336,25 +336,15 @@ class LabelingTask(Trainer):
         Number of prefetching background generators. Defaults to 1.
         Each generator will prefetch enough batches to cover a whole epoch.
         Set `parallel` to 0 to not use background generators.
-    optimizer : {'sgd', 'rmsprop', 'adam'}
-        Defaults to 'sgd'.
-    learning_rate : float, optional
-        Learning rate. Defaults to 0.01.
-    enable_backtrack : bool, optional
-        Defaults to True.
     """
 
     def __init__(self, duration=3.2, batch_size=32, per_epoch=3600,
-                 parallel=1, optimizer='sgd', learning_rate=1e-2,
-                 enable_backtrack=True):
+                 parallel=1):
         super(LabelingTask, self).__init__()
         self.duration = duration
         self.batch_size = batch_size
         self.per_epoch = per_epoch
         self.parallel = parallel
-        self.optimizer = optimizer
-        self.learning_rate = learning_rate
-        self.enable_backtrack = enable_backtrack
 
     def get_batch_generator(self, precomputed):
         """This method should be overriden by subclass
