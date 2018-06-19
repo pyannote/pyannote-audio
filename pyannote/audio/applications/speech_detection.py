@@ -97,7 +97,6 @@ Configuration file:
        name: SpeechActivityDetection
        params:
           duration: 3.2
-          batch_size: 32
           parallel: 2
     ...................................................................
 

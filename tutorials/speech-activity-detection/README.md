@@ -29,7 +29,7 @@ In this tutorial, you will learn how to train, validate, and apply a speech acti
 
 ## Table of contents
 - [Citation](#citation)
-- [ETAPE database](#etape-database)
+- [AMI database](#ami-database)
 - [Configuration](#configuration)
 - [Training](#training)
 - [Validation](#validation)
@@ -53,23 +53,23 @@ If you use `pyannote-audio` for speech activity detection, please cite the follo
 }
 ```
 
-## ETAPE database
+## AMI database
 ([↑up to table of contents](#table-of-contents))
 
 ```bash
 $ source activate pyannote
-$ pip install pyannote.db.etape
+$ pip install pyannote.db.odessa.ami
 ```
 
-This tutorial relies on the [ETAPE database](http://islrn.org/resources/425-777-374-455-4/). We first need to tell `pyannote` where the audio files are located:
+This tutorial relies on the [AMI database](http://groups.inf.ed.ac.uk/ami/corpus). We first need to tell `pyannote` where the audio files are located:
 
 ```bash
-$ cat ~/.pyannote/db.yml
-Etape: /path/to/Etape/corpus/{uri}.wav
+$ cat ~/.pyannote/db.yml | grep AMI
+AMI: /path/to/ami/amicorpus/*/audio/{uri}.wav
 ```
 
-If you want to train the network using a different database, you might need to create your own [`pyannote.database`](http://github.com/pyannote/pyannote-database) plugin.
-See [github.com/pyannote/pyannote-db-template](https://github.com/pyannote/pyannote-db-template) for details on how to do so.
+If you want to use a different database, you might need to create your own [`pyannote.database`](http://github.com/pyannote/pyannote-database) plugin.
+See [github.com/pyannote/pyannote-db-template](https://github.com/pyannote/pyannote-db-template) for details on how to do so. You might also use `pip search pyannote` to browse existing plugins.
 
 ## Configuration
 ([↑up to table of contents](#table-of-contents))
@@ -86,12 +86,13 @@ task:
    name: SpeechActivityDetection
    params:
       duration: 3.2
+      parallel: 4
 
 # use precomputed features (from feature extraction tutorials)
 feature_extraction:
    name: Precomputed
    params:
-      root_dir: /path/to/tutorials/feature-extraction
+      root_dir: tutorials/feature-extraction
 
 # use the StackedRNN architecture.
 # see pyannote.audio.labeling.models for more details
@@ -99,19 +100,22 @@ architecture:
    name: StackedRNN
    params:
      rnn: LSTM
-     recurrent: [16]
+     recurrent: [16, 16]
      bidirectional: True
-     linear: [16]
+
+# use cyclic learning rate scheduler
+scheduler:
+   name: CyclicScheduler
 ```
 
 ## Training
 ([↑up to table of contents](#table-of-contents))
 
-The following command will train the network using the training set of the `TV` protocol of the ETAPE database for 50 epochs (one epoch = one hour of audio).
+The following command will train the network using the training set of AMI database for 200 epochs (one epoch = one hour of audio).
 
 ```bash
 $ export EXPERIMENT_DIR=tutorials/speech-activity-detection
-$ pyannote-speech-detection train --to=50 ${EXPERIMENT_DIR} Etape.SpeakerDiarization.TV
+$ pyannote-speech-detection train --gpu --batch=512 --to=200 ${EXPERIMENT_DIR} AMI.SpeakerDiarization.MixHeadset
 ```
 ```
 Epoch #0: 100%|█████████████████████████████████████| 36/36 [00:40<00:00,  1.12s/it]
