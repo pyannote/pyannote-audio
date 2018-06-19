@@ -239,8 +239,8 @@ class Application(object):
                 values[metric][epoch] = value
 
                 writer.add_scalar(
-                    f'validation/{metric}', values[metric][epoch],
-                    global_step=epoch)
+                    f'validate/{protocol_name}.{subset}/{metric}',
+                    values[metric][epoch], global_step=epoch)
 
                 # keep track of best epoch so far
                 if minimize[metric] == 'NA':
