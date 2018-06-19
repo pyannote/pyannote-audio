@@ -37,13 +37,13 @@ Usage:
   pyannote-speech-detection --version
 
 Common options:
-  <database.task.protocol>   Experimental protocol (e.g. "Etape.SpeakerDiarization.TV")
+  <database.task.protocol>   Experimental protocol (e.g. "AMI.SpeakerDiarization.MixHeadset")
   --database=<db.yml>        Path to database configuration file.
                              [default: ~/.pyannote/db.yml]
   --subset=<subset>          Set subset (train|developement|test).
-                             In "train" mode, default subset is "train".
-                             In "validate" mode, defaults to "development".
-                             In "apply" mode, defaults to "test".
+                             Defaults to "train" in "train" mode. Defaults to
+                             "development" in "validate" mode. Not used in
+                             "apply" mode.
   --gpu                      Run on GPUs. Defaults to using CPUs.
   --batch=<size>             Set batch size. Has no effect in "train" mode.
                              [default: 32]
@@ -80,30 +80,40 @@ Configuration file:
     the neural network architecture, and the task addressed.
 
     ................... <experiment_dir>/config.yml ...................
+    # use precomputed features (se feature extraction tutorial)
     feature_extraction:
        name: Precomputed
        params:
-          root_dir: /path/to/mfcc
+          root_dir: tutorials/feature-extraction
 
-    architecture:
-       name: StackedRNN
-       params:
-         rnn: LSTM
-         recurrent: [16]
-         bidirectional: True
-         linear: [16]
-
+    # train the network for speech activity detection
+    # see pyannote.audio.labeling.tasks for more details
     task:
        name: SpeechActivityDetection
        params:
           duration: 3.2
-          parallel: 2
+          parallel: 4
+
+
+    # use the StackedRNN architecture.
+    # see pyannote.audio.labeling.models for more details
+    architecture:
+       name: StackedRNN
+       params:
+         rnn: LSTM
+         recurrent: [16, 16]
+         bidirectional: True
+
+    # use cyclic learning rate scheduler
+    scheduler:
+       name: CyclicScheduler
+       params:
+           learning_rate: auto
     ...................................................................
 
 "train" mode:
-    First, one should train the raw sequence labeling neural network using
-    "train" mode. This will create the following directory that contains
-    the pre-trained neural network weights after each epoch:
+    This will create the following directory that contains the pre-trained
+    neural network weights after each epoch:
 
         <experiment_dir>/train/<database.task.protocol>.<subset>
 
@@ -112,25 +122,23 @@ Configuration file:
     This directory is called <train_dir> in the subsequent "validate" mode.
 
 "validate" mode:
-    In parallel to training, one should validate the performance of the model
-    epoch after epoch, using "validate" mode. This will create a bunch of files
-    in the following directory:
+    Use the "validate" mode to run validation in parallel to training.
+    "validate" mode will watch the <train_dir> directory, and run validation
+    experiments every time a new epoch has ended. This will create the
+    following directory that contains validation results:
 
-        <train_dir>/validate/<database.task.protocol>
+        <train_dir>/validate/<database.task.protocol>.<subset>
 
-    This means that the network was validated on the <database.task.protocol>
-    protocol. By default, validation is done on the "development" subset:
-    "developement.DetectionErrorRate.{txt|png|eps}" files are created and
-    updated continuously, epoch after epoch. This directory is called
-    <validate_dir> in the subsequent "tune" mode.
+    You can run multiple "validate" in parallel (e.g. for every subset,
+    protocol, task, or database).
 
-    In practice, for each epoch, "validate" mode will report the detection
-    error rate obtained by applying (possibly not optimal) onset/offset
-    thresholds of 0.5.
+    In practice, for each epoch, "validate" mode will look for the detection
+    threshold that minimizes the detection error rate. Both values (best
+    threshold and corresponding error rate) to tensorboard.
 
 "apply" mode
-    Finally, one can apply speech activity detection using "apply" mode.
-    Created files can then be used in the following way:
+    Use the "apply" mode to extract speech activity detection raw scores.
+    Resulting files can then be used in the following way:
 
     >>> from pyannote.audio.features import Precomputed
     >>> precomputed = Precomputed('<output_dir>')
@@ -144,7 +152,6 @@ Configuration file:
 
     >>> raw_scores = precomputed(first_test_file)
     >>> speech_regions = binarizer.apply(raw_scores, dimension=1)
-
 """
 
 import torch
@@ -193,7 +200,6 @@ class SpeechActivityDetection(Application):
 
     def validate_epoch(self, epoch, protocol_name, subset='development',
                        validation_data=None):
-
 
         # load model for current epoch
         model = self.load_model(epoch).to(self.device)
