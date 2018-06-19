@@ -136,7 +136,7 @@ Configuration file:
     threshold that minimizes the detection error rate. Both values (best
     threshold and corresponding error rate) to tensorboard.
 
-"apply" mode
+"apply" mode:
     Use the "apply" mode to extract speech activity detection raw scores.
     Resulting files can then be used in the following way:
 
@@ -214,8 +214,6 @@ class SpeechActivityDetection(Application):
             model, self.feature_extraction_, duration=duration,
             step=.25 * duration, batch_size=self.batch_size,
             source='audio', device=self.device)
-
-        sequence_labeling.cache_preprocessed_ = False
 
         protocol = get_protocol(protocol_name, progress=False,
                                 preprocessors=self.preprocessors_)

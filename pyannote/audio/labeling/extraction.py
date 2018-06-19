@@ -129,8 +129,7 @@ class SequenceLabeling(FileBasedBatchGenerator):
         # if we get there, it means that we need to extract features
         # for current_file. let's create a cache to store them...
         if not hasattr(self, 'preprocessed_'):
-            self.preprocessed_ = {} if self.cache_preprocessed_ \
-                                 else LRUCache(maxsize=CACHE_MAXSIZE)
+            self.preprocessed_ = LRUCache(maxsize=CACHE_MAXSIZE)
 
         # this is the key that will be used to know if "features"
         # already exist in cache

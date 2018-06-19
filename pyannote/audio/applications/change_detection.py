@@ -167,8 +167,6 @@ class SpeakerChangeDetection(SpeechActivityDetection):
             step=.25 * duration, batch_size=self.batch_size,
             source='audio', device=self.device)
 
-        sequence_labeling.cache_preprocessed_ = False
-
         protocol = get_protocol(protocol_name, progress=False,
                                 preprocessors=self.preprocessors_)
 

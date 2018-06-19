@@ -121,12 +121,6 @@ class Application(object):
             self.feature_extraction_ = FeatureExtraction(
                 **self.config_['feature_extraction'].get('params', {}))
 
-            # do not cache features in memory when they are precomputed on disk
-            # as this does not bring any significant speed-up
-            # but does consume (potentially) a LOT of memory
-            self.cache_preprocessed_ = 'Precomputed' not in extraction_name
-
-
     def train(self, protocol_name, subset='train', restart=None, epochs=1000):
 
         train_dir = self.TRAIN_DIR.format(
