@@ -170,15 +170,14 @@ class Trainer:
                        if i > K else np.NAN for i in range(len(losses))]
         probability = np.array(probability)
 
-        # loss starts decreasing
-        # heuristic: 1st time prob. goes above 0.9999
-        onset = 0.9999
-        start = np.where(probability > onset)[0][0]
-
-        # loss stops decreasing
-        # heuristic: 1st time prob. goes below 0.95
-        offset = 0.95
-        stop = start + np.where(probability[start:] < offset)[0][0]
+        # find longest decreasing region
+        decreasing = 1 * (probability > 0.99)
+        starts_decreasing = np.where(np.diff(decreasing) == 1)[0]
+        stops_decreasing = np.where(np.diff(decreasing) == -1)[0]
+        i = np.argmax(
+            [stop - start for start, stop in zip(starts_decreasing,
+                                                 stops_decreasing)])
+        stop = stops_decreasing[i]
 
         # upper bound
         # heuristic: loss ceased to decrease between stop-K and stop
