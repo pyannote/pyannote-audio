@@ -141,7 +141,7 @@ class Trainer:
         return iteration['model']
 
     @staticmethod
-    def _auto_lr(lrs, losses, min_lr=1e-6, max_lr=1e3, n_batches=500):
+    def _choose_lr(lrs, losses, min_lr=1e-6, max_lr=1e3, n_batches=500):
         """Helper function that actually selects the best learning rates
 
         Parameters
@@ -176,7 +176,7 @@ class Trainer:
         start = np.where(probability > onset)[0][0]
 
         # loss stops decreasing
-        # heuristic: 1st time prob. goes below 0.98
+        # heuristic: 1st time prob. goes below 0.95
         offset = 0.95
         stop = start + np.where(probability[start:] < offset)[0][0]
 
@@ -275,7 +275,7 @@ class Trainer:
             for param_group in optimizer.param_groups:
                 param_group['lr'] *= factor
 
-        return self._auto_lr(
+        return self._choose_lr(
             np.array(lrs), np.array(losses),
             min_lr=min_lr, max_lr=max_lr, n_batches=n_batches)
 
