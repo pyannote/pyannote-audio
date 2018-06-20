@@ -80,20 +80,20 @@ Configuration file:
     the neural network architecture, and the task addressed.
 
     ................... <experiment_dir>/config.yml ...................
-    # use precomputed features (se feature extraction tutorial)
-    feature_extraction:
-       name: Precomputed
-       params:
-          root_dir: tutorials/feature-extraction
-
     # train the network for speech activity detection
     # see pyannote.audio.labeling.tasks for more details
     task:
        name: SpeechActivityDetection
        params:
           duration: 3.2
-          parallel: 4
+          batch_size: 32
+          parallel: 2
 
+    # use precomputed features (see feature extraction tutorial)
+    feature_extraction:
+       name: Precomputed
+       params:
+          root_dir: tutorials/feature-extraction
 
     # use the StackedRNN architecture.
     # see pyannote.audio.labeling.models for more details
@@ -121,6 +121,11 @@ Configuration file:
     <database.task.protocol> protocol. By default, <subset> is "train".
     This directory is called <train_dir> in the subsequent "validate" mode.
 
+    A bunch of values (loss, learning rate, ...) are sent to and can be
+    visualized with tensorboard with the following command:
+
+        $ tensorboard --logdir=<experiment_dir>
+
 "validate" mode:
     Use the "validate" mode to run validation in parallel to training.
     "validate" mode will watch the <train_dir> directory, and run validation
@@ -134,7 +139,7 @@ Configuration file:
 
     In practice, for each epoch, "validate" mode will look for the detection
     threshold that minimizes the detection error rate. Both values (best
-    threshold and corresponding error rate) to tensorboard.
+    threshold and corresponding error rate) are sent to tensorboard.
 
 "apply" mode:
     Use the "apply" mode to extract speech activity detection raw scores.
@@ -157,6 +162,7 @@ Configuration file:
 import torch
 import numpy as np
 import scipy.optimize
+from pathlib import Path
 from docopt import docopt
 from .base import Application
 from os.path import expanduser
@@ -314,14 +320,18 @@ def main():
 
     arguments = docopt(__doc__, version='Speech activity detection')
 
-    db_yml = expanduser(arguments['--database'])
+    db_yml = Path(arguments['--database'])
+    db_yml = db_yml.expanduser().resolve(strict=True)
+
     protocol_name = arguments['<database.task.protocol>']
     subset = arguments['--subset']
+
     gpu = arguments['--gpu']
     device = torch.device('cuda') if gpu else torch.device('cpu')
 
     if arguments['train']:
-        experiment_dir = arguments['<experiment_dir>']
+        experiment_dir = Path(arguments['<experiment_dir>'])
+        experiment_dir = experiment_dir.expanduser().resolve(strict=True)
 
         if subset is None:
             subset = 'train'
@@ -342,7 +352,9 @@ def main():
                           restart=restart, epochs=epochs)
 
     if arguments['validate']:
-        train_dir = arguments['<train_dir>']
+
+        train_dir = Path(arguments['<train_dir>'])
+        train_dir = train_dir.expanduser().resolve(strict=True)
 
         if subset is None:
             subset = 'development'
@@ -376,8 +388,12 @@ def main():
 
     if arguments['apply']:
 
-        model_pt = arguments['<model.pt>']
-        output_dir = arguments['<output_dir>']
+        model_pt = Path(arguments['<model_pt>'])
+        model_pt = model_pt.expanduser().resolve(strict=True)
+
+        output_dir = Path(arguments['<output_dir>'])
+        output_dir = output_dir.expanduser().resolve(strict=False)
+
         if subset is None:
             subset = 'test'
 

@@ -24,7 +24,7 @@
 # SOFTWARE.
 
 # AUTHORS
-# Ruiqing YIN
+# Ruiqing YIN - yin@limsi.fr
 # Hervé BREDIN - http://herve.niderb.fr
 
 """
@@ -38,13 +38,13 @@ Usage:
   pyannote-change-detection --version
 
 Common options:
-  <database.task.protocol>   Experimental protocol (e.g. "Etape.SpeakerDiarization.TV")
+  <database.task.protocol>   Experimental protocol (e.g. "AMI.SpeakerDiarization.MixHeadset")
   --database=<db.yml>        Path to database configuration file.
                              [default: ~/.pyannote/db.yml]
   --subset=<subset>          Set subset (train|developement|test).
-                             In "train" mode, default subset is "train".
-                             In "validate" mode, defaults to "development".
-                             In "apply" mode, defaults to "test".
+                             Defaults to "train" in "train" mode. Defaults to
+                             "development" in "validate" mode. Not used in
+                             "apply" mode.
   --gpu                      Run on GPUs. Defaults to using CPUs.
   --batch=<size>             Set batch size. Has no effect in "train" mode.
                              [default: 32]
@@ -82,40 +82,74 @@ Configuration file:
     the neural network architecture, and the task addressed.
 
     ................... <experiment_dir>/config.yml ...................
+    # train the network for speaker change detection
+    # see pyannote.audio.labeling.tasks for more details
+    task:
+       name: SpeakerChangeDetection
+       params:
+          duration: 3.2
+          collar: 0.200
+          batch_size: 32
+          parallel: 2
+
+    # use precomputed features (see feature extraction tutorial)
     feature_extraction:
        name: Precomputed
        params:
           root_dir: /path/to/mfcc
 
+    # use the StackedRNN architecture.
+    # see pyannote.audio.labeling.models for more details
     architecture:
        name: StackedRNN
        params:
          rnn: LSTM
-         recurrent: [16]
+         recurrent: [32, 20]
          bidirectional: True
-         linear: [16]
+         linear: [40, 10]
 
-    task:
-       name: SpeakerChangeDetection
+    # use cyclic learning rate scheduler
+    scheduler:
+       name: CyclicScheduler
        params:
-          duration: 3.2
-          batch_size: 32
-          parallel: 2
+           learning_rate: auto
     ...................................................................
 
 "train" mode:
-    TODO
+    This will create the following directory that contains the pre-trained
+    neural network weights after each epoch:
+
+        <experiment_dir>/train/<database.task.protocol>.<subset>
+
+    This means that the network was trained on the <subset> subset of the
+    <database.task.protocol> protocol. By default, <subset> is "train".
+    This directory is called <train_dir> in the subsequent "validate" mode.
+
+    A bunch of values (loss, learning rate, ...) are sent to and can be
+    visualized with tensorboard with the following command:
+
+        $ tensorboard --logdir=<experiment_dir>
 
 "validate" mode:
-    TODO
+    Use the "validate" mode to run validation in parallel to training.
+    "validate" mode will watch the <train_dir> directory, and run validation
+    experiments every time a new epoch has ended. This will create the
+    following directory that contains validation results:
 
-    In practice, for each epoch, "validate" mode will approximate  the set of
-    hyper-parameters that maximizes coverage, given that the purity must be
-    higher than the value provided by the "--purity" option.
+        <train_dir>/validate/<database.task.protocol>.<subset>
+
+    You can run multiple "validate" in parallel (e.g. for every subset,
+    protocol, task, or database).
+
+    In practice, for each epoch, "validate" mode will look for the peak
+    detection threshold that maximizes speech turn coverage, under the
+    constraint that purity must be greater than the value provided by the
+    "--purity" option. Both values (best threshold and corresponding coverage)
+    are sent to tensorboard.
 
 "apply" mode
-    Finally, one can apply speaker change detection using "apply" mode.
-    Created files can then be used in the following way:
+    Use the "apply" mode to extract speaker change detection raw scores.
+    Resulting files can then be used in the following way:
 
     >>> from pyannote.audio.features import Precomputed
     >>> precomputed = Precomputed('<output_dir>')
@@ -129,13 +163,12 @@ Configuration file:
 
     >>> raw_scores = precomputed(first_test_file)
     >>> homogeneous_segments = peak_detection.apply(raw_scores, dimension=1)
-
 """
 
 import torch
 import numpy as np
+from pathlib import Path
 from docopt import docopt
-from os.path import expanduser
 from pyannote.audio.signal import Peak
 from pyannote.database import get_protocol
 from pyannote.database import get_annotated
@@ -208,23 +241,28 @@ class SpeakerChangeDetection(SpeechActivityDetection):
                     best_coverage = coverage
                     best_alpha = current_alpha
 
-        metric_name = f'DiarizationCoverageAt{target_purity:.2f}Purity'
+        task = 'speaker_change_detection'
+        metric_name = f'{task}/coverage@{target_purity:.2f}purity'
         return {
             metric_name: {'minimize': False, 'value': best_coverage},
-            'peak/alpha': {'minimize': 'NA', 'value': best_alpha}}
+            f'{task}/threshold': {'minimize': 'NA', 'value': best_alpha}}
 
 def main():
 
     arguments = docopt(__doc__, version='Speaker change detection')
 
-    db_yml = expanduser(arguments['--database'])
+    db_yml = Path(arguments['--database'])
+    db_yml = db_yml.expanduser().resolve(strict=True)
+
     protocol_name = arguments['<database.task.protocol>']
     subset = arguments['--subset']
+
     gpu = arguments['--gpu']
     device = torch.device('cuda') if gpu else torch.device('cpu')
 
     if arguments['train']:
-        experiment_dir = arguments['<experiment_dir>']
+        experiment_dir = Path(arguments['<experiment_dir>'])
+        experiment_dir = experiment_dir.expanduser().resolve(strict=True)
 
         if subset is None:
             subset = 'train'
@@ -245,7 +283,9 @@ def main():
                           restart=restart, epochs=epochs)
 
     if arguments['validate']:
-        train_dir = arguments['<train_dir>']
+
+        train_dir = Path(arguments['<train_dir>'])
+        train_dir = train_dir.expanduser().resolve(strict=True)
 
         if subset is None:
             subset = 'development'
@@ -282,8 +322,12 @@ def main():
 
     if arguments['apply']:
 
-        model_pt = arguments['<model.pt>']
-        output_dir = arguments['<output_dir>']
+        model_pt = Path(arguments['<model_pt>'])
+        model_pt = model_pt.expanduser().resolve(strict=True)
+
+        output_dir = Path(arguments['<output_dir>'])
+        output_dir = output_dir.expanduser().resolve(strict=False)
+
         if subset is None:
             subset = 'test'
 

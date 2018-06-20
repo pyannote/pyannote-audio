@@ -32,12 +32,12 @@ Speaker embedding
 Usage:
   pyannote-speaker-embedding train [options] <experiment_dir> <database.task.protocol>
   pyannote-speaker-embedding validate [options] [--duration=<duration> --every=<epoch> --chronological --turn --metric=<metric>] <train_dir> <database.task.protocol>
-  pyannote-speaker-embedding apply [options] [--duration=<duration> --step=<step> --internal --normalize] <model.pt> <database.task.protocol> <output_dir>
+  pyannote-speaker-embedding apply [options] [--duration=<duration> --step=<step>] <model.pt> <database.task.protocol> <output_dir>
   pyannote-speaker-embedding -h | --help
   pyannote-speaker-embedding --version
 
 Common options:
-  <database.task.protocol>   Experimental protocol (e.g. "Etape.SpeakerDiarization.TV")
+  <database.task.protocol>   Experimental protocol (e.g. "AMI.SpeakerDiarization.MixHeadset")
   --database=<db.yml>        Path to database configuration file.
                              [default: ~/.pyannote/db.yml]
   --subset=<subset>          Set subset (train|developement|test).
@@ -74,10 +74,8 @@ Common options:
 
 "apply" mode:
   <model.pt>                 Path to the pretrained model.
-  --internal                 Extract internal embeddings.
-  --normalize                Extract normalized embeddings.
-  -h --help                  Show this screen.
-  --version                  Show version.
+  --step=<step>              Sliding window step, in seconds.
+                             Defaults to 25% of window duration.
 
 Database configuration file <db.yml>:
     The database configuration provides details as to where actual files are
@@ -86,26 +84,12 @@ Database configuration file <db.yml>:
 
 Configuration file:
     The configuration of each experiment is described in a file called
-    <experiment_dir>/config.yml, that describes the architecture of the neural
-    network used for sequence labeling (0 vs. 1, non-speech vs. speech), the
-    feature extraction process (e.g. MFCCs) and the sequence generator used for
-    both training and testing.
+    <experiment_dir>/config.yml, that describes the feature extraction process,
+    the neural network the architecture, and the approach used for training.
 
     ................... <experiment_dir>/config.yml ...................
-    feature_extraction:
-       name: Precomputed
-       params:
-          root_dir: /vol/work1/bredin/feature_extraction/mfcc
-
-    architecture:
-       name: ClopiNet
-       params:
-         rnn: LSTM
-         recurrent: [64, 64, 64]
-         bidirectional: True
-         linear: []
-         weighted: False
-
+    # train the network using triplet loss
+    # see pyannote.audio.embedding.approaches for more details
     approach:
        name: TripletLoss
        params:
@@ -116,6 +100,27 @@ Configuration file:
          sampling: all
          per_fold: 100
          per_label: 3
+
+    # use precomputed features (see feature extraction tutorial)
+    feature_extraction:
+       name: Precomputed
+       params:
+          root_dir: tutorials/feature-extraction
+
+    # use the ClopiNet architecture
+    # see pyannote.audio.embedding.models for more details
+    architecture:
+       name: ClopiNet
+       params:
+         rnn: LSTM
+         recurrent: [64, 64, 64]
+         bidirectional: True
+
+    # use cyclic learning rate scheduler
+    scheduler:
+       name: CyclicScheduler
+       params:
+           learning_rate: auto
     ...................................................................
 
 "train" mode:
@@ -128,24 +133,50 @@ Configuration file:
     <database.task.protocol> protocol. By default, <subset> is "train".
     This directory is called <train_dir> in the subsequent "validate" mode.
 
+    A bunch of values (loss, learning rate, ...) are sent to and can be
+    visualized with tensorboard with the following command:
+
+        $ tensorboard --logdir=<experiment_dir>
+
 "validate" mode:
     Use the "validate" mode to run validation in parallel to training.
     "validate" mode will watch the <train_dir> directory, and run validation
     experiments every time a new epoch has ended. This will create the
     following directory that contains validation results:
 
-        <train_dir>/validate/<database.task.protocol>
+        <train_dir>/validate/<database.task.protocol>.<subset>
 
     You can run multiple "validate" in parallel (e.g. for every subset,
     protocol, task, or database).
+
+    In practice, for each epoch, "validate" mode will run a "same/different"
+    experiment for SpeakerDiarization protocols (and actual verification
+    experiment for SpeakerVerification protocols) and send the corresponding
+    equal error rate to tensorboard.
+
+"apply" mode:
+    Use the "apply" mode to extract speaker embeddings on a sliding window.
+    Resulting files can then be used in the following way:
+
+    >>> from pyannote.audio.features import Precomputed
+    >>> precomputed = Precomputed('<output_dir>')
+
+    >>> from pyannote.database import get_protocol
+    >>> protocol = get_protocol('<database.task.protocol>')
+    >>> first_test_file = next(protocol.test())
+
+    >>> embeddings = precomputed(first_test_file)
+    >>> for window, embedding in embeddings:
+    ...     # do something with embedding
+
 """
 
 import torch
 import itertools
 import numpy as np
+from pathlib import Path
 from docopt import docopt
 from .base import Application
-from os.path import expanduser
 from pyannote.database import FileFinder
 from pyannote.database import get_protocol
 from pyannote.audio.embedding.utils import pdist
@@ -315,10 +346,6 @@ class SpeakerEmbedding(Application):
         model = self.load_model(epoch).to(self.device)
         model.eval()
 
-        # use final representation (not internal ones)
-        model.internal = False
-
-        
         # use user-provided --duration when available
         # otherwise use 'duration' used for training
         if self.duration is None:
@@ -460,20 +487,14 @@ class SpeakerEmbedding(Application):
         metrics['EER.turn'] = {'minimize': True, 'value': eer}
         return metrics
 
-    def apply(self, protocol_name, output_dir, step=None,
-              internal=False, normalize=False):
+    def apply(self, protocol_name, output_dir, step=None):
 
         model = self.model_.to(self.device)
         model.eval()
 
-        if internal is not None:
-            model.internal = internal
-        if normalize is not None:
-            model.normalize = normalize
-
         duration = self.duration
         if step is None:
-            step = 0.5 * duration
+            step = 0.25 * duration
 
         # do not use memmap as this would lead to too many open files
         if isinstance(self.feature_extraction_, Precomputed):
@@ -507,15 +528,19 @@ def main():
 
     arguments = docopt(__doc__, version='Speaker embedding')
 
-    db_yml = expanduser(arguments['--database'])
+    db_yml = Path(arguments['--database'])
+    db_yml = db_yml.expanduser().resolve(strict=True)
+
     protocol_name = arguments['<database.task.protocol>']
     subset = arguments['--subset']
+
     gpu = arguments['--gpu']
     device = torch.device('cuda') if gpu else torch.device('cpu')
 
-
     if arguments['train']:
-        experiment_dir = arguments['<experiment_dir>']
+
+        experiment_dir = Path(arguments['<experiment_dir>'])
+        experiment_dir = experiment_dir.expanduser().resolve(strict=True)
 
         if subset is None:
             subset = 'train'
@@ -536,7 +561,9 @@ def main():
                           restart=restart, epochs=epochs)
 
     if arguments['validate']:
-        train_dir = arguments['<train_dir>']
+
+        train_dir = Path(arguments['<train_dir>'])
+        train_dir = train_dir.expanduser().resolve(strict=True)
 
         if subset is None:
             subset = 'development'
@@ -589,8 +616,12 @@ def main():
 
     if arguments['apply']:
 
-        model_pt = arguments['<model.pt>']
-        output_dir = arguments['<output_dir>']
+        model_pt = Path(arguments['<model_pt>'])
+        model_pt = model_pt.expanduser().resolve(strict=True)
+
+        output_dir = Path(arguments['<output_dir>'])
+        output_dir = output_dir.expanduser().resolve(strict=False)
+
         if subset is None:
             subset = 'test'
 
@@ -598,8 +629,6 @@ def main():
         if step is not None:
             step = float(step)
 
-        internal = arguments['--internal']
-        normalize = arguments['--normalize']
         batch_size = int(arguments['--batch'])
 
         application = SpeakerEmbedding.from_model_pt(
@@ -618,5 +647,4 @@ def main():
             duration = float(duration)
         application.duration = duration
 
-        application.apply(protocol_name, output_dir, step=step,
-                          internal=internal, normalize=normalize)
+        application.apply(protocol_name, output_dir, step=step)

@@ -35,28 +35,51 @@ Usage:
   pyannote-overlap-detection --version
 
 Common options:
-  <database.task.protocol>   Experimental protocol (e.g. "Etape.SpeakerDiarization.TV")
+  <database.task.protocol>   Experimental protocol (e.g. "AMI.SpeakerDiarization.MixHeadset")
   --database=<db.yml>        Path to database configuration file.
                              [default: ~/.pyannote/db.yml]
   --subset=<subset>          Set subset (train|developement|test).
-                             In "validate" mode, defaults to "development".
-                             In "apply" mode, defaults to "test".
+                             Defaults to "development".
   --gpu                      Run on GPUs. Defaults to using CPUs.
   --batch=<size>             Set batch size. [default: 32]
   --from=<epoch>             Start validating at epoch <epoch>. [default: 0]
-  --to=<epochs>              End validating at epoch <epoch>. Defaults to keep
-                             going forever.
+  --to=<epochs>              End validating at epoch <epoch>.
+                             Defaults to keep going forever.
   --every=<epoch>            Validate model every <epoch> epochs [default: 1].
   --chronological            Force validation in chronological order.
   <train_dir>                Path to the directory containing pre-trained
                              models (i.e. the output of "train" mode).
   --precision=<precision>    Target precision [default: 0.9].
+
+Database configuration file <db.yml>:
+    The database configuration provides details as to where actual files are
+    stored. See `pyannote.database.util.FileFinder` docstring for more
+    information on the expected format.
+
+"validate" mode:
+    Use the "validate" mode to run validation in parallel to training.
+    "validate" mode will watch the <train_dir> directory, and run validation
+    experiments every time a new epoch has ended. This will create the
+    following directory that contains validation results:
+
+        <train_dir>/validate/<database.task.protocol>.<subset>
+
+    You can run multiple "validate" in parallel (e.g. for every subset,
+    protocol, task, or database).
+
+    In practice, for each epoch, "validate" mode will look for the detection
+    threshold that maximizes recall, under the constraint that precision must
+    be greater than the value provided by the "--precision" option. Both values
+    (best threshold and corresponding recall) are sent to tensorboard and can
+    be visualized with the following command:
+
+        $ tensorboard --logdir=<train_dir>
 """
 
 import torch
 import numpy as np
+from pathlib import Path
 from docopt import docopt
-from os.path import expanduser
 from pyannote.core import Timeline
 from pyannote.database import get_protocol
 from pyannote.audio.signal import Binarize
@@ -158,24 +181,29 @@ class OverlapDetection(SpeechActivityDetection):
                     best_recall = r
                     best_alpha = current_alpha
 
-        metric_name = f'RecallAt{target_precision:.2f}Precision'
+        task = 'overlap_speech_detection'
+        metric_name = f'{task}/recall@{target_precision:.2f}precision'
         return {
             metric_name: {'minimize': False, 'value': best_recall},
-            'binarize/threshold': {'minimize': 'NA',
-                                              'value': best_alpha}}
+            f'{task}/threshold': {'minimize': 'NA', 'value': best_alpha}}
 
 def main():
 
     arguments = docopt(__doc__, version='Overlapping speech detection')
 
-    db_yml = expanduser(arguments['--database'])
+    db_yml = Path(arguments['--database'])
+    db_yml = db_yml.expanduser().resolve(strict=True)
+
     protocol_name = arguments['<database.task.protocol>']
     subset = arguments['--subset']
+
     gpu = arguments['--gpu']
     device = torch.device('cuda') if gpu else torch.device('cpu')
 
     if arguments['validate']:
-        train_dir = arguments['<train_dir>']
+
+        train_dir = Path(arguments['<train_dir>'])
+        train_dir = train_dir.expanduser().resolve(strict=True)
 
         if subset is None:
             subset = 'development'
