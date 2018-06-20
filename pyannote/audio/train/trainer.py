@@ -308,7 +308,7 @@ class Trainer:
             # dump learning rates and losses to disk for debugging purposes
             with open(f'{log_dir}/auto_lr_log.csv', mode='w') as fp:
                 for lr, loss in zip(auto_lr['lrs'], auto_lr['losses']):
-                    fp.write(f'{np.log(lr):g} {loss:g}\n')
+                    fp.write(f'{np.log10(lr):g} {loss:g}\n')
 
             # reload model and optimizer states after "auto_lr"
             model_state = torch.load(
