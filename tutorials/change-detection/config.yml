@@ -28,14 +28,17 @@
 task:
    name: SpeakerChangeDetection
    params:
-      duration: 3.2
-      balance: 0.050
+      duration: 3.2     # sub-sequence duration
+      per_epoch: 36000  # 10 hours of audio per epoch
+      collar: 0.200     # upsampling collar
+      batch_size: 32    # number of sub-sequences per batch
+      parallel: 4       # number of background generators
 
-# use precomputed features (from feature extraction tutorials)
+# use precomputed features (see feature extraction tutorial)
 feature_extraction:
    name: Precomputed
    params:
-      root_dir: /path/to/tutorials/feature-extraction
+      root_dir: tutorials/feature-extraction
 
 # use the StackedRNN architecture.
 # see pyannote.audio.labeling.models for more details
@@ -46,3 +49,9 @@ architecture:
      recurrent: [32, 20]
      bidirectional: True
      linear: [40, 10]
+
+# use cyclic learning rate scheduler
+scheduler:
+   name: CyclicScheduler
+   params:
+       learning_rate: auto

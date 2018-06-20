@@ -87,16 +87,17 @@ Configuration file:
     task:
        name: SpeakerChangeDetection
        params:
-          duration: 3.2
-          collar: 0.200
-          batch_size: 32
-          parallel: 2
+          duration: 3.2     # sub-sequence duration
+          per_epoch: 36000  # 10 hours of audio per epoch
+          collar: 0.200     # upsampling collar
+          batch_size: 32    # number of sub-sequences per batch
+          parallel: 4       # number of background generators
 
     # use precomputed features (see feature extraction tutorial)
     feature_extraction:
        name: Precomputed
        params:
-          root_dir: /path/to/mfcc
+          root_dir: tutorials/feature-extraction
 
     # use the StackedRNN architecture.
     # see pyannote.audio.labeling.models for more details
