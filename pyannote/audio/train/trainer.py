@@ -164,8 +164,11 @@ class Trainer:
 
         Returns
         -------
-        min_lr, max_lr : float
-            "Good" learning rate bounds.
+        result : dict
+            {'min_lr': <learning rate lower bound>,
+             'max_lr': <learning rate upper bound>,
+             'lrs': <increasing sequence of learning rates>,
+             'losses': <corresponding sequence of loss values>}
 
         Reference
         ---------
@@ -246,7 +249,10 @@ class Trainer:
         lower = min(lrs[start], 0.1 * upper)
 
         # return learning rate bounds
-        return lower, upper
+        return {'min_lr': lower,
+                'max_lr': upper,
+                'lrs': lrs,
+                'losses': losses}
 
     def fit_iter(self, model, feature_extraction,
                  protocol, subset='train', restart=0, epochs=1000,
@@ -263,7 +269,6 @@ class Trainer:
         batches = batch_generator(protocol, subset=subset)
         batch = next(batches)
         batches_per_epoch = getattr(batch_generator, 'batches_per_epoch', None)
-
 
         # FIXME. log_dir = tmp directory
 
@@ -295,8 +300,15 @@ class Trainer:
             if restart == 0:
                 checkpoint.on_epoch_end(0, model, optimizer)
 
-            min_lr, max_lr = self.auto_lr(model, optimizer, batches,
-                                          writer=writer, device=device)
+            auto_lr = self.auto_lr(model, optimizer, batches,
+                                   writer=writer, device=device)
+            min_lr = auto_lr['min_lr']
+            max_lr = auto_lr['max_lr']
+
+            # dump learning rates and losses to disk for debugging purposes
+            with open(f'{log_dir}/auto_lr_log.csv', mode='w') as fp:
+                for lr, loss in zip(auto_lr['lrs'], auto_lr['losses']):
+                    fp.write(f'{np.log(lr):g} {loss:g}\n')
 
             # reload model and optimizer states after "auto_lr"
             model_state = torch.load(
