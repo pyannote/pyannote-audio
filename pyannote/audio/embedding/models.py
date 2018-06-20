@@ -285,8 +285,6 @@ class ClopiNet(nn.Module):
         Add dimension-wise trainable weights. Defaults to False.
     linear : list, optional
         List of hidden dimensions of linear layers. Defaults to none.
-    internal : bool, optional
-        Return sequence of internal embeddings. Defaults to False.
     attention : list of int, optional
         List of hidden dimensions of attention linear layers (e.g. [16, ]).
         Defaults to no attention.
@@ -301,7 +299,7 @@ class ClopiNet(nn.Module):
     def __init__(self, n_features,
                  rnn='LSTM', recurrent=[64, 64, 64], bidirectional=False,
                  pooling='sum', batch_normalize=True, normalize=False,
-                 weighted=False, linear=None, internal=False, attention=None,
+                 weighted=False, linear=None, attention=None,
                  return_attention=False):
 
         super(ClopiNet, self).__init__()
@@ -315,7 +313,6 @@ class ClopiNet(nn.Module):
         self.normalize = normalize
         self.weighted = weighted
         self.linear = [] if linear is None else linear
-        self.internal = internal
         self.attention = [] if attention is None else attention
         self.return_attention = return_attention
 
@@ -456,12 +453,6 @@ class ClopiNet(nn.Module):
             output = F.tanh(output)
 
         # n_samples, batch_size, dimension
-
-        if self.internal:
-            if self.normalize:
-                msg = 'did not normalize internal embeddings.'
-                warnings.warn(msg, UserWarning)
-            return output
 
         if self.attention_layers_:
             attn = sequence

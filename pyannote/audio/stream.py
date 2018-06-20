@@ -520,18 +520,14 @@ class StreamPredict(object):
 
 
 class StreamEmbed(object):
-    def __init__(self, model, internal=True):
+    def __init__(self, model):
 
         super(StreamEmbed, self).__init__()
         self.model = model
-        self.internal = internal
 
         import keras.backend as K
 
-        if self.internal:
-            output_layer = self.model.get_layer(name='internal')
-        else:
-            output_layer = self.model.get_layer(index=-1)
+        output_layer = self.model.get_layer(index=-1)
 
         input_layer = self.model.get_layer(name='input')
         K_func = K.function(
@@ -552,9 +548,6 @@ class StreamEmbed(object):
 
         X = sequence.data[np.newaxis, :, :]
         embedded = self.embed_(X)[0]
-
-        if self.internal:
-            return SlidingWindowFeature(embedded, sequence.sliding_window)
 
         raise NotImplementedError('')
         # data = ????
@@ -607,4 +600,3 @@ class Pipeline(object):
             outputs['t'] = self.t_.end
 
             yield outputs
-

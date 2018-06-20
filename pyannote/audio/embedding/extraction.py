@@ -69,10 +69,7 @@ class SequenceEmbedding(SequenceLabeling):
 
     @property
     def sliding_window(self):
-        if self.model.internal:
-            return self.feature_extractor.sliding_window()
-        else:
-            return SlidingWindow(duration=self.duration, step=self.step)
+        return SlidingWindow(duration=self.duration, step=self.step)
 
     def postprocess_sequence(self, X):
         """Embed (variable-length) sequences
@@ -113,10 +110,8 @@ class SequenceEmbedding(SequenceLabeling):
 
         Returns
         -------
-        fX : numpy array
+        fX : (batch_size, n_dimensions) numpy array
             Batch of sequence embeddings.
-            (batch_size, n_samples, n_dimensions) if self.model.internal
-            (batch_size, n_dimensions) if not self.model.internal
         """
 
         batch_size, n_samples, n_features = X.shape
@@ -142,13 +137,13 @@ class SequenceEmbedding(SequenceLabeling):
         Can process either pyannote.database protocol items (as dict) or
         batch of precomputed feature sequences (as numpy array).
 
-        Parameter
-        ---------
+        Parameters
+        ----------
         current_file : dict or numpy array
             File (from pyannote.database protocol) or batch of precomputed
             feature sequences.
         crop : Segment or Timeline, optional
-            When provided, blah blah
+            When provided, only extract corresponding embeddings.
 
         Returns
         -------
@@ -161,18 +156,11 @@ class SequenceEmbedding(SequenceLabeling):
             return self.postprocess_ndarray(current_file)
 
         # HACK: change internal SlidingSegment's source to only extract
-        # embeddings on provided "segment". keep track of original source
+        # embeddings on provided "crop". keep track of original source
         # to set it back before the function returns
         source = self.generator.source
         if crop is not None:
             self.generator.source = crop
-
-        # if "model" is configured to output a sequence of internal embeddings
-        # use SequenceLabeling aggregation routine directly
-        if getattr(self.model, 'internal', False):
-            embeddings = super(SequenceEmbedding, self).apply(current_file)
-            self.generator.source = source
-            return embeddings
 
         # compute embedding on sliding window
         # over the whole duration of the source
