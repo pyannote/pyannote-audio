@@ -264,6 +264,7 @@ class Trainer:
         batch = next(batches)
         batches_per_epoch = getattr(batch_generator, 'batches_per_epoch', None)
 
+
         # FIXME. log_dir = tmp directory
 
         checkpoint = Checkpoint(log_dir, restart=restart > 0)
@@ -291,19 +292,20 @@ class Trainer:
         if learning_rate == 'auto':
 
             # save model and optimizer states before "auto_lr"
-            checkpoint.on_epoch_end(0, model, optimizer)
+            if restart == 0:
+                checkpoint.on_epoch_end(0, model, optimizer)
 
             min_lr, max_lr = self.auto_lr(model, optimizer, batches,
                                           writer=writer, device=device)
 
             # reload model and optimizer states after "auto_lr"
             model_state = torch.load(
-                checkpoint.weights_pt(0),
+                checkpoint.weights_pt(restart),
                 map_location=lambda storage, loc: storage)
             model.load_state_dict(model_state)
 
             optimizer_state = torch.load(
-                checkpoint.optimizer_pt(0),
+                checkpoint.optimizer_pt(restart),
                 map_location=lambda storage, loc: storage)
             optimizer.load_state_dict(optimizer_state)
 
