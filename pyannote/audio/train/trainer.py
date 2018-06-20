@@ -142,7 +142,7 @@ class Trainer:
 
     def auto_lr(self, model, optimizer, batches,
                 min_lr=1e-6, max_lr=1e3, n_batches=500,
-                device=None, writer=None, onset=1e-6, offset=1e-1):
+                device=None, writer=None):
         """Automagically find a "good" learning rate upper bound
 
         Parameters
