@@ -28,13 +28,16 @@
 task:
    name: SpeechActivityDetection
    params:
-      duration: 3.2
+      duration: 3.2     # sub-sequence duration
+      per_epoch: 36000  # 10 hours of audio per epoch
+      batch_size: 32    # number of sub-sequences per batch
+      parallel: 4       # number of background generators
 
-# use precomputed features (from feature extraction tutorials)
+# use precomputed features (see feature extraction tutorial)
 feature_extraction:
    name: Precomputed
    params:
-      root_dir: /path/to/tutorials/feature-extraction
+      root_dir: tutorials/feature-extraction
 
 # use the StackedRNN architecture.
 # see pyannote.audio.labeling.models for more details
@@ -42,6 +45,11 @@ architecture:
    name: StackedRNN
    params:
      rnn: LSTM
-     recurrent: [16]
+     recurrent: [16, 16]
      bidirectional: True
-     linear: [16]
+
+# use cyclic learning rate scheduler
+scheduler:
+   name: CyclicScheduler
+   params:
+       learning_rate: auto
