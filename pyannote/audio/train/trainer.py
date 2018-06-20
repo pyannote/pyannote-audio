@@ -140,6 +140,61 @@ class Trainer:
 
         return iteration['model']
 
+    @staticmethod
+    def _auto_lr(lrs, losses, min_lr=1e-6, max_lr=1e3, n_batches=500):
+        """Helper function that actually selects the best learning rates
+
+        Parameters
+        ----------
+        lrs : numpy array
+        losses : numpy array
+        min_lr, max_lr, n_batches : see `Trainer.auto_lr`
+
+        Returns
+        -------
+        lower : float
+            Learning rate lower bound
+        upper : float
+            Learning rate upper bound
+        """
+
+        # `factor` by which the learning rate is multiplied after every batch,
+        # to get from `min_lr` to `max_lr` in `n_batches` step.
+        factor = (max_lr / min_lr) ** (1 / n_batches)
+
+        # `K` batches to increase the learning rate by one order of magnitude
+        K = int(np.log(10) / np.log(factor))
+
+        # probability that loss has decreased in the last `K` steps.
+        probability = [probability_that_sequence_is_increasing(-losses[i-K:i])
+                       if i > K else np.NAN for i in range(len(losses))]
+        probability = np.array(probability)
+
+        # loss starts decreasing
+        # heuristic: 1st time prob. goes above 0.9999
+        onset = 0.9999
+        start = np.where(probability > onset)[0][0]
+
+        # loss stops decreasing
+        # heuristic: 1st time prob. goes below 0.98
+        offset = 0.95
+        stop = start + np.where(probability[start:] < offset)[0][0]
+
+        # upper bound
+        # heuristic: loss ceased to decrease between stop-K and stop
+        # so we'd rather bound the learning rate slighgly before stop - K
+        upper = lrs[int(stop - 1.1 * K)]
+
+        # lower bound. make sure there is at least one order of magnitude
+        # between lower and upper bounds
+        lower = 0.1 * upper
+
+        return {'min_lr': lower,
+                'max_lr': upper,
+                'lrs': lrs,
+                'losses': losses,
+                'probability': probability}
+
     def auto_lr(self, model, optimizer, batches,
                 min_lr=1e-6, max_lr=1e3, n_batches=500,
                 device=None, writer=None):
@@ -189,9 +244,6 @@ class Trainer:
         # to get from `min_lr` to `max_lr` in `n_batches` step.
         factor = (max_lr / min_lr) ** (1 / n_batches)
 
-        # `K` batches to increase the learning rate by one order of magnitude
-        K = int(np.log(10) / np.log(factor))
-
         # progress bar
         pbar = tqdm(desc='Auto LR', total=n_batches,
                     postfix={'loss': '...', 'lr': '...'})
@@ -223,36 +275,10 @@ class Trainer:
             for param_group in optimizer.param_groups:
                 param_group['lr'] *= factor
 
-        losses = np.array(losses)
+        return self._auto_lr(
+            np.array(lrs), np.array(losses),
+            min_lr=min_lr, max_lr=max_lr, n_batches=n_batches)
 
-        # probability that loss has increased in the last `K` steps.
-        probability = [probability_that_sequence_is_increasing(losses[i-K:i])
-                       if i > K else np.NAN for i in range(len(losses))]
-        probability = np.array(probability)
-
-        # loss starts decreasing
-        # heuristic: 1st time prob. goes below half (in log-scale) its minimum
-        onset = np.sqrt(max(1e-12, np.nanmin(probability)))
-        start = np.where(probability < onset)[0][0]
-
-        # loss starts increasing
-        # heuristic: 1st time prob. goes above 0.9 after it initially decreased
-        stop = start + np.where(probability[start:] > 0.9)[0][0]
-
-        # upper bound
-        # heuristic: loss increased between stop-K and stop
-        # so we'd rather bound the learning rate at stop-K.
-        upper = lrs[stop - K]
-
-        # lower bound. make sure there is at least one order of magnitude
-        # between lower and upper bounds
-        lower = min(lrs[start], 0.1 * upper)
-
-        # return learning rate bounds
-        return {'min_lr': lower,
-                'max_lr': upper,
-                'lrs': lrs,
-                'losses': losses}
 
     def fit_iter(self, model, feature_extraction,
                  protocol, subset='train', restart=0, epochs=1000,
