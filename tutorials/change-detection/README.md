@@ -30,7 +30,7 @@ In this tutorial, you will learn how to train, validate, and apply a speaker cha
 
 ## Table of contents
 - [Citation](#citation)
-- [ETAPE database](#etape-database)
+- [AMI database](#ami-database)
 - [Configuration](#configuration)
 - [Training](#training)
 - [Validation](#validation)
@@ -54,23 +54,23 @@ If you use `pyannote-audio` for speaker change detection, please cite the follow
 }
 ```
 
-## ETAPE database
+## AMI database
 ([↑up to table of contents](#table-of-contents))
 
 ```bash
 $ source activate pyannote
-$ pip install pyannote.db.etape
+$ pip install pyannote.db.odessa.ami
 ```
 
-This tutorial relies on the [ETAPE database](http://islrn.org/resources/425-777-374-455-4/). We first need to tell `pyannote` where the audio files are located:
+This tutorial relies on the [AMI database](http://groups.inf.ed.ac.uk/ami/corpus). We first need to tell `pyannote` where the audio files are located:
 
 ```bash
-$ cat ~/.pyannote/db.yml
-Etape: /path/to/Etape/corpus/{uri}.wav
+$ cat ~/.pyannote/db.yml | grep AMI
+AMI: /path/to/ami/amicorpus/*/audio/{uri}.wav
 ```
 
-If you want to train the network using a different database, you might need to create your own [`pyannote.database`](http://github.com/pyannote/pyannote-database) plugin.
-See [github.com/pyannote/pyannote-db-template](https://github.com/pyannote/pyannote-db-template) for details on how to do so.
+If you want to use a different database, you might need to create your own [`pyannote.database`](http://github.com/pyannote/pyannote-database) plugin.
+See [github.com/pyannote/pyannote-db-template](https://github.com/pyannote/pyannote-db-template) for details on how to do so. You might also use `pip search pyannote` to browse existing plugins.
 
 ## Configuration
 ([↑up to table of contents](#table-of-contents))
@@ -86,14 +86,17 @@ $ cat tutorials/change-detection/config.yml
 task:
    name: SpeakerChangeDetection
    params:
-      duration: 3.2
-      balance: 0.050
+      duration: 3.2     # sub-sequence duration
+      per_epoch: 36000  # 10 hours of audio per epoch
+      collar: 0.200     # up-sampling collar
+      batch_size: 32    # number of sub-sequences per batch
+      parallel: 4       # number of background batch generators
 
-# use precomputed features (from feature extraction tutorials)
+# use precomputed features (see feature extraction tutorial)
 feature_extraction:
    name: Precomputed
    params:
-      root_dir: /path/to/tutorials/feature-extraction
+      root_dir: tutorials/feature-extraction
 
 # use the StackedRNN architecture.
 # see pyannote.audio.labeling.models for more details
@@ -104,22 +107,22 @@ architecture:
      recurrent: [32, 20]
      bidirectional: True
      linear: [40, 10]
+
+# use cyclic learning rate scheduler
+scheduler:
+   name: CyclicScheduler
+   params:
+       learning_rate: auto
 ```
 
 ## Training
 ([↑up to table of contents](#table-of-contents))
 
-The following command will train the network using the training set of the `TV` protocol of the ETAPE database for 50 epochs (one epoch = one hour of audio).
+The following command will train the network using the training set of AMI database for 1000 epoch:
 
 ```bash
-$ export EXPERIMENT_DIR=tutorials/speech-activity-detection
-$ pyannote-change-detection train --to=50 ${EXPERIMENT_DIR} Etape.SpeakerDiarization.TV
-```
-```
-Epoch #0: 100%|█████████████████████████████████████| 36/36 [00:40<00:00,  1.12s/it]
-Epoch #1: 100%|█████████████████████████████████████| 36/36 [00:24<00:00,  1.47it/s]
-...
-Epoch #50: 100%|████████████████████████████████████| 36/36 [00:24<00:00,  1.46it/s]
+$ export EXPERIMENT_DIR=tutorials/change-detection
+$ pyannote-change-detection train --gpu --to=1000 ${EXPERIMENT_DIR} AMI.SpeakerDiarization.MixHeadset
 ```
 
 This will create a bunch of files in `TRAIN_DIR` (defined below).
@@ -136,29 +139,26 @@ It can (should!) be run in parallel to training and evaluates the model epoch af
 One can use [tensorboard](https://github.com/tensorflow/tensorboard) to follow the validation process.
 
 ```bash
-$ export TRAIN_DIR=${EXPERIMENT_DIR}/train/Etape.SpeakerDiarization.TV.train
-$ pyannote-change-detection validate ${TRAIN_DIR} Etape.SpeakerDiarization.TV
-```
-```
-Epoch #45 : DiarizationCoverageAt0.90Purity = 8.264% [8.447%, #35]: : 10epoch [40:42, 231.40s/epoch]
+$ export TRAIN_DIR=${EXPERIMENT_DIR}/train/AMI.SpeakerDiarization.MixHeadset.train
+$ pyannote-change-detection validate --purity=0.8 ${TRAIN_DIR} AMI.SpeakerDiarization.MixHeadset
 ```
 
 ## Application
 ([↑up to table of contents](#table-of-contents))
 
-Now that we know how the model is doing, we can apply it on all files of the `TV` protocol of the ETAPE database and store raw change scores in `/path/to/scd`:
+Now that we know how the model is doing, we can apply it on all files of the AMI database and store raw change scores in `/path/to/scd`:
 
 ```bash
-$ pyannote-change-detection apply ${TRAIN_DIR}/weights/0050.pt Etape.SpeakerDiarization.TV /path/to/scd
+$ pyannote-change-detection apply ${TRAIN_DIR}/weights/0050.pt AMI.SpeakerDiarization.MixHeadset /path/to/scd
 ```
 
 We can then use these raw scores to perform actual speaker change detection, and [`pyannote.metrics`](http://pyannote.github.io/pyannote-metrics/) to evaluate the result:
 
 
 ```python
-# ETAPE protocol
+# AMI protocol
 >>> from pyannote.database import get_protocol
->>> protocol = get_protocol('Etape.SpeakerDiarization.TV')
+>>> protocol = get_protocol('AMI.SpeakerDiarization.MixHeadset')
 
 # precomputed scores
 >>> from pyannote.audio.features import Precomputed
@@ -192,12 +192,11 @@ We can then use these raw scores to perform actual speaker change detection, and
 
 >>> purity, coverage, fmeasure = metric.compute_metrics()
 >>> print(f'Purity = {100*purity:.1f}% / Coverage = {100*coverage:.1f}%')
-Purity = 71.8% / Coverage = 18.1%
 ```
 
 ## More options
 
-For more options, including training on GPU, see:
+For more options, see:
 
 ```bash
 $ pyannote-change-detection --help
