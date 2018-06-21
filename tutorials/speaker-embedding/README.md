@@ -29,7 +29,7 @@ In this tutorial, you will learn how to train a [_TristouNet_](http://arxiv.org/
 
 ## Table of contents
 - [Citation](#citation)
-- [ETAPE database](#etape-database)
+- [AMI database](#ami-database)
 - [Configuration](#configuration)
 - [Training](#training)
 - [Validation](#validation)
@@ -51,23 +51,23 @@ If you use `pyannote-audio` for speaker (or audio) neural embedding, please cite
 }
 ```
 
-## ETAPE database
+## AMI database
 ([↑up to table of contents](#table-of-contents))
 
 ```bash
 $ source activate pyannote
-$ pip install pyannote.db.etape
+$ pip install pyannote.db.odessa.ami
 ```
 
-This tutorial relies on the [ETAPE database](http://islrn.org/resources/425-777-374-455-4/). We first need to tell `pyannote` where the audio files are located:
+This tutorial relies on the [AMI database](http://groups.inf.ed.ac.uk/ami/corpus). We first need to tell `pyannote` where the audio files are located:
 
 ```bash
-$ cat ~/.pyannote/db.yml
-Etape: /path/to/Etape/corpus/{uri}.wav
+$ cat ~/.pyannote/db.yml | grep AMI
+AMI: /path/to/ami/amicorpus/*/audio/{uri}.wav
 ```
 
-If you want to train the network using a different database, you might need to create your own [`pyannote.database`](http://github.com/pyannote/pyannote-database) plugin.
-See [github.com/pyannote/pyannote-db-template](https://github.com/pyannote/pyannote-db-template) for details on how to do so.
+If you want to use a different database, you might need to create your own [`pyannote.database`](http://github.com/pyannote/pyannote-database) plugin.
+See [github.com/pyannote/pyannote-db-template](https://github.com/pyannote/pyannote-db-template) for details on how to do so. You might also use `pip search pyannote` to browse existing plugins.
 
 ## Configuration
 ([↑up to table of contents](#table-of-contents))
@@ -78,49 +78,51 @@ To ensure reproducibility, `pyannote-speaker-embedding` relies on a configuratio
 $ cat tutorials/speaker-embedding/config.yml
 ```
 ```yaml
-# train the network with regular triplet loss
+# train the network using triplet loss
 # see pyannote.audio.embedding.approaches for more details
 approach:
-   name: TripletLoss
-   params:
-     duration: 2
-     sampling: all
-     per_fold: 20
-     per_label: 3
-     parallel: 2
+  name: TripletLoss
+  params:
+    metric: cosine    # embeddings are optimized for cosine metric
+    clamp: positive   # triplet loss variant
+    margin: 0.2       # triplet loss margin
+    duration: 2       # sequence duration
+    sampling: all     # triplet sampling strategy
+    per_fold: 40      # number of speakers per fold
+    per_label: 3      # number of sequences per speaker
 
-# use precomputed features (from feature extraction tutorials)
+# use precomputed features (see feature extraction tutorial)
 feature_extraction:
-   name: Precomputed
-   params:
-      root_dir: /path/to/tutorials/feature-extraction
+  name: Precomputed
+  params:
+     root_dir: tutorials/feature-extraction
 
 # use the TristouNet architecture.
 # see pyannote.audio.embedding.models for more details
 architecture:
-   name: TristouNet
-   params:
-     rnn: LSTM
-     recurrent: [16]
-     bidirectional: True
-     pooling: sum
-     linear: [16, 16]
+  name: TristouNet
+  params:
+    rnn: LSTM
+    recurrent: [16]
+    bidirectional: True
+    pooling: sum
+    linear: [16, 16]
+
+# use cyclic learning rate scheduler
+scheduler:
+  name: CyclicScheduler
+  params:
+      learning_rate: auto
 ```
 
 ## Training
 ([↑up to table of contents](#table-of-contents))
 
-The following command will train the network using the training set of the `TV` protocol of the ETAPE database for 50 epochs (one epoch = one minute per speaker).
+The following command will train the network using the training set of the AMI database for 1000 epochs (one epoch = every speaker seen at least once)
 
 ```bash
 $ export EXPERIMENT_DIR=tutorials/speaker-embedding
-$ pyannote-speaker-embedding train --to=50 ${EXPERIMENT_DIR} Etape.SpeakerDiarization.TV
-```
-```
-Epoch #0: 100%|█████████████████████████████████████| 36/36 [00:40<00:00,  1.12s/it]
-Epoch #1: 100%|█████████████████████████████████████| 36/36 [00:24<00:00,  1.47it/s]
-...
-Epoch #50: 100%|████████████████████████████████████| 36/36 [00:24<00:00,  1.46it/s]
+$ pyannote-speaker-embedding train --gpu --to=1000 ${EXPERIMENT_DIR} AMI.SpeakerDiarization.MixHeadset
 ```
 
 This will create a bunch of files in `TRAIN_DIR` (defined below).
@@ -142,29 +144,26 @@ It can (should!) be run in parallel to training and evaluates the model epoch af
 One can use [tensorboard](https://github.com/tensorflow/tensorboard) to follow the validation process.
 
 ```bash
-$ export TRAIN_DIR=${EXPERIMENT_DIR}/train/Etape.SpeakerDiarization.TV.train
-$ pyannote-speaker-embedding validate ${TRAIN_DIR} Etape.SpeakerDiarization.TV
-```
-```
-Epoch #17 : EER.2s = 24.173% [24.173%, #17]: : 18epoch [29:45, 92.73s/epoch]
+$ export TRAIN_DIR=${EXPERIMENT_DIR}/train/AMI.SpeakerDiarization.MixHeadset.train
+$ pyannote-speaker-embedding validate ${TRAIN_DIR} AMI.SpeakerDiarization.MixHeadset
 ```
 
 ## Application
 ([↑up to table of contents](#table-of-contents))
 
-Now that we know how the model is doing, we can apply it on all files of the `TV` protocol of the ETAPE database and store raw SAD scores in `/path/to/emb`:
+Now that we know how the model is doing, we can apply it on all files of the AMI database and store raw SAD scores in `/path/to/emb`:
 
 ```bash
-$ pyannote-speaker-embedding apply ${TRAIN_DIR}/weights/0050.pt Etape.SpeakerDiarization.TV /path/to/emb
+$ pyannote-speaker-embedding apply ${TRAIN_DIR}/weights/0050.pt AMI.SpeakerDiarization.MixHeadset /path/to/emb
 ```
 
 We can then use these extracted embeddings like this:
 
 
 ```python
-# first test file of ETAPE protocol
+# first test file of AMI protocol
 >>> from pyannote.database import get_protocol
->>> protocol = get_protocol('Etape.SpeakerDiarization.TV')
+>>> protocol = get_protocol('AMI.SpeakerDiarization.MixHeadset')
 >>> test_file = next(protocol.test())
 
 # precomputed embeddings as pyannote.core.SlidingWindowFeature
@@ -177,20 +176,16 @@ We can then use these extracted embeddings like this:
 ...     print(window)
 ...     print(embedding)
 ...     break
-# [ 00:00:00.000 -->  00:00:02.000]
-# [ 0.20038879  0.19046214 -0.01471622 -0.41413733 -0.07942801  0.09274344
-#  -0.06193411 -0.05772949 -0.04593764 -0.5080932   0.08709101  0.5761991
-#  -0.17651494  0.30997014 -0.00222487 -0.05157921]
 
 # extract embedding from a specific segment
 >>> from pyannote.core import Segment
 >>> fX = embeddings.crop(Segment(10, 20))
 >>> print(fX.shape)
-# (13, 16)
 ```
+
 ## More options
 
-For more options, including training on GPU, see:
+For more options, see:
 
 ```bash
 $ pyannote-speaker-embedding --help
