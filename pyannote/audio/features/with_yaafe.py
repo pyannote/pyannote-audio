@@ -26,6 +26,11 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
+"""
+Feature extraction using Yaafe
+------------------------------
+"""
+
 from __future__ import unicode_literals
 
 import warnings
@@ -40,7 +45,7 @@ from pyannote.database.util import get_unique_identifier
 
 
 class YaafeFeatureExtractor(object):
-    """
+    """Base feature extraction. Should not be used directly.
 
     Parameters
     ----------
@@ -187,23 +192,25 @@ class YaafeZCR(YaafeFeatureExtractor):
 
 
 class YaafeMFCC(YaafeFeatureExtractor):
-    """
-        | e    |  energy
-        | c1   |
-        | c2   |  coefficients
-        | c3   |
-        | ...  |
-        | Δe   |  energy first derivative
-        | Δc1  |
-    x = | Δc2  |  coefficients first derivatives
-        | Δc3  |
-        | ...  |
-        | ΔΔe  |  energy second derivative
-        | ΔΔc1 |
-        | ΔΔc2 |  coefficients second derivatives
-        | ΔΔc3 |
-        | ...  |
+    """MFCC feature extraction
 
+    ::
+
+            | e    |  energy
+            | c1   |
+            | c2   |  coefficients
+            | c3   |
+            | ...  |
+            | Δe   |  energy first derivative
+            | Δc1  |
+        x = | Δc2  |  coefficients first derivatives
+            | Δc3  |
+            | ...  |
+            | ΔΔe  |  energy second derivative
+            | ΔΔc1 |
+            | ΔΔc2 |  coefficients second derivatives
+            | ΔΔc3 |
+            | ...  |
 
     Parameters
     ----------
@@ -213,7 +220,6 @@ class YaafeMFCC(YaafeFeatureExtractor):
         Defaults to 0.025.
     step : float, optional
         Defaults to 0.010.
-
     e : bool, optional
         Energy. Defaults to True.
     coefs : int, optional

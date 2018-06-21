@@ -176,22 +176,24 @@ class LibrosaRMSE(LibrosaFeatureExtractor):
 
 class LibrosaMFCC(LibrosaFeatureExtractor):
     """
-        | e    |  energy
-        | c1   |
-        | c2   |  coefficients
-        | c3   |
-        | ...  |
-        | Δe   |  energy first derivative
-        | Δc1  |
-    x = | Δc2  |  coefficients first derivatives
-        | Δc3  |
-        | ...  |
-        | ΔΔe  |  energy second derivative
-        | ΔΔc1 |
-        | ΔΔc2 |  coefficients second derivatives
-        | ΔΔc3 |
-        | ...  |
 
+    ::
+
+            | e    |  energy
+            | c1   |
+            | c2   |  coefficients
+            | c3   |
+            | ...  |
+            | Δe   |  energy first derivative
+            | Δc1  |
+        x = | Δc2  |  coefficients first derivatives
+            | Δc3  |
+            | ...  |
+            | ΔΔe  |  energy second derivative
+            | ΔΔc1 |
+            | ΔΔc2 |  coefficients second derivatives
+            | ΔΔc3 |
+            | ...  |
 
     Parameters
     ----------
