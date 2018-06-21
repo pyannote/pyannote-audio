@@ -111,17 +111,11 @@ scheduler:
 ## Training
 ([↑up to table of contents](#table-of-contents))
 
-The following command will train the network using the training set of AMI database for 200 epochs (one epoch = one hour of audio).
+The following command will train the network using the training set of AMI database for 1000 epochs:
 
 ```bash
 $ export EXPERIMENT_DIR=tutorials/speech-activity-detection
-$ pyannote-speech-detection train --gpu --batch=512 --to=200 ${EXPERIMENT_DIR} AMI.SpeakerDiarization.MixHeadset
-```
-```
-Epoch #0: 100%|█████████████████████████████████████| 36/36 [00:40<00:00,  1.12s/it]
-Epoch #1: 100%|█████████████████████████████████████| 36/36 [00:24<00:00,  1.47it/s]
-...
-Epoch #50: 100%|████████████████████████████████████| 36/36 [00:24<00:00,  1.46it/s]
+$ pyannote-speech-detection train --gpu --to=1000 ${EXPERIMENT_DIR} AMI.SpeakerDiarization.MixHeadset
 ```
 
 This will create a bunch of files in `TRAIN_DIR` (defined below).
@@ -141,31 +135,29 @@ It can (should!) be run in parallel to training and evaluates the model epoch af
 One can use [tensorboard](https://github.com/tensorflow/tensorboard) to follow the validation process.
 
 ```bash
-$ export TRAIN_DIR=${EXPERIMENT_DIR}/train/Etape.SpeakerDiarization.TV.train
-$ pyannote-speech-detection validate ${TRAIN_DIR} Etape.SpeakerDiarization.TV
+$ export TRAIN_DIR=${EXPERIMENT_DIR}/train/AMI.SpeakerDiarization.MixHeadset.train
+$ pyannote-speech-detection validate ${TRAIN_DIR} AMI.SpeakerDiarization.MixHeadset
 ```
-```
-Epoch #20 : DetectionErrorRate = 5.159% [5.159%, #20]: : 21epoch [37:50, 97.52s/epoch]
-```
+
 ![tensorboard screenshot](tb_validate.png)
 
 
 ## Application
 ([↑up to table of contents](#table-of-contents))
 
-Now that we know how the model is doing, we can apply it on all files of the `TV` protocol of the ETAPE database and store raw SAD scores in `/path/to/sad`:
+Now that we know how the model is doing, we can apply it on all files of the AMI database and store raw SAD scores in `/path/to/sad`:
 
 ```bash
-$ pyannote-speech-detection apply ${TRAIN_DIR}/weights/0050.pt Etape.SpeakerDiarization.TV /path/to/sad
+$ pyannote-speech-detection apply ${TRAIN_DIR}/weights/0050.pt AMI.SpeakerDiarization.MixHeadset /path/to/sad
 ```
 
 We can then use these raw scores to perform actual speech activity detection, and [`pyannote.metrics`](http://pyannote.github.io/pyannote-metrics/) to evaluate the result:
 
 
 ```python
-# ETAPE protocol
+# AMI protocol
 >>> from pyannote.database import get_protocol
->>> protocol = get_protocol('Etape.SpeakerDiarization.TV')
+>>> protocol = get_protocol('AMI.SpeakerDiarization.MixHeadset')
 
 # precomputed scores
 >>> from pyannote.audio.features import Precomputed
@@ -198,11 +190,10 @@ We can then use these raw scores to perform actual speech activity detection, an
 ...    metric(reference, speech_regions.to_annotation(), uem=uem)
 
 >>> print(f'Detection error rate = {100*abs(metric):.1f}%')
-Detection error rate = 6.3%
 ```
 ## More options
 
-For more options, including training on GPU, see:
+For more options, see:
 
 ```bash
 $ pyannote-speech-detection --help
