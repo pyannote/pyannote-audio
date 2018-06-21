@@ -31,6 +31,7 @@ Pipeline
 
 Usage:
   pyannote-pipeline train [options] [(--forever | --trials=<trials>)] <experiment_dir> <database.task.protocol>
+  pyannote-pipeline apply [options] <params.yml> <database.task.protocol> <output_dir>
   pyannote-pipeline -h | --help
   pyannote-pipeline --version
 
@@ -48,6 +49,10 @@ Common options:
   --trials=<trials>          Number of trials. [default: 1]
   --forever                  Try forever.
 
+"apply" mode:
+  <params.yml>               Path to hyper-parameters.
+  <output_dir>               Directory where to store pipeline output.
+
 Database configuration file <db.yml>:
     The database configuration provides details as to where actual files are
     stored. See `pyannote.database.util.FileFinder` docstring for more
@@ -55,20 +60,21 @@ Database configuration file <db.yml>:
 
 Configuration file:
     The configuration of each experiment is described in a file called
-    <experiment_dir>/config.yml, that describes the feature extraction process,
-    the neural network architecture, and the task addressed.
+    <experiment_dir>/config.yml that describes the pipeline.
 
     ................... <experiment_dir>/config.yml ...................
     pipeline:
        name: SpeechActivityDetection
        params:
           precomputed: /path/to/sad
-          log_scale: True
     ...................................................................
 
 "train" mode:
     Tune the pipeline hyper-parameters
         <experiment_dir>/<database.task.protocol>.<subset>.yml
+
+"apply" mode
+    Finally, one can apply the pipeline using "apply" mode.
 
 """
 
@@ -76,10 +82,11 @@ import os
 import yaml
 import numpy as np
 from tqdm import tqdm
+from pathlib import Path
 from docopt import docopt
 from filelock import FileLock
 from .base import Application
-from os.path import expanduser
+from pyannote.core import Timeline
 from tensorboardX import SummaryWriter
 from pyannote.audio.util import mkdir_p
 from pyannote.database import FileFinder
@@ -178,17 +185,44 @@ class Pipeline(Application):
         print(f"Loss = {best['loss']:g} | {best['n_trials']} trials")
         print(f"{sep}")
 
+    def apply(self, protocol_name, output_dir):
+
+        # file generator
+        protocol = get_protocol(protocol_name, progress=True,
+                                preprocessors=self.preprocessors_)
+
+        mkdir_p(output_dir)
+        path = Path(output_dir) / f'{protocol_name}.txt'
+
+        with open(path, mode='w') as fp:
+
+            for current_file in FileFinder.protocol_file_iter(
+                protocol, extra_keys=['audio']):
+
+                hypothesis = self.pipeline_.apply(current_file)
+
+                if isinstance(hypothesis, Timeline):
+                    for s in hypothesis:
+                        fp.write(f'{s.start:.3f} {s.end:.3f}\n')
+                    continue
+
+                for s, t, l in hypothesis.itertracks(yield_label=True):
+                    fp.write(f'{s.start:.3f} {s.end:.3f} {t:g} {l:g}\n')
+
 def main():
 
     arguments = docopt(
         __doc__, version='Pipeline hyper-parameter optimization')
 
-    db_yml = expanduser(arguments['--database'])
+    db_yml = Path(arguments['--database'])
+    db_yml = db_yml.expanduser().resolve(strict=True)
+
     protocol_name = arguments['<database.task.protocol>']
     subset = arguments['--subset']
 
     if arguments['train']:
-        experiment_dir = arguments['<experiment_dir>']
+        experiment_dir = Path(arguments['<experiment_dir>'])
+        experiment_dir = experiment_dir.expanduser().resolve(strict=True)
 
         if arguments['--forever']:
             trials = -1
@@ -201,3 +235,14 @@ def main():
         application = Pipeline(experiment_dir, db_yml=db_yml)
         application.train(protocol_name, subset=subset, n_calls=trials)
 
+    if arguments['apply']:
+
+        params_yml = Path(arguments['<params.yml>'])
+        params_yml = params_yml.expanduser().resolve(strict=True)
+
+        output_dir = Path(arguments['<output_dir>'])
+        output_dir = output_dir.expanduser().resolve(strict=False)
+
+        application = Pipeline.from_params_yml(
+            params_yml, db_yml=db_yml)
+        application.apply(protocol_name, output_dir)
