@@ -224,6 +224,8 @@ class SpeakerChangeDetection(SpeechActivityDetection):
                         log_scale=model.logsoftmax)
             metric = DiarizationPurityCoverageFMeasure()
 
+            # NOTE -- embarrasingly parallel
+            # TODO -- parallelize this
             for current_file in getattr(protocol, subset)():
                 reference = current_file['annotation']
                 uri = get_unique_identifier(current_file)

@@ -256,6 +256,8 @@ class SpeechActivityDetection(Application):
 
             metric = DetectionErrorRate()
 
+            # NOTE -- embarrasingly parallel
+            # TODO -- parallelize this
             file_generator = getattr(protocol, subset)()
             for current_file in file_generator:
 

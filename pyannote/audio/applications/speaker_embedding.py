@@ -91,36 +91,38 @@ Configuration file:
     # train the network using triplet loss
     # see pyannote.audio.embedding.approaches for more details
     approach:
-       name: TripletLoss
-       params:
-         metric: cosine
-         margin: 0.1
-         clamp: positive
-         duration: 3.2
-         sampling: all
-         per_fold: 100
-         per_label: 3
+      name: TripletLoss
+      params:
+        metric: cosine    # embeddings are optimized for cosine metric
+        clamp: positive   # triplet loss variant
+        margin: 0.2       # triplet loss margin
+        duration: 2       # sequence duration
+        sampling: all     # triplet sampling strategy
+        per_fold: 40      # number of speakers per fold
+        per_label: 3      # number of sequences per speaker
 
     # use precomputed features (see feature extraction tutorial)
     feature_extraction:
-       name: Precomputed
-       params:
-          root_dir: tutorials/feature-extraction
+      name: Precomputed
+      params:
+         root_dir: tutorials/feature-extraction
 
-    # use the ClopiNet architecture
+    # use the TristouNet architecture.
     # see pyannote.audio.embedding.models for more details
     architecture:
-       name: ClopiNet
-       params:
-         rnn: LSTM
-         recurrent: [64, 64, 64]
-         bidirectional: True
+      name: TristouNet
+      params:
+        rnn: LSTM
+        recurrent: [16]
+        bidirectional: True
+        pooling: sum
+        linear: [16, 16]
 
     # use cyclic learning rate scheduler
     scheduler:
-       name: CyclicScheduler
-       params:
-           learning_rate: auto
+      name: CyclicScheduler
+      params:
+          learning_rate: auto
     ...................................................................
 
 "train" mode:
