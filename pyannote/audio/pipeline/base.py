@@ -33,6 +33,7 @@ import chocolate
 
 
 class Pipeline:
+    """Base class for jointly optimized pipelines"""
 
     __metaclass__ = ABCMeta
 
@@ -45,13 +46,36 @@ class Pipeline:
         pass
 
     def with_params(self, **params):
+        """Instantiate pipeline with given set of keyword parameters
+
+        Must be overridden by sub-classes.
+        """
         return self
 
     @abstractmethod
     def apply(self, current_file):
+        """Apply pipeline on current file
+
+        Must be overridden by sub-classes.
+        """
         pass
 
     def objective(self, protocol, subset='development'):
+        """Compute the value of the bjective function (the lower, the better)
+
+        Parameters
+        ----------
+        protocol : pyannote.database.Protocol
+            Protocol on which to compute the value of the objective function.
+        subset : {'train', 'development', 'test'}, optional
+            Subset on which to compute the value of the objective function.
+            Defaults to 'development'.
+
+        Returns
+        -------
+        metric : float
+            Value of the objective function (the lower, the better).
+        """
         metric = self.get_tune_metric()
         value, duration = [], []
         for current_file in getattr(protocol, subset)():
@@ -69,14 +93,24 @@ class Pipeline:
             return np.average(value, weights=duration)
 
     def best(self, tune_db=None, connection=None):
-        """
+        """Get (current) best set of hyper-parameters
+
+        Parameters
+        ----------
+        connection : chocolate.SQLiteConnection, optional
+            Existing connection to SQLite database.
+        tune_db : str, optional
+            Path to SQLite database where trial results will be stored. Has no
+            effect when `connection` is provided.
+
+        At least one of `tune_db` or `connection` must be provided.
 
         Returns
         -------
         status : dict
-             {'loss': <best loss so far>,
-              'params': <corresponding set of hyper-parameters>,
-              'n_trials': <overall total number of trials>}}
+            ['loss'] (`float`) best loss so far
+            ['params'] (`dict`) corresponding set of hyper-parameters
+            ['n_trials'] (`int`) total number of trials
         """
 
         if connection is None:
@@ -96,16 +130,16 @@ class Pipeline:
                 'n_trials': len(trials)}
 
     def tune(self, tune_db, protocol, subset='development', n_calls=1):
-        """
+        """Tune pipeline
 
         Parameters
         ----------
         tune_db : str
-            Path to SQLite database.
+            Path to SQLite database where trial results will be stored.
         protocol : pyannote.database.Protocol
-            Evaluation protocol.
+            Protocol on which to tune the pipeline.
         subset : {'train', 'development', 'test'}, optional
-            Defaults to 'development'.
+            Subset on which to tune the pipeline. Defaults to 'development'.
         n_calls : int, optional
             Number of trials. Defaults to 1.
             Set `n_calls` to 0 to obtain best set of params.
@@ -113,11 +147,9 @@ class Pipeline:
         Returns
         -------
         best : dict
-            Best set of hyper-parameters.
-             {'loss': <best loss so far>,
-              'params': <corresponding set of hyper-parameters>,
-              'n_trials': <overall total number of trials>}}
-
+            ['loss'] (`float`) best loss so far
+            ['params'] (`dict`) corresponding set of hyper-parameters
+            ['n_trials'] (`int`) total number of trials
         """
 
         iterations = self.tune_iter(tune_db, protocol, subset=subset)
@@ -129,27 +161,26 @@ class Pipeline:
 
 
     def tune_iter(self, tune_db, protocol, subset='development'):
-        """Tune pipeline
+        """Tune pipeline forever
 
         Parameters
         ----------
         tune_db : str
-            Path to SQLite database.
+            Path to SQLite database where trial results will be stored.
         protocol : pyannote.database.Protocol
-            Evaluation protocol.
+            Protocol on which to tune the pipeline.
         subset : {'train', 'development', 'test'}, optional
-            Defaults to 'development'.
+            Subset on which to tune the pipeline. Defaults to 'development'.
 
         Yields
         ------
         status : dict
-            {'latest': {'loss': <loss of the latest trial>,
-                      'params': <corresponding set of hyper-parameters>,
-                      'n_trials': <total number of trials in this session>},
-             'new_best': {'loss': <best loss so far>,
-                      'params': <corresponding set of hyper-parameters>,
-                      'n_trials': <overall total number of trials>}}
-
+            ['latest']['loss'] (`float`) loss obtained by the latest trial
+            ['latest']['params'] (`dict`) corresponding set of hyper-parameters
+            ['latest']['n_trials'] (`int`) total number of trials in thes session
+            ['new_best']['loss'] (`float`) best loss so far
+            ['new_best']['params'] (`dict`) corresponding set of hyper-parameters
+            ['new_best']['n_trials'] (`int`) total number of trials
         """
 
         # start connection to SQLite database
