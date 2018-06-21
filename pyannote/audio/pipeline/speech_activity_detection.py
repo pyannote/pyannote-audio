@@ -43,13 +43,11 @@ class SpeechActivityDetection(Pipeline):
     ----------
     precomputed : str
         Path to precomputed SAD scores.
-    log_scale : bool, optional
     """
 
-    def __init__(self, precomputed, log_scale=False):
+    def __init__(self, precomputed=None, **kwargs):
         super(SpeechActivityDetection, self).__init__()
         self.precomputed = precomputed
-        self.log_scale = log_scale
 
         self.precomputed_ = Precomputed(self.precomputed)
         self.has_overlap_ = self.precomputed_.dimension() == 3
@@ -103,7 +101,16 @@ class SpeechActivityDetection(Pipeline):
 
         # extract precomputed scores
         precomputed = self.precomputed_(current_file)
-        data = np.exp(precomputed.data) if self.log_scale \
+
+        # if this check has not been done yet, do it once and for all
+        if not hasattr(self, "log_scale_"):
+            # heuristic to determine whether scores are log-scaled
+            if np.nanmean(precomputed.data) < 0:
+                self.log_scale_ = True
+            else:
+                self.log_scale_ = False
+
+        data = np.exp(precomputed.data) if self.log_scale_ \
                else precomputed.data
 
         # speech vs. non-speech
