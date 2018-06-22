@@ -32,6 +32,7 @@ import numpy as np
 from tqdm import tqdm
 from collections import deque
 from torch.optim import SGD
+from scipy.signal import convolve
 from abc import ABCMeta, abstractmethod
 from pyannote.audio.train.schedulers import DavisKingScheduler
 from pyannote.audio.train.checkpoint import Checkpoint
@@ -165,13 +166,16 @@ class Trainer:
         # `K` batches to increase the learning rate by one order of magnitude
         K = int(np.log(10) / np.log(factor))
 
+        losses = convolve(losses, 3 * np.ones(K // 3) / K,
+                          mode='same', method='auto')
+
         # probability that loss has decreased in the last `K` steps.
         probability = [probability_that_sequence_is_increasing(-losses[i-K:i])
                        if i > K else np.NAN for i in range(len(losses))]
         probability = np.array(probability)
 
         # find longest decreasing region
-        decreasing = 1 * (probability > 0.99)
+        decreasing = 1 * (probability > 0.999)
         starts_decreasing = np.where(np.diff(decreasing) == 1)[0]
         stops_decreasing = np.where(np.diff(decreasing) == -1)[0]
         i = np.argmax(

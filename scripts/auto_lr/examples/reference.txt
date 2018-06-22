@@ -1,9 +1,14 @@
 sad1 -2.3
 sad2 -2.3
 sad3 -2.2
+sad4 -2.5
+sad5 -2.2
 scd1 -2.2
 scd2 -2.0
 scd3 -2.2
+scd4 -2.2
+scd5 -2.2
 emb1 -0.5
 emb2 -1.8
-emb3 0.3
+emb3  0.3
+emb4 -1.5
