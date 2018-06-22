@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2014-2017 CNRS
+# Copyright (c) 2014-2018 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -31,16 +31,13 @@ Feature extraction using Yaafe
 ------------------------------
 """
 
-from __future__ import unicode_literals
-
+import yaafelib
 import warnings
 import numpy as np
 
 from pyannote.audio.features.utils import read_audio
-
 from pyannote.core.segment import SlidingWindow
 from pyannote.core.feature import SlidingWindowFeature
-from pyannote.audio.features.utils import PyannoteFeatureExtractionError
 from pyannote.database.util import get_unique_identifier
 
 
@@ -73,7 +70,6 @@ class YaafeFeatureExtractor(object):
                                              duration=self.duration,
                                              step=self.step)
 
-        import yaafelib
         self.engine_ = yaafelib.Engine()
 
     def dimension(self):
