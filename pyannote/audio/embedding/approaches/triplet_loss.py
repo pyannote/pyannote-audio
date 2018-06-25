@@ -437,8 +437,8 @@ class TripletLoss(Trainer):
                        np.zeros(len(log_negative))]),
             np.hstack([log_positive, log_negative]),
             distances=True)
-        writer.add_scalar('train/estimate/eer', eer,
-                                global_step=iteration)
+        writer.add_scalar('train/eer', eer,
+                          global_step=iteration)
 
         # log raw triplet loss (before max(0, .))
         log_delta = np.vstack(self.log_delta_)
