@@ -624,8 +624,7 @@ def main():
         output_dir = Path(arguments['<output_dir>'])
         output_dir = output_dir.expanduser().resolve(strict=False)
 
-        if subset is None:
-            subset = 'test'
+        # TODO. create README file in <output_dir>
 
         step = arguments['--step']
         if step is not None:
