@@ -91,6 +91,7 @@ from tensorboardX import SummaryWriter
 from pyannote.audio.util import mkdir_p
 from pyannote.database import FileFinder
 from pyannote.database import get_protocol
+from pyannote.database import get_unique_identifier
 
 
 class Pipeline(Application):
@@ -199,15 +200,16 @@ class Pipeline(Application):
             for current_file in FileFinder.protocol_file_iter(
                 protocol, extra_keys=['audio']):
 
+                uri = get_unique_identifier(current_file)
                 hypothesis = self.pipeline_.apply(current_file)
 
                 if isinstance(hypothesis, Timeline):
                     for s in hypothesis:
-                        fp.write(f'{s.start:.3f} {s.end:.3f}\n')
+                        fp.write(f'{uri} {s.start:.3f} {s.end:.3f}\n')
                     continue
 
                 for s, t, l in hypothesis.itertracks(yield_label=True):
-                    fp.write(f'{s.start:.3f} {s.end:.3f} {t:g} {l:g}\n')
+                    fp.write(f'{uri} {s.start:.3f} {s.end:.3f} {t:g} {l:g}\n')
 
 def main():
 
