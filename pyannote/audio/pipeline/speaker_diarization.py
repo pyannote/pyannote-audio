@@ -245,7 +245,11 @@ class Yin2018(NeuralSegmentation):
             [np.sum(emb.crop(t, mode='loose'), axis=0) for t in speech_turns]))
 
         # compute affinity matrix
-        affinity = -squareform(pdist(fX, metric=self.metric))
+        try:
+            affinity = -squareform(pdist(fX, metric=self.metric))
+        except MemoryError as e:
+            # cannot compute affinity propagation
+            return speech_turns.to_annotation()
 
         # apply clustering
         clusters = self.cls_.fit_predict(affinity)
