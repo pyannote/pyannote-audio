@@ -326,7 +326,7 @@ def main():
 
     if arguments['apply']:
 
-        model_pt = Path(arguments['<model_pt>'])
+        model_pt = Path(arguments['<model.pt>'])
         model_pt = model_pt.expanduser().resolve(strict=True)
 
         output_dir = Path(arguments['<output_dir>'])
