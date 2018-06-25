@@ -74,7 +74,6 @@ This configuration file assumes that you have already been through the other tut
   - speaker change detection (into `tutorials/pipeline/scd`)
   - speaker embedding (into `tutorials/pipeline/emb`)
 
-
 ## Training
 ([↑up to table of contents](#table-of-contents))
 
@@ -97,7 +96,8 @@ $ tensorboard --logdir=${EXPERIMENT_DIR}
 The optimized pipeline can then be applied on all files of the AMI database:
 
 ```bash
-$ pyannote-pipeline apply ${TRAIN_DIR} AMI.SpeakerDiarization.MixHeadset /path/to/pipeline/output
+$ export TRAIN_DIR=${EXPERIMENT_DIR}/train/AMI.SpeakerDiarization.MixHeadset.train
+$ pyannote-pipeline apply ${TRAIN_DIR}/params.yml AMI.SpeakerDiarization.MixHeadset /path/to/pipeline/output
 ```
 
 ## More options

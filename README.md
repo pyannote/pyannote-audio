@@ -39,6 +39,17 @@ If you use `pyannote.audio` in your research, please use the following citations
         url = {http://arxiv.org/abs/1609.04301},
     }
     ```
+  - Speaker diarization pipeline
+    ```bibtex
+    @inproceedings{Yin2018,
+      Author = {Ruiqing Yin and Herv\'e Bredin and Claude Barras},
+      Title = {{Neural Speech Turn Segmentation and Affinity Propagation for Speaker Diarization}},
+      Booktitle = {{19th Annual Conference of the International Speech Communication Association, Interspeech 2018}},
+      Year = {2018},
+      Month = {September},
+      Address = {Hyderabad, India},
+    }
+    ```
 
 ## Tutorials
 
@@ -46,7 +57,7 @@ If you use `pyannote.audio` in your research, please use the following citations
  * [LSTM-based speech activity detection](tutorials/speech-activity-detection)
  * [LSTM-based speaker change detection](tutorials/change-detection)
  * [_TristouNet_ neural speech turn embedding](tutorials/speaker-embedding)
-
+ * [Speaker diarization pipeline](tutorials/pipeline)
 
 ## Documentation
 
