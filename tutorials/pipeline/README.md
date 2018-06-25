@@ -23,12 +23,9 @@
 > AUTHOR  
 > Hervé Bredin - http://herve.niderb.fr
 
-# Globally optimized speaker diarization pipeline with `pyannote.audio`
+# Speaker diarization pipeline with `pyannote.audio`
 
 In this tutorial, you will learn how to optimize a speaker diarization pipeline using `pyannote-pipeline` command line tool.
-
-This tutorial assumes that you have already been through the other
-tutorials to train speech activity detection, speaker change detection, and speaker embedding models.
 
 ## Table of contents
 - [Citation](#citation)
@@ -60,15 +57,28 @@ If you use `pyannote-audio` for speaker diarization, please cite the following p
 To ensure reproducibility, `pyannote-pipeline` relies on a configuration file defining the experimental setup:
 
 ```bash
-$ cat tutorials/pipelines/config.yml
+$ cat tutorials/pipeline/config.yml
 ```
 ```yaml
+pipeline:
+   name: Yin2018
+   params:
+      sad: tutorials/pipeline/sad
+      scd: tutorials/pipeline/scd
+      emb: tutorials/pipeline/emb
+      metric: angular
 ```
+
+This configuration file assumes that you have already been through the other tutorials and applied
+  - speech activity detection (into `tutorials/pipeline/sad`)
+  - speaker change detection (into `tutorials/pipeline/scd`)
+  - speaker embedding (into `tutorials/pipeline/emb`)
+
 
 ## Training
 ([↑up to table of contents](#table-of-contents))
 
-The following command will perform hyper-parameter optimization the AMI database for 1000 epochs (one epoch = every speaker seen at least once)
+The following command will run hyper-parameter optimization on the development subset of the AMI database:
 
 ```bash
 $ export EXPERIMENT_DIR=tutorials/pipeline

@@ -1,0 +1,7 @@
+pipeline:
+   name: Yin2018
+   params:
+      sad: tutorials/pipeline/sad
+      scd: tutorials/pipeline/scd
+      emb: tutorials/pipeline/emb
+      metric: angular
