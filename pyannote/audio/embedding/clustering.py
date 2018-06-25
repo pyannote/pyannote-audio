@@ -36,7 +36,7 @@ from pyannote.audio.embedding.utils import pdist, cdist
 from scipy.spatial.distance import squareform
 
 
-class EmbeddingClustering(object):
+class HierarchicalPoolingClustering(object):
     """Embedding clustering
 
     Parameters
@@ -49,12 +49,12 @@ class EmbeddingClustering(object):
 
     Usage
     -----
-    >>> clustering = EmbeddingClustering()
+    >>> clustering = HierarchicalPoolingClustering()
     >>> annotation = clustering.fit(segmentation, embedding).apply(threshold)
     """
 
     def __init__(self, metric='angular', pooling_func=None):
-        super(EmbeddingClustering, self).__init__()
+        super(HierarchicalPoolingClustering, self).__init__()
         self.metric = metric
 
         if pooling_func is None:
@@ -73,7 +73,7 @@ class EmbeddingClustering(object):
 
         Returns
         -------
-        clustering : EmbeddingClustering
+        clustering : HierarchicalPoolingClustering
         """
 
         # extract one embedding per label
