@@ -78,6 +78,8 @@ class Pipeline:
         """
         metric = self.get_tune_metric()
         value, duration = [], []
+        # NOTE -- embarrasingly parallel
+        # TODO -- parallelize this
         for current_file in getattr(protocol, subset)():
             reference = current_file['annotation']
             uem = get_annotated(current_file)
