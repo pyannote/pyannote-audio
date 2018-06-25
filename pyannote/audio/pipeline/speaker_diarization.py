@@ -26,9 +26,9 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
-
 import numpy as np
 import sklearn.cluster
+from pathlib import Path
 from scipy.spatial.distance import squareform
 from pyannote.audio.embedding.utils import l2_normalize, pdist
 
@@ -50,8 +50,8 @@ class NeuralSegmentation(Pipeline):
 
     def __init__(self, sad=None, scd=None, **kwargs):
         super().__init__()
-        self.sad = sad
-        self.scd = scd
+        self.sad = Path(sad).expanduser().resolve(strict=True)
+        self.scd = Path(scd).expanduser().resolve(strict=True)
         self.with_params(**kwargs)
 
     def get_tune_space(self):
@@ -160,7 +160,7 @@ class Yin2018(NeuralSegmentation):
 
     def __init__(self, sad=None, scd=None, emb=None, metric='angular', **kwargs):
         super().__init__(sad=sad, scd=scd)
-        self.emb = emb
+        self.emb = Path(emb).expanduser().resolve(strict=True)
         self.metric = metric
         self.with_params(**kwargs)
 
@@ -275,7 +275,7 @@ class HierachicalEmbeddingPooling(NeuralSegmentation):
 
     def __init__(self, sad=None, scd=None, emb=None, metric='angular', **kwargs):
         super().__init__(sad=sad, scd=scd)
-        self.emb = emb
+        self.emb = Path(emb).expanduser().resolve(strict=True)
         self.metric = metric
         self.with_params(**kwargs)
 
