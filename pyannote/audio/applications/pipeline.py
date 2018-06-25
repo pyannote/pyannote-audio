@@ -99,7 +99,7 @@ class Pipeline(Application):
 
     @classmethod
     def from_params_yml(cls, params_yml, db_yml=None):
-        train_dir = dirname(dirname(dirname(params_yml)))
+        train_dir = dirname(params_yml)
         app = cls.from_train_dir(train_dir, db_yml=db_yml)
         app.params_yml_ = params_yml
         with open(params_yml, mode='r') as fp:
