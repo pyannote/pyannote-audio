@@ -105,7 +105,7 @@ class Trainer:
         Parameters
         ----------
         model : torch.nn.Module
-            Sequence labeling model.
+            Sequence labeling/embedding model.
         feature_extraction : pyannote.audio.features.Precomputed
             Precomputed features.
         protocol : pyannote.database.Protocol
