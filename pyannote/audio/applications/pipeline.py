@@ -83,6 +83,7 @@ import yaml
 import numpy as np
 from tqdm import tqdm
 from pathlib import Path
+from os.path import dirname
 from docopt import docopt
 from filelock import FileLock
 from .base import Application
