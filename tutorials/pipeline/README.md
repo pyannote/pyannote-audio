@@ -81,7 +81,7 @@ The following command will run hyper-parameter optimization on the development s
 
 ```bash
 $ export EXPERIMENT_DIR=tutorials/pipeline
-$ pyannote-pipeline train ${EXPERIMENT_DIR} AMI.SpeakerDiarization.MixHeadset
+$ pyannote-pipeline train --forever ${EXPERIMENT_DIR} AMI.SpeakerDiarization.MixHeadset
 ```
 
 This will create a bunch of files in `TRAIN_DIR` (defined below).
@@ -89,6 +89,8 @@ One can follow along the training process using [tensorboard](https://github.com
 ```bash
 $ tensorboard --logdir=${EXPERIMENT_DIR}
 ```
+
+One can run this command on several machines in parallel to speed up the hyper-parameter search.
 
 ## Application
 ([↑up to table of contents](#table-of-contents))
