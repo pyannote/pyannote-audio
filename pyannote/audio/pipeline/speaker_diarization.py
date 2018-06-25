@@ -159,9 +159,9 @@ class Yin2018(NeuralSegmentation):
     """
 
     def __init__(self, sad=None, scd=None, emb=None, metric='angular', **kwargs):
-        super().__init__(sad=sad, scd=scd)
         self.emb = Path(emb).expanduser().resolve(strict=True)
         self.metric = metric
+        super().__init__(sad=sad, scd=scd)
         self.with_params(**kwargs)
 
     def get_tune_space(self):
@@ -274,16 +274,15 @@ class HierachicalEmbeddingPooling(NeuralSegmentation):
     """
 
     def __init__(self, sad=None, scd=None, emb=None, metric='angular', **kwargs):
-        super().__init__(sad=sad, scd=scd)
-        self.emb = Path(emb).expanduser().resolve(strict=True)
+        self.emb = emb
         self.metric = metric
+        super().__init__(sad=sad, scd=scd)
         self.with_params(**kwargs)
 
     def get_tune_space(self):
 
         base_space = super().get_tune_space()
-        space = {
-            'cls_threshold': chocolate.uniform(0, 2.),
+        space = {'cls_threshold': chocolate.uniform(0, 2.)}
         base_space.update(space)
         return base_space
 
