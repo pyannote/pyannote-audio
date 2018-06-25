@@ -211,7 +211,7 @@ class Pipeline(Application):
                     continue
 
                 for s, t, l in hypothesis.itertracks(yield_label=True):
-                    fp.write(f'{uri} {s.start:.3f} {s.end:.3f} {t:g} {l:g}\n')
+                    fp.write(f'{uri} {s.start:.3f} {s.end:.3f} {t} {l}\n')
 
 def main():
 
