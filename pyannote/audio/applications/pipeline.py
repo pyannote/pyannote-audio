@@ -159,12 +159,19 @@ class Pipeline(Application):
             loss = status['latest']['loss']
             writer.add_scalar(f'train/{protocol_name}.{subset}/loss/latest',
                               loss, global_step=s + 1)
+            writer.add_scalars(
+                f'train/{protocol_name}.{subset}/params/latest',
+                status['latest']['params'], global_step=s + 1)
+
             if 'new_best' in status:
                 _ = self.dump(status['new_best'], params_yml, params_yml_lock)
                 n_trials = status['new_best']['n_trials']
                 best_loss = status['new_best']['loss']
                 writer.add_scalar(f'train/{protocol_name}.{subset}/loss/best',
                                   best_loss, global_step=n_trials)
+                writer.add_scalars(
+                    f'train/{protocol_name}.{subset}/params/best',
+                    status['new_best']['params'], global_step=n_trials)
 
             # progress bar
             desc = f"Trial #{s+1}"
