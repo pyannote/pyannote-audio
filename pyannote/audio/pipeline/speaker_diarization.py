@@ -244,15 +244,13 @@ class Yin2018(NeuralSegmentation):
         fX = l2_normalize(np.vstack(
             [np.sum(emb.crop(t, mode='loose'), axis=0) for t in speech_turns]))
 
-        # compute affinity matrix
+        # apply clustering
         try:
             affinity = -squareform(pdist(fX, metric=self.metric))
+            clusters = self.cls_.fit_predict(affinity)
         except MemoryError as e:
             # cannot compute affinity propagation
             return speech_turns.to_annotation()
-
-        # apply clustering
-        clusters = self.cls_.fit_predict(affinity)
 
         for speech_turn, cluster in zip(speech_turns, clusters):
             # HACK find why fit_predict returns NaN sometimes and fix it.
