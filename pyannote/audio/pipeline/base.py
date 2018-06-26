@@ -84,7 +84,10 @@ class Pipeline:
             reference = current_file['annotation']
             uem = get_annotated(current_file)
             hypothesis = self.apply(current_file)
-            value.append(metric(reference, hypothesis, uem=uem))
+            if hypothesis is None:
+                return 1.
+            metric_value = metric(reference, hypothesis, uem=uem)
+            value.append(metric_value)
             duration.append(uem.duration())
 
         # support for pyannote.metrics

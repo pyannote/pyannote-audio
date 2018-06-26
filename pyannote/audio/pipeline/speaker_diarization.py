@@ -250,7 +250,7 @@ class Yin2018(NeuralSegmentation):
             clusters = self.cls_.fit_predict(affinity)
         except MemoryError as e:
             # cannot compute affinity propagation
-            return speech_turns.to_annotation()
+            return None
 
         for speech_turn, cluster in zip(speech_turns, clusters):
             # HACK find why fit_predict returns NaN sometimes and fix it.
