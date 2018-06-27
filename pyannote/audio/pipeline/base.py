@@ -60,8 +60,8 @@ class Pipeline:
         """
         pass
 
-    def objective(self, protocol, subset='development'):
-        """Compute the value of the bjective function (the lower, the better)
+    def objective(self, protocol, subset='development', learning=False):
+        """Compute the value of the objective function (the lower, the better)
 
         Parameters
         ----------
@@ -70,6 +70,12 @@ class Pipeline:
         subset : {'train', 'development', 'test'}, optional
             Subset on which to compute the value of the objective function.
             Defaults to 'development'.
+        learning : bool, optional
+            Set to True to indicate that the pipeline is being tuned and that
+            the reference can be passed safely to the pipeline. Default
+            behavior is to remove it from `current_file`. This is useful for
+            pipelines that may take a looooong time to proceed when the
+            hypothesis is completely wrong (e.g. too many segments to cluster).
 
         Returns
         -------
@@ -81,11 +87,19 @@ class Pipeline:
         # NOTE -- embarrasingly parallel
         # TODO -- parallelize this
         for current_file in getattr(protocol, subset)():
-            reference = current_file['annotation']
+
             uem = get_annotated(current_file)
+
+            if learning:
+                reference = current_file['annotation']
+            else:
+                reference = current_file.pop('annotation')
+
             hypothesis = self.apply(current_file)
+
             if hypothesis is None:
                 return 1.
+
             metric_value = metric(reference, hypothesis, uem=uem)
             value.append(metric_value)
             duration.append(uem.duration())
@@ -219,7 +233,7 @@ class Pipeline:
             # instantiate pipeline with this set of parameters
             # and compute the objective function
             loss = self.with_params(**params).objective(
-                protocol, subset=subset)
+                protocol, subset=subset, learning=True)
 
             latest = {'loss': loss, 'params': params, 'n_trials': i}
 
