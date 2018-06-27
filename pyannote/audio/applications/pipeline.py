@@ -71,7 +71,7 @@ Configuration file:
           emb: tutorials/pipeline/emb
           metric: angular
 
-    optimizer:
+    sampler:
        name: CMAES
     ...................................................................
 
@@ -125,10 +125,10 @@ class Pipeline(Application):
         self.pipeline_ = getattr(pipelines, pipeline_name)(
             **self.config_['pipeline'].get('params', {}))
 
-        # optimizer
-        optimizer_name = self.config_.get('optimizer', {}).get('name', 'CMAES')
-        optimizers = __import__('chocolate', fromlist=[optimizer_name])
-        self.optimizer_ = getattr(optimizers, optimizer_name)
+        # sampler
+        sampler_name = self.config_.get('sampler', {}).get('name', 'CMAES')
+        samplers = __import__('chocolate', fromlist=[sampler_name])
+        self.sampler_ = getattr(samplers, sampler_name)
 
     def dump(self, best, params_yml, params_yml_lock):
         content = yaml.dump(best['params'], default_flow_style=False)
@@ -162,7 +162,7 @@ class Pipeline(Application):
 
         iterations = self.pipeline_.tune_iter(
             tune_db, protocol, subset=subset,
-            optimizer=self.optimizer_)
+            sampler=self.sampler_)
 
         for s, status in enumerate(iterations):
 
