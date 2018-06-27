@@ -236,6 +236,21 @@ class Yin2018(NeuralSegmentation):
         if len(speech_turns) < 1:
             return hypothesis
 
+        # this only happens during pipeline training
+        if 'annotation' in current_file:
+            # number of speech turns in reference
+            reference = current_file['annotation']
+            n_turns_true = len(list(reference.itertracks()))
+
+            # number of speech turns in hypothesis
+            uem = get_annotated(current_file)
+            n_turns_pred = len(speech_turns.crop(uem))
+
+            # don't even bother trying to cluster those speech turns
+            # as there are too many of those...
+            if n_turns_pred > 20 * n_turns_true:
+                return None
+
         # get raw (sliding window) embeddings
         emb = self.emb_(current_file)
 
