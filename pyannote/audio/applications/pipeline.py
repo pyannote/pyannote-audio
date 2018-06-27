@@ -64,9 +64,15 @@ Configuration file:
 
     ................... <experiment_dir>/config.yml ...................
     pipeline:
-       name: SpeechActivityDetection
+       name: Yin2018
        params:
-          precomputed: /path/to/sad
+          sad: tutorials/pipeline/sad
+          scd: tutorials/pipeline/scd
+          emb: tutorials/pipeline/emb
+          metric: angular
+
+    optimizer:
+       name: CMAES
     ...................................................................
 
 "train" mode:
@@ -119,6 +125,11 @@ class Pipeline(Application):
         self.pipeline_ = getattr(pipelines, pipeline_name)(
             **self.config_['pipeline'].get('params', {}))
 
+        # optimizer
+        optimizer_name = self.config_.get('optimizer', {}).get('name', 'CMAES')
+        optimizers = __import__('chocolate', fromlist=[optimizer_name])
+        self.optimizer_ = getattr(optimizers, optimizer_name)
+
     def dump(self, best, params_yml, params_yml_lock):
         content = yaml.dump(best['params'], default_flow_style=False)
         with FileLock(params_yml_lock):
@@ -149,7 +160,9 @@ class Pipeline(Application):
         progress_bar.set_description('Trial #1 : ...')
         progress_bar.update(0)
 
-        iterations = self.pipeline_.tune_iter(tune_db, protocol, subset=subset)
+        iterations = self.pipeline_.tune_iter(
+            tune_db, protocol, subset=subset,
+            optimizer=self.optimizer_)
 
         for s, status in enumerate(iterations):
 

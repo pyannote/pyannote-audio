@@ -145,6 +145,8 @@ class Pipeline:
             Protocol on which to tune the pipeline.
         subset : {'train', 'development', 'test'}, optional
             Subset on which to tune the pipeline. Defaults to 'development'.
+        optimizer : chocolate optimizer, optional
+            Defaults to chocolate.CMAES
         n_calls : int, optional
             Number of trials. Defaults to 1.
             Set `n_calls` to 0 to obtain best set of params.
@@ -157,7 +159,8 @@ class Pipeline:
             ['n_trials'] (`int`) total number of trials
         """
 
-        iterations = self.tune_iter(tune_db, protocol, subset=subset)
+        iterations = self.tune_iter(tune_db, protocol, subset=subset,
+                                    optimizer=optimizer)
 
         for i in range(n_calls):
             _ = next(iterations)
@@ -165,7 +168,8 @@ class Pipeline:
         return self.best(tune_db=tune_db)
 
 
-    def tune_iter(self, tune_db, protocol, subset='development'):
+    def tune_iter(self, tune_db, protocol, subset='development',
+                  optimizer=None):
         """Tune pipeline forever
 
         Parameters
@@ -176,6 +180,8 @@ class Pipeline:
             Protocol on which to tune the pipeline.
         subset : {'train', 'development', 'test'}, optional
             Subset on which to tune the pipeline. Defaults to 'development'.
+        optimizer : chocolate optimizer, optional
+            Defaults to chocolate.CMAES
 
         Yields
         ------
@@ -196,7 +202,10 @@ class Pipeline:
         space = self.get_tune_space()
 
         # instantiate sampler
-        sampler = chocolate.CMAES(connection, space)
+        if optimizer is None:
+            optimizer = chocolate.CMAES
+        sampler = optimizer(connection, space)
+        # TODO add option to use another sampler
 
         i = 0
         best = {'loss': np.inf}
