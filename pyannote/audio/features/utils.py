@@ -31,8 +31,7 @@ from __future__ import division
 
 import yaml
 import io
-import os.path
-import warnings
+from pathlib import Path
 from glob import glob
 import numpy as np
 from numpy.lib.format import open_memmap
@@ -185,8 +184,23 @@ class Precomputed(object):
 
     Parameters
     ----------
-    root_dir :
-    use_memmap : bool, optional
+    root_dir : `str`
+        Path to directory where precomputed features are stored.
+    use_memmap : `bool`, optional
+        Defaults to True.
+    sliding_window : `SlidingWindow`, optional
+        Sliding window used for feature extraction. This is not used when
+        `root_dir` already exists and contains `metadata.yml`.
+    dimension : `int`, optional
+        Dimension of feature vectors. This is not used when `root_dir` already
+        exists and contains `metadata.yml`.
+
+    Notes
+    -----
+    If `root_dir` directory does not exist, one must provide both
+    `sliding_window` and `dimension` parameters in order to create and
+    populate file `root_dir/metadata.yml` when instantiating.
+
     """
 
     def get_path(self, item):
@@ -198,12 +212,11 @@ class Precomputed(object):
                  sliding_window=None, dimension=None):
 
         super(Precomputed, self).__init__()
-        self.root_dir = root_dir
+        self.root_dir = Path(root_dir).expanduser().resolve(strict=False)
         self.use_memmap = use_memmap
 
-        path = '{root_dir}/metadata.yml'.format(root_dir=self.root_dir)
-
-        if os.path.exists(path):
+        path = self.root_dir / 'metadata.yml'
+        if path.exists():
 
             with io.open(path, 'r') as f:
                 params = yaml.load(f)
@@ -224,13 +237,17 @@ class Precomputed(object):
 
         else:
 
-            if sliding_window is None:
-                raise ValueError('missing "sliding_window" parameter.')
-            if dimension is None:
-                raise ValueError('missing "dimension" parameter.')
+            if sliding_window is None or dimension is None:
+                msg = (
+                    f'Either directory {self.root_dir} does not exist or it '
+                    f'does not contain precomputed features. In case it exists '
+                    f'and this was done on purpose, please provide both '
+                    f'`sliding_window` and `dimension` parameters when '
+                    f'instantianting `Precomputed`.')
+                raise ValueError(msg)
 
             # create parent directory
-            mkdir_p(os.path.dirname(path))
+            mkdir_p(path.parent)
 
             params = {'start': sliding_window.start,
                       'duration': sliding_window.duration,
@@ -251,12 +268,12 @@ class Precomputed(object):
 
     def __call__(self, item):
 
-        path = self.get_path(item)
+        path = Path(self.get_path(item))
 
-        if not os.path.exists(path):
+        if not path.exists():
             uri = get_unique_identifier(item)
-            msg = 'No precomputed features for "{uri}".'
-            raise PyannoteFeatureExtractionError(msg.format(uri=uri))
+            msg = f'No precomputed features for "{uri}".'
+            raise PyannoteFeatureExtractionError(msg)
 
         if self.use_memmap:
             data = np.load(path, mmap_mode='r')
@@ -282,8 +299,8 @@ class Precomputed(object):
         return shape
 
     def dump(self, item, features):
-        path = self.get_path(item)
-        mkdir_p(os.path.dirname(path))
+        path = Path(self.get_path(item))
+        mkdir_p(path.parent)
         np.save(path, features.data)
 
 
