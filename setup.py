@@ -75,7 +75,7 @@ setup(
     cmdclass=versioneer.get_cmdclass(),
     # PyPI
     name='pyannote.audio',
-    description=('Audio processing'),
+    description='Neural building blocks for speaker diarization',
     author='Hervé Bredin',
     author_email='bredin@limsi.fr',
     url='http://herve.niderb.fr/',
