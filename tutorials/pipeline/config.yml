@@ -30,3 +30,6 @@ pipeline:
       scd: tutorials/pipeline/scd
       emb: tutorials/pipeline/emb
       metric: angular
+
+sampler:
+   name: CMAES

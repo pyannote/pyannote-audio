@@ -67,6 +67,9 @@ pipeline:
       scd: tutorials/pipeline/scd
       emb: tutorials/pipeline/emb
       metric: angular
+
+sampler:
+   name: CMAES
 ```
 
 This configuration file assumes that you have already been through the other tutorials and applied
