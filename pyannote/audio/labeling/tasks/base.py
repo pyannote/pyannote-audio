@@ -26,6 +26,7 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
+import warnings
 import torch
 import numpy as np
 from tqdm import tqdm
