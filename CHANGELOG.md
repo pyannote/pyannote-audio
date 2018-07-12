@@ -1,3 +1,9 @@
+### Version 1.1 (WIP)
+
+  - BREAKING: add unified FeatureExtraction base class
+  - feat: add support for on-the-fly data augmentation
+  - setup: switch to librosa 0.6
+
 ### Version 1.0 (2018-07-03)
 
   - chore: switch from keras to pytorch (with tensorboard support)
