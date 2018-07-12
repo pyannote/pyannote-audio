@@ -50,7 +50,7 @@ class SpeechActivityDetection(Pipeline):
         self.precomputed = precomputed
 
         self.precomputed_ = Precomputed(self.precomputed)
-        self.has_overlap_ = self.precomputed_.dimension() == 3
+        self.has_overlap_ = self.precomputed_.dimension == 3
 
         self.with_params(**kwargs)
 

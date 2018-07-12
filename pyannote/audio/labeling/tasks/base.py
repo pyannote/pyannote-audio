@@ -149,7 +149,7 @@ class LabelingTaskGenerator(object):
         self.databases_ = sorted(databases)
         self.labels_ = sorted(labels)
 
-        sliding_window = self.precomputed.sliding_window()
+        sliding_window = self.precomputed.sliding_window
         for current_file in getattr(protocol, subset)():
             y, _ = to_numpy(current_file, self.precomputed,
                             labels=self.labels_)

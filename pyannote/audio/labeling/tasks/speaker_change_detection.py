@@ -89,7 +89,7 @@ class SpeakerChangeDetectionGenerator(LabelingTaskGenerator):
             raise ValueError(msg)
 
         # convert duration to number of samples
-        M = self.precomputed.sliding_window().durationToSamples(self.collar)
+        M = self.precomputed.sliding_window.durationToSamples(self.collar)
 
         # triangular window
         self.window_ = scipy.signal.triang(M)[:, np.newaxis]

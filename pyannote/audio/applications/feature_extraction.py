@@ -174,8 +174,8 @@ def extract(protocol_name, file_finder, experiment_dir,
     feature_extraction = FeatureExtraction(
         **config['feature_extraction'].get('params', {}))
 
-    sliding_window = feature_extraction.sliding_window()
-    dimension = feature_extraction.dimension()
+    sliding_window = feature_extraction.sliding_window
+    dimension = feature_extraction.dimension
 
     if 'normalization' in config:
         normalization_name = config['normalization']['name']

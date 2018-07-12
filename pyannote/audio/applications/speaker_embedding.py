@@ -204,7 +204,7 @@ class SpeakerEmbedding(Application):
                             fromlist=[architecture_name])
         Architecture = getattr(models, architecture_name)
         self.model_ = Architecture(
-            int(self.feature_extraction_.dimension()),
+            int(self.feature_extraction_.dimension),
             **self.config_['architecture'].get('params', {}))
 
         approach_name = self.config_['approach']['name']

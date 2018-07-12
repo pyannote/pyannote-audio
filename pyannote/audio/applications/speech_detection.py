@@ -193,7 +193,7 @@ class SpeechActivityDetection(Application):
         self.task_ = Task(
             **self.config_['task'].get('params', {}))
 
-        n_features = int(self.feature_extraction_.dimension())
+        n_features = int(self.feature_extraction_.dimension)
         n_classes = self.task_.n_classes
 
         # architecture

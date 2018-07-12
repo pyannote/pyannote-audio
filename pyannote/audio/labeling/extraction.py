@@ -95,7 +95,7 @@ class SequenceLabeling(FileBasedBatchGenerator):
 
     @property
     def sliding_window(self):
-        return self.feature_extraction.sliding_window()
+        return self.feature_extraction.sliding_window
 
     def preprocess(self, current_file):
         """On-demand feature extraction
@@ -203,8 +203,7 @@ class SequenceLabeling(FileBasedBatchGenerator):
         """
 
         # frame and sub-sequence sliding windows
-        frames = self.feature_extraction.sliding_window()
-
+        frames = self.feature_extraction.sliding_window
         batches = [batch for batch in self.from_file(current_file,
                                                      incomplete=True)]
         if not batches:

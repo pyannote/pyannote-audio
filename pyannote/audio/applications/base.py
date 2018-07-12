@@ -113,6 +113,7 @@ class Application(object):
         self.get_optimizer_ = partial(Optimizer, **optimizer_params)
 
         # feature extraction
+        extraction_name = None
         if 'feature_extraction' in self.config_:
             extraction_name = self.config_['feature_extraction']['name']
             features = __import__('pyannote.audio.features',
@@ -120,6 +121,18 @@ class Application(object):
             FeatureExtraction = getattr(features, extraction_name)
             self.feature_extraction_ = FeatureExtraction(
                 **self.config_['feature_extraction'].get('params', {}))
+
+        if 'data_augmentation' in self.config_:
+            augmentation_name = self.config_['data_augmentation']['name']
+            augmentation = __import__('pyannote.audio.augmentation',
+                                      fromlist=[augmentation_name])
+            DataAugmentation = getattr(augmentation, augmentation_name)
+            self.augmentation_ = DataAugmentation(
+                **self.config_['data_augmentation'].get('params', {}))
+
+        else:
+            self.augmentation_ = None
+
 
     def train(self, protocol_name, subset='train', restart=None, epochs=1000):
 
@@ -133,7 +146,8 @@ class Application(object):
 
         self.task_.fit(
             self.model_, self.feature_extraction_,
-            protocol, subset=subset, restart=restart, epochs=epochs,
+            protocol, subset=subset, augmentation=self.augmentation_,
+            restart=restart, epochs=epochs,
             get_optimizer=self.get_optimizer_,
             get_scheduler=self.get_scheduler_,
             learning_rate=self.learning_rate_,

@@ -26,38 +26,37 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
-
-import warnings
-import numpy as np
+"""
+Feature extraction with python_speech_features
+----------------------------------------------
+"""
 
 import python_speech_features
-from pyannote.audio.features.utils import read_audio
+import numpy as np
 
-
+from .base import FeatureExtraction
 from pyannote.core.segment import SlidingWindow
-from pyannote.core.feature import SlidingWindowFeature
-from pyannote.audio.features.utils import PyannoteFeatureExtractionError
-from pyannote.database.util import get_unique_identifier
 
 
-class PySpeechFeaturesExtractor(object):
-    """
+class PySpeechFeaturesExtraction(FeatureExtraction):
+    """python_speech_features base class
 
     Parameters
     ----------
     sample_rate : int, optional
         Defaults to 16000 (i.e. 16kHz)
-    block_size : int, optional
-        Defaults to 512.
-    step_size : int, optional
-        Defaults to 256.
+    augmentation : `pyannote.audio.augmentation.Augmentation`, optional
+        Defaults to no augmentation.
+    duration : float, optional
+        Defaults to 0.025.
+    step : float, optional
+        Defaults to 0.010.
     """
 
-    def __init__(self, sample_rate=16000, duration=0.025, step=0.01):
+    def __init__(self, sample_rate=16000, augmentation=None,
+                 duration=0.025, step=0.01):
 
-        super(PySpeechFeaturesExtractor, self).__init__()
-
-        self.sample_rate = sample_rate
+        super().__init__(sample_rate=sample_rate, augmentation=augmentation)
         self.duration = duration
         self.step = step
 
@@ -65,68 +64,54 @@ class PySpeechFeaturesExtractor(object):
                                              duration=self.duration,
                                              step=self.step)
 
-    def sliding_window(self):
+    def get_sliding_window(self):
         return self.sliding_window_
 
-    def dimension(self):
-        raise NotImplementedError('')
 
-    def __call__(self, item):
-        """Extract features
-
-        Parameters
-        ----------
-        item : dict
-
-        Returns
-        -------
-        features : SlidingWindowFeature
-
-        """
-
-        # --- load audio file
-        y, sample_rate = read_audio(item,
-                                    sample_rate=self.sample_rate,
-                                    mono=True)
-
-        data = self.process(y, sample_rate)
-
-        if np.any(np.isnan(data)):
-            uri = get_unique_identifier(item)
-            msg = 'Features extracted from "{uri}" contain NaNs.'
-            warnings.warn(msg.format(uri=uri))
-
-        return SlidingWindowFeature(data, self.sliding_window_)
-
-
-class PySpeechFeaturesMFCC(PySpeechFeaturesExtractor):
+class PySpeechFeaturesMFCC(PySpeechFeaturesExtraction):
     """MFCC with python_speech_features
 
     Parameters
     ----------
     sample_rate : int, optional
-        Sampling rate.
+        Defaults to 16000 (i.e. 16kHz)
+    augmentation : `pyannote.audio.augmentation.Augmentation`, optional
+        Defaults to no augmentation.
     duration : float, optional
-        Defaults to 0.025 (25ms)
+        Defaults to 0.025.
     step : float, optional
-        Defaults to 0.01 (10ms)
+        Defaults to 0.010.
     coefs : int, optional
         Number of coefficients. Defaults to 13.
     """
 
-    def __init__(self, sample_rate=16000, duration=0.025, step=0.01,
-                 coefs=13):
+    def __init__(self, sample_rate=16000, augmentation=None,
+                 duration=0.025, step=0.01, coefs=13):
 
-        super(PySpeechFeaturesMFCC, self).__init__(
-            sample_rate=sample_rate, duration=duration, step=step)
-
+        super().__init__(sample_rate=sample_rate, augmentation=augmentation,
+                         duration=duration, step=step)
         self.coefs = coefs
 
-    def process(self, y, sample_rate):
+    def get_dimension(self):
+        return self.coefs
+
+    def get_features(self, y, sample_rate):
+        """Feature extraction
+
+        Parameters
+        ----------
+        y : (n_samples, 1) numpy array
+            Waveform
+        sample_rate : int
+            Sample rate
+
+        Returns
+        -------
+        data : (n_frames, n_dimensions) numpy array
+            Features
+        """
 
         return python_speech_features.mfcc(
-            32768 * y, samplerate=sample_rate, winlen=self.duration, winstep=self.step,
+            32768 * y, samplerate=sample_rate,
+            winlen=self.duration, winstep=self.step,
             numcep=self.coefs)
-
-    def dimension(self):
-        return self.coefs

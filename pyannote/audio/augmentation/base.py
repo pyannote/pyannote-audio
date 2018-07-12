@@ -27,12 +27,9 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 
-class BaseAugmentation(object):
-
-    def __init__(self):
-        super().__init__()
+class Augmentation(object):
 
     def __call__(self, waveform, sample_rate):
         return waveform
 
-NoAugmentation = BaseAugmentation
+NoAugmentation = Augmentation

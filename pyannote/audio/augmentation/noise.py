@@ -31,14 +31,13 @@ import numpy as np
 from pyannote.core import Segment
 from pyannote.audio.features.utils import RawAudio
 from pyannote.audio.features.utils import get_audio_duration
-from pyannote.audio.features.utils import get_audio_sample_rate
 from pyannote.generators.fragment import random_subsegment
-from .base import BaseAugmentation
+from .base import Augmentation
 from glob import glob
 
 
-class AddNoise(BaseAugmentation):
-    """Add noise to waveform
+class AddNoise(Augmentation):
+    """Add noise
 
     Parameters
     ----------

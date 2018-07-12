@@ -250,7 +250,7 @@ class Resegmentation(LabelingTask):
         # number of speakers + 1 for non-speech
         self.n_classes_ = len(hypothesis.labels()) + 1
 
-        model = StackedRNN(self.precomputed.dimension(), self.n_classes,
+        model = StackedRNN(self.precomputed.dimension, self.n_classes,
                            rnn=self.rnn, recurrent=self.recurrent,
                            linear=self.linear,
                            bidirectional=self.bidirectional,

@@ -43,8 +43,8 @@ class SpeechSegmentGenerator(object):
 
     Parameters
     ----------
-    precomputed : pyannote.audio.features.Precomputed
-        Precomputed features
+    feature_extraction : `pyannote.audio.features.FeatureExtraction`
+        Feature extraction.
     per_label : int, optional
         Number of speech turns per speaker in each batch. Defaults to 3.
     label_min_duration : float, optional
@@ -65,13 +65,14 @@ class SpeechSegmentGenerator(object):
         Set `parallel` to 0 to not use background generators.
     """
 
-    def __init__(self, precomputed, per_label=3, per_fold=None,
+    def __init__(self, feature_extraction,
+                 per_label=3, per_fold=None,
                  duration=None, min_duration=None, max_duration=None,
                  label_min_duration=0., parallel=1):
 
         super(SpeechSegmentGenerator, self).__init__()
 
-        self.precomputed = precomputed
+        self.feature_extraction = feature_extraction
         self.per_label = per_label
         self.per_fold = per_fold
         self.duration = duration
@@ -106,7 +107,8 @@ class SpeechSegmentGenerator(object):
             annotation = current_file['annotation']
 
             # pre-load features.
-            if not self.precomputed.use_memmap:
+            if isinstance(self.feature_extraction, Precomputed) and \
+               not self.feature_extraction.use_memmap:
                 msg = ('Loading all precomputed features in memory. '
                        'Set "use_memmap" to True if you run out of memory.')
                 warnings.warn(msg)
@@ -221,7 +223,7 @@ class SpeechSegmentGenerator(object):
                                     segment, self.max_duration,
                                     min_duration=self.min_duration))
 
-                        X = self.precomputed.crop(
+                        X = self.feature_extraction.crop(
                             files[i], sub_segment, mode='center')
 
                     else:
@@ -230,7 +232,7 @@ class SpeechSegmentGenerator(object):
                         sub_segment = next(random_subsegment(
                             segment, self.duration))
 
-                        X = self.precomputed.crop(
+                        X = self.feature_extraction.crop(
                             files[i], sub_segment, mode='center',
                             fixed=self.duration)
 
@@ -330,8 +332,8 @@ class SpeechTurnSubSegmentGenerator(SpeechSegmentGenerator):
 
     Parameters
     ----------
-    precomputed : pyannote.audio.features.Precomputed
-        Precomputed features
+    feature_extraction : `pyannote.audio.features.FeatureExtraction`
+        Feature extraction
     duration : float
         Fixed segment duration.
     per_turn : int, optional
@@ -348,11 +350,11 @@ class SpeechTurnSubSegmentGenerator(SpeechSegmentGenerator):
         Set `parallel` to 0 to not use background generators.
     """
 
-    def __init__(self, precomputed, duration, per_label=3, per_fold=None,
-                 per_turn=10, parallel=1):
+    def __init__(self, feature_extraction, duration, per_label=3,
+                 per_fold=None, per_turn=10, parallel=1):
 
         super(SpeechTurnSubSegmentGenerator, self).__init__(
-            precomputed, per_label=per_label, per_fold=per_fold,
+            feature_extraction, per_label=per_label, per_fold=per_fold,
             duration=None, min_duration=duration, max_duration=None)
 
         # this is to make sure speech turns are selected at random
@@ -361,7 +363,7 @@ class SpeechTurnSubSegmentGenerator(SpeechSegmentGenerator):
         self.per_turn = per_turn
 
         # estimate number of samples in each subsequence
-        sw = precomputed.sliding_window()
+        sw = feature_extraction.sliding_window
         ranges = sw.crop(Segment(0, self.duration_), mode='center',
                          fixed=self.duration_, return_ranges=True)
         self.n_samples_ = ranges[0][1] - ranges[0][0]

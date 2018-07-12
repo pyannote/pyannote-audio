@@ -35,10 +35,12 @@ from collections import deque
 from torch.optim import SGD
 from scipy.signal import convolve
 from abc import ABCMeta, abstractmethod
-from pyannote.audio.train.schedulers import DavisKingScheduler
+from pyannote.audio.train.schedulers import ConstantScheduler
 from pyannote.audio.train.checkpoint import Checkpoint
 from tensorboardX import SummaryWriter
 from dlib import probability_that_sequence_is_increasing
+from pyannote.audio.features import Precomputed
+
 
 ARBITRARY_LR = 0.1
 
@@ -48,12 +50,12 @@ class Trainer:
     __metaclass__ = ABCMeta
 
     @abstractmethod
-    def get_batch_generator(self, precomputed):
+    def get_batch_generator(self, feature_extraction):
         """This method should be overriden by subclass
 
         Parameters
         ----------
-        precomputed : :class:`~pyannote.audio.features.Precomputed`
+        feature_extraction : `pyannote.audio.features.FeatureExtraction`
 
         Returns
         -------
@@ -98,7 +100,8 @@ class Trainer:
         return tensor.detach().to(cpu).numpy()
 
     def fit(self, model, feature_extraction,
-            protocol, subset='train', restart=0, epochs=1000,
+            protocol, subset='train', augmentation=None,
+            restart=0, epochs=1000,
             get_optimizer=None, get_scheduler=None, learning_rate='auto',
             log_dir=None, device=None):
         """Train model
@@ -107,18 +110,27 @@ class Trainer:
         ----------
         model : torch.nn.Module
             Sequence labeling/embedding model.
-        feature_extraction : pyannote.audio.features.Precomputed
-            Precomputed features.
+        feature_extraction : pyannote.audio.features.FeatureExtraction
+            Feature extraction
         protocol : pyannote.database.Protocol
             Evaluation protocol.
         subset : {'train', 'development', 'test'}, optional
             Subset to use for training. Defaults to "train".
-        epochs : int, optional
-            Train model for that many epochs. Defaults to 1000.
-        learning_rate : {float, 'auto'}, optional
-            Defaults to 'auto'.
+        augmentation : `pyannote.audio.augmentation.Augmentation`, optional
+            Data augmentation. Defaults to no augmentation.
         restart : int, optional
             Restart training at this epoch. Defaults to train from scratch.
+        epochs : int, optional
+            Train model for that many epochs. Defaults to 1000.
+        get_optimizer : callable, optional
+            Function that takes `model.parameters()` and `lr=...` as input and
+            returns an optimizer. Defaults to `torch.optim.SGD`.
+        get_scheduler : callable, optional
+            Function that takes `optimizer`, `batches_per_epoch`, `min_lr=...`,
+            and `max_lr=...` as input and returns a learning rate scheduler.
+            Defaults to `pyannote.audio.train.schedulers.ConstantScheduler`.
+        learning_rate : {float, 'auto'}, optional
+            Defaults to 'auto'.
         log_dir : str, optional
             Directory where models and other log files are stored.
             Defaults to not store anything.
@@ -133,7 +145,8 @@ class Trainer:
 
         iterations = self.fit_iter(
             model, feature_extraction,
-            protocol, subset=subset, restart=restart, epochs=epochs,
+            protocol, subset=subset, augmentation=augmentation,
+            restart=restart, epochs=epochs,
             get_optimizer=get_optimizer, get_scheduler=get_scheduler,
             learning_rate=learning_rate, log_dir=log_dir, device=device)
 
@@ -286,12 +299,68 @@ class Trainer:
 
 
     def fit_iter(self, model, feature_extraction,
-                 protocol, subset='train', restart=0, epochs=1000,
+                 protocol, subset='train', augmentation=None,
+                 restart=0, epochs=1000,
                  get_optimizer=None, get_scheduler=None, learning_rate='auto',
                  log_dir=None, device=None):
+        """Train model
+
+        Parameters
+        ----------
+        model : torch.nn.Module
+            Sequence labeling/embedding model.
+        feature_extraction : pyannote.audio.features.FeatureExtraction
+            Feature extraction
+        protocol : pyannote.database.Protocol
+            Evaluation protocol.
+        subset : {'train', 'development', 'test'}, optional
+            Subset to use for training. Defaults to "train".
+        augmentation : `pyannote.audio.augmentation.Augmentation`, optional
+            Data augmentation. Defaults to no augmentation.
+        restart : int, optional
+            Restart training at this epoch. Defaults to train from scratch.
+        epochs : int, optional
+            Train model for that many epochs. Defaults to 1000.
+        get_optimizer : callable, optional
+            Function that takes `model.parameters()` and `lr=...` as input and
+            returns an optimizer. Defaults to `torch.optim.SGD`.
+        get_scheduler : callable, optional
+            Function that takes `optimizer`, `batches_per_epoch`, `min_lr=...`,
+            and `max_lr=...` as input and returns a learning rate scheduler.
+            Defaults to `pyannote.audio.train.schedulers.ConstantScheduler`.
+        learning_rate : {float, 'auto'}, optional
+            Defaults to 'auto'.
+        log_dir : str, optional
+            Directory where models and other log files are stored.
+            Defaults to not store anything.
+        device : torch.device, optional
+            Defaults to torch.device('cpu')
+
+        Yields
+        ------
+        result : dict
+            ['epoch'] (int): current epoch
+            ['iteration'] (int): current iteration
+            ['model']  (torch.nn.Module): model at current iteration
+        """
+
+        if get_optimizer is None:
+            get_optimizer = SGD
+
+        if get_scheduler is None:
+            get_scheduler = ConstantScheduler
 
         if log_dir is None:
             log_dir = tempfile.mkdtemp()
+
+        if augmentation is not None:
+            if isinstance(feature_extraction, Precomputed):
+                msg = ('One cannot use `Precomputed` features when using '
+                       'data augmentation as features have to be computed '
+                       'on the fly on "augmented" waveforms.')
+                raise ValueError(msg)
+            else:
+                feature_extraction.augmentation = augmentation
 
         # initialize batch generator
         batch_generator = self.get_batch_generator(feature_extraction)

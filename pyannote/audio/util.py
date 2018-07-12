@@ -97,7 +97,7 @@ def to_numpy(current_file, precomputed, labels=None):
     # one-hot encoding
     y = np.zeros((N, K), dtype=np.int64)
 
-    sw = precomputed.sliding_window()
+    sw = precomputed.sliding_window
     for segment, _, label in annotation.itertracks(yield_label=True):
         label = get_label_identifier(label, current_file)
         try:
@@ -136,7 +136,7 @@ def from_numpy(y, precomputed, labels=None):
     `to_numpy`
     """
 
-    window = precomputed.sliding_window()
+    window = precomputed.sliding_window
 
     if len(y.shape) < 2:
         N, = y.shape

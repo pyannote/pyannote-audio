@@ -27,8 +27,6 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 
-from __future__ import division
-
 import yaml
 import io
 from pathlib import Path
@@ -159,16 +157,14 @@ class RawAudio(object):
         Target sampling rate. Defaults to using native sampling rate.
     mono : int, optional
         Convert multi-channel to mono. Defaults to True.
-    augmentation : callable, optional
+    augmentation : `pyannote.audio.augmentation.Augmentation`, optional
     """
 
-    def __init__(self, sample_rate=None, mono=True, augmentation=None):
+    def __init__(self, sample_rate=None, augmentation=None, mono=True):
         super(RawAudio, self).__init__()
         self.sample_rate = sample_rate
         self.mono = mono
 
-        if augmentation is None:
-            augmentation = lambda y, sample_rate: y
         self.augmentation = augmentation
 
         if sample_rate is not None:
@@ -176,7 +172,27 @@ class RawAudio(object):
                                                  duration=1./sample_rate,
                                                  step=1./sample_rate)
 
+    @property
+    def dimension(self):
+        return 1
+
+    @property
+    def sliding_window(self):
+        return self.sliding_window_
+
     def __call__(self, current_file):
+        """Obtain waveform
+
+        Parameters
+        ----------
+        current_file : dict
+            `pyannote.database` files.
+
+        Returns
+        -------
+        waveform : `pyannote.core.SlidingWindowFeature`
+            Waveform
+        """
 
         y, sample_rate = read_audio(current_file,
                                     sample_rate=self.sample_rate,
@@ -185,7 +201,8 @@ class RawAudio(object):
         if len(y.shape) < 2:
             y = y.reshape(-1, 1)
 
-        y = self.augmentation(y, sample_rate)
+        if self.augmentation is not None:
+            y = self.augmentation(y, sample_rate)
 
         sliding_window = SlidingWindow(
             start=-.5/sample_rate,
@@ -194,26 +211,27 @@ class RawAudio(object):
 
         return SlidingWindowFeature(y, sliding_window)
 
-    def crop(self, current_file, segment):
-        """Fast version of self(current_file).crop(segment, mode='center',
-                                                   fixed=segment.duration)
+    def get_margins(self):
+        return 0., 0.
+
+    def crop(self, current_file, segment, mode='center', fixed=None):
+        """Fast version of self(current_file).crop(segment, **kwargs)
 
         Parameters
         ----------
         current_file : dict
+            `pyannote.database` file.
         segment : `pyannote.core.Segment`
+            Segment from which to extract features.
 
         Returns
         -------
-        data : (n_samples, n_channels) numpy.array
+        waveform : (n_samples, 1) numpy array
+            Waveform
 
-        Example
-        -------
-        >>> from pyannote.audio.features import RawAudio
-        >>> from pyannote.core import Segment
-        >>> raw_audio = RawAudio(sample_rate=16000, mono=True)
-        >>> current_file = {'audio': '/path/to/filename.wav'}
-        >>> data = raw_audio.crop(current_file, Segment(10, 20))
+        See also
+        --------
+        `pyannote.core.SlidingWindowFeature.crop`
         """
 
         if self.sample_rate is None:
@@ -221,14 +239,19 @@ class RawAudio(object):
                    '`sample_rate` if one wants to use the `crop` method.')
             raise ValueError(msg)
 
-        # read data as memory mapped
-        sample_rate, y = scipy.io.wavfile.read(current_file['audio'],
-                                               mmap=True)
+        if 'waveform' in current_file:
+            y = current_file['waveform']
+            sample_rate = self.sample_rate
 
-        if sample_rate != self.sample_rate:
-            msg = (f'Mismatch between expected ({self.sample_rate:d}) and '
-                   f'actual ({sample_rate} sample rates)')
-            raise ValueError(msg)
+        else:
+            # read data as memory mapped
+            sample_rate, y = scipy.io.wavfile.read(current_file['audio'],
+                                                   mmap=True)
+
+            if sample_rate != self.sample_rate:
+                msg = (f'Mismatch between expected ({self.sample_rate:d}) and '
+                       f'actual ({sample_rate} sample rates)')
+                raise ValueError(msg)
 
         # extract segment waveform
         (start, end), = self.sliding_window_.crop(
@@ -261,7 +284,8 @@ class RawAudio(object):
         if self.mono and len(data.shape) > 1:
             data = np.mean(data, axis=1, keepdims=True)
 
-        data = self.augmentation(data, sample_rate)
+        if self.augmentation is not None:
+            data = self.augmentation(data, sample_rate)
 
         return data
 
@@ -347,18 +371,34 @@ class Precomputed(object):
             self.sliding_window_ = sliding_window
             self.dimension_ = dimension
 
+    @property
     def sliding_window(self):
+        """Sliding window used for feature extraction"""
         return self.sliding_window_
 
+    @property
     def dimension(self):
+        """Dimension of feature vectors"""
         return self.dimension_
 
-    def __call__(self, item):
+    def __call__(self, current_file):
+        """Obtain features for file
 
-        path = Path(self.get_path(item))
+        Parameters
+        ----------
+        current_file : dict
+            `pyannote.database` files.
+
+        Returns
+        -------
+        features : `pyannote.core.SlidingWindowFeature`
+            Features
+        """
+
+        path = Path(self.get_path(current_file))
 
         if not path.exists():
-            uri = get_unique_identifier(item)
+            uri = get_unique_identifier(current_file)
             msg = f'No precomputed features for "{uri}".'
             raise PyannoteFeatureExtractionError(msg)
 
@@ -369,11 +409,34 @@ class Precomputed(object):
 
         return SlidingWindowFeature(data, self.sliding_window_)
 
-    def crop(self, item, focus, mode='loose', fixed=None, return_data=True):
-        """Faster version of precomputed(item).crop(...)"""
-        memmap = open_memmap(self.get_path(item), mode='r')
+    def crop(self, current_file, segment, mode='center', fixed=None,
+             return_data=True):
+        """Fast version of self(current_file).crop(segment, **kwargs)
+
+        Parameters
+        ----------
+        current_file : dict
+            `pyannote.database` file.
+        segment : `pyannote.core.Segment`
+            Segment from which to extract features.
+
+        Returns
+        -------
+        features : (n_frames, dimension) numpy array
+            Extracted features
+
+        See also
+        --------
+        `pyannote.core.SlidingWindowFeature.crop`
+        """
+
+        # match default FeatureExtraction.crop behavior
+        if mode == 'center' and fixed is None:
+            fixed = segment.duration
+
+        memmap = open_memmap(self.get_path(current_file), mode='r')
         swf = SlidingWindowFeature(memmap, self.sliding_window_)
-        result = swf.crop(focus, mode=mode, fixed=fixed,
+        result = swf.crop(segment, mode=mode, fixed=fixed,
                           return_data=return_data)
         del memmap
         return result
@@ -424,10 +487,11 @@ class PrecomputedHTK(object):
         self.sliding_window_ = SlidingWindow(start=0.,
                                              duration=self.duration,
                                              step=self.step)
-
+    @property
     def sliding_window(self):
         return self.sliding_window_
 
+    @property
     def dimension(self):
         return self.dimension_
 

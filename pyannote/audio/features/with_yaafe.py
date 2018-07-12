@@ -27,30 +27,26 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 """
-Feature extraction using Yaafe
-------------------------------
+Feature extraction with Yaafe
+-----------------------------
 """
 
 import yaafelib
-import warnings
 import numpy as np
 
-from pyannote.core import Segment
-from pyannote.audio.features.utils import read_audio
-from pyannote.audio.features.utils import get_audio_duration
-from pyannote.audio.features.utils import RawAudio
+from .base import FeatureExtraction
 from pyannote.core.segment import SlidingWindow
-from pyannote.core.feature import SlidingWindowFeature
-from pyannote.database.util import get_unique_identifier
 
 
-class YaafeFeatureExtractor(object):
-    """Base feature extraction. Should not be used directly.
+class YaafeFeatureExtraction(FeatureExtraction):
+    """Yaafe feature extraction base class
 
     Parameters
     ----------
     sample_rate : int, optional
         Defaults to 16000 (i.e. 16kHz)
+    augmentation : `pyannote.audio.augmentation.Augmentation`, optional
+        Defaults to no augmentation.
     duration : float, optional
         Defaults to 0.025.
     step : float, optional
@@ -59,31 +55,29 @@ class YaafeFeatureExtractor(object):
         Stack `stack` consecutive features. Defaults to 1.
     """
 
-    def __init__(self, sample_rate=16000, duration=0.025, step=0.010, stack=1):
+    def __init__(self, sample_rate=16000, augmentation=None,
+                 duration=0.025, step=0.010, stack=1):
 
-        super(YaafeFeatureExtractor, self).__init__()
-
-        self.sample_rate = sample_rate
+        super().__init__(sample_rate=sample_rate, augmentation=augmentation)
         self.duration = duration
         self.step = step
         self.stack = stack
 
-        start = -0.5 * self.duration
-        self.sliding_window_ = SlidingWindow(start=start,
+        self.sliding_window_ = SlidingWindow(start=-0.5 * self.duration,
                                              duration=self.duration,
                                              step=self.step)
 
         self.engine_ = yaafelib.Engine()
-        self.raw_audio_ = RawAudio(sample_rate=self.sample_rate,
-                                   mono=True)
 
-    def dimension(self):
-        raise NotImplementedError('')
-
-    def sliding_window(self):
+    def get_sliding_window(self):
         return self.sliding_window_
 
-    def process(self, y, sample_rate):
+    def get_margins(self):
+        onset = 8 * self.step
+        offset = 7 * self.step + self.duration
+        return onset, offset
+
+    def get_features(self, y, sample_rate):
         """Feature extraction
 
         Parameters
@@ -95,7 +89,7 @@ class YaafeFeatureExtractor(object):
 
         Returns
         -------
-        data : (n_features, n_dimensions) numpy array
+        data : (n_frames, n_dimensions) numpy array
             Features
         """
 
@@ -139,100 +133,10 @@ class YaafeFeatureExtractor(object):
 
         return data
 
-    def __call__(self, current_file):
-        """Extract features
 
-        Parameters
-        ----------
-        current_file : dict
+class YaafeCompound(YaafeFeatureExtraction):
 
-        Returns
-        -------
-        features : SlidingWindowFeature
-
-        Notes
-        -----
-        If `current_file` contains `waveform` key, it is assumed to contain the
-        actual waveform at the right sample rate. In any other case,
-        `read_audio` is used to load (and resample if needed) from disk.
-
-        """
-
-        if 'waveform' in current_file:
-            # use preloaded
-            y = current_file['waveform']
-            sample_rate = self.sample_rate
-        else:
-            # load audio file
-            y, sample_rate = read_audio(current_file,
-                                        sample_rate=self.sample_rate,
-                                        mono=True)
-
-        data = self.process(y, sample_rate)
-
-        if np.any(np.isnan(data)):
-            uri = get_unique_identifier(current_file)
-            msg = 'Features extracted from "{uri}" contain NaNs.'
-            warnings.warn(msg.format(uri=uri))
-
-        return SlidingWindowFeature(data, self.sliding_window_)
-
-    def crop(self, current_file, segment):
-        """Faster version of feature_extraction(current_file).crop(segment)
-
-        Parameters
-        ----------
-        current_file : dict
-        segment : `pyannote.core.Segment`
-            Segment from which to extract features
-
-        Returns
-        -------
-        data : (n_features, n_dimensions) numpy array
-            Features
-
-        Examples
-        --------
-        >>> slow = extraction(current_file).crop(segment,
-        ...                                      mode='center',
-        ...                                      fixed=segment.duration)
-        >>> fast = extraction.crop(current_file, segment)
-        >>> assert np.all(slow == fast)
-        """
-
-        # in order to compute temporal derivative of features, Yaafe
-        # approximates it by an orthogonal polynomail fit over a finite length
-        # window of approximately 8 steps on both side:
-        # http://yaafe.sourceforge.net/features.html?highlight=derivate#yaafefeatures.Derivate
-        # therefore, we artifically extend `segment` by that many steps
-        # so that the above assertion is true.
-
-        duration = get_audio_duration(current_file)
-        xsegment = Segment(
-            max(0, segment.start - 8 * self.step),
-            min(duration, segment.end + 7 * self.step + self.duration))
-
-        if 'waveform' in current_file:
-            # use preloaded
-            y = current_file['waveform']
-        else:
-            y = self.raw_audio_.crop(current_file, xsegment)
-
-        data = self.process(y, self.sample_rate)
-
-        # since the segment was artifically extended, crop it after extraction
-        sw = SlidingWindow(start=xsegment.start - self.step,
-                           step=self.step,
-                           duration=self.duration)
-        (start, end), = sw.crop(segment, mode='center',
-                                fixed=segment.duration,
-                                return_ranges=True)
-        return data[start:end]
-
-
-class YaafeCompound(YaafeFeatureExtractor):
-
-    def __init__(self, extractors, sample_rate=16000,
+    def __init__(self, extractors, sample_rate=16000, augmentation=None,
                  duration=0.025, step=0.010, stack=1):
 
         assert all(e.sample_rate == sample_rate for e in extractors)
@@ -240,13 +144,13 @@ class YaafeCompound(YaafeFeatureExtractor):
         assert all(e.step == step for e in extractors)
         assert all(e.stack == stack for e in extractors)
 
-        super(YaafeCompound, self).__init__(duration=duration, step=step,
-                                            stack=stack)
+        super().__init__(sample_rate=sample_rate, augmentation=augmentation,
+                         duration=duration, step=step, stack=stack)
 
         self.extractors = extractors
 
-    def dimension(self):
-        return sum(extractor.dimension() for extractor in self.extractors)
+    def get_dimension(self):
+        return sum(extractor.dimension for extractor in self.extractors)
 
     def definition(self):
         return [(name, recipe)
@@ -256,9 +160,9 @@ class YaafeCompound(YaafeFeatureExtractor):
         return hash(tuple(self.definition()))
 
 
-class YaafeZCR(YaafeFeatureExtractor):
+class YaafeZCR(YaafeFeatureExtraction):
 
-    def dimension(self):
+    def get_dimension(self):
         return self.stack
 
     def definition(self):
@@ -274,7 +178,7 @@ class YaafeZCR(YaafeFeatureExtractor):
         return d
 
 
-class YaafeMFCC(YaafeFeatureExtractor):
+class YaafeMFCC(YaafeFeatureExtraction):
     """MFCC feature extraction
 
     ::
@@ -299,6 +203,8 @@ class YaafeMFCC(YaafeFeatureExtractor):
     ----------
     sample_rate : int, optional
         Defaults to 16000.
+    augmentation : `pyannote.audio.augmentation.Augmentation`, optional
+        Defaults to no augmentation.
     duration : float, optional
         Defaults to 0.025.
     step : float, optional
@@ -326,9 +232,12 @@ class YaafeMFCC(YaafeFeatureExtractor):
 
     """
 
-    def __init__(
-        self, sample_rate=16000, duration=0.025, step=0.010, stack=1,
-        e=True, coefs=11, De=False, DDe=False, D=False, DD=False):
+    def __init__(self, sample_rate=16000, augmentation=None,
+                 duration=0.025, step=0.010, stack=1,
+                 e=True, coefs=11, De=False, DDe=False, D=False, DD=False):
+
+        super().__init__(sample_rate=sample_rate, augmentation=augmentation,
+                         duration=duration, step=step, stack=stack)
 
         self.e = e
         self.coefs = coefs
@@ -337,12 +246,7 @@ class YaafeMFCC(YaafeFeatureExtractor):
         self.D = D
         self.DD = DD
 
-        super(YaafeMFCC, self).__init__(sample_rate=sample_rate,
-                                        duration=duration, step=step,
-                                        stack=stack)
-
-    def dimension(self):
-
+    def get_dimension(self):
         n_features = 0
         n_features += self.e
         n_features += self.De
@@ -350,7 +254,6 @@ class YaafeMFCC(YaafeFeatureExtractor):
         n_features += self.coefs
         n_features += self.coefs * self.D
         n_features += self.coefs * self.DD
-
         return n_features * self.stack
 
     def definition(self):
