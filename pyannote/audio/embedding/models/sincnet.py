@@ -33,6 +33,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from .utils import get_conv1d_output_shape
+from torch.autograd import Variable
 
 
 class SincConv(nn.Module):
@@ -159,7 +160,7 @@ class SincConv(nn.Module):
 
         filters = (band_pass * self.window_).view(
             self.out_channels, 1, self.kernel_size)
-
+        filters = Variable(filters)
         return F.conv1d(waveforms, filters, stride=self.stride,
                         padding=self.padding, dilation=self.dilation,
                         bias=None, groups=1)
