@@ -201,7 +201,8 @@ class Application(object):
         import torch
         weights_pt = self.WEIGHTS_PT.format(
             train_dir=train_dir, epoch=epoch)
-        self.model_.load_state_dict(torch.load(weights_pt))
+        # if GPU is not available, load using CPU
+        self.model_.load_state_dict(torch.load(weights_pt, map_location=lambda storage, loc: storage))
         return self.model_
 
     def get_number_of_epochs(self, train_dir=None, return_first=False):
