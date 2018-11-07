@@ -65,6 +65,8 @@ Common options:
   <train_dir>                Path to the directory containing pre-trained
                              models (i.e. the output of "train" mode).
   --purity=<purity>          Target segment purity [default: 0.9].
+  --metric_type=<metric_type>          Set metric_type (segmentation|diarization).
+                             Defaults to "diarization"
 
 "apply" mode:
   <model.pt>                 Path to the pretrained model.
@@ -166,19 +168,25 @@ Configuration file:
     >>> homogeneous_segments = peak_detection.apply(raw_scores, dimension=1)
 """
 
-import torch
-import numpy as np
-from pathlib import Path
-from docopt import docopt
-from pyannote.audio.signal import Peak
-from pyannote.database import get_protocol
-from pyannote.database import get_annotated
-from pyannote.audio.features import Precomputed
-from pyannote.database import get_unique_identifier
-from .speech_detection import SpeechActivityDetection
-from pyannote.audio.labeling.extraction import SequenceLabeling
-from pyannote.metrics.diarization import DiarizationPurityCoverageFMeasure
+import multiprocessing as mp
 from functools import partial
+from pathlib import Path
+
+import numpy as np
+import torch
+from docopt import docopt
+from pyannote.database import get_annotated
+from pyannote.database import get_unique_identifier
+from pyannote.metrics.diarization import DiarizationPurityCoverageFMeasure
+from pyannote.metrics.segmentation import SegmentationPurityCoverageFMeasure
+
+from pyannote.audio.labeling.extraction import SequenceLabeling
+from pyannote.audio.signal import Peak
+from .speech_detection import SpeechActivityDetection
+
+DIARIZATION_METRIC_TYPE = 'diarization'
+SEGMENTATION_METRIC_TYPE = 'segmentation'
+
 
 def validate_helper_func(current_file, predictions=None, peak=None,
                          metric=None):
@@ -189,12 +197,14 @@ def validate_helper_func(current_file, predictions=None, peak=None,
     hypothesis = hypothesis.to_annotation()
     return metric(reference, hypothesis, uem=uem)
 
+
 class SpeakerChangeDetection(SpeechActivityDetection):
 
     def validate_epoch(self, epoch, protocol_name, subset='development',
                        validation_data=None):
 
         target_purity = self.purity
+        metric_type = self.metric_type
 
         # load model for current epoch
         model = self.load_model(epoch).to(self.device)
@@ -204,7 +214,7 @@ class SpeakerChangeDetection(SpeechActivityDetection):
         step = .25 * duration
         sequence_labeling = SequenceLabeling(
             model, self.feature_extraction_, duration=duration,
-            step=.25 * duration, batch_size=self.batch_size,
+            step=step, batch_size=self.batch_size,
             source='audio', device=self.device)
 
         # extract predictions for all files.
@@ -226,7 +236,14 @@ class SpeakerChangeDetection(SpeechActivityDetection):
             current_alpha = .5 * (lower_alpha + upper_alpha)
             peak = Peak(alpha=current_alpha, min_duration=0.0,
                         log_scale=model.logsoftmax)
-            metric = DiarizationPurityCoverageFMeasure(parallel=True)
+
+            if metric_type == DIARIZATION_METRIC_TYPE:
+                metric = DiarizationPurityCoverageFMeasure(parallel=True)
+            elif metric_type == SEGMENTATION_METRIC_TYPE:
+                metric = SegmentationPurityCoverageFMeasure(parallel=True)
+            else:
+                raise Exception("Unknown metric type : {metric_type}".format(metric_type=metric_type))
+
             validate = partial(validate_helper_func,
                                predictions=predictions,
                                peak=peak,
@@ -252,8 +269,8 @@ class SpeakerChangeDetection(SpeechActivityDetection):
             metric_name: {'minimize': False, 'value': best_coverage},
             f'{task}/threshold': {'minimize': 'NA', 'value': best_alpha}}
 
-def main():
 
+def main():
     arguments = docopt(__doc__, version='Speaker change detection')
 
     db_yml = Path(arguments['--database'])
@@ -318,11 +335,19 @@ def main():
 
         purity = float(arguments['--purity'])
 
+        metric_type = arguments['--metric_type']
+        if not metric_type:
+            metric_type = SEGMENTATION_METRIC_TYPE
+
         application = SpeakerChangeDetection.from_train_dir(
             train_dir, db_yml=db_yml, training=False)
+
         application.device = device
         application.batch_size = batch_size
         application.purity = purity
+        application.metric_type = metric_type
+        application.pool_ = mp.Pool(mp.cpu_count())
+
         application.validate(protocol_name, subset=subset,
                              start=start, end=end, every=every,
                              in_order=in_order)
