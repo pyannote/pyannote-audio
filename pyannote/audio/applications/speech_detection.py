@@ -42,7 +42,7 @@ Common options:
                              [default: ~/.pyannote/db.yml]
   --subset=<subset>          Set subset (train|developement|test).
                              Defaults to "train" in "train" mode. Defaults to
-                             "development" in "validate" mode. Not used in
+                             "development" in "validate" mode. Defaults to all subsets in
                              "apply" mode.
   --gpu                      Run on GPUs. Defaults to using CPUs.
   --batch=<size>             Set batch size. Has no effect in "train" mode.
@@ -287,7 +287,7 @@ class SpeechActivityDetection(Application):
             'speech_activity_detection/threshold': {'minimize': 'NA',
                                                     'value': res.x}}
 
-    def apply(self, protocol_name, output_dir, step=None):
+    def apply(self, protocol_name, output_dir, step=None, subset=None):
 
         model = self.model_.to(self.device)
         model.eval()
@@ -320,8 +320,13 @@ class SpeechActivityDetection(Application):
         protocol = get_protocol(protocol_name, progress=True,
                                 preprocessors=self.preprocessors_)
 
-        for current_file in FileFinder.protocol_file_iter(
-            protocol, extra_keys=['audio']):
+        if subset is None:
+            files = FileFinder.protocol_file_iter(protocol,
+                                                  extra_keys=['audio'])
+        else:
+            files = getattr(protocol, subset)()
+
+        for current_file in files:
 
             fX = sequence_labeling.apply(current_file)
             precomputed.dump(current_file, fX)
@@ -418,4 +423,4 @@ def main():
             model_pt, db_yml=db_yml, training=False)
         application.device = device
         application.batch_size = batch_size
-        application.apply(protocol_name, output_dir, step=step)
+        application.apply(protocol_name, output_dir, step=step, subset=subset)

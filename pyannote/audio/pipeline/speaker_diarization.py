@@ -255,9 +255,13 @@ class Yin2018(NeuralSegmentation):
         emb = self.emb_(current_file)
 
         # get one embedding per speech turn
+        embeddings = [emb.crop(t, mode='loose') for t in speech_turns]
         # FIXME don't l2_normalize for any metric
+        # ignore empty embeddings
+        # since we can have empty ones due to very short segments at the end of the sample,
+        # for which it is impossible to compute an embedding
         fX = l2_normalize(np.vstack(
-            [np.sum(emb.crop(t, mode='loose'), axis=0) for t in speech_turns]))
+            [np.sum(e, axis=0) for e in embeddings if e.size > 0]))
 
         # apply clustering
         try:
@@ -265,6 +269,8 @@ class Yin2018(NeuralSegmentation):
             clusters = self.cls_.fit_predict(affinity)
         except MemoryError as e:
             # cannot compute affinity propagation
+            return None
+        except ValueError as e:
             return None
 
         for speech_turn, cluster in zip(speech_turns, clusters):

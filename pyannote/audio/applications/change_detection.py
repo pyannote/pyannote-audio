@@ -43,7 +43,7 @@ Common options:
                              [default: ~/.pyannote/db.yml]
   --subset=<subset>          Set subset (train|developement|test).
                              Defaults to "train" in "train" mode. Defaults to
-                             "development" in "validate" mode. Not used in
+                             "development" in "validate" mode. Defaults to all subsets in
                              "apply" mode.
   --gpu                      Run on GPUs. Defaults to using CPUs.
   --batch=<size>             Set batch size. Has no effect in "train" mode.
@@ -347,4 +347,4 @@ def main():
             model_pt, db_yml=db_yml, training=False)
         application.device = device
         application.batch_size = batch_size
-        application.apply(protocol_name, output_dir, step=step)
+        application.apply(protocol_name, output_dir, step=step, subset=subset)
