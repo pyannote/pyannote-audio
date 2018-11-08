@@ -143,8 +143,8 @@ $ export TRAIN_DIR=${EXPERIMENT_DIR}/train/AMI.SpeakerDiarization.MixHeadset.tra
 $ pyannote-change-detection validate --purity=0.8 ${TRAIN_DIR} AMI.SpeakerDiarization.MixHeadset
 ```
 
-By default, this validation computes the segmentation metrics. You may prefer to set the flag `--metric_type=diarization`
-in order to check diarization metrics
+By default, this validation computes the segmentation metrics.  
+You may prefer to set the flag `--metric=diarization` in order to check diarization metrics
 
 ## Application
 ([↑up to table of contents](#table-of-contents))
