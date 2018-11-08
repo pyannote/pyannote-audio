@@ -65,7 +65,7 @@ Common options:
   <train_dir>                Path to the directory containing pre-trained
                              models (i.e. the output of "train" mode).
   --purity=<purity>          Target segment purity [default: 0.9].
-  --metric=<metric>          Use segmentation or diarization metric [default: segmentation].
+  --diarization              Use diarization instead of segmentation metrics.
 
 "apply" mode:
   <model.pt>                 Path to the pretrained model.
@@ -202,7 +202,6 @@ class SpeakerChangeDetection(SpeechActivityDetection):
                        validation_data=None):
 
         target_purity = self.purity
-        metric_type = self.metric
 
         # load model for current epoch
         model = self.load_model(epoch).to(self.device)
@@ -235,12 +234,10 @@ class SpeakerChangeDetection(SpeechActivityDetection):
             peak = Peak(alpha=current_alpha, min_duration=0.0,
                         log_scale=model.logsoftmax)
 
-            if metric_type == DIARIZATION_METRIC_TYPE:
+            if self.diarization:
                 metric = DiarizationPurityCoverageFMeasure(parallel=True)
-            elif metric_type == SEGMENTATION_METRIC_TYPE:
-                metric = SegmentationPurityCoverageFMeasure(parallel=True)
             else:
-                raise Exception("Unknown metric type : {metric_type}".format(metric_type=metric_type))
+                metric = SegmentationPurityCoverageFMeasure(parallel=True)
 
             validate = partial(validate_helper_func,
                                predictions=predictions,
@@ -333,7 +330,7 @@ def main():
 
         purity = float(arguments['--purity'])
 
-        metric = arguments['--metric']
+        diarization = arguments['--diarization']
 
         application = SpeakerChangeDetection.from_train_dir(
             train_dir, db_yml=db_yml, training=False)
@@ -341,7 +338,7 @@ def main():
         application.device = device
         application.batch_size = batch_size
         application.purity = purity
-        application.metric = metric
+        application.diarization = diarization
 
         application.validate(protocol_name, subset=subset,
                              start=start, end=end, every=every,
