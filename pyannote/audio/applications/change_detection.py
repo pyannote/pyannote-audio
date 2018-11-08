@@ -167,7 +167,6 @@ Configuration file:
     >>> homogeneous_segments = peak_detection.apply(raw_scores, dimension=1)
 """
 
-import multiprocessing as mp
 from functools import partial
 from pathlib import Path
 
