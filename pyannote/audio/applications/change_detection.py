@@ -65,7 +65,7 @@ Common options:
   <train_dir>                Path to the directory containing pre-trained
                              models (i.e. the output of "train" mode).
   --purity=<purity>          Target segment purity [default: 0.9].
-  --metric=<metric>          Set metric_type (segmentation|diarization). [default: segmentation]
+  --metric=<metric>          Use segmentation or diarization metric [default: segmentation].
 
 "apply" mode:
   <model.pt>                 Path to the pretrained model.
