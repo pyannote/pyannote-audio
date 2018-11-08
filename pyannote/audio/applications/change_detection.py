@@ -65,8 +65,7 @@ Common options:
   <train_dir>                Path to the directory containing pre-trained
                              models (i.e. the output of "train" mode).
   --purity=<purity>          Target segment purity [default: 0.9].
-  --metric_type=<metric_type>          Set metric_type (segmentation|diarization).
-                             Defaults to "diarization"
+  --metric=<metric>          Set metric_type (segmentation|diarization). [default: segmentation]
 
 "apply" mode:
   <model.pt>                 Path to the pretrained model.
@@ -204,7 +203,7 @@ class SpeakerChangeDetection(SpeechActivityDetection):
                        validation_data=None):
 
         target_purity = self.purity
-        metric_type = self.metric_type
+        metric_type = self.metric
 
         # load model for current epoch
         model = self.load_model(epoch).to(self.device)
@@ -335,9 +334,7 @@ def main():
 
         purity = float(arguments['--purity'])
 
-        metric_type = arguments['--metric_type']
-        if not metric_type:
-            metric_type = SEGMENTATION_METRIC_TYPE
+        metric = arguments['--metric']
 
         application = SpeakerChangeDetection.from_train_dir(
             train_dir, db_yml=db_yml, training=False)
@@ -345,8 +342,7 @@ def main():
         application.device = device
         application.batch_size = batch_size
         application.purity = purity
-        application.metric_type = metric_type
-        application.pool_ = mp.Pool(mp.cpu_count())
+        application.metric = metric
 
         application.validate(protocol_name, subset=subset,
                              start=start, end=end, every=every,
