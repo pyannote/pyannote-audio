@@ -182,10 +182,6 @@ from pyannote.audio.labeling.extraction import SequenceLabeling
 from pyannote.audio.signal import Peak
 from .speech_detection import SpeechActivityDetection
 
-DIARIZATION_METRIC_TYPE = 'diarization'
-SEGMENTATION_METRIC_TYPE = 'segmentation'
-
-
 def validate_helper_func(current_file, predictions=None, peak=None,
                          metric=None):
     uri = get_unique_identifier(current_file)
