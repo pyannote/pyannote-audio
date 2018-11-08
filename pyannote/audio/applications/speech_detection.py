@@ -222,6 +222,8 @@ class SpeechActivityDetection(Application):
                                 preprocessors=self.preprocessors_)
         files = getattr(protocol, subset)()
 
+        self.pool_ = mp.Pool(mp.cpu_count())
+
         if isinstance(self.feature_extraction_, Precomputed):
             return list(files)
 
@@ -229,8 +231,6 @@ class SpeechActivityDetection(Application):
         for current_file in tqdm(files, desc='Feature extraction'):
             current_file['features'] = self.feature_extraction_(current_file)
             validation_data.append(current_file)
-
-        self.pool_ = mp.Pool(mp.cpu_count())
 
         return validation_data
 
