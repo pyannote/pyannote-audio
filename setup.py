@@ -42,7 +42,7 @@ setup(
         'pyannote.generators >= 1.0',
         'pyannote.database >= 1.3.2',
         'scikit-learn >= 0.19.1',
-        'torch == 0.4',
+        'torch >= 0.4',
         'pandas >= 0.18.0',
         'audioread >= 2.1.5',
         'librosa >= 0.5.1',
