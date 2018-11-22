@@ -33,6 +33,7 @@ Usage:
   pyannote-speech-detection train [options] <experiment_dir> <database.task.protocol>
   pyannote-speech-detection validate [options] [--every=<epoch> --chronological] <train_dir> <database.task.protocol>
   pyannote-speech-detection apply [options] [--step=<step>] <model.pt> <database.task.protocol> <output_dir>
+  pyannote-speech-detection test [options] [--dump=<output_dir>] <train_dir> <params.yml> <database.task.protocol>
   pyannote-speech-detection -h | --help
   pyannote-speech-detection --version
 
@@ -68,6 +69,12 @@ Common options:
   <model.pt>                 Path to the pretrained model.
   --step=<step>              Sliding window step, in seconds.
                              Defaults to 25% of window duration.
+
+"test" mode:
+    <train_dir>           Path to the directory containing pre-trained
+                             models (i.e. the output of "train" mode).
+    <params.yml>          Path to best hyper-parameters found in validation.
+    --dump=<output_dir>   Directory where to store the detection output.
 
 Database configuration file <db.yml>:
     The database configuration provides details as to where actual files are
@@ -158,28 +165,34 @@ Configuration file:
 
     >>> raw_scores = precomputed(first_test_file)
     >>> speech_regions = binarizer.apply(raw_scores, dimension=1)
+
+"test" mode:
+    Use the "test" mode to run the best model found in validation on the test dataset,
+    computing a set o standard metrics. Optionally, dump the results to a file
 """
 
-import torch
+import multiprocessing as mp
+from functools import partial
+from pathlib import Path
+
 import numpy as np
 import scipy.optimize
-from tqdm import tqdm
-from pathlib import Path
+import torch
+import yaml
 from docopt import docopt
-from .base import Application
-from os.path import expanduser
-from pyannote.database import FileFinder
-from pyannote.database import get_protocol
-from pyannote.audio.signal import Binarize
-from pyannote.database import get_annotated
 from pyannote.core import SlidingWindowFeature
+from pyannote.database import FileFinder
+from pyannote.database import get_annotated
+from pyannote.database import get_protocol
 from pyannote.database import get_unique_identifier
-from pyannote.audio.features import Precomputed
 from pyannote.metrics.detection import DetectionErrorRate
+from tqdm import tqdm
+
+from pyannote.audio.features import Precomputed
 from pyannote.audio.labeling.extraction import SequenceLabeling
-from pyannote.audio.util import get_class_by_name
-from functools import partial
-import multiprocessing as mp
+from pyannote.audio.signal import Binarize
+from pyannote.audio.util import get_class_by_name, mkdir_p
+from .base import Application
 
 
 def validate_helper_func(current_file, predictions=None, binarizer=None,
@@ -190,6 +203,7 @@ def validate_helper_func(current_file, predictions=None, binarizer=None,
     hypothesis = binarizer.apply(
         predictions[uri], dimension=0).to_annotation()
     return metric(reference, hypothesis, uem=uem)
+
 
 class SpeechActivityDetection(Application):
 
@@ -221,8 +235,8 @@ class SpeechActivityDetection(Application):
         protocol = get_protocol(protocol_name, progress=False,
                                 preprocessors=self.preprocessors_)
         files = getattr(protocol, subset)()
-
         self.pool_ = mp.Pool(mp.cpu_count())
+        self.best_params = {}
 
         if isinstance(self.feature_extraction_, Precomputed):
             return list(files)
@@ -245,7 +259,7 @@ class SpeechActivityDetection(Application):
         step = .25 * duration
         sequence_labeling = SequenceLabeling(
             model=model, feature_extraction=self.feature_extraction_,
-            duration=duration, step=.25 * duration, batch_size=self.batch_size,
+            duration=duration, step=step, batch_size=self.batch_size,
             device=self.device)
 
         # extract predictions for all files.
@@ -281,11 +295,97 @@ class SpeechActivityDetection(Application):
         res = scipy.optimize.minimize_scalar(
             fun, bounds=(0., 1.), method='bounded', options={'maxiter': 10})
 
+        iteration_best_error = res.fun
+        iteration_best_threshold = res.x
+
+        if not 'error' in self.best_params or self.best_params['error'] > iteration_best_error:
+            self.best_params = {
+
+                'error': iteration_best_error,
+                'params': {'epoch': epoch,
+                           'sad_onset': float(iteration_best_threshold),
+                           'sad_offset': float(iteration_best_threshold)}}
+
+            self.dump_params(protocol_name, subset, self.best_params['params'])
+
         return {
             'speech_activity_detection/error': {'minimize': True,
-                                                'value': res.fun},
+                                                'value': iteration_best_error},
             'speech_activity_detection/threshold': {'minimize': 'NA',
-                                                    'value': res.x}}
+                                                    'value': iteration_best_threshold}}
+
+    def test(self, params, protocol_name, output_dir=None):
+
+        epoch = params['epoch']
+        threshold = params['sad_onset']
+
+        # load model for current epoch
+        model = self.load_model(epoch).to(self.device)
+        model.eval()
+
+        protocol = get_protocol(protocol_name, progress=False,
+                                preprocessors=self.preprocessors_)
+        test_files = getattr(protocol, 'test')()
+
+        duration = self.task_.duration
+        step = .25 * duration
+        sequence_labeling = SequenceLabeling(
+            model=model, feature_extraction=self.feature_extraction_,
+            duration=duration, step=step, batch_size=self.batch_size,
+            device=self.device)
+
+        # extract predictions for all files.
+        predictions = {}
+        for current_file in test_files:
+            uri = get_unique_identifier(current_file)
+            scores = sequence_labeling(current_file)
+
+            if model.logsoftmax:
+                scores = SlidingWindowFeature(
+                    1. - np.exp(scores.data[:, 0]),
+                    scores.sliding_window)
+            else:
+                scores = SlidingWindowFeature(
+                    1. - scores.data[:, 0],
+                    scores.sliding_window)
+
+            predictions[uri] = scores
+
+        # apply threshold from parameters to obtain annotations
+        binarizer = Binarize(onset=threshold,
+                             offset=threshold,
+                             log_scale=False)
+
+        # dump results to file
+        if output_dir:
+
+            mkdir_p(output_dir)
+
+            path = Path(output_dir) / f'{protocol_name}.test.txt'
+
+            with open(path, mode='w') as fp:
+
+                for uri, prediction in predictions.items():
+
+                    hypothesis = binarizer.apply(
+                        prediction, dimension=0).to_annotation()
+
+
+                    for s, t, l in hypothesis.itertracks(yield_label=True):
+                        fp.write(f'{uri} {s.start:.3f} {s.end:.3f} V\n')
+
+        # compute metric
+        metric = DetectionErrorRate(parallel=True)
+        validate = partial(validate_helper_func,
+                           predictions=predictions,
+                           binarizer=binarizer,
+                           metric=metric)
+
+        test_files = getattr(protocol, 'test')()
+        self.pool_ = mp.Pool(mp.cpu_count())
+        _ = self.pool_.map(validate, test_files)
+
+        return abs(metric)
 
     def apply(self, protocol_name, output_dir, step=None, subset=None):
 
@@ -327,13 +427,11 @@ class SpeechActivityDetection(Application):
             files = getattr(protocol, subset)()
 
         for current_file in files:
-
             fX = sequence_labeling(current_file)
             precomputed.dump(current_file, fX)
 
 
 def main():
-
     arguments = docopt(__doc__, version='Speech activity detection')
 
     db_yml = Path(arguments['--database'])
@@ -424,3 +522,27 @@ def main():
         application.device = device
         application.batch_size = batch_size
         application.apply(protocol_name, output_dir, step=step, subset=subset)
+
+    if arguments['test']:
+
+        batch_size = int(arguments['--batch'])
+        output_dir = arguments['--dump']
+
+        train_dir = Path(arguments['<train_dir>'])
+        train_dir = train_dir.expanduser().resolve(strict=True)
+
+        # params
+        params_yml = Path(arguments['<params.yml>'])
+        params_yml = params_yml.expanduser().resolve(strict=True)
+
+        with open(params_yml, 'r') as f:
+            params = yaml.load(f)
+
+        application = SpeechActivityDetection.from_train_dir(
+            train_dir, db_yml=db_yml, training=False)
+        application.device = device
+        application.batch_size = batch_size
+
+        metric = application.test(params, protocol_name, output_dir=output_dir)
+
+        print(f'Test EER: {100*metric: .3f}%')
