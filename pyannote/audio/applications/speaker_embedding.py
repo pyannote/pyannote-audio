@@ -195,18 +195,18 @@ from scipy.cluster.hierarchy import fcluster
 from scipy.cluster.hierarchy import linkage
 from scipy.optimize import minimize_scalar
 
-from pyannote.audio.util import get_class_by_name
+from pyannote.core.utils.helper import get_class_by_name
 
-from pyannote.audio.embedding.utils import pdist
-from pyannote.audio.embedding.utils import cdist
+from pyannote.core.utils.distance import pdist
+from pyannote.core.utils.distance import cdist
 from pyannote.audio.features.precomputed import Precomputed
 
 from pyannote.metrics.binary_classification import det_curve
 from pyannote.metrics.diarization import DiarizationPurityCoverageFMeasure
 
 from pyannote.audio.embedding.extraction import SequenceEmbedding
-from pyannote.audio.generators.speaker import SpeechSegmentGenerator
-from pyannote.audio.generators.speaker import SpeechTurnSubSegmentGenerator
+from pyannote.audio.embedding.generators import SpeechSegmentGenerator
+from pyannote.audio.embedding.generators import SpeechTurnSubSegmentGenerator
 
 
 class SpeakerEmbedding(Application):
@@ -379,8 +379,9 @@ class SpeakerEmbedding(Application):
         _, _, _, eer = det_curve(np.array(y_true), np.array(y_pred),
                                  distances=True)
 
-        return {'speaker_verification/equal_error_rate': {'minimize': True,
-                                                          'value': eer}}
+        return {'metric': 'equal_error_rate',
+                'minimize': True,
+                'value': eer}
 
 
     def _validate_epoch_diarization(self, epoch, protocol_name,
@@ -402,8 +403,6 @@ class SpeakerEmbedding(Application):
         -------
         metrics : dict
         """
-
-        target_purity = self.purity
 
         # load current model
         model = self.load_model(epoch).to(self.device)
@@ -505,7 +504,7 @@ class SpeakerEmbedding(Application):
             current_threshold = .5 * (lower_threshold + upper_threshold)
             purity, coverage = fun(current_threshold)
 
-            if purity < target_purity:
+            if purity < self.purity:
                 upper_threshold = current_threshold
             else:
                 lower_threshold = current_threshold
@@ -513,14 +512,10 @@ class SpeakerEmbedding(Application):
                     best_coverage = coverage
                     best_threshold = current_threshold
 
-        task = 'speaker_diarization'
-        metric_name = f'{task}/coverage@{target_purity:.2f}purity'
+        return {'metric': f'coverage@{self.purity:.2f}purity',
+                'minimize': False,
+                'value': best_coverage}
 
-        metrics = {
-            metric_name: {'minimize': False, 'value': best_coverage},
-            f'{task}/threshold': {'minimize': 'NA', 'value': best_threshold}}
-
-        return metrics
 
     def apply(self, protocol_name, output_dir, step=None, subset=None):
 

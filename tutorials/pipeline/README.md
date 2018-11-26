@@ -20,7 +20,7 @@
 > OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 > SOFTWARE.
 >
-> AUTHOR  
+> AUTHOR
 > Hervé Bredin - http://herve.niderb.fr
 
 # Speaker diarization pipeline with `pyannote.audio`
@@ -61,15 +61,12 @@ $ cat tutorials/pipeline/config.yml
 ```
 ```yaml
 pipeline:
-   name: Yin2018
+   name: pyannote.audio.pipeline.speaker_diarization.Yin2018
    params:
-      sad: tutorials/pipeline/sad
-      scd: tutorials/pipeline/scd
-      emb: tutorials/pipeline/emb
+      sad_scores: tutorials/pipeline/sad
+      scd_scores: tutorials/pipeline/scd
+      embedding: tutorials/pipeline/emb
       metric: angular
-
-sampler:
-   name: CMAES
 ```
 
 This configuration file assumes that you have already been through the other tutorials and applied

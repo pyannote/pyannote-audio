@@ -81,7 +81,7 @@ from pyannote.database import FileFinder
 from pyannote.database import get_unique_identifier
 from pyannote.database import get_protocol
 
-from pyannote.audio.util import get_class_by_name
+from pyannote.core.utils.helper import get_class_by_name
 
 from pyannote.audio.features import Precomputed
 from pyannote.audio.features.utils import get_audio_duration

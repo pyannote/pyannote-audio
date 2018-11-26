@@ -182,42 +182,41 @@ from pyannote.audio.labeling.extraction import SequenceLabeling
 from pyannote.audio.signal import Peak
 from .speech_detection import SpeechActivityDetection
 
-def validate_helper_func(current_file, predictions=None, peak=None,
-                         metric=None):
-    uri = get_unique_identifier(current_file)
+from pyannote.audio.pipeline.speaker_change_detection \
+    import SpeakerChangeDetection as SpeakerChangeDetectionPipeline
+
+def validate_helper_func(current_file, pipeline=None, metric=None):
     reference = current_file['annotation']
     uem = get_annotated(current_file)
-    hypothesis = peak.apply(predictions[uri], dimension=1)
-    hypothesis = hypothesis.to_annotation()
+    hypothesis = pipeline(current_file)
     return metric(reference, hypothesis, uem=uem)
-
 
 class SpeakerChangeDetection(SpeechActivityDetection):
 
     def validate_epoch(self, epoch, protocol_name, subset='development',
                        validation_data=None):
 
-        target_purity = self.purity
-
         # load model for current epoch
         model = self.load_model(epoch).to(self.device)
         model.eval()
 
+        # compute (and store) SCD scores
         duration = self.task_.duration
         step = .25 * duration
         sequence_labeling = SequenceLabeling(
             model=model, feature_extraction=self.feature_extraction_,
             duration=duration, step=step, batch_size=self.batch_size,
             device=self.device)
-
-        # extract predictions for all files.
-        predictions = {}
         for current_file in validation_data:
             uri = get_unique_identifier(current_file)
-            predictions[uri] = sequence_labeling(current_file)
+            current_file['scd_scores'] = sequence_labeling(current_file)
+
+        # pipeline
+        pipeline = SpeakerChangeDetectionPipeline(purity=self.purity)
+        pipeline.freeze({'min_duration': 0.})
 
         # dichotomic search to find alpha that maximizes coverage
-        # while having at least `target_purity`
+        # while having at least `self.purity`
 
         lower_alpha = 0.
         upper_alpha = 1.
@@ -227,8 +226,7 @@ class SpeakerChangeDetection(SpeechActivityDetection):
         for _ in range(10):
 
             current_alpha = .5 * (lower_alpha + upper_alpha)
-            peak = Peak(alpha=current_alpha, min_duration=0.0,
-                        log_scale=model.logsoftmax)
+            pipeline.with_params({'alpha': current_alpha})
 
             if self.diarization:
                 metric = DiarizationPurityCoverageFMeasure(parallel=True)
@@ -236,8 +234,7 @@ class SpeakerChangeDetection(SpeechActivityDetection):
                 metric = SegmentationPurityCoverageFMeasure(parallel=True)
 
             validate = partial(validate_helper_func,
-                               predictions=predictions,
-                               peak=peak,
+                               pipeline=pipeline,
                                metric=metric)
             _ = self.pool_.map(validate, validation_data)
 
@@ -246,7 +243,7 @@ class SpeakerChangeDetection(SpeechActivityDetection):
             # TODO: normalize coverage with what one could achieve if
             # we were to put all reference speech turns in its own cluster
 
-            if purity < target_purity:
+            if purity < self.purity:
                 upper_alpha = current_alpha
             else:
                 lower_alpha = current_alpha
@@ -254,11 +251,10 @@ class SpeakerChangeDetection(SpeechActivityDetection):
                     best_coverage = coverage
                     best_alpha = current_alpha
 
-        task = 'speaker_change_detection'
-        metric_name = f'{task}/coverage@{target_purity:.2f}purity'
-        return {
-            metric_name: {'minimize': False, 'value': best_coverage},
-            f'{task}/threshold': {'minimize': 'NA', 'value': best_alpha}}
+        return {'metric': f'coverage@{self.purity:.2f}purity',
+                'minimize': False,
+                'value': best_coverage,
+                'pipeline': pipeline.with_params({'alpha': best_alpha})}
 
 
 def main():

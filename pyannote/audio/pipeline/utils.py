@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2014-2016 CNRS
+# Copyright (c) 2017-2018 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -25,3 +25,36 @@
 
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
+
+
+from pyannote.core import Annotation
+
+
+def assert_string_labels(annotation: Annotation, name: str):
+    """Check that annotation only contains string labels
+
+    Parameters
+    ----------
+    annotation : `pyannote.core.Annotation`
+        Annotation.
+    name : `str`
+        Name of the annotation (used for user feedback in case of failure)
+    """
+    if any(not isinstance(label, str) for label in annotation.labels()):
+        msg = f'{name} must contain `str` labels only.'
+        raise ValueError(msg)
+
+
+def assert_int_labels(annotation: Annotation, name: str):
+    """Check that annotation only contains integer labels
+
+    Parameters
+    ----------
+    annotation : `pyannote.core.Annotation`
+        Annotation.
+    name : `str`
+        Name of the annotation (used for user feedback in case of failure)
+    """
+    if any(not isinstance(label, int) for label in annotation.labels()):
+        msg = f'{name} must contain `int` labels only.'
+        raise ValueError(msg)

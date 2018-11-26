@@ -30,7 +30,7 @@ import itertools
 import numpy as np
 import torch
 import torch.nn.functional as F
-from pyannote.audio.generators.speaker import SpeechTurnSubSegmentGenerator
+from pyannote.audio.embedding.generators import SpeechTurnSubSegmentGenerator
 from .triplet_loss import TripletLoss
 
 

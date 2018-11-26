@@ -30,9 +30,9 @@
 import numpy as np
 import scipy.signal
 from pyannote.core import Segment, Timeline
-from pyannote.core.util import pairwise
+from pyannote.core.utils.generators import pairwise
 from sklearn.mixture import GaussianMixture
-from .util import one_hot_decoding
+from pyannote.core.utils.numpy import one_hot_decoding
 
 
 class Peak(object):

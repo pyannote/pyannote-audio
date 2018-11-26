@@ -30,7 +30,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from pyannote.audio.generators.speaker import SpeechSegmentGenerator
+from pyannote.audio.embedding.generators import SpeechSegmentGenerator
 from pyannote.audio.train.trainer import Trainer
 
 
@@ -114,7 +114,7 @@ class Softmax(Trainer):
 
         Returns
         -------
-        generator : `pyannote.audio.generators.speaker.SpeechSegmentGenerator`
+        generator : `pyannote.audio.embedding.generators.SpeechSegmentGenerator`
         """
         return SpeechSegmentGenerator(
             feature_extraction, label_min_duration=self.label_min_duration,

@@ -27,24 +27,24 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 import time
-import warnings
-from functools import partial
-from glob import glob
-from os.path import dirname, basename
-
-import numpy as np
-import tensorboardX
 import yaml
+from pathlib import Path
+from os.path import dirname, basename
+import numpy as np
+from tqdm import tqdm
+from glob import glob
 from pyannote.database import FileFinder
 from pyannote.database import get_protocol
-from sortedcontainers import SortedDict
-from tqdm import tqdm
-
-from pyannote.audio.util import get_class_by_name
 from pyannote.audio.util import mkdir_p
+from sortedcontainers import SortedDict
+import tensorboardX
+from functools import partial
+from pyannote.core.utils.helper import get_class_by_name
+import warnings
 
 
 class Application(object):
+
     CONFIG_YML = '{experiment_dir}/config.yml'
 
     TRAIN_DIR = '{experiment_dir}/train/{protocol}.{subset}'
@@ -135,7 +135,7 @@ class Application(object):
             warnings.warn(e.args[0])
 
         # data augmentation (only when training the model)
-        if training and 'data_augmentation' in self.config_:
+        if training and 'data_augmentation' in self.config_ :
             DataAugmentation = get_class_by_name(
                 self.config_['data_augmentation']['name'],
                 default_module_name='pyannote.audio.augmentation')
@@ -163,6 +163,7 @@ class Application(object):
             self.feature_extraction_ = FeatureExtraction(
                 **self.config_['feature_extraction'].get('params', {}),
                 augmentation=augmentation, normalization=normalization)
+
 
     def train(self, protocol_name, subset='train', restart=None, epochs=1000):
 
@@ -233,7 +234,7 @@ class Application(object):
             first_epoch = int(basename(weights[0])[:-3])
 
         return (number_of_epochs, first_epoch) if return_first \
-            else number_of_epochs
+                                               else number_of_epochs
 
     def validate_init(self, protocol_name, subset='development'):
         pass
@@ -245,72 +246,72 @@ class Application(object):
     def validate(self, protocol_name, subset='development',
                  every=1, start=0, end=None, in_order=False, **kwargs):
 
-        minimize, values, best_epoch, best_value = {}, {}, {}, {}
+        validate_dir = Path(self.VALIDATE_DIR.format(
+            train_dir=self.train_dir_,
+            protocol=protocol_name,
+            subset=subset))
+        params_yml = validate_dir / 'params.yml'
+        validate_dir.mkdir(parents=True, exist_ok=False)
 
-        validate_dir = self.VALIDATE_DIR.format(train_dir=self.train_dir_,
-                                                protocol=protocol_name,
-                                                subset=subset)
-        mkdir_p(validate_dir)
         writer = tensorboardX.SummaryWriter(log_dir=validate_dir)
 
         validation_data = self.validate_init(protocol_name, subset=subset,
                                              **kwargs)
 
-        progress_bar = tqdm(unit='epoch')
+        progress_bar = tqdm(unit='iteration')
 
         for i, epoch in enumerate(
-                self.validate_iter(start=start, end=end, step=every,
-                                   in_order=in_order)):
+            self.validate_iter(start=start, end=end, step=every,
+                               in_order=in_order)):
 
-            # {'metric1': {'minimize': True, 'value': 0.2},
-            #  'metric2': {'minimize': False, 'value': 0.9}}
-            metrics = self.validate_epoch(epoch, protocol_name, subset=subset,
-                                          validation_data=validation_data)
+            # {'metric': 'detection_error_rate',
+            #  'minimize': True,
+            #  'value': 0.9,
+            #  'pipeline': ...}
+            details = self.validate_epoch(
+                epoch, protocol_name, subset=subset,
+                validation_data=validation_data)
 
+            # initialize
             if i == 0:
-                for metric, details in metrics.items():
-                    minimize[metric] = details.get('minimize', True)
-                    values[metric] = SortedDict()
+                # what is the name of the metric?
+                metric = details['metric']
+                # should the metric be minimized?
+                minimize = details['minimize']
+                # epoch -> value dictionary
+                values = SortedDict()
 
-            description = 'Epoch #{epoch}'.format(epoch=epoch)
+            # metric value for current epoch
+            values[epoch] = details['value']
 
-            for metric, details in sorted(metrics.items()):
-                value = details['value']
-                values[metric][epoch] = value
+            # send value to tensorboard
+            writer.add_scalar(
+                f'validate/{protocol_name}.{subset}/{metric}',
+                values[epoch], global_step=epoch)
 
-                writer.add_scalar(
-                    f'validate/{protocol_name}.{subset}/{metric}',
-                    values[metric][epoch], global_step=epoch)
+            # keep track of best value so far
+            if minimize:
+                best_epoch = values.iloc[np.argmin(values.values())]
+                best_value = values[best_epoch]
 
-                # keep track of best epoch so far
-                if minimize[metric] == 'NA':
-                    best_value = 'NA'
-                elif minimize[metric]:
-                    best_epoch = \
-                        values[metric].iloc[np.argmin(values[metric].values())]
-                    best_value = values[metric][best_epoch]
-                else:
-                    best_epoch = \
-                        values[metric].iloc[np.argmax(values[metric].values())]
-                    best_value = values[metric][best_epoch]
+            else:
+                best_epoch = values.iloc[np.argmax(values.values())]
+                best_value = values[best_epoch]
 
-                if best_value == 'NA':
-                    continue
+            # if current epoch leads to the best metric so far
+            # store both epoch number and best pipeline parameter to disk
+            if best_epoch == epoch:
+                best = {'epoch': epoch}
+                if 'pipeline' in details:
+                    best['params'] = details['pipeline'].params
+                with open(params_yml, mode='w') as fp:
+                    fp.write(yaml.dump(best, default_flow_style=False))
 
-                if abs(best_value) < 1:
-                    addon = (' : {metric} = {value:.3f}% '
-                             '[{best_value:.3f}%, #{best_epoch}]')
-                    description += addon.format(metric=metric, value=100 * value,
-                                                best_value=100 * best_value,
-                                                best_epoch=best_epoch)
-                else:
-                    addon = (' : {metric} = {value:.3f} '
-                             '[{best_value:.3f}, #{best_epoch}]')
-                    description += addon.format(metric=metric, value=value,
-                                                best_value=best_value,
-                                                best_epoch=best_epoch)
-
-            progress_bar.set_description(description)
+            # progress bar
+            desc = (f'{metric} | '
+                    f'Epoch #{best_epoch} = {100 * best_value:g}% (best) | '
+                    f'Epoch #{epoch} = {100 * details["value"]:g}%')
+            progress_bar.set_description(desc=desc)
             progress_bar.update(1)
 
     def validate_iter(self, start=None, end=None, step=1, sleep=10,
@@ -390,6 +391,7 @@ class Application(object):
                 continue
 
             if next_epoch_to_validate not in validated_epochs:
+
                 # yield next epoch to process
                 yield next_epoch_to_validate
 
@@ -399,25 +401,3 @@ class Application(object):
             # increment 'in_order' processing
             if next_epoch_to_validate_in_order == next_epoch_to_validate:
                 next_epoch_to_validate_in_order += step
-
-    def test(self, params, protocol_name, output_dir=None):
-        pass
-
-    def dump_params(self, protocol_name, subset, params):
-        """
-        Dump best parameter set to a YAML file
-        :param protocol_name Name of the protocol
-        :param subset Data subset
-        :param params: Object with the parameters which yielded best results
-
-        :return:
-        """
-        val_dir = self.VALIDATE_DIR.format(train_dir=self.train_dir_,
-                                           experiment_dir=self.experiment_dir,
-                                           protocol=protocol_name,
-                                           subset=subset)
-
-        params_yml = f'{val_dir}/params.yml'
-        content = yaml.dump(params, default_flow_style=False)
-        with open(params_yml, mode='w') as fp:
-            fp.write(content)

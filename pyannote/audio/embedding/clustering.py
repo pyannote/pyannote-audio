@@ -32,7 +32,10 @@ import numpy as np
 import networkx as nx
 from sortedcontainers import SortedSet
 from sortedcollections import ValueSortedDict
-from pyannote.audio.embedding.utils import pdist, cdist, l2_normalize
+
+from pyannote.core.utils.distance import pdist
+from pyannote.core.utils.distance import cdist
+from pyannote.core.utils.distance import l2_normalize
 from scipy.spatial.distance import squareform
 
 

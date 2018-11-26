@@ -27,14 +27,11 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 
-import warnings
 import numpy as np
 from pyannote.core import Segment
-from pyannote.audio.features import Precomputed
 from pyannote.generators.fragment import random_segment
 from pyannote.generators.fragment import random_subsegment
 from pyannote.generators.batch import batchify, EndOfBatch
-from pyannote.database import get_annotated
 from pyannote.database.protocol import SpeakerDiarizationProtocol
 
 

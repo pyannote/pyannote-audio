@@ -36,7 +36,7 @@ from .base import LabelingTask
 from .base import LabelingTaskGenerator
 from pyannote.database.protocol import SpeakerDiarizationProtocol
 from pyannote.audio.labeling.models import StackedRNN
-from pyannote.audio.util import one_hot_decoding
+from pyannote.core.utils.numpy import one_hot_decoding
 from pyannote.database import get_unique_identifier
 from pyannote.database import get_annotated
 from pyannote.audio.labeling.extraction import SequenceLabeling

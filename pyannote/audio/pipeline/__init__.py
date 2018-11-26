@@ -27,4 +27,5 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 from .speech_activity_detection import SpeechActivityDetection
-from .speaker_diarization import Yin2018
+from .speech_turn_segmentation import SpeechTurnSegmentation
+from .speaker_diarization import SpeakerDiarization

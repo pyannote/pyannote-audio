@@ -29,11 +29,12 @@
 import numpy as np
 import torch
 import torch.nn.functional as F
-from pyannote.audio.generators.speaker import SpeechSegmentGenerator
-from pyannote.audio.generators.speaker import SessionWiseSpeechSegmentGenerator
-from pyannote.audio.generators.speaker import UnsupervisedSpeechSegmentGenerator
+from pyannote.audio.embedding.generators import SpeechSegmentGenerator
+from pyannote.audio.embedding.generators import SessionWiseSpeechSegmentGenerator
+from pyannote.audio.embedding.generators import UnsupervisedSpeechSegmentGenerator
 
-from pyannote.audio.embedding.utils import to_condensed, pdist
+from pyannote.core.utils.distance import to_condensed
+from pyannote.core.utils.distance import pdist
 from scipy.spatial.distance import squareform
 from pyannote.metrics.binary_classification import det_curve
 from collections import deque
@@ -391,7 +392,7 @@ class TripletLoss(Trainer):
 
         Returns
         -------
-        generator : `pyannote.audio.generators.speaker.SpeechSegmentGenerator`
+        generator : `pyannote.audio.embedding.generators.SpeechSegmentGenerator`
 
         """
 

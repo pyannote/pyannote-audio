@@ -33,7 +33,7 @@ from tqdm import tqdm
 from pyannote.metrics.binary_classification import det_curve
 from pyannote.database import get_unique_identifier
 from pyannote.database import get_annotated
-from pyannote.audio.util import one_hot_encoding
+from pyannote.core.utils.numpy import one_hot_encoding
 from pyannote.audio.features import Precomputed
 from pyannote.core import Segment
 from pyannote.core import Timeline
@@ -150,9 +150,10 @@ class LabelingTaskGenerator(object):
 
         for current_file in getattr(protocol, subset)():
 
-            y, _ = one_hot_encoding(
-                current_file, self.feature_extraction.sliding_window,
-                labels=self.labels_, mode='center')
+            y, _ = one_hot_encoding(current_file['annotation'],
+                                    get_annotated(current_file),
+                                    self.feature_extraction.sliding_window,
+                                    labels=self.labels_, mode='center')
 
             uri = get_unique_identifier(current_file)
 

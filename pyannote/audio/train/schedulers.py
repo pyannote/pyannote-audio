@@ -121,18 +121,21 @@ class DavisKingScheduler(object):
 
         super(DavisKingScheduler, self).__init__()
         self.batches_per_epoch = batches_per_epoch
-
         self.optimizer = optimizer
         self.max_lr = max_lr
 
-        # initialize optimizer learning rate
-        if max_lr is None:
-            lrs = [g['lr'] for g in self.optimizer.param_groups]
+        # learning rate upper bound
+        if self.max_lr is None:
+            self.max_lrs_ = [g['lr'] for g in self.optimizer.param_groups]
+
         elif isinstance(max_lr, (list, tuple)):
-            lrs = max_lr
+            self.max_lrs_ = [lr for lr in self.max_lr]
+
         else:
-            lrs = [max_lr] * len(self.optimizer.param_groups)
-        for param_group, lr in zip(self.optimizer.param_groups, lrs):
+            self.max_lrs_ = [self.max_lr] * len(self.optimizer.param_groups)
+
+        # initialize optimizer learning rate
+        for param_group, lr in zip(self.optimizer.param_groups, self.max_lrs_):
             param_group['lr'] = lr
 
         self.factor = factor

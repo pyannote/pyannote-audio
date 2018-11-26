@@ -32,7 +32,7 @@ import torch
 from torch.autograd import Variable, Function
 import torch.nn.functional as F
 import torch.nn as nn
-from pyannote.audio.generators.speaker import SpeechSegmentGenerator
+from pyannote.audio.embedding.generators import SpeechSegmentGenerator
 from pyannote.audio.checkpoint import Checkpoint
 from torch.optim import Adam
 from .triplet_loss import TripletLoss
