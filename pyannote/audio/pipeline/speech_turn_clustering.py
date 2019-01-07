@@ -132,7 +132,7 @@ class SpeechTurnClustering(Pipeline):
         # map each skipped label to its own cluster
         # (between -1 and -N_SKIPPED_LABELS)
         for l, label in enumerate(skipped_labels):
-            mapping[skipped_labels] = -(l + 1)
+            mapping[label] = -(l + 1)
 
         # do the actual mapping
         return speech_turns.rename_labels(mapping=mapping)
