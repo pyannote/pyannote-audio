@@ -9,9 +9,10 @@ Neural building blocks for speaker diarization:
 ## Installation
 
 ```bash
-$ conda create --name pyannote python=3.6 anaconda
+$ conda create --name pyannote python=3.6
 $ source activate pyannote
 $ pip install pyannote.audio
+$ conda install -c conda-forge yaafe
 ```
 
 ## Citation
