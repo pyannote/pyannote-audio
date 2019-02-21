@@ -261,7 +261,6 @@ class RawAudio(object):
         --------
         `pyannote.core.SlidingWindowFeature.crop`
         """
-
         if self.sample_rate is None:
             msg = ('`RawAudio` needs to be instantiated with an actual '
                    '`sample_rate` if one wants to use the `crop` method.')
@@ -271,18 +270,32 @@ class RawAudio(object):
             y = current_file['waveform']
             sample_rate = self.sample_rate
 
+        # if NIST SRE sphere files
+        elif current_file['audio'][-4:] == '.sph':
+            from sphfile import SPHFile
+            sph = SPHFile(current_file['audio'])
+            y = sph.content
+            sample_rate = sph.format['sample_rate']
+            if sph.format['sample_coding'] == 'ulaw':  # if non-linear coding
+                import audioop
+                # convert from u-law to linear coding
+                y = audioop.ulaw2lin(y, sph.format['sample_n_bytes'])
         else:
 
             warnings.filterwarnings("ignore", category=WavFileWarning)
 
             # read data as memory mapped
-            sample_rate, y = scipy.io.wavfile.read(current_file['audio'],
-                                                   mmap=True)
-
-            if sample_rate != self.sample_rate:
-                msg = (f'Mismatch between expected ({self.sample_rate:d}) and '
-                       f'actual ({sample_rate} sample rates)')
+            try:
+                sample_rate, y = scipy.io.wavfile.read(current_file['audio'],
+                                                       mmap=True)
+            except OSError as e:
+                msg = ('ERROR: running out of memory on file {0} with segment {1}. '.format(current_file, segment) + str(e) )
                 raise ValueError(msg)
+
+        if sample_rate != self.sample_rate:
+            msg = (f'Mismatch between expected ({self.sample_rate:d}) and '
+                   f'actual ({sample_rate} sample rates)')
+            raise ValueError(msg)
 
         # extract segment waveform
         (start, end), = self.sliding_window_.crop(
