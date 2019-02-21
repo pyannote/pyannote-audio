@@ -85,7 +85,7 @@ from pyannote.core.utils.helper import get_class_by_name
 
 from pyannote.audio.features import Precomputed
 from pyannote.audio.features.utils import get_audio_duration
-from pyannote.audio.features.utils import PyannoteFeatureExtractionError
+from pyannote.audio.features.precomputed import PyannoteFeatureExtractionError
 
 from multiprocessing import cpu_count, Pool
 

@@ -30,8 +30,8 @@ from typing import Optional
 from pathlib import Path
 import numpy as np
 
-import chocolate
 from pyannote.pipeline import Pipeline
+from pyannote.pipeline.parameter import Uniform
 
 from pyannote.core import Annotation
 from pyannote.core import SlidingWindowFeature
@@ -68,17 +68,17 @@ class SpeakerChangeDetection(Pipeline):
 
         self.scores = scores
         if self.scores is not None:
-            self.precomputed_ = Precomputed(self.scores)
+            self._precomputed = Precomputed(self.scores)
         self.purity = purity
 
         # hyper-parameters
-        self.alpha = chocolate.uniform(0., 1.)
-        self.min_duration = chocolate.uniform(0., 10.)
+        self.alpha = Uniform(0., 1.)
+        self.min_duration = Uniform(0., 10.)
 
-    def instantiate(self):
-        """Instantiate pipeline with current set of parameters"""
+    def initialize(self):
+        """Initialize pipeline with current set of parameters"""
 
-        self.peak_ = Peak(alpha=self.alpha,
+        self._peak = Peak(alpha=self.alpha,
                           min_duration=self.min_duration)
 
     def __call__(self, current_file: dict) -> Annotation:
@@ -99,7 +99,7 @@ class SpeakerChangeDetection(Pipeline):
         # precomputed SCD scores
         scd_scores = current_file.get('scd_scores')
         if scd_scores is None:
-            scd_scores = self.precomputed_(current_file)
+            scd_scores = self._precomputed(current_file)
 
         # if this check has not been done yet, do it once and for all
         if not hasattr(self, "log_scale_"):
@@ -120,7 +120,7 @@ class SpeakerChangeDetection(Pipeline):
             scd_scores.sliding_window)
 
         # peak detection
-        change = self.peak_.apply(change_prob)
+        change = self._peak.apply(change_prob)
         change.uri = get_unique_identifier(current_file)
 
         return change.to_annotation(generator='string', modality='audio')

@@ -301,7 +301,8 @@ class Application(object):
             if best_epoch == epoch:
                 best = {'epoch': epoch}
                 if 'pipeline' in details:
-                    best['params'] = details['pipeline'].params
+                    pipeline = details['pipeline']
+                    best['params'] = pipeline.parameters(instantiated=True)
                 with open(params_yml, mode='w') as fp:
                     fp.write(yaml.dump(best, default_flow_style=False))
 

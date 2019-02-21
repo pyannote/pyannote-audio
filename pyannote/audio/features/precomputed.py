@@ -38,7 +38,10 @@ from struct import unpack
 from pyannote.core import SlidingWindow, SlidingWindowFeature
 from pyannote.database.util import get_unique_identifier
 from pyannote.audio.util import mkdir_p
-from pyannote.audio.features.utils import PyannoteFeatureExtractionError
+
+
+class PyannoteFeatureExtractionError(Exception):
+    pass
 
 
 class Precomputed(object):

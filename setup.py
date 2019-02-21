@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2016-2018 CNRS
+# Copyright (c) 2016-2019 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -31,37 +31,18 @@ import versioneer
 
 from setuptools import setup, find_packages
 
+with open('README.md') as f:
+    long_description = f.read()
+
+with open('requirements.txt') as f:
+    requirements = f.read().splitlines()
+
 setup(
 
-    # package
+    name='pyannote.audio',
     namespace_packages=['pyannote'],
     packages=find_packages(),
-    install_requires=[
-        'pyannote.core >= 2.0.3',
-        'pyannote.metrics >= 1.8',
-        'pyannote.generators >= 2.0',
-        'pyannote.database >= 1.5.5',
-        'pyannote.pipeline >= 0.2.1',
-        'scikit-learn >= 0.19.1',
-        'torch >= 0.4.1',
-        'pandas >= 0.18.0',
-        'audioread >= 2.1.5',
-        'librosa >= 0.6',
-        'python_speech_features == 0.6',
-        'sphfile == 1.0.0',
-        'pyYAML >= 3.12',
-        'cachetools >= 2.0.0',
-        'tqdm >= 4.11.2',
-        'sortedcontainers >= 2.0.4',
-        'sortedcollections >= 1.0.1',
-        'tensorboardX >= 1.2',
-        'chocolate >= 0.6',
-        'filelock >= 3.0.4',
-        'dlib >= 19.13.1',
-    ],
-    dependency_links=[
-        'git+https://github.com/AIworx-Labs/chocolate.git@master#egg=chocolate-0.6'
-    ],
+    install_requires=requirements,
     entry_points = {
         'console_scripts': [
             'pyannote-speech-feature=pyannote.audio.applications.feature_extraction:main',
@@ -71,15 +52,18 @@ setup(
             'pyannote-segmentation=pyannote.audio.applications.segmentation:main',
             'pyannote-speaker-embedding=pyannote.audio.applications.speaker_embedding:main']
     },
-    # versioneer
+
     version=versioneer.get_version(),
     cmdclass=versioneer.get_cmdclass(),
-    # PyPI
-    name='pyannote.audio',
+
     description='Neural building blocks for speaker diarization',
+    long_description=long_description,
+    long_description_content_type='text/markdown',
+
     author='Hervé Bredin',
     author_email='bredin@limsi.fr',
-    url='http://herve.niderb.fr/',
+    url='https://github.com/pyannote/pyannote-audio',
+
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Science/Research",

@@ -1,0 +1,4 @@
+epoch: 870
+params:
+  alpha: 0.17578125
+  min_duration: 0.0

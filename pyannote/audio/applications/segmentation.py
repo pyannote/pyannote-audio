@@ -321,13 +321,14 @@ class Segmentation(Application):
 
         # pipeline
         pipeline = SpeechActivityDetectionPipeline()
-        pipeline.freeze({'min_duration_on': 0.,
-                         'min_duration_off': 0.,
-                         'pad_onset': 0.,
-                         'pad_offset': 0.})
 
         def fun(threshold):
-            pipeline.with_params({'onset': threshold, 'offset': threshold})
+            pipeline.instantiate({'onset': threshold,
+                                  'offset': threshold,
+                                  'min_duration_on': 0.,
+                                  'min_duration_off': 0.,
+                                  'pad_onset': 0.,
+                                  'pad_offset': 0.})
             metric = DetectionErrorRate(parallel=True)
             validate = partial(validate_helper_func,
                                pipeline=pipeline,
@@ -343,8 +344,12 @@ class Segmentation(Application):
         return {'metric': 'detection_error_rate',
                 'minimize': True,
                 'value': res.fun,
-                'pipeline': pipeline.with_params({'onset': threshold,
-                                                  'offset': threshold})}
+                'pipeline': pipeline.instantiate({'onset': threshold,
+                                                  'offset': threshold,
+                                                  'min_duration_on': 0.,
+                                                  'min_duration_off': 0.,
+                                                  'pad_onset': 0.,
+                                                  'pad_offset': 0.})}
 
     def validate_epoch_overlap(self, epoch, protocol_name, subset='development',
                               validation_data=None):
@@ -371,13 +376,14 @@ class Segmentation(Application):
 
         # pipeline
         pipeline = SpeechActivityDetectionPipeline()
-        pipeline.freeze({'min_duration_on': 0.,
-                         'min_duration_off': 0.,
-                         'pad_onset': 0.,
-                         'pad_offset': 0.})
 
         def fun(threshold):
-            pipeline.with_params({'onset': threshold, 'offset': threshold})
+            pipeline.instantiate({'onset': threshold,
+                                  'offset': threshold,
+                                  'min_duration_on': 0.,
+                                  'min_duration_off': 0.,
+                                  'pad_onset': 0.,
+                                  'pad_offset': 0.})
             metric = DetectionErrorRate(parallel=True)
             validate = partial(validate_helper_func,
                                pipeline=pipeline,
@@ -394,8 +400,12 @@ class Segmentation(Application):
         return {'metric': 'detection_error_rate',
                 'minimize': True,
                 'value': res.fun,
-                'pipeline': pipeline.with_params({'onset': threshold,
-                                                  'offset': threshold})}
+                'pipeline': pipeline.instantiate({'onset': threshold,
+                                                  'offset': threshold,
+                                                  'min_duration_on': 0.,
+                                                  'min_duration_off': 0.,
+                                                  'pad_onset': 0.,
+                                                  'pad_offset': 0.})}
 
     def validate_epoch_change(self, epoch, protocol_name, subset='development',
                               validation_data=None):
@@ -422,7 +432,6 @@ class Segmentation(Application):
 
         # pipeline
         pipeline = SpeakerChangeDetectionPipeline(purity=self.purity)
-        pipeline.freeze({'min_duration': 0.})
 
         # dichotomic search to find alpha that maximizes coverage
         # while having at least `self.purity`
@@ -435,7 +444,8 @@ class Segmentation(Application):
         for _ in range(10):
 
             current_alpha = .5 * (lower_alpha + upper_alpha)
-            pipeline.with_params({'alpha': current_alpha})
+            pipeline.instantiate({'alpha': current_alpha,
+                                  'min_duration': 0.})
 
             metric = SegmentationPurityCoverageFMeasure(parallel=True)
 
@@ -460,7 +470,8 @@ class Segmentation(Application):
         return {'metric': f'coverage@{self.purity:.2f}purity',
                 'minimize': False,
                 'value': best_coverage,
-                'pipeline': pipeline.with_params({'alpha': best_alpha})}
+                'pipeline': pipeline.instantiate({'alpha': best_alpha,
+                                                  'min_duration': 0.})}
 
     def apply(self, protocol_name, output_dir, step=None, subset=None):
 

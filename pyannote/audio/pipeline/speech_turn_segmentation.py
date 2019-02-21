@@ -67,22 +67,29 @@ class SpeechTurnSegmentation(Pipeline):
         Path to precomputed speech activity detection scores.
     scd_scores : `Path`
         Path to precomputed speaker change detection scores
+    non_speech : `bool`
+        Mark non-speech regions as speaker change. Defaults to True.
     purity : `float`, optional
         Target purity. Defaults to 0.95
     """
 
     def __init__(self, sad_scores: Optional[Path] = None,
                        scd_scores: Optional[Path] = None,
+                       non_speech: Optional[bool] = True,
                        purity: Optional[float] = 0.95):
         super().__init__()
 
-        self.purity = purity
-
         self.sad_scores = sad_scores
-        self.speech_activity_detection = SpeechActivityDetection(scores=self.sad_scores)
+        self.speech_activity_detection = SpeechActivityDetection(
+            scores=self.sad_scores)
 
         self.scd_scores = scd_scores
-        self.speaker_change_detection = SpeakerChangeDetection(scores=self.scd_scores)
+        self.speaker_change_detection = SpeakerChangeDetection(
+            scores=self.scd_scores)
+
+        self.non_speech = non_speech
+        self.purity = purity
+
 
     def __call__(self, current_file: dict) -> Annotation:
         """Apply speech turn segmentation
@@ -98,9 +105,20 @@ class SpeechTurnSegmentation(Pipeline):
             Hypothesized speech turns
         """
 
+        # speech regions
         sad = self.speech_activity_detection(current_file).get_timeline()
+
         scd = self.speaker_change_detection(current_file)
         speech_turns = scd.crop(sad, mode='intersection')
+
+        # at this point, consecutive speech turns separated by non-speech
+        # might be assigned the same label (because scd might have missed
+        # speech/non-speech boundaries)
+
+        # assign one unique label per speech turn
+        if self.non_speech:
+            speech_turns = speech_turns.relabel_tracks(generator='string')
+
         speech_turns.modality = 'speaker'
         return speech_turns
 

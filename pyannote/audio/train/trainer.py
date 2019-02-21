@@ -26,6 +26,7 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
+import sys
 import time
 import torch
 import tempfile
@@ -472,6 +473,13 @@ class Trainer:
         if log_dir is None:
             log_dir = tempfile.mkdtemp()
 
+        # initialize loggers
+        try:
+            checkpoint = Checkpoint(log_dir, restart=restart > 0)
+        except FileExistsError as e:
+            sys.exit(e)
+        writer = SummaryWriter(log_dir=log_dir)
+
         # initialize batch generator
         batch_generator = self.get_batch_generator(feature_extraction)
         batches = batch_generator(protocol, subset=subset)
@@ -480,10 +488,6 @@ class Trainer:
         # get information about batches
         batches_per_epoch = getattr(batch_generator, 'batches_per_epoch', None)
         labels = getattr(batch_generator, 'labels', None)
-
-        # initialize loggers
-        checkpoint = Checkpoint(log_dir, restart=restart > 0)
-        writer = SummaryWriter(log_dir=log_dir)
 
         # send model to device
         device = torch.device('cpu') if device is None else device

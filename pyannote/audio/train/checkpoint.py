@@ -34,12 +34,13 @@ from pyannote.audio.util import mkdir_p
 
 
 class Checkpoint(object):
-    """
+    """Model checkpoints
 
     Parameters
     ----------
-    log_dir : str
-    restart : boolean, optional
+    log_dir : `str`
+        Path to logging directory.
+    restart : `bool`, optional
         Indicates that this training is a restart, not a cold start (default).
     """
 
@@ -56,14 +57,23 @@ class Checkpoint(object):
         # create log_dir directory
         mkdir_p(self.log_dir)
 
-        # this will fail if the directory already exists
-        # and this is OK  because 'weights' directory
-        # usually contains the output of very long computations
-        # and you do not want to erase them by mistake :/
         self.restart = restart
         if not self.restart:
             weights_dir = self.WEIGHTS_DIR.format(log_dir=self.log_dir)
-            os.makedirs(weights_dir)
+            try:
+                # this will fail if the directory already exists
+                # and this is OK  because 'weights' directory
+                # usually contains the output of very long computations
+                # and you do not want to erase them by mistake :/
+                os.makedirs(weights_dir)
+            except FileExistsError as e:
+                msg = (
+                    f'You are about to overwrite pretrained models in '
+                    f'"{weights_dir}" directory. If you want to train a new '
+                    f'model from scratch, first (backup and) remove the '
+                    f'directory.'
+                )
+                raise FileExistsError(msg)
 
     def weights_dir(self):
         """Return path to weights directory"""

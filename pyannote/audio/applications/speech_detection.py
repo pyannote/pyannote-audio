@@ -253,13 +253,14 @@ class SpeechActivityDetection(Application):
 
         # pipeline
         pipeline = SpeechActivityDetectionPipeline()
-        pipeline.freeze({'min_duration_on': 0.,
-                         'min_duration_off': 0.,
-                         'pad_onset': 0.,
-                         'pad_offset': 0.})
 
         def fun(threshold):
-            pipeline.with_params({'onset': threshold, 'offset': threshold})
+            pipeline.instantiate({'onset': threshold,
+                                  'offset': threshold,
+                                  'min_duration_on': 0.,
+                                  'min_duration_off': 0.,
+                                  'pad_onset': 0.,
+                                  'pad_offset': 0.})
             metric = DetectionErrorRate(parallel=True)
             validate = partial(validate_helper_func,
                                pipeline=pipeline,
@@ -275,8 +276,12 @@ class SpeechActivityDetection(Application):
         return {'metric': 'detection_error_rate',
                 'minimize': True,
                 'value': res.fun,
-                'pipeline': pipeline.with_params({'onset': threshold,
-                                                  'offset': threshold})}
+                'pipeline': pipeline.instantiate({'onset': threshold,
+                                                  'offset': threshold,
+                                                  'min_duration_on': 0.,
+                                                  'min_duration_off': 0.,
+                                                  'pad_onset': 0.,
+                                                  'pad_offset': 0.})}
 
     def apply(self, protocol_name, output_dir, step=None, subset=None):
 

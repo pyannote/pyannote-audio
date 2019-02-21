@@ -28,6 +28,7 @@
 
 import numpy as np
 import audioread
+
 import librosa
 from librosa.util import valid_audio
 from librosa.util.exceptions import ParameterError
@@ -39,9 +40,6 @@ import scipy.io.wavfile
 import warnings
 from scipy.io.wavfile import WavFileWarning
 
-
-class PyannoteFeatureExtractionError(Exception):
-    pass
 
 
 def get_audio_duration(current_file):

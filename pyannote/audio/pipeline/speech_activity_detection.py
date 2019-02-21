@@ -30,8 +30,8 @@ from typing import Optional
 from pathlib import Path
 import numpy as np
 
-import chocolate
 from pyannote.pipeline import Pipeline
+from pyannote.pipeline.parameter import Uniform
 
 from pyannote.core import Annotation
 from pyannote.core import SlidingWindowFeature
@@ -39,7 +39,6 @@ from pyannote.core import SlidingWindowFeature
 from pyannote.audio.signal import Binarize
 from pyannote.audio.features import Precomputed
 
-from pyannote.database import get_annotated
 from pyannote.database import get_unique_identifier
 from pyannote.metrics.detection import DetectionErrorRate
 
@@ -58,20 +57,20 @@ class SpeechActivityDetection(Pipeline):
 
         self.scores = scores
         if self.scores is not None:
-            self.precomputed_ = Precomputed(self.scores)
+            self._precomputed = Precomputed(self.scores)
 
         # hyper-parameters
-        self.onset = chocolate.uniform(0., 1.)
-        self.offset = chocolate.uniform(0., 1.)
-        self.min_duration_on = chocolate.uniform(0., 2.)
-        self.min_duration_off = chocolate.uniform(0., 2.)
-        self.pad_onset = chocolate.uniform(-1., 1.)
-        self.pad_offset = chocolate.uniform(-1., 1.)
+        self.onset = Uniform(0., 1.)
+        self.offset = Uniform(0., 1.)
+        self.min_duration_on = Uniform(0., 2.)
+        self.min_duration_off = Uniform(0., 2.)
+        self.pad_onset = Uniform(-1., 1.)
+        self.pad_offset = Uniform(-1., 1.)
 
-    def instantiate(self):
-        """Instantiate pipeline with current set of parameters"""
+    def initialize(self):
+        """Initialize pipeline with current set of parameters"""
 
-        self.binarize_ = Binarize(
+        self._binarize = Binarize(
             onset=self.onset,
             offset=self.offset,
             min_duration_on=self.min_duration_on,
@@ -97,7 +96,7 @@ class SpeechActivityDetection(Pipeline):
         # precomputed SAD scores
         sad_scores = current_file.get('sad_scores')
         if sad_scores is None:
-            sad_scores = self.precomputed_(current_file)
+            sad_scores = self._precomputed(current_file)
 
         # if this check has not been done yet, do it once and for all
         if not hasattr(self, "log_scale_"):
@@ -116,28 +115,11 @@ class SpeechActivityDetection(Pipeline):
         else:
             speech_prob = SlidingWindowFeature(data, sad_scores.sliding_window)
 
-        speech = self.binarize_.apply(speech_prob)
+        speech = self._binarize.apply(speech_prob)
 
         speech.uri = get_unique_identifier(current_file)
         return speech.to_annotation(generator='string', modality='speech')
 
-    def loss(self, current_file: dict, hypothesis: Annotation) -> float:
-        """Compute detection error rate
-
-        Parameters
-        ----------
-        current_file : `dict`
-            File as provided by a pyannote.database protocol.
-        hypothesis : `pyannote.core.Annotation`
-            Speech regions.
-
-        Returns
-        -------
-        error : `float`
-            Detection error rate
-        """
-
-        metric = DetectionErrorRate(collar=0.0, skip_overlap=False)
-        reference  = current_file['annotation']
-        uem = get_annotated(current_file)
-        return metric(reference, hypothesis, uem=uem)
+    def get_metric(self) -> DetectionErrorRate:
+        """Return new instance of detection error rate metric"""
+        return  DetectionErrorRate(collar=0.0, skip_overlap=False)

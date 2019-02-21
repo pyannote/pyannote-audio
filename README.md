@@ -1,24 +1,25 @@
-# Announcement
-Open [Phd/postdoc positions](https://mycore.core-cloud.net/public.php?service=files&t=2b5f5a79d24ac81c3b3c371fcd80734b) at [LIMSI](https://www.limsi.fr/en/) combining machine learning, NLP, speech processing, and computer vision. 
-
 # pyannote-audio
 
-Neural building blocks for speaker diarization
+Neural building blocks for speaker diarization: 
+* speech activity detection
+* speaker change detection
+* speaker embedding
+* speaker diarization pipeline
 
 ## Installation
 
 ```bash
-$ conda create --name pyannote python=3.6 anaconda
+$ conda create --name pyannote python=3.6
 $ source activate pyannote
+$ pip install pyannote.audio
+
+# support Yaafe feature extraction (optional)
 $ conda install -c conda-forge yaafe
-$ conda install cmake
-$ pip install -U pip setuptools
-$ pip install --process-dependency-links pyannote.audio
 ```
 
 ## Citation
 
-If you use `pyannote.audio` in your research, please use the following citations.
+If you use `pyannote.audio` please use the following citations.
 
   - Speech  activity and speaker change detection
     ```bibtex
@@ -56,12 +57,21 @@ If you use `pyannote.audio` in your research, please use the following citations
 
 ## Tutorials
 
- * [Feature extraction](tutorials/feature-extraction)
- * [LSTM-based speech activity detection](tutorials/speech-activity-detection)
- * [LSTM-based speaker change detection](tutorials/change-detection)
- * [_TristouNet_ neural speech turn embedding](tutorials/speaker-embedding)
- * [Speaker diarization pipeline](tutorials/pipeline)
+:warning: These tutorials assumes that you installed the [`develop` branch](https://github.com/pyannote/pyannote-audio/issues/145) of `pyannote.audio`.   
+:warning: They are most likely [broken](https://github.com/pyannote/pyannote-audio/issues/151) in `pyannote.audio 1.x`.
 
+  * [Feature extraction](tutorials/feature_extraction)
+  * Models
+    * [Training LSTM-based speech activity detection](tutorials/models/speech_activity_detection)
+    * [Training LSTM-based speaker change detection](tutorials/models/speaker_change_detection)
+    * [Training LSTM-based speaker embedding](tutorials/models/speaker_embedding)
+    * [Using pre-trained models](tutorials/models/pretrained)
+
+  * Pipelines
+    * [Tuning speech activity detection pipeline](tutorials/pipelines/speech_activity_detection)
+    * [Tuning speaker diarization pipeline](tutorials/pipelines/speaker_diarization)
+  
 ## Documentation
 
-The API is unfortunately not documented yet.
+Part of the API is described in [this](tutorials/models/pretrained) tutorial.  
+Other than that, there is still a lot to do (contribute?) documentation-wise...

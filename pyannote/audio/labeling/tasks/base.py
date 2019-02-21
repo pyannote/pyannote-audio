@@ -30,7 +30,6 @@ import warnings
 import torch
 import numpy as np
 from tqdm import tqdm
-from pyannote.metrics.binary_classification import det_curve
 from pyannote.database import get_unique_identifier
 from pyannote.database import get_annotated
 from pyannote.core.utils.numpy import one_hot_encoding
@@ -44,8 +43,6 @@ from pyannote.generators.batch import batchify
 from pyannote.generators.fragment import random_segment
 from pyannote.generators.fragment import random_subsegment
 from pyannote.generators.fragment import SlidingSegments
-
-from collections import deque
 
 from pyannote.audio.train.trainer import Trainer
 
@@ -409,9 +406,6 @@ class LabelingTask(Trainer):
 
         self.loss_func_ = model.get_loss()
 
-        self.log_y_pred_ = deque([], maxlen=batches_per_epoch)
-        self.log_y_true_ = deque([], maxlen=batches_per_epoch)
-
     def batch_loss(self, batch, model, device, writer=None):
 
         X = torch.tensor(batch['X'], dtype=torch.float32, device=device)
@@ -421,9 +415,6 @@ class LabelingTask(Trainer):
             y = torch.tensor(batch['y'], dtype=torch.int64, device=device)
             target = y.contiguous().view((-1, ))
             fX = fX.view((-1, self.n_classes))
-            if writer is not None:
-                self.log_y_pred_.append(self.to_numpy(fX))
-                self.log_y_true_.append(self.to_numpy(y))
 
         elif self.task_type == TASK_MULTI_LABEL_CLASSIFICATION:
             target = torch.tensor(batch['y'], dtype=torch.float32,
@@ -433,28 +424,7 @@ class LabelingTask(Trainer):
             target = torch.tensor(batch['y'], dtype=torch.float32,
                                   device=device)
 
-        return self.loss_func_(fX, target,
-                               weight=self.weight.to(device=device))
-
-    def on_epoch_end(self, iteration, checkpoint, writer=None, **kwargs):
-
-        if writer is None or self.task_type != TASK_CLASSIFICATION:
-            return
-
-        # TODO. add support for multi-class
-
-        log_y_pred = np.hstack(self.log_y_pred_)
-        log_y_true = np.hstack(self.log_y_true_)
-        log_y_pred = log_y_pred.reshape((-1, self.n_classes))
-        log_y_true = log_y_true.reshape((-1, ))
-        if self.n_classes < 3:
-            _, _, _, eer = det_curve(log_y_true == 0,
-                                     log_y_pred[:, 0])
-            writer.add_scalar(f'train/eer',
-                eer, global_step=iteration)
-        else:
-            for k in range(self.n_classes):
-                _, _, _, eer = det_curve(log_y_true == k,
-                                         log_y_pred[:, k])
-                writer.add_scalar(f'train/eer/{k}',
-                    eer, global_step=iteration)
+        weight = self.weight
+        if weight is not None:
+            weight = weight.to(device=device)
+        return self.loss_func_(fX, target, weight=weight)

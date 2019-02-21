@@ -213,7 +213,6 @@ class SpeakerChangeDetection(SpeechActivityDetection):
 
         # pipeline
         pipeline = SpeakerChangeDetectionPipeline(purity=self.purity)
-        pipeline.freeze({'min_duration': 0.})
 
         # dichotomic search to find alpha that maximizes coverage
         # while having at least `self.purity`
@@ -226,7 +225,8 @@ class SpeakerChangeDetection(SpeechActivityDetection):
         for _ in range(10):
 
             current_alpha = .5 * (lower_alpha + upper_alpha)
-            pipeline.with_params({'alpha': current_alpha})
+            pipeline.instantiate({'alpha': current_alpha,
+                                  'min_duration': 0.})
 
             if self.diarization:
                 metric = DiarizationPurityCoverageFMeasure(parallel=True)
@@ -254,7 +254,8 @@ class SpeakerChangeDetection(SpeechActivityDetection):
         return {'metric': f'coverage@{self.purity:.2f}purity',
                 'minimize': False,
                 'value': best_coverage,
-                'pipeline': pipeline.with_params({'alpha': best_alpha})}
+                'pipeline': pipeline.instantiate({'alpha': best_alpha,
+                                                  'min_duration': 0.})}
 
 
 def main():
