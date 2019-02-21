@@ -238,6 +238,6 @@ class SpeakerChangeDetection(LabelingTask):
 
     @property
     def task_type(self):
-        if variant in {'triangle'}:
+        if self.variant in {'triangle'}:
             return TASK_REGRESSION
         return TASK_CLASSIFICATION
