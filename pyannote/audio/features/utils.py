@@ -36,11 +36,7 @@ from librosa.util.exceptions import ParameterError
 from pyannote.core import SlidingWindow, SlidingWindowFeature
 import tempfile
 
-import scipy.io.wavfile
-import warnings
-from scipy.io.wavfile import WavFileWarning
-
-
+from soundfile import SoundFile
 
 def get_audio_duration(current_file):
     """Return audio file duration
@@ -264,60 +260,35 @@ class RawAudio(object):
                    '`sample_rate` if one wants to use the `crop` method.')
             raise ValueError(msg)
 
-        if 'waveform' in current_file:
-            y = current_file['waveform']
-            sample_rate = self.sample_rate
-
-        # if NIST SRE sphere files
-        elif current_file['audio'][-4:] == '.sph':
-            from sphfile import SPHFile
-            sph = SPHFile(current_file['audio'])
-            y = sph.content
-            sample_rate = sph.format['sample_rate']
-            if sph.format['sample_coding'] == 'ulaw':  # if non-linear coding
-                import audioop
-                # convert from u-law to linear coding
-                y = audioop.ulaw2lin(y, sph.format['sample_n_bytes'])
-                # since audioop returns everything as byte string, convert to numpy
-                if sph.format['sample_n_bytes'] == 1:
-                    # read buffer as unit8
-                    # convert to 16 bits WAV signed format as per:
-                    # https://docs.python.org/2/library/audioop.html#audioop.lin2lin
-                    new_width = 2
-                    y = audioop.lin2lin(y, sph.format['sample_n_bytes'], new_width)
-                    y = audioop.bias(y, new_width, -128)
-                    y_dtype = np.int16  # now, it's converted to signed 16 bits
-                elif sph.format['sample_n_bytes'] == 2:
-                    y_dtype = np.int16
-                elif sph.format['sample_n_bytes'] == 4:
-                    y_dtype = np.int32
-                else:
-                    raise NotImplementedError('The sample size {0} is not implemented for u-LAW encoded '
-                            'file {1}'.format(sph.format['sample_n_bytes'], current_file['audio']))
-
-                y = np.frombuffer(y, y_dtype)
-        else:
-
-            warnings.filterwarnings("ignore", category=WavFileWarning)
-
-            # read data as memory mapped
-            try:
-                sample_rate, y = scipy.io.wavfile.read(current_file['audio'],
-                                                       mmap=True)
-            except OSError as e:
-                msg = ('ERROR: running out of memory on file {0} with segment {1}. '.format(current_file, segment) + str(e) )
-                raise ValueError(msg)
-
-        # extract segment waveform
+        # find the start and end positions of the required segment
         (start, end), = self.sliding_window_.crop(
             segment, mode=mode, fixed=fixed, return_ranges=True)
 
-        # if the sample rates are mismatched, recompute the start and end
-        if sample_rate != self.sample_rate:
-            start = int(1. * sample_rate / self.sample_rate * start)
-            end = int(1. * sample_rate / self.sample_rate * end)
+        if 'waveform' in current_file:
+            y = current_file['waveform']
+            sample_rate = self.sample_rate
+            data = y[start:end]
 
-        data = y[start:end]
+        else:  # read file with SoundFile, which supports various fomats, including NIST sphere
+            try:
+                with SoundFile(current_file['audio'], 'r') as audio_file:
+                    sample_rate = audio_file.samplerate
+                    # if the sample rates are mismatched, recompute the start and end
+                    if sample_rate != self.sample_rate:
+                        start = int(1. * sample_rate / self.sample_rate * start)
+                        end = int(1. * sample_rate / self.sample_rate * end)
+                    audio_file.seek(start)
+                    data = audio_file.read(end - start, dtype='float32')
+
+            except OSError as e:
+                msg = ('ERROR: problems when reading file {0} with segment {1}. '.format(current_file, segment) + str(e) )
+                raise ValueError(msg)
+
+            # if sample rate of the file we just read does not match the expected one,
+            # resample the piece of data on the fly
+            if sample_rate != self.sample_rate:
+                data = librosa.core.resample(data, sample_rate, self.sample_rate)
+                sample_rate = self.sample_rate
 
         # see https://docs.scipy.org/doc/scipy/reference/generated/scipy.io.wavfile.read.html
         msg = f'Audio file was loaded using (unsupported) {data.dtype} data-type.'
@@ -336,12 +307,6 @@ class RawAudio(object):
 
         else:
             raise NotImplementedError(msg)
-
-        # if sample rate of the file we just read does not match the expected one,
-        # resample the piece of data on the fly
-        if sample_rate != self.sample_rate:
-            data = librosa.core.resample(data, sample_rate, self.sample_rate)
-            sample_rate = self.sample_rate
 
         # add `n_channels` dimension
         if len(data.shape) < 2:
