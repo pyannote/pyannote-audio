@@ -34,9 +34,9 @@ from librosa.util import valid_audio
 from librosa.util.exceptions import ParameterError
 
 from pyannote.core import SlidingWindow, SlidingWindowFeature
-import tempfile
 
 from soundfile import SoundFile
+import soundfile as sf
 
 def get_audio_duration(current_file):
     """Return audio file duration
@@ -110,22 +110,11 @@ def read_audio(current_file, sample_rate=None, mono=True):
 
     """
 
-    # sphere files
-    if current_file['audio'][-4:] == '.sph':
+    y, file_sample_rate = sf.read(current_file['audio'], dtype='float32')
 
-        # dump sphere file to a temporary wav file
-        # and load it from here...
-        from sphfile import SPHFile
-        sph = SPHFile(current_file['audio'])
-        with tempfile.NamedTemporaryFile() as f:
-            sph.write_wav(f.name)
-            y, sample_rate = librosa.load(f.name, sr=sample_rate, mono=False)
-
-    # all other files
-    else:
-        y, sample_rate = librosa.load(current_file['audio'],
-                                      sr=sample_rate,
-                                      mono=False)
+    # resample if sample rates mismatch
+    if file_sample_rate != sample_rate:
+        y = librosa.core.resample(y, file_sample_rate, sample_rate)
 
     # reshape mono files to (1, n) [was (n, )]
     if y.ndim == 1:
