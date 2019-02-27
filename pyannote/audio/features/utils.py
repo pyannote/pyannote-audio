@@ -231,6 +231,17 @@ class RawAudio(object):
             `pyannote.database` file.
         segment : `pyannote.core.Segment`
             Segment from which to extract features.
+        mode : {'loose', 'strict', 'center'}, optional
+            In 'strict' mode, only frames fully included in 'segment' are
+            returned. In 'loose' mode, any intersecting frames are returned. In
+            'center' mode, first and last frames are chosen to be the ones
+            whose centers are the closest to 'focus' start and end times.
+            Defaults to 'center'.
+        fixed : float, optional
+            Overrides `Segment` 'focus' duration and ensures that the number of
+            returned frames is fixed (which might otherwise not be the case
+            because of rounding errors). Has no effect in 'strict' or 'loose'
+            modes.
 
         Returns
         -------
@@ -250,58 +261,67 @@ class RawAudio(object):
         (start, end), = self.sliding_window_.crop(
             segment, mode=mode, fixed=fixed, return_ranges=True)
 
+        # this is expected number of samples.
+        # this will be useful later in case of on-the-fly resampling
+        n_samples = end - start
+
         if 'waveform' in current_file:
             y = current_file['waveform']
+            if len(y.shape) != 2:
+                msg = (
+                    f'Precomputed waveform should be provided as a '
+                    f'(n_samples, n_channels) `np.ndarray`.'
+                )
+                raise ValueError(msg)
+
             sample_rate = self.sample_rate
             data = y[start:end]
 
-        else:  # read file with SoundFile, which supports various fomats, including NIST sphere
+        else:
+            # read file with SoundFile, which supports various fomats
+            # including NIST sphere
             try:
                 with SoundFile(current_file['audio'], 'r') as audio_file:
+
                     sample_rate = audio_file.samplerate
+
                     # if the sample rates are mismatched, recompute the start and end
                     if sample_rate != self.sample_rate:
-                        start = int(1. * sample_rate / self.sample_rate * start)
-                        end = int(1. * sample_rate / self.sample_rate * end)
-                    audio_file.seek(start)
-                    data = audio_file.read(end - start, dtype='float32')
 
+                        sliding_window = SlidingWindow(start=-.5/sample_rate,
+                                                       duration=1./sample_rate,
+                                                       step=1./sample_rate)
+                        (start, end), = sliding_window.crop(
+                            segment, mode=mode, fixed=fixed,
+                            return_ranges=True)
+
+                    audio_file.seek(start)
+                    data = audio_file.read(end - start,
+                                           dtype='float32',
+                                           always_2d=True)
+
+            # raise on error
             except OSError as e:
-                msg = ('ERROR: problems when reading file {0} with segment {1}. '.format(current_file["audio"], segment) + str(e) )
+                msg = (
+                    f'Something went wrong when cropping {segment} from file '
+                    f'{current_file["audio"]}: {str(e)}'
+                )
                 raise ValueError(msg)
 
-            # if sample rate of the file we just read does not match the expected one,
+            # if sample rate does not match the expected one,
             # resample the piece of data on the fly
             if sample_rate != self.sample_rate:
-                data = librosa.core.resample(data, sample_rate, self.sample_rate)
+                data = librosa.core.resample(data.T,
+                                             sample_rate,
+                                             self.sample_rate).T
+                data = data[:n_samples]
                 sample_rate = self.sample_rate
 
-        # see https://docs.scipy.org/doc/scipy/reference/generated/scipy.io.wavfile.read.html
-        msg = f'Audio file was loaded using (unsupported) {data.dtype} data-type.'
-
-        if data.dtype == np.uint8:
-            raise NotImplementedError(msg)
-
-        elif data.dtype == np.int16:
-            data = data.astype(np.float32) / 32768.0
-
-        elif data.dtype == np.int32:
-            raise NotImplementedError(msg)
-
-        elif data.dtype == np.float32:
-            pass
-
-        else:
-            raise NotImplementedError(msg)
-
-        # add `n_channels` dimension
-        if len(data.shape) < 2:
-            data = data.reshape(-1, 1)
-
         # convert to mono if needed
-        if self.mono and len(data.shape) > 1:
+        if self.mono and data.shape[1] > 1:
             data = np.mean(data, axis=1, keepdims=True)
 
+        # TODO: how time consuming is this thing (needs profiling...)
         try:
             valid = valid_audio(data[:, 0], mono=True)
         except ParameterError as e:
@@ -314,3 +334,23 @@ class RawAudio(object):
             data = self.augmentation(data, sample_rate)
 
         return data
+
+
+# # THIS SCRIPT CAN BE USED TO CRASH-TEST THE ON-THE-FLY RESAMPLING
+
+# import numpy as np
+# from pyannote.audio.features import RawAudio
+# from pyannote.core import Segment
+# from pyannote.audio.features.utils import get_audio_duration
+# from tqdm import tqdm
+#
+# TEST_FILE = '/Users/bredin/Corpora/etape/BFMTV_BFMStory_2010-09-03_175900.wav'
+# current_file = {'audio': TEST_FILE}
+# duration = get_audio_duration(current_file)
+#
+# for sample_rate in [8000, 16000, 44100, 48000]:
+#     raw_audio = RawAudio(sample_rate=sample_rate)
+#     for i in tqdm(range(1000), desc=f'{sample_rate:d}Hz'):
+#         start = np.random.rand() * duration - 1.
+#         data = raw_audio.crop(current_file, Segment(start, start + 1), fixed=1.)
+#         assert len(data) == sample_rate
