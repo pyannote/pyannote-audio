@@ -267,7 +267,7 @@ class RawAudio(object):
                     data = audio_file.read(end - start, dtype='float32')
 
             except OSError as e:
-                msg = ('ERROR: problems when reading file {0} with segment {1}. '.format(current_file, segment) + str(e) )
+                msg = ('ERROR: problems when reading file {0} with segment {1}. '.format(current_file["audio"], segment) + str(e) )
                 raise ValueError(msg)
 
             # if sample rate of the file we just read does not match the expected one,
