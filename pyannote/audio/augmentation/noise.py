@@ -127,5 +127,6 @@ class AddNoise(Augmentation):
         # select SNR at random
         snr = (self.snr_max - self.snr_min) * np.random.random_sample() + self.snr_min
         alpha = np.exp(-np.log(10) * snr / 20)
-
+        if len(noise) > len(original):
+            noise = noise[:len(original)]
         return self.normalize(original) + alpha * noise
