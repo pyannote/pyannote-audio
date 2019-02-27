@@ -27,7 +27,6 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 import numpy as np
-import audioread
 
 import librosa
 from librosa.util import valid_audio
@@ -56,8 +55,8 @@ def get_audio_duration(current_file):
     if 'duration' in current_file:
         return current_file['duration']
 
-    # otherwise use audioread
-    with audioread.audio_open(current_file['audio']) as f:
+    # otherwise use SoundFile
+    with SoundFile(current_file['audio'], 'r') as f:
         duration = f.duration
 
     return duration
@@ -76,9 +75,7 @@ def get_audio_sample_rate(current_file):
     sample_rate : int
         Sampling rate
     """
-    path = current_file['audio']
-
-    with audioread.audio_open(path) as f:
+    with SoundFile(current_file['audio'], 'r') as f:
         sample_rate = f.samplerate
 
     return sample_rate
