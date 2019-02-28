@@ -274,8 +274,7 @@ class RawAudio(object):
 
         if self.sample_rate is None:
             msg = ('`RawAudio` needs to be instantiated with an actual '
-                   '`sample_rate` if one wants to use precomputed '
-                   'waveform.')
+                   '`sample_rate` if one wants to use `crop`.')
             raise ValueError(msg)
 
         # find the start and end positions of the required segment
