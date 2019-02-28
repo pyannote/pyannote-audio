@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2016-2018 CNRS
+# Copyright (c) 2016-2019 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -107,26 +107,24 @@ def read_audio(current_file, sample_rate=None, mono=True):
 
     """
 
-    y, file_sample_rate = sf.read(current_file['audio'], dtype='float32')
-
-    # resample if sample rates mismatch
-    if file_sample_rate != sample_rate:
-        y = librosa.core.resample(y, file_sample_rate, sample_rate)
-
-    # reshape mono files to (1, n) [was (n, )]
-    if y.ndim == 1:
-        y = y.reshape(1, -1)
+    y, file_sample_rate = sf.read(current_file['audio'],
+                                  dtype='float32',
+                                  always_2d=True)
 
     # extract specific channel if requested
     channel = current_file.get('channel', None)
     if channel is not None:
-        y = y[channel - 1, :]
+        y = y[:, channel-1:channel]
 
     # convert to mono
-    if mono:
-        y = librosa.to_mono(y)
+    if mono and y.shape[1] > 1:
+        y = np.mean(y, axis=1, keepdims=True)
 
-    return y.T, sample_rate
+    # resample if sample rates mismatch
+    if file_sample_rate != sample_rate:
+        y = librosa.core.resample(y.T, file_sample_rate, sample_rate).T
+
+    return y, sample_rate
 
 
 class RawAudio(object):
@@ -183,26 +181,47 @@ class RawAudio(object):
         """
 
         if 'waveform' in current_file:
+
             if self.sample_rate is None:
                 msg = ('`RawAudio` needs to be instantiated with an actual '
                        '`sample_rate` if one wants to use precomputed '
                        'waveform.')
                 raise ValueError(msg)
-
-            y = current_file['waveform']
             sample_rate = self.sample_rate
 
+            y = current_file['waveform']
+
+            if len(y.shape) != 2:
+                msg = (
+                    f'Precomputed waveform should be provided as a '
+                    f'(n_samples, n_channels) `np.ndarray`.'
+                )
+                raise ValueError(msg)
+
         else:
-            y, sample_rate = read_audio(current_file,
-                                        sample_rate=self.sample_rate,
-                                        mono=self.mono)
+            y, sample_rate = sf.read(current_file['audio'],
+                                     dtype='float32',
+                                     always_2d=True)
 
-        if len(y.shape) < 2:
-            y = y.reshape(-1, 1)
+        # extract specific channel if requested
+        channel = current_file.get('channel', None)
+        if channel is not None:
+            y = y[:, channel-1:channel]
 
+        # convert to mono
+        if self.mono:
+            y = np.mean(y, axis=1, keepdims=True)
+
+        # resample if sample rates mismatch
+        if (self.sample_rate is not None) and (self.sample_rate != sample_rate):
+            y = librosa.core.resample(y.T, sample_rate, self.sample_rate).T
+            sample_rate = self.sample_rate
+
+        # augment data
         if self.augmentation is not None:
             y = self.augmentation(y, sample_rate)
 
+            # TODO: how time consuming is this thing (needs profiling...)
             try:
                 valid = valid_audio(y[:, 0], mono=True)
             except ParameterError as e:
@@ -245,16 +264,18 @@ class RawAudio(object):
 
         Returns
         -------
-        waveform : (n_samples, 1) numpy array
+        waveform : (n_samples, n_channels) numpy array
             Waveform
 
         See also
         --------
         `pyannote.core.SlidingWindowFeature.crop`
         """
+
         if self.sample_rate is None:
             msg = ('`RawAudio` needs to be instantiated with an actual '
-                   '`sample_rate` if one wants to use the `crop` method.')
+                   '`sample_rate` if one wants to use precomputed '
+                   'waveform.')
             raise ValueError(msg)
 
         # find the start and end positions of the required segment
@@ -266,7 +287,9 @@ class RawAudio(object):
         n_samples = end - start
 
         if 'waveform' in current_file:
+
             y = current_file['waveform']
+
             if len(y.shape) != 2:
                 msg = (
                     f'Precomputed waveform should be provided as a '
@@ -280,46 +303,42 @@ class RawAudio(object):
         else:
             # read file with SoundFile, which supports various fomats
             # including NIST sphere
-            try:
-                with SoundFile(current_file['audio'], 'r') as audio_file:
+            with SoundFile(current_file['audio'], 'r') as audio_file:
 
-                    sample_rate = audio_file.samplerate
+                sample_rate = audio_file.samplerate
 
-                    # if the sample rates are mismatched, recompute the start and end
-                    if sample_rate != self.sample_rate:
+                # if the sample rates are mismatched,
+                # recompute the start and end
+                if sample_rate != self.sample_rate:
 
-                        sliding_window = SlidingWindow(start=-.5/sample_rate,
-                                                       duration=1./sample_rate,
-                                                       step=1./sample_rate)
-                        (start, end), = sliding_window.crop(
-                            segment, mode=mode, fixed=fixed,
-                            return_ranges=True)
+                    sliding_window = SlidingWindow(start=-.5/sample_rate,
+                                                   duration=1./sample_rate,
+                                                   step=1./sample_rate)
+                    (start, end), = sliding_window.crop(
+                        segment, mode=mode, fixed=fixed,
+                        return_ranges=True)
 
-                    audio_file.seek(start)
-                    data = audio_file.read(end - start,
-                                           dtype='float32',
-                                           always_2d=True)
+                audio_file.seek(start)
+                data = audio_file.read(end - start,
+                                       dtype='float32',
+                                       always_2d=True)
 
-            # raise on error
-            except OSError as e:
-                msg = (
-                    f'Something went wrong when cropping {segment} from file '
-                    f'{current_file["audio"]}: {str(e)}'
-                )
-                raise ValueError(msg)
-
-            # if sample rate does not match the expected one,
-            # resample the piece of data on the fly
-            if sample_rate != self.sample_rate:
-                data = librosa.core.resample(data.T,
-                                             sample_rate,
-                                             self.sample_rate).T
-                data = data[:n_samples]
-                sample_rate = self.sample_rate
+        # extract specific channel if requested
+        channel = current_file.get('channel', None)
+        if channel is not None:
+            data = data[:, channel-1:channel]
 
         # convert to mono if needed
-        if self.mono and data.shape[1] > 1:
+        if self.mono:
             data = np.mean(data, axis=1, keepdims=True)
+
+        # resample if sample rates mismatch
+        if sample_rate != self.sample_rate:
+            data = librosa.core.resample(data.T,
+                                         sample_rate,
+                                         self.sample_rate).T
+            sample_rate = self.sample_rate
+            data = data[:n_samples]
 
         # TODO: how time consuming is this thing (needs profiling...)
         try:
@@ -334,7 +353,6 @@ class RawAudio(object):
             data = self.augmentation(data, sample_rate)
 
         return data
-
 
 # # THIS SCRIPT CAN BE USED TO CRASH-TEST THE ON-THE-FLY RESAMPLING
 
@@ -351,6 +369,6 @@ class RawAudio(object):
 # for sample_rate in [8000, 16000, 44100, 48000]:
 #     raw_audio = RawAudio(sample_rate=sample_rate)
 #     for i in tqdm(range(1000), desc=f'{sample_rate:d}Hz'):
-#         start = np.random.rand() * duration - 1.
+#         start = np.random.rand() * (duration - 1.)
 #         data = raw_audio.crop(current_file, Segment(start, start + 1), fixed=1.)
 #         assert len(data) == sample_rate
