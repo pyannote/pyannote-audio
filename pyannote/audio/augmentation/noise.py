@@ -115,9 +115,7 @@ class AddNoise(Augmentation):
             # otherwise, take the whole file
             else:
                 noise = raw_audio(file).data
-                # remove from left the duration of noise in sec
-                # ensuring correct duration even if the signal was resampled
-                left -= float(len(noise)) / sample_rate
+                left -= duration
 
             noise = self.normalize(noise)
             noises.append(noise)
@@ -129,4 +127,5 @@ class AddNoise(Augmentation):
         # select SNR at random
         snr = (self.snr_max - self.snr_min) * np.random.random_sample() + self.snr_min
         alpha = np.exp(-np.log(10) * snr / 20)
+
         return self.normalize(original) + alpha * noise
