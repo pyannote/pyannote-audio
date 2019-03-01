@@ -34,8 +34,14 @@ from pyannote.core import Timeline
 from pyannote.generators.fragment import random_segment
 from pyannote.generators.fragment import random_subsegment
 from pyannote.generators.fragment import SlidingSegments
+from pyannote.generators.batch import batchify
 
+from pyannote.audio.features import RawAudio
+
+from .base import LabelingTask
 from .base import LabelingTaskGenerator
+from .base import TASK_CLASSIFICATION
+
 
 normalize = lambda wav: wav / (np.sqrt(np.mean(wav ** 2)) + 1e-8)
 
@@ -113,7 +119,7 @@ class OverlapDetectionGenerator(LabelingTaskGenerator):
             y = datum['y'].crop(sequence, mode='center', fixed=duration)
 
             yield {'waveform': normalize(X),
-                   'y': np.squeeze(y)}
+                   'y': y}
 
     def sliding_samples(self):
         """Sliding window
@@ -167,7 +173,7 @@ class OverlapDetectionGenerator(LabelingTaskGenerator):
                                         fixed=self.duration)
 
                     sample = {'waveform': normalize(X),
-                              'y': np.squeeze(y)}
+                              'y': y}
 
                     if self.shuffle:
                         samples.append(sample)
@@ -239,9 +245,8 @@ class OverlapDetectionGenerator(LabelingTaskGenerator):
 
                 if r-l > len(overlap['y']):
                     r = r-1
-                if r > l:
-                    original['y'][l:r] += overlap['y'][:r-l]
-
+                original['y'][l:r] += overlap['y'][:r-l]
+                                
                 speaker_count = np.sum(original['y'], axis=1, keepdims=True)
                 original['y'] = np.int64(speaker_count > 1)
 
@@ -253,8 +258,7 @@ class OverlapDetectionGenerator(LabelingTaskGenerator):
                 original['X'] = self.feature_extraction.crop(
                     original, Segment(0, self.duration), mode='center',
                     fixed=self.duration)
-
-
+                
                 del original['waveform']
                 del original['duration']
 
@@ -343,7 +347,7 @@ class OverlapDetection(LabelingTask):
 
     def get_batch_generator(self, precomputed):
         return OverlapDetectionGenerator(
-            precomputed, overlap=self.overlap, duration=self.duration,
+            precomputed, duration=self.duration,
             per_epoch=self.per_epoch, batch_size=self.batch_size,
             parallel=self.parallel)
 

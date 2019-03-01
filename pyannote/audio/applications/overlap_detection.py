@@ -247,8 +247,8 @@ class OverlapDetection(SpeechActivityDetection):
         for _ in range(10):
 
             current_alpha = .5 * (lower_alpha + upper_alpha)
-            pipeline.instantiate({'onset': threshold,
-                                  'offset': threshold,
+            pipeline.instantiate({'onset': current_alpha,
+                                  'offset': current_alpha,
                                   'min_duration_on': 0.,
                                   'min_duration_off': 0.,
                                   'pad_onset': 0.,
@@ -278,7 +278,7 @@ class OverlapDetection(SpeechActivityDetection):
 
         return {'metric': f'recall@{self.precision:.2f}precision',
                 'minimize': False,
-                'value': best_coverage,
+                'value': best_recall,
                 'pipeline': pipeline.instantiate({'onset': best_alpha,
                                                   'offset': best_alpha,
                                                   'min_duration_on': 0.,
