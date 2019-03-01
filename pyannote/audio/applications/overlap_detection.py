@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2018 CNRS
+# Copyright (c) 2018-2019 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -27,10 +27,12 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 """
-Overlap speech detection
+Overlap detection
 
 Usage:
+  pyannote-overlap-detection train [options] <experiment_dir> <database.task.protocol>
   pyannote-overlap-detection validate [options] [--every=<epoch> --chronological --precision=<precision>] <train_dir> <database.task.protocol>
+  pyannote-overlap-detection apply [options] [--step=<step>] <model.pt> <database.task.protocol> <output_dir>
   pyannote-overlap-detection -h | --help
   pyannote-overlap-detection --version
 
@@ -39,22 +41,94 @@ Common options:
   --database=<db.yml>        Path to database configuration file.
                              [default: ~/.pyannote/db.yml]
   --subset=<subset>          Set subset (train|developement|test).
-                             Defaults to "development".
+                             Defaults to "train" in "train" mode. Defaults to
+                             "development" in "validate" mode. Defaults to all subsets in
+                             "apply" mode.
   --gpu                      Run on GPUs. Defaults to using CPUs.
-  --batch=<size>             Set batch size. [default: 32]
-  --from=<epoch>             Start validating at epoch <epoch>. [default: 0]
-  --to=<epochs>              End validating at epoch <epoch>.
+  --batch=<size>             Set batch size. Has no effect in "train" mode.
+                             [default: 32]
+  --from=<epoch>             Start {train|validat}ing at epoch <epoch>. Has no
+                             effect in "apply" mode. [default: 0]
+  --to=<epochs>              End {train|validat}ing at epoch <epoch>.
                              Defaults to keep going forever.
+
+"train" mode:
+  <experiment_dir>           Set experiment root directory. This script expects
+                             a configuration file called "config.yml" to live
+                             in this directory. See "Configuration file"
+                             section below for more details.
+
+"validation" mode:
   --every=<epoch>            Validate model every <epoch> epochs [default: 1].
   --chronological            Force validation in chronological order.
   <train_dir>                Path to the directory containing pre-trained
                              models (i.e. the output of "train" mode).
-  --precision=<precision>    Target precision [default: 0.9].
+  --precision=<precision>    Target detection precision [default: 0.8].
+
+"apply" mode:
+  <model.pt>                 Path to the pretrained model.
+  --step=<step>              Sliding window step, in seconds.
+                             Defaults to 25% of window duration.
 
 Database configuration file <db.yml>:
     The database configuration provides details as to where actual files are
     stored. See `pyannote.database.util.FileFinder` docstring for more
     information on the expected format.
+
+Configuration file:
+    The configuration of each experiment is described in a file called
+    <experiment_dir>/config.yml, that describes the feature extraction process,
+    the neural network architecture, and the task addressed.
+
+    ................... <experiment_dir>/config.yml ...................
+    # train the network for overlap detection
+    # see pyannote.audio.labeling.tasks for more details
+    task:
+       name: OverlapDetection
+       params:
+          duration: 3.2     # sub-sequence duration
+          per_epoch: 1      # 1 day of audio per epoch
+          collar: 0.200     # upsampling collar
+          batch_size: 32    # number of sub-sequences per batch
+          parallel: 4       # number of background generators
+
+    # use precomputed features (see feature extraction tutorial)
+    feature_extraction:
+       name: Precomputed
+       params:
+          root_dir: tutorials/feature-extraction
+
+    # use the StackedRNN architecture.
+    # see pyannote.audio.labeling.models for more details
+    architecture:
+       name: StackedRNN
+       params:
+         rnn: LSTM
+         recurrent: [32, 20]
+         bidirectional: True
+         linear: [40, 10]
+
+    # use cyclic learning rate scheduler
+    scheduler:
+       name: CyclicScheduler
+       params:
+           learning_rate: auto
+    ...................................................................
+
+"train" mode:
+    This will create the following directory that contains the pre-trained
+    neural network weights after each epoch:
+
+        <experiment_dir>/train/<database.task.protocol>.<subset>
+
+    This means that the network was trained on the <subset> subset of the
+    <database.task.protocol> protocol. By default, <subset> is "train".
+    This directory is called <train_dir> in the subsequent "validate" mode.
+
+    A bunch of values (loss, learning rate, ...) are sent to and can be
+    visualized with tensorboard with the following command:
+
+        $ tensorboard --logdir=<experiment_dir>
 
 "validate" mode:
     Use the "validate" mode to run validation in parallel to training.
@@ -67,83 +141,100 @@ Database configuration file <db.yml>:
     You can run multiple "validate" in parallel (e.g. for every subset,
     protocol, task, or database).
 
-    In practice, for each epoch, "validate" mode will look for the detection
-    threshold that maximizes recall, under the constraint that precision must
-    be greater than the value provided by the "--precision" option. Both values
-    (best threshold and corresponding recall) are sent to tensorboard and can
-    be visualized with the following command:
+    In practice, for each epoch, "validate" mode will look for the peak
+    detection threshold that maximizes speech turn coverage, under the
+    constraint that purity must be greater than the value provided by the
+    "--purity" option. Both values (best threshold and corresponding coverage)
+    are sent to tensorboard.
 
-        $ tensorboard --logdir=<train_dir>
+"apply" mode
+    Use the "apply" mode to extract speaker change detection raw scores.
+    Resulting files can then be used in the following way:
+
+    >>> from pyannote.audio.features import Precomputed
+    >>> precomputed = Precomputed('<output_dir>')
+
+    >>> from pyannote.database import get_protocol
+    >>> protocol = get_protocol('<database.task.protocol>')
+    >>> first_test_file = next(protocol.test())
+
+    >>> from pyannote.audio.signal import Binarize
+    >>> binarizer = Binarize()
+
+    >>> raw_scores = precomputed(first_test_file)
+    >>> overlap_regions = binarizer.apply(raw_scores, dimension=1)
 """
 
-import torch
-import numpy as np
+
+from functools import partial
 from pathlib import Path
+
+import numpy as np
+import torch
 from docopt import docopt
+
 from pyannote.core import Timeline
-from pyannote.database import get_protocol
-from pyannote.audio.signal import Binarize
+
 from pyannote.database import get_annotated
-from pyannote.core import SlidingWindowFeature
-from pyannote.audio.features import Precomputed
 from pyannote.database import get_unique_identifier
-from .speech_detection import SpeechActivityDetection
+
 from pyannote.metrics.detection import DetectionRecall
 from pyannote.metrics.detection import DetectionPrecision
-from pyannote.audio.labeling.extraction import SequenceLabeling
 
+from pyannote.audio.labeling.extraction import SequenceLabeling
+from pyannote.audio.signal import Binarize
+from .speech_detection import SpeechActivityDetection
+
+from pyannote.audio.pipeline.overlap_detection \
+    import OverlapDetection as OverlapDetectionPipeline
+
+
+def validate_helper_func(current_file, pipeline=None, precision=None, recall=None):
+    reference = current_file['annotation']
+    uem = get_annotated(current_file)
+    hypothesis = pipeline(current_file)
+    return (precision(reference, hypothesis, uem=uem),
+            recall(reference, hypothesis, uem=uem))
 
 class OverlapDetection(SpeechActivityDetection):
 
+    def validate_init(self, protocol_name, subset='development'):
+        validation_data = super().validate_init(protocol_name, subset=subset)
+        for current_file in validation_data:
+
+            uri = current_file['uri']
+
+            # build overlap reference
+            overlap = Timeline(uri=uri)
+            turns = current_file['annotation']
+            for track1, track2 in turns.co_iter(turns):
+                if track1 == track2:
+                    continue
+                overlap.add(track1[0] & track2[0])
+            current_file['annotation'] = overlap.support().to_annotation()
+
+        return validation_data
+
     def validate_epoch(self, epoch, protocol_name, subset='development',
                        validation_data=None):
-
-        target_precision = self.precision
 
         # load model for current epoch
         model = self.load_model(epoch).to(self.device)
         model.eval()
 
-        if isinstance(self.feature_extraction_, Precomputed):
-            self.feature_extraction_.use_memmap = False
-
+        # compute (and store) overlap scores
         duration = self.task_.duration
         step = .25 * duration
         sequence_labeling = SequenceLabeling(
             model=model, feature_extraction=self.feature_extraction_,
-            duration=duration, step=.25 * duration, batch_size=self.batch_size,
+            duration=duration, step=step, batch_size=self.batch_size,
             device=self.device)
-
-        protocol = get_protocol(protocol_name, progress=False,
-                                preprocessors=self.preprocessors_)
-
-        predictions = {}
-        references = {}
-
-        file_generator = getattr(protocol, subset)()
-        for current_file in file_generator:
+        for current_file in validation_data:
             uri = get_unique_identifier(current_file)
+            current_file['ovl_scores'] = sequence_labeling(current_file)
 
-            # build overlap reference
-            reference = Timeline(uri=uri)
-            annotation = current_file['annotation']
-            for track1, track2 in annotation.co_iter(annotation):
-                if track1 == track2:
-                    continue
-                reference.add(track1[0] & track2[0])
-            references[uri] = reference.to_annotation()
-
-            # extract overlap scores
-            scores = sequence_labeling(current_file)
-
-            if model.logsoftmax:
-                scores = SlidingWindowFeature(
-                    np.exp(scores.data[:, 2]), scores.sliding_window)
-            else:
-                scores = SlidingWindowFeature(
-                    scores.data[:, 2], scores.sliding_window)
-
-            predictions[uri] = scores
+        # pipeline
+        pipeline = OverlapDetectionPipeline(precision=self.precision)
 
         # dichotomic search to find threshold that maximizes recall
         # while having at least `target_precision`
@@ -154,41 +245,50 @@ class OverlapDetection(SpeechActivityDetection):
         best_recall = 0.
 
         for _ in range(10):
+
             current_alpha = .5 * (lower_alpha + upper_alpha)
-            binarizer = Binarize(onset=current_alpha,
-                                 offset=current_alpha,
-                                 log_scale=False)
+            pipeline.instantiate({'onset': threshold,
+                                  'offset': threshold,
+                                  'min_duration_on': 0.,
+                                  'min_duration_off': 0.,
+                                  'pad_onset': 0.,
+                                  'pad_offset': 0.})
 
             precision = DetectionPrecision()
             recall = DetectionRecall()
 
-            for current_file in getattr(protocol, subset)():
-                uri = get_unique_identifier(current_file)
-                reference = references[uri]
-                hypothesis = binarizer.apply(predictions[uri], dimension=0)
-                hypothesis = hypothesis.to_annotation()
-                uem = get_annotated(current_file)
-                _ = precision(reference, hypothesis, uem=uem)
-                _ = recall(reference, hypothesis, uem=uem)
+            validate = partial(validate_helper_func,
+                               pipeline=pipeline,
+                               precision=precision,
+                               recall=recall)
+            _ = self.pool_.map(validate, validation_data)
 
-            if abs(precision) < target_precision:
+            precision = abs(precision)
+            recall = abs(recall)
+
+            if precision < self.precision:
                 # precision is not high enough: try higher thresholds
-                lower_alpha = current_alpha
+                lower_alpha = current_alapha
+
             else:
                 upper_alpha = current_alpha
-                r = abs(recall)
-                if r > best_recall:
-                    best_recall = r
+                if recall > best_recall:
+                    best_recall = recall
                     best_alpha = current_alpha
 
-        return {
-            'metric': f'recall@{target_precision:.2f}precision',
-            'minimize': False,
-            'value': best_recall}
+        return {'metric': f'recall@{self.precision:.2f}precision',
+                'minimize': False,
+                'value': best_coverage,
+                'pipeline': pipeline.instantiate({'onset': best_alpha,
+                                                  'offset': best_alpha,
+                                                  'min_duration_on': 0.,
+                                                  'min_duration_off': 0.,
+                                                  'pad_onset': 0.,
+                                                  'pad_offset': 0.})}
 
 def main():
 
-    arguments = docopt(__doc__, version='Overlapping speech detection')
+    arguments = docopt(__doc__, version='Overlap detection')
 
     db_yml = Path(arguments['--database'])
     db_yml = db_yml.expanduser().resolve(strict=True)
@@ -198,6 +298,30 @@ def main():
 
     gpu = arguments['--gpu']
     device = torch.device('cuda') if gpu else torch.device('cpu')
+
+    if arguments['train']:
+
+        experiment_dir = Path(arguments['<experiment_dir>'])
+        experiment_dir = experiment_dir.expanduser().resolve(strict=True)
+
+        if subset is None:
+            subset = 'train'
+
+        # start training at this epoch (defaults to 0)
+        restart = int(arguments['--from'])
+
+        # stop training at this epoch (defaults to never stop)
+        epochs = arguments['--to']
+        if epochs is None:
+            epochs = np.inf
+        else:
+            epochs = int(epochs)
+
+        application = OverlapDetection(experiment_dir, db_yml=db_yml,
+                                       training=True)
+        application.device = device
+        application.train(protocol_name, subset=subset,
+                          restart=restart, epochs=epochs)
 
     if arguments['validate']:
 
@@ -230,9 +354,33 @@ def main():
 
         application = OverlapDetection.from_train_dir(
             train_dir, db_yml=db_yml, training=False)
+
         application.device = device
         application.batch_size = batch_size
         application.precision = precision
+
         application.validate(protocol_name, subset=subset,
                              start=start, end=end, every=every,
                              in_order=in_order)
+
+    if arguments['apply']:
+
+        model_pt = Path(arguments['<model.pt>'])
+        model_pt = model_pt.expanduser().resolve(strict=True)
+
+        output_dir = Path(arguments['<output_dir>'])
+        output_dir = output_dir.expanduser().resolve(strict=False)
+
+        # TODO. create README file in <output_dir>
+
+        step = arguments['--step']
+        if step is not None:
+            step = float(step)
+
+        batch_size = int(arguments['--batch'])
+
+        application = OverlapDetection.from_model_pt(
+            model_pt, db_yml=db_yml, training=False)
+        application.device = device
+        application.batch_size = batch_size
+        application.apply(protocol_name, output_dir, step=step, subset=subset)
