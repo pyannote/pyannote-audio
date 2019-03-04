@@ -268,7 +268,7 @@ class OverlapDetection(SpeechActivityDetection):
 
             if precision < self.precision:
                 # precision is not high enough: try higher thresholds
-                lower_alpha = current_alapha
+                lower_alpha = current_alpha
 
             else:
                 upper_alpha = current_alpha
