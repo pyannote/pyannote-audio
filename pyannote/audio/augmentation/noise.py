@@ -202,12 +202,10 @@ class AddNoiseFromGaps(Augmentation):
 
         raw_audio = RawAudio(sample_rate=sample_rate, mono=True)
 
-        original_duration = len(original) / sample_rate
-
         # accumulate enough noise to cover duration of original waveform
         noises = []
-        left = original_duration
-        while left > 0:
+        len_left = len(original)
+        while len_left > 0:
 
             # select noise file at random
             file = np.random.choice(self.files_)
@@ -215,16 +213,18 @@ class AddNoiseFromGaps(Augmentation):
             # select noise segment at random
             segment = next(random_segment(file['gaps'], weighted=False))
             duration = segment.duration
+            segment_len = duration * sample_rate
 
             # if noise segment is longer than what is needed, crop it at random
-            if duration > left:
-                segment = next(random_subsegment(segment, left))
-                duration = left
+            if segment_len > len_left:
+                duration = len_left / sample_rate
+                segment = next(random_subsegment(segment, duration))
 
             noise = raw_audio.crop(file, segment,
                                    mode='center', fixed=duration)
 
-            left -= duration
+            # decrease the `len_left` value by the size of the returned noise
+            len_left -= len(noise)
 
             noise = normalize(noise)
             noises.append(noise)
