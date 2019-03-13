@@ -193,8 +193,9 @@ def validate_helper_func(current_file, pipeline=None, precision=None, recall=Non
     reference = current_file['annotation']
     uem = get_annotated(current_file)
     hypothesis = pipeline(current_file)
-    return (precision(reference, hypothesis, uem=uem),
-            recall(reference, hypothesis, uem=uem))
+    p = precision(reference, hypothesis, uem=uem)
+    r = recall(reference, hypothesis, uem=uem)
+    return p, r
 
 class OverlapDetection(SpeechActivityDetection):
 
@@ -254,9 +255,9 @@ class OverlapDetection(SpeechActivityDetection):
                                   'pad_onset': 0.,
                                   'pad_offset': 0.})
 
-            precision = DetectionPrecision()
-            recall = DetectionRecall()
-
+            precision = DetectionPrecision(parallel=True)
+            recall = DetectionRecall(parallel=True)
+            
             validate = partial(validate_helper_func,
                                pipeline=pipeline,
                                precision=precision,
