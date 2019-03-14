@@ -196,14 +196,6 @@ def validate_helper_func(current_file, pipeline=None, precision=None, recall=Non
     r = recall(reference, hypothesis, uem=uem)
     return p, r
 
-def validate_helper_func(current_file, pipeline=None, precision=None, recall=None):
-    reference = current_file['annotation']
-    uem = get_annotated(current_file)
-    hypothesis = pipeline(current_file)
-    p = precision(reference, hypothesis, uem=uem)
-    r = recall(reference, hypothesis, uem=uem)
-    return p, r
-
 class OverlapDetection(SpeechActivityDetection):
 
     def validate_init(self, protocol_name, subset='development'):
