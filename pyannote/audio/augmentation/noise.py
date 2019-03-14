@@ -57,6 +57,7 @@ class AddNoise(Augmentation):
         package.
     db_yml : str, optional
         Path to `pyannote.database` configuration file.
+        See `pyannote.database.FileFinder` for more details.
     snr_min, snr_max : int, optional
         Defines Signal-to-Noise Ratio (SNR) range in dB. Defaults to [5, 20].
     """
@@ -152,6 +153,7 @@ class AddNoiseFromGaps(Augmentation):
         Use this subset. Defaults to 'train'.
     db_yml : str, optional
         Path to `pyannote.database` configuration file.
+        See `pyannote.database.FileFinder` for more details.
     snr_min, snr_max : int, optional
         Defines Signal-to-Noise Ratio (SNR) range in dB. Defaults to [5, 20].
 

@@ -156,9 +156,12 @@ class OverlapDetectionGenerator(LabelingTaskGenerator):
 
                 # randomly shift 'annotated' segments start time so that
                 # we avoid generating exactly the same subsequence twice
-                annotated = Timeline(
-                    [Segment(s.start + np.random.random() * self.duration,
-                             s.end) for s in get_annotated(current_file)])
+                shifted_segments = [
+                    Segment(s.start + np.random.random() * self.duration, s.end)
+                    for s in get_annotated(current_file)]
+                # deal with corner case where a shifted segment would be empty
+                shifted_segments = [s for s in shifted_segments if s]
+                annotated = Timeline(segments=shifted_segments)
                 current_file['annotated'] = annotated
 
                 if self.shuffle:
@@ -246,7 +249,7 @@ class OverlapDetectionGenerator(LabelingTaskGenerator):
                 if r-l > len(overlap['y']):
                     r = r-1
                 original['y'][l:r] += overlap['y'][:r-l]
-                                
+
                 speaker_count = np.sum(original['y'], axis=1, keepdims=True)
                 original['y'] = np.int64(speaker_count > 1)
 
@@ -258,7 +261,7 @@ class OverlapDetectionGenerator(LabelingTaskGenerator):
                 original['X'] = self.feature_extraction.crop(
                     original, Segment(0, self.duration), mode='center',
                     fixed=self.duration)
-                
+
                 del original['waveform']
                 del original['duration']
 

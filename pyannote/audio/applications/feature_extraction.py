@@ -42,7 +42,6 @@ Options:
                              section below for more details.
   <database.task.protocol>   Set evaluation protocol (e.g. "Etape.SpeakerDiarization.TV")
   --database=<db.yml>        Path to database configuration file.
-                             [default: ~/.pyannote/db.yml]
   --robust                   When provided, skip files for which feature extraction fails.
   --parallel                 When provided, process files in parallel.
   -h --help                  Show this screen.
@@ -253,8 +252,8 @@ def main():
 
     arguments = docopt(__doc__, version='Feature extraction')
 
-    db_yml = os.path.expanduser(arguments['--database'])
-    file_finder = FileFinder(db_yml)
+    db_yml = arguments['--database']
+    file_finder = FileFinder(config_yml=db_yml)
 
     protocol_name = arguments['<database.task.protocol>']
     experiment_dir = arguments['<experiment_dir>']
