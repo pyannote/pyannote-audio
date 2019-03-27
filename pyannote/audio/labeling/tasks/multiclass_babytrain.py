@@ -41,6 +41,8 @@ import numpy as np
 from .base import LabelingTask
 from .base import LabelingTaskGenerator
 from .base import TASK_MULTI_LABEL_CLASSIFICATION
+from pyannote.database import get_protocol
+protocol = get_protocol('BabyTrain.SpeakerDiarization.BB')
 import scipy.signal
 import sys
 
@@ -100,8 +102,7 @@ class MulticlassBabyTrainGenerator(LabelingTaskGenerator):
 
         Returns
         -------
-        y : (n_samples, n_speakers_classes+1 or +2) numpy.ndarray extended with non speech class
-                                                    (and re-extended with OVL if self.overlap==True)
+        y : (n_samples, n_speakers_classes+0 or +1) numpy.ndarray extended OVL if self.overlap == True
 
         See also
         --------
@@ -175,10 +176,10 @@ class MulticlassBabyTrain(LabelingTask):
 
     """
 
-    def __init__(self, overlap=True, **kwargs):
+    def __init__(self, overlap=False, weighted_loss=False, **kwargs):
         super(MulticlassBabyTrain, self).__init__(**kwargs)
         self.overlap = float(overlap)
-
+        self.weighted_loss = float(weighted_loss)
 
     def get_batch_generator(self, feature_extraction):
         return MulticlassBabyTrainGenerator(
@@ -194,14 +195,25 @@ class MulticlassBabyTrain(LabelingTask):
     def n_classes(self):
         return 5 if self.overlap else 4
 
+    def _get_one_over_the_prior(self):
+        nb_speakers = 4
+        weights = dict([(key, 0.0) for key in self.labels[0:nb_speakers]])
+
+        for current_file in protocol.trn_iter():
+            y = current_file["annotation"]
+            for speaker in self.labels[0:nb_speakers]:
+                weights[speaker] += y.label_duration(speaker)
+
+        total_speech = sum(weights.values(), 0.0)
+        weights = {key: total_speech / value for key, value in weights.items()}
+        return torch.tensor(np.array(list(weights.values())), dtype=torch.float32)
+
     @property
     def weight(self):
-        # Maybe weight by 1/prior
-        weight = [True] * self.n_classes
-        if weight:
-            return torch.tensor(np.array(weight) / np.sum(weight),
-                                dtype=torch.float32)
+        if self.weighted_loss:
+            return self._get_one_over_the_prior()
         return None
+        #return torch.tensor(np.array(weight) / np.sum(weight),dtype=torch.float32)
 
     @property
     def labels(self):
