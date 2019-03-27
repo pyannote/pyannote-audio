@@ -154,7 +154,6 @@ def helper_extract(current_file, file_finder=None, experiment_dir=None,
 
 def extract(protocol_name, file_finder, experiment_dir,
             robust=False, parallel=False):
-
     protocol = get_protocol(protocol_name, progress=False)
 
     # load configuration file
