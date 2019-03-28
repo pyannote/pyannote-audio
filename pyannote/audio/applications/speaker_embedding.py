@@ -38,7 +38,7 @@ Usage:
 
 Common options:
   <database.task.protocol>   Experimental protocol (e.g. "AMI.SpeakerDiarization.MixHeadset")
-  --database=<db.yml>        Path to database configuration file.
+  --database=<database.yml>  Path to pyannote.database configuration file.
   --subset=<subset>          Set subset (train|developement|test).
                              Defaults to "train" in "train" mode. Defaults to
                              "development" in "validate" mode. Defaults to all subsets in
@@ -74,11 +74,6 @@ Common options:
   <model.pt>                 Path to the pretrained model.
   --step=<step>              Sliding window step, in seconds.
                              Defaults to 25% of window duration.
-
-Database configuration file <db.yml>:
-    The database configuration provides details as to where actual files are
-    stored. See `pyannote.database.util.FileFinder` docstring for more
-    information on the expected format.
 
 Configuration file:
     The configuration of each experiment is described in a file called

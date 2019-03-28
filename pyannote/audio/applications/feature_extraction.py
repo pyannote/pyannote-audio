@@ -30,8 +30,8 @@
 Feature extraction
 
 Usage:
-  pyannote-speech-feature [--robust --parallel --database=<db.yml>] <experiment_dir> <database.task.protocol>
-  pyannote-speech-feature check [--database=<db.yml>] <experiment_dir> <database.task.protocol>
+  pyannote-speech-feature [--robust --parallel --database=<database.yml>] <experiment_dir> <database.task.protocol>
+  pyannote-speech-feature check [--database=<database.yml>] <experiment_dir> <database.task.protocol>
   pyannote-speech-feature -h | --help
   pyannote-speech-feature --version
 
@@ -41,16 +41,11 @@ Options:
                              in this directory. See "Configuration file"
                              section below for more details.
   <database.task.protocol>   Set evaluation protocol (e.g. "Etape.SpeakerDiarization.TV")
-  --database=<db.yml>        Path to database configuration file.
+  --database=<database.yml>  Path to pyannote.database configuration file.
   --robust                   When provided, skip files for which feature extraction fails.
   --parallel                 When provided, process files in parallel.
   -h --help                  Show this screen.
   --version                  Show version.
-
-Database configuration file:
-    The database configuration provides details as to where actual files are
-    stored. See `pyannote.database.util.FileFinder` docstring for more
-    information on the expected format.
 
 Configuration file:
     The configuration of each experiment is described in a file called

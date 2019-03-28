@@ -154,7 +154,8 @@ class SpeakerDiarization(Pipeline):
                                                             shrt_speech_turns,
                                                             long_speech_turns)
         # merge short/long speech turns
-        return long_speech_turns.update(shrt_speech_turns, copy=False)
+        return long_speech_turns.update(
+            shrt_speech_turns, copy=False).support(collar=0.)
 
         # TODO. add GMM-based resegmentation
 
