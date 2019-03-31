@@ -59,7 +59,7 @@ Common options:
 "validation" mode:
   --every=<epoch>            Validate model every <epoch> epochs [default: 1].
   --chronological            Force validation in chronological order.
-  <label>                    Label to predict (speech, overlap, or change).
+  <label>                    Label to predict (KCHI, CHI, FEM, MAL, OVL or speech).
   <train_dir>                Path to the directory containing pre-trained
                              models (i.e. the output of "train" mode).
   --precision=<precision>    Target detection precision [default: 0.8].
@@ -86,7 +86,7 @@ Configuration file:
        name: Segmentation
        params:
           duration: 3.2     # sub-sequence duration
-          overlap: True     # train for overlap speech detection
+          overlap: False    # train for overlap speech detection
           per_epoch: 1      # 1 day of audio per epoch
           batch_size: 32    # number of sub-sequences per batch
 

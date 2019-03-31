@@ -27,13 +27,11 @@
 # Marvin Lavechin - marvinlavechin@gmail.com
 
 """BabyTrain
-6-way classification :
-SIL     (silence)
+4-way classification :
 KCHI    (the key child wearing the device)
 CHI     (other children)
 FEM     (female speech)
 MAL     (male speech)
-OVL     (overlap)
 """
 
 import torch
@@ -86,7 +84,7 @@ class MulticlassBabyTrainGenerator(LabelingTaskGenerator):
     >>>     pass
     """
 
-    def __init__(self, feature_extraction, overlap=True, **kwargs):
+    def __init__(self, feature_extraction, overlap=False, **kwargs):
 
         super(MulticlassBabyTrainGenerator, self).__init__(
             feature_extraction, **kwargs)
