@@ -53,6 +53,8 @@ class OverlapDetectionGenerator(LabelingTaskGenerator):
     ----------
     feature_extraction : `pyannote.audio.features.FeatureExtraction`
         Feature extraction
+    protocol : `pyannote.database.Protocol`
+    subset : {'train', 'development', 'test'}
     duration : float, optional
         Duration of sub-sequences. Defaults to 3.2s.
     snr_min, snr_max : int, optional
@@ -68,17 +70,18 @@ class OverlapDetectionGenerator(LabelingTaskGenerator):
         Set `parallel` to 0 to not use background generators.
     """
 
-    def __init__(self, feature_extraction, duration=3.2, snr_min=0, snr_max=10,
+    def __init__(self, feature_extraction, protocol, subset='train',
+                 duration=3.2, snr_min=0, snr_max=10,
                  batch_size=32, per_epoch=1, parallel=1):
-
-        super().__init__(feature_extraction, duration=duration,
-                         batch_size=batch_size, per_epoch=per_epoch,
-                         parallel=parallel, shuffle=True)
 
         self.snr_min = snr_min
         self.snr_max = snr_max
-        self.raw_audio_ = RawAudio(
-            sample_rate=self.feature_extraction.sample_rate)
+        self.raw_audio_ = RawAudio(sample_rate=feature_extraction.sample_rate)
+
+        super().__init__(feature_extraction, protocol, subset=subset,
+                         duration=duration,
+                         batch_size=batch_size, per_epoch=per_epoch,
+                         parallel=parallel, shuffle=True)
 
     def overlap_samples(self):
         """Random overlap samples
@@ -200,15 +203,8 @@ class OverlapDetectionGenerator(LabelingTaskGenerator):
         duration_per_batch = self.duration * self.batch_size
         return int(np.ceil(duration_per_epoch / duration_per_batch))
 
-    @property
-    def labels(self):
-        return list(self.labels_)
-
-    def __call__(self, protocol, subset='train'):
+    def __call__(self):
         """(Parallelized) batch generator"""
-
-        # pre-load useful information about protocol once and for all
-        self.initialize(protocol, subset=subset)
 
         # number of batches needed to complete an epoch
         batches_per_epoch = self.batches_per_epoch
@@ -305,6 +301,14 @@ class OverlapDetectionGenerator(LabelingTaskGenerator):
                 for _ in range(batches_per_epoch):
                     yield next(batches)
 
+    @property
+    def specifications(self):
+        return {
+            'task': TASK_CLASSIFICATION,
+            'X': {'dimension': self.feature_extraction.dimension},
+            'y': {'classes': ['non_overlap', 'overlap']},
+        }
+
 
 class OverlapDetection(LabelingTask):
     """Train overlap detection
@@ -348,16 +352,11 @@ class OverlapDetection(LabelingTask):
     def __init__(self, **kwargs):
         super(OverlapDetection, self).__init__(**kwargs)
 
-    def get_batch_generator(self, precomputed):
+    def get_batch_generator(self, feature_extraction, protocol, subset='train'):
         return OverlapDetectionGenerator(
-            precomputed, duration=self.duration,
-            per_epoch=self.per_epoch, batch_size=self.batch_size,
+            feature_extraction,
+            protocol, subset=subset,
+            duration=self.duration,
+            per_epoch=self.per_epoch,
+            batch_size=self.batch_size,
             parallel=self.parallel)
-
-    @property
-    def task_type(self):
-        return TASK_CLASSIFICATION
-
-    @property
-    def n_classes(self):
-        return 2

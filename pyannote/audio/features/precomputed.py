@@ -114,6 +114,15 @@ class Precomputed(object):
 
         else:
 
+            if dimension is None:
+                if labels is None:
+                    msg = (
+                        f'Please provide either `dimension` or `labels` '
+                        f'parameters (or both) when instantiating '
+                        f'`Precomputed`.'
+                    )
+                dimension = len(labels)
+
             if sliding_window is None or dimension is None:
                 msg = (
                     f'Either directory {self.root_dir} does not exist or it '
@@ -125,6 +134,7 @@ class Precomputed(object):
 
             # create parent directory
             mkdir_p(path.parent)
+
 
             params = {'start': sliding_window.start,
                       'duration': sliding_window.duration,

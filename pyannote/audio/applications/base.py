@@ -26,6 +26,9 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
+import io
+import os
+import sys
 import time
 import yaml
 from pathlib import Path
@@ -47,11 +50,9 @@ import warnings
 class Application(object):
 
     CONFIG_YML = '{experiment_dir}/config.yml'
-
     TRAIN_DIR = '{experiment_dir}/train/{protocol}.{subset}'
+    WEIGHTS_DIR = '{train_dir}/weights'
     WEIGHTS_PT = '{train_dir}/weights/{epoch:04d}.pt'
-
-    # created by "validate" mode
     VALIDATE_DIR = '{train_dir}/validate{_task}/{protocol}.{subset}'
 
     @classmethod
@@ -161,20 +162,50 @@ class Application(object):
                 **self.config_['feature_extraction'].get('params', {}),
                 augmentation=augmentation)
 
+    def train(self, protocol_name, subset='train', restart=0, epochs=1000):
+        """
 
-    def train(self, protocol_name, subset='train', restart=None, epochs=1000):
+        Parameters
+        ----------
+        protocol_name : `str`
+        subset : {'train', 'development', 'test'}, optional
+            Defaults to 'train'.
+        restart : `int`, optional
+
+
+        """
 
         train_dir = self.TRAIN_DIR.format(
             experiment_dir=self.experiment_dir,
             protocol=protocol_name,
             subset=subset)
 
+        if not restart:
+
+            weights_dir = self.task_.WEIGHTS_DIR.format(log_dir=train_dir)
+            try:
+                # this will fail if the directory already exists
+                # and this is OK  because 'weights' directory
+                # usually contains the output of very long computations
+                # and you do not want to erase them by mistake :/
+                os.makedirs(weights_dir)
+            except FileExistsError as e:
+                msg = (
+                    f'You are about to overwrite pretrained models in '
+                    f'"{weights_dir}" directory. If you want to train a new '
+                    f'model from scratch, first (backup and) remove the '
+                    f'directory.'
+                )
+                sys.exit(msg)
+
+        # initialize batch generator
         protocol = get_protocol(protocol_name, progress=True,
                                 preprocessors=self.preprocessors_)
+        batch_generator = self.task_.get_batch_generator(
+            self.feature_extraction_, protocol, subset=subset)
 
         self.task_.fit(
-            self.model_, self.feature_extraction_,
-            protocol, subset=subset,
+            self.get_model_, batch_generator,
             restart=restart, epochs=epochs,
             get_optimizer=self.get_optimizer_,
             get_scheduler=self.get_scheduler_,
@@ -195,12 +226,20 @@ class Application(object):
         if train_dir is None:
             train_dir = self.train_dir_
 
+        # initialize model from specs stored on disk
+        specs_yml = self.task_.SPECS_YML.format(log_dir=train_dir)
+        with io.open(specs_yml, 'r') as fp:
+            specifications = yaml.load(fp)
+        self.model_ = self.get_model_(specifications)
+
         import torch
         weights_pt = self.WEIGHTS_PT.format(
             train_dir=train_dir, epoch=epoch)
+
         # if GPU is not available, load using CPU
         self.model_.load_state_dict(
             torch.load(weights_pt, map_location=lambda storage, loc: storage))
+
         return self.model_
 
     def get_number_of_epochs(self, train_dir=None, return_first=False):

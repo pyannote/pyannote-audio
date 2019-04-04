@@ -43,15 +43,19 @@ class StackedRNN(nn.Module):
 
     Parameters
     ----------
-    n_features : int
-        Input feature dimension.
-    n_classes : int
-        Set number of classes.
-    task_type : {TASK_CLASSIFICATION, TASK_MULTI_LABEL_CLASSIFICATION,
-            TASK_REGRESSION}
-        Depending on which task is adressed, the final activation will vary.
-        Classification relies on log-softmax, multi-label classificatition and
-        regression use sigmoid.
+    specifications : `dict`
+        Provides model IO specifications using the following data structure:
+            {'X': {'dimension': DIMENSION},
+             'y': {'classes': CLASSES},
+             'task': TASK_TYPE}
+        where
+            * DIMENSION is the input feature dimension
+            * CLASSES is the list of (human-readable) output classes
+            * TASK_TYPE is either TASK_CLASSIFICATION, TASK_REGRESSION, or
+                TASK_MULTI_LABEL_CLASSIFICATION. Depending on which task is
+                adressed, the final activation will vary. Classification relies
+                on log-softmax, multi-label classificatition and regression use
+                sigmoid.
     instance_normalize : boolean, optional
         Apply mean/variance normalization on input sequences.
     rnn : {'LSTM', 'GRU'}, optional
@@ -67,15 +71,21 @@ class StackedRNN(nn.Module):
         one linear layer with hidden dimension of 16.
     """
 
-    def __init__(self, n_features, n_classes, task_type, instance_normalize=False,
+    def __init__(self, specifications, instance_normalize=False,
                  rnn='LSTM', recurrent=[16,], bidirectional=False,
                  linear=[16, ]):
 
         super(StackedRNN, self).__init__()
 
-        self.n_features = n_features
-        self.n_classes = n_classes
-        self.task_type = task_type
+        self.specifications = specifications
+
+        n_features = specifications['X']['dimension']
+        self.n_features_ = n_features
+
+        n_classes = len(specifications['y']['classes'])
+        self.n_classes_ = n_classes
+
+        task_type = specifications['task']
         if task_type not in {TASK_CLASSIFICATION,
                         TASK_MULTI_LABEL_CLASSIFICATION,
                         TASK_REGRESSION}:
@@ -83,6 +93,7 @@ class StackedRNN(nn.Module):
             msg = (f"`task_type` must be one of {TASK_CLASSIFICATION}, "
                    f"{TASK_MULTI_LABEL_CLASSIFICATION} or {TASK_REGRESSION}.")
             raise ValueError(msg)
+        self.task_type_ = task_type
 
         self.instance_normalize = instance_normalize
 
@@ -96,7 +107,7 @@ class StackedRNN(nn.Module):
 
         # create list of recurrent layers
         self.recurrent_layers_ = []
-        input_dim = self.n_features
+        input_dim = self.n_features_
         for i, hidden_dim in enumerate(self.recurrent):
             if self.rnn == 'LSTM':
                 recurrent_layer = nn.LSTM(input_dim, hidden_dim,
@@ -120,28 +131,17 @@ class StackedRNN(nn.Module):
             self.linear_layers_.append(linear_layer)
             input_dim = hidden_dim
 
-        # create final classification layer
-        self.final_layer_ = nn.Linear(input_dim, self.n_classes)
+        self.last_hidden_dim_ = input_dim
 
-    def get_loss(self):
-        """Return loss function (with support for class weights)
+        self.final_layer_ = nn.Linear(self.last_hidden_dim_, self.n_classes_)
 
-        Returns
-        -------
-        loss_func : callable
-            Function f(input, target, weight=None) -> loss value
-        """
+    @property
+    def classes(self):
+        return self.specifications['y']['classes']
 
-        if self.task_type == TASK_CLASSIFICATION:
-            return F.nll_loss
-
-        if self.task_type == TASK_MULTI_LABEL_CLASSIFICATION:
-            return F.binary_cross_entropy
-
-        if self.task_type == TASK_REGRESSION:
-            def mse_loss(input, target, weight=None):
-                return F.mse_loss(input, target)
-            return mse_loss
+    @property
+    def n_classes(self):
+        return len(self.specifications['y']['classes'])
 
     def forward(self, sequences):
 
@@ -152,9 +152,9 @@ class StackedRNN(nn.Module):
 
         batch_size, n_features, device = get_info(sequences)
 
-        if n_features != self.n_features:
+        if n_features != self.n_features_:
             msg = 'Wrong feature dimension. Found {0}, should be {1}'
-            raise ValueError(msg.format(n_features, self.n_features))
+            raise ValueError(msg.format(n_features, self.n_features_))
 
         output = sequences
 
@@ -200,11 +200,11 @@ class StackedRNN(nn.Module):
         # apply final classification layer
         output = self.final_layer_(output)
 
-        if self.task_type == TASK_CLASSIFICATION:
+        if self.task_type_ == TASK_CLASSIFICATION:
             return torch.log_softmax(output, dim=2)
 
-        elif self.task_type == TASK_MULTI_LABEL_CLASSIFICATION:
+        elif self.task_type_ == TASK_MULTI_LABEL_CLASSIFICATION:
             return torch.sigmoid(output)
 
-        elif self.task_type == TASK_REGRESSION:
+        elif self.task_type_ == TASK_REGRESSION:
             return torch.sigmoid(output)

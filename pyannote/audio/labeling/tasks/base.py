@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2018 CNRS
+# Copyright (c) 2018-2019 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -50,6 +50,8 @@ from .. import TASK_CLASSIFICATION
 from .. import TASK_MULTI_LABEL_CLASSIFICATION
 from .. import TASK_REGRESSION
 
+import torch.nn.functional as F
+
 
 class LabelingTaskGenerator(object):
     """Base batch generator for various labeling tasks
@@ -60,6 +62,8 @@ class LabelingTaskGenerator(object):
     ----------
     feature_extraction : `pyannote.audio.features.FeatureExtraction`
         Feature extraction
+    protocol : `pyannote.database.Protocol`
+    subset : {'train', 'development', 'test'}
     duration : float, optional
         Duration of sub-sequences. Defaults to 3.2s.
     batch_size : int, optional
@@ -78,8 +82,9 @@ class LabelingTaskGenerator(object):
         Shuffle exhaustive samples. Defaults to False.
     """
 
-    def __init__(self, feature_extraction, duration=3.2, batch_size=32,
-                 per_epoch=1, parallel=1, exhaustive=False, shuffle=False):
+    def __init__(self, feature_extraction, protocol, subset='train',
+                 duration=3.2, batch_size=32, per_epoch=1, parallel=1,
+                 exhaustive=False, shuffle=False):
 
         super(LabelingTaskGenerator, self).__init__()
 
@@ -91,7 +96,53 @@ class LabelingTaskGenerator(object):
         self.exhaustive = exhaustive
         self.shuffle = shuffle
 
-    def initialize(self, protocol, subset='train'):
+        self._load_metadata(protocol, subset=subset)
+
+    def postprocess_y(self, Y):
+        """This function does nothing but return its input.
+        It should be overriden by subclasses."""
+        return Y
+
+    def initialize_y(self, current_file):
+        """Precompute y for the whole file
+
+        Parameters
+        ----------
+        current_file : `dict`
+            File as provided by a pyannote.database protocol.
+
+        Returns
+        -------
+        y : `SlidingWindowFeature`
+            Precomputed y for the whole file
+        """
+        y, _ = one_hot_encoding(current_file['annotation'],
+                                get_annotated(current_file),
+                                self.feature_extraction.sliding_window,
+                                labels=self.original_classes_, mode='center')
+
+        return SlidingWindowFeature(self.postprocess_y(y.data),
+                                    y.sliding_window)
+
+    def crop_y(self, y, segment):
+        """Extract y for specified segment
+
+        Parameters
+        ----------
+        y : `pyannote.core.SlidingWindowFeature`
+            Output of `initialize_y` above.
+        segment : `pyannote.core.Segment`
+            Segment for which to obtain y.
+
+        Returns
+        -------
+        cropped_y :  (n_samples, ) or (n_samples, dim) `np.ndarray`
+            y for specified
+        """
+
+        return np.squeeze(y.crop(segment, mode='center', fixed=self.duration))
+
+    def _load_metadata(self, protocol, subset='train'):
         """Gather the following information about the training subset:
 
         data_ : dict
@@ -154,32 +205,27 @@ class LabelingTaskGenerator(object):
             self.data_[uri] = datum
 
         self.databases_ = sorted(databases)
-        self.labels_ = sorted(labels)
+        self.original_classes_ = sorted(labels)
 
         for current_file in getattr(protocol, subset)():
-
-            y, _ = one_hot_encoding(current_file['annotation'],
-                                    get_annotated(current_file),
-                                    self.feature_extraction.sliding_window,
-                                    labels=self.labels_, mode='center')
-
             uri = get_unique_identifier(current_file)
+            self.data_[uri]['y'] = self.initialize_y(current_file)
 
-            self.data_[uri]['y'] = SlidingWindowFeature(
-                self.postprocess_y(y.data), y.sliding_window)
+    @property
+    def specifications(self):
+        return {
+            'task': None,
+            'X': {'dimension': self.feature_extraction.dimension},
+            'y': {'classes': self.original_classes_},
+        }
 
-    def postprocess_y(self, Y):
-        """This function does nothing but return its input.
-        It should be overriden by subclasses."""
-        return Y
-
-    def samples(self):
+    def _samples(self):
         if self.exhaustive:
-            return self.sliding_samples()
+            return self._sliding_samples()
         else:
-            return self.random_samples()
+            return self._random_samples()
 
-    def random_samples(self):
+    def _random_samples(self):
         """Random samples
 
         Returns
@@ -206,17 +252,16 @@ class LabelingTaskGenerator(object):
             segment = next(random_segment(datum['segments'], weighted=True))
 
             # choose fixed-duration subsegment at random
-            sequence = next(random_subsegment(segment, self.duration))
+            subsegment = next(random_subsegment(segment, self.duration))
 
-            X = self.feature_extraction.crop(current_file,
-                                      sequence, mode='center',
-                                      fixed=self.duration)
+            yield {
+                'X': self.feature_extraction.crop(current_file,
+                                                  subsegment, mode='center',
+                                                  fixed=self.duration),
+                'y': self.crop_y(datum['y'], subsegment),
+            }
 
-            y = datum['y'].crop(sequence, mode='center', fixed=self.duration)
-
-            yield {'X': X, 'y': np.squeeze(y)}
-
-    def sliding_samples(self):
+    def _sliding_samples(self):
 
         uris = list(self.data_)
         durations = np.array([self.data_[uri]['duration'] for uri in uris])
@@ -255,11 +300,8 @@ class LabelingTaskGenerator(object):
 
                     X = features.crop(sequence, mode='center',
                                       fixed=self.duration)
-
-                    y = datum['y'].crop(sequence, mode='center',
-                                        fixed=self.duration)
-
-                    sample = {'X': X, 'y': np.squeeze(y)}
+                    y = self.crop_y(datum['y'], subsegment)
+                    sample = {'X': X, 'y': y}
 
                     if self.shuffle:
                         samples.append(sample)
@@ -283,15 +325,8 @@ class LabelingTaskGenerator(object):
         duration_per_batch = self.duration * self.batch_size
         return int(np.ceil(duration_per_epoch / duration_per_batch))
 
-    @property
-    def labels(self):
-        return list(self.labels_)
-
-    def __call__(self, protocol, subset='train'):
+    def __call__(self):
         """(Parallelized) batch generator"""
-
-        # pre-load useful information about protocol once and for all
-        self.initialize(protocol, subset=subset)
 
         # number of batches needed to complete an epoch
         batches_per_epoch = self.batches_per_epoch
@@ -301,12 +336,9 @@ class LabelingTaskGenerator(object):
         if self.parallel:
             for _ in range(self.parallel):
 
-                # initialize one sample generator
-                samples = self.samples()
-
-                # batchify it and make sure at least
+                # batchify sampler and make sure at least
                 # `batches_per_epoch` batches are prefetched.
-                batches = batchify(samples, self.signature,
+                batches = batchify(self._samples(), self.signature,
                                    batch_size=self.batch_size,
                                    prefetch=batches_per_epoch)
 
@@ -314,11 +346,8 @@ class LabelingTaskGenerator(object):
                 generators.append(batches)
         else:
 
-            # initialize one sample generator
-            samples = self.samples()
-
-            # batchify it without prefetching
-            batches = batchify(samples, self.signature,
+            # batchify sampler without prefetching
+            batches = batchify(self._samples(), self.signature,
                                batch_size=self.batch_size, prefetch=0)
 
             # add it to the list of generators
@@ -362,7 +391,7 @@ class LabelingTask(Trainer):
         self.per_epoch = per_epoch
         self.parallel = parallel
 
-    def get_batch_generator(self, feature_extraction):
+    def get_batch_generator(self, feature_extraction, protocol, subset='train'):
         """This method should be overriden by subclass
 
         Parameters
@@ -374,20 +403,9 @@ class LabelingTask(Trainer):
         batch_generator : `LabelingTaskGenerator`
         """
         return LabelingTaskGenerator(
-            feature_extraction, duration=self.duration,
-            per_epoch=self.per_epoch, batch_size=self.batch_size,
-            parallel=self.parallel)
-
-    @property
-    def task_type(self):
-        msg = 'LabelingTask subclasses must implement task_type property'
-        raise NotImplementedError(msg)
-
-    @property
-    def n_classes(self):
-        """Number of classes"""
-        msg = 'LabelingTask subclass must define `n_classes` property.'
-        raise NotImplementedError(msg)
+            feature_extraction, protocol, subset=subset,
+            duration=self.duration, per_epoch=self.per_epoch,
+            batch_size=self.batch_size, parallel=self.parallel)
 
     @property
     def weight(self):
@@ -399,32 +417,52 @@ class LabelingTask(Trainer):
         """
         return None
 
-    def on_train_start(self, model, batches_per_epoch=None, **kwargs):
+    def on_train_start(self):
+        """Set loss function (with support for class weights)
 
-        if model.n_classes != self.n_classes:
-            raise ValueError('n_classes mismatch')
+        loss_func_ = Function f(input, target, weight=None) -> loss value
+        """
 
-        self.loss_func_ = model.get_loss()
+        self.task_type_ = self.model_.specifications['task']
 
-    def batch_loss(self, batch, model, device, writer=None):
+        if self.task_type_ == TASK_CLASSIFICATION:
+            self.n_classes_ = len(self.model_.specifications['y']['classes'])
+            self.loss_func_ = F.nll_loss
 
-        X = torch.tensor(batch['X'], dtype=torch.float32, device=device)
-        fX = model(X)
+        if self.task_type_ == TASK_MULTI_LABEL_CLASSIFICATION:
+            self.loss_func_ = F.binary_cross_entropy
 
-        if self.task_type == TASK_CLASSIFICATION:
-            y = torch.tensor(batch['y'], dtype=torch.int64, device=device)
-            target = y.contiguous().view((-1, ))
-            fX = fX.view((-1, self.n_classes))
+        if self.task_type_ == TASK_REGRESSION:
+            def mse_loss(input, target, weight=None):
+                return F.mse_loss(input, target)
+            self.loss_func_ = mse_loss
 
-        elif self.task_type == TASK_MULTI_LABEL_CLASSIFICATION:
-            target = torch.tensor(batch['y'], dtype=torch.float32,
-                                  device=device)
+    def batch_loss(self, batch):
 
-        elif self.task_type == TASK_REGRESSION:
-            target = torch.tensor(batch['y'], dtype=torch.float32,
-                                  device=device)
+        # forward pass
+        X = torch.tensor(batch['X'],
+                         dtype=torch.float32,
+                         device=self.device_)
+        fX = self.model_(X)
+
+        if self.task_type_ == TASK_CLASSIFICATION:
+            fX = fX.view((-1, self.n_classes_))
+
+            target = torch.tensor(
+                batch['y'],
+                dtype=torch.int64,
+                device=self.device_).contiguous().view((-1, ))
+
+        elif self.task_type_ in [TASK_MULTI_LABEL_CLASSIFICATION,
+                                 TASK_REGRESSION]:
+
+            target = torch.tensor(
+                batch['y'],
+                dtype=torch.float32,
+                device=self.device_)
 
         weight = self.weight
         if weight is not None:
-            weight = weight.to(device=device)
+            weight = weight.to(device=self.device_)
+
         return self.loss_func_(fX, target, weight=weight)

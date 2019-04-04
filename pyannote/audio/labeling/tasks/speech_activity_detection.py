@@ -41,6 +41,8 @@ class SpeechActivityDetectionGenerator(LabelingTaskGenerator):
     ----------
     feature_extraction : `pyannote.audio.features.FeatureExtraction`
         Feature extraction
+    protocol : `pyannote.database.Protocol`
+    subset : {'train', 'development', 'test'}
     overlap : bool, optional
         Switch to 3 classes "non-speech vs. one speaker vs. 2+ speakers".
         Defaults to 2 classes "non-speech vs. speech".
@@ -56,30 +58,14 @@ class SpeechActivityDetectionGenerator(LabelingTaskGenerator):
         Each generator will prefetch enough batches to cover a whole epoch.
         Set `parallel` to 0 to not use background generators.
 
-    Usage
-    -----
-    # precomputed features
-    >>> from pyannote.audio.features import Precomputed
-    >>> precomputed = Precomputed('/path/to/mfcc')
-
-    # instantiate batch generator
-    >>> batches = SpeechActivityDetectionGenerator(precomputed)
-
-    # evaluation protocol
-    >>> from pyannote.database import get_protocol
-    >>> protocol = get_protocol('Etape.SpeakerDiarization.TV')
-
-    # iterate over training set
-    >>> for batch in batches(protocol, subset='train'):
-    >>>     # batch['X'] is a (batch_size, n_samples, n_features) numpy array
-    >>>     # batch['y'] is a (batch_size, n_samples, 1) numpy array
-    >>>     pass
     """
 
-    def __init__(self, feature_extraction, overlap=False, **kwargs):
-        super(SpeechActivityDetectionGenerator, self).__init__(
-            feature_extraction, **kwargs)
+    def __init__(self, feature_extraction, protocol, subset='train',
+                 overlap=False, **kwargs):
+
         self.overlap = overlap
+        super().__init__(
+            feature_extraction, protocol, subset=subset, **kwargs)
 
     def postprocess_y(self, Y):
         """Generate labels for speech activity detection
@@ -110,6 +96,17 @@ class SpeechActivityDetectionGenerator(LabelingTaskGenerator):
 
         return speech
 
+    @property
+    def specifications(self):
+        classes = ['non_speech', 'speech']
+        if self.overlap:
+            classes.append('overlap')
+        return {
+            'task': TASK_CLASSIFICATION,
+            'X': {'dimension': self.feature_extraction.dimension},
+            'y': {'classes': classes},
+        }
+
 
 class SpeechActivityDetection(LabelingTask):
     """Train speech activity (and overlap) detection
@@ -130,43 +127,18 @@ class SpeechActivityDetection(LabelingTask):
         Number of prefetching background generators. Defaults to 1.
         Each generator will prefetch enough batches to cover a whole epoch.
         Set `parallel` to 0 to not use background generators.
-
-    Usage
-    -----
-    >>> task = SpeechActivityDetection()
-
-    # precomputed features
-    >>> from pyannote.audio.features import Precomputed
-    >>> precomputed = Precomputed('/path/to/features')
-
-    # model architecture
-    >>> from pyannote.audio.labeling.models import StackedRNN
-    >>> model = StackedRNN(precomputed.dimension, task.n_classes)
-
-    # evaluation protocol
-    >>> from pyannote.database import get_protocol
-    >>> protocol = get_protocol('Etape.SpeakerDiarization.TV')
-
-    # train model using protocol training set
-    >>> for epoch, model in task.fit_iter(model, precomputed, protocol):
-    ...     pass
-
     """
 
     def __init__(self, overlap=False, **kwargs):
-        super(SpeechActivityDetection, self).__init__(**kwargs)
+        super().__init__(**kwargs)
         self.overlap = overlap
 
-    def get_batch_generator(self, precomputed):
+    def get_batch_generator(self, feature_extraction, protocol, subset='train'):
         return SpeechActivityDetectionGenerator(
-            precomputed, overlap=self.overlap, duration=self.duration,
-            per_epoch=self.per_epoch, batch_size=self.batch_size,
+            feature_extraction,
+            protocol, subset=subset,
+            overlap=self.overlap,
+            duration=self.duration,
+            per_epoch=self.per_epoch,
+            batch_size=self.batch_size,
             parallel=self.parallel)
-
-    @property
-    def task_type(self):
-        return TASK_CLASSIFICATION
-
-    @property
-    def n_classes(self):
-        return 3 if self.overlap else 2
