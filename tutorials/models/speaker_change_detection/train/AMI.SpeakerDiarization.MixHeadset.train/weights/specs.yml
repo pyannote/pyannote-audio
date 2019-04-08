@@ -1,0 +1,7 @@
+X:
+  dimension: 59
+task: one-class
+y:
+  classes:
+  - non_change
+  - change
