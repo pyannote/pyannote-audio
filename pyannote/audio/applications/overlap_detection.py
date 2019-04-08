@@ -253,11 +253,19 @@ class OverlapDetection(BaseLabeling):
             precision = abs(precision)
             recall = abs(recall)
 
-            if precision < self.precision:
-                # precision is not high enough: try higher thresholds
+            if not recall:
+                # lower the threshold until we at least return something...
+                upper_alpha = current_alpha
+                best_alpha = current_alpha
+                precision = 0.
+
+            elif precision < self.precision:
+                # increase the threshold while precision is not good enough
                 lower_alpha = current_alpha
 
             else:
+                # lower the threshold if we return something and
+                # precision is good enough
                 upper_alpha = current_alpha
                 if recall > best_recall:
                     best_recall = recall
@@ -265,7 +273,8 @@ class OverlapDetection(BaseLabeling):
 
         return {'metric': f'recall@{self.precision:.2f}precision',
                 'minimize': False,
-                'value': best_recall,
+                'value': best_recall if best_recall \
+                         else precision - self.precision,
                 'pipeline': pipeline.instantiate({'onset': best_alpha,
                                                   'offset': best_alpha,
                                                   'min_duration_on': 0.,

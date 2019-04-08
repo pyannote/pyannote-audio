@@ -76,6 +76,9 @@ class Trainer:
                    self.OPTIMIZER_PT.format(log_dir=self.log_dir_,
                                             epoch=self.epoch_))
 
+    def on_train_start(self):
+        pass
+
     def fit(self, model, batch_generator, restart=0, epochs=1000,
             get_optimizer=None, get_scheduler=None, learning_rate='auto',
             log_dir=None, device=None):

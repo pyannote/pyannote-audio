@@ -43,18 +43,20 @@ class VGGVox(nn.Module):
 
     """
 
-    def __init__(self, n_features, output_dim=256):
+    def __init__(self, specifications, output_dim=256):
 
-        if n_features < 97:
+        super().__init__()
+        self.specifications = specifications
+        self.n_features_ = specifications['X']['dimension']
+
+        if self.n_features_ < 97:
             msg = (f'VGGVox expects features with at least 97 dimensions '
                    f'(here, n_features = {n_features:d})')
             raise ValueError(msg)
 
-        super(VGGVox, self).__init__()
-        self.n_features = n_features
         self.output_dim = output_dim
 
-        h = self.n_features  # 512 in VoxCeleb paper. 201 in practice.
+        h = self.n_features_  # 512 in VoxCeleb paper. 201 in practice.
         w = 301 # typically 3s with 10ms steps
 
         self.conv1_ = nn.Conv2d(1, 96, (7, 7), stride=(2, 2), padding=1)
@@ -130,9 +132,9 @@ class VGGVox(nn.Module):
         # reshape batch to (batch_size, n_channels, n_features, n_samples)
         batch_size, n_samples, n_features = sequences.size()
 
-        if n_features != self.n_features:
+        if n_features != self.n_features_:
             msg = (f'Mismatch in feature dimension '
-                   f'(should be: {self.n_features:d}, is: {n_features:d})')
+                   f'(should be: {self.n_features_:d}, is: {n_features:d})')
             raise ValueError(msg)
 
         if n_samples < 65:

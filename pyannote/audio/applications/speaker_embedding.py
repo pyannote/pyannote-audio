@@ -174,6 +174,8 @@ import itertools
 import numpy as np
 from pathlib import Path
 from docopt import docopt
+from functools import partial
+
 from .base import Application
 
 from pyannote.core import Segment, Timeline, Annotation
@@ -214,8 +216,8 @@ class SpeakerEmbedding(Application):
         Architecture = get_class_by_name(
             self.config_['architecture']['name'],
             default_module_name='pyannote.audio.embedding.models')
-        self.model_ = Architecture(
-            int(self.feature_extraction_.dimension),
+        self.get_model_ = partial(
+            Architecture,
             **self.config_['architecture'].get('params', {}))
 
         # training approach
@@ -508,7 +510,8 @@ class SpeakerEmbedding(Application):
 
         return {'metric': f'coverage@{self.purity:.2f}purity',
                 'minimize': False,
-                'value': best_coverage}
+                'value': best_coverage if best_coverage \
+                         else purity - self.purity}
 
 
     def apply(self, protocol_name, output_dir, step=None, subset=None):

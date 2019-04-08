@@ -41,8 +41,9 @@ class TristouNet(nn.Module):
 
     Parameters
     ----------
-    n_features : int
-        Input feature dimension
+    specifications : `dict`
+        Batch specifications:
+            {'X': {'dimension': n_features}}
     rnn : {'LSTM', 'GRU'}, optional
         Defaults to 'LSTM'.
     recurrent: list, optional
@@ -61,13 +62,14 @@ class TristouNet(nn.Module):
     ICASSP 2017 (https://arxiv.org/abs/1609.04301)
     """
 
-    def __init__(self, n_features,
+    def __init__(self, specifications,
                  rnn='LSTM', recurrent=[16], bidirectional=False,
                  pooling='sum', linear=[16, 16]):
 
         super(TristouNet, self).__init__()
 
-        self.n_features = n_features
+        self.specifications = specifications
+        self.n_features_ = specifications['X']['dimension']
         self.rnn = rnn
         self.recurrent = recurrent
         self.bidirectional = bidirectional
@@ -81,7 +83,7 @@ class TristouNet(nn.Module):
 
         # create list of recurrent layers
         self.recurrent_layers_ = []
-        input_dim = self.n_features
+        input_dim = self.n_features_
         for i, hidden_dim in enumerate(self.recurrent):
             if self.rnn == 'LSTM':
                 recurrent_layer = nn.LSTM(input_dim, hidden_dim,
@@ -131,9 +133,9 @@ class TristouNet(nn.Module):
             batch_size, _, n_features = sequence.size()
             device = sequence.device
 
-        if n_features != self.n_features:
+        if n_features != self.n_features_:
             msg = 'Wrong feature dimension. Found {0}, should be {1}'
-            raise ValueError(msg.format(n_features, self.n_features))
+            raise ValueError(msg.format(n_features, self.n_features_))
 
         output = sequence
 

@@ -233,7 +233,6 @@ class SpeakerChangeDetection(BaseLabeling):
             # we were to put all reference speech turns in its own cluster
 
             if purity < self.purity:
-
                 upper_alpha = current_alpha
             else:
                 lower_alpha = current_alpha
@@ -243,7 +242,8 @@ class SpeakerChangeDetection(BaseLabeling):
 
         return {'metric': f'coverage@{self.purity:.2f}purity',
                 'minimize': False,
-                'value': best_coverage,
+                'value': best_coverage if best_coverage \
+                         else purity - self.purity
                 'pipeline': pipeline.instantiate({'alpha': best_alpha,
                                                   'min_duration': 0.})}
 

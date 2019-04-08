@@ -68,11 +68,8 @@ class SequenceLabeling(FileBasedBatchGenerator):
 
         if not isinstance(model, nn.Module):
 
-            # TODO. make all labeling apps inherit from a unique Labeling app
-            from pyannote.audio.applications.speech_detection \
-                import SpeechActivityDetection as LabelingApp
-
-            app = LabelingApp.from_model_pt(model, training=False)
+            from pyannote.audio.applications.base_labeling import BaseLabeling
+            app = BaseLabeling.from_model_pt(model, training=False)
 
             model = app.model_
             if feature_extraction is None:
@@ -243,7 +240,6 @@ class SequenceLabeling(FileBasedBatchGenerator):
             return SlidingWindowFeature(data, frames)
 
         fX = np.vstack(batches)
-
         subsequences = SlidingWindow(duration=self.duration, step=self.step)
 
         # get total number of frames

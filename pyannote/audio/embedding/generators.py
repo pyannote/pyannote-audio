@@ -80,6 +80,8 @@ class SessionWiseSpeechSegmentGenerator(object):
     ----------
     feature_extraction : `pyannote.audio.features.FeatureExtraction`
         Feature extraction.
+    protocol : `pyannote.database.Protocol`
+    subset : {'train', 'development', 'test'}
     per_label : int, optional
         Number of speech turns per speaker in each batch. Defaults to 3.
     label_min_duration : float, optional
@@ -102,7 +104,7 @@ class SessionWiseSpeechSegmentGenerator(object):
         Set `parallel` to 0 to not use background generators.
     """
 
-    def __init__(self, feature_extraction,
+    def __init__(self, feature_extraction, protocol, subset='train',
                  per_label=3, per_fold=None, per_epoch=7,
                  duration=None, min_duration=None, max_duration=None,
                  label_min_duration=0., parallel=1):
@@ -123,7 +125,9 @@ class SessionWiseSpeechSegmentGenerator(object):
         self.label_min_duration = label_min_duration
         self.parallel = parallel
 
-    def initialize(self, protocol, subset='train'):
+        self._load_metadata(protocol, subset=subset)
+
+    def _load_metadata(self, protocol, subset='train'):
         """Intialize one batch generator per file in the protocol"""
 
         self.batches_ = []
@@ -143,10 +147,7 @@ class SessionWiseSpeechSegmentGenerator(object):
             # keep track of it
             self.batches_.append(generator(dummy, subset='train'))
 
-    def __call__(self, protocol, subset='train'):
-
-        # initialize one batch generator per file in the protocol
-        self.initialize(protocol, subset=subset)
+    def __call__(self):
 
         # generate one batch per file
         while True:
@@ -193,6 +194,8 @@ class UnsupervisedSpeechSegmentGenerator(object):
     ----------
     feature_extraction : `pyannote.audio.features.FeatureExtraction`
         Feature extraction.
+    protocol : `pyannote.database.Protocol`
+    subset : {'train', 'development', 'test'}
     duration : float
         Fixed duration of segments. Must be provided.
     per_fold : int
@@ -205,8 +208,9 @@ class UnsupervisedSpeechSegmentGenerator(object):
         Set `parallel` to 0 to not use background generators.
     """
 
-    def __init__(self, feature_extraction, duration=None, per_fold=None,
-                 per_epoch=7, parallel=1, **kwargs):
+    def __init__(self, feature_extraction, protocol, subset='train',
+                 duration=None, per_fold=None, per_epoch=7, parallel=1,
+                 **kwargs):
 
         super().__init__()
 
@@ -224,6 +228,8 @@ class UnsupervisedSpeechSegmentGenerator(object):
 
         self.parallel = parallel
 
+        self._load_metadata(protocol, subset=subset)
+
     @property
     def batch_size(self):
         return self.per_fold * 2
@@ -239,7 +245,7 @@ class UnsupervisedSpeechSegmentGenerator(object):
 
         return int(np.ceil(duration_per_epoch / duration_per_batch))
 
-    def initialize(self, protocol, subset='train'):
+    def _load_metadata(self, protocol, subset='train'):
 
         self.data_ = [(current_file, segment)
             for current_file in getattr(protocol, subset)()
@@ -282,9 +288,7 @@ class UnsupervisedSpeechSegmentGenerator(object):
         return {'X': {'@': (None, None)},
                 'y': {'@': (None, np.stack)}}
 
-    def __call__(self, protocol, subset='train'):
-
-        self.initialize(protocol, subset=subset)
+    def __call__(self):
 
         batch_size = self.batch_size
         batches_per_epoch = self.batches_per_epoch
@@ -318,6 +322,8 @@ class SpeechSegmentGenerator(object):
     ----------
     feature_extraction : `pyannote.audio.features.FeatureExtraction`
         Feature extraction.
+    protocol : `pyannote.database.Protocol`
+    subset : {'train', 'development', 'test'}
     per_label : int, optional
         Number of speech turns per speaker in each batch. Defaults to 3.
     label_min_duration : float, optional
@@ -340,7 +346,7 @@ class SpeechSegmentGenerator(object):
         Set `parallel` to 0 to not use background generators.
     """
 
-    def __init__(self, feature_extraction,
+    def __init__(self, feature_extraction, protocol, subset='train',
                  per_label=3, per_fold=None, per_epoch=7,
                  duration=None, min_duration=None, max_duration=None,
                  label_min_duration=0., parallel=1):
@@ -367,17 +373,23 @@ class SpeechSegmentGenerator(object):
 
         self.weighted_ = True
 
-    def initialize(self, protocol, subset='train'):
+        self._load_metadata(protocol, subset=subset)
+
+    def _load_metadata(self, protocol, subset='train'):
 
         self.data_ = {}
-        databases = set()
+        segment_labels, file_labels = set(), dict()
 
         # loop once on all files
         for current_file in getattr(protocol, subset)():
 
-            # keep track of database
-            database = current_file['database']
-            databases.add(database)
+            # keep track of unique file labels
+            for key, value in current_file.items():
+                if key in ['annotation', 'annotated']:
+                    continue
+                if key not in file_labels:
+                    file_labels[key] = set()
+                file_labels[key].add(value)
 
             # get annotation for current file
             annotation = current_file['annotation']
@@ -417,10 +429,8 @@ class SpeechSegmentGenerator(object):
         for label in dropped_labels:
             self.data_.pop(label)
 
-        self.labels_ = {label: i for i, label in enumerate(self.data_)}
-
-        self.domains_ = {}
-        self.domains_['database'] = {db: i for i, db in enumerate(databases)}
+        self.file_labels_ = {k: sorted(file_labels[k]) for k in file_labels}
+        self.segment_labels_ = sorted(self.data_)
 
     def generator(self):
 
@@ -504,14 +514,7 @@ class SpeechSegmentGenerator(object):
                             files[i], sub_segment, mode='center',
                             fixed=self.duration)
 
-                    database = files[i]['database']
-                    extra = {'label': label,
-                             'database': database}
-
-                    yield {'X': X,
-                           'y': self.labels_[label],
-                           'y_database': self.domains_['database'][database],
-                           'extra': extra}
+                    yield {'X': X, 'y': self.segment_labels_.index(label)}
 
     @property
     def batch_size(self):
@@ -540,26 +543,20 @@ class SpeechSegmentGenerator(object):
         return int(np.ceil(duration_per_epoch / duration_per_batch))
 
     @property
-    def n_classes(self):
-        return len(self.data_)
-
-    @property
-    def labels(self):
-        labels, _ = zip(*sorted(self.labels_.items(),
-                                key=lambda x: x[1]))
-        return labels
-
-    @property
     def signature(self):
-        return {'X': {'@': (None, None)},
-                'y': {'@': (None, np.stack)},
-                'y_database': {'@': (None, np.stack)},
-                'extra': {'label': {'@': (None, None)},
-                         'database': {'@': (None, None)}}}
+        return {
+            'X': {'@': (None, None)},
+            'y': {'@': (None, np.stack)},
+        }
 
-    def __call__(self, protocol, subset='train'):
+    @property
+    def specifications(self):
+        return {
+            'X': {'dimension': self.feature_extraction.dimension},
+            'y': {'classes': self.segment_labels_},
+        }
 
-        self.initialize(protocol, subset=subset)
+    def __call__(self):
 
         batch_size = self.batch_size
         batches_per_epoch = self.batches_per_epoch
@@ -599,6 +596,8 @@ class SpeechTurnSubSegmentGenerator(SpeechSegmentGenerator):
     ----------
     feature_extraction : `pyannote.audio.features.FeatureExtraction`
         Feature extraction
+    protocol : `pyannote.database.Protocol`
+    subset : {'train', 'development', 'test'}
     duration : float
         Fixed segment duration.
     per_turn : int, optional
@@ -617,11 +616,12 @@ class SpeechTurnSubSegmentGenerator(SpeechSegmentGenerator):
         Set `parallel` to 0 to not use background generators.
     """
 
-    def __init__(self, feature_extraction, duration, per_label=3,
-                 per_fold=None, per_turn=10, per_epoch=7, parallel=1):
+    def __init__(self, feature_extraction, duration, protocol, subset='train',
+                 per_label=3, per_fold=None, per_turn=10, per_epoch=7,
+                 parallel=1):
 
         super(SpeechTurnSubSegmentGenerator, self).__init__(
-            feature_extraction,
+            feature_extraction, protocol, subset=subset,
             per_label=per_label, per_fold=per_fold, per_epoch=per_epoch,
             duration=None, min_duration=duration, max_duration=None)
 
@@ -635,6 +635,7 @@ class SpeechTurnSubSegmentGenerator(SpeechSegmentGenerator):
         ranges = sw.crop(Segment(0, self.duration_), mode='center',
                          fixed=self.duration_, return_ranges=True)
         self.n_samples_ = ranges[0][1] - ranges[0][0]
+
 
     def iter_segments_(self, X):
         """Generate fixed length sub-segments of X

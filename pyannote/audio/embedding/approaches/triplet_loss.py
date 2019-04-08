@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2018 CNRS
+# Copyright (c) 2018-2019 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -38,10 +38,10 @@ from pyannote.core.utils.distance import pdist
 from scipy.spatial.distance import squareform
 from pyannote.metrics.binary_classification import det_curve
 from collections import deque
-from pyannote.audio.train.trainer import Trainer
+from .base import EmbeddingApproach
 
 
-class TripletLoss(Trainer):
+class TripletLoss(EmbeddingApproach):
     """
 
     delta = d(anchor, positive) - d(anchor, negative)
@@ -168,6 +168,8 @@ class TripletLoss(Trainer):
 
         n_sequences, _ = fX.size()
         distances = []
+
+        # FIXME. with 'euclidean' metric, use torch.nn.functional.pdist()
 
         for i in range(n_sequences - 1):
 
@@ -383,7 +385,8 @@ class TripletLoss(Trainer):
         else:
             return loss
 
-    def get_batch_generator(self, feature_extraction):
+    def get_batch_generator(self, feature_extraction,
+                            protocol, subset='train'):
         """Get batch generator
 
         Parameters
@@ -399,7 +402,8 @@ class TripletLoss(Trainer):
         if self.variant == 'session':
 
             return SessionWiseSpeechSegmentGenerator(
-                feature_extraction, label_min_duration=self.label_min_duration,
+                feature_extraction, protocol, subset=subset,
+                label_min_duration=self.label_min_duration,
                 per_label=self.per_label, per_fold=self.per_fold,
                 per_epoch=self.per_epoch, duration=self.duration,
                 min_duration=self.min_duration, max_duration=self.max_duration,
@@ -408,7 +412,8 @@ class TripletLoss(Trainer):
         elif self.variant == 'corpus':
 
             return SpeechSegmentGenerator(
-                feature_extraction, label_min_duration=self.label_min_duration,
+                feature_extraction, protocol, subset=subset,
+                label_min_duration=self.label_min_duration,
                 per_label=self.per_label, per_fold=self.per_fold,
                 per_epoch=self.per_epoch, duration=self.duration,
                 min_duration=self.min_duration, max_duration=self.max_duration,
@@ -417,20 +422,15 @@ class TripletLoss(Trainer):
         elif self.variant == 'unsupervised':
 
             return UnsupervisedSpeechSegmentGenerator(
-                feature_extraction, per_fold=self.per_fold,
+                feature_extraction, protocol, subset=subset,
+                per_fold=self.per_fold,
                 per_epoch=self.per_epoch, duration=self.duration,
                 parallel=self.parallel)
 
     def aggregate(self, batch):
         return batch
 
-    def on_train_start(self, model, batches_per_epoch=None, **kwargs):
-        self.log_positive_ = deque([], maxlen=batches_per_epoch)
-        self.log_negative_ = deque([], maxlen=batches_per_epoch)
-        self.log_delta_ = deque([], maxlen=batches_per_epoch)
-        self.log_norm_ = deque([], maxlen=batches_per_epoch)
-
-    def batch_loss(self, batch, model, device, writer=None):
+    def batch_loss(self, batch):
         """Compute loss for current `batch`
 
         Parameters
@@ -438,12 +438,6 @@ class TripletLoss(Trainer):
         batch : `dict`
             ['X'] (`numpy.ndarray`)
             ['y'] (`numpy.ndarray`)
-        model : `torch.nn.Module`
-            Model currently being trained.
-        device : `torch.device`
-            Device used by model parameters.
-        writer : `tensorboardX.SummaryWriter`, optional
-            Tensorboard writer.
 
         Returns
         -------
@@ -451,12 +445,7 @@ class TripletLoss(Trainer):
             Triplet loss.
         """
 
-        fX = self.forward(batch, model, device)
-
-        # log embedding norms
-        if writer is not None:
-            norm_npy = np.linalg.norm(self.to_numpy(fX), axis=1)
-            self.log_norm_.append(norm_npy)
+        fX = self.forward(batch)
 
         batch['fX'] = fX
         batch = self.aggregate(batch)
@@ -476,60 +465,5 @@ class TripletLoss(Trainer):
             distances, anchors, positives, negatives,
             return_delta=True)
 
-        if writer is not None:
-            pdist_npy = self.to_numpy(distances)
-            delta_npy = self.to_numpy(deltas)
-            same_speaker = pdist(y.reshape((-1, 1)), metric='equal')
-            self.log_positive_.append(pdist_npy[np.where(same_speaker)])
-            self.log_negative_.append(pdist_npy[np.where(~same_speaker)])
-            self.log_delta_.append(delta_npy)
-
         # average over all triplets
         return torch.mean(losses)
-
-    def on_epoch_end(self, iteration, checkpoint, writer=None, **kwargs):
-        """Log a bunch of statistics at the end of current epoch
-
-        Parameters
-        ----------
-        iteration : `int`
-            Current epoch.
-        checkpoint : `pyannote.audio.train.checkpoint.Checkpoint`
-            Checkpoint.
-        writer : `tensorboardX.SummaryWriter`, optional
-            Tensorboard writer.
-        """
-
-        if writer is None:
-            return
-
-        # log intra class vs. inter class distance distributions
-        log_positive = np.hstack(self.log_positive_)
-        log_negative = np.hstack(self.log_negative_)
-        writer.add_histogram(
-            'train/distance/intra_class', log_positive,
-            global_step=iteration, bins='doane')
-        writer.add_histogram(
-            'train/distance/inter_class', log_negative,
-            global_step=iteration, bins='doane')
-
-        # log same/different experiment on training samples
-        _, _, _, eer = det_curve(
-            np.hstack([np.ones(len(log_positive)),
-                       np.zeros(len(log_negative))]),
-            np.hstack([log_positive, log_negative]),
-            distances=True)
-        writer.add_scalar('train/eer', eer,
-                          global_step=iteration)
-
-        # log raw triplet loss (before max(0, .))
-        log_delta = np.vstack(self.log_delta_)
-        writer.add_histogram(
-            'train/triplet/delta', log_delta,
-            global_step=iteration, bins='doane')
-
-        # log distribution of embedding norms
-        log_norm = np.hstack(self.log_norm_)
-        writer.add_histogram(
-            'train/embedding/norm', log_norm,
-            global_step=iteration, bins='doane')
