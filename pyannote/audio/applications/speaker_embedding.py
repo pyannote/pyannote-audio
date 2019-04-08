@@ -170,7 +170,6 @@ Configuration file:
 """
 
 import torch
-import itertools
 import numpy as np
 from pathlib import Path
 from docopt import docopt
@@ -189,7 +188,6 @@ from pyannote.database.protocol import SpeakerVerificationProtocol
 
 from scipy.cluster.hierarchy import fcluster
 from scipy.cluster.hierarchy import linkage
-from scipy.optimize import minimize_scalar
 
 from pyannote.core.utils.helper import get_class_by_name
 
@@ -201,8 +199,6 @@ from pyannote.metrics.binary_classification import det_curve
 from pyannote.metrics.diarization import DiarizationPurityCoverageFMeasure
 
 from pyannote.audio.embedding.extraction import SequenceEmbedding
-from pyannote.audio.embedding.generators import SpeechSegmentGenerator
-from pyannote.audio.embedding.generators import SpeechTurnSubSegmentGenerator
 
 
 class SpeakerEmbedding(Application):

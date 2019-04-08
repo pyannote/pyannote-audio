@@ -28,16 +28,10 @@
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 from pyannote.audio.embedding.generators import SpeechSegmentGenerator
-from pyannote.audio.embedding.generators import SessionWiseSpeechSegmentGenerator
-from pyannote.audio.embedding.generators import UnsupervisedSpeechSegmentGenerator
-
 from pyannote.core.utils.distance import to_condensed
-from pyannote.core.utils.distance import pdist
 from scipy.spatial.distance import squareform
 from pyannote.metrics.binary_classification import det_curve
-from collections import deque
 from .base import EmbeddingApproach
 
 
@@ -84,17 +78,6 @@ class TripletLoss(EmbeddingApproach):
         time. Defaults to sample triplets from the whole speaker set.
     per_epoch : float, optional
         Number of days per epoch. Defaults to 7 (a week).
-    variant : {'corpus', 'session', 'unsupervised'}, optional
-        Change the way triplets are built. Default behavior ('corpus') is to
-        build triplets by sampling sequences from the whole corpus (assuming
-        that labels are consistent on the whole corpus). Therefore, triplets
-        may contain sequences from different sessions in the corpus. When
-        `variant` is 'session', we only assume labels are consistent within
-        each 'session'. Therefore, triplets are always made of sequences
-        extracted from the same session. When `variant` is 'unsupervised',
-        anchor and positive sequences are always extracted from the same
-        speech turn, and the negative sequence is sampled at random from any
-        other speech turns (whatever its label).
     parallel : int, optional
         Number of prefetching background generators. Defaults to 1.
         Each generator will prefetch enough batches to cover a whole epoch.
@@ -104,7 +87,7 @@ class TripletLoss(EmbeddingApproach):
     def __init__(self, duration=None, min_duration=None, max_duration=None,
                  metric='cosine', margin=0.2, clamp='positive',
                  sampling='all', per_label=3, per_fold=None, per_epoch=7,
-                 parallel=1, variant='corpus', label_min_duration=0.):
+                 parallel=1, label_min_duration=0.):
 
         super(TripletLoss, self).__init__()
 
@@ -128,67 +111,11 @@ class TripletLoss(EmbeddingApproach):
         self.per_epoch = per_epoch
         self.label_min_duration = label_min_duration
 
-        if variant not in {'corpus', 'session', 'unsupervised'}:
-            msg = "'variant' must be one of {'corpus', 'session', 'unsupervised'}."
-            raise ValueError(msg)
-        self.variant = variant
-
         self.duration = duration
         self.min_duration = min_duration
         self.max_duration = max_duration
 
         self.parallel = parallel
-
-    @property
-    def max_distance(self):
-        if self.metric == 'cosine':
-            return 2.
-        elif self.metric == 'angular':
-            return np.pi
-        elif self.metric == 'euclidean':
-            # FIXME. incorrect if embedding are not unit-normalized
-            return 2.
-        else:
-            msg = "'metric' must be one of {'euclidean', 'cosine', 'angular'}."
-            raise ValueError(msg)
-
-    def pdist(self, fX):
-        """Compute pdist à-la scipy.spatial.distance.pdist
-
-        Parameters
-        ----------
-        fX : (n, d) torch.Tensor
-            Embeddings.
-
-        Returns
-        -------
-        distances : (n * (n-1) / 2,) torch.Tensor
-            Condensed pairwise distance matrix
-        """
-
-        n_sequences, _ = fX.size()
-        distances = []
-
-        # FIXME. with 'euclidean' metric, use torch.nn.functional.pdist()
-
-        for i in range(n_sequences - 1):
-
-            if self.metric in ('cosine', 'angular'):
-                d = 1. - F.cosine_similarity(
-                    fX[i, :].expand(n_sequences - 1 - i, -1),
-                    fX[i+1:, :], dim=1, eps=1e-8)
-
-                if self.metric == 'angular':
-                    d = torch.acos(torch.clamp(1. - d, -1 + 1e-6, 1 - 1e-6))
-
-            elif self.metric == 'euclidean':
-                d = F.pairwise_distance(
-                    fX[i, :].expand(n_sequences - 1 - i, -1),
-                    fX[i+1:, :], p=2, eps=1e-06).view(-1)
-
-            distances.append(d)
-
-        return torch.cat(distances)
 
 
     def batch_easy(self, y, distances):
@@ -399,33 +326,13 @@ class TripletLoss(EmbeddingApproach):
 
         """
 
-        if self.variant == 'session':
-
-            return SessionWiseSpeechSegmentGenerator(
-                feature_extraction, protocol, subset=subset,
-                label_min_duration=self.label_min_duration,
-                per_label=self.per_label, per_fold=self.per_fold,
-                per_epoch=self.per_epoch, duration=self.duration,
-                min_duration=self.min_duration, max_duration=self.max_duration,
-                parallel=self.parallel)
-
-        elif self.variant == 'corpus':
-
-            return SpeechSegmentGenerator(
-                feature_extraction, protocol, subset=subset,
-                label_min_duration=self.label_min_duration,
-                per_label=self.per_label, per_fold=self.per_fold,
-                per_epoch=self.per_epoch, duration=self.duration,
-                min_duration=self.min_duration, max_duration=self.max_duration,
-                parallel=self.parallel)
-
-        elif self.variant == 'unsupervised':
-
-            return UnsupervisedSpeechSegmentGenerator(
-                feature_extraction, protocol, subset=subset,
-                per_fold=self.per_fold,
-                per_epoch=self.per_epoch, duration=self.duration,
-                parallel=self.parallel)
+        return SpeechSegmentGenerator(
+            feature_extraction, protocol, subset=subset,
+            label_min_duration=self.label_min_duration,
+            per_label=self.per_label, per_fold=self.per_fold,
+            per_epoch=self.per_epoch, duration=self.duration,
+            min_duration=self.min_duration, max_duration=self.max_duration,
+            parallel=self.parallel)
 
     def aggregate(self, batch):
         return batch

@@ -36,6 +36,57 @@ import numpy as np
 
 class EmbeddingApproach(Trainer):
 
+    @property
+    def max_distance(self):
+        if self.metric == 'cosine':
+            return 2.
+        elif self.metric == 'angular':
+            return np.pi
+        elif self.metric == 'euclidean':
+            # FIXME. incorrect if embedding are not unit-normalized
+            return 2.
+        else:
+            msg = "'metric' must be one of {'euclidean', 'cosine', 'angular'}."
+            raise ValueError(msg)
+
+    def pdist(self, fX):
+        """Compute pdist à-la scipy.spatial.distance.pdist
+
+        Parameters
+        ----------
+        fX : (n, d) torch.Tensor
+            Embeddings.
+
+        Returns
+        -------
+        distances : (n * (n-1) / 2,) torch.Tensor
+            Condensed pairwise distance matrix
+        """
+
+        n_sequences, _ = fX.size()
+        distances = []
+
+        # FIXME. with 'euclidean' metric, use torch.nn.functional.pdist()
+
+        for i in range(n_sequences - 1):
+
+            if self.metric in ('cosine', 'angular'):
+                d = 1. - F.cosine_similarity(
+                    fX[i, :].expand(n_sequences - 1 - i, -1),
+                    fX[i+1:, :], dim=1, eps=1e-8)
+
+                if self.metric == 'angular':
+                    d = torch.acos(torch.clamp(1. - d, -1 + 1e-6, 1 - 1e-6))
+
+            elif self.metric == 'euclidean':
+                d = F.pairwise_distance(
+                    fX[i, :].expand(n_sequences - 1 - i, -1),
+                    fX[i+1:, :], p=2, eps=1e-06).view(-1)
+
+            distances.append(d)
+
+        return torch.cat(distances)
+
     def forward(self, batch):
         """Forward pass on current batch
 
