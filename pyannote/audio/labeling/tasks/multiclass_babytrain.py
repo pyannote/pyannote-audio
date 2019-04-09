@@ -84,52 +84,31 @@ class MulticlassBabyTrainGenerator(LabelingTaskGenerator):
     >>>     pass
     """
 
-    def __init__(self, feature_extraction, overlap=False, **kwargs):
+    def __init__(self, feature_extraction, **kwargs):
 
         super(MulticlassBabyTrainGenerator, self).__init__(
             feature_extraction, **kwargs)
         self.overlap = overlap
 
     def postprocess_y(self, Y):
-        """Add overlap to Y
+        """Add speech to Y
 
         Parameters
         ----------
         Y : (n_samples, n_speaker_classes) numpy.ndarray
-            Discretized annotation returned by `pyannote.core.utils.numpy.one_hot_encoding`.
+            Discretized annotation returned by `pyannote.core.utils_rttm.numpy.one_hot_encoding`.
 
         Returns
         -------
-        y : (n_samples, n_speakers_classes+0 or +1) numpy.ndarray extended OVL if self.overlap == True
+        y : (n_samples, n_speakers_classes+0 or +1 ) numpy.ndarray if self.speech == True
 
         See also
         --------
-        `pyannote.core.utils.numpy.one_hot_encoding`
+        `pyannote.core.utils_rttm.numpy.one_hot_encoding`
         """
         # replace NaNs by 0s
         Y = np.nan_to_num(Y)
-
-        # Add overlap class
-        if self.overlap:
-            # Number of speakers
-            count = np.sum(Y, axis=1)
-
-            # Count number of speakers
-            y_overlap = count > 1
-
-            # When there's overlap, we turn off the speaker columns..
-            Y[y_overlap] = np.zeros(Y[y_overlap].shape)
-
-            # ... and turn on the overlap column !
-            Y = np.column_stack((Y, 1*y_overlap))
-
-        # Number of speakers
-        # count = np.sum(Y, axis=1)
-        # y_non_speech = count == 0
-        # Y = np.column_stack((Y, y_non_speech))
-
-        return Y #np.argwhere(Y == 1)[:, -1]
-
+        return Y
 
 
 class MulticlassBabyTrain(LabelingTask):
@@ -137,9 +116,6 @@ class MulticlassBabyTrain(LabelingTask):
 
     Parameters
     ----------
-    overlap : `bool` or `float`, optional
-        Use overlapping speech detection task with weight `overlap`.
-        Defaults to True (= 1).
     duration : float, optional
         Duration of sub-sequences. Defaults to 3.2s.
     batch_size : int, optional
@@ -174,14 +150,13 @@ class MulticlassBabyTrain(LabelingTask):
 
     """
 
-    def __init__(self, overlap=False, weighted_loss=False, **kwargs):
+    def __init__(self, weighted_loss=False, **kwargs):
         super(MulticlassBabyTrain, self).__init__(**kwargs)
-        self.overlap = float(overlap)
         self.weighted_loss = float(weighted_loss)
 
     def get_batch_generator(self, feature_extraction):
         return MulticlassBabyTrainGenerator(
-            feature_extraction, overlap=self.overlap > 0.,  duration=self.duration,
+            feature_extraction, duration=self.duration,
             batch_size=self.batch_size, per_epoch=self.per_epoch,
             parallel=self.parallel)
 
@@ -191,7 +166,7 @@ class MulticlassBabyTrain(LabelingTask):
 
     @property
     def n_classes(self):
-        return 5 if self.overlap else 4
+        return 4 # KCHI, CHI, FEM, MAL
 
     def _get_one_over_the_prior(self):
         nb_speakers = 4
@@ -211,11 +186,7 @@ class MulticlassBabyTrain(LabelingTask):
         if self.weighted_loss:
             return self._get_one_over_the_prior()
         return None
-        #return torch.tensor(np.array(weight) / np.sum(weight),dtype=torch.float32)
 
     @property
     def labels(self):
-        labels = ["CHI", "FEM", "KCHI", "MAL"]
-        if self.overlap:
-            labels.append("OVL")
-        return labels
+        return ["CHI", "FEM", "KCHI", "MAL"]

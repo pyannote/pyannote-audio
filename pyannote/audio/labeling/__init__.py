@@ -27,5 +27,5 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 TASK_CLASSIFICATION = 'one-class'
-TASK_MULTI_LABEL_CLASSIFICATION = 'multi-class'
+TASK_MULTI_LABEL_CLASSIFICATION = 'multi-label'
 TASK_REGRESSION = 'regression'

@@ -86,7 +86,6 @@ Configuration file:
        name: Segmentation
        params:
           duration: 3.2     # sub-sequence duration
-          overlap: False    # train for overlap speech detection
           per_epoch: 1      # 1 day of audio per epoch
           batch_size: 32    # number of sub-sequences per batch
 
@@ -191,8 +190,8 @@ from pyannote.audio.labeling.extraction import SequenceLabeling
 from pyannote.audio.pipeline.speech_activity_detection \
     import SpeechActivityDetection as SpeechActivityDetectionPipeline
 
-from pyannote.audio.pipeline.single_speaker_activity \
-    import SingleSpeakerActivityDetection as SingleSpeakerActivityDetectionPipeline
+from pyannote.audio.pipeline.speaker_activity \
+    import SpeakerActivityDetection as SpeakerActivityDetectionPipeline
 
 from pyannote.metrics.detection import DetectionErrorRate
 
@@ -201,12 +200,11 @@ from pyannote.metrics.detection import DetectionPrecision
 
 
 
-def validate_helper_func(current_file, pipeline=None, precision=None, recall=None, speaker_label=None):
-    reference = current_file[speaker_label]
-    uem = get_annotated(current_file)
-    hypothesis = pipeline(current_file) # pipeline has been initialized with speaker_label, so that it can know which speaker needs to be assessed
-    p = precision(reference, hypothesis, uem=uem)
-    r = recall(reference, hypothesis, uem=uem)
+def validate_helper_func(current_file, pipeline=None, precision=None, recall=None, label=None):
+    reference = current_file[label]
+    hypothesis = pipeline(current_file) # pipeline has been initialized with label, so that it can know which class needs to be assessed
+    p = precision(reference, hypothesis)
+    r = recall(reference, hypothesis)
     return p, r
 
 
@@ -246,7 +244,7 @@ class MulticlassBabyTrain(Application):
         if isinstance(self.feature_extraction_, Precomputed):
             return list(files)
 
-        # pre-compute features/overlap for each validation files
+        # pre-compute features for each validation files
         validation_data = []
         for current_file in tqdm(files, desc='Feature extraction'):
 
@@ -254,15 +252,6 @@ class MulticlassBabyTrain(Application):
             if not isinstance(self.feature_extraction_, Precomputed):
                 current_file['features'] = self.feature_extraction_(
                     current_file)
-            # precompute "overlap" reference
-            if self.task_.overlap:
-                overlap = Timeline(uri=get_unique_identifier(current_file))
-                reference = current_file['annotation']
-                for track1, track2 in reference.co_iter(reference):
-                    if track1 == track2:
-                        continue
-                    overlap.add(track1[0] & track2[0])
-                current_file['overlap'] = overlap.to_annotation()
 
             # Extract subset relevant to the speaker whose speech performances need to be evaluated
             if self.label in ["KCHI", "CHI", "MAL", "FEM"]:
@@ -270,32 +259,26 @@ class MulticlassBabyTrain(Application):
                 label_speech = reference.subset([self.label])
                 current_file[self.label] = label_speech
 
-            validation_data.append(current_file)
+            if self.label == "speech":
+                current_file[self.label] = current_file['annotation'] # all the speakers
 
+            validation_data.append(current_file)
         return validation_data
 
     def validate_epoch(self, epoch, protocol_name, subset='development',
                        validation_data=None):
-        if self.label == "overlap":
-            func = getattr(self, f'validate_epoch_overlap')
-            return func(epoch, protocol_name, subset=subset,
-                        validation_data=validation_data)
-        elif self.label in ["KCHI", "CHI", "MAL", "FEM"]:
-            func = getattr(self, f'validate_epoch_speaker')
-            return func(epoch, protocol_name, subset=subset,
-                        validation_data=validation_data, speaker_role=self.label)
-        elif self.label == "speech":
-            func = getattr(self, f'validate_epoch_speech')
-            return func(epoch, protocol_name, subset=subset,
-                        validation_data=validation_data)
-        else:
-            raise ValueError("Argument label not recognized : %s " % self.label)
+        func = getattr(self, f'validate_epoch_class')
+        return func(epoch, protocol_name, subset=subset,
+                    validation_data=validation_data)
 
-    def validate_epoch_speech(self, epoch, protocol_name, subset='development',
+    def validate_epoch_class(self, epoch, protocol_name, subset='development',
                               validation_data=None):
         """
-        Validate the model for the SAD task
+        Validate function given a class which must belongs to ["KCHI", "CHI", "FEM", "MAL", "speech"]
         """
+        # Name of the class that needs to be validated
+        class_name = self.label
+
         # load model for current epoch
         model = self.load_model(epoch).to(self.device)
         model.eval()
@@ -306,41 +289,24 @@ class MulticlassBabyTrain(Application):
 
         sequence_labeling = SequenceLabeling(
             model=model, feature_extraction=self.feature_extraction_,
-            duration=duration, step=.25 * duration, batch_size=self.batch_size,
+            duration=duration, step=step, batch_size=self.batch_size,
             device=self.device)
 
         for current_file in validation_data:
             scores = sequence_labeling(current_file)
-            current_file['sad_scores'] = SlidingWindowFeature(
-                scores.data[:, dimension].reshape(-1, 1),
-                scores.sliding_window)
-
-    def validate_epoch_speaker(self, epoch, protocol_name, subset='development',
-                              validation_data=None, speaker_role='KCHI'):
-
-        # load model for current epoch
-        model = self.load_model(epoch).to(self.device)
-        model.eval()
-
-        # compute (and store) SAD scores
-        duration = self.task_.duration
-        step = .25 * duration
-
-        dimension = self.task_.labels.index(speaker_role)
-
-        sequence_labeling = SequenceLabeling(
-            model=model, feature_extraction=self.feature_extraction_,
-            duration=duration, step=.25 * duration, batch_size=self.batch_size,
-            device=self.device)
-
-        for current_file in validation_data:
-            scores = sequence_labeling(current_file)
-            current_file[speaker_role+'_scores'] = SlidingWindowFeature(
-                scores.data[:, dimension].reshape(-1, 1),
+            if class_name == "speech":
+                # We sum up all the scores of every speakers
+                scores_data = np.sum(scores.data, axis=1).reshape(-1, 1)
+            else:
+                # We extract the score of interest
+                dimension = self.task_.labels.index(class_name)
+                scores_data = scores.data[:, dimension].reshape(-1, 1)
+            current_file[class_name+'_scores'] = SlidingWindowFeature(
+                scores_data,
                 scores.sliding_window)
 
         # pipeline
-        pipeline = SingleSpeakerActivityDetectionPipeline(speaker_label=self.label)
+        pipeline = SpeakerActivityDetectionPipeline(label=self.label)
 
         lower_alpha = 0.
         upper_alpha = 1.
@@ -364,7 +330,7 @@ class MulticlassBabyTrain(Application):
                                pipeline=pipeline,
                                precision=precision,
                                recall=recall,
-                               speaker_label=self.label)
+                               label=self.label)
             _ = self.pool_.map(validate, validation_data)
 
             precision = abs(precision)
@@ -385,62 +351,6 @@ class MulticlassBabyTrain(Application):
                 'value': best_recall,
                 'pipeline': pipeline.instantiate({'onset': best_alpha,
                                                   'offset': best_alpha,
-                                                  'min_duration_on': 0.,
-                                                  'min_duration_off': 0.,
-                                                  'pad_onset': 0.,
-                                                  'pad_offset': 0.})}
-
-    def validate_epoch_overlap(self, epoch, protocol_name, subset='development',
-                              validation_data=None):
-
-        # load model for current epoch
-        model = self.load_model(epoch).to(self.device)
-        model.eval()
-
-        # compute (and store) SAD scores
-        duration = self.task_.duration
-        step = .25 * duration
-
-        dimension = self.task_.labels.index('overlap')
-
-        sequence_labeling = SequenceLabeling(
-            model=model, feature_extraction=self.feature_extraction_,
-            duration=duration, step=.25 * duration, batch_size=self.batch_size,
-            device=self.device)
-        for current_file in validation_data:
-            scores = sequence_labeling(current_file)
-            current_file['sad_scores'] = SlidingWindowFeature(
-                scores.data[:, dimension].reshape(-1, 1),
-                scores.sliding_window)
-
-        # pipeline
-        pipeline = SpeechActivityDetectionPipeline()
-
-        def fun(threshold):
-            pipeline.instantiate({'onset': threshold,
-                                  'offset': threshold,
-                                  'min_duration_on': 0.,
-                                  'min_duration_off': 0.,
-                                  'pad_onset': 0.,
-                                  'pad_offset': 0.})
-            metric = DetectionErrorRate(parallel=True)
-            validate = partial(validate_helper_func,
-                               pipeline=pipeline,
-                               metric=metric,
-                               reference='overlap')
-            _ = self.pool_.map(validate, validation_data)
-
-            return abs(metric)
-
-        res = scipy.optimize.minimize_scalar(
-            fun, bounds=(0., 1.), method='bounded', options={'maxiter': 10})
-
-        threshold = res.x.item()
-        return {'metric': 'detection_error_rate',
-                'minimize': True,
-                'value': res.fun,
-                'pipeline': pipeline.instantiate({'onset': threshold,
-                                                  'offset': threshold,
                                                   'min_duration_on': 0.,
                                                   'min_duration_off': 0.,
                                                   'pad_onset': 0.,

@@ -44,7 +44,7 @@ from pyannote.database import get_unique_identifier
 from pyannote.metrics.detection import DetectionPrecision
 from pyannote.metrics.detection import DetectionRecall
 
-class SingleSpeakerActivityDetection(Pipeline):
+class SpeakerActivityDetection(Pipeline):
     """Single speaker activity pipeline
 
     Parameters
@@ -64,11 +64,11 @@ class SingleSpeakerActivityDetection(Pipeline):
         Padding duration.
     """
 
-    def __init__(self,  speaker_label,
+    def __init__(self,  label,
                         scores: Optional[Path] = None,
                         precision: Optional[Path] = 0.8):
         super().__init__()
-        self.speaker_label = speaker_label
+        self.label = label
         self.scores = scores
         if self.scores is not None:
             self._precomputed = Precomputed(self.scores)
@@ -100,7 +100,7 @@ class SingleSpeakerActivityDetection(Pipeline):
         ----------
         current_file : `dict`
             File as provided by a pyannote.database protocol. May contain a
-            '<self.speaker_label>_scores' key providing precomputed scores.
+            '<self.label>_scores' key providing precomputed scores.
 
         Returns
         -------
@@ -109,7 +109,7 @@ class SingleSpeakerActivityDetection(Pipeline):
         """
 
         # precomputed overlap scores
-        speaker_scores = current_file.get(self.speaker_label+'_scores')
+        speaker_scores = current_file.get(self.label+'_scores')
         if speaker_scores is None:
             speaker_scores = self._precomputed(current_file)
 
@@ -126,17 +126,15 @@ class SingleSpeakerActivityDetection(Pipeline):
 
         # speaker speech vs (non-speech + other speakers speech)
         if data.shape[1] > 1:
-            speaker_activity_prob = SlidingWindowFeature(1. - data[:, 0],
-                                                speaker_scores.sliding_window)
+            speaker_activity_prob = SlidingWindowFeature(1. - data[:, 0], speaker_scores.sliding_window)
         else:
-            speaker_activity_prob = SlidingWindowFeature(data,
-                                                speaker_scores.sliding_window)
+            speaker_activity_prob = SlidingWindowFeature(data, speaker_scores.sliding_window)
 
         speaker_activity = self._binarize.apply(speaker_activity_prob)
         speaker_activity.uri = get_unique_identifier(current_file)
-        return speaker_activity.to_annotation(generator='string', modality=self.speaker_label)
+        return speaker_activity.to_annotation(generator='string', modality=self.label)
 
-    def loss(self, current_file: dict, hypothesis: Annotation) -> float:
+    def loss(self, current_file: dict) -> float:
         """Compute (1 - recall) at target precision
 
         If precision < target, return 1 + (1 - precision)
@@ -157,9 +155,8 @@ class SingleSpeakerActivityDetection(Pipeline):
         precision = DetectionPrecision()
         recall = DetectionRecall()
 
-        # build overlap reference
-        reference = current_file[self.speaker_label]
-        hypothesis = current_file[self.speaker_label+'_scores']
+        reference = current_file[self.label]
+        hypothesis = current_file[self.label+'_scores']
 
         uem = get_annotated(current_file)
         p = precision(reference, hypothesis, uem=uem)
