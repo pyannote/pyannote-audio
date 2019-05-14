@@ -39,6 +39,14 @@ except ModuleNotFoundError as e:
             'because "yaafelib" could not be found.')
         print(msg)
 
+#try:
+from .with_shennong import ShennongMfccPitch
+#except Exception as e:
+#        msg = (
+#            f'Feature extractors based on "shennong" are not available '
+#            f'because something went wrong when importing them: "{e}".')
+#        print(msg)
+
 try:
     from .with_librosa import LibrosaMFCC, LibrosaSpectrogram, LibrosaMelSpectrogram
 except Exception as e:

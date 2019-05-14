@@ -1,0 +1,10 @@
+feature_extraction:
+    name: ShennongMfccPitch
+    params:
+        coefs: 13
+        D: True
+        DD: True
+        with_pitch: True
+        duration: 0.025
+        step: 0.010
+        sample_rate: 16000
