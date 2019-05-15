@@ -146,7 +146,7 @@ class ShennongMfccPitch(ShennongFeatureExtraction):
                  duration=0.025, step=0.01,
                  e=False, De=True, DDe=True,
                  coefs=13, D=True, DD=True,
-                 fmin=0.0, fmax=500, n_mels=40,
+                 fmin=20, fmax=500, n_mels=40,
                  with_pitch=True):
 
         super().__init__(sample_rate=sample_rate, augmentation=augmentation,
@@ -183,12 +183,13 @@ class ShennongMfccPitch(ShennongFeatureExtraction):
             Features
         """
         # force y to be of shape (n,) if shape is (n,1)
-        if y.shape[1] == 1:
-            y = y.reshape(y.shape[0])
-
+        #if y.shape[1] == 1:
+        #    y = y.reshape(y.shape[0])
+        #y = y.astype('float64')
         # create audio object for shennong
         audio = Audio(data=y, sample_rate=sample_rate)
-
+        #audio = Audio.load(fin)
+        #sample_rate = audio.sample_rate
         # MFCC parameters
         processor = MfccProcessor(sample_rate=sample_rate)
         processor.window_type = 'hanning'
@@ -199,7 +200,7 @@ class ShennongMfccPitch(ShennongFeatureExtraction):
         # MFCC extraction
         #audio = Audio(data=y, sample_rate=sample_rate)
         mfcc = processor.process(audio)
-
+        print("coucou")
         # compute deltas
         if self.D:
             # define first or second order derivative
@@ -213,6 +214,7 @@ class ShennongMfccPitch(ShennongFeatureExtraction):
 
         # Compute Pitch
         if self.with_pitch:
+            print("pitchohmonpitch")
             # define pitch estimation parameters
             processor = PitchProcessor(frame_shift=self.step,
                                        frame_length=self.duration)
@@ -222,11 +224,13 @@ class ShennongMfccPitch(ShennongFeatureExtraction):
 
             # estimate pitch
             pitch = processor.process(audio)
+            print('have pitch, concatenating...')
 
             # concatenate mfcc w/pitch
-            mfcc = mfcc.concatenate(pitch)
+            mfcc = mfcc.concatenate(pitch, 5)
 
-        return mfcc
+        print("just before returning")
+        return mfcc.data
 
     def get_dimension(self):
         n_features = 0
