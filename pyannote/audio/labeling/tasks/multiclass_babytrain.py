@@ -88,7 +88,8 @@ class MulticlassBabyTrainGenerator(LabelingTaskGenerator):
 
         super(MulticlassBabyTrainGenerator, self).__init__(
             feature_extraction, **kwargs)
-        self.overlap = overlap
+        #self.overlap = overlap
+        self.overlap = True
 
     def postprocess_y(self, Y):
         """Add speech to Y
