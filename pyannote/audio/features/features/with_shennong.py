@@ -229,6 +229,14 @@ class ShennongMfccPitch(ShennongFeatureExtraction):
 
         if self.with_cmvn:
             # do cepstral mean variance normalisation
+            processor = CmvnPostProcessor(dim = self.get_dimension)
+
+            # to be tested
+            # accumulate CMVN statistics and apply them on mfccs
+            print('accumulating CMVN')
+            processor.accumulate(mfcc)
+            print('appying CMVN')
+            mfcc = processor.process(mfcc)
             
         print("just before returning")
         return mfcc.data
