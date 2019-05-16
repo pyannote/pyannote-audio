@@ -44,6 +44,7 @@ from shennong.features.processor.mfcc import MfccProcessor
 from shennong.features.postprocessor.delta import DeltaPostProcessor
 from shennong.features.processor.pitch import (
     PitchProcessor, PitchPostProcessor)
+from shennong.features.postprocessor.cmvn import CmvnPostProcessor
 
 class ShennongFeatureExtraction(FeatureExtraction):
     """Shennong feature extraction base class
@@ -144,25 +145,30 @@ class ShennongMfccPitch(ShennongFeatureExtraction):
 
     def __init__(self, sample_rate=16000, augmentation=None,
                  duration=0.025, step=0.01,
-                 e=False, De=True, DDe=True,
-                 coefs=13, D=True, DD=True,
+                 mfcc_window_type='hanning',
+                 mfcc_low_freq=20,
+                 mfcc_high_freq=-100,
+                 e=False, coefs=13, D=True, DD=True,
                  fmin=20, fmax=500, n_mels=40,
-                 with_pitch=True):
+                 with_pitch=True, with_cmvn=True):
 
         super().__init__(sample_rate=sample_rate, augmentation=augmentation,
                          duration=duration, step=step)
 
         self.e = e
         self.coefs = coefs
-        self.De = De
-        self.DDe = DDe
         self.D = D
         self.DD = DD
         self.with_pitch = with_pitch
+        self.with_cmvn = with_cmvn
 
         self.n_mels = n_mels
         self.fmin = fmin
         self.fmax = fmax
+        self.mfcc_window_type = mfcc_window_type
+        self.mfcc_low_freq = mfcc_low_freq
+        self.mfcc_high_freq = mfcc_high_freq
+
 
     def get_context_duration(self):
         return 0.
@@ -200,7 +206,6 @@ class ShennongMfccPitch(ShennongFeatureExtraction):
         # MFCC extraction
         #audio = Audio(data=y, sample_rate=sample_rate)
         mfcc = processor.process(audio)
-        print("coucou")
         # compute deltas
         if self.D:
             # define first or second order derivative
@@ -214,7 +219,6 @@ class ShennongMfccPitch(ShennongFeatureExtraction):
 
         # Compute Pitch
         if self.with_pitch:
-            print("pitchohmonpitch")
             # define pitch estimation parameters
             processor = PitchProcessor(frame_shift=self.step,
                                        frame_length=self.duration)
@@ -224,12 +228,22 @@ class ShennongMfccPitch(ShennongFeatureExtraction):
 
             # estimate pitch
             pitch = processor.process(audio)
-            print('have pitch, concatenating...')
 
-            # concatenate mfcc w/pitch
-            mfcc = mfcc.concatenate(pitch, 5)
+            # concatenate mfcc w/pitch - sometimes Kaldi adds to pitch
+            # one frame so give 2 frames of tolerance
+            mfcc = mfcc.concatenate(pitch, 2)
 
-        print("just before returning")
+        # Compute CMVN
+        if self.with_cmvn:
+            # define cmvn
+            postproc = CmvnPostProcessor(self.get_dimension(), stats=None)
+            
+            # accumulate stats
+            stats = postproc.accumulate(mfcc)
+
+            # process cmvn
+            mfcc = postproc.process(mfcc)
+
         return mfcc.data
 
     def get_dimension(self):
@@ -237,5 +251,5 @@ class ShennongMfccPitch(ShennongFeatureExtraction):
         n_features += self.coefs
         n_features += self.coefs * self.D
         n_features += self.coefs * self.DD
-        n_features += self.with_pitch * 2
+        n_features += self.with_pitch * 2 # Pitch is two dimensional
         return n_features
