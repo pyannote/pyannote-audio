@@ -1,0 +1,10 @@
+feature_extraction:
+    name: ShennongBottleneck
+    params:
+        with_pitch: True
+        pitchFmin: 20
+        pitchFmax: 500
+        duration: 0.025
+        step: 0.010
+        sample_rate: 16000
+        weights: 'BabelMulti'

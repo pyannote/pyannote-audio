@@ -1,0 +1,17 @@
+feature_extraction:
+    name: ShennongMfcc
+    params:
+        coefs: 19
+        e: True
+        D: True
+        DD: True
+        mfccWindowType: 'hanning'
+        mfccLowFreq: 20
+        mfccHighFreq: -100 # Real value will be (f_nyquist - 100)
+        with_pitch: True
+        with_cmvn: False
+        duration: 0.025
+        step: 0.010
+        sample_rate: 16000
+        pitchFmin: 20
+        pitchFmax: 500
