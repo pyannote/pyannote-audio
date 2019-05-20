@@ -41,6 +41,8 @@ from .base import FeatureExtraction
 from pyannote.core.segment import SlidingWindow
 from shennong.features.pipeline import get_default_config, extract_features
 from shennong.features.processor.mfcc import MfccProcessor
+from shennong.features.processor.bottleneck import BottleneckProcessor
+from shennong.features.processor.filterbank import FilterbankProcessor
 from shennong.features.postprocessor.delta import DeltaPostProcessor
 from shennong.features.processor.pitch import (
     PitchProcessor, PitchPostProcessor)
@@ -77,7 +79,7 @@ class ShennongFeatureExtraction(FeatureExtraction):
                                              duration=self.duration,
                                              step=self.step)
 
-    def get_pitch(self, audio):
+    def get_pitch(self, audio, fmin, fmax):
         """Extract pitch using shennong and output it as a set 
         of features. Can be concatenated with other sets of features
         (mfcc, filterbanks...).
@@ -98,9 +100,9 @@ class ShennongFeatureExtraction(FeatureExtraction):
         # define pitch estimation parameters
         processor = PitchProcessor(frame_shift=self.step,
                                    frame_length=self.duration)
-        processor.sample_rate = sample_rate
-        processor.min_f0 = self.fmin
-        processor.max_f0 = self.fmax
+        processor.sample_rate = self.sample_rate
+        processor.min_f0 = fmin
+        processor.max_f0 = fmax
 
         # estimate pitch
         pitch = processor.process(audio)
@@ -161,9 +163,11 @@ class ShennongFilterbank(ShennongFeatureExtraction):
                  duration=0.025, step=0.01,
                  fftWindow='hanning',
                  melLowFreq=20,
-                 melHighFreq=-100,
+                 melHighFreq=0,
+                 pitchFmin=20,
+                 pitchFmax=500,
                  e=False, D=True, DD=True,
-                 fmin=20, fmax=500, melNbFilters=40,
+                 melNbFilters=40,
                  with_pitch=True):
 
         super().__init__(sample_rate=sample_rate, augmentation=augmentation,
@@ -171,14 +175,15 @@ class ShennongFilterbank(ShennongFeatureExtraction):
 
         self.e = e
         self.with_pitch = with_pitch
-        self.melNbFilters = melNbFilters
+
+        # pitch frequencies
+        self.pitchFmin = pitchFmin
+        self.pitchFmax = pitchFmax
 
         self.melNbFilters = melNbFilters
-        self.fmin = fmin
-        self.fmax = fmax
-        self.fftWindow = mfccWindowType
-        self.melLowFreq = mfccLowFreq
-        self.melHighFreq = mfccHighFreq
+        self.fftWindow = fftWindow
+        self.melLowFreq = melLowFreq
+        self.melHighFreq = melHighFreq
 
 
     def get_context_duration(self):
@@ -209,7 +214,7 @@ class ShennongFilterbank(ShennongFeatureExtraction):
         processor.use_energy = self.e
 
         # set parameters
-        processor.frame_length = self_duration
+        processor.frame_length = self.duration
         processor.frame_shift = self.step
         processor.window_type = self.fftWindow
         processor.low_freq = self.melLowFreq
@@ -222,13 +227,14 @@ class ShennongFilterbank(ShennongFeatureExtraction):
         # Compute Pitch
         if self.with_pitch:
             # extract pitch
-            pitch = self.get_pitch(audio)
+            pitch = self.get_pitch(audio, self.pitchFmin,
+                                   self.pitchFmax)
 
             ## concatenate mfcc w/pitch - sometimes Kaldi adds to pitch
             ## one frame so give 2 frames of tolerance
             fbank = fbank.concatenate(pitch, 2)
 
-        return fbank
+        return fbank.data
 
 
     def get_dimension(self):
@@ -279,12 +285,19 @@ class ShennongBottleneck(ShennongFeatureExtraction):
     def __init__(self, sample_rate=16000, augmentation=None,
                  duration=0.025, step=0.01,
                  weights='BabelMulti',
+                 pitchFmin=20,
+                 pitchFmax=500,
                  with_pitch=True):
 
         super().__init__(sample_rate=sample_rate, augmentation=augmentation,
                          duration=duration, step=step)
 
         self.with_pitch = with_pitch
+
+        # pitch frequencies
+        self.pitchFmin = pitchFmin
+        self.pitchFmax = pitchFmax
+
         self.weights = weights
 
     def get_context_duration(self):
@@ -312,8 +325,9 @@ class ShennongBottleneck(ShennongFeatureExtraction):
         processor = BottleneckProcessor(weights=self.weights)
 
         # define parameters
-        processor.frame_length = self.duration
-        processor.frame_shift = self.step
+
+        #processor.frame_length = self.duration
+        #processor.frame_shift = self.step
 
         # extract features
         bottleneck = processor.process(audio)
@@ -321,13 +335,14 @@ class ShennongBottleneck(ShennongFeatureExtraction):
         # Compute Pitch
         if self.with_pitch:
             # extract pitch
-            pitch = self.get_pitch(audio)
+            pitch = self.get_pitch(audio, self.pitchFmin,
+                                   self.pitchFmax)
 
             ## concatenate mfcc w/pitch - sometimes Kaldi adds to pitch
             ## one frame so give 2 frames of tolerance
             bottleneck = bottleneck.concatenate(pitch, 2)
 
-        return bottleneck
+        return bottleneck.data
 
 
     def get_dimension(self):
@@ -404,7 +419,7 @@ class ShennongMfcc(ShennongFeatureExtraction):
                  mfccLowFreq=20,
                  mfccHighFreq=-100,
                  e=False, coefs=13, D=True, DD=True,
-                 fmin=20, fmax=500, n_mels=40,
+                 pitchFmin=20, pitchFmax=500, n_mels=40,
                  with_pitch=True, with_cmvn=True):
 
         super().__init__(sample_rate=sample_rate, augmentation=augmentation,
@@ -417,9 +432,11 @@ class ShennongMfcc(ShennongFeatureExtraction):
         self.with_pitch = with_pitch
         self.with_cmvn = with_cmvn
 
+        # pitch frequencies
+        self.pitchFmin = pitchFmin
+        self.pitchFmax = pitchFmax
+
         self.n_mels = n_mels
-        self.fmin = fmin
-        self.fmax = fmax
         self.mfccWindowType = mfccWindowType
         self.mfccLowFreq = mfccLowFreq
         self.mfccHighFreq = mfccHighFreq
@@ -470,7 +487,8 @@ class ShennongMfcc(ShennongFeatureExtraction):
         # Compute Pitch
         if self.with_pitch:
             # extract pitch
-            pitch = self.get_pitch(audio)
+            pitch = self.get_pitch(audio, self.pitchFmin,
+                                   self.pitchFmax)
 
             ## concatenate mfcc w/pitch - sometimes Kaldi adds to pitch
             ## one frame so give 2 frames of tolerance
