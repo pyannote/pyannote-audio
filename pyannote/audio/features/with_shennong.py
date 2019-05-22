@@ -36,7 +36,6 @@ Feature extraction with Shennong
 from shennong.audio import Audio
 from shennong.features.processor.mfcc import MfccProcessor
 import numpy as np
-import ipdb
 from .base import FeatureExtraction
 from pyannote.core.segment import SlidingWindow
 from shennong.features.pipeline import get_default_config, extract_features
@@ -255,7 +254,6 @@ class ShennongFilterbank(ShennongFeatureExtraction):
             ## concatenate mfcc w/pitch - sometimes Kaldi adds to pitch
             ## one frame so give 2 frames of tolerance
             #fbank = fbank.concatenate(pitch, 2)
-            ipdb.set_trace()
             fbank = self.concatenate_with_pitch(fbank.data, pitch.data)
 
         return fbank
