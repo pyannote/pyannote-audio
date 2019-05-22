@@ -113,6 +113,28 @@ class ShennongFeatureExtraction(FeatureExtraction):
 
         return postpitch
 
+    def concatenate_with_pitch(self, feat, pitch):
+        """ When the pitch and the mfcc are not of same length, 
+            pad the pitch equally at the begining and at the end
+            to match the sizes.
+        """
+        # get size difference
+        n_difference = feat.shape[0] - pitch.shape[0]
+
+        if n_difference > 0:
+            # add ceil(n_difference/2) frames at start or pitch array
+            # and floor(n_difference/2) frames at end of pitch array
+            ceil = int(np.ceil(n_difference/2))
+            floor = int(np.floor(n_difference/2))
+
+            pitch = np.insert(pitch, 0, np.zeros((ceil, 3)), axis=0)
+            pitch = np.insert(pitch, pitch.shape[0], np.zeros((floor, 3)), axis=0)
+
+        # concatenate pitch and mfcc which are now the same size
+        stack = np.concatenate((feat, pitch), axis=1)
+
+        return stack
+
     def get_sliding_window(self):
             return self.sliding_window_
 
@@ -220,6 +242,7 @@ class ShennongFilterbank(ShennongFeatureExtraction):
         processor.low_freq = self.melLowFreq
         processor.high_freq = self.melHighFreq
         processor.num_bins = self.melNbFilters
+        processor.snip_edges = False 
 
         # process audio to get filterbanks
         fbank = processor.process(audio)
@@ -232,9 +255,10 @@ class ShennongFilterbank(ShennongFeatureExtraction):
 
             ## concatenate mfcc w/pitch - sometimes Kaldi adds to pitch
             ## one frame so give 2 frames of tolerance
-            fbank = fbank.concatenate(pitch, 2)
+            #fbank = fbank.concatenate(pitch, 2)
+            fbank = self.concatenate_with_pitch(fbank, pitch)
 
-        return fbank.data
+        return fbank
 
 
     def get_dimension(self):
