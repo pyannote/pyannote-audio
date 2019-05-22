@@ -238,9 +238,9 @@ class ShennongFilterbank(ShennongFeatureExtraction):
 
 
     def get_dimension(self):
-        n_features = 0
+        n_features = 1
         n_features += self.melNbFilters
-        n_features += self.with_pitch * 2 # Pitch is two dimensional
+        n_features += self.with_pitch * 3 # Pitch is two dimensional
         return n_features
 
 class ShennongBottleneck(ShennongFeatureExtraction):
@@ -345,7 +345,7 @@ class ShennongBottleneck(ShennongFeatureExtraction):
     def get_dimension(self):
         n_features = 0
         n_features += 80 # bottleneck have 80 dimensions
-        n_features += self.with_pitch * 2 # Pitch is two dimensional
+        n_features += self.with_pitch * 3 # Pitch is two dimensional
         return n_features
 
 class ShennongMfcc(ShennongFeatureExtraction):
@@ -415,7 +415,7 @@ class ShennongMfcc(ShennongFeatureExtraction):
                  mfccWindowType='hanning',
                  mfccLowFreq=20,
                  mfccHighFreq=-100,
-                 e=False, coefs=13, D=True, DD=True,
+                 e=False, coefs=19, D=True, DD=True,
                  pitchFmin=20, pitchFmax=500, n_mels=40,
                  with_pitch=True, with_cmvn=True):
 
@@ -437,10 +437,33 @@ class ShennongMfcc(ShennongFeatureExtraction):
         self.mfccWindowType = mfccWindowType
         self.mfccLowFreq = mfccLowFreq
         self.mfccHighFreq = mfccHighFreq
+    
 
 
     def get_context_duration(self):
         return 0.
+
+    def concatenate_with_pitch(self, mfcc, pitch):
+        """ When the pitch and the mfcc are not of same length, 
+            pad the pitch equally at the begining and at the end
+            to match the sizes.
+        """
+        # get size difference
+        n_difference = mfcc.shape[0] - pitch.shape[0]
+
+        if n_difference > 0:
+            # add ceil(n_difference/2) frames at start or pitch array
+            # and floor(n_difference/2) frames at end of pitch array
+            ceil = int(np.ceil(n_difference/2))
+            floor = int(np.floor(n_difference/2))
+
+            pitch = np.insert(pitch, 0, np.zeros((ceil, 3)), axis=0)
+            pitch = np.insert(pitch, pitch.shape[0], np.zeros((floor, 3)), axis=0)
+
+        # concatenate pitch and mfcc which are now the same size
+        stack = np.concatenate((mfcc, pitch), axis=1)
+
+        return stack
 
     def get_features(self, y, sample_rate):
         """Feature extraction
@@ -466,6 +489,8 @@ class ShennongMfcc(ShennongFeatureExtraction):
         processor.low_freq = 20
         processor.high_freq = -100 # defines it as (nyquist - 100)
         processor.use_energy = True
+        processor.num_ceps = self.coefs
+        processor.snip_edges= False # end with correct number of frames
 
         # MFCC extraction
         #audio = Audio(data=y, sample_rate=sample_rate)
@@ -489,7 +514,8 @@ class ShennongMfcc(ShennongFeatureExtraction):
 
             ## concatenate mfcc w/pitch - sometimes Kaldi adds to pitch
             ## one frame so give 2 frames of tolerance
-            mfcc = mfcc.concatenate(pitch, 2)
+            mfcc = self.concatenate_with_pitch(mfcc.data, pitch.data)
+            #mfcc = mfcc.concatenate(pitch, 2)
 
             ## define pitch estimation parameters
             #processor = PitchProcessor(frame_shift=self.step,
@@ -513,12 +539,12 @@ class ShennongMfcc(ShennongFeatureExtraction):
             # process cmvn
             mfcc = postproc.process(mfcc)
 
-        return mfcc.data
+        return mfcc
 
     def get_dimension(self):
         n_features = 0
         n_features += self.coefs
         n_features += self.coefs * self.D
         n_features += self.coefs * self.DD
-        n_features += self.with_pitch * 2 # Pitch is two dimensional
+        n_features += self.with_pitch * 3 # Pitch is two dimensional
         return n_features

@@ -89,7 +89,7 @@ def init_feature_extraction(experiment_dir):
     # load configuration file
     config_yml = experiment_dir + '/config.yml'
     with open(config_yml, 'r') as fp:
-        config = yaml.load(fp)
+        config = yaml.safe_load(fp)
 
     FeatureExtraction = get_class_by_name(
         config['feature_extraction']['name'],
@@ -155,7 +155,7 @@ def extract(protocol_name, file_finder, experiment_dir,
     config_yml = experiment_dir + '/config.yml'
     print(experiment_dir)
     with open(config_yml, 'r') as fp:
-        config = yaml.load(fp)
+        config = yaml.safe_load(fp)
 
     FeatureExtraction = get_class_by_name(
         config['feature_extraction']['name'],
