@@ -36,7 +36,7 @@ Feature extraction with Shennong
 from shennong.audio import Audio
 from shennong.features.processor.mfcc import MfccProcessor
 import numpy as np
-
+import ipdb
 from .base import FeatureExtraction
 from pyannote.core.segment import SlidingWindow
 from shennong.features.pipeline import get_default_config, extract_features
@@ -126,7 +126,6 @@ class ShennongFeatureExtraction(FeatureExtraction):
             # and floor(n_difference/2) frames at end of pitch array
             ceil = int(np.ceil(n_difference/2))
             floor = int(np.floor(n_difference/2))
-
             pitch = np.insert(pitch, 0, np.zeros((ceil, 3)), axis=0)
             pitch = np.insert(pitch, pitch.shape[0], np.zeros((floor, 3)), axis=0)
 
@@ -256,7 +255,8 @@ class ShennongFilterbank(ShennongFeatureExtraction):
             ## concatenate mfcc w/pitch - sometimes Kaldi adds to pitch
             ## one frame so give 2 frames of tolerance
             #fbank = fbank.concatenate(pitch, 2)
-            fbank = self.concatenate_with_pitch(fbank, pitch)
+            ipdb.set_trace()
+            fbank = self.concatenate_with_pitch(fbank.data, pitch.data)
 
         return fbank
 
@@ -361,9 +361,11 @@ class ShennongBottleneck(ShennongFeatureExtraction):
 
             ## concatenate mfcc w/pitch - sometimes Kaldi adds to pitch
             ## one frame so give 2 frames of tolerance
-            bottleneck = bottleneck.concatenate(pitch, 2)
+            #bottleneck = bottleneck.concatenate(pitch, 2)
+            bottleneck = self.concatenate_with_pitch(bottleneck.data,
+                                                     pitch.data)
 
-        return bottleneck.data
+        return bottleneck
 
 
     def get_dimension(self):
