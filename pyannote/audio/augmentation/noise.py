@@ -135,15 +135,8 @@ class AddNoise(Augmentation):
         # select SNR at random
         snr = (self.snr_max - self.snr_min) * np.random.random_sample() + self.snr_min
         alpha = np.exp(-np.log(10) * snr / 20)
-        
-        # add noise to original wav
-        augmented = normalize(original) + alpha * noise
 
-        # bound wav form to -1/1 , to be consistent w/ scipy
-        # wav requirement for float32
-        augmented = augmented/np.max( (-np.min(augmented),
-                                       np.max(augmented)))
-        return augmented
+        return normalize(original) + alpha * noise
 
 
 class AddNoiseFromGaps(Augmentation):

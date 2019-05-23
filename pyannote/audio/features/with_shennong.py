@@ -224,6 +224,14 @@ class ShennongFilterbank(ShennongFeatureExtraction):
         data : (n_frames, n_dimensions) numpy array
             Features
         """
+        # scale the audio signal between -1 and 1 before 
+        # creating audio object w/ shennong: Do this because
+        # when pyannote uses "data augmentation", it normalizes
+        # the signal, but when loading the data without data
+        # augmentation it doesn't normalize it.
+        y = y / np.max( -np.min(y),
+                        np.max(y))
+
         # create audio object for shennong
         audio = Audio(data=y, sample_rate=sample_rate)
 
@@ -337,6 +345,14 @@ class ShennongBottleneck(ShennongFeatureExtraction):
         data : (n_frames, n_dimensions) numpy array
             Features
         """
+        # scale the audio signal between -1 and 1 before 
+        # creating audio object w/ shennong: Do this because
+        # when pyannote uses "data augmentation", it normalizes
+        # the signal, but when loading the data without data
+        # augmentation it doesn't normalize it.
+        y = y / np.max( -np.min(y),
+                        np.max(y))
+
         # create audio object for shennong
         audio = Audio(data=y, sample_rate=sample_rate)
 
@@ -467,28 +483,6 @@ class ShennongMfcc(ShennongFeatureExtraction):
     def get_context_duration(self):
         return 0.
 
-    def concatenate_with_pitch(self, mfcc, pitch):
-        """ When the pitch and the mfcc are not of same length, 
-            pad the pitch equally at the begining and at the end
-            to match the sizes.
-        """
-        # get size difference
-        n_difference = mfcc.shape[0] - pitch.shape[0]
-
-        if n_difference > 0:
-            # add ceil(n_difference/2) frames at start or pitch array
-            # and floor(n_difference/2) frames at end of pitch array
-            ceil = int(np.ceil(n_difference/2))
-            floor = int(np.floor(n_difference/2))
-
-            pitch = np.insert(pitch, 0, np.zeros((ceil, 3)), axis=0)
-            pitch = np.insert(pitch, pitch.shape[0], np.zeros((floor, 3)), axis=0)
-
-        # concatenate pitch and mfcc which are now the same size
-        stack = np.concatenate((mfcc, pitch), axis=1)
-
-        return stack
-
     def get_features(self, y, sample_rate):
         """Feature extraction
 
@@ -504,6 +498,14 @@ class ShennongMfcc(ShennongFeatureExtraction):
         data : (n_frames, n_dimensions) numpy array
             Features
         """
+        # scale the audio signal between -1 and 1 before 
+        # creating audio object w/ shennong: Do this because
+        # when pyannote uses "data augmentation", it normalizes
+        # the signal, but when loading the data without data
+        # augmentation it doesn't normalize it.
+        y = y / np.max( -np.min(y),
+                        np.max(y))
+
         # create audio object for shennong
         audio = Audio(data=y, sample_rate=sample_rate)
 
