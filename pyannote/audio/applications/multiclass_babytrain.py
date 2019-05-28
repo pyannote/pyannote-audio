@@ -372,7 +372,7 @@ class MulticlassBabyTrain(Application):
         # initialize embedding extraction
         sequence_labeling = SequenceLabeling(
             model=model, feature_extraction=self.feature_extraction_,
-            duration=duration, step=.25 * duration, batch_size=self.batch_size,
+            duration=duration, step=step, batch_size=self.batch_size,
             device=self.device)
 
         sliding_window = sequence_labeling.sliding_window
@@ -474,6 +474,9 @@ def main():
                              in_order=in_order, task=label)
 
     if arguments['apply']:
+
+        if subset is None:
+            subset = 'test'
 
         model_pt = Path(arguments['<model.pt>'])
         model_pt = model_pt.expanduser().resolve(strict=True)
