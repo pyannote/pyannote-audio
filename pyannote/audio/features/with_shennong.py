@@ -229,8 +229,7 @@ class ShennongFilterbank(ShennongFeatureExtraction):
         # when pyannote uses "data augmentation", it normalizes
         # the signal, but when loading the data without data
         # augmentation it doesn't normalize it.
-        y = y / np.max( -np.min(y),
-                        np.max(y))
+        y = y / np.max([-np.min(y), np.max(y)])
 
         # create audio object for shennong
         audio = Audio(data=y, sample_rate=sample_rate)
@@ -350,8 +349,7 @@ class ShennongBottleneck(ShennongFeatureExtraction):
         # when pyannote uses "data augmentation", it normalizes
         # the signal, but when loading the data without data
         # augmentation it doesn't normalize it.
-        y = y / np.max( -np.min(y),
-                        np.max(y))
+        y = y / np.max([-np.min(y), np.max(y)])
 
         # create audio object for shennong
         audio = Audio(data=y, sample_rate=sample_rate)
@@ -503,9 +501,7 @@ class ShennongMfcc(ShennongFeatureExtraction):
         # when pyannote uses "data augmentation", it normalizes
         # the signal, but when loading the data without data
         # augmentation it doesn't normalize it.
-        y = y / np.max( -np.min(y),
-                        np.max(y))
-
+        y = y / np.max([-np.min(y), np.max(y)])
         # create audio object for shennong
         audio = Audio(data=y, sample_rate=sample_rate)
 
