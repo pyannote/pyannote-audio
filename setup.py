@@ -51,7 +51,7 @@ setup(
             'pyannote-overlap-detection=pyannote.audio.applications.overlap_detection:main',
             'pyannote-segmentation=pyannote.audio.applications.segmentation:main',
             'pyannote-speaker-embedding=pyannote.audio.applications.speaker_embedding:main',
-            'pyannote-multiclass-babytrain = pyannote.audio.applications.multiclass_babytrain:main']
+            'pyannote-multilabel-babytrain = pyannote.audio.applications.multiclass_babytrain:main']
     },
 
     version=versioneer.get_version(),

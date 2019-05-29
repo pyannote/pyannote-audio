@@ -30,14 +30,14 @@
 Multi-class classifier BabyTrain
 
 Usage:
-  pyannote-multiclass-babytrain train [options] <experiment_dir> <database.task.protocol>
-  pyannote-multiclass-babytrain validate [options] [--every=<epoch> --chronological --precision=<precision>] <label> <train_dir> <database.task.protocol>
-  pyannote-multiclass-babytrain apply [options] [--step=<step>] <model.pt> <database.task.protocol> <output_dir>
-  pyannote-multiclass-babytrain -h | --help
-  pyannote-multiclass-babytrain --version
+  pyannote-multilabel-babytrain train [options] <experiment_dir> <database.task.protocol>
+  pyannote-multilabel-babytrain validate [options] [--every=<epoch> --chronological --precision=<precision>] <label> <train_dir> <database.task.protocol>
+  pyannote-multilabel-babytrain apply [options] [--step=<step>] <model.pt> <database.task.protocol> <output_dir>
+  pyannote-multilabel-babytrain -h | --help
+  pyannote-multilabel-babytrain --version
 
 Common options:
-  <database.task.protocol>   Experimental protocol (e.g. "AMI.SpeakerDiarization.MixHeadset")
+  <database.task.protocol>   Experimental protocol (e.g. "BabyTrain.SpeakerRole.JSALT")
   --database=<database.yml>        Path to database configuration file.
   --subset=<subset>          Set subset (train|developement|test).
                              Defaults to "train" in "train" mode. Defaults to
@@ -59,7 +59,7 @@ Common options:
 "validation" mode:
   --every=<epoch>            Validate model every <epoch> epochs [default: 1].
   --chronological            Force validation in chronological order.
-  <label>                    Label to predict (KCHI, CHI, FEM, MAL, OVL or speech).
+  <label>                    Label to predict (KCHI, CHI, FEM, MAL or speech).
   <train_dir>                Path to the directory containing pre-trained
                              models (i.e. the output of "train" mode).
   --precision=<precision>    Target detection precision [default: 0.8].
@@ -473,6 +473,13 @@ def main():
                              start=start, end=end, every=every,
                              in_order=in_order, task=label)
 
+    # def from_model_pt(cls, model_pt, db_yml=None, training=False):
+    #     train_dir = dirname(dirname(model_pt))
+    #     app = cls.from_train_dir(train_dir, db_yml=db_yml, training=training)
+    #     app.model_pt_ = model_pt
+    #     epoch = int(basename(app.model_pt_)[:-3])
+    #     app.model_ = app.load_model(epoch, train_dir=train_dir)
+    #     return app
     if arguments['apply']:
 
         if subset is None:
