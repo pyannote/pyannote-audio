@@ -208,7 +208,7 @@ def validate_helper_func(current_file, pipeline=None, precision=None, recall=Non
     return p, r
 
 
-class MulticlassBabyTrain(Application):
+class MultilabelBabyTrain(Application):
 
     def __init__(self, experiment_dir, db_yml=None, training=False):
 
@@ -403,7 +403,7 @@ class MulticlassBabyTrain(Application):
 
 
 def main():
-    arguments = docopt(__doc__, version='MulticlassBabyTrain')
+    arguments = docopt(__doc__, version='MultilabelBabyTrain')
     db_yml = arguments['--database']
     protocol_name = arguments['<database.task.protocol>']
     subset = arguments['--subset']
@@ -427,7 +427,7 @@ def main():
         else:
             epochs = int(epochs)
 
-        application = MulticlassBabyTrain(experiment_dir, db_yml=db_yml,
+        application = MultilabelBabyTrain(experiment_dir, db_yml=db_yml,
                                              training=True)
         application.device = device
         application.train(protocol_name, subset=subset,
@@ -461,7 +461,7 @@ def main():
         # batch size
         batch_size = int(arguments['--batch'])
 
-        application = MulticlassBabyTrain.from_train_dir(
+        application = MultilabelBabyTrain.from_train_dir(
             train_dir, db_yml=db_yml, training=False)
 
         application.device = device
@@ -499,7 +499,7 @@ def main():
 
         batch_size = int(arguments['--batch'])
 
-        application = MulticlassBabyTrain.from_model_pt(
+        application = MultilabelBabyTrain.from_model_pt(
             model_pt, db_yml=db_yml, training=False)
         application.device = device
         application.batch_size = batch_size

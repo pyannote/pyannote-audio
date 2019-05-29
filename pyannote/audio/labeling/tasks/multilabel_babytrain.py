@@ -46,7 +46,7 @@ import sys
 import os
 
 
-class MulticlassBabyTrainGenerator(LabelingTaskGenerator):
+class MultilabelBabyTrainGenerator(LabelingTaskGenerator):
     """Batch generator for training a multi-class classifier on BabyTrain
 
     Parameters
@@ -72,7 +72,7 @@ class MulticlassBabyTrainGenerator(LabelingTaskGenerator):
     >>> precomputed = Precomputed('/path/to/mfcc')
 
     # instantiate batch generator
-    >>> batches =  MulticlassBabyTrainGenerator(precomputed)
+    >>> batches =  MultilabelBabyTrainGenerator(precomputed)
 
     # evaluation protocol
     >>> from pyannote.database import get_protocol
@@ -87,7 +87,7 @@ class MulticlassBabyTrainGenerator(LabelingTaskGenerator):
 
     def __init__(self, feature_extraction, **kwargs):
 
-        super(MulticlassBabyTrainGenerator, self).__init__(
+        super(MultilabelBabyTrainGenerator, self).__init__(
             feature_extraction, **kwargs)
 
     def postprocess_y(self, Y):
@@ -96,7 +96,7 @@ class MulticlassBabyTrainGenerator(LabelingTaskGenerator):
         return Y
 
 
-class MulticlassBabyTrain(LabelingTask):
+class MultilabelBabyTrain(LabelingTask):
     """Train a 4-labels classifier
 
     Parameters
@@ -115,7 +115,7 @@ class MulticlassBabyTrain(LabelingTask):
 
     Usage
     -----
-    >>> task = MulticlassBabyTrain()
+    >>> task = MultilabelBabyTrain()
 
     # precomputed features
     >>> from pyannote.audio.features import Precomputed
@@ -135,7 +135,7 @@ class MulticlassBabyTrain(LabelingTask):
 
     """
     def __init__(self, weighted_loss=False, **kwargs):
-        super(MulticlassBabyTrain, self).__init__(**kwargs)
+        super(MultilabelBabyTrain, self).__init__(**kwargs)
         self.labels_ = self._update_labels()
         self.weighted_loss = weighted_loss
 
@@ -151,7 +151,7 @@ class MulticlassBabyTrain(LabelingTask):
         return labels
 
     def get_batch_generator(self, feature_extraction):
-        return MulticlassBabyTrainGenerator(
+        return MultilabelBabyTrainGenerator(
             feature_extraction, duration=self.duration,
             batch_size=self.batch_size, per_epoch=self.per_epoch,
             parallel=self.parallel)
