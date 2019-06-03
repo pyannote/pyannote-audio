@@ -229,8 +229,8 @@ class ShennongFilterbank(ShennongFeatureExtraction):
         # when pyannote uses "data augmentation", it normalizes
         # the signal, but when loading the data without data
         # augmentation it doesn't normalize it.
-        y = y / np.max( -np.min(y),
-                        np.max(y))
+        y = y / np.max(( -np.min(y),
+                        np.max(y)))
 
         # create audio object for shennong
         audio = Audio(data=y, sample_rate=sample_rate)
@@ -263,6 +263,8 @@ class ShennongFilterbank(ShennongFeatureExtraction):
             ## one frame so give 2 frames of tolerance
             #fbank = fbank.concatenate(pitch, 2)
             fbank = self.concatenate_with_pitch(fbank.data, pitch.data)
+        else:
+            fbank = fbank.data
 
         return fbank
 
@@ -350,8 +352,8 @@ class ShennongBottleneck(ShennongFeatureExtraction):
         # when pyannote uses "data augmentation", it normalizes
         # the signal, but when loading the data without data
         # augmentation it doesn't normalize it.
-        y = y / np.max( -np.min(y),
-                        np.max(y))
+        y = y / np.max(( -np.min(y),
+                        np.max(y)))
 
         # create audio object for shennong
         audio = Audio(data=y, sample_rate=sample_rate)
@@ -378,6 +380,14 @@ class ShennongBottleneck(ShennongFeatureExtraction):
             #bottleneck = bottleneck.concatenate(pitch, 2)
             bottleneck = self.concatenate_with_pitch(bottleneck.data,
                                                      pitch.data)
+            ## add 1 frame at begining and 1 frame at end to ensure that
+            ## we have the same length as mfccs etc..
+            bottleneck = np.insert(bottleneck, 0,
+                                   np.zeros((1, bottleneck.shape[1])), axis=0)
+            bottleneck = np.insert(bottleneck, bottleneck.shape[0],
+                                   np.zeros((1, bottleneck.shape[1])), axis=0)
+        else:
+            bottleneck = bottleneck.data
 
         return bottleneck
 
@@ -503,8 +513,8 @@ class ShennongMfcc(ShennongFeatureExtraction):
         # when pyannote uses "data augmentation", it normalizes
         # the signal, but when loading the data without data
         # augmentation it doesn't normalize it.
-        y = y / np.max( -np.min(y),
-                        np.max(y))
+        y = y / np.max(( -np.min(y),
+                        np.max(y)))
 
         # create audio object for shennong
         audio = Audio(data=y, sample_rate=sample_rate)
@@ -532,6 +542,17 @@ class ShennongMfcc(ShennongFeatureExtraction):
             # process Mfccs
             mfcc = derivative_proc.process(mfcc)
 
+        # Compute CMVN
+        if self.with_cmvn:
+            # define cmvn
+            postproc = CmvnPostProcessor(self.get_dimension(), stats=None)
+
+            # accumulate stats
+            stats = postproc.accumulate(mfcc)
+
+            # process cmvn
+            mfcc = postproc.process(mfcc)
+
         # Compute Pitch
         if self.with_pitch:
             # extract pitch
@@ -552,18 +573,10 @@ class ShennongMfcc(ShennongFeatureExtraction):
 
             ## estimate pitch
             #pitch = processor.process(audio)
+        else:
+            mfcc = mfcc.data
 
 
-        # Compute CMVN
-        if self.with_cmvn:
-            # define cmvn
-            postproc = CmvnPostProcessor(self.get_dimension(), stats=None)
-
-            # accumulate stats
-            stats = postproc.accumulate(mfcc)
-
-            # process cmvn
-            mfcc = postproc.process(mfcc)
 
         return mfcc
 
