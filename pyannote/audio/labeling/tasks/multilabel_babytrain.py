@@ -40,12 +40,13 @@ from .base import LabelingTask
 from .base import LabelingTaskGenerator
 from .base import TASK_MULTI_LABEL_CLASSIFICATION
 from pyannote.database import get_protocol
-protocol = get_protocol('BabyTrain.SpeakerDiarization.BB')
+protocol = get_protocol('BabyTrain.SpeakerRole.JSALT')
 import scipy.signal
 import sys
+import os
 
 
-class MulticlassBabyTrainGenerator(LabelingTaskGenerator):
+class MultilabelBabyTrainGenerator(LabelingTaskGenerator):
     """Batch generator for training a multi-class classifier on BabyTrain
 
     Parameters
@@ -71,11 +72,11 @@ class MulticlassBabyTrainGenerator(LabelingTaskGenerator):
     >>> precomputed = Precomputed('/path/to/mfcc')
 
     # instantiate batch generator
-    >>> batches =  MulticlassBabyTrainGenerator(precomputed)
+    >>> batches =  MultilabelBabyTrainGenerator(precomputed)
 
     # evaluation protocol
     >>> from pyannote.database import get_protocol
-    >>> protocol = get_protocol('BabyTrain.SpeakerDiarization.BB')
+    >>> protocol = get_protocol('BabyTrain.SpeakerRole.JSALT')
 
     # iterate over training set
     >>> for batch in batches(protocol, subset='train'):
@@ -86,32 +87,17 @@ class MulticlassBabyTrainGenerator(LabelingTaskGenerator):
 
     def __init__(self, feature_extraction, **kwargs):
 
-        super(MulticlassBabyTrainGenerator, self).__init__(
+        super(MultilabelBabyTrainGenerator, self).__init__(
             feature_extraction, **kwargs)
 
     def postprocess_y(self, Y):
-        """Add speech to Y
-
-        Parameters
-        ----------
-        Y : (n_samples, n_speaker_classes) numpy.ndarray
-            Discretized annotation returned by `pyannote.core.utils_rttm.numpy.one_hot_encoding`.
-
-        Returns
-        -------
-        y : (n_samples, n_speakers_classes+0 or +1 ) numpy.ndarray if self.speech == True
-
-        See also
-        --------
-        `pyannote.core.utils_rttm.numpy.one_hot_encoding`
-        """
         # replace NaNs by 0s
         Y = np.nan_to_num(Y)
         return Y
 
 
-class MulticlassBabyTrain(LabelingTask):
-    """Train a 6-class classifier
+class MultilabelBabyTrain(LabelingTask):
+    """Train a 4-labels classifier
 
     Parameters
     ----------
@@ -129,7 +115,7 @@ class MulticlassBabyTrain(LabelingTask):
 
     Usage
     -----
-    >>> task = MulticlassBabyTrain()
+    >>> task = MultilabelBabyTrain()
 
     # precomputed features
     >>> from pyannote.audio.features import Precomputed
@@ -141,20 +127,31 @@ class MulticlassBabyTrain(LabelingTask):
 
     # evaluation protocol
     >>> from pyannote.database import get_protocol
-    >>> protocol = get_protocol('BabyTrain.SpeakerDiarization.BB')
+    >>> protocol = get_protocol('BabyTrain.SpeakerRole.JSALT')
 
     # train model using protocol training set
     >>> for epoch, model in task.fit_iter(model, precomputed, protocol):
     ...     pass
 
     """
-
     def __init__(self, weighted_loss=False, **kwargs):
-        super(MulticlassBabyTrain, self).__init__(**kwargs)
-        self.weighted_loss = float(weighted_loss)
+        super(MultilabelBabyTrain, self).__init__(**kwargs)
+        self.labels_ = self._update_labels()
+        self.weighted_loss = weighted_loss
+
+    def _update_labels(self):
+        """
+        Get the actual number of labels (the roles amongst {KCHI,CHI,FEM,MAL} that are present
+        in the data
+        """
+        labels = set()
+        for current_file in protocol.trn_iter():
+            y_labels = set(current_file["annotation"].labels())
+            labels |= y_labels
+        return labels
 
     def get_batch_generator(self, feature_extraction):
-        return MulticlassBabyTrainGenerator(
+        return MultilabelBabyTrainGenerator(
             feature_extraction, duration=self.duration,
             batch_size=self.batch_size, per_epoch=self.per_epoch,
             parallel=self.parallel)
@@ -165,19 +162,28 @@ class MulticlassBabyTrain(LabelingTask):
 
     @property
     def n_classes(self):
-        return 4 # KCHI, CHI, FEM, MAL
+        return len(self.labels_)
 
     def _get_one_over_the_prior(self):
         nb_speakers = 4
         weights = dict([(key, 0.0) for key in self.labels[0:nb_speakers]])
 
+        # Compute the cumulated speech duration
         for current_file in protocol.trn_iter():
             y = current_file["annotation"]
             for speaker in self.labels[0:nb_speakers]:
                 weights[speaker] += y.label_duration(speaker)
 
         total_speech = sum(weights.values(), 0.0)
-        weights = {key: total_speech / value for key, value in weights.items()}
+        for key, value in weights.items():
+            if value != 0:
+                weights[key] = total_speech/value
+
+        # Finally normalize, so that the weights sum to 1
+        # We remove speaker roles whose value is equal to 0
+        norm1 = sum(weights.values())
+        weights = {key: value/norm1 for key, value in weights.items() if value != 0}
+
         return torch.tensor(np.array(list(weights.values())), dtype=torch.float32)
 
     @property
@@ -188,4 +194,4 @@ class MulticlassBabyTrain(LabelingTask):
 
     @property
     def labels(self):
-        return ["CHI", "FEM", "KCHI", "MAL"]
+        return list(self.labels_)

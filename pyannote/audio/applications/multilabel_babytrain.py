@@ -30,14 +30,14 @@
 Multi-class classifier BabyTrain
 
 Usage:
-  pyannote-multiclass-babytrain train [options] <experiment_dir> <database.task.protocol>
-  pyannote-multiclass-babytrain validate [options] [--every=<epoch> --chronological --precision=<precision>] <label> <train_dir> <database.task.protocol>
-  pyannote-multiclass-babytrain apply [options] [--step=<step>] <model.pt> <database.task.protocol> <output_dir>
-  pyannote-multiclass-babytrain -h | --help
-  pyannote-multiclass-babytrain --version
+  pyannote-multilabel-babytrain train [options] <experiment_dir> <database.task.protocol>
+  pyannote-multilabel-babytrain validate [options] [--every=<epoch> --chronological --precision=<precision>] <label> <train_dir> <database.task.protocol>
+  pyannote-multilabel-babytrain apply [options] [--step=<step>] <model.pt> <database.task.protocol> <output_dir>
+  pyannote-multilabel-babytrain -h | --help
+  pyannote-multilabel-babytrain --version
 
 Common options:
-  <database.task.protocol>   Experimental protocol (e.g. "AMI.SpeakerDiarization.MixHeadset")
+  <database.task.protocol>   Experimental protocol (e.g. "BabyTrain.SpeakerRole.JSALT")
   --database=<database.yml>        Path to database configuration file.
   --subset=<subset>          Set subset (train|developement|test).
                              Defaults to "train" in "train" mode. Defaults to
@@ -59,7 +59,7 @@ Common options:
 "validation" mode:
   --every=<epoch>            Validate model every <epoch> epochs [default: 1].
   --chronological            Force validation in chronological order.
-  <label>                    Label to predict (KCHI, CHI, FEM, MAL, OVL or speech).
+  <label>                    Label to predict (KCHI, CHI, FEM, MAL or speech).
   <train_dir>                Path to the directory containing pre-trained
                              models (i.e. the output of "train" mode).
   --precision=<precision>    Target detection precision [default: 0.8].
@@ -208,7 +208,7 @@ def validate_helper_func(current_file, pipeline=None, precision=None, recall=Non
     return p, r
 
 
-class MulticlassBabyTrain(Application):
+class MultilabelBabyTrain(Application):
 
     def __init__(self, experiment_dir, db_yml=None, training=False):
 
@@ -372,7 +372,7 @@ class MulticlassBabyTrain(Application):
         # initialize embedding extraction
         sequence_labeling = SequenceLabeling(
             model=model, feature_extraction=self.feature_extraction_,
-            duration=duration, step=.25 * duration, batch_size=self.batch_size,
+            duration=duration, step=step, batch_size=self.batch_size,
             device=self.device)
 
         sliding_window = sequence_labeling.sliding_window
@@ -403,7 +403,7 @@ class MulticlassBabyTrain(Application):
 
 
 def main():
-    arguments = docopt(__doc__, version='MulticlassBabyTrain')
+    arguments = docopt(__doc__, version='MultilabelBabyTrain')
     db_yml = arguments['--database']
     protocol_name = arguments['<database.task.protocol>']
     subset = arguments['--subset']
@@ -427,7 +427,7 @@ def main():
         else:
             epochs = int(epochs)
 
-        application = MulticlassBabyTrain(experiment_dir, db_yml=db_yml,
+        application = MultilabelBabyTrain(experiment_dir, db_yml=db_yml,
                                              training=True)
         application.device = device
         application.train(protocol_name, subset=subset,
@@ -461,7 +461,7 @@ def main():
         # batch size
         batch_size = int(arguments['--batch'])
 
-        application = MulticlassBabyTrain.from_train_dir(
+        application = MultilabelBabyTrain.from_train_dir(
             train_dir, db_yml=db_yml, training=False)
 
         application.device = device
@@ -473,7 +473,17 @@ def main():
                              start=start, end=end, every=every,
                              in_order=in_order, task=label)
 
+    # def from_model_pt(cls, model_pt, db_yml=None, training=False):
+    #     train_dir = dirname(dirname(model_pt))
+    #     app = cls.from_train_dir(train_dir, db_yml=db_yml, training=training)
+    #     app.model_pt_ = model_pt
+    #     epoch = int(basename(app.model_pt_)[:-3])
+    #     app.model_ = app.load_model(epoch, train_dir=train_dir)
+    #     return app
     if arguments['apply']:
+
+        if subset is None:
+            subset = 'test'
 
         model_pt = Path(arguments['<model.pt>'])
         model_pt = model_pt.expanduser().resolve(strict=True)
@@ -489,7 +499,7 @@ def main():
 
         batch_size = int(arguments['--batch'])
 
-        application = MulticlassBabyTrain.from_model_pt(
+        application = MultilabelBabyTrain.from_model_pt(
             model_pt, db_yml=db_yml, training=False)
         application.device = device
         application.batch_size = batch_size

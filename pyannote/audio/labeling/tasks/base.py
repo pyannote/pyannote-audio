@@ -427,4 +427,5 @@ class LabelingTask(Trainer):
         weight = self.weight
         if weight is not None:
             weight = weight.to(device=device)
+
         return self.loss_func_(fX, target, weight=weight)
