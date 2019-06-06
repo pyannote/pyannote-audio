@@ -210,7 +210,7 @@ def validate_helper_func(current_file, pipeline=None, precision=None, recall=Non
 
 class MultilabelBabyTrain(Application):
 
-    def __init__(self, experiment_dir, db_yml=None, training=False):
+    def __init__(self, protocol_name, experiment_dir, db_yml=None, training=False):
 
         super().__init__(experiment_dir, db_yml=db_yml, training=training)
         # task
@@ -218,6 +218,7 @@ class MultilabelBabyTrain(Application):
             self.config_['task']['name'],
             default_module_name='pyannote.audio.labeling.tasks')
         self.task_ = Task(
+            protocol_name,
             **self.config_['task'].get('params', {}))
 
         n_features = int(self.feature_extraction_.dimension)
@@ -427,7 +428,7 @@ def main():
         else:
             epochs = int(epochs)
 
-        application = MultilabelBabyTrain(experiment_dir, db_yml=db_yml,
+        application = MultilabelBabyTrain(protocol_name, experiment_dir, db_yml=db_yml,
                                              training=True)
         application.device = device
         application.train(protocol_name, subset=subset,

@@ -40,11 +40,6 @@ from .base import LabelingTask
 from .base import LabelingTaskGenerator
 from .base import TASK_MULTI_LABEL_CLASSIFICATION
 from pyannote.database import get_protocol
-protocol = get_protocol('BabyTrain.SpeakerRole.JSALT')
-import scipy.signal
-import sys
-import os
-
 
 class MultilabelBabyTrainGenerator(LabelingTaskGenerator):
     """Batch generator for training a multi-class classifier on BabyTrain
@@ -134,8 +129,11 @@ class MultilabelBabyTrain(LabelingTask):
     ...     pass
 
     """
-    def __init__(self, weighted_loss=False, **kwargs):
+    def __init__(self, protocol_name, weighted_loss=False, **kwargs):
         super(MultilabelBabyTrain, self).__init__(**kwargs)
+        # Need protocol to know the classes that need to be predicted
+        # And thus the dimension of the target !
+        self.protocol = get_protocol(protocol_name)
         self.labels_ = self._update_labels()
         self.weighted_loss = weighted_loss
 
@@ -145,7 +143,7 @@ class MultilabelBabyTrain(LabelingTask):
         in the data
         """
         labels = set()
-        for current_file in protocol.trn_iter():
+        for current_file in self.protocol.trn_iter():
             y_labels = set(current_file["annotation"].labels())
             labels |= y_labels
         return labels
@@ -169,7 +167,7 @@ class MultilabelBabyTrain(LabelingTask):
         weights = dict([(key, 0.0) for key in self.labels[0:nb_speakers]])
 
         # Compute the cumulated speech duration
-        for current_file in protocol.trn_iter():
+        for current_file in self.protocol.trn_iter():
             y = current_file["annotation"]
             for speaker in self.labels[0:nb_speakers]:
                 weights[speaker] += y.label_duration(speaker)
