@@ -36,12 +36,22 @@ MAL     (male speech)
 
 import torch
 import numpy as np
+import re
+import warnings
 from .base import LabelingTask
 from .base import LabelingTaskGenerator
 from .base import TASK_MULTI_LABEL_CLASSIFICATION
 from pyannote.database import get_protocol
+from pyannote.database import get_unique_identifier
+from pyannote.database import get_annotated
+from pyannote.core.utils.numpy import one_hot_encoding
+from pyannote.audio.features import Precomputed
+from pyannote.audio.features.utils import get_audio_duration
+from pyannote.core import Segment
+from pyannote.core import SlidingWindowFeature
 
-class MultilabelBabyTrainGenerator(LabelingTaskGenerator):
+
+class MultilabelGenerator(LabelingTaskGenerator):
     """Batch generator for training a multi-class classifier on BabyTrain
 
     Parameters
@@ -67,7 +77,7 @@ class MultilabelBabyTrainGenerator(LabelingTaskGenerator):
     >>> precomputed = Precomputed('/path/to/mfcc')
 
     # instantiate batch generator
-    >>> batches =  MultilabelBabyTrainGenerator(precomputed)
+    >>> batches =  MultilabelGenerator(precomputed)
 
     # evaluation protocol
     >>> from pyannote.database import get_protocol
@@ -82,7 +92,7 @@ class MultilabelBabyTrainGenerator(LabelingTaskGenerator):
 
     def __init__(self, feature_extraction, **kwargs):
 
-        super(MultilabelBabyTrainGenerator, self).__init__(
+        super(MultilabelGenerator, self).__init__(
             feature_extraction, **kwargs)
 
     def postprocess_y(self, Y):
@@ -91,7 +101,7 @@ class MultilabelBabyTrainGenerator(LabelingTaskGenerator):
         return Y
 
 
-class MultilabelBabyTrain(LabelingTask):
+class Multilabel(LabelingTask):
     """Train a 4-labels classifier
 
     Parameters
@@ -110,7 +120,7 @@ class MultilabelBabyTrain(LabelingTask):
 
     Usage
     -----
-    >>> task = MultilabelBabyTrain()
+    >>> task = Multilabel()
 
     # precomputed features
     >>> from pyannote.audio.features import Precomputed
@@ -129,11 +139,11 @@ class MultilabelBabyTrain(LabelingTask):
     ...     pass
 
     """
-    def __init__(self, protocol_name, weighted_loss=False, **kwargs):
-        super(MultilabelBabyTrain, self).__init__(**kwargs)
+    def __init__(self, protocol_name, preprocessors, weighted_loss=False, **kwargs):
+        super(Multilabel, self).__init__(**kwargs)
         # Need protocol to know the classes that need to be predicted
         # And thus the dimension of the target !
-        self.protocol = get_protocol(protocol_name)
+        self.protocol = get_protocol(protocol_name, preprocessors)
         self.labels_ = self._update_labels()
         self.weighted_loss = weighted_loss
 
@@ -143,13 +153,13 @@ class MultilabelBabyTrain(LabelingTask):
         in the data
         """
         labels = set()
-        for current_file in self.protocol.trn_iter():
+        for current_file in self.protocol.train():
             y_labels = set(current_file["annotation"].labels())
             labels |= y_labels
         return labels
 
     def get_batch_generator(self, feature_extraction):
-        return MultilabelBabyTrainGenerator(
+        return MultilabelGenerator(
             feature_extraction, duration=self.duration,
             batch_size=self.batch_size, per_epoch=self.per_epoch,
             parallel=self.parallel)
@@ -167,7 +177,7 @@ class MultilabelBabyTrain(LabelingTask):
         weights = dict([(key, 0.0) for key in self.labels[0:nb_speakers]])
 
         # Compute the cumulated speech duration
-        for current_file in self.protocol.trn_iter():
+        for current_file in self.protocol.train():
             y = current_file["annotation"]
             for speaker in self.labels[0:nb_speakers]:
                 weights[speaker] += y.label_duration(speaker)

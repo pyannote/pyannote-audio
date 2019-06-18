@@ -32,4 +32,4 @@ from .speaker_change_detection import SpeakerChangeDetection
 
 from .segmentation import Segmentation
 from .resegmentation import Resegmentation
-from .multilabel_babytrain import MultilabelBabyTrain
+from .multilabel import Multilabel
