@@ -31,7 +31,7 @@ Multi-class classifier BabyTrain
 
 Usage: 
   pyannote-multilabel train [options] <experiment_dir> <database.task.protocol>
-  pyannote-multilabel validate [options] [--every=<epoch> --chronological --precision=<precision>] <label> <train_dir> <database.task.protocol>
+  pyannote-multilabel validate [options] [--every=<epoch> --chronological --precision=<precision> --use_der] <label> <train_dir> <database.task.protocol>
   pyannote-multilabel apply [options] [--step=<step>] <model.pt> <database.task.protocol> <output_dir>
   pyannote-multilabel -h | --help
   pyannote-multilabel --version
@@ -63,6 +63,7 @@ Common options:
   <train_dir>                Path to the directory containing pre-trained
                              models (i.e. the output of "train" mode).
   --precision=<precision>    Target detection precision [default:  0.8].
+  --use_der                  Indicates if the DER should be used for validating the model.
 
 "apply" mode: 
   <model.pt>                 Path to the pretrained model.
@@ -201,18 +202,22 @@ from pyannote.metrics.detection import DetectionRecall
 from pyannote.metrics.detection import DetectionPrecision
 
 
-
-def validate_helper_func(current_file, pipeline=None, precision=None, recall=None, label=None): 
+def validate_helper_func(current_file, pipeline=None, precision=None, recall=None, label=None, metric=None):
     reference = current_file[label]
     hypothesis = pipeline(current_file) # pipeline has been initialized with label, so that it can know which class needs to be assessed
-    p = precision(reference, hypothesis)
-    r = recall(reference, hypothesis)
-    return p, r
+    uem = get_annotated(current_file)
+
+    if precision is not None:
+        p = precision(reference, hypothesis, uem=uem)
+        r = recall(reference, hypothesis, uem=uem)
+        return p, r
+    else:
+        return metric(reference, hypothesis, uem=uem)
 
 
 class Multilabel(Application):
 
-    def __init__(self, protocol_name, experiment_dir, db_yml=None, training=False): 
+    def __init__(self, protocol_name, experiment_dir, db_yml=None, training=False, use_der=False):
 
         super().__init__(experiment_dir, db_yml=db_yml, training=training)
 
@@ -1163,6 +1168,8 @@ class Multilabel(Application):
         # However, protocol.train() will
         self.preprocessors_['annotation'] = collapse
 
+        self.use_der = use_der
+
         # task
         Task = get_class_by_name(
             self.config_['task']['name'],
@@ -1186,16 +1193,16 @@ class Multilabel(Application):
             **self.config_['architecture'].get('params', {}))
 
     @classmethod
-    def from_train_dir(cls, protocol_name, train_dir, db_yml=None, training=False):
+    def from_train_dir(cls, protocol_name, train_dir, db_yml=None, training=False, use_der=False):
         experiment_dir = dirname(dirname(train_dir))
-        app = cls(protocol_name, experiment_dir, db_yml=db_yml, training=training)
+        app = cls(protocol_name, experiment_dir, db_yml=db_yml, training=training, use_der=use_der)
         app.train_dir_ = train_dir
         return app
 
     @classmethod
-    def from_model_pt(cls, protocol_name, model_pt, db_yml=None, training=False):
+    def from_model_pt(cls, protocol_name, model_pt, db_yml=None, training=False, use_der=False):
         train_dir = dirname(dirname(model_pt))
-        app = cls.from_train_dir(protocol_name, train_dir, db_yml=db_yml, training=training)
+        app = cls.from_train_dir(protocol_name, train_dir, db_yml=db_yml, training=training, use_der=use_der)
         app.model_pt_ = model_pt
         epoch = int(basename(app.model_pt_)[:-3])
         app.model_ = app.load_model(epoch, train_dir=train_dir)
@@ -1223,7 +1230,7 @@ class Multilabel(Application):
                     current_file)
 
             # Extract subset relevant to the speaker whose speech performances need to be evaluated
-            if self.label in ["KCHI", "CHI", "MAL", "FEM"]: 
+            if self.label in ["CHI", "FEM", "KCHI", "MAL"]:
                 reference = current_file['annotation']
                 label_speech = reference.subset([self.label])
                 current_file[self.label] = label_speech
@@ -1243,7 +1250,7 @@ class Multilabel(Application):
     def validate_epoch_class(self, epoch, protocol_name, subset='development',
                               validation_data=None): 
         """
-        Validate function given a class which must belongs to ["KCHI", "KCHI", "FEM", "MAL", "speech"]
+        Validate function given a class which must belongs to ["CHI", "FEM", "KCHI", "MAL", "speech"]
         """
         # Name of the class that needs to be validated
         class_name = self.label
@@ -1269,61 +1276,94 @@ class Multilabel(Application):
             else: 
                 # We extract the score of interest
                 dimension = self.task_.labels.index(class_name)
-                scores_data = scores.data[: , dimension].reshape(-1, 1)
+                scores_data = scores.data[:, dimension].reshape(-1, 1)
+
             current_file[class_name+'_scores'] = SlidingWindowFeature(
                 scores_data,
                 scores.sliding_window)
 
         # pipeline
-        pipeline = SpeakerActivityDetectionPipeline(label=self.label)
+        pipeline = SpeakerActivityDetectionPipeline(label=self.label, use_der=self.use_der)
 
         lower_alpha = 0.
         upper_alpha = 1.
         best_alpha = .5 * (lower_alpha + upper_alpha)
         best_recall = 0.
 
-        for _ in range(10): 
+        if not self.use_der:
+            for _ in range(10):
 
-            current_alpha = .5 * (lower_alpha + upper_alpha)
-            pipeline.instantiate({'onset':  current_alpha,
-                                  'offset':  current_alpha,
-                                  'min_duration_on':  0.,
-                                  'min_duration_off':  0.,
-                                  'pad_onset':  0.,
-                                  'pad_offset':  0.})
+                current_alpha = .5 * (lower_alpha + upper_alpha)
+                pipeline.instantiate({'onset':  current_alpha,
+                                      'offset':  current_alpha,
+                                      'min_duration_on':  0.,
+                                      'min_duration_off':  0.,
+                                      'pad_onset':  0.,
+                                      'pad_offset':  0.})
 
-            precision = DetectionPrecision(parallel=True)
-            recall = DetectionRecall(parallel=True)
+                precision = DetectionPrecision(parallel=True)
+                recall = DetectionRecall(parallel=True)
 
-            validate = partial(validate_helper_func,
-                               pipeline=pipeline,
-                               precision=precision,
-                               recall=recall,
-                               label=self.label)
-            _ = self.pool_.map(validate, validation_data)
+                validate = partial(validate_helper_func,
+                                   pipeline=pipeline,
+                                   precision=precision,
+                                   recall=recall,
+                                   label=self.label)
+                _ = self.pool_.map(validate, validation_data)
 
-            precision = abs(precision)
-            recall = abs(recall)
+                precision = abs(precision)
+                recall = abs(recall)
 
-            if precision < self.precision: 
-                # precision is not high enough:  try higher thresholds
-                lower_alpha = current_alpha
+                if precision < self.precision:
+                    # precision is not high enough:  try higher thresholds
+                    lower_alpha = current_alpha
 
-            else: 
-                upper_alpha = current_alpha
-                if recall > best_recall: 
-                    best_recall = recall
-                    best_alpha = current_alpha
+                else:
+                    upper_alpha = current_alpha
+                    if recall > best_recall:
+                        best_recall = recall
+                        best_alpha = current_alpha
 
-        return {'metric':  f'recall@{self.precision: .2f}precision',
-                'minimize':  False,
-                'value':  best_recall,
-                'pipeline':  pipeline.instantiate({'onset':  best_alpha,
-                                                  'offset':  best_alpha,
-                                                  'min_duration_on':  0.,
-                                                  'min_duration_off':  0.,
-                                                  'pad_onset':  0.,
-                                                  'pad_offset':  0.})}
+            return {'metric':  f'recall@{self.precision: .2f}precision',
+                    'minimize':  False,
+                    'value':  best_recall,
+                    'pipeline':  pipeline.instantiate({'onset':  best_alpha,
+                                                      'offset':  best_alpha,
+                                                      'min_duration_on':  0.,
+                                                      'min_duration_off':  0.,
+                                                      'pad_onset':  0.,
+                                                      'pad_offset':  0.})}
+        else:
+            def fun(threshold):
+                pipeline.instantiate({'onset': threshold,
+                                      'offset': threshold,
+                                      'min_duration_on': 0.,
+                                      'min_duration_off': 0.,
+                                      'pad_onset': 0.,
+                                      'pad_offset': 0.})
+                metric = DetectionErrorRate(parallel=True)
+                validate = partial(validate_helper_func,
+                                   pipeline=pipeline,
+                                   label=self.label,
+                                   metric=metric)
+                _ = self.pool_.map(validate, validation_data)
+
+                return abs(metric)
+
+            res = scipy.optimize.minimize_scalar(
+                fun, bounds=(0., 1.), method='bounded', options={'maxiter': 10})
+
+            threshold = res.x.item()
+
+            return {'metric': 'detection_error_rate',
+                    'minimize': True,
+                    'value': res.fun,
+                    'pipeline': pipeline.instantiate({'onset': threshold,
+                                                      'offset': threshold,
+                                                      'min_duration_on': 0.,
+                                                      'min_duration_off': 0.,
+                                                      'pad_onset': 0.,
+                                                      'pad_offset': 0.})}
 
     def apply(self, protocol_name, output_dir, step=None, subset=None): 
 
@@ -1378,7 +1418,9 @@ def main():
     subset = arguments['--subset']
     gpu = arguments['--gpu']
     device = torch.device('cuda') if gpu else torch.device('cpu')
-    if arguments['train']: 
+    use_der = arguments['--use_der']
+
+    if arguments['train']:
 
         experiment_dir = Path(arguments['<experiment_dir>'])
         experiment_dir = experiment_dir.expanduser().resolve(strict=True)
@@ -1430,7 +1472,7 @@ def main():
         # batch size
         batch_size = int(arguments['--batch'])
 
-        application = Multilabel.from_train_dir(protocol_name, train_dir, db_yml=db_yml, training=False)
+        application = Multilabel.from_train_dir(protocol_name, train_dir, db_yml=db_yml, training=False, use_der=use_der)
 
         application.device = device
         application.batch_size = batch_size
