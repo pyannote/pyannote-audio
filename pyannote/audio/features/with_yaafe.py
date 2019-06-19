@@ -70,7 +70,7 @@ class YaafeFeatureExtraction(FeatureExtraction):
 
         self.engine_ = yaafelib.Engine()
 
-    def get_sliding_window(self):
+    def get_frame_info(self):
         return self.sliding_window_
 
     def get_context_duration(self):

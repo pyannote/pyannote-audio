@@ -26,6 +26,10 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
+"""
+# Signal processing
+"""
+
 
 import numpy as np
 import scipy.signal

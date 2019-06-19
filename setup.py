@@ -50,8 +50,10 @@ setup(
             'pyannote-change-detection=pyannote.audio.applications.change_detection:main',
             'pyannote-overlap-detection=pyannote.audio.applications.overlap_detection:main',
             'pyannote-segmentation=pyannote.audio.applications.segmentation:main',
+            'pyannote-multilabel = pyannote.audio.applications.multilabel:main'
+            'pyannote-domain-classification=pyannote.audio.applications.domain_classification:main',
             'pyannote-speaker-embedding=pyannote.audio.applications.speaker_embedding:main',
-            'pyannote-multilabel = pyannote.audio.applications.multilabel:main']
+        ],
     },
 
     version=versioneer.get_version(),

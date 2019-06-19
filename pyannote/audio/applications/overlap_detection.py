@@ -27,7 +27,7 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 """
-Overlap detection
+Overlapping speech detection
 
 Usage:
   pyannote-overlap-detection train [options] <experiment_dir> <database.task.protocol>
@@ -75,14 +75,13 @@ Configuration file:
     the neural network architecture, and the task addressed.
 
     ................... <experiment_dir>/config.yml ...................
-    # train the network for overlap detection
+    # train the network for overlapping speech detection
     # see pyannote.audio.labeling.tasks for more details
     task:
        name: OverlapDetection
        params:
           duration: 3.2     # sub-sequence duration
           per_epoch: 1      # 1 day of audio per epoch
-          collar: 0.200     # upsampling collar
           batch_size: 32    # number of sub-sequences per batch
 
     # use precomputed features (see feature extraction tutorial)
@@ -134,14 +133,13 @@ Configuration file:
     You can run multiple "validate" in parallel (e.g. for every subset,
     protocol, task, or database).
 
-    In practice, for each epoch, "validate" mode will look for the peak
-    detection threshold that maximizes speech turn coverage, under the
-    constraint that purity must be greater than the value provided by the
-    "--purity" option. Both values (best threshold and corresponding coverage)
-    are sent to tensorboard.
+    In practice, for each epoch, "validate" mode will look for the detection
+    threshold that maximizes overlapping speech detection recall, under the
+    constraint that precision must be greater than the value provided by the
+    "--precision" option.
 
-"apply" mode
-    Use the "apply" mode to extract speaker change detection raw scores.
+"apply" mode:
+    Use the "apply" mode to extract overlapping speech detection raw scores.
     Resulting files can then be used in the following way:
 
     >>> from pyannote.audio.features import Precomputed
@@ -161,28 +159,23 @@ Configuration file:
 
 from functools import partial
 from pathlib import Path
-
-import numpy as np
 import torch
+import numpy as np
 from docopt import docopt
-
-from pyannote.core import Timeline
-
+from .base_labeling import BaseLabeling
 from pyannote.database import get_annotated
 from pyannote.database import get_unique_identifier
-
 from pyannote.metrics.detection import DetectionRecall
 from pyannote.metrics.detection import DetectionPrecision
 
 from pyannote.audio.labeling.extraction import SequenceLabeling
-from pyannote.audio.signal import Binarize
-from .speech_detection import SpeechActivityDetection
-
 from pyannote.audio.pipeline.overlap_detection \
     import OverlapDetection as OverlapDetectionPipeline
+from pyannote.core import Timeline
 
 
-def validate_helper_func(current_file, pipeline=None, precision=None, recall=None):
+def validate_helper_func(current_file, pipeline=None,
+                         precision=None, recall=None):
     reference = current_file['annotation']
     uem = get_annotated(current_file)
     hypothesis = pipeline(current_file)
@@ -190,7 +183,8 @@ def validate_helper_func(current_file, pipeline=None, precision=None, recall=Non
     r = recall(reference, hypothesis, uem=uem)
     return p, r
 
-class OverlapDetection(SpeechActivityDetection):
+
+class OverlapDetection(BaseLabeling):
 
     def validate_init(self, protocol_name, subset='development'):
         validation_data = super().validate_init(protocol_name, subset=subset)
@@ -206,7 +200,7 @@ class OverlapDetection(SpeechActivityDetection):
                     continue
                 overlap.add(track1[0] & track2[0])
             current_file['annotation'] = overlap.support().to_annotation()
-
+            # TODO. make 'annotated' focus on speech regions only
         return validation_data
 
     def validate_epoch(self, epoch, protocol_name, subset='development',
@@ -218,10 +212,9 @@ class OverlapDetection(SpeechActivityDetection):
 
         # compute (and store) overlap scores
         duration = self.task_.duration
-        step = .25 * duration
         sequence_labeling = SequenceLabeling(
             model=model, feature_extraction=self.feature_extraction_,
-            duration=duration, step=step, batch_size=self.batch_size,
+            duration=duration, step=.25 * duration, batch_size=self.batch_size,
             device=self.device)
         for current_file in validation_data:
             uri = get_unique_identifier(current_file)
@@ -260,11 +253,19 @@ class OverlapDetection(SpeechActivityDetection):
             precision = abs(precision)
             recall = abs(recall)
 
-            if precision < self.precision:
-                # precision is not high enough: try higher thresholds
+            if not recall:
+                # lower the threshold until we at least return something...
+                upper_alpha = current_alpha
+                best_alpha = current_alpha
+                precision = 0.
+
+            elif precision < self.precision:
+                # increase the threshold while precision is not good enough
                 lower_alpha = current_alpha
 
             else:
+                # lower the threshold if we return something and
+                # precision is good enough
                 upper_alpha = current_alpha
                 if recall > best_recall:
                     best_recall = recall
@@ -272,7 +273,8 @@ class OverlapDetection(SpeechActivityDetection):
 
         return {'metric': f'recall@{self.precision:.2f}precision',
                 'minimize': False,
-                'value': best_recall,
+                'value': best_recall if best_recall \
+                         else precision - self.precision,
                 'pipeline': pipeline.instantiate({'onset': best_alpha,
                                                   'offset': best_alpha,
                                                   'min_duration_on': 0.,
@@ -281,8 +283,7 @@ class OverlapDetection(SpeechActivityDetection):
                                                   'pad_offset': 0.})}
 
 def main():
-
-    arguments = docopt(__doc__, version='Overlap detection')
+    arguments = docopt(__doc__, version='Overlapping speech detection')
 
     db_yml = arguments['--database']
     protocol_name = arguments['<database.task.protocol>']
@@ -292,7 +293,6 @@ def main():
     device = torch.device('cuda') if gpu else torch.device('cpu')
 
     if arguments['train']:
-
         experiment_dir = Path(arguments['<experiment_dir>'])
         experiment_dir = experiment_dir.expanduser().resolve(strict=True)
 

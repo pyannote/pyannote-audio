@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2018 CNRS
+# Copyright (c) 2018-2019 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -28,30 +28,15 @@
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 from pyannote.audio.embedding.generators import SpeechSegmentGenerator
-from pyannote.audio.embedding.generators import SessionWiseSpeechSegmentGenerator
-from pyannote.audio.embedding.generators import UnsupervisedSpeechSegmentGenerator
-
 from pyannote.core.utils.distance import to_condensed
-from pyannote.core.utils.distance import pdist
 from scipy.spatial.distance import squareform
 from pyannote.metrics.binary_classification import det_curve
-from collections import deque
-from pyannote.audio.train.trainer import Trainer
+from .base import EmbeddingApproach
 
 
-class TripletLoss(Trainer):
-    """
-
-    delta = d(anchor, positive) - d(anchor, negative)
-
-    * with 'positive' clamping:
-        loss = max(0, delta + margin x D)
-    * with 'sigmoid' clamping:
-        loss = sigmoid(10 * delta)
-
-    where d(., .) varies in range [0, D] (e.g. D=2 for euclidean distance).
+class TripletLoss(EmbeddingApproach):
+    """Train embeddings using triplet loss
 
     Parameters
     ----------
@@ -84,29 +69,30 @@ class TripletLoss(Trainer):
         time. Defaults to sample triplets from the whole speaker set.
     per_epoch : float, optional
         Number of days per epoch. Defaults to 7 (a week).
-    variant : {'corpus', 'session', 'unsupervised'}, optional
-        Change the way triplets are built. Default behavior ('corpus') is to
-        build triplets by sampling sequences from the whole corpus (assuming
-        that labels are consistent on the whole corpus). Therefore, triplets
-        may contain sequences from different sessions in the corpus. When
-        `variant` is 'session', we only assume labels are consistent within
-        each 'session'. Therefore, triplets are always made of sequences
-        extracted from the same session. When `variant` is 'unsupervised',
-        anchor and positive sequences are always extracted from the same
-        speech turn, and the negative sequence is sampled at random from any
-        other speech turns (whatever its label).
     parallel : int, optional
         Number of prefetching background generators. Defaults to 1.
         Each generator will prefetch enough batches to cover a whole epoch.
         Set `parallel` to 0 to not use background generators.
+
+    Notes
+    -----
+    delta = d(anchor, positive) - d(anchor, negative)
+
+    * with 'positive' clamping:
+        loss = max(0, delta + margin x D)
+    * with 'sigmoid' clamping:
+        loss = sigmoid(10 * delta)
+
+    where d(., .) varies in range [0, D] (e.g. D=2 for euclidean distance).
+
     """
 
     def __init__(self, duration=None, min_duration=None, max_duration=None,
                  metric='cosine', margin=0.2, clamp='positive',
                  sampling='all', per_label=3, per_fold=None, per_epoch=7,
-                 parallel=1, variant='corpus', label_min_duration=0.):
+                 parallel=1, label_min_duration=0.):
 
-        super(TripletLoss, self).__init__()
+        super().__init__()
 
         self.metric = metric
         self.margin = margin
@@ -128,65 +114,11 @@ class TripletLoss(Trainer):
         self.per_epoch = per_epoch
         self.label_min_duration = label_min_duration
 
-        if variant not in {'corpus', 'session', 'unsupervised'}:
-            msg = "'variant' must be one of {'corpus', 'session', 'unsupervised'}."
-            raise ValueError(msg)
-        self.variant = variant
-
         self.duration = duration
         self.min_duration = min_duration
         self.max_duration = max_duration
 
         self.parallel = parallel
-
-    @property
-    def max_distance(self):
-        if self.metric == 'cosine':
-            return 2.
-        elif self.metric == 'angular':
-            return np.pi
-        elif self.metric == 'euclidean':
-            # FIXME. incorrect if embedding are not unit-normalized
-            return 2.
-        else:
-            msg = "'metric' must be one of {'euclidean', 'cosine', 'angular'}."
-            raise ValueError(msg)
-
-    def pdist(self, fX):
-        """Compute pdist à-la scipy.spatial.distance.pdist
-
-        Parameters
-        ----------
-        fX : (n, d) torch.Tensor
-            Embeddings.
-
-        Returns
-        -------
-        distances : (n * (n-1) / 2,) torch.Tensor
-            Condensed pairwise distance matrix
-        """
-
-        n_sequences, _ = fX.size()
-        distances = []
-
-        for i in range(n_sequences - 1):
-
-            if self.metric in ('cosine', 'angular'):
-                d = 1. - F.cosine_similarity(
-                    fX[i, :].expand(n_sequences - 1 - i, -1),
-                    fX[i+1:, :], dim=1, eps=1e-8)
-
-                if self.metric == 'angular':
-                    d = torch.acos(torch.clamp(1. - d, -1 + 1e-6, 1 - 1e-6))
-
-            elif self.metric == 'euclidean':
-                d = F.pairwise_distance(
-                    fX[i, :].expand(n_sequences - 1 - i, -1),
-                    fX[i+1:, :], p=2, eps=1e-06).view(-1)
-
-            distances.append(d)
-
-        return torch.cat(distances)
 
 
     def batch_easy(self, y, distances):
@@ -383,7 +315,9 @@ class TripletLoss(Trainer):
         else:
             return loss
 
-    def get_batch_generator(self, feature_extraction):
+    def get_batch_generator(self, feature_extraction,
+                            protocol, subset='train',
+                            frame_info=None, frame_crop=None):
         """Get batch generator
 
         Parameters
@@ -396,41 +330,15 @@ class TripletLoss(Trainer):
 
         """
 
-        if self.variant == 'session':
+        return SpeechSegmentGenerator(
+            feature_extraction, protocol, subset=subset,
+            label_min_duration=self.label_min_duration,
+            per_label=self.per_label, per_fold=self.per_fold,
+            per_epoch=self.per_epoch, duration=self.duration,
+            min_duration=self.min_duration, max_duration=self.max_duration,
+            parallel=self.parallel)
 
-            return SessionWiseSpeechSegmentGenerator(
-                feature_extraction, label_min_duration=self.label_min_duration,
-                per_label=self.per_label, per_fold=self.per_fold,
-                per_epoch=self.per_epoch, duration=self.duration,
-                min_duration=self.min_duration, max_duration=self.max_duration,
-                parallel=self.parallel)
-
-        elif self.variant == 'corpus':
-
-            return SpeechSegmentGenerator(
-                feature_extraction, label_min_duration=self.label_min_duration,
-                per_label=self.per_label, per_fold=self.per_fold,
-                per_epoch=self.per_epoch, duration=self.duration,
-                min_duration=self.min_duration, max_duration=self.max_duration,
-                parallel=self.parallel)
-
-        elif self.variant == 'unsupervised':
-
-            return UnsupervisedSpeechSegmentGenerator(
-                feature_extraction, per_fold=self.per_fold,
-                per_epoch=self.per_epoch, duration=self.duration,
-                parallel=self.parallel)
-
-    def aggregate(self, batch):
-        return batch
-
-    def on_train_start(self, model, batches_per_epoch=None, **kwargs):
-        self.log_positive_ = deque([], maxlen=batches_per_epoch)
-        self.log_negative_ = deque([], maxlen=batches_per_epoch)
-        self.log_delta_ = deque([], maxlen=batches_per_epoch)
-        self.log_norm_ = deque([], maxlen=batches_per_epoch)
-
-    def batch_loss(self, batch, model, device, writer=None):
+    def batch_loss(self, batch):
         """Compute loss for current `batch`
 
         Parameters
@@ -438,98 +346,26 @@ class TripletLoss(Trainer):
         batch : `dict`
             ['X'] (`numpy.ndarray`)
             ['y'] (`numpy.ndarray`)
-        model : `torch.nn.Module`
-            Model currently being trained.
-        device : `torch.device`
-            Device used by model parameters.
-        writer : `tensorboardX.SummaryWriter`, optional
-            Tensorboard writer.
 
         Returns
         -------
-        loss : `torch.Tensor`
-            Triplet loss.
+        batch_loss : `dict`
+            ['loss'] (`torch.Tensor`) : Triplet loss
         """
 
-        fX = self.forward(batch, model, device)
-
-        # log embedding norms
-        if writer is not None:
-            norm_npy = np.linalg.norm(self.to_numpy(fX), axis=1)
-            self.log_norm_.append(norm_npy)
-
-        batch['fX'] = fX
-        batch = self.aggregate(batch)
-
-        fX = batch['fX']
-        y = batch['y']
+        fX = self.forward(batch)
 
         # pre-compute pairwise distances
         distances = self.pdist(fX)
 
         # sample triplets
         triplets = getattr(self, 'batch_{0}'.format(self.sampling))
-        anchors, positives, negatives = triplets(y, distances)
+        anchors, positives, negatives = triplets(batch['y'], distances)
 
         # compute loss for each triplet
         losses, deltas, _, _ = self.triplet_loss(
             distances, anchors, positives, negatives,
             return_delta=True)
 
-        if writer is not None:
-            pdist_npy = self.to_numpy(distances)
-            delta_npy = self.to_numpy(deltas)
-            same_speaker = pdist(y.reshape((-1, 1)), metric='equal')
-            self.log_positive_.append(pdist_npy[np.where(same_speaker)])
-            self.log_negative_.append(pdist_npy[np.where(~same_speaker)])
-            self.log_delta_.append(delta_npy)
-
         # average over all triplets
-        return torch.mean(losses)
-
-    def on_epoch_end(self, iteration, checkpoint, writer=None, **kwargs):
-        """Log a bunch of statistics at the end of current epoch
-
-        Parameters
-        ----------
-        iteration : `int`
-            Current epoch.
-        checkpoint : `pyannote.audio.train.checkpoint.Checkpoint`
-            Checkpoint.
-        writer : `tensorboardX.SummaryWriter`, optional
-            Tensorboard writer.
-        """
-
-        if writer is None:
-            return
-
-        # log intra class vs. inter class distance distributions
-        log_positive = np.hstack(self.log_positive_)
-        log_negative = np.hstack(self.log_negative_)
-        writer.add_histogram(
-            'train/distance/intra_class', log_positive,
-            global_step=iteration, bins='doane')
-        writer.add_histogram(
-            'train/distance/inter_class', log_negative,
-            global_step=iteration, bins='doane')
-
-        # log same/different experiment on training samples
-        _, _, _, eer = det_curve(
-            np.hstack([np.ones(len(log_positive)),
-                       np.zeros(len(log_negative))]),
-            np.hstack([log_positive, log_negative]),
-            distances=True)
-        writer.add_scalar('train/eer', eer,
-                          global_step=iteration)
-
-        # log raw triplet loss (before max(0, .))
-        log_delta = np.vstack(self.log_delta_)
-        writer.add_histogram(
-            'train/triplet/delta', log_delta,
-            global_step=iteration, bins='doane')
-
-        # log distribution of embedding norms
-        log_norm = np.hstack(self.log_norm_)
-        writer.add_histogram(
-            'train/embedding/norm', log_norm,
-            global_step=iteration, bins='doane')
+        return {'loss': torch.mean(losses)}

@@ -38,6 +38,7 @@ from .speech_turn_clustering import SpeechTurnClustering
 from .speech_turn_assignment import SpeechTurnClosestAssignment
 
 from typing import Optional
+from typing import Union
 from pyannote.pipeline import Pipeline
 from pyannote.pipeline.parameter import Uniform
 
@@ -47,8 +48,9 @@ class SpeakerDiarization(Pipeline):
 
     Parameters
     ----------
-    sad_scores : `Path`
-        Path to precomputed SAD scores on disk
+    sad_scores : `Path` or 'oracle'
+        Path to precomputed speech activity detection scores.
+        Use 'oracle' to assume perfect speech activity detection.
     scd_scores : `Path`
         Path to precomputed SCD scores on disk
     embedding : `Path`
@@ -67,7 +69,7 @@ class SpeakerDiarization(Pipeline):
         the closest cluster (of long speech turns) instead.
     """
 
-    def __init__(self, sad_scores: Optional[Path] = None,
+    def __init__(self, sad_scores: Optional[Union[Path, str]] = None,
                        scd_scores: Optional[Path] = None,
                        embedding: Optional[Path] = None,
                        metric: Optional[str] = 'cosine',

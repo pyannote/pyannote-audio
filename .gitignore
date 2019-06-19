@@ -62,7 +62,7 @@ target/
 .ipynb_checkpoints
 
 notebooks
-models
+
 experiments
 *~
 

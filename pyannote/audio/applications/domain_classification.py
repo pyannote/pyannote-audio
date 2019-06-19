@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2017-2018 CNRS
+# Copyright (c) 2019 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -27,14 +27,14 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 """
-Speech activity detection
+Domain classification
 
 Usage:
-  pyannote-speech-detection train [options] <experiment_dir> <database.task.protocol>
-  pyannote-speech-detection validate [options] [--every=<epoch> --chronological] <train_dir> <database.task.protocol>
-  pyannote-speech-detection apply [options] [--step=<step>] <model.pt> <database.task.protocol> <output_dir>
-  pyannote-speech-detection -h | --help
-  pyannote-speech-detection --version
+  pyannote-domain-classification train [options] <experiment_dir> <database.task.protocol>
+  pyannote-domain-classification validate [options] [--every=<epoch> --chronological] <train_dir> <database.task.protocol>
+  pyannote-domain-classification apply [options] [--step=<step>] <model.pt> <database.task.protocol> <output_dir>
+  pyannote-domain-classification -h | --help
+  pyannote-domain-classification --version
 
 Common options:
   <database.task.protocol>   Experimental protocol (e.g. "AMI.SpeakerDiarization.MixHeadset")
@@ -74,10 +74,10 @@ Configuration file:
     the neural network architecture, and the task addressed.
 
     ................... <experiment_dir>/config.yml ...................
-    # train the network for speech activity detection
+    # train the network for domain classification
     # see pyannote.audio.labeling.tasks for more details
     task:
-       name: SpeechActivityDetection
+       name: DomainClassification
        params:
           duration: 3.2     # sub-sequence duration
           per_epoch: 1      # 1 day of audio per epoch
@@ -97,6 +97,7 @@ Configuration file:
          rnn: LSTM
          recurrent: [16, 16]
          bidirectional: True
+         pooling: sum
 
     # use cyclic learning rate scheduler
     scheduler:
@@ -131,11 +132,11 @@ Configuration file:
     You can run multiple "validate" in parallel (e.g. for every subset,
     protocol, task, or database).
 
-    In practice, for each epoch, "validate" mode will look for the detection
-    threshold that minimizes the detection error rate.
+    In practice, for each epoch, "validate" mode will compute the
+    classification accuracy.
 
 "apply" mode:
-    Use the "apply" mode to extract speech activity detection raw scores.
+    Use the "apply" mode to extract domain classification raw scores.
     Resulting files can then be used in the following way:
 
     >>> from pyannote.audio.features import Precomputed
@@ -144,12 +145,7 @@ Configuration file:
     >>> from pyannote.database import get_protocol
     >>> protocol = get_protocol('<database.task.protocol>')
     >>> first_test_file = next(protocol.test())
-
-    >>> from pyannote.audio.signal import Binarize
-    >>> binarizer = Binarize()
-
     >>> raw_scores = precomputed(first_test_file)
-    >>> speech_regions = binarizer.apply(raw_scores, dimension=1)
 """
 
 from functools import partial
@@ -161,20 +157,72 @@ from docopt import docopt
 from .base_labeling import BaseLabeling
 from pyannote.database import get_annotated
 from pyannote.database import get_unique_identifier
-from pyannote.metrics.detection import DetectionErrorRate
 from pyannote.audio.labeling.extraction import SequenceLabeling
-from pyannote.audio.pipeline import SpeechActivityDetection \
-                             as SpeechActivityDetectionPipeline
+from collections import Counter
+from sklearn.metrics import confusion_matrix
 
 
-def validate_helper_func(current_file, pipeline=None, metric=None):
-    reference = current_file['annotation']
-    uem = get_annotated(current_file)
-    hypothesis = pipeline(current_file)
-    return metric(reference, hypothesis, uem=uem)
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 
-class SpeechActivityDetection(BaseLabeling):
+
+def plot_confusion_matrix(y_true, y_pred, classes,
+                          normalize=False,
+                          title=None,
+                          cmap=plt.cm.Blues):
+    """
+    This function prints and plots the confusion matrix.
+    Normalization can be applied by setting `normalize=True`.
+    """
+    if not title:
+        if normalize:
+            title = 'Normalized confusion matrix'
+        else:
+            title = 'Confusion matrix, without normalization'
+
+    # Compute confusion matrix
+    cm = confusion_matrix(y_true, y_pred)
+    if normalize:
+        cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+        print("Normalized confusion matrix")
+    else:
+        print('Confusion matrix, without normalization')
+
+    print(cm)
+
+    fig, ax = plt.subplots()
+    im = ax.imshow(cm, interpolation='nearest', cmap=cmap)
+    ax.figure.colorbar(im, ax=ax)
+    # We want to show all ticks...
+    ax.set(xticks=np.arange(cm.shape[1]),
+           yticks=np.arange(cm.shape[0]),
+           # ... and label them with the respective list entries
+           xticklabels=classes, yticklabels=classes,
+           title=title,
+           ylabel='True label',
+           xlabel='Predicted label')
+
+    # Rotate the tick labels and set their alignment.
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right",
+             rotation_mode="anchor")
+
+    # Loop over data dimensions and create text annotations.
+    fmt = '.2f' if normalize else 'd'
+    thresh = cm.max() / 2.
+    for i in range(cm.shape[0]):
+        for j in range(cm.shape[1]):
+            ax.text(j, i, format(cm[i, j], fmt),
+                    ha="center", va="center",
+                    color="white" if cm[i, j] > thresh else "black",
+                    size=6)
+    fig.tight_layout()
+    return ax
+
+
+
+class DomainClassification(BaseLabeling):
 
     def validate_epoch(self, epoch, protocol_name, subset='development',
                        validation_data=None):
@@ -183,52 +231,35 @@ class SpeechActivityDetection(BaseLabeling):
         model = self.load_model(epoch).to(self.device)
         model.eval()
 
-        # compute (and store) SAD scores
+        domain = self.task_.domain
+        domains = model.specifications['y']['classes']
+
         duration = self.task_.duration
         sequence_labeling = SequenceLabeling(
             model=model, feature_extraction=self.feature_extraction_,
             duration=duration, step=.25 * duration, batch_size=self.batch_size,
             device=self.device)
+
+        y_true_file, y_pred_file = [], []
+
         for current_file in validation_data:
-            uri = get_unique_identifier(current_file)
-            current_file['sad_scores'] = sequence_labeling(current_file)
 
-        # pipeline
-        pipeline = SpeechActivityDetectionPipeline()
+            y_pred = sequence_labeling(current_file).data.argmax(axis=1)
+            y_pred_file.append(Counter(y_pred).most_common(1)[0][0])
 
-        def fun(threshold):
-            pipeline.instantiate({'onset': threshold,
-                                  'offset': threshold,
-                                  'min_duration_on': 0.,
-                                  'min_duration_off': 0.,
-                                  'pad_onset': 0.,
-                                  'pad_offset': 0.})
-            metric = DetectionErrorRate(parallel=True)
-            validate = partial(validate_helper_func,
-                               pipeline=pipeline,
-                               metric=metric)
-            _ = self.pool_.map(validate, validation_data)
+            y_true = domains.index(current_file[domain])
+            y_true_file.append(y_true)
 
-            return abs(metric)
 
-        res = scipy.optimize.minimize_scalar(
-            fun, bounds=(0., 1.), method='bounded', options={'maxiter': 10})
+        # Compute confusion matrix
+        cm = confusion_matrix(y_true, y_pred)
 
-        threshold = res.x.item()
-
-        return {'metric': 'detection_error_rate',
-                'minimize': True,
-                'value': res.fun,
-                'pipeline': pipeline.instantiate({'onset': threshold,
-                                                  'offset': threshold,
-                                                  'min_duration_on': 0.,
-                                                  'min_duration_off': 0.,
-                                                  'pad_onset': 0.,
-                                                  'pad_offset': 0.})}
+        accuracy = np.mean(np.array(y_true_file) == np.array(y_pred_file))
+        return {'metric': 'accuracy', 'minimize': False, 'value': accuracy}
 
 
 def main():
-    arguments = docopt(__doc__, version='Speech activity detection')
+    arguments = docopt(__doc__, version='Domain classification')
 
     db_yml = arguments['--database']
     protocol_name = arguments['<database.task.protocol>']
@@ -254,8 +285,8 @@ def main():
         else:
             epochs = int(epochs)
 
-        application = SpeechActivityDetection(experiment_dir, db_yml=db_yml,
-                                              training=True)
+        application = DomainClassification(experiment_dir, db_yml=db_yml,
+                                           training=True)
         application.device = device
         application.train(protocol_name, subset=subset,
                           restart=restart, epochs=epochs)
@@ -287,7 +318,7 @@ def main():
         # batch size
         batch_size = int(arguments['--batch'])
 
-        application = SpeechActivityDetection.from_train_dir(
+        application = DomainClassification.from_train_dir(
             train_dir, db_yml=db_yml, training=False)
         application.device = device
         application.batch_size = batch_size
@@ -311,7 +342,7 @@ def main():
 
         batch_size = int(arguments['--batch'])
 
-        application = SpeechActivityDetection.from_model_pt(
+        application = DomainClassification.from_model_pt(
             model_pt, db_yml=db_yml, training=False)
         application.device = device
         application.batch_size = batch_size

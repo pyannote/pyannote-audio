@@ -34,7 +34,7 @@ import collections
 import numpy as np
 from .base import LabelingTask
 from .base import LabelingTaskGenerator
-from .base import TASK_CLASSIFICATION
+from .base import TASK_MULTI_CLASS_CLASSIFICATION
 from pyannote.database.protocol import SpeakerDiarizationProtocol
 from pyannote.audio.labeling.models import StackedRNN
 from pyannote.core.utils.numpy import one_hot_decoding
@@ -136,7 +136,7 @@ class Resegmentation(LabelingTask):
 
     @property
     def task_type(self):
-        return TASK_CLASSIFICATION
+        return TASK_MULTI_CLASS_CLASSIFICATION
 
     @property
     def n_classes(self):

@@ -139,10 +139,9 @@ Configuration file:
     In practice, for each epoch, "validate" mode will look for the peak
     detection threshold that maximizes speech turn coverage, under the
     constraint that purity must be greater than the value provided by the
-    "--purity" option. Both values (best threshold and corresponding coverage)
-    are sent to tensorboard.
+    "--purity" option.
 
-"apply" mode
+"apply" mode:
     Use the "apply" mode to extract speaker change detection raw scores.
     Resulting files can then be used in the following way:
 
@@ -162,21 +161,19 @@ Configuration file:
 
 from functools import partial
 from pathlib import Path
-
-import numpy as np
 import torch
+import numpy as np
 from docopt import docopt
+from .base_labeling import BaseLabeling
 from pyannote.database import get_annotated
 from pyannote.database import get_unique_identifier
 from pyannote.metrics.diarization import DiarizationPurityCoverageFMeasure
 from pyannote.metrics.segmentation import SegmentationPurityCoverageFMeasure
 
 from pyannote.audio.labeling.extraction import SequenceLabeling
-from pyannote.audio.signal import Peak
-from .speech_detection import SpeechActivityDetection
-
 from pyannote.audio.pipeline.speaker_change_detection \
     import SpeakerChangeDetection as SpeakerChangeDetectionPipeline
+
 
 def validate_helper_func(current_file, pipeline=None, metric=None):
     reference = current_file['annotation']
@@ -184,7 +181,8 @@ def validate_helper_func(current_file, pipeline=None, metric=None):
     hypothesis = pipeline(current_file)
     return metric(reference, hypothesis, uem=uem)
 
-class SpeakerChangeDetection(SpeechActivityDetection):
+
+class SpeakerChangeDetection(BaseLabeling):
 
     def validate_epoch(self, epoch, protocol_name, subset='development',
                        validation_data=None):
@@ -195,10 +193,9 @@ class SpeakerChangeDetection(SpeechActivityDetection):
 
         # compute (and store) SCD scores
         duration = self.task_.duration
-        step = .25 * duration
         sequence_labeling = SequenceLabeling(
             model=model, feature_extraction=self.feature_extraction_,
-            duration=duration, step=step, batch_size=self.batch_size,
+            duration=duration, step=.25 * duration, batch_size=self.batch_size,
             device=self.device)
         for current_file in validation_data:
             uri = get_unique_identifier(current_file)
@@ -232,7 +229,6 @@ class SpeakerChangeDetection(SpeechActivityDetection):
             _ = self.pool_.map(validate, validation_data)
 
             purity, coverage, _ = metric.compute_metrics()
-
             # TODO: normalize coverage with what one could achieve if
             # we were to put all reference speech turns in its own cluster
 
@@ -246,7 +242,8 @@ class SpeakerChangeDetection(SpeechActivityDetection):
 
         return {'metric': f'coverage@{self.purity:.2f}purity',
                 'minimize': False,
-                'value': best_coverage,
+                'value': best_coverage if best_coverage \
+                         else purity - self.purity,
                 'pipeline': pipeline.instantiate({'alpha': best_alpha,
                                                   'min_duration': 0.})}
 
@@ -262,7 +259,6 @@ def main():
     device = torch.device('cuda') if gpu else torch.device('cpu')
 
     if arguments['train']:
-
         experiment_dir = Path(arguments['<experiment_dir>'])
         experiment_dir = experiment_dir.expanduser().resolve(strict=True)
 
@@ -313,12 +309,10 @@ def main():
         batch_size = int(arguments['--batch'])
 
         purity = float(arguments['--purity'])
-
         diarization = arguments['--diarization']
 
         application = SpeakerChangeDetection.from_train_dir(
             train_dir, db_yml=db_yml, training=False)
-
         application.device = device
         application.batch_size = batch_size
         application.purity = purity

@@ -65,7 +65,7 @@ class PySpeechFeaturesExtraction(FeatureExtraction):
                                              duration=self.duration,
                                              step=self.step)
 
-    def get_sliding_window(self):
+    def get_frame_info(self):
         return self.sliding_window_
 
 

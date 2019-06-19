@@ -83,7 +83,7 @@ class FeatureExtraction(object):
         """Dimension of feature vectors"""
         return self.get_dimension()
 
-    def get_sliding_window(self):
+    def get_frame_info(self):
         """Get sliding window used for feature extraction
 
         Returns
@@ -93,13 +93,13 @@ class FeatureExtraction(object):
         """
 
         msg = ('`FeatureExtraction` subclasses must implement '
-               '`get_sliding_window` method.')
+               '`get_frame_info` method.')
         raise NotImplementedError(msg)
 
     @property
     def sliding_window(self):
         """Sliding window used for feature extraction"""
-        return self.get_sliding_window()
+        return self.get_frame_info()
 
     def get_features(self, y, sample_rate):
         """Extract features from waveform

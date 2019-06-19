@@ -47,13 +47,14 @@ class ClopiNet(nn.Module):
 
     Parameters
     ----------
-    n_features : int
-        Input feature dimension.
+    specifications : `dict`
+        Batch specifications:
+            {'X': {'dimension': n_features}}
     rnn : {'LSTM', 'GRU'}, optional
         Defaults to 'LSTM'.
     recurrent : list, optional
         List of hidden dimensions of stacked recurrent layers. Defaults to
-        [64, 64, 64], i.e. three recurrent layers with hidden dimension of 64.
+        [256, 256, 256], i.e. three recurrent layers with hidden dimension of 64.
     bidirectional : bool, optional
         Use bidirectional recurrent layers. Defaults to False, i.e. use
         mono-directional RNNs.
@@ -80,14 +81,17 @@ class ClopiNet(nn.Module):
     >>> embedding = model(sequence)
     """
 
-    def __init__(self, n_features,
-                 rnn='LSTM', recurrent=[64, 64, 64], bidirectional=False,
+    supports_packed = True
+
+    def __init__(self, specifications,
+                 rnn='LSTM', recurrent=[256, 256, 256], bidirectional=False,
                  pooling='sum', instance_normalize=False, batch_normalize=True,
                  normalize=False, weighted=False, linear=None, attention=None):
 
         super(ClopiNet, self).__init__()
 
-        self.n_features = n_features
+        self.specifications = specifications
+        self.n_features_ = specifications['X']['dimension']
         self.rnn = rnn
         self.recurrent = recurrent
         self.bidirectional = bidirectional
@@ -106,7 +110,7 @@ class ClopiNet(nn.Module):
 
         # create list of recurrent layers
         self.recurrent_layers_ = []
-        input_dim = self.n_features
+        input_dim = self.n_features_
         for i, hidden_dim in enumerate(self.recurrent):
             if self.rnn == 'LSTM':
                 recurrent_layer = nn.LSTM(input_dim, hidden_dim,
@@ -153,7 +157,7 @@ class ClopiNet(nn.Module):
         if not self.attention:
             return
 
-        input_dim = self.n_features
+        input_dim = self.n_features_
         for i, hidden_dim in enumerate(self.attention):
             attention_layer = nn.Linear(input_dim, hidden_dim, bias=True)
             self.add_module('attention_{0}'.format(i), attention_layer)
@@ -166,7 +170,7 @@ class ClopiNet(nn.Module):
             self.attention_layers_.append(attention_layer)
 
     @property
-    def output_dim(self):
+    def dimension(self):
         if self.linear:
             return self.linear[-1]
         return sum(self.recurrent) * (2 if self.bidirectional else 1)
@@ -188,9 +192,9 @@ class ClopiNet(nn.Module):
         """
 
         batch_size, n_features, device = get_info(sequences)
-        if n_features != self.n_features:
+        if n_features != self.n_features_:
             msg = 'Wrong feature dimension. Found {0}, should be {1}'
-            raise ValueError(msg.format(n_features, self.n_features))
+            raise ValueError(msg.format(n_features, self.n_features_))
 
         output = sequences
 

@@ -32,7 +32,7 @@ import numpy as np
 from .base import LabelingTask
 from .base import LabelingTaskGenerator
 from .base import TASK_REGRESSION
-from .base import TASK_CLASSIFICATION
+from .base import TASK_MULTI_CLASS_CLASSIFICATION
 import scipy.signal
 
 
@@ -43,6 +43,16 @@ class SpeakerChangeDetectionGenerator(LabelingTaskGenerator):
     ----------
     feature_extraction : `pyannote.audio.features.FeatureExtraction`
         Feature extraction
+    protocol : `pyannote.database.Protocol`
+    subset : {'train', 'development', 'test'}
+    frame_info : `pyannote.core.SlidingWindow`, optional
+        Override `feature_extraction.sliding_window`. This is useful for
+        models that include the feature extraction step (e.g. SincNet) and
+        therefore output a lower sample rate than that of the input.
+    frame_crop : {'center', 'loose', 'strict'}, optional
+        Which mode to use when cropping labels. This is useful for models
+        that include the feature extraction step (e.g. SincNet) and
+        therefore use a different cropping mode. Defaults to 'center'.
     collar : float, optional
         Duration of positive collar, in seconds. Default to 0.1 (i.e. frames
         less than 100ms away from the actual change are also labeled as
@@ -64,42 +74,28 @@ class SpeakerChangeDetectionGenerator(LabelingTaskGenerator):
         Each generator will prefetch enough batches to cover a whole epoch.
         Set `parallel` to 0 to not use background generators.
 
-    Usage
-    -----
-    # precomputed features
-    >>> from pyannote.audio.features import Precomputed
-    >>> precomputed = Precomputed('/path/to/mfcc')
-
-    # instantiate batch generator
-    >>> batches = SpeakerChangeDetectionGenerator(precomputed)
-
-    # evaluation protocol
-    >>> from pyannote.database import get_protocol
-    >>> protocol = get_protocol('Etape.SpeakerDiarization.TV')
-
-    # iterate over training set
-    >>> for batch in batches(protocol, subset='train'):
-    >>>     # batch['X'] is a (batch_size, n_samples, n_features) numpy array
-    >>>     # batch['y'] is a (batch_size, n_samples, 1) numpy array
-    >>>     pass
     """
 
-    def __init__(self, feature_extraction, collar=0.100, regression=False,
-                 non_speech=False, **kwargs):
-
-        super(SpeakerChangeDetectionGenerator, self).__init__(
-            feature_extraction, **kwargs)
+    def __init__(self, feature_extraction, protocol, subset='train',
+                 frame_info=None, frame_crop=None, collar=0.100,
+                 regression=False, non_speech=False, **kwargs):
 
         self.collar = collar
         self.regression = regression
         self.non_speech = non_speech
 
         # number of samples in collar
-        self.collar_ = \
-            self.feature_extraction.sliding_window.durationToSamples(collar)
+        if frame_info is None:
+            frame_info = feature_extraction.sliding_window
+        self.collar_ = frame_info.durationToSamples(collar)
 
         # window
         self.window_ = scipy.signal.triang(self.collar_)[:, np.newaxis]
+
+        super(SpeakerChangeDetectionGenerator, self).__init__(
+            feature_extraction, protocol, subset=subset,
+            frame_info=frame_info, frame_crop=frame_crop, **kwargs)
+
 
     def postprocess_y(self, Y):
         """Generate labels for speaker change detection
@@ -160,6 +156,22 @@ class SpeakerChangeDetectionGenerator(LabelingTaskGenerator):
 
         return y
 
+    @property
+    def specifications(self):
+        if self.regression:
+            return {
+                'task': TASK_REGRESSION,
+                'X': {'dimension': self.feature_extraction.dimension},
+                'y': {'classes': ['change', ]},
+            }
+
+        else:
+            return {
+                'task': TASK_MULTI_CLASS_CLASSIFICATION,
+                'X': {'dimension': self.feature_extraction.dimension},
+                'y': {'classes': ['non_change', 'change']},
+            }
+
 
 class SpeakerChangeDetection(LabelingTask):
     """Train speaker change detection
@@ -210,24 +222,28 @@ class SpeakerChangeDetection(LabelingTask):
 
     """
 
-    def __init__(self, collar=0.100, regression=False,
-                 non_speech=False, **kwargs):
-        super(SpeakerChangeDetection, self).__init__(**kwargs)
+    def __init__(self, collar=0.100, regression=False, non_speech=False,
+                 **kwargs):
+        super().__init__(**kwargs)
         self.collar = collar
         self.regression = regression
         self.non_speech = non_speech
 
-    def get_batch_generator(self, precomputed):
+    def get_batch_generator(self, feature_extraction, protocol, subset='train',
+                            frame_info=None, frame_crop=None):
+        """
+        frame_info : `pyannote.core.SlidingWindow`, optional
+            Override `feature_extraction.sliding_window`. This is useful for
+            models that include the feature extraction step (e.g. SincNet) and
+            therefore output a lower sample rate than that of the input.
+        frame_crop : {'center', 'loose', 'strict'}, optional
+            Which mode to use when cropping labels. This is useful for models
+            that include the feature extraction step (e.g. SincNet) and
+            therefore use a different cropping mode. Defaults to 'center'.
+        """
         return SpeakerChangeDetectionGenerator(
-            precomputed, collar=self.collar,
+            feature_extraction, protocol, frame_info=frame_info,
+            frame_crop=frame_crop, subset='train', collar=self.collar,
             regression=self.regression, non_speech=self.non_speech,
             duration=self.duration, batch_size=self.batch_size,
             per_epoch=self.per_epoch, parallel=self.parallel)
-
-    @property
-    def n_classes(self):
-        return 1 if self.regression else 2
-
-    @property
-    def task_type(self):
-        return TASK_REGRESSION if self.regression else TASK_CLASSIFICATION

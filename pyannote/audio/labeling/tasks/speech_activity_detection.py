@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2018 CNRS
+# Copyright (c) 2018-2019 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -29,9 +29,11 @@
 """Speech activity detection"""
 
 import numpy as np
+import torch
+import torch.nn as nn
 from .base import LabelingTask
 from .base import LabelingTaskGenerator
-from .base import TASK_CLASSIFICATION
+from .base import TASK_MULTI_CLASS_CLASSIFICATION
 
 
 class SpeechActivityDetectionGenerator(LabelingTaskGenerator):
@@ -41,9 +43,16 @@ class SpeechActivityDetectionGenerator(LabelingTaskGenerator):
     ----------
     feature_extraction : `pyannote.audio.features.FeatureExtraction`
         Feature extraction
-    overlap : bool, optional
-        Switch to 3 classes "non-speech vs. one speaker vs. 2+ speakers".
-        Defaults to 2 classes "non-speech vs. speech".
+    protocol : `pyannote.database.Protocol`
+    subset : {'train', 'development', 'test'}
+    frame_info : `pyannote.core.SlidingWindow`, optional
+        Override `feature_extraction.sliding_window`. This is useful for
+        models that include the feature extraction step (e.g. SincNet) and
+        therefore output a lower sample rate than that of the input.
+    frame_crop : {'center', 'loose', 'strict'}, optional
+        Which mode to use when cropping labels. This is useful for models
+        that include the feature extraction step (e.g. SincNet) and
+        therefore use a different cropping mode. Defaults to 'center'.
     duration : float, optional
         Duration of sub-sequences. Defaults to 3.2s.
     batch_size : int, optional
@@ -55,31 +64,7 @@ class SpeechActivityDetectionGenerator(LabelingTaskGenerator):
         Number of prefetching background generators. Defaults to 1.
         Each generator will prefetch enough batches to cover a whole epoch.
         Set `parallel` to 0 to not use background generators.
-
-    Usage
-    -----
-    # precomputed features
-    >>> from pyannote.audio.features import Precomputed
-    >>> precomputed = Precomputed('/path/to/mfcc')
-
-    # instantiate batch generator
-    >>> batches = SpeechActivityDetectionGenerator(precomputed)
-
-    # evaluation protocol
-    >>> from pyannote.database import get_protocol
-    >>> protocol = get_protocol('Etape.SpeakerDiarization.TV')
-
-    # iterate over training set
-    >>> for batch in batches(protocol, subset='train'):
-    >>>     # batch['X'] is a (batch_size, n_samples, n_features) numpy array
-    >>>     # batch['y'] is a (batch_size, n_samples, 1) numpy array
-    >>>     pass
     """
-
-    def __init__(self, feature_extraction, overlap=False, **kwargs):
-        super(SpeechActivityDetectionGenerator, self).__init__(
-            feature_extraction, **kwargs)
-        self.overlap = overlap
 
     def postprocess_y(self, Y):
         """Generate labels for speech activity detection
@@ -102,13 +87,20 @@ class SpeechActivityDetectionGenerator(LabelingTaskGenerator):
         speaker_count = np.sum(Y, axis=1, keepdims=True)
 
         # mark speech regions as such
-        speech = np.int64(speaker_count > 0)
-        if self.overlap:
-            # mark overlap regions as such
-            overlap = np.int64(speaker_count > 1)
-            return speech + overlap
+        return np.int64(speaker_count > 0)
 
-        return speech
+
+    @property
+    def specifications(self):
+        specs = {
+            'task': TASK_MULTI_CLASS_CLASSIFICATION,
+            'X': {'dimension': self.feature_extraction.dimension},
+            'y': {'classes': ['non_speech', 'speech']},
+        }
+        for key, classes in self.file_labels_.items():
+            specs[key] = {'classes': classes}
+
+        return specs
 
 
 class SpeechActivityDetection(LabelingTask):
@@ -116,9 +108,6 @@ class SpeechActivityDetection(LabelingTask):
 
     Parameters
     ----------
-    overlap : bool, optional
-        Switch to 3 classes "non-speech vs. one speaker vs. 2+ speakers".
-        Defaults to 2 classes "non-speech vs. speech".
     duration : float, optional
         Duration of sub-sequences. Defaults to 3.2s.
     batch_size : int, optional
@@ -130,43 +119,154 @@ class SpeechActivityDetection(LabelingTask):
         Number of prefetching background generators. Defaults to 1.
         Each generator will prefetch enough batches to cover a whole epoch.
         Set `parallel` to 0 to not use background generators.
-
-    Usage
-    -----
-    >>> task = SpeechActivityDetection()
-
-    # precomputed features
-    >>> from pyannote.audio.features import Precomputed
-    >>> precomputed = Precomputed('/path/to/features')
-
-    # model architecture
-    >>> from pyannote.audio.labeling.models import StackedRNN
-    >>> model = StackedRNN(precomputed.dimension, task.n_classes)
-
-    # evaluation protocol
-    >>> from pyannote.database import get_protocol
-    >>> protocol = get_protocol('Etape.SpeakerDiarization.TV')
-
-    # train model using protocol training set
-    >>> for epoch, model in task.fit_iter(model, precomputed, protocol):
-    ...     pass
-
     """
 
-    def __init__(self, overlap=False, **kwargs):
-        super(SpeechActivityDetection, self).__init__(**kwargs)
-        self.overlap = overlap
-
-    def get_batch_generator(self, precomputed):
+    def get_batch_generator(self, feature_extraction, protocol, subset='train',
+                            frame_info=None, frame_crop=None):
+        """
+        frame_info : `pyannote.core.SlidingWindow`, optional
+            Override `feature_extraction.sliding_window`. This is useful for
+            models that include the feature extraction step (e.g. SincNet) and
+            therefore output a lower sample rate than that of the input.
+        frame_crop : {'center', 'loose', 'strict'}, optional
+            Which mode to use when cropping labels. This is useful for models
+            that include the feature extraction step (e.g. SincNet) and
+            therefore use a different cropping mode. Defaults to 'center'.
+        """
         return SpeechActivityDetectionGenerator(
-            precomputed, overlap=self.overlap, duration=self.duration,
-            per_epoch=self.per_epoch, batch_size=self.batch_size,
+            feature_extraction,
+            protocol, subset=subset,
+            frame_info=frame_info,
+            frame_crop=frame_crop,
+            duration=self.duration,
+            per_epoch=self.per_epoch,
+            batch_size=self.batch_size,
             parallel=self.parallel)
 
-    @property
-    def task_type(self):
-        return TASK_CLASSIFICATION
 
-    @property
-    def n_classes(self):
-        return 3 if self.overlap else 2
+class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
+    """Domain-aware speech activity detection
+
+    Trains speech activity detection and domain classification jointly.
+
+    Parameters
+    ----------
+    domain : `str`, optional
+        Batch key to use as domain. Defaults to 'domain'.
+        Could be 'database' or 'uri' for instance.
+    attachment : `int`, optional
+        Intermediate level where to attach the domain classifier.
+        Defaults to -1. Passed to `return_intermediate` in models supporting it.
+    """
+
+    DOMAIN_PT = '{log_dir}/weights/{epoch:04d}.domain.pt'
+
+    def __init__(self, domain='domain', attachment=-1, **kwargs):
+        super().__init__(**kwargs)
+        self.domain = domain
+        self.attachment = attachment
+
+        self.logsoftmax_ = nn.LogSoftmax(dim=1)
+        self.domain_loss_ = nn.NLLLoss()
+
+    def parameters(self, model, specifications, device):
+        """Initialize trainable trainer parameters
+
+        Parameters
+        ----------
+        specifications : `dict`
+            Batch specs.
+
+        Returns
+        -------
+        parameters : iterable
+            Trainable trainer parameters
+        """
+
+        self.domain_classifier_ = nn.Linear(
+            model.intermediate_dimension(self.attachment),
+            len(specifications[self.domain]['classes']),
+            bias=True).to(device)
+
+        return list(self.domain_classifier_.parameters())
+
+    def load_epoch(self, epoch):
+        """Load model and classifier from disk
+
+        Parameters
+        ----------
+        epoch : `int`
+            Epoch number.
+        """
+
+        super().load_epoch(epoch)
+
+        domain_classifier_state = torch.load(
+            self.DOMAIN_PT.format(log_dir=self.log_dir_, epoch=epoch),
+            map_location=lambda storage, loc: storage)
+        self.domain_classifier_.load_state_dict(domain_classifier_state)
+
+    def save_epoch(self, epoch=None):
+        """Save model to disk
+
+        Parameters
+        ----------
+        epoch : `int`, optional
+            Epoch number. Defaults to self.epoch_
+
+        """
+
+        if epoch is None:
+            epoch = self.epoch_
+
+        torch.save(self.domain_classifier_.state_dict(),
+                   self.DOMAIN_PT.format(log_dir=self.log_dir_,
+                                             epoch=epoch))
+
+        super().save_epoch(epoch=epoch)
+
+    def batch_loss(self, batch):
+        """Compute loss for current `batch`
+
+        Parameters
+        ----------
+        batch : `dict`
+            ['X'] (`numpy.ndarray`)
+            ['y'] (`numpy.ndarray`)
+
+        Returns
+        -------
+        batch_loss : `dict`
+            ['loss'] (`torch.Tensor`) : Loss
+        """
+
+        # forward pass
+        X = torch.tensor(batch['X'],
+                         dtype=torch.float32,
+                         device=self.device_)
+        fX, intermediate = self.model_(X, return_intermediate=self.attachment)
+
+        # speech activity detection
+        fX = fX.view((-1, self.n_classes_))
+        target = torch.tensor(
+            batch['y'],
+            dtype=torch.int64,
+            device=self.device_).contiguous().view((-1, ))
+
+        weight = self.weight
+        if weight is not None:
+            weight = weight.to(device=self.device_)
+        loss = self.loss_func_(fX, target, weight=weight)
+
+        # domain classification
+        domain_target = torch.tensor(
+            batch[self.domain],
+            dtype=torch.int64,
+            device=self.device_)
+
+        domain_scores = self.logsoftmax_(self.domain_classifier_(intermediate))
+        domain_loss = self.domain_loss_(domain_scores, domain_target)
+
+        return {'loss': loss + domain_loss,
+                'loss_domain': domain_loss,
+                'loss_task': loss}

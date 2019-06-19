@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2018 CNRS
+# Copyright (c) 2018-2019 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -31,240 +31,312 @@ import numpy as np
 from collections import deque
 from dlib import count_steps_without_decrease
 from dlib import count_steps_without_decrease_robust
+from dlib import probability_that_sequence_is_increasing
+from .callback import Callback
+from tqdm import tqdm
+from scipy.signal import convolve
 
 
-class ConstantScheduler(object):
-    """Constant learning rate
+AUTO_LR_MIN = 1e-6
+AUTO_LR_MAX = 1e3
+AUTO_LR_BATCHES = 500
 
-    Parameters
-    ----------
-    optimizer : Optimizer
-        Wrapped optimizer.
-    batches_per_epoch : int
-        Number of batches per epoch.
-    max_lr : {float, list}, optional
-        Initial learning rate. Defaults to using optimizer's own learning rate.
-    allow_backtrack : bool, optional
-        Defaults to False.
+MOMENTUM_MAX = 0.95
+MOMENTUM_MIN = 0.85
 
-    Example
-    -------
-    >>> optimizer = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9)
-    >>> batches_per_epoch = 1000
-    >>> scheduler = ConstantScheduler(optimizer, batches_per_epoch)
-    """
+class BaseSchedulerCallback(Callback):
 
-    def __init__(self, optimizer, batches_per_epoch, max_lr=None,
-                 allow_backtrack=False, **kwargs):
+    def on_train_start(self, trainer):
+        self.optimizer_ = trainer.optimizer_
+        if trainer.base_learning_rate_ == 'auto':
+            trainer.base_learning_rate_ = self.auto_lr(trainer)
+        self.learning_rate = trainer.base_learning_rate_
 
-        super(ConstantScheduler, self).__init__()
+    def on_epoch_start(self, trainer):
+        trainer.tensorboard_.add_scalar(
+            f'train/lr', self.learning_rate,
+            global_step=trainer.epoch_)
 
-        self.optimizer = optimizer
-        self.batches_per_epoch = batches_per_epoch
-        self.max_lr = max_lr
-        self.allow_backtrack = allow_backtrack
+    def learning_rate():
+        doc = "Learning rate."
+        def fget(self):
+            return self._learning_rate
+        def fset(self, lr):
+            for g in self.optimizer_.param_groups:
+                g['lr'] = lr
+                g['momentum'] = MOMENTUM_MAX
+            self._learning_rate = lr
+        return locals()
+    learning_rate = property(**learning_rate())
 
-        # initialize optimizer learning rate
-        if max_lr is None:
-            lrs = [g['lr'] for g in self.optimizer.param_groups]
-        elif isinstance(max_lr, (list, tuple)):
-            lrs = max_lr
-        else:
-            lrs = [max_lr] * len(self.optimizer.param_groups)
+    def choose_lr(self, lrs, losses):
 
-        for param_group, lr in zip(self.optimizer.param_groups, lrs):
-            param_group['lr'] = lr
+        min_lr = np.min(lrs)
+        max_lr = np.max(lrs)
+        n_batches = len(lrs)
 
-    def batch_step(self, batch_loss):
+        # `factor` by which the learning rate is multiplied after every batch,
+        # to get from `min_lr` to `max_lr` in `n_batches` step.
+        factor = (max_lr / min_lr) ** (1 / n_batches)
 
-        for param_group in self.optimizer.param_groups:
-            lr = param_group['lr']
-            break
+        # `K` batches to increase the learning rate by one order of magnitude
+        K = int(np.log(10) / np.log(factor))
 
-        return {'lr': lr}
+        losses = convolve(losses, 3 * np.ones(K // 3) / K,
+                          mode='same', method='auto')
+
+        # probability that loss has decreased in the last `K` steps.
+        probability = [probability_that_sequence_is_increasing(-losses[i-K:i])
+                       if i > K else np.NAN for i in range(len(losses))]
+        probability = np.array(probability)
+
+        # find longest decreasing region
+        decreasing = 1 * (probability > 0.999)
+        starts_decreasing = np.where(np.diff(decreasing) == 1)[0]
+        stops_decreasing = np.where(np.diff(decreasing) == -1)[0]
+        i = np.argmax(
+            [stop - start for start, stop in zip(starts_decreasing,
+                                                 stops_decreasing)])
+        stop = stops_decreasing[i]
+
+        # upper bound
+        # heuristic: loss ceased to decrease between stop-K and stop
+        # so we'd rather bound the learning rate slighgly before stop - K
+        return lrs[int(stop - 1.1 * K)]
+
+    def auto_lr(self, trainer, beta=0.98):
+
+        trainer.save_epoch()
+
+        # initialize optimizer with a low learning rate
+        for param_group in trainer.optimizer_.param_groups:
+            param_group['lr'] = AUTO_LR_MIN
+
+        # `factor` by which the learning rate is multiplied after every batch,
+        # to get from `min_lr` to `max_lr` in `n_batches` step.
+        factor = (AUTO_LR_MAX / AUTO_LR_MIN) ** (1 / 500)
+
+        # progress bar
+        pbar = tqdm(
+            desc='AutoLR',
+            total=AUTO_LR_BATCHES,
+            leave=False,
+            ncols=80,
+            unit='batch',
+            position=1)
+
+        loss_moving_avg = 0.
+        losses, losses_smoothened, lrs = [], [], []
+
+        # loop on n_batches batches
+        for i in range(AUTO_LR_BATCHES):
+
+            batch = next(trainer.batches_)
+            loss = trainer.batch_loss(batch)['loss']
+            loss.backward()
+
+            # TODO. use closure
+            # https://pytorch.org/docs/stable/optim.html#optimizer-step-closure
+            trainer.optimizer_.step()
+            trainer.optimizer_.zero_grad()
+
+            lrs.append(trainer.optimizer_.param_groups[0]['lr'])
+
+            loss = loss.detach().cpu().item()
+            losses.append(loss)
+
+            loss_moving_avg = beta * loss_moving_avg + (1 - beta) * loss
+            losses_smoothened.append(loss_moving_avg / (1 - beta ** (i + 1)))
+
+            # update progress bar
+            pbar.update(1)
+            pbar.set_postfix(
+                ordered_dict={'loss': losses_smoothened[-1], 'lr': lrs[-1]})
+
+            # increase learning rate
+            for param_group in trainer.optimizer_.param_groups:
+                param_group['lr'] *= factor
+
+            # stop AutoLR early when loss starts to explode
+            if i > 1 and losses_smoothened[-1] > 100 * np.nanmin(losses_smoothened):
+                break
+
+        # reload model using its initial state
+        trainer.load_epoch(trainer.epoch_)
+
+        lr = self.choose_lr(lrs, losses_smoothened)
+
+        try:
+
+            # import matplotlib with headless backend
+            import matplotlib
+            matplotlib.use('Agg')
+            import matplotlib.pyplot as plt
+
+            # create AutoLR loss = f(learning_rate) curve
+            fig, ax = plt.subplots()
+            ax.semilogx(lrs, losses, '.', alpha=0.3, label='Raw loss')
+            ax.semilogx(lrs, losses_smoothened, linewidth=2, label='Smoothened loss')
+            ax.set_xlabel('Learning rate')
+            ax.set_ylabel('Loss')
+            ax.legend()
+
+            # indicate selected learning rate by a vertical line
+            ax.plot([lr, lr], [np.nanmin(losses_smoothened),
+                               np.nanmax(losses_smoothened)],
+                               linewidth=3)
+
+            # zoom on meaningful part of the curve
+            m = np.nanmin(losses_smoothened)
+            M = 1.1 * losses_smoothened[10]
+            ax.set_ylim(m, M)
+
+            # indicate selected learning rate in the figure title
+            ax.set_title(f'AutoLR = {lr:g}')
+
+            # send matplotlib figure to Tensorboard
+            trainer.tensorboard_.add_figure(
+                'train/auto_lr', fig,
+                global_step=trainer.epoch_,
+                close=True)
+
+        except ImportError as e:
+            msg = (
+                'Something went wrong when trying to send AutoLR figure '
+                'to Tensorboard. Did you install matplotlib?'
+            )
+            print(msg)
+
+        except Exception as e:
+            msg = (
+                'Something went wrong when trying to send AutoLR figure '
+                'to Tensorboard. It is OK but you might want to have a '
+                'look at why this happened...'
+            )
+            print(msg)
+
+        return lr
 
 
-class DavisKingScheduler(object):
+class ConstantScheduler(BaseSchedulerCallback):
+    """Constant learning rate"""
+    pass
+
+
+class DavisKingScheduler(BaseSchedulerCallback):
     """Automatic Learning Rate Scheduling That Really Works
 
     http://blog.dlib.net/2018/02/automatic-learning-rate-scheduling-that.html
 
     Parameters
     ----------
-    optimizer : Optimizer
-        Wrapped optimizer.
-    batches_per_epoch : int
-        Number of batches per epoch.
-    max_lr : {float, list}, optional
-        Initial learning rate. Defaults to using optimizer's own learning rate.
     factor : float, optional
         Factor by which the learning rate will be reduced.
-        new_lr = old_lr * factor. Defaults to 0.3
+        new_lr = old_lr * factor. Defaults to 0.5
     patience : int, optional
         Number of epochs with no improvement after which learning rate will
         be reduced. Defaults to 10.
-    allow_backtrack : bool, optional
-        Defaults to True
-
-    Example
-    -------
-    >>> optimizer = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9)
-    >>> batches_per_epoch = 1000
-    >>> scheduler = DavisKingScheduler(optimizer, batches_per_epoch)
-    >>> for mini_batch in batches:
-    ...     mini_loss = train(mini_batch, optimizer)
-    ...     scheduler.step(mini_loss)
     """
 
-    def __init__(self, optimizer, batches_per_epoch, max_lr=None,
-                 factor=0.3, patience=10, allow_backtrack=True, **kwargs):
-
-        super(DavisKingScheduler, self).__init__()
-        self.batches_per_epoch = batches_per_epoch
-        self.optimizer = optimizer
-        self.max_lr = max_lr
-
-        # learning rate upper bound
-        if self.max_lr is None:
-            self.max_lrs_ = [g['lr'] for g in self.optimizer.param_groups]
-
-        elif isinstance(max_lr, (list, tuple)):
-            self.max_lrs_ = [lr for lr in self.max_lr]
-
-        else:
-            self.max_lrs_ = [self.max_lr] * len(self.optimizer.param_groups)
-
-        # initialize optimizer learning rate
-        for param_group, lr in zip(self.optimizer.param_groups, self.max_lrs_):
-            param_group['lr'] = lr
-
+    def __init__(self, factor=0.5, patience=10):
+        super().__init__()
         self.factor = factor
         self.patience = patience
-        self.allow_backtrack = allow_backtrack
 
-        # TODO check in dlib's code whether patience * batches_per_epoch + 1
-        # would actually be enough
-        maxlen = 10 * self.patience * self.batches_per_epoch
-        self.batch_losses_ = deque([], maxlen=maxlen)
+    def on_train_start(self, trainer):
+        super().on_train_start(trainer)
+        maxlen = 10 * self.patience * trainer.batches_per_epoch_
+        self.losses_ = deque([], maxlen=maxlen)
 
-    def batch_step(self, batch_loss):
+    def on_batch_end(self, trainer, batch_loss):
+        super().on_batch_end(trainer, batch_loss)
 
         # store current batch loss
-        self.batch_losses_.append(batch_loss)
+        loss = batch_loss['loss'].detach().cpu().item()
+        self.losses_.append(loss)
 
         # compute statistics on batch loss trend
-        count = count_steps_without_decrease(self.batch_losses_)
-        count_robust = count_steps_without_decrease_robust(self.batch_losses_)
+        count = count_steps_without_decrease(self.losses_)
+        count_robust = count_steps_without_decrease_robust(self.losses_)
 
         # if batch loss hasn't been decreasing for a while
-        patience = self.patience * self.batches_per_epoch
+        patience = self.patience * trainer.batches_per_epoch_
         if count > patience and count_robust > patience:
-            factor = self.factor
-            # reset batch loss trend
-            self.batch_losses_.clear()
-        else:
-            factor = 1.
-
-        # decrease optimizer learning rate
-        for param_group in self.optimizer.param_groups:
-            lr = param_group['lr'] * factor
-            param_group['lr'] = lr
-
-        return {
-            'lr': lr,
-            'epochs_without_decrease': count / self.batches_per_epoch,
-            'epochs_without_decrease_robust': \
-                count_robust / self.batches_per_epoch}
+            self.learning_rate = self.factor * self.learning_rate
+            self.losses_.clear()
 
 
-class CyclicScheduler(object):
-    """
+class CyclicScheduler(BaseSchedulerCallback):
+    """Cyclic learning rate (and momentum)
 
     Parameters
     ----------
-    optimizer : Optimizer
-        Wrapped optimizer.
-    batches_per_epoch : int
-        Number of batches per epoch.
-    min_lr, max_lr : {float, list}, optional
-        Learning rate bounds.
-    min_momentum, max_momentum : float, optional
-        Momentum bounds.
     epochs_per_cycle : int, optional
         Number of epochs per cycle. Defaults to 20.
-    allow_backtrack : bool, optional
-        Defaults to False.
-    decay : float, optional
-        Defaults to 1 (i.e. no decay).
+    decay : {float, 'auto'}, optional
+        Update base learning rate at the end of each cycle:
+            - when `float`, multiply base learning rate by this amount;
+            - when 'auto', apply AutoLR;
+            - defaults to doing nothing.
     """
 
-    def __init__(self, optimizer, batches_per_epoch, min_lr=None, max_lr=None,
-                 min_momentum=0.85, max_momentum=0.95, epochs_per_cycle=20,
-                 decay=1., allow_backtrack=False, **kwargs):
-
-        super(CyclicScheduler, self).__init__()
-        self.batches_per_epoch = batches_per_epoch
-        self.optimizer = optimizer
-        self.min_lr = min_lr
-        self.max_lr = max_lr
-        self.min_momentum = min_momentum
-        self.max_momentum = max_momentum
+    def __init__(self, epochs_per_cycle=20, decay=None):
+        super().__init__()
         self.epochs_per_cycle = epochs_per_cycle
         self.decay = decay
-        self.allow_backtrack = allow_backtrack
 
-        # learning rate upper bound
-        if self.max_lr is None:
-            self.max_lrs_ = [g['lr'] for g in self.optimizer.param_groups]
+    def momentum():
+        doc = "Momentum."
+        def fget(self):
+            return self._momentum
+        def fset(self, momentum):
+            for g in self.optimizer_.param_groups:
+                g['momentum'] = momentum
+            self._momentum = momentum
+        return locals()
+    momentum = property(**momentum())
 
-        elif isinstance(max_lr, (list, tuple)):
-            self.max_lrs_ = [lr for lr in self.max_lr]
+    def on_train_start(self, trainer):
+        """Initialize batch/epoch counters"""
 
-        else:
-            self.max_lrs_ = [self.max_lr] * len(self.optimizer.param_groups)
-
-        # learning rate lower bound
-        if self.min_lr is None:
-            self.min_lrs_ = [0.1 * lr for lr in self.max_lrs_]
-
-        elif isinstance(min_lr, (list, tuple)):
-            self.min_lrs_ = [lr for lr in self.min_lr]
-
-        else:
-            self.min_lrs_ = [self.min_lr] * len(self.optimizer.param_groups)
-
-        # initialize optimizer learning rate to lower value
-        # and momentum to higher value
-        for param_group, lr in zip(self.optimizer.param_groups, self.min_lrs_):
-            param_group['lr'] = lr
-            param_group['momentum'] = self.max_momentum
-
+        super().on_train_start(trainer)
+        self.batches_per_cycle_ = \
+            self.epochs_per_cycle * trainer.batches_per_epoch_
         self.n_batches_ = 0
+        self.n_epochs_ = 0
 
-    def batch_step(self, batch_loss):
+        self.learning_rate = trainer.base_learning_rate_ * 0.1
 
-        # bpc = batches per cycle
-        bpc = self.epochs_per_cycle * self.batches_per_epoch
+    def on_epoch_end(self, trainer):
+        """Update base learning rate at the end of cycle"""
 
-        # current cycle (1 for first cycle, 2 for second cycle, etc.)
-        cycle = np.floor(1 + .5 * self.n_batches_ / bpc)
+        super().on_epoch_end(trainer)
 
-        # position within current cycle
-        rho = max(0, 1 - np.abs(self.n_batches_ / bpc - 2 * cycle + 1))
+        # reached end of cycle?
+        self.n_epochs_ += 1
+        if self.n_epochs_ % self.epochs_per_cycle == 0:
 
-        # update learning rates and momentum
-        momentum = self.max_momentum - \
-            (self.max_momentum - self.min_momentum) * rho
-        group_min_max = zip(self.optimizer.param_groups,
-                            self.min_lrs_,  self.max_lrs_)
-        for param_group, min_lr, max_lr in group_min_max:
+            # apply AutoLR
+            if self.decay == 'auto':
+                trainer.base_learning_rate_ = self.auto_lr(trainer)
 
-            # cycle decay
-            max_lr = self.decay ** (cycle - 1) * max_lr
-            lr = min_lr + (max_lr - min_lr) * rho
-            param_group['lr'] = lr
-            param_group['momentum'] = momentum
+            # decay base learning rate
+            elif self.decay is not None:
+                trainer.base_learning_rate_ *= self.decay
+
+            # reset epoch/batch counters
+            self.n_epochs_ = 0
+            self.n_batches_ = 0
+
+    def on_batch_start(self, trainer, batch):
+        """Update learning rate & momentum according to position in cycle"""
+
+        super().on_batch_start(trainer, batch)
+
+        # position within current cycle (reversed V)
+        rho = 1. - abs(2 * (self.n_batches_ / self.batches_per_cycle_ - 0.5))
+
+        self.learning_rate = trainer.base_learning_rate_ * (0.1 + 0.9 * rho)
+        self.momentum = MOMENTUM_MAX - (MOMENTUM_MAX - MOMENTUM_MIN) * rho
 
         self.n_batches_ += 1
-
-        return {'lr': lr, 'momentum': momentum}

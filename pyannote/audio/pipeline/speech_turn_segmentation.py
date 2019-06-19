@@ -27,12 +27,14 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 from typing import Optional
+from typing import Union
 from pathlib import Path
 
 from pyannote.core import Annotation
 from pyannote.pipeline import Pipeline
 from .speaker_change_detection import SpeakerChangeDetection
 from .speech_activity_detection import SpeechActivityDetection
+from .speech_activity_detection import OracleSpeechActivityDetection
 
 from pyannote.database import get_annotated
 from pyannote.metrics.diarization import DiarizationPurityCoverageFMeasure
@@ -63,8 +65,9 @@ class SpeechTurnSegmentation(Pipeline):
 
     Parameters
     ----------
-    sad_scores : `Path`
+    sad_scores : `Path` or 'oracle'
         Path to precomputed speech activity detection scores.
+        Use 'oracle' to assume perfect speech activity detection.
     scd_scores : `Path`
         Path to precomputed speaker change detection scores
     non_speech : `bool`
@@ -73,15 +76,18 @@ class SpeechTurnSegmentation(Pipeline):
         Target purity. Defaults to 0.95
     """
 
-    def __init__(self, sad_scores: Optional[Path] = None,
+    def __init__(self, sad_scores: Optional[Union[Path, str]] = None,
                        scd_scores: Optional[Path] = None,
                        non_speech: Optional[bool] = True,
                        purity: Optional[float] = 0.95):
         super().__init__()
 
         self.sad_scores = sad_scores
-        self.speech_activity_detection = SpeechActivityDetection(
-            scores=self.sad_scores)
+        if self.sad_scores == 'oracle':
+            self.speech_activity_detection = OracleSpeechActivityDetection()
+        else:
+            self.speech_activity_detection = SpeechActivityDetection(
+                scores=self.sad_scores)
 
         self.scd_scores = scd_scores
         self.speaker_change_detection = SpeakerChangeDetection(

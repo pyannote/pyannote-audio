@@ -1,0 +1,7 @@
+X:
+  dimension: 59
+task: multi_class_classification
+y:
+  classes:
+  - non_change
+  - change

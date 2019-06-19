@@ -43,6 +43,27 @@ from pyannote.database import get_unique_identifier
 from pyannote.metrics.detection import DetectionErrorRate
 
 
+class OracleSpeechActivityDetection(Pipeline):
+    """Oracle speech activity detection"""
+
+    def __call__(self, current_file: dict) -> Annotation:
+        """Return groundtruth speech activity detection
+
+        Parameter
+        ---------
+        current_file : `dict`
+            Dictionary as provided by `pyannote.database`.
+
+        Returns
+        -------
+        hypothesis : `pyannote.core.Annotation`
+            Speech regions
+        """
+
+        speech = current_file['annotation'].get_timeline().support()
+        return speech.to_annotation(generator='string', modality='speech')
+
+
 class SpeechActivityDetection(Pipeline):
     """Speech activity detection pipeline
 
