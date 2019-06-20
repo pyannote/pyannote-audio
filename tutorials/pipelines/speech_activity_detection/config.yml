@@ -1,0 +1,4 @@
+pipeline:
+   name: pyannote.audio.pipeline.speech_activity_detection.SpeechActivityDetection
+   params:
+      scores: /path/to/precomputed/sad
