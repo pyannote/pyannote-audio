@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2018-2019 CNRS
+# Copyright © 2019 Jan Freyberg
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -23,14 +23,36 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# AUTHORS
-# Hervé BREDIN - http://herve.niderb.fr
 
-from .speech_activity_detection import SpeechActivityDetection
-from .speech_activity_detection import DomainAwareSpeechActivityDetection
-from .speech_activity_detection import DomainAdversarialSpeechActivityDetection
+import torch.nn as nn
+from torch.autograd import Function
 
-from .overlap_detection import OverlapDetection
-from .speaker_change_detection import SpeakerChangeDetection
-from .domain_classification import DomainClassification
-from .resegmentation import Resegmentation
+class RevGrad(Function):
+    @staticmethod
+    def forward(ctx, input_):
+        ctx.save_for_backward(input_)
+        output = input_
+        return output
+
+    @staticmethod
+    def backward(ctx, grad_output):  # pragma: no cover
+        grad_input = None
+        if ctx.needs_input_grad[0]:
+            grad_input = -grad_output
+        return grad_input
+
+revgrad = RevGrad.apply
+
+
+class GradientReversal(nn.Module):
+    def __init__(self, *args, **kwargs):
+        """
+        A gradient reversal layer.
+        This layer has no parameters, and simply reverses the gradient
+        in the backward pass.
+        """
+
+        super().__init__(*args, **kwargs)
+
+    def forward(self, input_):
+        return revgrad(input_)

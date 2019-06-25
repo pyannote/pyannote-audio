@@ -34,6 +34,7 @@ import torch.nn as nn
 from .base import LabelingTask
 from .base import LabelingTaskGenerator
 from .base import TASK_MULTI_CLASS_CLASSIFICATION
+from ..gradient_reversal import GradientReversal
 
 
 class SpeechActivityDetectionGenerator(LabelingTaskGenerator):
@@ -268,5 +269,61 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
         domain_loss = self.domain_loss_(domain_scores, domain_target)
 
         return {'loss': loss + domain_loss,
+                'loss_domain': domain_loss,
+                'loss_task': loss}
+
+
+class DomainAdversarialSpeechActivityDetection(DomainAwareSpeechActivityDetection):
+
+    def __init__(self, domain='domain', attachment=-1, alpha=1., **kwargs):
+        super().__init__(domain=domain, attachment=attachment, **kwargs)
+        self.alpha = alpha
+        self.gradient_reversal_ = GradientReversal()
+
+
+    def batch_loss(self, batch):
+        """Compute loss for current `batch`
+
+        Parameters
+        ----------
+        batch : `dict`
+            ['X'] (`numpy.ndarray`)
+            ['y'] (`numpy.ndarray`)
+
+        Returns
+        -------
+        batch_loss : `dict`
+            ['loss'] (`torch.Tensor`) : Loss
+        """
+
+        # forward pass
+        X = torch.tensor(batch['X'],
+                         dtype=torch.float32,
+                         device=self.device_)
+        fX, intermediate = self.model_(X, return_intermediate=self.attachment)
+
+        # speech activity detection
+        fX = fX.view((-1, self.n_classes_))
+        target = torch.tensor(
+            batch['y'],
+            dtype=torch.int64,
+            device=self.device_).contiguous().view((-1, ))
+
+        weight = self.weight
+        if weight is not None:
+            weight = weight.to(device=self.device_)
+        loss = self.loss_func_(fX, target, weight=weight)
+
+        # domain classification
+        domain_target = torch.tensor(
+            batch[self.domain],
+            dtype=torch.int64,
+            device=self.device_)
+
+        domain_scores = self.logsoftmax_(self.domain_classifier_(
+            self.gradient_reversal_(intermediate)))
+        domain_loss = self.domain_loss_(domain_scores, domain_target)
+
+        return {'loss': loss + self.alpha * domain_loss,
                 'loss_domain': domain_loss,
                 'loss_task': loss}
