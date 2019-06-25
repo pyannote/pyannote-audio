@@ -65,11 +65,15 @@ If you use `pyannote.audio` please use the following citations.
     * [Training LSTM-based speech activity detection](tutorials/models/speech_activity_detection)
     * [Training LSTM-based speaker change detection](tutorials/models/speaker_change_detection)
     * [Training LSTM-based speaker embedding](tutorials/models/speaker_embedding)
-    * [Using pre-trained models](tutorials/models/pretrained)
 
   * Pipelines
     * [Tuning speech activity detection pipeline](tutorials/pipelines/speech_activity_detection)
     * [Tuning speaker diarization pipeline](tutorials/pipelines/speaker_diarization)
+  
+  * In-house datasets 
+    * [Appling pre-trained models on your own data](tutorials/own_data/pretrained)
+    * [Training models on your own data](tutorials/own_data/train)
+
   
 ## Documentation
 

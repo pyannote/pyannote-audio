@@ -23,7 +23,7 @@
 > AUTHORS
 > Hervé Bredin - http://herve.niderb.fr
 
-# Using pre-trained models with `pyannote.audio`
+# Appling pre-trained models on your own data
 
 Models pre-trained on AMI are available in their corresponding tutorials sub-directory:
 ```python
