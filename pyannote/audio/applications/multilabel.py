@@ -1245,8 +1245,7 @@ class Multilabel(Application):
             if self.label == "SPEECH":
                 # all the speakers
                 current_file[self.label] = current_file['annotation']
-            elif self.label in ["CHI", "FEM", "KCHI", "MAL", "SPEECH"]:
-                # Extract subset relevant to the speaker whose speech performances need to be evaluated
+            elif self.label in ["CHI", "FEM", "KCHI", "MAL"]:
                 reference = current_file['annotation']
                 label_speech = reference.subset([self.label])
                 current_file[self.label] = label_speech
