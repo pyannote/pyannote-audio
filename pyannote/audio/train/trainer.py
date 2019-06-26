@@ -250,7 +250,7 @@ class Trainer:
             self.log_dir_ = tempfile.mkdtemp()
         else:
             self.log_dir_ = log_dir
-        self.tensorboard_ = SummaryWriter(log_dir=self.log_dir_)
+        self.tensorboard_ = SummaryWriter(logdir=self.log_dir_)
 
         # BATCH GENERATOR
         self.batch_generator_ = batch_generator

@@ -293,7 +293,7 @@ class Application(object):
         params_yml = validate_dir / 'params.yml'
         validate_dir.mkdir(parents=True, exist_ok=False)
 
-        writer = tensorboardX.SummaryWriter(log_dir=str(validate_dir))
+        writer = tensorboardX.SummaryWriter(logdir=str(validate_dir))
 
         validation_data = self.validate_init(protocol_name, subset=subset,
                                              **kwargs)
