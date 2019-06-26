@@ -43,6 +43,8 @@ from pyannote.database import get_annotated
 from pyannote.database import get_unique_identifier
 from pyannote.metrics.detection import DetectionPrecision
 from pyannote.metrics.detection import DetectionRecall
+from pyannote.metrics.detection import DetectionErrorRate
+
 
 class SpeakerActivityDetection(Pipeline):
     """Single speaker activity pipeline
@@ -66,13 +68,15 @@ class SpeakerActivityDetection(Pipeline):
 
     def __init__(self,  label,
                         scores: Optional[Path] = None,
-                        precision: Optional[Path] = 0.8):
+                        precision: Optional[Path] = 0.8,
+                        use_der=False):
         super().__init__()
         self.label = label
         self.scores = scores
         if self.scores is not None:
             self._precomputed = Precomputed(self.scores)
         self.precision = precision
+        self.use_der = use_der
 
         # hyper-parameters
         self.onset = Uniform(0., 1.)
@@ -151,18 +155,20 @@ class SpeakerActivityDetection(Pipeline):
         error : `float`
             1. - segment coverage.
         """
-
-        precision = DetectionPrecision()
-        recall = DetectionRecall()
-
         reference = current_file[self.label]
-        hypothesis = current_file[self.label+'_scores']
-
+        hypothesis = current_file[self.label + '_scores']
         uem = get_annotated(current_file)
-        p = precision(reference, hypothesis, uem=uem)
-        r = recall(reference, hypothesis, uem=uem)
 
-        if p > self.precision:
-            return 1. - r
+        if not self.use_der:
+            precision = DetectionPrecision()
+            recall = DetectionRecall()
+
+            p = precision(reference, hypothesis, uem=uem)
+            r = recall(reference, hypothesis, uem=uem)
+
+            if p > self.precision:
+                return 1. - r
+            else:
+                return 1. + (1. - p)
         else:
-            return 1. + (1. - p)
+            return DetectionErrorRate(reference, hypothesis, collar=0.0, skip_overlap=False, uem=uem)
