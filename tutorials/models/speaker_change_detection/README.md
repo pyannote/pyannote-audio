@@ -80,7 +80,7 @@ Have a look at `pyannote.database` [documentation](http://github.com/pyannote/py
 To ensure reproducibility, `pyannote-change-detection` relies on a configuration file defining the experimental setup:
 
 ```bash
-$ cat tutorials/models/speakker_change_detection/config.yml
+$ cat tutorials/models/speaker_change_detection/config.yml
 ```
 ```yaml
 task:
