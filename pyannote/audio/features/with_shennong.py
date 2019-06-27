@@ -40,6 +40,7 @@ from .base import FeatureExtraction
 from pyannote.core.segment import SlidingWindow
 from shennong.features.pipeline import get_default_config, extract_features
 from shennong.features.processor.mfcc import MfccProcessor
+from shennong.features.processor.spectrogram import SpectrogramProcessor
 from shennong.features.processor.bottleneck import BottleneckProcessor
 from shennong.features.processor.filterbank import FilterbankProcessor
 from shennong.features.postprocessor.delta import DeltaPostProcessor
@@ -585,5 +586,158 @@ class ShennongMfcc(ShennongFeatureExtraction):
         n_features += self.coefs
         n_features += self.coefs * self.D
         n_features += self.coefs * self.DD
+        n_features += self.with_pitch * 3 # Pitch is two dimensional
+        return n_features
+
+class ShennongSpectrogram(ShennongFeatureExtraction):
+    """Shennong Spectrogram 
+
+    ::
+
+            | c0   |  
+            | c1   |
+            | c2   |  coefficients
+            | c3   |
+        x = | ...  |
+            | c256 |  
+            | ...  |
+            |pitch1|
+            |pitch2|  Coefficients of pitch estimation
+            |pitch3|
+
+
+    Parameters
+    ----------
+    sample_rate : int, optional
+        Defaults to 16000 (i.e. 16kHz)
+    augmentation : `pyannote.audio.augmentation.Augmentation`, optional
+        Data augmentation.
+    duration : float, optional
+        Defaults to 0.025.
+    step : float, optional
+        Defaults to 0.010.
+    dither : float, optional
+        Defaults to 1.0
+    preemph_coeff : float, optional
+        Defaults to 0.97
+    remove_dc_offset : bool, optional
+        Defaults to True
+    window_type : string, optional
+        Defaults to "povey"
+    round_to_power_of_two : bool, optional
+        Defaults to True
+    blackman_coeff : float, optional
+        Defaults to 0.42
+    energy_floor : float, optional
+        Defaults to 0.0
+    raw_energy : bool, optional
+        Defaults to True
+    with_pitch: bool, optional
+        Compute Pitch Estimation (w/ same step and Duration as MFCC).
+        Defaults to True.
+
+    Notes
+    -----
+    Internal setup
+        * melMaxFreq = sampleFreq / 2 - 100
+        * melMinFreq = 20
+        * melNbFilters = 40
+
+
+    """
+
+    def __init__(self, sample_rate=16000, augmentation=None,
+                 duration=0.025, step=0.01,
+                 dither=1.0, preemph_coeff=0.97,
+                 remove_dc_offset=True, window_type='povey',
+                 round_to_power_of_two=True, blackman_coeff=0.97,
+                 energy_floor=0.0, raw_energy=True, with_pitch=True,
+                 pitchFmin=20, pitchFmax=500
+                 ):
+
+        super().__init__(sample_rate=sample_rate, augmentation=augmentation,
+                         duration=duration, step=step)
+
+        # spectrogram parameters
+        self.dither = dither
+        self.preemph_coeff = preemph_coeff
+        self.remove_dc_offset = remove_dc_offset
+        self.window_type = window_type
+        self.round_to_power_of_two = round_to_power_of_two
+        self.blackman_coeff = blackman_coeff
+        self.energy_floor = energy_floor
+        self.raw_energy = raw_energy
+
+        # pitch parameters
+        self.with_pitch = with_pitch
+        self.pitchFmin = pitchFmin
+        self.pitchFmax = pitchFmax
+
+
+    def get_context_duration(self):
+        return 0.
+
+    def get_features(self, y, sample_rate):
+        """Feature extraction
+
+        Parameters
+        ----------
+        y : (n_samples, 1) numpy array
+            Waveform
+        sample_rate : int
+            Sample rate
+
+        Returns
+        -------
+        data : (n_frames, n_dimensions) numpy array
+            Features
+        """
+        # scale the audio signal between -1 and 1 before 
+        # creating audio object w/ shennong: Do this because
+        # when pyannote uses "data augmentation", it normalizes
+        # the signal, but when loading the data without data
+        # augmentation it doesn't normalize it.
+        y = y / np.max(( -np.min(y),
+                        np.max(y)))
+
+        # create audio object for shennong
+        audio = Audio(data=y, sample_rate=sample_rate)
+
+        # MFCC parameters
+        processor = SpectrogramProcessor(sample_rate=sample_rate)
+        processor.window_type = self.window_type
+        processor.dither = self.dither
+        processor.preemph_coeff = self.preemph_coeff
+        processor.remove_dc_offset = self.remove_dc_offset
+        processor.round_to_power_of_two = self.round_to_power_of_two
+        processor.blackman_coeff = self.blackman_coeff
+        processor.energy_floor = self.energy_floor
+        processor.raw_energy = self.raw_energy
+
+        processor.snip_edges= False # end with correct number of frames
+
+        # MFCC extraction
+        #audio = Audio(data=y, sample_rate=sample_rate)
+        spect = processor.process(audio)
+
+        # Compute Pitch
+        if self.with_pitch:
+            # extract pitch
+            pitch = self.get_pitch(audio, self.pitchFmin,
+                                   self.pitchFmax)
+
+            ## concatenate spect w/pitch - sometimes Kaldi adds to pitch
+            ## one frame so give 2 frames of tolerance
+            spect = self.concatenate_with_pitch(spect.data, pitch.data)
+
+        else:
+            spect = spect.data
+
+
+
+        return spect
+
+    def get_dimension(self):
+        n_features = 257
         n_features += self.with_pitch * 3 # Pitch is two dimensional
         return n_features
