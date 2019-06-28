@@ -35,8 +35,9 @@ import librosa
 import numpy as np
 
 from .base import FeatureExtraction
+from .spec_augmentor import SpecAugmentor
 from pyannote.core.segment import SlidingWindow
-
+import matplotlib.pyplot as plt
 
 class LibrosaFeatureExtraction(FeatureExtraction):
     """librosa feature extraction base class
@@ -136,14 +137,22 @@ class LibrosaMelSpectrogram(LibrosaFeatureExtraction):
     """
 
     def __init__(self, sample_rate=16000, augmentation=None,
-                 duration=0.025, step=0.010, n_mels=96):
+                 duration=0.025, step=0.010, n_mels=96, spec_augment=False,
+                 time_warping_para=80, frequency_masking_para=27,
+                 time_masking_para=100, nb_frequency_masks=1, nb_time_masks=1, time_warp=False):
 
         super().__init__(sample_rate=sample_rate, augmentation=augmentation,
                          duration=duration, step=step)
-
         self.n_mels = n_mels
         self.n_fft_ = int(self.duration * self.sample_rate)
         self.hop_length_ = int(self.step * self.sample_rate)
+        self.spec_augment = spec_augment
+        self.time_warping_para = time_warping_para
+        self.frequency_masking_para = frequency_masking_para
+        self.time_masking_para = time_masking_para
+        self.nb_frequency_masks = nb_frequency_masks
+        self.nb_time_masks = nb_time_masks
+        self.time_warp = time_warp
 
     def get_dimension(self):
         return self.n_mels
@@ -163,13 +172,23 @@ class LibrosaMelSpectrogram(LibrosaFeatureExtraction):
         data : (n_frames, n_mels) numpy array
             Features
         """
-
-        X = librosa.feature.melspectrogram(
+        mel_spec = librosa.feature.melspectrogram(
             y.squeeze(), sr=sample_rate, n_mels=self.n_mels,
-            n_fft=self.n_fft_, hop_length=self.hop_length_,
-            power=2.0)
+            n_fft=self.n_fft_*2, hop_length=self.hop_length_, power=2)
 
-        return librosa.amplitude_to_db(X, ref=1.0, amin=1e-5, top_db=80.0).T
+        mel_spec = librosa.power_to_db(mel_spec, ref=np.max)
+
+        if self.spec_augment:
+            spec_augmentor = SpecAugmentor()
+            mel_spec = spec_augmentor(features=mel_spec,
+                                     time_warping_para=self.time_warping_para,
+                                     frequency_masking_para=self.frequency_masking_para,
+                                     time_masking_para=self.time_masking_para,
+                                     nb_frequency_masks=self.nb_frequency_masks,
+                                     nb_time_masks=self.nb_time_masks,
+                                      time_warp=self.time_warp)
+
+        return mel_spec.T
 
 
 class LibrosaMFCC(LibrosaFeatureExtraction):
