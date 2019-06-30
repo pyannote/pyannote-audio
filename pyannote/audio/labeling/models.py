@@ -346,14 +346,13 @@ class ConvRNN(nn.Module):
 
         # get convolutional layer
         # [batch_size, seq_len, nb_mel] to [batch_size, 1, nb_mel, seq_len]
-        output = output.transpose(1,2).unsqueeze(1)
+        output = output.transpose(1, 2).unsqueeze(1).contiguous()
         output = self.convolutionnal_layer_(output)
         output = self.batch_norm_(output)
         output = self.relu_(output)
-        output = output.transpose(1,2).transpose(1,3)
+        output = output.transpose(1, 2).transpose(1, 3).contiguous()
         output = self.maxpool_(output)
-
-        output = output.squeeze()
+        output = output.squeeze(dim=3)
 
         # stack recurrent layers
         for hidden_dim, layer in zip(self.recurrent, self.recurrent_layers_):
