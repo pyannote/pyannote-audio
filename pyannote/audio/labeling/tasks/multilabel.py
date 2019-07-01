@@ -90,12 +90,14 @@ class MultilabelGenerator(LabelingTaskGenerator):
     >>>     pass
     """
 
-    def __init__(self, feature_extraction, overlap=False, speech=False, **kwargs):
+    def __init__(self, feature_extraction, overlap=False, speech=False, labels=None, **kwargs):
 
         super(MultilabelGenerator, self).__init__(
             feature_extraction, **kwargs)
+
         self.overlap = overlap
         self.speech = speech
+        self.labels_ = labels
 
     def postprocess_y(self, Y):
         # number of speakers for each frame
@@ -104,10 +106,9 @@ class MultilabelGenerator(LabelingTaskGenerator):
         # mark speech regions as such
         speech = np.int64(speaker_count > 0)
 
-        # Last column is speech
-        # For now, it's activated only where UU* speakers
-        # are speaking
-        if self.speech:
+        # Last column is speech if BabyTrain (only where UU* speakers are speaking)
+        # Needs to be removed
+        if "SPEECH" in self.labels_ and Y.shape[1] == len(self.labels_):
             Y = Y[:, :-1]
 
         # We add overlap first (columns are alphabetically sorted by their CLASS id)
@@ -115,7 +116,6 @@ class MultilabelGenerator(LabelingTaskGenerator):
             # mark overlap regions as such
             overlap = np.int64(speaker_count > 1)
             Y = np.concatenate((Y, overlap), axis=1)
-
         # Then we can add speech
         if self.speech:
             Y = np.concatenate((Y, speech), axis=1)
@@ -190,10 +190,11 @@ class Multilabel(LabelingTask):
         return sorted(labels)
 
     def get_batch_generator(self, feature_extraction):
+
         return MultilabelGenerator(
             feature_extraction, duration=self.duration,
             batch_size=self.batch_size, per_epoch=self.per_epoch,
-            parallel=self.parallel, overlap=self.overlap, speech=self.speech)
+            parallel=self.parallel, overlap=self.overlap,speech=self.speech, labels=self.labels_)
 
     @property
     def task_type(self):
