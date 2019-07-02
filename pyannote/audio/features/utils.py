@@ -138,19 +138,15 @@ class RawAudio(object):
         Convert multi-channel to mono. Defaults to True.
     augmentation : `pyannote.audio.augmentation.Augmentation`, optional
         Data augmentation.
-    resampling : `pyannote.audio.augmentation.Augmentation`,
-        Resampling.
     """
 
-    def __init__(self, sample_rate=None, mono=True,
-                 augmentation=None, resampling=None):
+    def __init__(self, sample_rate=None, mono=True, augmentation=None):
 
         super(RawAudio, self).__init__()
         self.sample_rate = sample_rate
         self.mono = mono
 
         self.augmentation = augmentation
-        self.resampling = resampling
 
         if sample_rate is not None:
             self.sliding_window_ = SlidingWindow(start=-.5/sample_rate,
@@ -219,17 +215,6 @@ class RawAudio(object):
         if (self.sample_rate is not None) and (self.sample_rate != sample_rate):
             y = librosa.core.resample(y.T, sample_rate, self.sample_rate).T
             sample_rate = self.sample_rate
-
-        # resample data
-        if self.resampling is not None:
-            y = self.resampling(y, sample_rate)
-
-            # TODO: how time consuming is this thing (needs profiling...)
-            try:
-                valid = valid_audio(y[:, 0], mono=True)
-            except ParameterError as e:
-                msg = (f"Something went wrong when resampling waveform.")
-                raise ValueError(msg)
 
         # augment data
         if self.augmentation is not None:

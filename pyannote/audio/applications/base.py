@@ -151,15 +151,6 @@ class Application(object):
         else:
             augmentation = None
 
-        if training and 'resampling' in self.config_ :
-            Resampling = get_class_by_name(
-                self.config_['resampling']['name'],
-                default_module_name='pyannote.audio.augmentation')
-            resampling = Resampling(
-                **self.config_['resampling'].get('params', {}))
-        else:
-            resampling = None
-
         # feature extraction
         extraction_name = None
         if 'feature_extraction' in self.config_:
