@@ -347,9 +347,6 @@ class RawAudio(object):
                    f"between {segment.start:.3f}s and {segment.end:.3f}s.")
             raise ValueError(msg)
 
-        if self.resampling is not None:
-            data = self.resampling(data, sample_rate)
-
         if self.augmentation is not None:
             data = self.augmentation(data, sample_rate)
 
