@@ -33,4 +33,3 @@
 from .base import NoAugmentation
 from .noise import AddNoise
 from .noise import AddNoiseFromGaps
-form .resampler import Resampler
