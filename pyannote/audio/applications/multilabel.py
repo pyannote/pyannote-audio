@@ -1229,10 +1229,6 @@ class Multilabel(Application):
 
         self.pool_ = mp.Pool(mp.cpu_count())
 
-        # if features are already available on disk, return
-        if isinstance(self.feature_extraction_, Precomputed): 
-            return list(files)
-
         # pre-compute features for each validation files
         validation_data = []
         for current_file in tqdm(files, desc='Feature extraction'): 
@@ -1289,7 +1285,7 @@ class Multilabel(Application):
             duration=duration, step=step, batch_size=self.batch_size,
             device=self.device)
 
-        for current_file in validation_data: 
+        for current_file in validation_data:
             scores = sequence_labeling(current_file)
             if class_name == "SPEECH" and "SPEECH" not in self.task_.labels:
                 # We sum up all the scores of every speakers
