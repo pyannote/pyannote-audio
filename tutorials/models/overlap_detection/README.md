@@ -209,6 +209,8 @@ Here is the type of results you can expect from this model on `AMI`:
 
 ![tensorboard screenshot](results.png)
 
+For an example on how to create the above figure, have a look at [this](../pretrained) tutorial.
+
 ## More options
 
 For more options, see:
