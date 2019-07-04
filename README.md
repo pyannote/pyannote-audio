@@ -65,6 +65,7 @@ If you use `pyannote.audio` please use the following citations.
     * [Training LSTM-based speech activity detection](tutorials/models/speech_activity_detection)
     * [Training LSTM-based speaker change detection](tutorials/models/speaker_change_detection)
     * [Training LSTM-based speaker embedding](tutorials/models/speaker_embedding)
+    * [Training LSTM-based overlapped speech detection](tutorials/models/overlap_detection)
     * [Using pre-trained models](tutorials/models/pretrained)
 
   * Pipelines
