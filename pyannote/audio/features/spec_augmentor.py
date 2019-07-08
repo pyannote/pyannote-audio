@@ -34,7 +34,7 @@ class SpecAugmentor(object):
         v = mel_spectrogram.shape[0]
         tau = mel_spectrogram.shape[1]
 
-        if scheduler is not None and max_epoch is not None:
+        if scheduler is not None and max_epoch is not None and epoch is not None:
             frequency_masking_para = int(frequency_masking_para * min(epoch, max_epoch)/max_epoch)
             time_masking_para = int(time_masking_para * min(epoch, max_epoch)/max_epoch)
 
