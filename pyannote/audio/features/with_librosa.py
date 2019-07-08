@@ -157,7 +157,7 @@ class LibrosaMelSpectrogram(LibrosaFeatureExtraction):
     def get_dimension(self):
         return self.n_mels
 
-    def get_features(self, y, sample_rate, epoch):
+    def get_features(self, y, sample_rate, epoch=None):
         """Feature extraction
 
         Parameters
@@ -166,6 +166,8 @@ class LibrosaMelSpectrogram(LibrosaFeatureExtraction):
             Waveform
         sample_rate : int
             Sample rate
+        epoch :
+            Current epoch
 
         Returns
         -------
