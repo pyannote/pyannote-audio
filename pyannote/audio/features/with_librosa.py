@@ -138,8 +138,8 @@ class LibrosaMelSpectrogram(LibrosaFeatureExtraction):
 
     def __init__(self, sample_rate=16000, augmentation=None,
                  duration=0.025, step=0.010, n_mels=96, spec_augment=False,
-                 time_warping_para=80, frequency_masking_para=27,
-                 time_masking_para=100, nb_frequency_masks=1, nb_time_masks=1, time_warp=False):
+                 frequency_masking_para=27,time_masking_para=100,
+                 nb_frequency_masks=1, nb_time_masks=1, scheduler=None, max_epoch=None):
 
         super().__init__(sample_rate=sample_rate, augmentation=augmentation,
                          duration=duration, step=step)
@@ -147,17 +147,17 @@ class LibrosaMelSpectrogram(LibrosaFeatureExtraction):
         self.n_fft_ = int(self.duration * self.sample_rate)
         self.hop_length_ = int(self.step * self.sample_rate)
         self.spec_augment = spec_augment
-        self.time_warping_para = time_warping_para
         self.frequency_masking_para = frequency_masking_para
         self.time_masking_para = time_masking_para
         self.nb_frequency_masks = nb_frequency_masks
         self.nb_time_masks = nb_time_masks
-        self.time_warp = time_warp
+        self.scheduler = scheduler
+        self.max_epoch = max_epoch
 
     def get_dimension(self):
         return self.n_mels
 
-    def get_features(self, y, sample_rate):
+    def get_features(self, y, sample_rate, epoch):
         """Feature extraction
 
         Parameters
@@ -181,12 +181,13 @@ class LibrosaMelSpectrogram(LibrosaFeatureExtraction):
         if self.spec_augment:
             spec_augmentor = SpecAugmentor()
             mel_spec = spec_augmentor(features=mel_spec,
-                                     time_warping_para=self.time_warping_para,
-                                     frequency_masking_para=self.frequency_masking_para,
-                                     time_masking_para=self.time_masking_para,
-                                     nb_frequency_masks=self.nb_frequency_masks,
-                                     nb_time_masks=self.nb_time_masks,
-                                      time_warp=self.time_warp)
+                                      frequency_masking_para=self.frequency_masking_para,
+                                      time_masking_para=self.time_masking_para,
+                                      nb_frequency_masks=self.nb_frequency_masks,
+                                      nb_time_masks=self.nb_time_masks,
+                                      scheduler=self.scheduler,
+                                      epoch=epoch,
+                                      max_epoch=self.max_epoch)
 
         return mel_spec.T
 

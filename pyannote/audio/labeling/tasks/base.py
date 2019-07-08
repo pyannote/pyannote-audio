@@ -173,13 +173,13 @@ class LabelingTaskGenerator(object):
         It should be overriden by subclasses."""
         return Y
 
-    def samples(self):
+    def samples(self, iteration=None):
         if self.exhaustive:
             return self.sliding_samples()
         else:
-            return self.random_samples()
+            return self.random_samples(iteration=iteration)
 
-    def random_samples(self):
+    def random_samples(self, iteration=None):
         """Random samples
 
         Returns
@@ -187,6 +187,9 @@ class LabelingTaskGenerator(object):
         samples : generator
             Generator that yields {'X': ..., 'y': ...} samples indefinitely.
         """
+        iteration = 0
+        i = 0
+        nb_sequences_per_epoch = self.batches_per_epoch * (self.batch_size + 2)
 
         uris = list(self.data_)
         durations = np.array([self.data_[uri]['duration'] for uri in uris])
@@ -210,14 +213,18 @@ class LabelingTaskGenerator(object):
 
             X = self.feature_extraction.crop(current_file,
                                       sequence, mode='center',
-                                      fixed=self.duration)
+                                      fixed=self.duration, epoch=iteration)
 
             y = datum['y'].crop(sequence, mode='center', fixed=self.duration)
+            i = i + 1
+
+            if i % nb_sequences_per_epoch == 0:
+                iteration = iteration + 1
+                i = 0
 
             yield {'X': X, 'y': np.squeeze(y)}
 
     def sliding_samples(self):
-
         uris = list(self.data_)
         durations = np.array([self.data_[uri]['duration'] for uri in uris])
         probabilities = durations / np.sum(durations)
@@ -287,9 +294,8 @@ class LabelingTaskGenerator(object):
     def labels(self):
         return list(self.labels_)
 
-    def __call__(self, protocol, subset='train'):
+    def __call__(self, protocol, subset='train', iteration=None):
         """(Parallelized) batch generator"""
-
         # pre-load useful information about protocol once and for all
         self.initialize(protocol, subset=subset)
 
