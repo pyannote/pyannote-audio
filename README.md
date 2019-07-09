@@ -3,18 +3,22 @@
 Neural building blocks for speaker diarization: 
 * speech activity detection
 * speaker change detection
+* overlapped speech detection
 * speaker embedding
 * speaker diarization pipeline
 
 ## Installation
 
 ```bash
+# create a conda environment with Python 3.6 or later
 $ conda create --name pyannote python=3.6
 $ source activate pyannote
-$ pip install pyannote.audio
 
-# support Yaafe feature extraction (optional)
-$ conda install -c conda-forge yaafe
+# install from source in the "develop" branch
+$ git clone https://github.com/pyannote/pyannote-audio.git
+$ cd pyannote-audio
+$ git checkout develop
+$ pip install .
 ```
 
 ## Citation
@@ -57,20 +61,24 @@ If you use `pyannote.audio` please use the following citations.
 
 ## Tutorials
 
-:warning: These tutorials assumes that you installed the [`develop` branch](https://github.com/pyannote/pyannote-audio/issues/145) of `pyannote.audio`.   
+:warning: These tutorials assumes that you installed the [`develop` branch](https://github.com/pyannote/pyannote-audio/issues/145) of `pyannote.audio`.  
 :warning: They are most likely [broken](https://github.com/pyannote/pyannote-audio/issues/151) in `pyannote.audio 1.x`.
 
   * [Feature extraction](tutorials/feature_extraction)
   * Models
     * [Training LSTM-based speech activity detection](tutorials/models/speech_activity_detection)
     * [Training LSTM-based speaker change detection](tutorials/models/speaker_change_detection)
-    * [Training LSTM-based speaker embedding](tutorials/models/speaker_embedding)
     * [Training LSTM-based overlapped speech detection](tutorials/models/overlap_detection)
-    * [Using pre-trained models](tutorials/models/pretrained)
+    * [Training LSTM-based speaker embedding](tutorials/models/speaker_embedding)
 
   * Pipelines
     * [Tuning speech activity detection pipeline](tutorials/pipelines/speech_activity_detection)
     * [Tuning speaker diarization pipeline](tutorials/pipelines/speaker_diarization)
+  
+  * In-house datasets 
+    * [Applying pre-trained models on your own data](tutorials/own_data/pretrained)
+    * [Training models on your own data](tutorials/own_data/train)
+
   
 ## Documentation
 
