@@ -39,10 +39,18 @@ In this tutorial, you will learn how to train, validate, and apply an overlapped
 ## Citation
 ([↑up to table of contents](#table-of-contents))
 
-If you use `pyannote-audio` for overlap speech detection, please cite the following paper:
+If you use `pyannote-audio` for overlap speech detection, please cite the following paper as it relies on the same underlying approach. Hopefully a better citation will be available soon.
 
 ```bibtex
-WIP
+@inproceedings{Yin2017,
+  Author = {Ruiqing Yin and Herv\'e Bredin and Claude Barras},
+  Title = {{Speaker Change Detection in Broadcast TV using Bidirectional Long Short-Term Memory Networks}},
+  Booktitle = {{Interspeech 2017, 18th Annual Conference of the International Speech Communication Association}},
+  Year = {2017},
+  Month = {August},
+  Address = {Stockholm, Sweden},
+  Url = {https://github.com/yinruiqing/change_detection}
+}
 ```
 
 ## Databases
