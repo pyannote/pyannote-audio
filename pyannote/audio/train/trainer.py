@@ -294,13 +294,15 @@ class Trainer:
         if get_scheduler is None:
             get_scheduler = ConstantScheduler
 
-        callbacks = Callbacks([
+        callbacks = [
             Checkpoint(),        # checkpoint has to go first
             get_scheduler(),
-        ])
+        ]
 
         if not quiet:
             callbacks.append(Logging(epochs))
+
+        callbacks = Callbacks(callbacks)
 
         if restart:
             # warm restart

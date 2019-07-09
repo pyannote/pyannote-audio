@@ -528,14 +528,14 @@ class ResegmentationWithOverlap(Resegmentation):
             T = T[T < N]
 
             # remove timesteps where second most likely class is non-speech
-            T = T[best_speaker_indices[T, 1] > 0]
+            T = T[best_speakers_indices[T, 1] > 0]
 
             # mark second most likely speaker as active
             active_speakers[T, best_speakers_indices[T, 1] - 1] = 1
 
             # reconstruct annotation
             new_hypothesis = one_hot_decoding(
-                active_speakers, window, labels=labels)
+                active_speakers, frames, labels=labels)
 
         new_hypothesis.uri = hypothesis.uri
         return new_hypothesis
