@@ -23,7 +23,7 @@
 > AUTHORS
 > Hervé Bredin - http://herve.niderb.fr
 
-# Appling pre-trained models on your own data
+# Applying pre-trained models on your own data
 
 Models pre-trained on AMI are available in their corresponding tutorials sub-directory:
 ```python

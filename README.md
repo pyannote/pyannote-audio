@@ -71,7 +71,7 @@ If you use `pyannote.audio` please use the following citations.
     * [Tuning speaker diarization pipeline](tutorials/pipelines/speaker_diarization)
   
   * In-house datasets 
-    * [Appling pre-trained models on your own data](tutorials/own_data/pretrained)
+    * [Applying pre-trained models on your own data](tutorials/own_data/pretrained)
     * [Training models on your own data](tutorials/own_data/train)
 
   
