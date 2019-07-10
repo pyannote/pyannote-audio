@@ -38,7 +38,7 @@ class SpecAugmentor(object):
             frequency_masking_para = int(frequency_masking_para * min(epoch, max_epoch)/max_epoch)
             time_masking_para = int(time_masking_para * min(epoch, max_epoch)/max_epoch)
 
-        time_masking_para = min(time_masking_para, 0.2*tau)
+        time_masking_para = int(min(time_masking_para, 0.2*tau))
         augmented_mel_spectrogram = mel_spectrogram.copy()
         minimum_value = np.min(mel_spectrogram)
 
