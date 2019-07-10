@@ -176,7 +176,7 @@ class LibrosaMelSpectrogram(LibrosaFeatureExtraction):
         """
         mel_spec = librosa.feature.melspectrogram(
             y.squeeze(), sr=sample_rate, n_mels=self.n_mels,
-            n_fft=self.n_fft_*2, hop_length=self.hop_length_, power=2)
+            n_fft=self.n_fft_, hop_length=self.hop_length_, power=2)
 
         mel_spec = librosa.power_to_db(mel_spec, ref=np.max)
 
