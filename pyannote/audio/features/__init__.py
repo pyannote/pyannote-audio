@@ -72,3 +72,6 @@ try:
 except Exception as e:
     msg = f'Loading raw audio might fail because something went wrong: {e}.'
     print(msg)
+
+from .mapper import GenderChiMapper
+

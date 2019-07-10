@@ -122,4 +122,4 @@ class SpeechActivityDetection(Pipeline):
 
     def get_metric(self) -> DetectionErrorRate:
         """Return new instance of detection error rate metric"""
-        return  DetectionErrorRate(collar=0.0, skip_overlap=False)
+        return DetectionErrorRate(collar=0.0, skip_overlap=False)
