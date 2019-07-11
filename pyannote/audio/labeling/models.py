@@ -239,9 +239,9 @@ class ConvRNN(nn.Module):
         one linear layer with hidden dimension of 16.
     """
 
-    def __init__(self, n_features, n_classes, task_type, instance_normalize=False,
-                 convolutionnal=[16,], rnn='LSTM', recurrent=[16,], bidirectional=False,
-                 linear=[16, ], kernel_size=32):
+    def __init__(self, n_features, n_classes, task_type,
+                 norm=None, rnn='LSTM', recurrent=[16,], bidirectional=False,
+                 linear=[16, ], conv_out=[128,], kernel_size=[32,]):
 
         super(ConvRNN, self).__init__()
 
@@ -256,8 +256,8 @@ class ConvRNN(nn.Module):
                    f"{TASK_MULTI_LABEL_CLASSIFICATION} or {TASK_REGRESSION}.")
             raise ValueError(msg)
 
-        self.instance_normalize = instance_normalize
-        self.convolutionnal = convolutionnal
+        self.norm = norm
+        self.conv_out = conv_out
         self.rnn = rnn
         self.recurrent = recurrent
         self.bidirectional = bidirectional
@@ -266,15 +266,30 @@ class ConvRNN(nn.Module):
 
         self.num_directions_ = 2 if self.bidirectional else 1
 
+        if len(conv_out) != len(kernel_size):
+            raise ValueError("The convolutional output channels list must of same size than the kernel sizes list.")
+
+        if self.norm is not None and self.norm not in ["batch", "instance"]:
+            raise ValueError("norm parameter must be in ['batch', 'instance']")
+
         input_dim = self.n_features
-        # create 1D convolutional network
-        # input_dim = self.n_features
-        self.convolutionnal_layer_ = []
-        self.convolutionnal_layer_ = nn.Conv2d(in_channels=1, out_channels=input_dim,
-                                               kernel_size=[self.kernel_size, 1])
-        self.batch_norm_ = nn.BatchNorm2d(self.n_features)
-        self.relu_ = nn.ReLU()
-        self.maxpool_ = nn.MaxPool2d(kernel_size=[1, input_dim-self.kernel_size+1])
+        self.conv1d_, self.norm_, self.relu_, self.max_pool_= nn.ModuleList([]), nn.ModuleList([]), nn.ModuleList([]), nn.ModuleList([])
+
+        for i, (out_channel, kernel_size) in enumerate(zip(self.conv_out, self.kernel_size)):
+            conv_layer = nn.Conv1d(in_channels=1, out_channels=out_channel, kernel_size=[kernel_size, 1])
+
+            if self.norm == "batch":
+                self.norm_.append(nn.BatchNorm2d(out_channel))
+            if self.norm == "instance":
+                self.norm_.append(nn.InstanceNorm2d(out_channel))
+
+            relu = nn.ReLU(inplace=True)
+            maxpool = nn.MaxPool2d(kernel_size=[input_dim-kernel_size+1, 1])
+
+            self.conv1d_.append(conv_layer)
+            self.relu_.append(relu)
+            self.max_pool_.append(maxpool)
+            input_dim = out_channel
 
         # create list of recurrent layers
         self.recurrent_layers_ = []
@@ -339,20 +354,29 @@ class ConvRNN(nn.Module):
 
         output = sequences
 
-        if self.instance_normalize:
+        if self.norm == "instance":
             output = output.transpose(1, 2)
             output = F.instance_norm(output)
             output = output.transpose(1, 2)
 
-        # get convolutional layer
-        # [batch_size, seq_len, nb_mel] to [batch_size, 1, nb_mel, seq_len]
+        # Here's N describes the batch size, T describes the time dimension
+        # M describes the number of mel filterbanks used for computing the spectrogram (frequency dimension)
+        # C describes the number of channels = 1
+        # Transform the (N, T, M) to (N, C, M, T)
         output = output.transpose(1, 2).unsqueeze(1).contiguous()
-        output = self.convolutionnal_layer_(output)
-        output = self.batch_norm_(output)
-        output = self.relu_(output)
-        output = output.transpose(1, 2).transpose(1, 3).contiguous()
-        output = self.maxpool_(output)
-        output = output.squeeze(dim=3)
+        layers = zip(self.conv1d_, self.relu_, self.max_pool_)
+        for i, (conv1d, relu, max_pool) in enumerate(layers):
+            output = conv1d(output)
+
+            if self.norm is not None:
+                output = self.norm_[i](output)
+
+            output = relu(output)
+            output = max_pool(output)
+            output = output.transpose(1, 2).contiguous()
+
+        # Returns to (N, T, M)
+        output = output.squeeze(dim=1).transpose(1,2).contiguous()
 
         # stack recurrent layers
         for hidden_dim, layer in zip(self.recurrent, self.recurrent_layers_):
