@@ -40,21 +40,20 @@ class SpecAugmentor(object):
 
         time_masking_para = int(min(time_masking_para, 0.2*tau))
         augmented_mel_spectrogram = mel_spectrogram.copy()
-        minimum_value = np.min(mel_spectrogram)
 
         # 1) Frequency masking
         for i in range(frequency_mask_num):
             f = np.random.uniform(low=0.0, high=frequency_masking_para)
             f = int(f)
             f0 = random.randint(0, v - f)
-            augmented_mel_spectrogram[f0:f0 + f, :] = minimum_value
+            augmented_mel_spectrogram[f0:f0 + f, :] = 0
 
         # 2) Time masking
         for i in range(time_mask_num):
             t = np.random.uniform(low=0.0, high=time_masking_para)
             t = int(t)
             t0 = random.randint(0, tau - t)
-            augmented_mel_spectrogram[:, t0:t0 + t] = minimum_value
+            augmented_mel_spectrogram[:, t0:t0 + t] = 0
 
         return augmented_mel_spectrogram
 

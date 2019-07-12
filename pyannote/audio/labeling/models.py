@@ -241,7 +241,7 @@ class ConvRNN(nn.Module):
 
     def __init__(self, n_features, n_classes, task_type,
                  norm=None, rnn='LSTM', recurrent=[16,], bidirectional=False,
-                 linear=[16, ], conv_out=[128,], kernel_size=[32,]):
+                 linear=[16, ], conv_out=[128,], kernel_size=[32,], dropout=0.):
 
         super(ConvRNN, self).__init__()
 
@@ -273,7 +273,7 @@ class ConvRNN(nn.Module):
             raise ValueError("norm parameter must be in ['batch', 'instance']")
 
         input_dim = self.n_features
-        self.conv1d_, self.norm_, self.relu_, self.max_pool_= nn.ModuleList([]), nn.ModuleList([]), nn.ModuleList([]), nn.ModuleList([])
+        self.conv1d_, self.norm_, self.relu_, self.max_pool_ = nn.ModuleList([]), nn.ModuleList([]), nn.ModuleList([]), nn.ModuleList([])
 
         for i, (out_channel, kernel_size) in enumerate(zip(self.conv_out, self.kernel_size)):
             conv_layer = nn.Conv1d(in_channels=1, out_channels=out_channel, kernel_size=[kernel_size, 1])
@@ -290,6 +290,11 @@ class ConvRNN(nn.Module):
             self.relu_.append(relu)
             self.max_pool_.append(maxpool)
             input_dim = out_channel
+
+        # Dropout
+        self.dropout = dropout
+        if self.dropout:
+            self.dropout_ = nn.Dropout(p=self.dropout)
 
         # create list of recurrent layers
         self.recurrent_layers_ = []
@@ -365,6 +370,7 @@ class ConvRNN(nn.Module):
         # Transform the (N, T, M) to (N, C, M, T)
         output = output.transpose(1, 2).unsqueeze(1).contiguous()
         layers = zip(self.conv1d_, self.relu_, self.max_pool_)
+
         for i, (conv1d, relu, max_pool) in enumerate(layers):
             output = conv1d(output)
 
@@ -377,6 +383,9 @@ class ConvRNN(nn.Module):
 
         # Returns to (N, T, M)
         output = output.squeeze(dim=1).transpose(1,2).contiguous()
+
+        if self.dropout:
+            output = self.dropout_(output)
 
         # stack recurrent layers
         for hidden_dim, layer in zip(self.recurrent, self.recurrent_layers_):
