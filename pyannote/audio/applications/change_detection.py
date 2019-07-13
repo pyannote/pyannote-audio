@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2017-2018 CNRS
+# Copyright (c) 2017-2019 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -61,6 +61,8 @@ Common options:
 "validation" mode:
   --every=<epoch>            Validate model every <epoch> epochs [default: 1].
   --chronological            Force validation in chronological order.
+  --parallel=<n_jobs>        Process <n_jobs> files in parallel. Defaults to
+                             using all CPUs.
   <train_dir>                Path to the directory containing pre-trained
                              models (i.e. the output of "train" mode).
   --purity=<purity>          Target segment purity [default: 0.9].
@@ -164,6 +166,7 @@ from pathlib import Path
 import torch
 import numpy as np
 from docopt import docopt
+import multiprocessing as mp
 from .base_labeling import BaseLabeling
 from pyannote.database import get_annotated
 from pyannote.metrics.diarization import DiarizationPurityCoverageFMeasure
@@ -306,6 +309,13 @@ def main():
         # batch size
         batch_size = int(arguments['--batch'])
 
+        # number of processes
+        n_jobs = arguments['--parallel']
+        if n_jobs is None:
+            n_jobs = mp.cpu_count()
+        else:
+            n_jobs = int(n_jobs)
+
         purity = float(arguments['--purity'])
         diarization = arguments['--diarization']
 
@@ -313,6 +323,7 @@ def main():
             train_dir, db_yml=db_yml, training=False)
         application.device = device
         application.batch_size = batch_size
+        application.n_jobs = n_jobs
         application.purity = purity
         application.diarization = diarization
 

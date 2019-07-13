@@ -60,6 +60,8 @@ Common options:
 "validation" mode:
   --every=<epoch>            Validate model every <epoch> epochs [default: 1].
   --chronological            Force validation in chronological order.
+  --parallel=<n_jobs>        Process <n_jobs> files in parallel. Defaults to
+                             using all CPUs.
   <train_dir>                Path to the directory containing pre-trained
                              models (i.e. the output of "train" mode).
   --precision=<precision>    Target detection precision [default: 0.8].
@@ -162,6 +164,7 @@ from pathlib import Path
 import torch
 import numpy as np
 from docopt import docopt
+import multiprocessing as mp
 from .base_labeling import BaseLabeling
 from pyannote.database import get_annotated
 from pyannote.metrics.detection import DetectionRecall
@@ -340,6 +343,13 @@ def main():
         # batch size
         batch_size = int(arguments['--batch'])
 
+        # number of processes
+        n_jobs = arguments['--parallel']
+        if n_jobs is None:
+            n_jobs = mp.cpu_count()
+        else:
+            n_jobs = int(n_jobs)
+
         precision = float(arguments['--precision'])
 
         application = OverlapDetection.from_train_dir(
@@ -347,6 +357,7 @@ def main():
 
         application.device = device
         application.batch_size = batch_size
+        application.n_jobs = n_jobs
         application.precision = precision
 
         application.validate(protocol_name, subset=subset,

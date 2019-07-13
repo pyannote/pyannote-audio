@@ -76,7 +76,7 @@ class BaseLabeling(Application):
                                 preprocessors=self.preprocessors_)
         files = getattr(protocol, subset)()
 
-        self.pool_ = mp.Pool(mp.cpu_count())
+        self.pool_ = mp.Pool(self.n_jobs)
 
         if isinstance(self.feature_extraction_, (Precomputed, RawAudio)):
             return list(files)
