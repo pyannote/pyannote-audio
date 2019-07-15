@@ -90,14 +90,12 @@ class MultilabelGenerator(LabelingTaskGenerator):
     >>>     pass
     """
 
-    def __init__(self, feature_extraction, overlap=False, speech=False, labels=None, **kwargs):
-
-        super(MultilabelGenerator, self).__init__(
-            feature_extraction, **kwargs)
-
+    def __init__(self, feature_extraction, protocol, subset='train',
+                 overlap=False, speech=False, labels=None, **kwargs):
         self.overlap = overlap
         self.speech = speech
         self.labels_ = labels
+        super().__init__(feature_extraction, protocol, subset=subset)
 
     def postprocess_y(self, Y):
         # number of speakers for each frame
@@ -123,6 +121,14 @@ class MultilabelGenerator(LabelingTaskGenerator):
         # replace NaNs by 0s
         Y = np.nan_to_num(Y)
         return Y
+
+    @property
+    def specifications(self):
+        return {
+            'task': TASK_MULTI_LABEL_CLASSIFICATION,
+            'X': {'dimension': self.feature_extraction.dimension},
+            'y': {'classes': self.labels_},
+        }
 
 
 class Multilabel(LabelingTask):
@@ -163,23 +169,23 @@ class Multilabel(LabelingTask):
     ...     pass
 
     """
-    def __init__(self, protocol_name, preprocessors, weighted_loss=False, training=False, overlap=False, speech=False, **kwargs):
+    def __init__(self, protocol_name, preprocessors, weighted_loss=False, overlap=False, speech=False, **kwargs):
         super(Multilabel, self).__init__(**kwargs)
         # Need protocol to know the classes that need to be predicted
         # And thus the dimension of the target !
-        self.protocol = get_protocol(protocol_name, preprocessors)
         self.weighted_loss = weighted_loss
         self.overlap = overlap
         self.speech = speech
+        self.protocol = get_protocol(protocol_name, preprocessors=preprocessors)
         self.labels_ = self._update_labels()
 
     def _update_labels(self):
         """
-        Get the actual number of labels (the roles amongst {CHI,FEM,KCHI,MAL} that are present
+        Get the actual number of labels (the roles amongst {CHI,FEM,KCHI,MAL,SPEECH,OVERLAP} that are present
         in the data
         """
         labels = set()
-        for current_file in self.protocol.train():
+        for current_file in getattr(self.protocol, "train")():
             y_labels = set(current_file["annotation"].labels())
             labels |= y_labels
 
@@ -189,10 +195,10 @@ class Multilabel(LabelingTask):
             labels.add("SPEECH")
         return sorted(labels)
 
-    def get_batch_generator(self, feature_extraction):
-
+    def get_batch_generator(self, feature_extraction, protocol, subset='train',
+                            frame_info=None, frame_crop=None):
         return MultilabelGenerator(
-            feature_extraction, duration=self.duration,
+            feature_extraction, protocol, duration=self.duration,
             batch_size=self.batch_size, per_epoch=self.per_epoch,
             parallel=self.parallel, overlap=self.overlap,speech=self.speech, labels=self.labels_)
 

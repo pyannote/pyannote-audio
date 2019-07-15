@@ -167,41 +167,19 @@ Configuration file:
 
 from functools import partial
 from pathlib import Path
-import multiprocessing as mp
-from tqdm import tqdm
-import scipy.optimize
-from os.path import dirname, basename
-
-import numpy as np
 import torch
+import numpy as np
+import scipy.optimize
 from docopt import docopt
+import multiprocessing as mp
+from .base_labeling import BaseLabeling
 from pyannote.database import get_annotated
-from pyannote.database import get_protocol
-from pyannote.database import FileFinder
-from pyannote.database import get_unique_identifier
-
-from pyannote.core import Timeline
-from pyannote.core import SlidingWindowFeature
+from pyannote.metrics.detection import DetectionErrorRate
+from pyannote.audio.labeling.extraction import SequenceLabeling
+from pyannote.audio.pipeline import SpeakerActivityDetection \
+                             as SpeakerActivityDetectionPipeline
 from pyannote.core.utils.helper import get_class_by_name
 
-
-from .base import Application
-
-
-from pyannote.audio.features import Precomputed
-from pyannote.audio.labeling.extraction import SequenceLabeling
-from pyannote.audio.features.utils import get_audio_duration
-
-from pyannote.audio.pipeline.speech_activity_detection \
-    import SpeechActivityDetection as SpeechActivityDetectionPipeline
-
-from pyannote.audio.pipeline.speaker_activity \
-    import SpeakerActivityDetection as SpeakerActivityDetectionPipeline
-
-from pyannote.metrics.detection import DetectionErrorRate
-
-from pyannote.metrics.detection import DetectionRecall
-from pyannote.metrics.detection import DetectionPrecision
 
 
 def validate_helper_func(current_file, pipeline=None, precision=None, recall=None, label=None, metric=None):
@@ -217,11 +195,11 @@ def validate_helper_func(current_file, pipeline=None, precision=None, recall=Non
         return metric(reference, hypothesis, uem=uem)
 
 
-class Multilabel(Application):
+class Multilabel(BaseLabeling):
 
     def __init__(self, protocol_name, experiment_dir, db_yml=None, training=False, use_der=False):
-
-        super().__init__(experiment_dir, db_yml=db_yml, training=training)
+        super(BaseLabeling, self).__init__(
+            experiment_dir, db_yml=db_yml, training=training)
 
         self.use_der = use_der
 
@@ -230,23 +208,29 @@ class Multilabel(Application):
             self.config_['task']['name'],
             default_module_name='pyannote.audio.labeling.tasks')
 
-        self.task_ = Task(
-            protocol_name,
-            preprocessors=self.preprocessors_,
-            **self.config_['task'].get('params', {}))
-
-        n_features = int(self.feature_extraction_.dimension)
-        n_classes = self.task_.n_classes
-        task_type = self.task_.task_type
-
+        # Here we need preprocessors for initializing the task
+        # since we need to know the labels that must be predicted
+        # amongst {KCHI,CHI,FEM,MAL,SPEECH,OVERLAP}
+        self.task_ = Task(protocol_name=protocol_name,
+                          preprocessors=self.preprocessors_,
+                          **self.config_['task'].get('params', {}))
         # architecture
         Architecture = get_class_by_name(
             self.config_['architecture']['name'],
             default_module_name='pyannote.audio.labeling.models')
-        self.model_ = Architecture(
-            n_features, n_classes, task_type,
-            **self.config_['architecture'].get('params', {}))
 
+        params = self.config_['architecture'].get('params', {})
+        self.get_model_ = partial(Architecture, **params)
+
+        if hasattr(Architecture, 'get_frame_info'):
+            self.frame_info_ = Architecture.get_frame_info(**params)
+        else:
+            self.frame_info_ = None
+
+        if hasattr(Architecture, 'frame_crop'):
+            self.frame_crop_ = Architecture.frame_crop
+        else:
+            self.frame_crop_ = None
 
     @classmethod
     def from_train_dir(cls, protocol_name, train_dir, db_yml=None, training=False, use_der=False):
@@ -498,7 +482,7 @@ def main():
             epochs = int(epochs)
 
         application = Multilabel(protocol_name, experiment_dir, db_yml=db_yml,
-                                             training=True)
+                                 training=True)
         application.device = device
         application.train(protocol_name, subset=subset,
                           restart=restart, epochs=epochs)

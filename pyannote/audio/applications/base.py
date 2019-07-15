@@ -102,16 +102,24 @@ class Application(object):
         PREPROCESSORS_DEFAULT = {'audio': db_yml,
                                  'duration': get_audio_duration}
 
-        for key, value in self.config_.get('preprocessors',
-                                            PREPROCESSORS_DEFAULT).items():
+        merged_preprocessors = {**PREPROCESSORS_DEFAULT, **self.config_.get('preprocessors')}
+        for key, value in merged_preprocessors.items():
             if callable(value):
                 preprocessors[key] = value
+                continue
+            # If type dict, go get the class
+            elif isinstance(value, dict):
+                klass = get_class_by_name(
+                    value['name'],
+                    default_module_name='pyannote.pipeline')
+                preprocessors[key] = klass(**value.get('params', {}))
                 continue
 
             try:
                 preprocessors[key] = FileFinder(config_yml=value)
             except FileNotFoundError as e:
                 preprocessors[key] = value
+                
         self.preprocessors_ = preprocessors
 
         # scheduler
@@ -295,7 +303,6 @@ class Application(object):
 
         params_yml = validate_dir / 'params.yml'
         validate_dir.mkdir(parents=True, exist_ok=False)
-
         writer = tensorboardX.SummaryWriter(logdir=str(validate_dir))
 
         validation_data = self.validate_init(protocol_name, subset=subset,
@@ -452,3 +459,6 @@ class Application(object):
             # increment 'in_order' processing
             if next_epoch_to_validate_in_order == next_epoch_to_validate:
                 next_epoch_to_validate_in_order += step
+
+    def get_preprocessors(self):
+        return self.preprocessors_
