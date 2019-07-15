@@ -6,8 +6,8 @@ dependencies:
   - numpy
   - sox
   - pandas
-  - dlib
   - pip:
+    - dlib >= 19.16.0
     - cachetools >= 2.0.0
     - ipdb == 0.12
     - librosa >= 0.6.2
