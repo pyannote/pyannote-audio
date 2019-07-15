@@ -30,12 +30,17 @@
 import versioneer
 
 from setuptools import setup, find_packages
+import yaml
 
 with open('README.md') as f:
     long_description = f.read()
 
-with open('requirements.txt') as f:
-    requirements = f.read().splitlines()
+with open('environment.yml') as f:
+    deps = yaml.load(f.read())["dependencies"]["pip"]
+    for dep in deps:
+        if isinstance(dep, dict) and "pip" in dep:
+            requirements = dep["pip"]
+            break
 
 setup(
 

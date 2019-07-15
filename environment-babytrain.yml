@@ -1,11 +1,15 @@
-name: pyannote
+name: pyannote-babytrain
 channels:
+  - pykaldi
   - conda-forge
+  - coml
 dependencies:
   - python=3.6
   - numpy
   - sox
   - pandas
+  - pykaldi-cpu # needed by shennong
+  - shennong
   - dlib
   - pip:
     - cachetools >= 2.0.0
