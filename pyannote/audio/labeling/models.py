@@ -238,17 +238,21 @@ class ConvRNN(nn.Module):
 
     Parameters
     ----------
-    n_features : int
-        Input feature dimension.
-    n_classes : int
-        Set number of classes.
-    task_type : {TASK_CLASSIFICATION, TASK_MULTI_LABEL_CLASSIFICATION,
-            TASK_REGRESSION}
-        Depending on which task is adressed, the final activation will vary.
-        Classification relies on log-softmax, multi-label classificatition and
-        regression use sigmoid.
-    instance_normalize : boolean, optional
-        Apply mean/variance normalization on input sequences.
+    specifications : `dict`
+        Provides model IO specifications using the following data structure:
+            {'X': {'dimension': DIMENSION},
+             'y': {'classes': CLASSES},
+             'task': TASK_TYPE}
+        where
+            * DIMENSION is the input feature dimension
+            * CLASSES is the list of (human-readable) output classes
+            * TASK_TYPE is either TASK_MULTI_CLASS_CLASSIFICATION, TASK_REGRESSION, or
+                TASK_MULTI_LABEL_CLASSIFICATION. Depending on which task is
+                adressed, the final activation will vary. Classification relies
+                on log-softmax, multi-label classificatition and regression use
+                sigmoid.
+    norm : {'batch', 'instance}, optional
+        Apply instance or batch normalization after each convolutionnal layer.
     rnn : {'LSTM', 'GRU'}, optional
         Defaults to 'LSTM'.
     recurrent : list, optional
