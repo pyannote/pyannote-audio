@@ -59,6 +59,8 @@ Common options:
 "validation" mode: 
   --every=<epoch>            Validate model every <epoch> epochs [default:  1].
   --chronological            Force validation in chronological order.
+  --parallel=<n_jobs>        Process <n_jobs> files in parallel. Defaults to
+                             using all CPUs.
   <label>                    Label to predict (KCHI, CHI, FEM, MAL or speech).
                              If options overlap and speech have been activated during training, one
                              can also to validate on the classes (SPEECH, OVERLAP).
@@ -315,11 +317,10 @@ class Multilabel(BaseLabeling):
 
         # compute (and store) SAD scores
         duration = self.task_.duration
-        step = .25 * duration
 
         sequence_labeling = SequenceLabeling(
             model=model, feature_extraction=self.feature_extraction_,
-            duration=duration, step=step, batch_size=self.batch_size,
+            duration=duration, step=.25 * duration, batch_size=self.batch_size,
             device=self.device)
 
         for current_file in validation_data:
@@ -525,11 +526,19 @@ def main():
         # batch size
         batch_size = int(arguments['--batch'])
 
+        # number of processes
+        n_jobs = arguments['--parallel']
+        if n_jobs is None:
+            n_jobs = mp.cpu_count()
+        else:
+            n_jobs = int(n_jobs)
+
         application = Multilabel.from_train_dir(protocol_name, train_dir, db_yml=db_yml, training=False, use_der=use_der)
 
         application.device = device
         application.batch_size = batch_size
         application.label = label
+        application.n_jobs = n_jobs
         application.precision = precision
 
         application.validate(protocol_name, subset=subset,

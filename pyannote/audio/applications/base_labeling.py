@@ -94,8 +94,6 @@ class BaseLabeling(Application):
         model.eval()
 
         duration = self.task_.duration
-        if step is None:
-            step = 0.25 * duration
 
         # do not use memmap as this would lead to too many open files
         if isinstance(self.feature_extraction_, Precomputed):

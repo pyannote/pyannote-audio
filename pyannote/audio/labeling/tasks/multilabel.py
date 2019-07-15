@@ -36,19 +36,11 @@ MAL     (male speech)
 
 import torch
 import numpy as np
-import re
-import warnings
 from .base import LabelingTask
 from .base import LabelingTaskGenerator
 from .base import TASK_MULTI_LABEL_CLASSIFICATION
 from pyannote.database import get_protocol
-from pyannote.database import get_unique_identifier
-from pyannote.database import get_annotated
-from pyannote.core.utils.numpy import one_hot_encoding
 from pyannote.audio.features import Precomputed
-from pyannote.audio.features.utils import get_audio_duration
-from pyannote.core import Segment
-from pyannote.core import SlidingWindowFeature
 
 
 class MultilabelGenerator(LabelingTaskGenerator):
@@ -58,6 +50,16 @@ class MultilabelGenerator(LabelingTaskGenerator):
     ----------
     feature_extraction : `pyannote.audio.features.FeatureExtraction`
         Feature extraction
+    protocol : `pyannote.database.Protocol`
+    subset : {'train', 'development', 'test'}
+    frame_info : `pyannote.core.SlidingWindow`, optional
+        Override `feature_extraction.sliding_window`. This is useful for
+        models that include the feature extraction step (e.g. SincNet) and
+        therefore output a lower sample rate than that of the input.
+    frame_crop : {'center', 'loose', 'strict'}, optional
+        Which mode to use when cropping labels. This is useful for models
+        that include the feature extraction step (e.g. SincNet) and
+        therefore use a different cropping mode. Defaults to 'center'.
     duration : float, optional
         Duration of sub-sequences. Defaults to 3.2s.
     batch_size : int, optional
@@ -91,11 +93,17 @@ class MultilabelGenerator(LabelingTaskGenerator):
     """
 
     def __init__(self, feature_extraction, protocol, subset='train',
-                 overlap=False, speech=False, labels=None, **kwargs):
+                 frame_info=None, frame_crop=None, duration=3.2,
+                 batch_size=32, per_epoch=1, parallel=1,
+                 overlap=False, speech=False, labels=None, shuffle=True):
         self.overlap = overlap
         self.speech = speech
         self.labels_ = labels
-        super().__init__(feature_extraction, protocol, subset=subset)
+        super().__init__(feature_extraction, protocol, subset=subset,
+                         frame_info=frame_info, frame_crop=frame_crop,
+                         duration=duration,
+                         batch_size=batch_size, per_epoch=per_epoch,
+                         parallel=parallel, shuffle=shuffle)
 
     def postprocess_y(self, Y):
         # number of speakers for each frame
@@ -198,17 +206,17 @@ class Multilabel(LabelingTask):
     def get_batch_generator(self, feature_extraction, protocol, subset='train',
                             frame_info=None, frame_crop=None):
         return MultilabelGenerator(
-            feature_extraction, protocol, duration=self.duration,
-            batch_size=self.batch_size, per_epoch=self.per_epoch,
-            parallel=self.parallel, overlap=self.overlap,speech=self.speech, labels=self.labels_)
-
-    @property
-    def task_type(self):
-        return TASK_MULTI_LABEL_CLASSIFICATION
-
-    @property
-    def n_classes(self):
-        return len(self.labels_)
+            feature_extraction,
+            protocol, subset=subset,
+            frame_info=frame_info,
+            frame_crop=frame_crop,
+            duration=self.duration,
+            per_epoch=self.per_epoch,
+            batch_size=self.batch_size,
+            parallel=self.parallel,
+            overlap=self.overlap,
+            speech=self.speech,
+            labels=self.labels_)
 
     def _get_one_over_the_prior(self):
         nb_speakers = 4
@@ -242,7 +250,3 @@ class Multilabel(LabelingTask):
         if self.weighted_loss:
             return self._get_one_over_the_prior()
         return None
-
-    @property
-    def labels(self):
-        return list(self.labels_)
