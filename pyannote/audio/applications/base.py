@@ -102,7 +102,10 @@ class Application(object):
         PREPROCESSORS_DEFAULT = {'audio': db_yml,
                                  'duration': get_audio_duration}
 
-        merged_preprocessors = {**PREPROCESSORS_DEFAULT, **self.config_.get('preprocessors')}
+        merged_preprocessors = PREPROCESSORS_DEFAULT
+        if self.config_.get('preprocessors') is not None:
+            merged_preprocessors = {**PREPROCESSORS_DEFAULT, **self.config_.get('preprocessors')}
+
         for key, value in merged_preprocessors.items():
             if callable(value):
                 preprocessors[key] = value
