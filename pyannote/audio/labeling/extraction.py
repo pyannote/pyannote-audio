@@ -230,7 +230,8 @@ class SequenceLabeling(FileBasedBatchGenerator):
         if self.return_intermediate is None:
             fX = self.model(packed)
         else:
-            _, fX = self.model(packed, return_intermediate=return_intermediate)
+            _, fX = self.model(packed,
+                               return_intermediate=self.return_intermediate)
 
         fX = fX.detach().to('cpu').numpy()
 
