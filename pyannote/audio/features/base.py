@@ -27,6 +27,7 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 import warnings
+import inspect
 import numpy as np
 
 from .utils import RawAudio
@@ -110,6 +111,8 @@ class FeatureExtraction(object):
             Waveform.
         sample_rate : int
             Sample rate.
+        epoch: int
+            Current epoch
 
         Returns
         -------
@@ -161,7 +164,7 @@ class FeatureExtraction(object):
         """
         return 0.
 
-    def crop(self, current_file, segment, mode='center', fixed=None):
+    def crop(self, current_file, segment, mode='center', fixed=None, epoch=None):
         """Fast version of self(current_file).crop(segment, mode='center',
 +                                                  fixed=segment.duration)
 
@@ -199,9 +202,12 @@ class FeatureExtraction(object):
 
         # obtain (augmented) waveform on this extended segment
         y = self.raw_audio_.crop(current_file, xsegment, mode='center',
-                                 fixed=xsegment.duration)
+                                 fixed=xsegment.duration, epoch=epoch)
 
-        features = self.get_features(y, self.sample_rate)
+        if "epoch" in inspect.signature(self.get_features).parameters:
+            features = self.get_features(y, self.sample_rate, epoch)
+        else:
+            features = self.get_features(y, self.sample_rate)
 
         # get rid of additional context before returning
         frames = self.sliding_window

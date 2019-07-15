@@ -70,3 +70,4 @@ experiments
 *.pt
 *events.out.tfevents*
 *.csv
+.DS_Store

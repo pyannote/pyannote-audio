@@ -60,6 +60,8 @@ Common options:
   --every=<epoch>            Validate model every <epoch> epochs [default:  1].
   --chronological            Force validation in chronological order.
   <label>                    Label to predict (KCHI, CHI, FEM, MAL or speech).
+                             If options overlap and speech have been activated during training, one
+                             can also to validate on the classes (SPEECH, OVERLAP).
   <train_dir>                Path to the directory containing pre-trained
                              models (i.e. the output of "train" mode).
   --precision=<precision>    Target detection precision [default:  0.8].
@@ -221,7 +223,7 @@ class Multilabel(Application):
 
         super().__init__(experiment_dir, db_yml=db_yml, training=training)
 
-        def collapse(item): 
+        def collapse(item):
             dict_map = {
                 "BRO": "CHI",
                 "C1": "CHI",
@@ -890,10 +892,10 @@ class Multilabel(Application):
                 "!MOT_nohlan": "FEM",
                 "!MOT_sacha": "FEM",
                 "!MOT_TWX": "FEM",
-                "OCH": "SIL",
-                "OTH": "SIL",
+                "OCH": "SPEECH",
+                "OTH": "SPEECH",
                 "SIS":  "CHI",
-                "UA1": "SIL",
+                "UA1": "SPEECH",
                 "UC1": "CHI",
                 "!UC1_0643": "CHI",
                 "!UC1_2625": "CHI",
@@ -913,9 +915,9 @@ class Multilabel(Application):
                 "UC5": "CHI",
                 "!UC5_8179": "CHI",
                 "UC6": "CHI",
-                "UU": "SIL",
-                "!UU1_2625": "SIL",
-                "!UU1_6216": "SIL",
+                "UU": "SPEECH",
+                "!UU1_2625": "SPEECH",
+                "!UU1_6216": "SPEECH",
                 "FEE005": "FEM",
                 "FEE013": "FEM",
                 "FEE016": "FEM",
@@ -1152,8 +1154,62 @@ class Multilabel(Application):
                 "P53": "FEM",
                 "P54": "MAL",
                 "P55": "MAL",
-                "P56": "FEM"
+                "P56": "FEM",
+                "01": "FEM",
+                "02": "MAL",
+                "03": "MAL",
+                "04": "MAL",
+                "09": "MAL",
+                "10": "FEM",
+                "12": "MAL",
+                "13": "FEM",
+                "14": "MAL",
+                "15": "MAL",
+                "16": "MAL",
+                "17": "FEM",
+                "18": "MAL",
+                "19": "MAL",
+                "20": "MAL",
+                "21": "FEM",
+                "22": "MAL",
+                "24": "FEM",
+                "25": "MAL",
+                "26": "MAL",
+                "27": "MAL",
+                "28": "MAL",
+                "29": "MAL",
+                "30": "MAL",
+                "31": "MAL",
+                "32": "MAL",
+                "33": "FEM",
+                "34": "MAL",
+                "35": "MAL",
+                "36": "FEM",
+                "37": "MAL",
+                "38": "FEM",
+                "39": "MAL",
+                "40": "MAL",
+                "41": "FEM",
+                "42": "FEM",
+                "43": "FEM",
+                "44": "MAL",
+                "45": "FEM",
+                "46": "FEM",
+                "47": "FEM",
+                "48": "MAL",
+                "49": "FEM",
+                "50": "FEM",
+                "51": "MAL"
             }
+
+            # If model must predict "SPEECH", then all the speakers who are not
+            # classified as being [KCHI,CHI,FEM,MAL] are classified as being "SPEECH".
+            # If not, these classes are classified as being "SIL".
+            if not ("speech" in self.config_['task'].get('params', {}).keys() and
+                    self.config_['task'].get('params', {})["speech"]):
+                for key, value in dict_map.items():
+                    if value == "SPEECH":
+                        dict_map[key] = "SIL"
 
             for segment, track, label in item["annotation"].itertracks(yield_label=True):
                 if label in dict_map.keys():
@@ -1161,6 +1217,7 @@ class Multilabel(Application):
                 else:
                     raise ValueError("No mapping found for %s" % label)
 
+            # Extract all but SIL class
             item["annotation"] = item["annotation"].subset(["SIL"], invert=True)
             return item["annotation"]
 
@@ -1192,6 +1249,7 @@ class Multilabel(Application):
             n_features, n_classes, task_type,
             **self.config_['architecture'].get('params', {}))
 
+
     @classmethod
     def from_train_dir(cls, protocol_name, train_dir, db_yml=None, training=False, use_der=False):
         experiment_dir = dirname(dirname(train_dir))
@@ -1216,10 +1274,6 @@ class Multilabel(Application):
 
         self.pool_ = mp.Pool(mp.cpu_count())
 
-        # if features are already available on disk, return
-        if isinstance(self.feature_extraction_, Precomputed): 
-            return list(files)
-
         # pre-compute features for each validation files
         validation_data = []
         for current_file in tqdm(files, desc='Feature extraction'): 
@@ -1229,15 +1283,23 @@ class Multilabel(Application):
                 current_file['features'] = self.feature_extraction_(
                     current_file)
 
-            # Extract subset relevant to the speaker whose speech performances need to be evaluated
-            if self.label in ["CHI", "FEM", "KCHI", "MAL"]:
+            if self.label == "SPEECH":
+                # all the speakers
+                current_file[self.label] = current_file['annotation']
+            elif self.label in ["CHI", "FEM", "KCHI", "MAL"]:
                 reference = current_file['annotation']
                 label_speech = reference.subset([self.label])
                 current_file[self.label] = label_speech
-
-            if self.label == "speech": 
-                current_file[self.label] = current_file['annotation'] # all the speakers
-
+            elif self.label == "OVERLAP":
+                # build overlap reference
+                uri = current_file['uri']
+                overlap = Timeline(uri=uri)
+                turns = current_file['annotation']
+                for track1, track2 in turns.co_iter(turns):
+                    if track1 == track2:
+                        continue
+                    overlap.add(track1[0] & track2[0])
+                current_file["OVERLAP"] = overlap.support().to_annotation()
             validation_data.append(current_file)
         return validation_data
 
@@ -1250,7 +1312,7 @@ class Multilabel(Application):
     def validate_epoch_class(self, epoch, protocol_name, subset='development',
                               validation_data=None): 
         """
-        Validate function given a class which must belongs to ["CHI", "FEM", "KCHI", "MAL", "speech"]
+        Validate function given a class which must belongs to ["CHI", "FEM", "KCHI", "MAL", "SPEECH", "OVERLAP"]
         """
         # Name of the class that needs to be validated
         class_name = self.label
@@ -1268,9 +1330,9 @@ class Multilabel(Application):
             duration=duration, step=step, batch_size=self.batch_size,
             device=self.device)
 
-        for current_file in validation_data: 
+        for current_file in validation_data:
             scores = sequence_labeling(current_file)
-            if class_name == "speech": 
+            if class_name == "SPEECH" and "SPEECH" not in self.task_.labels:
                 # We sum up all the scores of every speakers
                 scores_data = np.sum(scores.data, axis=1).reshape(-1, 1)
             else: 
@@ -1421,7 +1483,6 @@ def main():
     use_der = arguments['--use_der']
 
     if arguments['train']:
-
         experiment_dir = Path(arguments['<experiment_dir>'])
         experiment_dir = experiment_dir.expanduser().resolve(strict=True)
 

@@ -1,0 +1,16 @@
+feature_extraction:
+    name: ShennongSpectrogram
+    params:
+        duration: 0.025
+        step: 0.01
+        dither: 1.0
+        preemph_coeff: 0.97
+        remove_dc_offset: True
+        window_type: 'povey'
+        round_to_power_of_two: True            
+        blackman_coeff: 0.97
+        energy_floor: 0.0
+        raw_energy: True
+        with_pitch: True
+        pitchFmin: 20
+        pitchFmax: 500

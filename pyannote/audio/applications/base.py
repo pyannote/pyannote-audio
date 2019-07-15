@@ -143,7 +143,7 @@ class Application(object):
             warnings.warn(e.args[0])
 
         # data augmentation (only when training the model)
-        if training and 'data_augmentation' in self.config_ :
+        if training and 'data_augmentation' in self.config_:
             DataAugmentation = get_class_by_name(
                 self.config_['data_augmentation']['name'],
                 default_module_name='pyannote.audio.augmentation')
@@ -155,6 +155,10 @@ class Application(object):
         # feature extraction
         extraction_name = None
         if 'feature_extraction' in self.config_:
+            # Disable spec augment when not training
+            if not training and "spec_augment" in self.config_['feature_extraction'].get('params'):
+                self.config_['feature_extraction']["params"]["spec_augment"] = False
+
             FeatureExtraction = get_class_by_name(
                 self.config_['feature_extraction']['name'],
                 default_module_name='pyannote.audio.features')

@@ -34,8 +34,10 @@ import librosa
 import numpy as np
 
 from .base import FeatureExtraction
+from .spec_augmentor import SpecAugmentor
 from pyannote.core.segment import SlidingWindow
-
+import matplotlib.pyplot as plt
+import librosa.display as display
 
 class LibrosaFeatureExtraction(FeatureExtraction):
     """librosa feature extraction base class
@@ -135,19 +137,28 @@ class LibrosaMelSpectrogram(LibrosaFeatureExtraction):
     """
 
     def __init__(self, sample_rate=16000, augmentation=None,
-                 duration=0.025, step=0.010, n_mels=96):
+                 duration=0.025, step=0.010, n_mels=96, spec_augment=False,
+                 frequency_masking_para=27,time_masking_para=100,
+                 nb_frequency_masks=1, nb_time_masks=1, scheduler=None, max_epoch=None, norm=True):
 
         super().__init__(sample_rate=sample_rate, augmentation=augmentation,
                          duration=duration, step=step)
-
         self.n_mels = n_mels
         self.n_fft_ = int(self.duration * self.sample_rate)
         self.hop_length_ = int(self.step * self.sample_rate)
+        self.spec_augment = spec_augment
+        self.frequency_masking_para = frequency_masking_para
+        self.time_masking_para = time_masking_para
+        self.nb_frequency_masks = nb_frequency_masks
+        self.nb_time_masks = nb_time_masks
+        self.scheduler = scheduler
+        self.max_epoch = max_epoch
+        self.norm = norm
 
     def get_dimension(self):
         return self.n_mels
 
-    def get_features(self, y, sample_rate):
+    def get_features(self, y, sample_rate, epoch=None):
         """Feature extraction
 
         Parameters
@@ -156,19 +167,35 @@ class LibrosaMelSpectrogram(LibrosaFeatureExtraction):
             Waveform
         sample_rate : int
             Sample rate
+        epoch :
+            Current epoch
 
         Returns
         -------
         data : (n_frames, n_mels) numpy array
             Features
         """
-
-        X = librosa.feature.melspectrogram(
+        mel_spec = librosa.feature.melspectrogram(
             y.squeeze(), sr=sample_rate, n_mels=self.n_mels,
-            n_fft=self.n_fft_, hop_length=self.hop_length_,
-            power=2.0)
+            n_fft=self.n_fft_, hop_length=self.hop_length_, power=2)
 
-        return librosa.amplitude_to_db(X, ref=1.0, amin=1e-5, top_db=80.0).T
+        mel_spec = librosa.power_to_db(mel_spec, ref=np.max)
+
+        if self.norm:
+            mel_spec = (mel_spec - np.mean(mel_spec)) / np.var(mel_spec)
+
+        if self.spec_augment:
+            spec_augmentor = SpecAugmentor()
+            mel_spec = spec_augmentor(features=mel_spec,
+                                      frequency_masking_para=self.frequency_masking_para,
+                                      time_masking_para=self.time_masking_para,
+                                      nb_frequency_masks=self.nb_frequency_masks,
+                                      nb_time_masks=self.nb_time_masks,
+                                      scheduler=self.scheduler,
+                                      epoch=epoch,
+                                      max_epoch=self.max_epoch)
+
+        return mel_spec.T
 
 
 class LibrosaMFCC(LibrosaFeatureExtraction):

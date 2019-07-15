@@ -31,6 +31,7 @@
 """
 
 from .speech_activity_detection import SpeechActivityDetection
+from .speaker_activity import SpeakerActivityDetection
 from .overlap_detection import OverlapDetection
 from .speech_turn_segmentation import SpeechTurnSegmentation
 from .speaker_diarization import SpeakerDiarization

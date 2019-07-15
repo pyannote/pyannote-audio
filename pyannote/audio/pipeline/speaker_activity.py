@@ -88,7 +88,6 @@ class SpeakerActivityDetection(Pipeline):
 
     def initialize(self):
         """Initialize pipeline with current set of parameters"""
-
         self._binarize = Binarize(
             onset=self.onset,
             offset=self.offset,
@@ -127,10 +126,14 @@ class SpeakerActivityDetection(Pipeline):
 
         data = np.exp(speaker_scores.data) if self.log_scale_ \
                else speaker_scores.data
-
         # speaker speech vs (non-speech + other speakers speech)
         if data.shape[1] > 1:
-            speaker_activity_prob = SlidingWindowFeature(1. - data[:, 0], speaker_scores.sliding_window)
+            if "SPEECH" not in self._precomputed.labels and self.label == "SPEECH":
+                speech_data = np.sum(data,axis=1)
+                speaker_activity_prob = SlidingWindowFeature(speech_data, speaker_scores.sliding_window)
+            else:
+                idx = self._precomputed.labels.index(self.label)
+                speaker_activity_prob = SlidingWindowFeature(data[:, idx], speaker_scores.sliding_window)
         else:
             speaker_activity_prob = SlidingWindowFeature(data, speaker_scores.sliding_window)
 
@@ -138,7 +141,7 @@ class SpeakerActivityDetection(Pipeline):
         speaker_activity.uri = get_unique_identifier(current_file)
         return speaker_activity.to_annotation(generator='string', modality=self.label)
 
-    def loss(self, current_file: dict) -> float:
+    def loss(self, current_file: dict, hypothesis=None) -> float:
         """Compute (1 - recall) at target precision
 
         If precision < target, return 1 + (1 - precision)
@@ -155,8 +158,13 @@ class SpeakerActivityDetection(Pipeline):
         error : `float`
             1. - segment coverage.
         """
-        reference = current_file[self.label]
-        hypothesis = current_file[self.label + '_scores']
+        if self.label in ["CHI", "FEM", "KCHI", "MAL"]:
+            reference = current_file["annotation"].subset([self.label])
+        elif self.label == "SPEECH":
+            reference = current_file["annotation"]
+        else:
+            raise ValueError("The label you want to optimize (%s) does "
+                             "not belong to [KCHI,CHI,MAL,FEM,SPEECH]" % self.label)
         uem = get_annotated(current_file)
 
         if not self.use_der:
@@ -171,4 +179,6 @@ class SpeakerActivityDetection(Pipeline):
             else:
                 return 1. + (1. - p)
         else:
-            return DetectionErrorRate(reference, hypothesis, collar=0.0, skip_overlap=False, uem=uem)
+            metric = DetectionErrorRate(collar=0.0, skip_overlap=False)
+            deter = metric(reference, hypothesis, uem=uem)
+            return deter
