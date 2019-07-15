@@ -27,7 +27,7 @@
 # Marvin Lavechin - marvinlavechin@gmail.com
 
 """
-Multi-class classifier BabyTrain
+Multi-label classifier BabyTrain
 
 Usage: 
   pyannote-multilabel train [options] <experiment_dir> <database.task.protocol>
@@ -65,7 +65,8 @@ Common options:
   <train_dir>                Path to the directory containing pre-trained
                              models (i.e. the output of "train" mode).
   --precision=<precision>    Target detection precision [default:  0.8].
-  --use_der                  Indicates if the DER should be used for validating the model.
+  --use_der                  Indicates if the Detection Error Rate should be used for validating the mode.
+                             Default mode uses precision/recall.
 
 "apply" mode: 
   <model.pt>                 Path to the pretrained model.
@@ -165,6 +166,8 @@ Configuration file:
     >>> homogeneous_segments = peak_detection.apply(raw_scores, dimension=1)
 """
 
+from os.path import dirname, basename
+from tqdm import tqdm
 from functools import partial
 from pathlib import Path
 import torch
@@ -173,18 +176,26 @@ import scipy.optimize
 from docopt import docopt
 import multiprocessing as mp
 from .base_labeling import BaseLabeling
-from pyannote.database import get_annotated
-from pyannote.metrics.detection import DetectionErrorRate
+
+from pyannote.database import get_annotated, get_protocol, FileFinder
+
+from pyannote.metrics.detection import DetectionErrorRate, DetectionRecall, DetectionPrecision
+
 from pyannote.audio.labeling.extraction import SequenceLabeling
+
 from pyannote.audio.pipeline import SpeakerActivityDetection \
                              as SpeakerActivityDetectionPipeline
-from pyannote.core.utils.helper import get_class_by_name
 
+from pyannote.audio.features import Precomputed
+
+from pyannote.core.utils.helper import get_class_by_name
+from pyannote.core import Timeline, SlidingWindowFeature
 
 
 def validate_helper_func(current_file, pipeline=None, precision=None, recall=None, label=None, metric=None):
     reference = current_file[label]
-    hypothesis = pipeline(current_file) # pipeline has been initialized with label, so that it can know which class needs to be assessed
+    # pipeline has been initialized with label, so that it can know which class needs to be assessed
+    hypothesis = pipeline(current_file)
     uem = get_annotated(current_file)
 
     if precision is not None:
@@ -291,8 +302,7 @@ class Multilabel(BaseLabeling):
         return func(epoch, protocol_name, subset=subset,
                     validation_data=validation_data)
 
-    def validate_epoch_class(self, epoch, protocol_name, subset='development',
-                              validation_data=None): 
+    def validate_epoch_class(self, epoch, validation_data=None):
         """
         Validate function given a class which must belongs to ["CHI", "FEM", "KCHI", "MAL", "SPEECH", "OVERLAP"]
         """
@@ -372,11 +382,11 @@ class Multilabel(BaseLabeling):
                     'minimize':  False,
                     'value':  best_recall,
                     'pipeline':  pipeline.instantiate({'onset':  best_alpha,
-                                                      'offset':  best_alpha,
-                                                      'min_duration_on':  0.,
-                                                      'min_duration_off':  0.,
-                                                      'pad_onset':  0.,
-                                                      'pad_offset':  0.})}
+                                                       'offset':  best_alpha,
+                                                       'min_duration_on':  0.,
+                                                       'min_duration_off':  0.,
+                                                       'pad_onset':  0.,
+                                                       'pad_offset':  0.})}
         else:
             def fun(threshold):
                 pipeline.instantiate({'onset': threshold,
@@ -550,3 +560,4 @@ def main():
         application.device = device
         application.batch_size = batch_size
         application.apply(protocol_name, output_dir, step=step, subset=subset)
+

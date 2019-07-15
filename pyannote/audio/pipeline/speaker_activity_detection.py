@@ -55,6 +55,8 @@ class SpeakerActivityDetection(Pipeline):
         Path to precomputed scores on disk.
     precision : `float`, optional
         Target detection precision. Defaults to 0.8.
+    use_der: 'bool', optional
+        Indicates if detection error rate must be use. Default to False
 
     Hyper-parameters
     ----------------
@@ -66,10 +68,10 @@ class SpeakerActivityDetection(Pipeline):
         Padding duration.
     """
 
-    def __init__(self,  label,
-                        scores: Optional[Path] = None,
-                        precision: Optional[Path] = 0.8,
-                        use_der=False):
+    def __init__(self, label,
+                 scores: Optional[Path] = None,
+                 precision: float = 0.8,
+                 use_der: bool = False):
         super().__init__()
         self.label = label
         self.scores = scores
@@ -129,7 +131,7 @@ class SpeakerActivityDetection(Pipeline):
         # speaker speech vs (non-speech + other speakers speech)
         if data.shape[1] > 1:
             if "SPEECH" not in self._precomputed.labels and self.label == "SPEECH":
-                speech_data = np.sum(data,axis=1)
+                speech_data = np.sum(data, axis=1)
                 speaker_activity_prob = SlidingWindowFeature(speech_data, speaker_scores.sliding_window)
             else:
                 idx = self._precomputed.labels.index(self.label)
