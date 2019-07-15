@@ -39,7 +39,6 @@ from pyannote.core import SlidingWindowFeature
 from pyannote.audio.signal import Binarize
 from pyannote.audio.features import Precomputed
 
-from pyannote.database import get_unique_identifier
 from pyannote.metrics.detection import DetectionPrecision
 from pyannote.metrics.detection import DetectionRecall
 
@@ -132,7 +131,7 @@ class OverlapDetection(Pipeline):
 
         overlap = self._binarize.apply(overlap_prob)
 
-        overlap.uri = get_unique_identifier(current_file)
+        overlap.uri = current_file['uri']
         return overlap.to_annotation(generator='string', modality='overlap')
 
     def loss(self, current_file: dict, hypothesis: Annotation) -> float:

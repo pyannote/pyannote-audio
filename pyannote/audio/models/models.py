@@ -375,7 +375,7 @@ class PyanNet(nn.Module):
             self.activation_ = nn.LogSoftmax(dim=-1)
 
         elif self.task_ == TASK_MULTI_LABEL_CLASSIFICATION:
-            self.activation_ = nn.LogSigmoid()
+            self.activation_ = nn.Sigmoid()
 
         elif self.task_ == TASK_REGRESSION:
             self.activation_ = lambda x: x

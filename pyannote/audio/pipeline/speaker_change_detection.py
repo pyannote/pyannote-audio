@@ -121,7 +121,7 @@ class SpeakerChangeDetection(Pipeline):
 
         # peak detection
         change = self._peak.apply(change_prob)
-        change.uri = get_unique_identifier(current_file)
+        change.uri = current_file['uri']
 
         return change.to_annotation(generator='string', modality='audio')
 

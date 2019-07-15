@@ -39,7 +39,6 @@ from pyannote.core import SlidingWindowFeature
 from pyannote.audio.signal import Binarize
 from pyannote.audio.features import Precomputed
 
-from pyannote.database import get_unique_identifier
 from pyannote.metrics.detection import DetectionErrorRate
 
 
@@ -138,7 +137,7 @@ class SpeechActivityDetection(Pipeline):
 
         speech = self._binarize.apply(speech_prob)
 
-        speech.uri = get_unique_identifier(current_file)
+        speech.uri = current_file['uri']
         return speech.to_annotation(generator='string', modality='speech')
 
     def get_metric(self) -> DetectionErrorRate:

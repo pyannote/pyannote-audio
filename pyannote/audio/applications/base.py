@@ -153,7 +153,6 @@ class Application(object):
             augmentation = None
 
         # feature extraction
-        extraction_name = None
         if 'feature_extraction' in self.config_:
             # Disable spec augment when not training
             if not training and "spec_augment" in self.config_['feature_extraction'].get('params'):
@@ -297,7 +296,7 @@ class Application(object):
         params_yml = validate_dir / 'params.yml'
         validate_dir.mkdir(parents=True, exist_ok=False)
 
-        writer = tensorboardX.SummaryWriter(log_dir=str(validate_dir))
+        writer = tensorboardX.SummaryWriter(logdir=str(validate_dir))
 
         validation_data = self.validate_init(protocol_name, subset=subset,
                                              **kwargs)
@@ -442,6 +441,10 @@ class Application(object):
 
                 # yield next epoch to process
                 yield next_epoch_to_validate
+
+                # stop validation when the last epoch has been reached
+                if next_epoch_to_validate >= end:
+                    return
 
                 # remember which epoch was processed
                 validated_epochs.add(next_epoch_to_validate)

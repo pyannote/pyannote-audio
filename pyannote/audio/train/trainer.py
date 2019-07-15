@@ -162,7 +162,7 @@ class Trainer:
 
     def fit(self, model, batch_generator, restart=0, epochs=1000,
             get_optimizer=None, get_scheduler=None, learning_rate='auto',
-            log_dir=None, device=None):
+            log_dir=None, quiet=False, device=None):
         """Train model
 
         Parameters
@@ -187,6 +187,8 @@ class Trainer:
         log_dir : str, optional
             Directory where models and other log files are stored.
             Defaults to not store anything.
+        quiet : `boolean`, optional
+            Do not show progress on stdout. Defaults to False.
         device : torch.device, optional
             Defaults to torch.device('cpu')
 
@@ -200,7 +202,8 @@ class Trainer:
             model, batch_generator,
             restart=restart, epochs=epochs,
             get_optimizer=get_optimizer, get_scheduler=get_scheduler,
-            learning_rate=learning_rate, log_dir=log_dir, device=device)
+            learning_rate=learning_rate, log_dir=log_dir, quiet=quiet,
+            device=device)
 
         for _ in iterations:
             pass
@@ -210,7 +213,7 @@ class Trainer:
     def fit_iter(self, get_model, batch_generator,
                  restart=0, epochs=1000,
                  get_optimizer=None, get_scheduler=None, learning_rate='auto',
-                 log_dir=None, device=None):
+                 log_dir=None, quiet=False, device=None):
         """Train model
 
         Parameters
@@ -236,6 +239,8 @@ class Trainer:
         log_dir : str, optional
             Directory where models and other log files are stored.
             Defaults to not store anything.
+        quiet : `boolean`, optional
+            Do not show progress on stdout. Defaults to False.
         device : torch.device, optional
             Defaults to torch.device('cpu')
 
@@ -250,7 +255,7 @@ class Trainer:
             self.log_dir_ = tempfile.mkdtemp()
         else:
             self.log_dir_ = log_dir
-        self.tensorboard_ = SummaryWriter(log_dir=self.log_dir_)
+        self.tensorboard_ = SummaryWriter(logdir=self.log_dir_)
 
         # BATCH GENERATOR
         self.batch_generator_ = batch_generator
@@ -289,11 +294,15 @@ class Trainer:
         if get_scheduler is None:
             get_scheduler = ConstantScheduler
 
-        callbacks = Callbacks([
+        callbacks = [
             Checkpoint(),        # checkpoint has to go first
             get_scheduler(),
-            Logging(epochs),
-        ])
+        ]
+
+        if not quiet:
+            callbacks.append(Logging(epochs))
+
+        callbacks = Callbacks(callbacks)
 
         if restart:
             # warm restart

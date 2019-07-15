@@ -193,8 +193,7 @@ class Precomputed(object):
 
         return SlidingWindowFeature(data, self.sliding_window_)
 
-    def crop(self, current_file, segment, mode='center', fixed=None,
-             return_data=True):
+    def crop(self, current_file, segment, mode='center', fixed=None):
         """Fast version of self(current_file).crop(segment, **kwargs)
 
         Parameters
@@ -220,8 +219,7 @@ class Precomputed(object):
 
         memmap = open_memmap(self.get_path(current_file), mode='r')
         swf = SlidingWindowFeature(memmap, self.sliding_window_)
-        result = swf.crop(segment, mode=mode, fixed=fixed,
-                          return_data=return_data)
+        result = swf.crop(segment, mode=mode, fixed=fixed)
         del memmap
         return result
 

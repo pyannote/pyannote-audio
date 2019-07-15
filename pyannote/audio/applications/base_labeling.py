@@ -32,6 +32,7 @@ from .base import Application
 from pyannote.database import FileFinder
 from pyannote.database import get_protocol
 from pyannote.audio.features import Precomputed
+from pyannote.audio.features import RawAudio
 from pyannote.audio.labeling.extraction import SequenceLabeling
 from pyannote.core.utils.helper import get_class_by_name
 from functools import partial
@@ -75,9 +76,9 @@ class BaseLabeling(Application):
                                 preprocessors=self.preprocessors_)
         files = getattr(protocol, subset)()
 
-        self.pool_ = mp.Pool(mp.cpu_count())
+        self.pool_ = mp.Pool(self.n_jobs)
 
-        if isinstance(self.feature_extraction_, Precomputed):
+        if isinstance(self.feature_extraction_, (Precomputed, RawAudio)):
             return list(files)
 
         validation_data = []

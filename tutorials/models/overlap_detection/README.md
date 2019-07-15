@@ -1,6 +1,6 @@
 > The MIT License (MIT)
 >
-> Copyright (c) 2017-2019 CNRS
+> Copyright (c) 2019 CNRS
 >
 > Permission is hereby granted, free of charge, to any person obtaining a copy
 > of this software and associated documentation files (the "Software"), to deal
@@ -20,13 +20,12 @@
 > OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 > SOFTWARE.
 >
-> AUTHORS
-> Ruiqing Yin
+> AUTHOR
 > Hervé Bredin - http://herve.niderb.fr
 
-# Speaker change detection with `pyannote.audio`
+# Overlapped speech detection with `pyannote.audio`
 
-In this tutorial, you will learn how to train, validate, and apply a speaker change detector based on MFCCs and LSTMs, using `pyannote-change-detection` command line tool.
+In this tutorial, you will learn how to train, validate, and apply an overlapped speech detector based on MFCCs and LSTMs, using `pyannote-overlap-detection` command line tool.
 
 ## Table of contents
 - [Citation](#citation)
@@ -40,7 +39,7 @@ In this tutorial, you will learn how to train, validate, and apply a speaker cha
 ## Citation
 ([↑up to table of contents](#table-of-contents))
 
-If you use `pyannote-audio` for speaker change detection, please cite the following paper:
+If you use `pyannote-audio` for overlap speech detection, please cite the following paper as it relies on the same underlying approach. Hopefully a better citation will be available soon.
 
 ```bibtex
 @inproceedings{Yin2017,
@@ -74,23 +73,23 @@ Databases:
 
 Have a look at `pyannote.database` [documentation](http://github.com/pyannote/pyannote-database) to learn how to use other datasets.
 
+
 ## Configuration
 ([↑up to table of contents](#table-of-contents))
 
-To ensure reproducibility, `pyannote-change-detection` relies on a configuration file defining the experimental setup:
+To ensure reproducibility, `pyannote-overlap-detection` relies on a configuration file defining the experimental setup:
 
 ```bash
-$ cat tutorials/models/speaker_change_detection/config.yml
+$ cat tutorials/models/overlap_detection/config.yml
 ```
 ```yaml
 task:
-   name: SpeakerChangeDetection
+   name: OverlapDetection
    params:
       duration: 2.0      # sequences are 2s long
-      collar: 0.100      # upsampling collar = 100ms
-      non_speech: False  # do not try to detect non-speech/speaker changes
       batch_size: 64     # 64 sequences per batch
       per_epoch: 1       # one epoch = 1 day of audio
+      parallel: 1        # pre-fetch training data in 1 parallel generator
 
 data_augmentation:
    name: AddNoise                                   # add noise on-the-fly
@@ -134,8 +133,8 @@ scheduler:
 The following command will train the network using the training set of AMI database for 1000 epochs:
 
 ```bash
-$ export EXPERIMENT_DIR=tutorials/models/speaker_change_detection
-$ pyannote-change-detection train --gpu --to=1000 ${EXPERIMENT_DIR} AMI.SpeakerDiarization.MixHeadset
+$ export EXPERIMENT_DIR=tutorials/models/overlap_detection
+$ pyannote-overlap-detection train --gpu --to=1000 ${EXPERIMENT_DIR} AMI.SpeakerDiarization.MixHeadset
 ```
 
 This will create a bunch of files in `TRAIN_DIR` (defined below).
@@ -144,95 +143,88 @@ One can follow along the training process using [tensorboard](https://github.com
 $ tensorboard --logdir=${EXPERIMENT_DIR}
 ```
 
-![tensorboard screenshot](tb_train.png)
-
-
 ## Validation
 ([↑up to table of contents](#table-of-contents))
 
 To get a quick idea of how the network is doing during training, one can use the `validate` mode.
 It can (should!) be run in parallel to training and evaluates the model epoch after epoch.
-One can use [tensorboard](https://github.com/tensorflow/tensorboard) to follow the validation process.
 
 ```bash
 $ export TRAIN_DIR=${EXPERIMENT_DIR}/train/AMI.SpeakerDiarization.MixHeadset.train
-$ pyannote-change-detection validate --purity=0.8 ${TRAIN_DIR} AMI.SpeakerDiarization.MixHeadset
+$ pyannote-overlap-detection validate ${TRAIN_DIR} AMI.SpeakerDiarization.MixHeadset
 ```
 
-In practice, it is tuning a simple speaker change detection pipeline (pyannote.audio.pipeline.speaker_change_detection.SpeakerChangeDetection) after each epoch and stores the best hyper-parameter configuration on disk:
+In practice, it is tuning a simple overlap speech detection pipeline (pyannote.audio.pipeline.overlap_detection.OverlapDetection) after each epoch 
+and stores the best hyper-parameter configuration on disk:
 
 ```bash
 $ cat ${TRAIN_DIR}/validate/AMI.SpeakerDiarization.MixHeadset/params.yml
 ```
 ```yaml
-epoch: 870
+epoch: 960
 params:
-  alpha: 0.17578125
-  min_duration: 0.0
+  min_duration_off: 0.0
+  min_duration_on: 0.0
+  offset: 0.6728515625
+  onset: 0.6728515625
+  pad_offset: 0.0
+  pad_onset: 0.0
 ```
 
 One can also use [tensorboard](https://github.com/tensorflow/tensorboard) to follow the validation process.
 
 ![tensorboard screenshot](tb_validate.png)
 
-
 ## Application
 ([↑up to table of contents](#table-of-contents))
 
-Now that we know how the model is doing, we can apply it on all files of the AMI database and store raw change scores in `/path/to/precomputed/scd`:
+Now that we know how the model is doing, we can apply it on all files of the AMI database and store raw overlap scores in `/path/to/precomputed/ovl`:
 
 ```bash
-$ pyannote-change-detection apply ${TRAIN_DIR}/weights/0870.pt AMI.SpeakerDiarization.MixHeadset /path/to/precomputed/scd
+$ pyannote-overlap-detection apply ${TRAIN_DIR}/weights/0960.pt AMI.SpeakerDiarization.MixHeadset /path/to/precomputed/ovl
 ```
 
-We can then use these raw scores to perform actual speaker change detection, and [`pyannote.metrics`](http://pyannote.github.io/pyannote-metrics/) to evaluate the result:
-
+We can then use these raw scores to perform overlap speech detection:
 
 ```python
-# AMI protocol
+# get first test file of AMI protocol
 >>> from pyannote.database import get_protocol
 >>> protocol = get_protocol('AMI.SpeakerDiarization.MixHeadset')
+>>> test_file = next(protocol.test())
 
-# precomputed scores
+# load precomputed overlap scores as pyannote.core.SlidingWindowFeature
 >>> from pyannote.audio.features import Precomputed
->>> precomputed = Precomputed('/path/to/precomputed/scd')
+>>> precomputed = Precomputed('/path/to/precomputed/ovl')
+>>> ovl_scores = precomputed(test_file)
 
-# peak detection
->>> from pyannote.audio.signal import Peak
-# alpha / min_duration are tunable parameters (and should be tuned for better performance)
-# we use log_scale = True because of the final log-softmax in the StackedRNN model
->>> peak = Peak(alpha=0.17, min_duration=0.0, log_scale=True)
+# initialize binarizer
+# onset / offset are tunable parameters (and should be tuned for better 
+# performance). we use log_scale=True because of the final log-softmax in the 
+# StackedRNN model
+>>> from pyannote.audio.signal import Binarize
+>>> binarize = Binarize(onset=0.6728515625, offset=0.6728515625, log_scale=True)
 
-# evaluation metric
->>> from pyannote.metrics.diarization import DiarizationPurityCoverageFMeasure
->>> metric = DiarizationPurityCoverageFMeasure()
+# binarize overlap scores to obtain overlap regions as pyannote.core.Timeline
+>>> ovl_regions = binarize.apply(ovl_scores, dimension=1)
 
-# loop on test files
->>> from pyannote.database import get_annotated
->>> for test_file in protocol.test():
-...    # load reference annotation
-...    reference = test_file['annotation']
-...    uem = get_annotated(test_file)
-...
-...    # load precomputed change scores as pyannote.core.SlidingWindowFeature
-...    scd_scores = precomputed(test_file)
-...
-...    # binarize scores to obtain speech regions as pyannote.core.Timeline
-...    hypothesis = peak.apply(scd_scores, dimension=1)
-...
-...    # evaluate speech activity detection
-...    metric(reference, hypothesis.to_annotation(), uem=uem)
-
->>> purity, coverage, fmeasure = metric.compute_metrics()
->>> print(f'Purity = {100*purity:.1f}% / Coverage = {100*coverage:.1f}%')
+# we are using dimension=1 because dim=0 corresponds to 'non_overlap' scores 
+# and dim=1 corresponds to 'overlap' scores as shown by the following line:
+>>> precomputed.labels
+['non_overlap', 'overlap']
 ```
+
+Here is the type of results you can expect from this model on `AMI`:
+
+![tensorboard screenshot](results.png)
+
+For an example on how to create the above figure, have a look at [this](../pretrained) tutorial.
 
 ## More options
 
 For more options, see:
 
 ```bash
-$ pyannote-change-detection --help
+$ pyannote-overlap-detection --help
 ```
 
 That's all folks!

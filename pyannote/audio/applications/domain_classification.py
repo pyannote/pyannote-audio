@@ -156,7 +156,6 @@ import scipy.optimize
 from docopt import docopt
 from .base_labeling import BaseLabeling
 from pyannote.database import get_annotated
-from pyannote.database import get_unique_identifier
 from pyannote.audio.labeling.extraction import SequenceLabeling
 from collections import Counter
 from sklearn.metrics import confusion_matrix

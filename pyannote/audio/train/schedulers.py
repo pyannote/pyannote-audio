@@ -45,6 +45,15 @@ MOMENTUM_MAX = 0.95
 MOMENTUM_MIN = 0.85
 
 class BaseSchedulerCallback(Callback):
+    """Base scheduler with support for AutoLR
+
+
+    Reference
+    ---------
+    Leslie N. Smith. "Cyclical Learning Rates for Training Neural Networks"
+    IEEE Winter Conference on Applications of Computer Vision (WACV, 2017).
+
+    """
 
     def on_train_start(self, trainer):
         self.optimizer_ = trainer.optimizer_
@@ -278,6 +287,12 @@ class CyclicScheduler(BaseSchedulerCallback):
             - when `float`, multiply base learning rate by this amount;
             - when 'auto', apply AutoLR;
             - defaults to doing nothing.
+
+
+    Reference
+    ---------
+    Leslie N. Smith. "Cyclical Learning Rates for Training Neural Networks"
+    IEEE Winter Conference on Applications of Computer Vision (WACV, 2017).
     """
 
     def __init__(self, epochs_per_cycle=20, decay=None):

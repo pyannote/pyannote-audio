@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2017-2018 CNRS
+# Copyright (c) 2017-2019 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -60,6 +60,8 @@ Common options:
 "validation" mode:
   --every=<epoch>            Validate model every <epoch> epochs [default: 1].
   --chronological            Force validation in chronological order.
+  --parallel=<n_jobs>        Process <n_jobs> files in parallel. Defaults to
+                             using all CPUs.
   <train_dir>                Path to the directory containing pre-trained
                              models (i.e. the output of "train" mode).
 
@@ -158,9 +160,9 @@ import torch
 import numpy as np
 import scipy.optimize
 from docopt import docopt
+import multiprocessing as mp
 from .base_labeling import BaseLabeling
 from pyannote.database import get_annotated
-from pyannote.database import get_unique_identifier
 from pyannote.metrics.detection import DetectionErrorRate
 from pyannote.audio.labeling.extraction import SequenceLabeling
 from pyannote.audio.pipeline import SpeechActivityDetection \
@@ -190,7 +192,6 @@ class SpeechActivityDetection(BaseLabeling):
             duration=duration, step=.25 * duration, batch_size=self.batch_size,
             device=self.device)
         for current_file in validation_data:
-            uri = get_unique_identifier(current_file)
             current_file['sad_scores'] = sequence_labeling(current_file)
 
         # pipeline
@@ -236,6 +237,9 @@ def main():
 
     gpu = arguments['--gpu']
     device = torch.device('cuda') if gpu else torch.device('cpu')
+
+    # HACK for JHU/CLSP cluster
+    _ = torch.Tensor([0]).to(device)
 
     if arguments['train']:
         experiment_dir = Path(arguments['<experiment_dir>'])
@@ -287,10 +291,18 @@ def main():
         # batch size
         batch_size = int(arguments['--batch'])
 
+        # number of processes
+        n_jobs = arguments['--parallel']
+        if n_jobs is None:
+            n_jobs = mp.cpu_count()
+        else:
+            n_jobs = int(n_jobs)
+
         application = SpeechActivityDetection.from_train_dir(
             train_dir, db_yml=db_yml, training=False)
         application.device = device
         application.batch_size = batch_size
+        application.n_jobs = n_jobs
         application.validate(protocol_name, subset=subset,
                              start=start, end=end, every=every,
                              in_order=in_order)
