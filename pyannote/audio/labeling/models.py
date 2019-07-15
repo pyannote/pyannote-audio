@@ -90,8 +90,8 @@ class StackedRNN(nn.Module):
 
         task_type = specifications['task']
         if task_type not in {TASK_MULTI_CLASS_CLASSIFICATION,
-                        TASK_MULTI_LABEL_CLASSIFICATION,
-                        TASK_REGRESSION}:
+                             TASK_MULTI_LABEL_CLASSIFICATION,
+                             TASK_REGRESSION}:
 
             msg = (f"`task_type` must be one of {TASK_MULTI_CLASS_CLASSIFICATION}, "
                    f"{TASK_MULTI_LABEL_CLASSIFICATION} or {TASK_REGRESSION}.")
@@ -262,23 +262,30 @@ class ConvRNN(nn.Module):
         one linear layer with hidden dimension of 16.
     """
 
-    def __init__(self, n_features, n_classes, task_type,
+    def __init__(self, specifications,
                  norm=None, rnn='LSTM', recurrent=[16,], bidirectional=False,
                  linear=[16, ], conv_out=[128,], kernel_size=[32,], dropout=0.):
 
         super(ConvRNN, self).__init__()
 
-        self.n_features = n_features
-        self.n_classes = n_classes
-        self.task_type = task_type
-        if task_type not in {TASK_CLASSIFICATION,
-                        TASK_MULTI_LABEL_CLASSIFICATION,
-                        TASK_REGRESSION}:
+        self.specifications = specifications
 
-            msg = (f"`task_type` must be one of {TASK_CLASSIFICATION}, "
+        n_features = specifications['X']['dimension']
+        self.n_features_ = n_features
+
+        n_classes = len(specifications['y']['classes'])
+        self.n_classes_ = n_classes
+
+        task_type = specifications['task']
+        if task_type not in {TASK_MULTI_CLASS_CLASSIFICATION,
+                             TASK_MULTI_LABEL_CLASSIFICATION,
+                             TASK_REGRESSION}:
+
+            msg = (f"`task_type` must be one of {TASK_MULTI_CLASS_CLASSIFICATION}, "
                    f"{TASK_MULTI_LABEL_CLASSIFICATION} or {TASK_REGRESSION}.")
             raise ValueError(msg)
-
+        
+        self.task_type_ = task_type
         self.norm = norm
         self.conv_out = conv_out
         self.rnn = rnn
@@ -295,7 +302,7 @@ class ConvRNN(nn.Module):
         if self.norm is not None and self.norm not in ["batch", "instance"]:
             raise ValueError("norm parameter must be in ['batch', 'instance']")
 
-        input_dim = self.n_features
+        input_dim = self.n_features_
         self.conv1d_, self.norm_, self.relu_, self.max_pool_ = nn.ModuleList([]), nn.ModuleList([]), nn.ModuleList([]), nn.ModuleList([])
 
         for i, (out_channel, kernel_size) in enumerate(zip(self.conv_out, self.kernel_size)):
@@ -345,7 +352,7 @@ class ConvRNN(nn.Module):
             input_dim = hidden_dim
 
         # create final classification layer
-        self.final_layer_ = nn.Linear(input_dim, self.n_classes)
+        self.final_layer_ = nn.Linear(input_dim, self.n_classes_)
 
     def get_loss(self):
         """Return loss function (with support for class weights)
@@ -356,13 +363,13 @@ class ConvRNN(nn.Module):
             Function f(input, target, weight=None) -> loss value
         """
 
-        if self.task_type == TASK_CLASSIFICATION:
+        if self.task_type_ == TASK_MULTI_CLASS_CLASSIFICATION:
             return F.nll_loss
 
-        if self.task_type == TASK_MULTI_LABEL_CLASSIFICATION:
+        if self.task_type_ == TASK_MULTI_LABEL_CLASSIFICATION:
             return F.binary_cross_entropy
 
-        if self.task_type == TASK_REGRESSION:
+        if self.task_type_ == TASK_REGRESSION:
             def mse_loss(input, target, weight=None):
                 return F.mse_loss(input, target)
             return mse_loss
@@ -376,9 +383,9 @@ class ConvRNN(nn.Module):
 
         batch_size, n_features, device = get_info(sequences)
 
-        if n_features != self.n_features:
+        if n_features != self.n_features_:
             msg = 'Wrong feature dimension. Found {0}, should be {1}'
-            raise ValueError(msg.format(n_features, self.n_features))
+            raise ValueError(msg.format(n_features, self.n_features_))
 
         output = sequences
 
@@ -447,11 +454,11 @@ class ConvRNN(nn.Module):
         # apply final classification layer
         output = self.final_layer_(output)
 
-        if self.task_type == TASK_CLASSIFICATION:
+        if self.task_type_ == TASK_MULTI_CLASS_CLASSIFICATION:
             return torch.log_softmax(output, dim=2)
 
-        elif self.task_type == TASK_MULTI_LABEL_CLASSIFICATION:
+        elif self.task_type_ == TASK_MULTI_LABEL_CLASSIFICATION:
             return torch.sigmoid(output)
 
-        elif self.task_type == TASK_REGRESSION:
+        elif self.task_type_ == TASK_REGRESSION:
             return torch.sigmoid(output)
