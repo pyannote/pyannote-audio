@@ -358,6 +358,14 @@ class ConvRNN(nn.Module):
         # create final classification layer
         self.final_layer_ = nn.Linear(input_dim, self.n_classes_)
 
+    @property
+    def classes(self):
+        return self.specifications['y']['classes']
+
+    @property
+    def n_classes(self):
+        return len(self.specifications['y']['classes'])
+
     def get_loss(self):
         """Return loss function (with support for class weights)
 
