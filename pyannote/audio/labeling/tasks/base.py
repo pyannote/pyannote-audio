@@ -57,7 +57,7 @@ from .. import TASK_REGRESSION
 import torch.nn.functional as F
 
 
-class LabelingTaskGenerator(object):
+class LabelingTaskGenerator:
     """Base batch generator for various labeling tasks
 
     This class should be inherited from: it should not be used directy
@@ -116,8 +116,6 @@ class LabelingTaskGenerator(object):
                  batch_size=32, per_epoch=1, parallel=1,
                  exhaustive=False, shuffle=False,
                  mask_dimension=None, mask_logscale=False):
-
-        super(LabelingTaskGenerator, self).__init__()
 
         self.feature_extraction = feature_extraction
 

@@ -47,7 +47,7 @@ from pyannote.core.utils.helper import get_class_by_name
 import warnings
 
 
-class Application(object):
+class Application:
 
     CONFIG_YML = '{experiment_dir}/config.yml'
     TRAIN_DIR = '{experiment_dir}/train/{protocol}.{subset}'
@@ -88,9 +88,9 @@ class Application(object):
         training : boolean, optional
             When False, data augmentation is disabled.
         """
-        super(Application, self).__init__()
-
         self.experiment_dir = experiment_dir
+        self.device = None
+        self.task_ = None
 
         # load configuration
         config_yml = self.CONFIG_YML.format(experiment_dir=self.experiment_dir)
