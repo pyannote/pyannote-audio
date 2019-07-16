@@ -140,6 +140,10 @@ class LabelingTaskGenerator:
         self.mask_dimension = mask_dimension
         self.mask_logscale = mask_logscale
 
+        self.nb_sequences_per_epoch = self.batches_per_epoch * (self.batch_size + 2)
+        # Iteration counter
+        self.iteration = 0
+
         self._load_metadata(protocol, subset=subset)
 
     def postprocess_y(self, Y):
@@ -298,6 +302,8 @@ class LabelingTaskGenerator:
             return self._random_samples()
 
     def _random_samples(self):
+        i = 0
+
         """Random samples
 
         Returns
@@ -328,17 +334,25 @@ class LabelingTaskGenerator:
 
             X = self.feature_extraction.crop(current_file,
                                              subsegment, mode='center',
-                                             fixed=self.duration)
+                                             fixed=self.duration,
+                                             epoch=self.iteration)
 
             y = self.crop_y(datum['y'], subsegment)
             sample = {'X': X, 'y': y}
+
+            # Update counters
+            i = i + 1
+            if (i % self.nb_sequences_per_epoch) == 0:
+                self.iteration = self.iteration + 1
+                i = 0
 
             if self.mask_dimension is not None:
 
                 # extract mask for current sub-segment
                 mask = current_file['mask'].crop(subsegment,
                                                  mode='center',
-                                                 fixed=self.duration)
+                                                 fixed=self.duration,
+                                                 epoch=self.iteration)
 
                 # use requested dimension (e.g. non-overlap scores)
                 mask = mask[:, self.mask_dimension]
