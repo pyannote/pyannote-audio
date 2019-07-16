@@ -475,6 +475,9 @@ def main():
     device = torch.device('cuda') if gpu else torch.device('cpu')
     use_der = arguments['--use_der']
 
+    # HACK for JHU/CLSP cluster
+    _ = torch.Tensor([0]).to(device)
+    
     if arguments['train']:
         experiment_dir = Path(arguments['<experiment_dir>'])
         experiment_dir = experiment_dir.expanduser().resolve(strict=True)
