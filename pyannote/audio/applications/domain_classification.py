@@ -317,6 +317,9 @@ def main():
         # batch size
         batch_size = int(arguments['--batch'])
 
+        # number of processes 
+        n_jobs = 1
+
         application = DomainClassification.from_train_dir(
             train_dir, db_yml=db_yml, training=False)
         application.device = device
