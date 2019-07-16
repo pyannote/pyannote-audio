@@ -10,16 +10,20 @@ Neural building blocks for speaker diarization:
 ## Installation
 
 ```bash
-# create a conda environment with Python 3.6 or later
-$ conda create --name pyannote python=3.6
+# Step 1: This creates a conda environment with python3.6
+$ conda create env -f environment.yml
 $ source activate pyannote
 
-# install from source in the "develop" branch
+# Step 2:  install from source in the "develop" branch
 $ git clone https://github.com/pyannote/pyannote-audio.git
 $ cd pyannote-audio
 $ git checkout develop
 $ pip install .
 ```
+
+If you're using Shennong for feature extraction, use the `environment-shennong.yml` 
+environment config file. If you're willing to use a regular pip environment, make sure you have PyYAML installed 
+in that env, and run Step 2.
 
 ## Citation
 
