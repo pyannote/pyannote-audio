@@ -181,10 +181,10 @@ class Application(object):
 
         Parameters
         ----------
-        protocol_name : `str`
+        protocol_name : `str`
         subset : {'train', 'development', 'test'}, optional
             Defaults to 'train'.
-        restart : `int`, optional
+        restart : `int`, optional
             Restart training at `restart`th epoch. Defaults to training from
             scratch.
         epochs : `int`, optional
