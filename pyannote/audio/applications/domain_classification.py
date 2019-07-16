@@ -324,6 +324,7 @@ def main():
             train_dir, db_yml=db_yml, training=False)
         application.device = device
         application.batch_size = batch_size
+        application.n_jobs = n_jobs
         application.validate(protocol_name, subset=subset,
                              start=start, end=end, every=every,
                              in_order=in_order)
