@@ -298,13 +298,7 @@ class Multilabel(BaseLabeling):
             validation_data.append(current_file)
         return validation_data
 
-    def validate_epoch(self, epoch, protocol_name, subset='development',
-                       validation_data=None): 
-        func = getattr(self, f'validate_epoch_class')
-        return func(epoch, protocol_name, subset=subset,
-                    validation_data=validation_data)
-
-    def validate_epoch_class(self, epoch, validation_data=None):
+    def validate_epoch(self, epoch, protocol_name, subset='development', validation_data=None):
         """
         Validate function given a class which must belongs to ["CHI", "FEM", "KCHI", "MAL", "SPEECH", "OVERLAP"]
         """
@@ -325,12 +319,12 @@ class Multilabel(BaseLabeling):
 
         for current_file in validation_data:
             scores = sequence_labeling(current_file)
-            if class_name == "SPEECH" and "SPEECH" not in self.task_.labels:
+            if class_name == "SPEECH" and "SPEECH" not in self.task_.labels_:
                 # We sum up all the scores of every speakers
                 scores_data = np.sum(scores.data, axis=1).reshape(-1, 1)
             else: 
                 # We extract the score of interest
-                dimension = self.task_.labels.index(class_name)
+                dimension = self.task_.labels_.index(class_name)
                 scores_data = scores.data[:, dimension].reshape(-1, 1)
 
             current_file[class_name+'_scores'] = SlidingWindowFeature(
@@ -441,7 +435,7 @@ class Multilabel(BaseLabeling):
 
         sliding_window = sequence_labeling.sliding_window
         n_classes = self.task_.n_classes
-        labels = self.task_.labels
+        labels = self.task_.labels_
 
         # create metadata file at root that contains
         # sliding window and dimension information
