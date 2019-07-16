@@ -36,7 +36,7 @@ with open('README.md') as f:
     long_description = f.read()
 
 with open('environment.yml') as f:
-    deps = yaml.load(f.read())["dependencies"]["pip"]
+    deps = yaml.load(f.read())["dependencies"]
     for dep in deps:
         if isinstance(dep, dict) and "pip" in dep:
             requirements = dep["pip"]
