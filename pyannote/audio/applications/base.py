@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2017 CNRS
+# Copyright (c) 2017-2019 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -97,31 +97,32 @@ class Application:
             self.config_ = yaml.load(fp)
 
         # preprocessors
-        preprocessors = {}
-        PREPROCESSORS_DEFAULT = {'audio': db_yml,
-                                 'duration': get_audio_duration}
+        preprocessors = {'audio': db_yml,
+                         'duration': get_audio_duration}
 
-        merged_preprocessors = PREPROCESSORS_DEFAULT
-        if self.config_.get('preprocessors') is not None:
-            merged_preprocessors = {**PREPROCESSORS_DEFAULT, **self.config_.get('preprocessors')}
+        for key, preprocessor in self.config_.get('preprocessors', {}).items():
 
-        for key, value in merged_preprocessors.items():
-            if callable(value):
-                preprocessors[key] = value
-                continue
-            # If type dict, go get the class
-            elif isinstance(value, dict):
-                klass = get_class_by_name(
-                    value['name'],
-                    default_module_name='pyannote.pipeline')
-                preprocessors[key] = klass(**value.get('params', {}))
+            # preprocessors:
+            #    key:
+            #       name: package.module.ClassName
+            #       params:
+            #          param1: value1
+            #          param2: value2
+            if isinstance(preprocessor, dict):
+                Klass = get_class_by_name(preprocessor['name'])
+                preprocessors[key] = Klass(**preprocessor.get('params', {}))
                 continue
 
             try:
-                preprocessors[key] = FileFinder(config_yml=value)
+                # preprocessors:
+                #    key: /path/to/database.yml
+                preprocessors[key] = FileFinder(preprocessor)
+
             except FileNotFoundError as e:
-                preprocessors[key] = value
-                
+                # preprocessors:
+                #    key: /path/to/{uri}.wav
+                preprocessors[key] = preprocessor
+                        
         self.preprocessors_ = preprocessors
 
         # scheduler
