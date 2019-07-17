@@ -26,6 +26,7 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
+import torch
 import numpy as np
 from pyannote.core import SlidingWindow, SlidingWindowFeature
 from pyannote.audio.labeling.extraction import SequenceLabeling
@@ -57,13 +58,17 @@ class SequenceEmbedding(SequenceLabeling):
         Subsequence step, in seconds. Defaults to 50% of `duration`.
     batch_size : int, optional
         Defaults to 32.
-    device : torch.device, optional
+    device : `torch.device` or `str`, optional
         Defaults to CPU.
     """
 
     def __init__(self, model=None, feature_extraction=None,
                  step=None, duration=None, min_duration=None,
                  batch_size=32, device=None):
+
+        # support for providing device as 'cpu' or 'cuda'
+        if isinstance(device, str):
+            device = torch.device(device)
 
         if not isinstance(model, nn.Module):
 
@@ -90,6 +95,11 @@ class SequenceEmbedding(SequenceLabeling):
         super().__init__(model=model, feature_extraction=feature_extraction,
                          step=step, duration=duration, min_duration=min_duration,
                          batch_size=batch_size, device=device)
+
+    @property
+    def dimension(self):
+        """Dimension of embeddings"""
+        return self.model.dimension
 
     @property
     def sliding_window(self):
@@ -152,6 +162,16 @@ class SequenceEmbedding(SequenceLabeling):
                                      step=self.step)
         return SlidingWindowFeature(fX, subsequences)
 
+    def get_context_duration(self):
+        """
+
+        Returns
+        -------
+        context : float
+            Context duration, in seconds.
+        """
+        return self.feature_extraction.get_context_duration()
+
     def crop(self, current_file, segment):
         """Extract embeddings from a specific time range
 
@@ -164,7 +184,7 @@ class SequenceEmbedding(SequenceLabeling):
 
         Returns
         -------
-        embeddings : `numpy array`
+        embeddings : (n_windows, dimension) `numpy array`
             Extracted embeddings
         """
 
