@@ -216,8 +216,9 @@ class FeatureExtraction(object):
                                        duration=frames.duration)
         (start, end), = shifted_frames.crop(segment, mode=mode, fixed=fixed,
                                             return_ranges=True)
-        if start < 0:
-            msg = f'Negative start returned from shifted_frames.crop : Shifting start/end.'
+
+        if start < 0 and fixed is not None:
+            msg = f'Negative start returned by shifted_frames.crop : Shifting start/end.'
             warnings.warn(msg)
             end -= start
             start = 0
