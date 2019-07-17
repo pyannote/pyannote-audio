@@ -140,7 +140,8 @@ class RawAudio(object):
         Data augmentation.
     """
 
-    def __init__(self, sample_rate=None, mono=True, augmentation=None):
+    def __init__(self, sample_rate=None, mono=True,
+                 augmentation=None):
 
         super(RawAudio, self).__init__()
         self.sample_rate = sample_rate
