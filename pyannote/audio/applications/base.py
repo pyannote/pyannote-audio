@@ -97,11 +97,10 @@ class Application:
             self.config_ = yaml.load(fp)
 
         # preprocessors
-        preprocessors = {'audio': db_yml,
+        preprocessors = {'audio': FileFinder(db_yml),
                          'duration': get_audio_duration}
 
         for key, preprocessor in self.config_.get('preprocessors', {}).items():
-
             # preprocessors:
             #    key:
             #       name: package.module.ClassName
