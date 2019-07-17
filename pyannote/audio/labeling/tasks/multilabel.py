@@ -219,13 +219,13 @@ class Multilabel(LabelingTask):
             labels=self.labels_)
 
     def _get_one_over_the_prior(self):
-        nb_speakers = len(self.labels_)
-        weights = dict([(key, 0.0) for key in self.labels[0:nb_speakers]])
+        nb_classes = len(self.labels_)
+        weights = dict([(key, 0.0) for key in self.labels[0:nb_classes]])
 
-        # Compute the cumulated speech duration
+        # Compute the cumulated duration
         for current_file in self.protocol.train():
             y = current_file["annotation"]
-            for speaker in self.labels[0:nb_speakers]:
+            for speaker in self.labels[0:nb_classes]:
                 weights[speaker] += y.label_duration(speaker)
 
         total_speech = sum(weights.values(), 0.0)
@@ -238,11 +238,6 @@ class Multilabel(LabelingTask):
         norm1 = sum(weights.values())
         weights = {key: value/norm1 for key, value in weights.items() if value != 0}
 
-        # We might want to compute priors on overlap and speech as well...
-        if self.overlap:
-            weights["OVERLAP"] = 1.0
-        if self.speech:
-            weights["SPEECH"] = 1.0
         return torch.tensor(np.array(list(weights.values())), dtype=torch.float32)
 
     @property
