@@ -219,7 +219,7 @@ class Multilabel(LabelingTask):
             labels=self.labels_)
 
     def _get_one_over_the_prior(self):
-        nb_speakers = 4
+        nb_speakers = len(self.labels_)
         weights = dict([(key, 0.0) for key in self.labels[0:nb_speakers]])
 
         # Compute the cumulated speech duration
