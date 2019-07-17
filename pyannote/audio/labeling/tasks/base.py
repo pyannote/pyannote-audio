@@ -302,8 +302,6 @@ class LabelingTaskGenerator:
             return self._random_samples()
 
     def _random_samples(self):
-        i = 0
-
         """Random samples
 
         Returns
@@ -311,7 +309,7 @@ class LabelingTaskGenerator:
         samples : generator
             Generator that yields {'X': ..., 'y': ...} samples indefinitely.
         """
-
+        i = 0
         uris = list(self.data_)
         durations = np.array([self.data_[uri]['duration'] for uri in uris])
         probabilities = durations / np.sum(durations)
