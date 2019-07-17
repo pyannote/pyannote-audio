@@ -48,7 +48,6 @@ import warnings
 
 
 class Application:
-
     CONFIG_YML = '{experiment_dir}/config.yml'
     TRAIN_DIR = '{experiment_dir}/train/{protocol}.{subset}'
     WEIGHTS_DIR = '{train_dir}/weights'
@@ -462,6 +461,3 @@ class Application:
             # increment 'in_order' processing
             if next_epoch_to_validate_in_order == next_epoch_to_validate:
                 next_epoch_to_validate_in_order += step
-
-    def get_preprocessors(self):
-        return self.preprocessors_
