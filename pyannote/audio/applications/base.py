@@ -164,10 +164,6 @@ class Application:
 
         # feature extraction
         if 'feature_extraction' in self.config_:
-            # Disable spec augment when not training
-            if not training and "spec_augment" in self.config_['feature_extraction'].get('params'):
-                self.config_['feature_extraction']["params"]["spec_augment"] = False
-
             FeatureExtraction = get_class_by_name(
                 self.config_['feature_extraction']['name'],
                 default_module_name='pyannote.audio.features')

@@ -34,7 +34,6 @@ import librosa
 import numpy as np
 
 from .base import FeatureExtraction
-from .spec_augmentor import SpecAugmentor
 from pyannote.core.segment import SlidingWindow
 
 
@@ -136,21 +135,13 @@ class LibrosaMelSpectrogram(LibrosaFeatureExtraction):
     """
 
     def __init__(self, sample_rate=16000, augmentation=None,
-                 duration=0.025, step=0.010, n_mels=96, spec_augment=False,
-                 frequency_masking_para=27,time_masking_para=100,
-                 nb_frequency_masks=1, nb_time_masks=1, scheduler=None, max_epoch=None, norm=True):
+                 duration=0.025, step=0.010, n_mels=96, max_epoch=None, norm=True):
 
         super().__init__(sample_rate=sample_rate, augmentation=augmentation,
                          duration=duration, step=step)
         self.n_mels = n_mels
         self.n_fft_ = int(self.duration * self.sample_rate)
         self.hop_length_ = int(self.step * self.sample_rate)
-        self.spec_augment = spec_augment
-        self.frequency_masking_para = frequency_masking_para
-        self.time_masking_para = time_masking_para
-        self.nb_frequency_masks = nb_frequency_masks
-        self.nb_time_masks = nb_time_masks
-        self.scheduler = scheduler
         self.max_epoch = max_epoch
         self.norm = norm
 
@@ -182,17 +173,6 @@ class LibrosaMelSpectrogram(LibrosaFeatureExtraction):
 
         if self.norm:
             mel_spec = (mel_spec - np.mean(mel_spec)) / np.var(mel_spec)
-
-        if self.spec_augment:
-            spec_augmentor = SpecAugmentor()
-            mel_spec = spec_augmentor(features=mel_spec,
-                                      frequency_masking_para=self.frequency_masking_para,
-                                      time_masking_para=self.time_masking_para,
-                                      nb_frequency_masks=self.nb_frequency_masks,
-                                      nb_time_masks=self.nb_time_masks,
-                                      scheduler=self.scheduler,
-                                      epoch=epoch,
-                                      max_epoch=self.max_epoch)
 
         return mel_spec.T
 
