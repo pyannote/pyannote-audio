@@ -91,7 +91,7 @@ class Precomputed(object):
         if path.exists():
 
             with io.open(path, 'r') as f:
-                params = yaml.safe_load(f)
+                params = yaml.load(f, Loader=yaml.Loader)
 
             self.dimension_ = params.pop('dimension')
             self.labels_ = params.pop('labels', None)

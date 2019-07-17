@@ -147,15 +147,15 @@ def helper_extract(current_file, file_finder=None, experiment_dir=None,
                                 feature_extraction=feature_extraction,
                                 robust=robust)
 
+
 def extract(protocol_name, file_finder, experiment_dir,
             robust=False, parallel=False):
     protocol = get_protocol(protocol_name, progress=False)
 
     # load configuration file
     config_yml = experiment_dir + '/config.yml'
-    print(experiment_dir)
     with open(config_yml, 'r') as fp:
-        config = yaml.safe_load(fp)
+        config = yaml.load(fp, Loader=yaml.SafeLoader)
 
     FeatureExtraction = get_class_by_name(
         config['feature_extraction']['name'],

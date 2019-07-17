@@ -36,8 +36,7 @@ import numpy as np
 from .base import FeatureExtraction
 from .spec_augmentor import SpecAugmentor
 from pyannote.core.segment import SlidingWindow
-import matplotlib.pyplot as plt
-import librosa.display as display
+
 
 class LibrosaFeatureExtraction(FeatureExtraction):
     """librosa feature extraction base class

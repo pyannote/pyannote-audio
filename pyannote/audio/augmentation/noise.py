@@ -193,7 +193,7 @@ class AddNoiseFromGaps(Augmentation):
                                 preprocessors=preprocessors)
         self.files_ = list(getattr(protocol, self.subset)())
         # Filter files that don't have any silence
-        self.files_ = [f for f in self.files_ if f['gaps'].__len__() != 0]
+        self.files_ = [f for f in self.files_ if f['gaps']]
 
     def __call__(self, original, sample_rate, epoch=None):
         """Augment original waveform

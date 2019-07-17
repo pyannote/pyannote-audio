@@ -9,7 +9,6 @@ dependencies:
   - pip:
     - dlib >= 19.16.0
     - cachetools >= 2.0.0
-    - ipdb == 0.12
     - librosa >= 0.6.2
     - pandas >= 0.18.0
     - pyannote.core >= 3.0
