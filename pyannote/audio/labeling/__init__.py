@@ -29,10 +29,6 @@
 """
 # Frame-based audio labeling
 """
-
-TASK_CLASSIFICATION = 'one-class'
-TASK_MULTI_LABEL_CLASSIFICATION = 'multi-label'
-TASK_REGRESSION = 'regression'
 from ..models  import TASK_MULTI_CLASS_CLASSIFICATION
 from ..models import TASK_MULTI_LABEL_CLASSIFICATION
 from ..models import TASK_REGRESSION
