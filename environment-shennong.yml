@@ -19,6 +19,7 @@ dependencies:
     - pyannote.generators >= 2.0
     - pyannote.metrics >= 1.8.1
     - pyannote.pipeline >= 1.2
+    - pyannote.features.shennong >= 0.1
     - python_speech_features == 0.6
     - pyYAML >= 3.12
     - scikit-learn >= 0.20.2
