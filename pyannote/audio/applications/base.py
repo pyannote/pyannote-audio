@@ -162,6 +162,14 @@ class Application:
         else:
             augmentation = None
 
+        # callbacks
+        self.callbacks_ = []
+        if 'callbacks' in self.config_:
+            for callback_config in self.config_['callbacks']:
+                Callback = get_class_by_name(callback_config['name'])
+                callback = Callback(**callback_config.get('params', {}))
+                self.callbacks_.append(callback)
+
         # feature extraction
         if 'feature_extraction' in self.config_:
             FeatureExtraction = get_class_by_name(
@@ -170,6 +178,7 @@ class Application:
             self.feature_extraction_ = FeatureExtraction(
                 **self.config_['feature_extraction'].get('params', {}),
                 augmentation=augmentation)
+
 
     def train(self, protocol_name, subset='train', restart=0, epochs=1000):
         """Trainer model
@@ -218,11 +227,14 @@ class Application:
 
         self.task_.fit(
             self.get_model_, batch_generator,
-            restart=restart, epochs=epochs,
+            restart=restart,
+            epochs=epochs,
             get_optimizer=self.get_optimizer_,
             get_scheduler=self.get_scheduler_,
             learning_rate=self.learning_rate_,
-            log_dir=train_dir, device=self.device)
+            callbacks=self.callbacks_,
+            log_dir=train_dir,
+            device=self.device)
 
     def load_model(self, epoch, train_dir=None):
         """Load pretrained model

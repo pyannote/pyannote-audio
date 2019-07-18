@@ -160,9 +160,17 @@ class Trainer:
         """Called when training stops"""
         pass
 
-    def fit(self, model, batch_generator, restart=0, epochs=1000,
-            get_optimizer=None, get_scheduler=None, learning_rate='auto',
-            log_dir=None, quiet=False, device=None):
+    def fit(self,
+            model, batch_generator,
+            restart=0,
+            epochs=1000,
+            get_optimizer=None,
+            get_scheduler=None,
+            learning_rate='auto',
+            callbacks=None,
+            log_dir=None,
+            quiet=False,
+            device=None):
         """Train model
 
         Parameters
@@ -184,6 +192,8 @@ class Trainer:
             Defaults to `pyannote.audio.train.schedulers.ConstantScheduler`.
         learning_rate : {float, 'auto'}, optional
             Defaults to 'auto'.
+        callbacks : `list` of `Callback` instances
+            Add user-provided callbacks.
         log_dir : str, optional
             Directory where models and other log files are stored.
             Defaults to not store anything.
@@ -200,20 +210,32 @@ class Trainer:
 
         iterations = self.fit_iter(
             model, batch_generator,
-            restart=restart, epochs=epochs,
-            get_optimizer=get_optimizer, get_scheduler=get_scheduler,
-            learning_rate=learning_rate, log_dir=log_dir, quiet=quiet,
-            device=device)
+            restart=restart,
+            epochs=epochs,
+            get_optimizer=get_optimizer,
+            get_scheduler=get_scheduler,
+            learning_rate=learning_rate,
+            callbacks=callbacks,
+            log_dir=log_dir,
+            quiet=quiet,
+            device=device,
+        )
 
         for _ in iterations:
             pass
 
         return self.model_
 
-    def fit_iter(self, get_model, batch_generator,
+    def fit_iter(self,
+                 get_model, batch_generator,
                  restart=0, epochs=1000,
-                 get_optimizer=None, get_scheduler=None, learning_rate='auto',
-                 log_dir=None, quiet=False, device=None):
+                 get_optimizer=None,
+                 get_scheduler=None,
+                 learning_rate='auto',
+                 callbacks=None,
+                 log_dir=None,
+                 quiet=False,
+                 device=None):
         """Train model
 
         Parameters
@@ -236,6 +258,8 @@ class Trainer:
             Defaults to `pyannote.audio.train.schedulers.ConstantScheduler`.
         learning_rate : {float, 'auto'}, optional
             Base learning rate. Defaults to 'auto'.
+        callbacks : `list` of `Callback` instances
+            Add user-provided callbacks.
         log_dir : str, optional
             Directory where models and other log files are stored.
             Defaults to not store anything.
@@ -294,15 +318,22 @@ class Trainer:
         if get_scheduler is None:
             get_scheduler = ConstantScheduler
 
-        callbacks = [
-            Checkpoint(),        # checkpoint has to go first
+        # checkpointing & scheduling callbacks
+        # checkpointing has to go first
+        callbacks_ = [
+            Checkpoint(),
             get_scheduler(),
         ]
 
+        # logging callback
         if not quiet:
-            callbacks.append(Logging(epochs))
+            callbacks_.append(Logging(epochs))
 
-        callbacks = Callbacks(callbacks)
+        # user-provided callbacks
+        if callbacks is not None:
+            callbacks_.extend(callbacks)
+
+        callbacks = Callbacks(callbacks_)
 
         if restart:
             # warm restart
