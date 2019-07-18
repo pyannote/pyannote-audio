@@ -41,15 +41,6 @@ except ModuleNotFoundError as e:
         print(msg)
 
 try:
-    from .with_shennong import (ShennongMfcc, ShennongFilterbank,
-                                ShennongBottleneck, ShennongSpectrogram)
-except Exception as e:
-        msg = (
-            f'Feature extractors based on "shennong" are not available '
-            f'because something went wrong when importing them: "{e}".')
-        print(msg)
-
-try:
     from .with_librosa import LibrosaMFCC, LibrosaSpectrogram, LibrosaMelSpectrogram
 except Exception as e:
         msg = (
