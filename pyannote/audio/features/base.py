@@ -164,7 +164,7 @@ class FeatureExtraction(object):
         """
         return 0.
 
-    def crop(self, current_file, segment, mode='center', fixed=None, epoch=None):
+    def crop(self, current_file, segment, mode='center', fixed=None):
         """Fast version of self(current_file).crop(segment, mode='center',
 +                                                  fixed=segment.duration)
 
@@ -202,10 +202,10 @@ class FeatureExtraction(object):
 
         # obtain (augmented) waveform on this extended segment
         y = self.raw_audio_.crop(current_file, xsegment, mode='center',
-                                 fixed=xsegment.duration, epoch=epoch)
+                                 fixed=xsegment.duration)
 
         if "epoch" in inspect.signature(self.get_features).parameters:
-            features = self.get_features(y, self.sample_rate, epoch)
+            features = self.get_features(y, self.sample_rate)
         else:
             features = self.get_features(y, self.sample_rate)
 

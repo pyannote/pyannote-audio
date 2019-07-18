@@ -83,7 +83,7 @@ class AddNoise(Augmentation):
             protocol = get_protocol(collection, preprocessors=preprocessors)
             self.files_.extend(protocol.files())
 
-    def __call__(self, original, sample_rate, epoch=None):
+    def __call__(self, original, sample_rate):
         """Augment original waveform
 
         Parameters
@@ -189,7 +189,7 @@ class AddNoiseFromGaps(Augmentation):
         # Filter files that don't have any silence
         self.files_ = [f for f in self.files_ if f['gaps']]
 
-    def __call__(self, original, sample_rate, epoch=None):
+    def __call__(self, original, sample_rate):
         """Augment original waveform
 
         Parameters
