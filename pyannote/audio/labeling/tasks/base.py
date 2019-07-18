@@ -327,8 +327,7 @@ class LabelingTaskGenerator:
 
             X = self.feature_extraction.crop(current_file,
                                              subsegment, mode='center',
-                                             fixed=self.duration,
-                                             epoch=self.iteration)
+                                             fixed=self.duration)
 
             y = self.crop_y(datum['y'], subsegment)
             sample = {'X': X, 'y': y}
@@ -338,8 +337,7 @@ class LabelingTaskGenerator:
                 # extract mask for current sub-segment
                 mask = current_file['mask'].crop(subsegment,
                                                  mode='center',
-                                                 fixed=self.duration,
-                                                 epoch=self.iteration)
+                                                 fixed=self.duration)
 
                 # use requested dimension (e.g. non-overlap scores)
                 mask = mask[:, self.mask_dimension]
