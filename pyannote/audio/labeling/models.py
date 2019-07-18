@@ -365,27 +365,7 @@ class ConvRNN(nn.Module):
     @property
     def n_classes(self):
         return len(self.specifications['y']['classes'])
-
-    def get_loss(self):
-        """Return loss function (with support for class weights)
-
-        Returns
-        -------
-        loss_func : callable
-            Function f(input, target, weight=None) -> loss value
-        """
-
-        if self.task_type_ == TASK_MULTI_CLASS_CLASSIFICATION:
-            return F.nll_loss
-
-        if self.task_type_ == TASK_MULTI_LABEL_CLASSIFICATION:
-            return F.binary_cross_entropy
-
-        if self.task_type_ == TASK_REGRESSION:
-            def mse_loss(input, target, weight=None):
-                return F.mse_loss(input, target)
-            return mse_loss
-
+    
     def forward(self, sequences):
 
         if isinstance(sequences, PackedSequence):
