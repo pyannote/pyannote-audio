@@ -241,7 +241,7 @@ class RawAudio(object):
     def get_context_duration(self):
         return 0.
 
-    def crop(self, current_file, segment, mode='center', fixed=None, epoch=None):
+    def crop(self, current_file, segment, mode='center', fixed=None):
         """Fast version of self(current_file).crop(segment, **kwargs)
 
         Parameters
@@ -349,7 +349,7 @@ class RawAudio(object):
             raise ValueError(msg)
 
         if self.augmentation is not None:
-            data = self.augmentation(data, sample_rate, epoch=epoch)
+            data = self.augmentation(data, sample_rate)
 
         return data
 
