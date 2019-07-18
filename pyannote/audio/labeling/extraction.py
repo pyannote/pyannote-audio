@@ -50,6 +50,9 @@ class SequenceLabeling(FileBasedBatchGenerator):
         by pyannote command line tools (e.g. pyannote-speech-detection) should
         be kept unchanged so that one can find the corresponding configuration
         file automatically.
+    return_intermediate : `int`, optional
+        Index of intermediate layer. Returns intermediate hidden state.
+        Defaults to returning the final output.
     feature_extraction : callable, optional
         Feature extractor. When not provided and `model` is a path, it is
         inferred directly from the configuration file.
@@ -65,7 +68,8 @@ class SequenceLabeling(FileBasedBatchGenerator):
     """
 
     def __init__(self, model=None, feature_extraction=None, duration=1,
-                 min_duration=None, step=None, batch_size=32, device=None):
+                 min_duration=None, step=None, batch_size=32, device=None,
+                 return_intermediate=None):
 
         if not isinstance(model, nn.Module):
 
@@ -100,6 +104,8 @@ class SequenceLabeling(FileBasedBatchGenerator):
         generator = SlidingSegments(duration=duration, step=step,
                                     min_duration=min_duration, source='audio')
         self.step = generator.step if step is None else step
+
+        self.return_intermediate = return_intermediate
 
         super(SequenceLabeling, self).__init__(
             generator, {'@': (self._process, self.forward)},
@@ -221,7 +227,13 @@ class SequenceLabeling(FileBasedBatchGenerator):
                                   dtype=torch.float32,
                                   device=self.device)
 
-        fX = self.model(packed).detach().to('cpu').numpy()
+        if self.return_intermediate is None:
+            fX = self.model(packed)
+        else:
+            _, fX = self.model(packed,
+                               return_intermediate=self.return_intermediate)
+
+        fX = fX.detach().to('cpu').numpy()
 
         if variable_lengths:
             return fX[unsort]

@@ -249,10 +249,6 @@ class DomainClassification(BaseLabeling):
             y_true = domains.index(current_file[domain])
             y_true_file.append(y_true)
 
-
-        # Compute confusion matrix
-        cm = confusion_matrix(y_true, y_pred)
-
         accuracy = np.mean(np.array(y_true_file) == np.array(y_pred_file))
         return {'metric': 'accuracy', 'minimize': False, 'value': accuracy}
 
