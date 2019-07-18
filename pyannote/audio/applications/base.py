@@ -164,11 +164,10 @@ class Application:
 
         # callbacks
         self.callbacks_ = []
-        if 'callbacks' in self.config_:
-            for callback_config in self.config_['callbacks']:
-                Callback = get_class_by_name(callback_config['name'])
-                callback = Callback(**callback_config.get('params', {}))
-                self.callbacks_.append(callback)
+        for callback_config in self.config_.get('callbacks', {}):
+            Callback = get_class_by_name(callback_config['name'])
+            callback = Callback(**callback_config.get('params', {}))
+            self.callbacks_.append(callback)
 
         # feature extraction
         if 'feature_extraction' in self.config_:
