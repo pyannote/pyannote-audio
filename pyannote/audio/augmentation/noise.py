@@ -62,7 +62,7 @@ class AddNoise(Augmentation):
         Defines Signal-to-Noise Ratio (SNR) range in dB. Defaults to [5, 20].
     """
 
-    def __init__(self, collection=None, db_yml=None, snr_min=5, snr_max=20, max_epoch=None, scheduler=None):
+    def __init__(self, collection=None, db_yml=None, snr_min=5, snr_max=20):
         super().__init__()
 
         if collection is None:
@@ -74,8 +74,6 @@ class AddNoise(Augmentation):
 
         self.snr_min = snr_min
         self.snr_max = snr_max
-        self.scheduler = scheduler
-        self.max_epoch = max_epoch
 
         # load noise database
         self.files_ = []
@@ -134,8 +132,6 @@ class AddNoise(Augmentation):
         noise = np.vstack(noises)
 
         power = np.random.random_sample()
-        if self.scheduler == "Linear" and self.max_epoch is not None:
-            power = min(epoch, self.max_epoch)/self.max_epoch * power
 
         snr = (self.snr_max - self.snr_min) * power + self.snr_min
         alpha = np.exp(-np.log(10) * snr / 20)
@@ -168,7 +164,7 @@ class AddNoiseFromGaps(Augmentation):
     """
 
     def __init__(self, protocol=None, subset='train', db_yml=None,
-                 snr_min=5, snr_max=20, max_epoch=None, scheduler=None):
+                 snr_min=5, snr_max=20):
         super().__init__()
 
         self.protocol = protocol
@@ -177,8 +173,6 @@ class AddNoiseFromGaps(Augmentation):
 
         self.snr_min = snr_min
         self.snr_max = snr_max
-        self.scheduler = scheduler
-        self.max_epoch = max_epoch
 
         # returns gaps in annotation as pyannote.core.Timeline instance
         get_gaps = lambda f: f['annotation'].get_timeline().gaps(
@@ -245,8 +239,6 @@ class AddNoiseFromGaps(Augmentation):
         noise = np.vstack(noises)
 
         power = np.random.random_sample()
-        if self.scheduler == "Linear" and self.max_epoch is not None:
-            power = min(epoch, self.max_epoch) / self.max_epoch * power
 
         snr = (self.snr_max - self.snr_min) * power + self.snr_min
         alpha = np.exp(-np.log(10) * snr / 20)

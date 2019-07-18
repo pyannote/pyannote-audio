@@ -140,10 +140,6 @@ class LabelingTaskGenerator:
         self.mask_dimension = mask_dimension
         self.mask_logscale = mask_logscale
 
-        self.nb_sequences_per_epoch = self.batches_per_epoch * (self.batch_size + 2)
-        # Iteration counter
-        self.iteration = 0
-
         self._load_metadata(protocol, subset=subset)
 
     def postprocess_y(self, Y):
@@ -309,7 +305,6 @@ class LabelingTaskGenerator:
         samples : generator
             Generator that yields {'X': ..., 'y': ...} samples indefinitely.
         """
-        i = 0
         uris = list(self.data_)
         durations = np.array([self.data_[uri]['duration'] for uri in uris])
         probabilities = durations / np.sum(durations)
@@ -337,12 +332,6 @@ class LabelingTaskGenerator:
 
             y = self.crop_y(datum['y'], subsegment)
             sample = {'X': X, 'y': y}
-
-            # Update counters
-            i = i + 1
-            if (i % self.nb_sequences_per_epoch) == 0:
-                self.iteration = self.iteration + 1
-                i = 0
 
             if self.mask_dimension is not None:
 
