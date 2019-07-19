@@ -86,6 +86,13 @@ class SequenceLabeling(FileBasedBatchGenerator):
         self.device = torch.device('cpu') if device is None \
                                           else torch.device(device)
         self.model = model.eval().to(self.device)
+
+        if feature_extraction.augmentation is not None:
+            msg = (
+                'Data augmentation should not be used '
+                'when applying a pre-trained model.'
+            )
+            raise ValueError(msg)
         self.feature_extraction = feature_extraction
 
         if hasattr(self.model, 'frame_info_'):
