@@ -1,0 +1,41 @@
+task:
+   name: SpeechActivityDetection
+   params:
+      duration: 2.0      # sequences are 2s long
+      batch_size: 64     # 64 sequences per batch
+      per_epoch: 1       # one epoch = 1 day of audio
+
+data_augmentation:
+   name: AddNoise                                   # add noise on-the-fly
+   params:
+      snr_min: 10                                   # using random signal-to-noise
+      snr_max: 20                                   # ratio between 10 and 20 dBs
+      collection: MUSAN.Collection.BackgroundNoise  # use background noise from MUSAN
+                                                    # (needs pyannote.db.musan)
+feature_extraction:
+   name: LibrosaMFCC      # use MFCC from librosa
+   params:
+      e: False            # do not use energy
+      De: True            # use energy 1st derivative
+      DDe: True           # use energy 2nd derivative
+      coefs: 19           # use 19 MFCC coefficients
+      D: True             # use coefficients 1st derivative
+      DD: True            # use coefficients 2nd derivative
+      duration: 0.025     # extract MFCC from 25ms windows
+      step: 0.010         # extract MFCC every 10ms
+      sample_rate: 16000  # convert to 16KHz first (if needed)
+
+architecture:
+   name: StackedRNN
+   params:
+      instance_normalize: True  # normalize sequences
+      rnn: LSTM                 # use LSTM (could be GRU)
+      recurrent: [128, 128]     # two layers with 128 hidden states
+      bidirectional: True       # bidirectional LSTMs
+      linear: [32, 32]          # add two linear layers at the end
+
+scheduler:
+   name: CyclicScheduler        # use cyclic learning rate (LR) scheduler
+   params:
+      learning_rate: auto       # automatically guess LR upper bound
+      epochs_per_cycle: 14      # 14 epochs per cycle

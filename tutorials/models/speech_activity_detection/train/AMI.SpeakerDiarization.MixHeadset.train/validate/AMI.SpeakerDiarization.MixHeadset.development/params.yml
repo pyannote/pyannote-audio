@@ -1,0 +1,8 @@
+epoch: 280
+params:
+  min_duration_off: 0.0
+  min_duration_on: 0.0
+  offset: 0.5503037490496294
+  onset: 0.5503037490496294
+  pad_offset: 0.0
+  pad_onset: 0.0

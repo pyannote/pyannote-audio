@@ -1,0 +1,50 @@
+feature_extraction:
+   name: LibrosaMFCC
+   params:
+      e: False
+      De: True
+      DDe: True
+      coefs: 19
+      D: True
+      DD: True
+      duration: 0.025
+      step: 0.010
+      sample_rate: 16000
+
+data_augmentation:
+   name: AddNoise
+   params:
+     snr_min: 10
+     snr_max: 20
+     collection: MUSAN.Collection.BackgroundNoise
+
+architecture:
+   name: ClopiNet
+   params:
+     instance_normalize: True
+     rnn: LSTM
+     recurrent: [256, 256, 256]
+     linear: [256]
+     bidirectional: True
+     pooling: sum
+     batch_normalize: True
+     normalize: True
+
+approach:
+   name: TripletLoss
+   params:
+     metric: cosine
+     clamp: sigmoid
+     margin: 0.0
+     min_duration: 0.500
+     max_duration: 1.500
+     sampling: all
+     per_fold: 20
+     per_label: 3
+     per_epoch: 1
+     label_min_duration: 60
+
+scheduler:
+   name: CyclicScheduler
+   params:
+      epochs_per_cycle: 14
