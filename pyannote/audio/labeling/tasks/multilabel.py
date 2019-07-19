@@ -51,6 +51,49 @@ from .base import LabelingTaskGenerator
 from .. import TASK_MULTI_LABEL_CLASSIFICATION
 
 
+def derives_label(annotation, derivation_type, meta_label, regular_labels):
+    """
+    Derives a label. The derivation takes as inputs :
+    - An annotation from which we want to derive
+    - A derivation type : union or intersection
+    - A meta label : the name of the output label
+    - A list of regular labels : the regular labels from which we want to derive
+
+    Example :
+        1) derives_label(annotation, 'union', 'speech', ["CHI","MAL","FEM"]
+        Will compute the speech label based on the union of "CHI", "MAL" and "FEM"
+        2) derives_label(annotation, 'intersection', 'overlap', ["CHI","MAL","FEM"]
+        Will compute the overlapping speech based on the intersection of "CHI", "MAL" and "FEM"
+
+    annotation:  Annotation type
+        The annotation we want to derive from.
+    derivation_type: string, must belong to ['union', 'intersection']
+        The derivation type
+    meta_label:  string
+        The meta label, the name of the label returned by the derivation
+    regular_labels:  list of strings
+        A list of regular labels we want to derive from
+    """
+    if derivation_type not in ['union', 'intersection']:
+        raise ValueError("Derivation type must be in ['union', 'intersection')")
+
+    derived = Annotation()
+    renaming = {k: v for k, v in zip(regular_labels, [meta_label] * len(regular_labels))}
+    annotation = annotation.subset(regular_labels).rename_labels(mapping=renaming)
+
+    if derivation_type == 'union':
+        support = annotation.support()
+        derived.update(support.rename_tracks())
+    elif derivation_type == 'intersection':
+        overlap = Timeline()
+        for track1, track2 in annotation.co_iter(annotation):
+            if track1 == track2:
+                continue
+            overlap.add(track1[0] & track2[0])
+        derived = overlap.support().to_annotation(generator=cycle([meta_label]))
+
+    return derived
+
 class MultilabelGenerator(LabelingTaskGenerator):
     """Batch generator for training a multi-class classifier on BabyTrain
 
@@ -112,50 +155,6 @@ class MultilabelGenerator(LabelingTaskGenerator):
                          batch_size=batch_size, per_epoch=per_epoch,
                          parallel=parallel, shuffle=shuffle)
 
-    @staticmethod
-    def derives_label(annotation, derivation_type, meta_label, regular_labels):
-        """
-        Derives a label. The derivation takes as inputs :
-        - An annotation from which we want to derive
-        - A derivation type : union or intersection
-        - A meta label : the name of the output label
-        - A list of regular labels : the regular labels from which we want to derive
-
-        Example :
-            1) derives_label(annotation, 'union', 'speech', ["CHI","MAL","FEM"]
-            Will compute the speech label based on the union of "CHI", "MAL" and "FEM"
-            2) derives_label(annotation, 'intersection', 'overlap', ["CHI","MAL","FEM"]
-            Will compute the overlapping speech based on the intersection of "CHI", "MAL" and "FEM"
-
-        annotation:  Annotation type
-            The annotation we want to derive from.
-        derivation_type: string, must belong to ['union', 'intersection']
-            The derivation type
-        meta_label:  string
-            The meta label, the name of the label returned by the derivation
-        regular_labels:  list of strings
-            A list of regular labels we want to derive from
-        """
-        if derivation_type not in ['union', 'intersection']:
-            raise ValueError("Derivation type must be in ['union', 'intersection')")
-
-        derived = Annotation()
-        renaming = {k: v for k, v in zip(regular_labels, [meta_label] * len(regular_labels))}
-        annotation = annotation.subset(regular_labels).rename_labels(mapping=renaming)
-
-        if derivation_type == 'union':
-            support = annotation.support()
-            derived.update(support.rename_tracks())
-        elif derivation_type == 'intersection':
-            overlap = Timeline()
-            for track1, track2 in annotation.co_iter(annotation):
-                if track1 == track2:
-                    continue
-                overlap.add(track1[0] & track2[0])
-            derived = overlap.support().to_annotation(generator=cycle([meta_label]))
-
-        return derived
-
     def initialize_y(self, current_file):
         # First, one hot encode the regular classes
         annotation = current_file['annotation'].subset(self.labels_spec['regular'])
@@ -168,7 +167,7 @@ class MultilabelGenerator(LabelingTaskGenerator):
         # Then, one hot encode the meta classes
         for derivation_type in ['union', 'intersection']:
             for meta_label, regular_labels in self.labels_spec[derivation_type].items():
-                derived = self.derives_label(current_file["annotation"], derivation_type, meta_label, regular_labels)
+                derived = derives_label(current_file["annotation"], derivation_type, meta_label, regular_labels)
                 z, _ = one_hot_encoding(derived, get_annotated(current_file),
                                         self.frame_info,
                                         labels=[meta_label],

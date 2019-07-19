@@ -192,10 +192,11 @@ from pyannote.audio.features import Precomputed
 
 from pyannote.core.utils.helper import get_class_by_name
 from pyannote.core import Timeline, SlidingWindowFeature
+from pyannote.audio.labeling.tasks import derives_label
 
 
 def validate_helper_func(current_file, pipeline=None, precision=None, recall=None, label=None, metric=None):
-    reference = current_file[label]
+    reference = current_file[label+"_ref"]
     # pipeline has been initialized with label, so that it can know which class needs to be assessed
     hypothesis = pipeline(current_file)
     uem = get_annotated(current_file)
@@ -221,12 +222,10 @@ class Multilabel(BaseLabeling):
             self.config_['task']['name'],
             default_module_name='pyannote.audio.labeling.tasks')
 
-        # Here we need preprocessors for initializing the task
-        # since we need to know the labels that must be predicted
-        # amongst {KCHI,CHI,FEM,MAL,SPEECH,OVERLAP}
         self.task_ = Task(protocol_name=protocol_name,
                           preprocessors=self.preprocessors_,
                           **self.config_['task'].get('params', {}))
+
         # architecture
         Architecture = get_class_by_name(
             self.config_['architecture']['name'],
@@ -250,6 +249,7 @@ class Multilabel(BaseLabeling):
         experiment_dir = dirname(dirname(train_dir))
         app = cls(protocol_name, experiment_dir, db_yml=db_yml, training=training, use_der=use_der)
         app.train_dir_ = train_dir
+
         return app
 
     @classmethod
@@ -261,7 +261,16 @@ class Multilabel(BaseLabeling):
         app.model_ = app.load_model(epoch, train_dir=train_dir)
         return app
 
-    def validate_init(self, protocol_name, subset='development'): 
+    def validate_init(self, protocol_name, subset='development'):
+        if self.label in self.task_.labels_spec["regular"]:
+            derivation_type = "regular"
+        elif self.label in self.task_.labels_spec["union"]:
+            derivation_type = "union"
+        elif self.label in self.task_.labels_spec["intersection"]:
+            derivation_type = "intersection"
+        else:
+            raise ValueError("%s not found in training labels : %s"
+                             % (self.label, self.task_.label_names))
 
         protocol = get_protocol(protocol_name, progress=False,
                                 preprocessors=self.preprocessors_)
@@ -271,30 +280,19 @@ class Multilabel(BaseLabeling):
 
         # pre-compute features for each validation files
         validation_data = []
-        for current_file in tqdm(files, desc='Feature extraction'): 
-
+        for current_file in tqdm(files, desc='Feature extraction'):
             # precompute features
             if not isinstance(self.feature_extraction_, Precomputed): 
                 current_file['features'] = self.feature_extraction_(
                     current_file)
 
-            if self.label == "SPEECH":
-                # all the speakers
-                current_file[self.label] = current_file['annotation']
-            elif self.label in ["CHI", "FEM", "KCHI", "MAL"]:
-                reference = current_file['annotation']
-                label_speech = reference.subset([self.label])
-                current_file[self.label] = label_speech
-            elif self.label == "OVERLAP":
-                # build overlap reference
-                uri = current_file['uri']
-                overlap = Timeline(uri=uri)
-                turns = current_file['annotation']
-                for track1, track2 in turns.co_iter(turns):
-                    if track1 == track2:
-                        continue
-                    overlap.add(track1[0] & track2[0])
-                current_file["OVERLAP"] = overlap.support().to_annotation()
+            if derivation_type == "regular":
+                current_file[self.label+"_ref"] = current_file["annotation"].subset([self.label])
+            else:
+                current_file[self.label+"_ref"] = derives_label(current_file["annotation"],
+                                                                derivation_type=derivation_type,
+                                                                meta_label=self.label,
+                                                                regular_labels=self.task_.labels_spec[derivation_type][self.label])
             validation_data.append(current_file)
         return validation_data
 
@@ -319,13 +317,10 @@ class Multilabel(BaseLabeling):
 
         for current_file in validation_data:
             scores = sequence_labeling(current_file)
-            if class_name == "SPEECH" and "SPEECH" not in self.task_.labels_:
-                # We sum up all the scores of every speakers
-                scores_data = np.sum(scores.data, axis=1).reshape(-1, 1)
-            else: 
-                # We extract the score of interest
-                dimension = self.task_.labels_.index(class_name)
-                scores_data = scores.data[:, dimension].reshape(-1, 1)
+
+            # We extract the score of interest
+            dimension = self.task_.label_names.index(class_name)
+            scores_data = scores.data[:, dimension].reshape(-1, 1)
 
             current_file[class_name+'_scores'] = SlidingWindowFeature(
                 scores_data,
@@ -471,7 +466,7 @@ def main():
 
     # HACK for JHU/CLSP cluster
     _ = torch.Tensor([0]).to(device)
-    
+
     if arguments['train']:
         experiment_dir = Path(arguments['<experiment_dir>'])
         experiment_dir = experiment_dir.expanduser().resolve(strict=True)
