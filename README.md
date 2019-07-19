@@ -21,9 +21,18 @@ $ git checkout develop
 $ pip install .
 ```
 
-If you're using Shennong for feature extraction, use the `environment-shennong.yml` 
-environment config file. If you're willing to use a regular pip environment, make sure you have PyYAML installed 
+If you're willing to use a regular pip environment, make sure you have PyYAML installed 
 in that env, and run Step 2.
+
+## Plugins
+
+### Shennong
+
+If you're using Shennong for feature extraction, use the tutorial
+ [here](http://github.com/bootphon/pyannote-shennong-features).
+
+You can then specify the feature processing parameters in your config file exactly the same
+way as with librosa. You can find more information on the plugin's repository.
 
 ## Citation
 

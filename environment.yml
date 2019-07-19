@@ -12,7 +12,7 @@ dependencies:
     - librosa >= 0.6.2
     - pandas >= 0.18.0
     - pyannote.core >= 3.0
-    - pyannote.database >= 2.2
+    - pyannote.database >= 2.3
     - pyannote.generators >= 2.0
     - pyannote.metrics >= 1.8.1
     - pyannote.pipeline >= 1.2
