@@ -21,18 +21,7 @@ $ git checkout develop
 $ pip install .
 ```
 
-If you're willing to use a regular pip environment, make sure you have PyYAML installed 
-in that env, and run Step 2.
-
-## Plugins
-
-### Shennong
-
-If you're using Shennong for feature extraction, use the tutorial
- [here](http://github.com/bootphon/pyannote-shennong-features).
-
-You can then specify the feature processing parameters in your config file exactly the same
-way as with librosa. You can find more information on the plugin's repository.
+If you prefer `pip` environment over `conda`, make sure to install `PyYAML` before Step 2. 
 
 ## Citation
 
@@ -92,8 +81,11 @@ If you use `pyannote.audio` please use the following citations.
     * [Applying pre-trained models on your own data](tutorials/own_data/pretrained)
     * [Training models on your own data](tutorials/own_data/train)
 
-  
 ## Documentation
 
 Part of the API is described in [this](tutorials/models/pretrained) tutorial.  
 Other than that, there is still a lot to do (contribute?) documentation-wise...
+
+## External plugins
+
+- [pyannote-shennong-features](http://github.com/bootphon/pyannote-shennong-features) is a library that provides additional feature extractors, based on the [Shennong](https://coml.lscp.ens.fr/shennong) toolbox for unsupervised speech recognition.
