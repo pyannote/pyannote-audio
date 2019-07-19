@@ -38,6 +38,7 @@ from .base import TASK_MULTI_CLASS_CLASSIFICATION
 from pyannote.core import SlidingWindowFeature
 from pyannote.database.protocol import SpeakerDiarizationProtocol
 from pyannote.audio.labeling.models import StackedRNN
+from pyannote.audio.augmentation import AddNoiseFromGaps
 from pyannote.core.utils.numpy import one_hot_decoding
 from pyannote.database import get_annotated
 from pyannote.audio.labeling.extraction import SequenceLabeling
@@ -55,10 +56,10 @@ class ResegmentationGenerator(LabelingTaskGenerator):
 
     Parameters
     ----------
-    precomputed : `pyannote.audio.features.Precomputed`
-        Precomputed feature extraction
+    feature_extraction : `pyannote.audio.features.FeatureExtraction`
+        Feature extraction
     current_file : `dict`
-        # ...
+
     frame_info : `pyannote.core.SlidingWindow`, optional
         Override `feature_extraction.sliding_window`. This is useful for
         models that include the feature extraction step (e.g. SincNet) and
@@ -84,12 +85,21 @@ class ResegmentationGenerator(LabelingTaskGenerator):
         Set to True to indicate that mask values are log scaled. Will apply
         exponential. Defaults to False. Has not effect when `mask_dimension`
         is not set.
+    augmentation : `bool`, optional
+        Augment (self-)training data by adding noise from non-speech regions.
+        Defaults to False.
     """
 
-    def __init__(self, precomputed, current_file,
-                 frame_info=None, frame_crop=None,
-                 duration=3.2, batch_size=32,
-                 mask_dimension=None, mask_logscale=False):
+    def __init__(self,
+                 feature_extraction,
+                 current_file,
+                 frame_info=None,
+                 frame_crop=None,
+                 duration=3.2,
+                 batch_size=32,
+                 mask_dimension=None,
+                 mask_logscale=False,
+                 augmentation=False):
 
         if 'duration' not in current_file:
             msg = (
@@ -99,13 +109,30 @@ class ResegmentationGenerator(LabelingTaskGenerator):
             raise ValueError(msg)
 
         self.current_file = current_file
+        dummy_protocol = self.get_dummy_protocol(current_file)
+
+        self.augmentation = augmentation
+        if augmentation:
+            feature_extraction.augmentation = \
+                AddNoiseFromGaps(protocol=dummy_protocol,
+                                 subset='train',
+                                 snr_min=10,
+                                 snr_max=20)
 
         super(ResegmentationGenerator, self).__init__(
-            precomputed, self.get_dummy_protocol(current_file), subset='train',
-            frame_info=frame_info, frame_crop=frame_crop,
-            duration=duration, step=0.25*duration, batch_size=batch_size,
-            exhaustive=True, shuffle=True, parallel=1,
-            mask_dimension=mask_dimension, mask_logscale=mask_logscale)
+            feature_extraction,
+            dummy_protocol,
+            subset='train',
+            frame_info=frame_info,
+            frame_crop=frame_crop,
+            duration=duration,
+            step=0.25 * duration,
+            batch_size=batch_size,
+            exhaustive=True,
+            shuffle=True,
+            parallel=0 if self.augmentation else 1,
+            mask_dimension=mask_dimension,
+            mask_logscale=mask_logscale)
 
     def get_dummy_protocol(self, current_file):
         """Get dummy protocol containing only `current_file`
@@ -370,6 +397,8 @@ class Resegmentation(LabelingTask):
                     continue
 
                 current_model.eval()
+                augmentation = self.feature_extraction.augmentation
+                self.feature_extraction.augmentation = None
 
                 # initialize sequence labeling with model and features
                 sequence_labeling = SequenceLabeling(
@@ -382,6 +411,7 @@ class Resegmentation(LabelingTask):
                 scores.append(sequence_labeling(current_file))
 
                 current_model.train()
+                self.feature_extraction.augmentation = augmentation
 
         # ensemble scores
         scores = SlidingWindowFeature(
