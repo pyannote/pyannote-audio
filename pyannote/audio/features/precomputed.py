@@ -150,6 +150,17 @@ class Precomputed(object):
             self.dimension_ = dimension
             self.labels_ = labels
 
+    def augmentation():
+        doc = "Data augmentation."
+        def fget(self):
+            return None
+        def fset(self, augmentation):
+            if augmentation is not None:
+                msg = 'Data augmentation is not supported by `Precomputed`.'
+                raise AttributeError(msg)
+        return locals()
+    augmentation = property(**augmentation())
+
     @property
     def sliding_window(self):
         """Sliding window used for feature extraction"""

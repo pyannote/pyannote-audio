@@ -96,6 +96,15 @@ class SequenceEmbedding(SequenceLabeling):
                          step=step, duration=duration, min_duration=min_duration,
                          batch_size=batch_size, device=device)
 
+    def augmentation():
+        doc = "Data augmentation."
+        def fget(self):
+            return self.feature_extraction.augmentation
+        def fset(self, augmentation):
+            self.feature_extraction.augmentation = augmentation
+        return locals()
+    augmentation = property(**augmentation())
+
     @property
     def dimension(self):
         """Dimension of embeddings"""

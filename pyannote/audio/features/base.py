@@ -66,6 +66,15 @@ class FeatureExtraction(object):
             sample_rate=self.sample_rate, mono=True,
             augmentation=augmentation)
 
+    def augmentation():
+        doc = "Data augmentation."
+        def fget(self):
+            return self.raw_audio_.augmentation
+        def fset(self, augmentation):
+            self.raw_audio_.augmentation = augmentation
+        return locals()
+    augmentation = property(**augmentation())
+
     def get_dimension(self):
         """Get dimension of feature vectors
 
