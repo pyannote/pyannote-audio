@@ -65,6 +65,9 @@ class Resegmentation(Pipeline):
         Configuration dict for masking.
         - dimension : `int`, optional
         - log_scale : `bool`, optional
+    augmentation : `bool`, optional
+        Augment (self-)training data by adding noise from non-speech regions.
+        Defaults to False.
     duration : `float`, optional
         Defaults to 2s.
     batch_size : `int`, optional
@@ -121,6 +124,7 @@ class Resegmentation(Pipeline):
                        overlap: Optional[bool] = False,
                        keep_sad: Optional[bool] = False,
                        mask: Optional[dict] = None,
+                       augmentation: Optional[bool] = False,
                        duration: Optional[float] = 2.0,
                        batch_size: Optional[float] = 32,
                        gpu: Optional[bool] = False):
@@ -172,6 +176,8 @@ class Resegmentation(Pipeline):
         else:
             self.mask_dimension_ = mask['dimension']
             self.mask_logscale_ = mask['log_scale']
+
+        self.augmentation = augmentation
 
         self.duration = duration
         self.batch_size = batch_size

@@ -253,12 +253,24 @@ class Resegmentation(LabelingTask):
         Set to True to indicate that mask values are log scaled. Will apply
         exponential. Defaults to False. Has not effect when `mask_dimension`
         is not set.
+    augmentation : `bool`, optional
+        Augment (self-)training data by adding noise from non-speech regions.
+        Defaults to False.
     """
 
-    def __init__(self, feature_extraction, get_model, keep_sad=False,
-                 epochs=30, learning_rate=0.1, ensemble=1, device=None,
-                 duration=3.2, batch_size=32,
-                 mask_dimension=None, mask_logscale=False):
+    def __init__(self,
+                 feature_extraction,
+                 get_model,
+                 keep_sad=False,
+                 epochs=30,
+                 learning_rate=0.1,
+                 ensemble=1,
+                 device=None,
+                 duration=3.2,
+                 batch_size=32,
+                 mask_dimension=None,
+                 mask_logscale=False,
+                 augmentation=False):
 
         self.feature_extraction = feature_extraction
         self.get_model = get_model
@@ -269,6 +281,8 @@ class Resegmentation(LabelingTask):
 
         self.mask_dimension = mask_dimension
         self.mask_logscale = mask_logscale
+
+        self.augmentation = augmentation
 
         self.device = torch.device('cpu') if device is None else device
 
@@ -299,11 +313,15 @@ class Resegmentation(LabelingTask):
             frame_crop = None
 
         return ResegmentationGenerator(
-            self.feature_extraction, current_file,
-            frame_info=frame_info, frame_crop=frame_crop,
-            duration=self.duration, batch_size=self.batch_size,
+            self.feature_extraction,
+            current_file,
+            frame_info=frame_info,
+            frame_crop=frame_crop,
+            duration=self.duration,
+            batch_size=self.batch_size,
             mask_dimension=self.mask_dimension,
-            mask_logscale=self.mask_logscale)
+            mask_logscale=self.mask_logscale,
+            augmentation=self.augmentation)
 
     def _decode(self, current_file, hypothesis, scores, labels):
 
@@ -457,12 +475,25 @@ class ResegmentationWithOverlap(Resegmentation):
         Set to True to indicate that mask values are log scaled. Will apply
         exponential. Defaults to False. Has not effect when `mask_dimension`
         is not set.
+    augmentation : `bool`, optional
+        Augment (self-)training data by adding noise from non-speech regions.
+        Defaults to False.
     """
 
-    def __init__(self, feature_extraction, get_model, keep_sad=False,
-                 overlap_threshold=0.5, epochs=30, learning_rate=0.1,
-                 ensemble=1, device=None, duration=3.2, batch_size=32,
-                 mask_dimension=None, mask_logscale=False):
+    def __init__(self,
+                 feature_extraction,
+                 get_model,
+                 keep_sad=False,
+                 overlap_threshold=0.5,
+                 epochs=30,
+                 learning_rate=0.1,
+                 ensemble=1,
+                 device=None,
+                 duration=3.2,
+                 batch_size=32,
+                 mask_dimension=None,
+                 mask_logscale=False,
+                 augmentation=False):
 
         super().__init__(feature_extraction,
                          get_model,
@@ -474,7 +505,8 @@ class ResegmentationWithOverlap(Resegmentation):
                          duration=duration,
                          batch_size=batch_size,
                          mask_dimension=mask_dimension,
-                         mask_logscale=mask_logscale)
+                         mask_logscale=mask_logscale,
+                         augmentation=augmentation)
 
         self.overlap_threshold = overlap_threshold
         self.binarizer_ = Binarize(onset=self.overlap_threshold,
