@@ -75,7 +75,7 @@ def derives_label(annotation, derivation_type, meta_label, regular_labels):
         A list of regular labels we want to derive from
     """
     if derivation_type not in ['union', 'intersection']:
-        raise ValueError("Derivation type must be in ['union', 'intersection')")
+        raise ValueError("Derivation type must be in ['union', 'intersection']")
 
     derived = Annotation()
     renaming = {k: v for k, v in zip(regular_labels, [meta_label] * len(regular_labels))}
@@ -253,6 +253,10 @@ class Multilabel(LabelingTask):
 
         # Labels related attributes
         self.labels_spec = labels
+        if 'union' not in self.labels_spec.keys():
+            self.labels_spec['union'] = dict()
+        if 'intersection' not in self.labels_spec.keys():
+            self.labels_spec['intersection'] = dict()
         self.label_names = labels["regular"] \
                            + list(labels['union'].keys()) \
                            + list(labels['intersection'].keys())
