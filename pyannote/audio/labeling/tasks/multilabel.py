@@ -26,14 +26,6 @@
 # AUTHORS
 # Marvin Lavechin - marvinlavechin@gmail.com
 
-"""BabyTrain
-4-way classification :
-KCHI    (the key child wearing the device)
-CHI     (other children)
-FEM     (female speech)
-MAL     (male speech)
-"""
-
 from itertools import cycle
 
 import numpy as np
@@ -51,57 +43,23 @@ from .base import LabelingTaskGenerator
 from .. import TASK_MULTI_LABEL_CLASSIFICATION
 
 
-def derives_label(annotation, derivation_type, meta_label, regular_labels):
-    """
-    Derives a label. The derivation takes as inputs :
-    - An annotation from which we want to derive
-    - A derivation type : union or intersection
-    - A meta label : the name of the output label
-    - A list of regular labels : the regular labels from which we want to derive
-
-    Example :
-        1) derives_label(annotation, 'union', 'speech', ["CHI","MAL","FEM"]
-        Will compute the speech label based on the union of "CHI", "MAL" and "FEM"
-        2) derives_label(annotation, 'intersection', 'overlap', ["CHI","MAL","FEM"]
-        Will compute the overlapping speech based on the intersection of "CHI", "MAL" and "FEM"
-
-    annotation:  Annotation type
-        The annotation we want to derive from.
-    derivation_type: string, must belong to ['union', 'intersection']
-        The derivation type
-    meta_label:  string
-        The meta label, the name of the label returned by the derivation
-    regular_labels:  list of strings
-        A list of regular labels we want to derive from
-    """
-    if derivation_type not in ['union', 'intersection']:
-        raise ValueError("Derivation type must be in ['union', 'intersection']")
-
-    derived = Annotation()
-    renaming = {k: v for k, v in zip(regular_labels, [meta_label] * len(regular_labels))}
-    annotation = annotation.subset(regular_labels).rename_labels(mapping=renaming)
-
-    if derivation_type == 'union':
-        support = annotation.support()
-        derived.update(support.rename_tracks())
-    elif derivation_type == 'intersection':
-        overlap = Timeline()
-        for track1, track2 in annotation.co_iter(annotation):
-            if track1 == track2:
-                continue
-            overlap.add(track1[0] & track2[0])
-        derived = overlap.support().to_annotation(generator=cycle([meta_label]))
-
-    return derived
-
 class MultilabelGenerator(LabelingTaskGenerator):
-    """Batch generator for training a multi-class classifier on BabyTrain
+    """Batch generator for training a multi-labels classifier on BabyTrain
 
     Parameters
     ----------
     feature_extraction : `pyannote.audio.features.FeatureExtraction`
         Feature extraction
     protocol : `pyannote.database.Protocol`
+    labels_spec : dictionnary
+        Describes the labels that must be predicted.
+        1) Must contain a 'regular' key listing the labels appearing 'as-is' in the dataset.
+        2) Might contain a 'union' key listing the {key, values} where key is the name of
+        the union_label that needs to be predicted, and values is the list of labels
+        that will construct the union_label (useful to construct speech classes).
+        3) Might contain a 'intersection' key listing the {key, values} where key is the name of
+        the intersection_label that needs to be predicted, and values is the list of labels
+        that will construct the intersection_label (useful to construct overlap classes).
     subset : {'train', 'development', 'test'}
     frame_info : `pyannote.core.SlidingWindow`, optional
         Override `feature_extraction.sliding_window`. This is useful for
@@ -129,12 +87,23 @@ class MultilabelGenerator(LabelingTaskGenerator):
     >>> from pyannote.audio.features import Precomputed
     >>> precomputed = Precomputed('/path/to/mfcc')
 
-    # instantiate batch generator
-    >>> batches =  MultilabelGenerator(precomputed)
-
     # evaluation protocol
     >>> from pyannote.database import get_protocol
     >>> protocol = get_protocol('BabyTrain.SpeakerRole.JSALT')
+
+    # labels specification
+    >>> labels_spec = {'regular': ['CHI', 'FEM', 'MAL'],
+    >>>                'union': {
+    >>>                     'speech' : ['CHI', 'FEM', 'MAL']
+    >>>                     'adult_spech': ['FEM','MAL']
+    >>>                 },
+    >>>                 'intersection': {
+    >>>                     'overlap' : ['CHI', 'FEM', 'MAL']
+    >>>                 }
+    >>>                }
+
+    # instantiate batch generator
+    >>> batches =  MultilabelGenerator(precomputed, protocol, labels_spec)
 
     # iterate over training set
     >>> for batch in batches(protocol, subset='train'):
@@ -143,17 +112,61 @@ class MultilabelGenerator(LabelingTaskGenerator):
     >>>     pass
     """
 
-    def __init__(self, feature_extraction, protocol, labels,
+    def __init__(self, feature_extraction, protocol, labels_spec,
                  subset='train', frame_info=None, frame_crop=None,
                  duration=3.2, batch_size=32, per_epoch=1, parallel=1,
                  shuffle=True):
 
-        self.labels_spec = labels
+        self.labels_spec = labels_spec
         super().__init__(feature_extraction, protocol, subset=subset,
                          frame_info=frame_info, frame_crop=frame_crop,
                          duration=duration,
                          batch_size=batch_size, per_epoch=per_epoch,
                          parallel=parallel, shuffle=shuffle)
+
+    @staticmethod
+    def derives_label(annotation, derivation_type, meta_label, regular_labels):
+        """
+        Derives a label. The derivation takes as inputs :
+        - An annotation from which we want to derive
+        - A derivation type : union or intersection
+        - A meta label : the name of the output label
+        - A list of regular labels : the regular labels from which we want to derive
+
+        Example :
+            1) derives_label(annotation, 'union', 'speech', ["CHI","MAL","FEM"]
+            Will compute the speech label based on the union of "CHI", "MAL" and "FEM"
+            2) derives_label(annotation, 'intersection', 'overlap', ["CHI","MAL","FEM"]
+            Will compute the overlapping speech based on the intersection of "CHI", "MAL" and "FEM"
+
+        annotation:  Annotation type
+            The annotation we want to derive from.
+        derivation_type: string, must belong to ['union', 'intersection']
+            The derivation type
+        meta_label:  string
+            The meta label, the name of the label returned by the derivation
+        regular_labels:  list of strings
+            A list of regular labels we want to derive from
+        """
+        if derivation_type not in ['union', 'intersection']:
+            raise ValueError("Derivation type must be in ['union', 'intersection']")
+
+        derived = Annotation()
+        mapping = {k: v for k, v in zip(regular_labels, [meta_label] * len(regular_labels))}
+        annotation = annotation.subset(regular_labels).rename_labels(mapping=mapping)
+
+        if derivation_type == 'union':
+            support = annotation.support()
+            derived.update(support.rename_tracks())
+        elif derivation_type == 'intersection':
+            overlap = Timeline()
+            for track1, track2 in annotation.co_iter(annotation):
+                if track1 == track2:
+                    continue
+                overlap.add(track1[0] & track2[0])
+            derived = overlap.support().to_annotation(generator=cycle([meta_label]))
+
+        return derived
 
     def initialize_y(self, current_file):
         # First, one hot encode the regular classes
@@ -167,7 +180,7 @@ class MultilabelGenerator(LabelingTaskGenerator):
         # Then, one hot encode the meta classes
         for derivation_type in ['union', 'intersection']:
             for meta_label, regular_labels in self.labels_spec[derivation_type].items():
-                derived = derives_label(current_file["annotation"], derivation_type, meta_label, regular_labels)
+                derived = MultilabelGenerator.derives_label(current_file["annotation"], derivation_type, meta_label, regular_labels)
                 z, _ = one_hot_encoding(derived, get_annotated(current_file),
                                         self.frame_info,
                                         labels=[meta_label],
@@ -193,9 +206,9 @@ class Multilabel(LabelingTask):
     """
     Train a n-labels classifier where the labels are provided by the user, and can be of 3 types :
 
-    - Regular labels : those are computed directly from the annotation and are kept unchanged.
-    - Union meta-label : those are computed by taking the union of multiple regular labels
-    - Intersection meta-label : those are computed by taking the intersection of multiple regular labels.
+    - Regular labels : those are extracted directly from the annotation and are kept unchanged.
+    - Union meta-label : those are extracted by taking the union of multiple regular labels.
+    - Intersection meta-label : those are extracted by taking the intersection of multiple regular labels.
 
     Parameters
     ----------
@@ -226,7 +239,24 @@ class Multilabel(LabelingTask):
 
     Usage
     -----
-    >>> task = Multilabel()
+    # Use mapping as a preprocessor
+    >>> from pyannote.database.util import LabelMapper
+    >>> preprocessors = {'annotation': LabelMapper(mapping=mapping)}
+
+    # labels specification
+    >>> labels_spec = {'regular': ['CHI', 'FEM', 'MAL'],
+    >>>                'union': {
+    >>>                     'speech' : ['CHI', 'FEM', 'MAL']
+    >>>                     'adult_spech': ['FEM','MAL']
+    >>>                 },
+    >>>                 'intersection': {
+    >>>                     'overlap' : ['CHI', 'FEM', 'MAL']
+    >>>                 }
+    >>>                }
+
+    # protocol name
+    >>> protocol_name = 'BabyTrain.SpeakerDiarization.All'
+    >>> task = Multilabel(protocol_name, preprocessors, labels_spec)
 
     # precomputed features
     >>> from pyannote.audio.features import Precomputed
@@ -238,13 +268,13 @@ class Multilabel(LabelingTask):
 
     # evaluation protocol
     >>> from pyannote.database import get_protocol
-    >>> protocol = get_protocol('BabyTrain.SpeakerDiarization.All')
+    >>> protocol = get_protocol(protocol_name)
 
     # train model using protocol training set
     >>> for epoch, model in task.fit_iter(model, precomputed, protocol):
     ...     pass
     """
-    def __init__(self, protocol_name, preprocessors, labels, weighted_loss=False, **kwargs):
+    def __init__(self, protocol_name, preprocessors, labels_spec, weighted_loss=False, **kwargs):
         super(Multilabel, self).__init__(**kwargs)
 
         # Need protocol to know the classes that need to be predicted
@@ -252,16 +282,16 @@ class Multilabel(LabelingTask):
         self.weighted_loss = weighted_loss
 
         # Labels related attributes
-        self.labels_spec = labels
+        self.labels_spec = labels_spec
         if 'union' not in self.labels_spec.keys():
             self.labels_spec['union'] = dict()
         if 'intersection' not in self.labels_spec.keys():
             self.labels_spec['intersection'] = dict()
-        self.label_names = labels["regular"] \
-                           + list(labels['union'].keys()) \
-                           + list(labels['intersection'].keys())
-        self.nb_labels = len(labels)
-        self.nb_regular_labels = len(labels["regular"])
+        self.label_names = labels_spec["regular"] \
+                           + list(labels_spec['union'].keys()) \
+                           + list(labels_spec['intersection'].keys())
+        self.nb_labels = len(labels_spec)
+        self.nb_regular_labels = len(labels_spec["regular"])
 
         # Protocol, so that we can loop through the training set
         # and compute the prior

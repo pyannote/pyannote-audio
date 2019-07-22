@@ -27,7 +27,7 @@
 # Marvin Lavechin - marvinlavechin@gmail.com
 
 """
-Multi-label classifier BabyTrain
+Multi-label classifier
 
 Usage: 
   pyannote-multilabel train [options] <experiment_dir> <database.task.protocol>
@@ -94,6 +94,13 @@ Configuration file:
           duration:  3.2     # sub-sequence duration
           per_epoch:  1      # 1 day of audio per epoch
           batch_size:  32    # number of sub-sequences per batch
+          labels_spec:
+             regular: ['CHI', 'MAL', 'FEM']
+             union:
+                speech: ['CHI', 'FEM', 'MAL']
+                adult_speech : ['FEM', 'MAL']
+             intersection:
+                overlap: ['CHI', 'FEM', 'MAL']
 
     # use precomputed features (see feature extraction tutorial)
     feature_extraction: 
@@ -116,6 +123,17 @@ Configuration file:
        name:  CyclicScheduler
        params: 
            learning_rate:  auto
+
+    # Label mapping : depends on the labels found in your data
+    preprocessors:
+    annotation:
+       name: pyannote.database.util.LabelMapper
+       params:
+         keep_missing: False    # Raise an error if one of the input label is not found in the mapping.
+         mapping:
+            "BRO": "CHI"
+            "MOT": "FEM"
+            "FAT": "MAL"
     ...................................................................
 
 "train" mode: 
@@ -192,7 +210,7 @@ from pyannote.audio.features import Precomputed
 
 from pyannote.core.utils.helper import get_class_by_name
 from pyannote.core import Timeline, SlidingWindowFeature
-from pyannote.audio.labeling.tasks import derives_label
+from pyannote.audio.labeling.tasks import MultilabelGenerator
 
 
 def validate_helper_func(current_file, pipeline=None, precision=None, recall=None, label=None, metric=None):
@@ -289,7 +307,7 @@ class Multilabel(BaseLabeling):
             if derivation_type == "regular":
                 current_file[self.label+"_ref"] = current_file["annotation"].subset([self.label])
             else:
-                current_file[self.label+"_ref"] = derives_label(current_file["annotation"],
+                current_file[self.label+"_ref"] = MultilabelGenerator.derives_label(current_file["annotation"],
                                                                 derivation_type=derivation_type,
                                                                 meta_label=self.label,
                                                                 regular_labels=self.task_.labels_spec[derivation_type][self.label])

@@ -35,5 +35,3 @@ from .speaker_change_detection import SpeakerChangeDetection
 from .domain_classification import DomainClassification
 from .resegmentation import Resegmentation
 from .multilabel import Multilabel
-
-from .multilabel import derives_label
