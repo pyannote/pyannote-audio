@@ -355,3 +355,4 @@ class CyclicScheduler(BaseSchedulerCallback):
         self.momentum = MOMENTUM_MAX - (MOMENTUM_MAX - MOMENTUM_MIN) * rho
 
         self.n_batches_ += 1
+        return batch

@@ -75,6 +75,7 @@ class Logging(Callback):
         self.t_batch_.append(
             self.t_batch_start_ - self.t_batch_end_
         )
+        return batch
 
     def on_batch_end(self, trainer, batch_loss):
 
