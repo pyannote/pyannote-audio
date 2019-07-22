@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2018 CNRS
+# Copyright (c) 2018-2019 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -131,9 +131,7 @@ class AddNoise(Augmentation):
         # FIXME: use fade-in between concatenated noises
         noise = np.vstack(noises)
 
-        power = np.random.random_sample()
-
-        snr = (self.snr_max - self.snr_min) * power + self.snr_min
+        snr = (self.snr_max - self.snr_min) * np.random.random_sample() + self.snr_min
         alpha = np.exp(-np.log(10) * snr / 20)
 
         return normalize(original) + alpha * noise
@@ -238,9 +236,7 @@ class AddNoiseFromGaps(Augmentation):
         # FIXME: use fade-in between concatenated noises
         noise = np.vstack(noises)
 
-        power = np.random.random_sample()
-
-        snr = (self.snr_max - self.snr_min) * power + self.snr_min
+        snr = (self.snr_max - self.snr_min) * np.random.random_sample() + self.snr_min
         alpha = np.exp(-np.log(10) * snr / 20)
 
         return normalize(original) + alpha * noise
