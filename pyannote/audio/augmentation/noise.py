@@ -184,7 +184,8 @@ class AddNoiseFromGaps(Augmentation):
         protocol = get_protocol(self.protocol,
                                 preprocessors=preprocessors)
         self.files_ = list(getattr(protocol, self.subset)())
-        # Filter files that don't have any silence
+
+        # remove files with no gaps
         self.files_ = [f for f in self.files_ if f['gaps']]
 
     def __call__(self, original, sample_rate):
@@ -236,6 +237,7 @@ class AddNoiseFromGaps(Augmentation):
         # FIXME: use fade-in between concatenated noises
         noise = np.vstack(noises)
 
+        # select SNR at random
         snr = (self.snr_max - self.snr_min) * np.random.random_sample() + self.snr_min
         alpha = np.exp(-np.log(10) * snr / 20)
 
