@@ -351,7 +351,7 @@ class Trainer:
             for i in range(self.batches_per_epoch_):
                 batch = next(self.batches_)
 
-                callbacks.on_batch_start(self, batch)
+                batch = callbacks.on_batch_start(self, batch)
 
                 loss = self.batch_loss(batch)
                 loss['loss'].backward()
