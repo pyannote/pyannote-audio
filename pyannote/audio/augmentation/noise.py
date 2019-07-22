@@ -131,6 +131,7 @@ class AddNoise(Augmentation):
         # FIXME: use fade-in between concatenated noises
         noise = np.vstack(noises)
 
+        # select SNR at random
         snr = (self.snr_max - self.snr_min) * np.random.random_sample() + self.snr_min
         alpha = np.exp(-np.log(10) * snr / 20)
 
