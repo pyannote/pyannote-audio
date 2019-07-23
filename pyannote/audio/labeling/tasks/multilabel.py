@@ -123,70 +123,6 @@ class MultilabelGenerator(LabelingTaskGenerator):
                          batch_size=batch_size, per_epoch=per_epoch,
                          parallel=parallel, shuffle=shuffle)
 
-    @staticmethod
-    def derives_label(annotation, derivation_type, meta_label, regular_labels):
-        """Returns an Annotation describing the utterances of the union or intersection
-        of multiple labels.
-
-        Derives a label. The derivation takes as inputs :
-        - An annotation from which we want to derive
-        - A derivation type : union or intersection
-        - A meta label : the name of the output label
-        - A list of regular labels : the regular labels from which we want to derive
-
-        Example :
-            1) derives_label(annotation, 'union', 'speech', ["CHI","MAL","FEM"]
-            Will compute the speech label based on the union of "CHI", "MAL" and "FEM"
-            2) derives_label(annotation, 'intersection', 'overlap', ["CHI","MAL","FEM"]
-            Will compute the overlapping speech based on the intersection of "CHI", "MAL" and "FEM"
-
-        Parameters
-        ----------
-        annotation : `Annotation`
-            Input annotation that needs to be derived
-        derivation_type: {'union', 'intersection'}
-            Indicates if the union, or the intersection must be considered
-        meta_label: `string`
-            Indicates the name of the output label
-        regular_labels: `list`
-            Indicates the list of labels that must be taken into account.
-
-        Returns
-        -------
-        variable_name : `Annotation`
-            Annotation whose only label is meta_label that has been constructed
-            by taking the intersection or union of the regular_labels list.
-
-        Usage
-        -----
-        # compute the "adult_speech" label
-        >>> speech = derives_label(annotation, 'union', 'adult_speech', ['MAL', 'FEM'])
-        # compute the "overlap" label blahlblah
-        >>> overlap = derives_label(annotation, 'intersection', 'overlap', ['MAL','FEM','CHI'])
-        """
-
-        if derivation_type not in ['union', 'intersection']:
-            raise ValueError("Derivation type must be in ['union', 'intersection']")
-
-        derived = Annotation(uri=annotation.uri)
-        mapping = {k: meta_label for k in regular_labels}
-        annotation = annotation.subset(regular_labels).rename_labels(mapping=mapping)
-
-        if derivation_type == 'union':
-            support = annotation.support()
-            return derived.update(support)
-        elif derivation_type == 'intersection':
-            overlap = Timeline()
-            for track1, track2 in annotation.co_iter(annotation):
-                if track1 == track2:
-                    continue
-                overlap.add(track1[0] & track2[0])
-            derived = overlap.support().to_annotation(generator=cycle([meta_label]))
-            return derived
-        else:
-            raise ValueError("derivation_type must belong to ['union', 'intersection']\n"
-                             "Can't be %s." % derivation_type)
-
     def initialize_y(self, current_file):
         # First, one hot encode the regular classes
         annotation = current_file['annotation'].subset(self.labels_spec['regular'])
@@ -199,7 +135,7 @@ class MultilabelGenerator(LabelingTaskGenerator):
         # Then, one hot encode the meta classes
         for derivation_type in ['union', 'intersection']:
             for meta_label, regular_labels in self.labels_spec[derivation_type].items():
-                derived = MultilabelGenerator.derives_label(current_file["annotation"], derivation_type, meta_label, regular_labels)
+                derived = Multilabel.derives_label(current_file["annotation"], derivation_type, meta_label, regular_labels)
                 z, _ = one_hot_encoding(derived, get_annotated(current_file),
                                         self.frame_info,
                                         labels=[meta_label],
@@ -299,7 +235,7 @@ class Multilabel(LabelingTask):
 
     # model architecture
     >>> from pyannote.audio.labeling.models import StackedRNN
-    >>> model = StackedRNN(precomputed.dimension, task.n_classes)
+    >>> model = StackedRNN(precomputed.dimension, task.specifications)
 
     # evaluation protocol
     >>> from pyannote.database import get_protocol
@@ -344,6 +280,70 @@ class Multilabel(LabelingTask):
         # and compute the prior
         self.protocol = get_protocol(protocol_name, preprocessors=preprocessors)
 
+    @staticmethod
+    def derives_label(annotation, derivation_type, meta_label, regular_labels):
+        """Returns an Annotation describing the utterances of the union or intersection
+        of multiple labels.
+
+        Derives a label. The derivation takes as inputs :
+        - An annotation from which we want to derive
+        - A derivation type : union or intersection
+        - A meta label : the name of the output label
+        - A list of regular labels : the regular labels from which we want to derive
+
+        Example :
+            1) derives_label(annotation, 'union', 'speech', ["CHI","MAL","FEM"]
+            Will compute the speech label based on the union of "CHI", "MAL" and "FEM"
+            2) derives_label(annotation, 'intersection', 'overlap', ["CHI","MAL","FEM"]
+            Will compute the overlapping speech based on the intersection of "CHI", "MAL" and "FEM"
+
+        Parameters
+        ----------
+        annotation : `Annotation`
+            Input annotation that needs to be derived
+        derivation_type: {'union', 'intersection'}
+            Indicates if the union, or the intersection must be considered
+        meta_label: `string`
+            Indicates the name of the output label
+        regular_labels: `list`
+            Indicates the list of labels that must be taken into account.
+
+        Returns
+        -------
+        variable_name : `Annotation`
+            Annotation whose only label is meta_label that has been constructed
+            by taking the intersection or union of the regular_labels list.
+
+        Usage
+        -----
+        # compute the "adult_speech" label
+        >>> speech = derives_label(annotation, 'union', 'adult_speech', ['MAL', 'FEM'])
+        # compute the "overlap" label blahlblah
+        >>> overlap = derives_label(annotation, 'intersection', 'overlap', ['MAL','FEM','CHI'])
+        """
+
+        if derivation_type not in ['union', 'intersection']:
+            raise ValueError("Derivation type must be in ['union', 'intersection']")
+
+        derived = Annotation(uri=annotation.uri)
+        mapping = {k: meta_label for k in regular_labels}
+        annotation = annotation.subset(regular_labels).rename_labels(mapping=mapping)
+
+        if derivation_type == 'union':
+            support = annotation.support()
+            return derived.update(support)
+        elif derivation_type == 'intersection':
+            overlap = Timeline()
+            for track1, track2 in annotation.co_iter(annotation):
+                if track1 == track2:
+                    continue
+                overlap.add(track1[0] & track2[0])
+            derived = overlap.support().to_annotation(generator=cycle([meta_label]))
+            return derived
+        else:
+            raise ValueError("derivation_type must belong to ['union', 'intersection']\n"
+                             "Can't be %s." % derivation_type)
+
     def get_batch_generator(self, feature_extraction, protocol, subset='train',
                             frame_info=None, frame_crop=None):
         return MultilabelGenerator(
@@ -355,7 +355,7 @@ class Multilabel(LabelingTask):
             per_epoch=self.per_epoch,
             batch_size=self.batch_size,
             parallel=self.parallel,
-            labels=self.labels_spec)
+            labels_spec=self.labels_spec)
 
     def _get_one_over_the_prior(self):
         weights = {k: 0.0 for k in self.label_names[0:self.nb_regular_labels]}

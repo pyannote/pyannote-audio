@@ -212,7 +212,7 @@ from pyannote.audio.features import Precomputed
 
 from pyannote.core.utils.helper import get_class_by_name
 from pyannote.core import Timeline, SlidingWindowFeature
-from pyannote.audio.labeling.tasks import MultilabelGenerator
+from pyannote.audio.labeling.tasks import Multilabel as MultilabelTask
 
 
 def validate_helper_func(current_file, pipeline=None, precision=None, recall=None, label=None, metric=None):
@@ -309,7 +309,7 @@ class Multilabel(BaseLabeling):
             if derivation_type == "regular":
                 current_file[self.label+"_ref"] = current_file["annotation"].subset([self.label])
             else:
-                current_file[self.label+"_ref"] = MultilabelGenerator.derives_label(current_file["annotation"],
+                current_file[self.label+"_ref"] = MultilabelTask.derives_label(current_file["annotation"],
                                                                 derivation_type=derivation_type,
                                                                 meta_label=self.label,
                                                                 regular_labels=self.task_.labels_spec[derivation_type][self.label])
