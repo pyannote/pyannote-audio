@@ -30,7 +30,6 @@ from itertools import cycle
 
 import numpy as np
 import torch
-from pyannote.audio.features import Precomputed
 from pyannote.core import Annotation
 from pyannote.core import SlidingWindowFeature
 from pyannote.core import Timeline
@@ -44,14 +43,14 @@ from .. import TASK_MULTI_LABEL_CLASSIFICATION
 
 
 class MultilabelGenerator(LabelingTaskGenerator):
-    """Batch generator for training a multi-labels classifier on BabyTrain
+    """Batch generator for training a multi-label classifier
 
     Parameters
     ----------
     feature_extraction : `pyannote.audio.features.FeatureExtraction`
         Feature extraction
     protocol : `pyannote.database.Protocol`
-    labels_spec : dictionnary
+    labels_spec : `dict`
         Describes the labels that must be predicted.
         1) Must contain a 'regular' key listing the labels appearing 'as-is' in the dataset.
         2) Might contain a 'union' key listing the {key, values} where key is the name of
@@ -126,7 +125,9 @@ class MultilabelGenerator(LabelingTaskGenerator):
 
     @staticmethod
     def derives_label(annotation, derivation_type, meta_label, regular_labels):
-        """
+        """Returns an Annotation describing the utterances of the union or intersection
+        of multiple labels.
+
         Derives a label. The derivation takes as inputs :
         - An annotation from which we want to derive
         - A derivation type : union or intersection
@@ -139,25 +140,41 @@ class MultilabelGenerator(LabelingTaskGenerator):
             2) derives_label(annotation, 'intersection', 'overlap', ["CHI","MAL","FEM"]
             Will compute the overlapping speech based on the intersection of "CHI", "MAL" and "FEM"
 
-        annotation:  Annotation type
-            The annotation we want to derive from.
-        derivation_type: string, must belong to ['union', 'intersection']
-            The derivation type
-        meta_label:  string
-            The meta label, the name of the label returned by the derivation
-        regular_labels:  list of strings
-            A list of regular labels we want to derive from
+        Parameters
+        ----------
+        annotation : `Annotation`
+            Input annotation that needs to be derived
+        derivation_type: {'union', 'intersection'}
+            Indicates if the union, or the intersection must be considered
+        meta_label: `string`
+            Indicates the name of the output label
+        regular_labels: `list`
+            Indicates the list of labels that must be taken into account.
+
+        Returns
+        -------
+        variable_name : `Annotation`
+            Annotation whose only label is meta_label that has been constructed
+            by taking the intersection or union of the regular_labels list.
+
+        Usage
+        -----
+        # compute the "adult_speech" label
+        >>> speech = derives_label(annotation, 'union', 'adult_speech', ['MAL', 'FEM'])
+        # compute the "overlap" label blahlblah
+        >>> overlap = derives_label(annotation, 'intersection', 'overlap', ['MAL','FEM','CHI'])
         """
+
         if derivation_type not in ['union', 'intersection']:
             raise ValueError("Derivation type must be in ['union', 'intersection']")
 
-        derived = Annotation()
-        mapping = {k: v for k, v in zip(regular_labels, [meta_label] * len(regular_labels))}
+        derived = Annotation(uri=annotation.uri)
+        mapping = {k: meta_label for k in regular_labels}
         annotation = annotation.subset(regular_labels).rename_labels(mapping=mapping)
 
         if derivation_type == 'union':
             support = annotation.support()
-            derived.update(support.rename_tracks())
+            return derived.update(support)
         elif derivation_type == 'intersection':
             overlap = Timeline()
             for track1, track2 in annotation.co_iter(annotation):
@@ -165,8 +182,10 @@ class MultilabelGenerator(LabelingTaskGenerator):
                     continue
                 overlap.add(track1[0] & track2[0])
             derived = overlap.support().to_annotation(generator=cycle([meta_label]))
-
-        return derived
+            return derived
+        else:
+            raise ValueError("derivation_type must belong to ['union', 'intersection']\n"
+                             "Can't be %s." % derivation_type)
 
     def initialize_y(self, current_file):
         # First, one hot encode the regular classes
@@ -197,8 +216,8 @@ class MultilabelGenerator(LabelingTaskGenerator):
             'task': TASK_MULTI_LABEL_CLASSIFICATION,
             'X': {'dimension': self.feature_extraction.dimension},
             'y': {'classes': self.labels_spec["regular"]
-                             + list(self.labels_spec['union'].keys())
-                             + list(self.labels_spec['intersection'].keys())},
+                             + list(self.labels_spec['union'])
+                             + list(self.labels_spec['intersection'])},
         }
 
 
@@ -237,6 +256,22 @@ class Multilabel(LabelingTask):
         For each of the regular classes : 1/prior
         For each of the union/intersection classes : 1
 
+    Usage in config.yml
+    --------------------
+    task:
+        name: Multilabel
+        params:
+            duration: 2.0         # sequences are 2s long
+            batch_size: 16        # 64 sequences per batch
+            per_epoch: 1          # one epoch = 1 day of audio
+            weighted_loss: True
+            labels_spec:
+                regular: ['CHI', 'MAL', 'FEM']
+                union:
+                    speech: ['CHI', 'FEM', 'MAL']     # build speech label
+                    adult_speech : ['FEM', 'MAL']     # build adult_speech label
+                intersection:
+                    overlap: ['CHI', 'MAL', 'FEM']    # build overlap label
     Usage
     -----
     # Use mapping as a preprocessor
@@ -283,14 +318,26 @@ class Multilabel(LabelingTask):
 
         # Labels related attributes
         self.labels_spec = labels_spec
-        if 'union' not in self.labels_spec.keys():
+        labels_spec_key = self.labels_spec.keys()
+        if 'regular' not in labels_spec_key:
+            self.labels_spec['regular'] = dict()
+        if 'union' not in labels_spec_key:
             self.labels_spec['union'] = dict()
-        if 'intersection' not in self.labels_spec.keys():
+        if 'intersection' not in labels_spec_key:
             self.labels_spec['intersection'] = dict()
-        self.label_names = labels_spec["regular"] \
-                           + list(labels_spec['union'].keys()) \
-                           + list(labels_spec['intersection'].keys())
-        self.nb_labels = len(labels_spec)
+
+        self.regular_labels = self.labels_spec['regular']
+        self.union_labels = list(self.labels_spec['union'])
+        self.intersection_labels = list(self.labels_spec['intersection'])
+
+        self.label_names = self.regular_labels +\
+                           self.union_labels +\
+                           self.intersection_labels
+
+        if set(self.union_labels).intersection(self.intersection_labels):
+            raise ValueError("Union keys and intersection keys in "
+                             "labels_spec should be mutually exclusive.")
+
         self.nb_regular_labels = len(labels_spec["regular"])
 
         # Protocol, so that we can loop through the training set
@@ -327,8 +374,7 @@ class Multilabel(LabelingTask):
         # Finally normalize, so that the weights sum to 1
         norm1 = sum(weights.values())
         regular_weights = {key: value/norm1 for key, value in weights.items()}
-        meta_weights = {key: 1 for key in list(self.labels_spec["union"].keys())
-                        + list(self.labels_spec["intersection"].keys())}
+        meta_weights = {key: 1 for key in self.union_labels + self.intersection_labels}
 
         weights = list(regular_weights.values()) + list(meta_weights.values())
         return torch.tensor(np.array(weights), dtype=torch.float32)
