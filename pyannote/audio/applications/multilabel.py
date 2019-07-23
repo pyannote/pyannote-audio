@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2017-2018 CNRS
+# Copyright (c) 2019 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -86,21 +86,23 @@ Configuration file:
     the neural network architecture, and the task addressed.
 
     ................... <experiment_dir>/config.yml ...................
-    # train the network for segmentation
+    # train the network for the multilabel task
     # see pyannote.audio.labeling.tasks for more details
-    task: 
-       name:  Segmentation
-       params: 
-          duration:  3.2     # sub-sequence duration
-          per_epoch:  1      # 1 day of audio per epoch
-          batch_size:  32    # number of sub-sequences per batch
-          labels_spec:
-             regular: ['CHI', 'MAL', 'FEM']
-             union:
-                speech: ['CHI', 'FEM', 'MAL']
-                adult_speech : ['FEM', 'MAL']
-             intersection:
-                overlap: ['CHI', 'FEM', 'MAL']
+    task:
+        name: Multilabel
+        params:
+            duration: 2.0     # sequences are 2s long
+            batch_size: 16     # 64 sequences per batch
+            per_epoch: 1       # one epoch = 1 day of audio
+            weighted_loss: True
+            labels_spec:
+                regular: ['CHI', 'MAL', 'FEM']
+                union:
+                    speech: ['CHI', 'FEM', 'MAL']   # build speech label
+                    adult_speech : ['FEM', 'MAL']   # build adult_speech label
+                intersection:
+                    overlap : ['CHI', 'MAL', 'FEM'] # build overlap label
+
 
     # use precomputed features (see feature extraction tutorial)
     feature_extraction: 
