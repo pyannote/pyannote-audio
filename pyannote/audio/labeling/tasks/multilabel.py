@@ -229,20 +229,20 @@ class Multilabel(LabelingTask):
     >>> protocol_name = 'BabyTrain.SpeakerDiarization.All'
     >>> task = Multilabel(protocol_name, preprocessors, labels_spec)
 
+    # model architecture
+    >>> from pyannote.audio.labeling.models import StackedRNN
+    >>> model = StackedRNN(task.specifications)
+
     # precomputed features
     >>> from pyannote.audio.features import Precomputed
     >>> precomputed = Precomputed('/path/to/features')
-
-    # model architecture
-    >>> from pyannote.audio.labeling.models import StackedRNN
-    >>> model = StackedRNN(precomputed.dimension, task.specifications)
 
     # evaluation protocol
     >>> from pyannote.database import get_protocol
     >>> protocol = get_protocol(protocol_name)
 
     # train model using protocol training set
-    >>> for epoch, model in task.fit_iter(model, precomputed, protocol):
+    >>> for epoch, model in task.fit_iter(model, task.get_batch_generator(precomputed, protocol)):
     ...     pass
     """
     def __init__(self, protocol_name, preprocessors, labels_spec, weighted_loss=False, **kwargs):
