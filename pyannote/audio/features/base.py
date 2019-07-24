@@ -217,6 +217,8 @@ class FeatureExtraction(object):
         (start, end), = shifted_frames.crop(segment, mode=mode, fixed=fixed,
                                             return_ranges=True)
 
+        # HACK for when start (returned by shifted_frames.crop) is None
+        # due to floating point precision.
         if start < 0 and fixed is not None:
             msg = f'Negative start returned by shifted_frames.crop : Shifting start/end.'
             warnings.warn(msg)

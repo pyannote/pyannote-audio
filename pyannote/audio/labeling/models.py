@@ -263,7 +263,13 @@ class ConvRNN(nn.Module):
         mono-directional RNNs.
     linear : list, optional
         List of hidden dimensions of linear layers. Defaults to [16, ], i.e.
-        one linear layer with hidden dimension of 16.
+        one linear layer with hidden dimension of 16
+
+    Reference
+    ---------
+
+    Lim, Hyungui & Park, Jeongsoo & Lee, Kyogu & Han, Yoonchang. (2018).
+    RARE SOUND EVENT DETECTION USING 1D CONVOLUTIONAL RECURRENT NEURAL NETWORKS.
     """
 
     def __init__(self, specifications,
