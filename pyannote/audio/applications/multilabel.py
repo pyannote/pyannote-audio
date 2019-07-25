@@ -213,7 +213,7 @@ from pyannote.audio.labeling.tasks import Multilabel as MultilabelTask
 
 
 def validate_helper_func(current_file, pipeline=None, precision=None, recall=None, label=None, metric=None):
-    reference = current_file[label+"_ref"]
+    reference = current_file["reference"]
     # pipeline has been initialized with label, so that it can know which class needs to be assessed
     hypothesis = pipeline(current_file)
     uem = get_annotated(current_file)
@@ -229,6 +229,8 @@ def validate_helper_func(current_file, pipeline=None, precision=None, recall=Non
 class Multilabel(BaseLabeling):
 
     def validate_init(self, protocol_name, subset='development'):
+        validation_data = super().validate_init(protocol_name, subset=subset)
+
         if self.label in self.task_.labels_spec["regular"]:
             derivation_type = "regular"
         elif self.label in self.task_.labels_spec["union"]:
@@ -254,19 +256,16 @@ class Multilabel(BaseLabeling):
                     current_file)
 
             if derivation_type == "regular":
-                current_file[self.label+"_ref"] = current_file["annotation"].subset([self.label])
+                current_file["reference"] = current_file["annotation"].subset([self.label])
             else:
-                current_file[self.label+"_ref"] = MultilabelTask.derives_label(current_file["annotation"],
-                                                                derivation_type=derivation_type,
-                                                                meta_label=self.label,
-                                                                regular_labels=self.task_.labels_spec[derivation_type][self.label])
+                current_file["reference"] = MultilabelTask.derives_label(current_file["annotation"],
+                                                                         derivation_type=derivation_type,
+                                                                         meta_label=self.label,
+                                                                         regular_labels=self.task_.labels_spec[derivation_type][self.label])
             validation_data.append(current_file)
         return validation_data
 
     def validate_epoch(self, epoch, protocol_name, subset='development', validation_data=None):
-        """
-        Validate function given a class which must belongs to ["CHI", "FEM", "KCHI", "MAL", "SPEECH", "OVERLAP"]
-        """
         # Name of the class that needs to be validated
         class_name = self.label
 
@@ -289,7 +288,7 @@ class Multilabel(BaseLabeling):
             dimension = self.task_.label_names.index(class_name)
             scores_data = scores.data[:, dimension].reshape(-1, 1)
 
-            current_file[class_name+'_scores'] = SlidingWindowFeature(
+            current_file['hypothesis'] = SlidingWindowFeature(
                 scores_data,
                 scores.sliding_window)
 

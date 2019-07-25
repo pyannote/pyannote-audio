@@ -114,7 +114,7 @@ class SpeakerActivityDetection(Pipeline):
         """
 
         # precomputed overlap scores
-        speaker_scores = current_file.get(self.label+'_scores')
+        speaker_scores = current_file.get("hypothesis")
         if speaker_scores is None:
             speaker_scores = self._precomputed(current_file)
 
