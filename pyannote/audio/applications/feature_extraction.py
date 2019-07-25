@@ -90,7 +90,7 @@ def init_feature_extraction(experiment_dir):
     config_yml = experiment_dir + '/config.yml'
     with open(config_yml, 'r') as fp:
         config = yaml.load(fp, Loader=yaml.SafeLoader)
-    
+
     FeatureExtraction = get_class_by_name(
         config['feature_extraction']['name'],
         default_module_name='pyannote.audio.features')
