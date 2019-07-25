@@ -40,15 +40,26 @@ class SpecAugmentCallback(Callback):
     (3) Time warping) : Not implemented yet. Shown as leading to a small improvement
     in the reference.
 
+    Parameters
+    ----------
+    frequency_masking_para : `int`, optional
+        Maximal size of the frequency mask, in number of frames
+        (random between 0 and frequency_masking_para). Defaults to 27
+    time_masking_para : `int`, optional
+        Maximal size of the time mask, in number of frames
+        (random between 0 and time_masking_para). Defaults to 100.
+    nb_frequency_masks : `int`, optional
+        Number of frequency masks. Defaults to 1.
+    nb_time_masks : `int`, optional
+        Number of time masks. Defaults to 1.
+
     Reference
     ---------
     https://ai.googleblog.com/2019/04/specaugment-new-data-augmentation.html
 
-
-    Use case
-    --------
-    Here's what expected in config.yml :
-
+    Usage
+    -----
+    # config.yml
     callbacks:
       - name: pyannote.audio.augmentation.spec_augment_callback.SpecAugmentCallback
         params:
@@ -56,27 +67,10 @@ class SpecAugmentCallback(Callback):
           frequency_masking_para: 27
           nb_time_masks: 1
           nb_frequency_masks: 1
-
     """
 
     def __init__(self, frequency_masking_para=27, time_masking_para=100,
                  nb_frequency_masks=1, nb_time_masks=1):
-        """
-        Initialize spectrogram augmentation callback class
-
-        Parameters
-        ----------
-        frequency_masking_para :    `int`, optional, default to 27
-            Maximal size of the frequency mask, in number of frames
-            (random between 0 and frequency_masking_para)
-        time_masking_para :         `int`, optional, default to 100
-            Maximal size of the time mask, in number of frames
-            (random between 0 and time_masking_para)
-        nb_frequency_masks :        `int`, optional, default to 1
-            Number of frequency masks
-        nb_time_masks :             `int`, optional, default to 1
-            Number of time masks
-        """
         super().__init__()
         self.frequency_masking_para = frequency_masking_para
         self.time_masking_para = time_masking_para
