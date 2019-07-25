@@ -31,7 +31,7 @@ import numpy as np
 import random
 
 
-class SpecAugmentCallback(Callback):
+class SpecAugment(Callback):
     """
     Callback for spectrogram augmentation. Two-step process :
 
@@ -61,7 +61,7 @@ class SpecAugmentCallback(Callback):
     -----
     # config.yml
     callbacks:
-      - name: pyannote.audio.augmentation.spec_augment_callback.SpecAugmentCallback
+      - name: pyannote.audio.augmentation.spec_augment.SpecAugmentCallback
         params:
           time_masking_para: 100
           frequency_masking_para: 27
