@@ -77,8 +77,6 @@ class Logging(Callback):
         )
         return batch
 
-        return batch
-
     def on_batch_end(self, trainer, batch_loss):
 
         # mark time just after forward/backward

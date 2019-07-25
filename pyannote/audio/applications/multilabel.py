@@ -31,7 +31,7 @@ Multi-label classifier
 
 Usage: 
   pyannote-multilabel train [options] <experiment_dir> <database.task.protocol>
-  pyannote-multilabel validate [options] [--every=<epoch> --chronological --precision=<precision> --use_der] <label> <train_dir> <database.task.protocol>
+  pyannote-multilabel validate [options] [--every=<epoch> --chronological --precision=<precision> --detection] <label> <train_dir> <database.task.protocol>
   pyannote-multilabel apply [options] [--step=<step>] <model.pt> <database.task.protocol> <output_dir>
   pyannote-multilabel -h | --help
   pyannote-multilabel --version
@@ -61,13 +61,12 @@ Common options:
   --chronological            Force validation in chronological order.
   --parallel=<n_jobs>        Process <n_jobs> files in parallel. Defaults to
                              using all CPUs.
-  <label>                    Label to predict (KCHI, CHI, FEM, MAL or speech).
-                             If options overlap and speech have been activated during training, one
-                             can also to validate on the classes (SPEECH, OVERLAP).
+  <label>                    Label that needs to be validated. Must belong to the labels
+                             that have been seen during training.
   <train_dir>                Path to the directory containing pre-trained
                              models (i.e. the output of "train" mode).
   --precision=<precision>    Target detection precision [default:  0.8].
-  --use_der                  Indicates if the Detection Error Rate should be used for validating the mode.
+  --detection                  Indicates if the Detection Error Rate should be used for validating the mode.
                              Default mode uses precision/recall.
 
 "apply" mode: 
@@ -128,14 +127,14 @@ Configuration file:
 
     # Label mapping : depends on the labels found in your data
     preprocessors:
-    annotation:
-       name: pyannote.database.util.LabelMapper
-       params:
-         keep_missing: False    # Raise an error if one of the input label is not found in the mapping.
-         mapping:
-            "BRO": "CHI"
-            "MOT": "FEM"
-            "FAT": "MAL"
+        annotation:
+           name: pyannote.database.util.LabelMapper
+           params:
+             keep_missing: False    # Raise an error if one of the input label is not found in the mapping.
+             mapping:
+                "BRO": "CHI"
+                "MOT": "FEM"
+                "FAT": "MAL"
     ...................................................................
 
 "train" mode: 
@@ -159,16 +158,15 @@ Configuration file:
     experiments every time a new epoch has ended. This will create the
     following directory that contains validation results: 
 
-        <train_dir>/validate/<database.task.protocol>.<subset>
+        <train_dir>/validate_<label>/<database.task.protocol>.<subset>
 
     You can run multiple "validate" in parallel (e.g. for every subset,
-    protocol, task, or database).
+    protocol, task, database or label).
 
-    In practice, for each epoch, "validate" mode will look for the peak
-    detection threshold that maximizes speech turn coverage, under the
-    constraint that purity must be greater than the value provided by the
-    "--purity" option. Both values (best threshold and corresponding coverage)
-    are sent to tensorboard.
+    In practice, for each epoch, "validate" mode will look for the optimal
+    decision threshold that maximizes recall, depending on a given accuracy.
+    If --detection mode is activated, it will minimizes the detection error rate instead.
+
 
 "apply" mode
     Use the "apply" mode to extract segmentation raw scores.
@@ -231,11 +229,11 @@ def validate_helper_func(current_file, pipeline=None, precision=None, recall=Non
 
 class Multilabel(BaseLabeling):
 
-    def __init__(self, protocol_name, experiment_dir, db_yml=None, training=False, use_der=False):
+    def __init__(self, protocol_name, experiment_dir, db_yml=None, training=False, detection=False):
         super(BaseLabeling, self).__init__(
             experiment_dir, db_yml=db_yml, training=training)
 
-        self.use_der = use_der
+        self.detection = detection
 
         # task
         Task = get_class_by_name(
@@ -246,36 +244,19 @@ class Multilabel(BaseLabeling):
                           preprocessors=self.preprocessors_,
                           **self.config_['task'].get('params', {}))
 
-        # architecture
-        Architecture = get_class_by_name(
-            self.config_['architecture']['name'],
-            default_module_name='pyannote.audio.labeling.models')
-
-        params = self.config_['architecture'].get('params', {})
-        self.get_model_ = partial(Architecture, **params)
-
-        if hasattr(Architecture, 'get_frame_info'):
-            self.frame_info_ = Architecture.get_frame_info(**params)
-        else:
-            self.frame_info_ = None
-
-        if hasattr(Architecture, 'frame_crop'):
-            self.frame_crop_ = Architecture.frame_crop
-        else:
-            self.frame_crop_ = None
 
     @classmethod
-    def from_train_dir(cls, protocol_name, train_dir, db_yml=None, training=False, use_der=False):
+    def from_train_dir(cls, protocol_name, train_dir, db_yml=None, training=False, detection=False):
         experiment_dir = dirname(dirname(train_dir))
-        app = cls(protocol_name, experiment_dir, db_yml=db_yml, training=training, use_der=use_der)
+        app = cls(protocol_name, experiment_dir, db_yml=db_yml, training=training, detection=detection)
         app.train_dir_ = train_dir
 
         return app
 
     @classmethod
-    def from_model_pt(cls, protocol_name, model_pt, db_yml=None, training=False, use_der=False):
+    def from_model_pt(cls, protocol_name, model_pt, db_yml=None, training=False, detection=False):
         train_dir = dirname(dirname(model_pt))
-        app = cls.from_train_dir(protocol_name, train_dir, db_yml=db_yml, training=training, use_der=use_der)
+        app = cls.from_train_dir(protocol_name, train_dir, db_yml=db_yml, training=training, detection=detection)
         app.model_pt_ = model_pt
         epoch = int(basename(app.model_pt_)[:-3])
         app.model_ = app.load_model(epoch, train_dir=train_dir)
@@ -347,14 +328,14 @@ class Multilabel(BaseLabeling):
                 scores.sliding_window)
 
         # pipeline
-        pipeline = SpeakerActivityDetectionPipeline(label=self.label, use_der=self.use_der)
+        pipeline = SpeakerActivityDetectionPipeline(label=self.label, detection=self.detection)
 
         lower_alpha = 0.
         upper_alpha = 1.
         best_alpha = .5 * (lower_alpha + upper_alpha)
         best_recall = 0.
 
-        if not self.use_der:
+        if not self.detection:
             for _ in range(10):
 
                 current_alpha = .5 * (lower_alpha + upper_alpha)
@@ -482,7 +463,7 @@ def main():
     subset = arguments['--subset']
     gpu = arguments['--gpu']
     device = torch.device('cuda') if gpu else torch.device('cpu')
-    use_der = arguments['--use_der']
+    detection = arguments['--detection']
 
     # HACK for JHU/CLSP cluster
     _ = torch.Tensor([0]).to(device)
@@ -545,7 +526,7 @@ def main():
         else:
             n_jobs = int(n_jobs)
 
-        application = Multilabel.from_train_dir(protocol_name, train_dir, db_yml=db_yml, training=False, use_der=use_der)
+        application = Multilabel.from_train_dir(protocol_name, train_dir, db_yml=db_yml, training=False, detection=detection)
 
         application.device = device
         application.batch_size = batch_size

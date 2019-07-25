@@ -346,7 +346,7 @@ class CyclicScheduler(BaseSchedulerCallback):
     def on_batch_start(self, trainer, batch):
         """Update learning rate & momentum according to position in cycle"""
 
-        super().on_batch_start(trainer, batch)
+        batch = super().on_batch_start(trainer, batch)
 
         # position within current cycle (reversed V)
         rho = 1. - abs(2 * (self.n_batches_ / self.batches_per_cycle_ - 0.5))
