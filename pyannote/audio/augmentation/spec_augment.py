@@ -32,13 +32,12 @@ import random
 
 
 class SpecAugment(Callback):
-    """
-    Callback for spectrogram augmentation. Two-step process :
-
-    1) Apply frequency mask(s)
-    2) Apply time mask(s)
-    (3) Time warping) : Not implemented yet. Shown as leading to a small improvement
-    in the reference.
+    """Spectrogram augmentation. 
+    
+    This is a callback that applies the following transformations to each batch:
+        1. Apply frequency masks
+        2. Apply time masks
+        3. Time warping (TODO)
 
     Parameters
     ----------
