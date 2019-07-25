@@ -185,45 +185,37 @@ Configuration file:
     >>> label_regions = binarizer.apply(raw_scores, dimension=1)
 """
 
-from os.path import dirname, basename
-from tqdm import tqdm
+import multiprocessing as mp
 from functools import partial
 from pathlib import Path
-import torch
+
 import numpy as np
 import scipy.optimize
+import torch
 from docopt import docopt
-import multiprocessing as mp
-from .base_labeling import BaseLabeling
-
+from pyannote.audio.features import Precomputed
+from pyannote.audio.labeling.extraction import SequenceLabeling
+from pyannote.audio.labeling.tasks import Multilabel as MultilabelTask
+from pyannote.audio.pipeline import SpeechActivityDetection \
+    as SpeechActivityDetectionPipeline
+from pyannote.core import SlidingWindowFeature
 from pyannote.database import get_annotated, get_protocol, FileFinder
-
 from pyannote.metrics.detection import DetectionErrorRate, DetectionRecall, DetectionPrecision
 
-from pyannote.audio.labeling.extraction import SequenceLabeling
-
-from pyannote.audio.pipeline import SpeakerActivityDetection \
-                             as SpeakerActivityDetectionPipeline
-
-from pyannote.audio.features import Precomputed
-
-from pyannote.core.utils.helper import get_class_by_name
-from pyannote.core import Timeline, SlidingWindowFeature
-from pyannote.audio.labeling.tasks import Multilabel as MultilabelTask
+from .base_labeling import BaseLabeling
 
 
-def validate_helper_func(current_file, pipeline=None, precision=None, recall=None, label=None, metric=None):
-    reference = current_file["reference"]
-    # pipeline has been initialized with label, so that it can know which class needs to be assessed
-    hypothesis = pipeline(current_file)
+def validate_helper_func(current_file, pipeline=None, precision=None, recall=None, metric=None):
+    reference = current_file["annotation"]
+    scores = pipeline(current_file)
     uem = get_annotated(current_file)
 
     if precision is not None:
-        p = precision(reference, hypothesis, uem=uem)
-        r = recall(reference, hypothesis, uem=uem)
+        p = precision(reference, scores, uem=uem)
+        r = recall(reference, scores, uem=uem)
         return p, r
     else:
-        return metric(reference, hypothesis, uem=uem)
+        return metric(reference, scores, uem=uem)
 
 
 class Multilabel(BaseLabeling):
@@ -241,28 +233,16 @@ class Multilabel(BaseLabeling):
             raise ValueError("%s not found in training labels : %s"
                              % (self.label, self.task_.label_names))
 
-        protocol = get_protocol(protocol_name, progress=False,
-                                preprocessors=self.preprocessors_)
-        files = getattr(protocol, subset)()
-
-        self.pool_ = mp.Pool(mp.cpu_count())
-
-        # pre-compute features for each validation files
-        validation_data = []
-        for current_file in tqdm(files, desc='Feature extraction'):
-            # precompute features
-            if not isinstance(self.feature_extraction_, Precomputed): 
-                current_file['features'] = self.feature_extraction_(
-                    current_file)
-
+        # Overwrite annotation field with the class of interest
+        for current_file in validation_data:
             if derivation_type == "regular":
-                current_file["reference"] = current_file["annotation"].subset([self.label])
+                current_file["annotation"] = current_file["annotation"].subset([self.label])
             else:
-                current_file["reference"] = MultilabelTask.derives_label(current_file["annotation"],
-                                                                         derivation_type=derivation_type,
-                                                                         meta_label=self.label,
-                                                                         regular_labels=self.task_.labels_spec[derivation_type][self.label])
-            validation_data.append(current_file)
+                current_file["annotation"] = MultilabelTask.derives_label(current_file["annotation"],
+                                                                          derivation_type=derivation_type,
+                                                                          meta_label=self.label,
+                                                                          regular_labels=self.task_.labels_spec[derivation_type][self.label])
+
         return validation_data
 
     def validate_epoch(self, epoch, protocol_name, subset='development', validation_data=None):
@@ -287,13 +267,13 @@ class Multilabel(BaseLabeling):
             # We extract the score of interest
             dimension = self.task_.label_names.index(class_name)
             scores_data = scores.data[:, dimension].reshape(-1, 1)
-
-            current_file['hypothesis'] = SlidingWindowFeature(
+            current_file['scores'] = SlidingWindowFeature(
                 scores_data,
                 scores.sliding_window)
 
         # pipeline
-        pipeline = SpeakerActivityDetectionPipeline(label=self.label, detection=self.detection)
+        pipeline = SpeechActivityDetectionPipeline(scores_name='scores',
+                                                   detection=self.detection)
 
         lower_alpha = 0.
         upper_alpha = 1.
@@ -317,8 +297,7 @@ class Multilabel(BaseLabeling):
                 validate = partial(validate_helper_func,
                                    pipeline=pipeline,
                                    precision=precision,
-                                   recall=recall,
-                                   label=self.label)
+                                   recall=recall)
                 _ = self.pool_.map(validate, validation_data)
 
                 precision = abs(precision)
@@ -354,7 +333,6 @@ class Multilabel(BaseLabeling):
                 metric = DetectionErrorRate(parallel=True)
                 validate = partial(validate_helper_func,
                                    pipeline=pipeline,
-                                   label=self.label,
                                    metric=metric)
                 _ = self.pool_.map(validate, validation_data)
 
@@ -491,7 +469,7 @@ def main():
         else:
             n_jobs = int(n_jobs)
 
-        application = Multilabel.from_train_dir(protocol_name, train_dir, db_yml=db_yml, training=False)
+        application = Multilabel.from_train_dir(train_dir, db_yml=db_yml, training=False)
 
         application.device = device
         application.batch_size = batch_size

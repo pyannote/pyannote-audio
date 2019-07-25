@@ -39,7 +39,11 @@ from pyannote.core import SlidingWindowFeature
 from pyannote.audio.signal import Binarize
 from pyannote.audio.features import Precomputed
 
+from pyannote.metrics.detection import DetectionPrecision
+from pyannote.metrics.detection import DetectionRecall
 from pyannote.metrics.detection import DetectionErrorRate
+
+from pyannote.database import get_annotated
 
 
 class OracleSpeechActivityDetection(Pipeline):
@@ -72,10 +76,15 @@ class SpeechActivityDetection(Pipeline):
         Path to precomputed scores on disk.
     """
 
-    def __init__(self, scores: Optional[Path] = None):
+    def __init__(self, scores: Optional[Path] = None,
+                 scores_name: Optional[Path] = 'sad_scores',
+                 detection: Optional[Path] = True):
         super().__init__()
 
         self.scores = scores
+        self.scores_name = scores_name
+        self.detection = detection
+
         if self.scores is not None:
             self._precomputed = Precomputed(self.scores)
 
@@ -114,7 +123,7 @@ class SpeechActivityDetection(Pipeline):
         """
 
         # precomputed SAD scores
-        sad_scores = current_file.get('sad_scores')
+        sad_scores = current_file.get(self.scores_name)
         if sad_scores is None:
             sad_scores = self._precomputed(current_file)
 
@@ -141,5 +150,26 @@ class SpeechActivityDetection(Pipeline):
         return speech.to_annotation(generator='string', modality='speech')
 
     def get_metric(self) -> DetectionErrorRate:
-        """Return new instance of detection error rate metric"""
-        return DetectionErrorRate(collar=0.0, skip_overlap=False)
+        """Return new instance of detection error rate metric
+        If mode set on detection.
+        Otherwise, it will use the self.loss function for precision and recall
+        """
+        if self.detection:
+            return DetectionErrorRate(collar=0.0, skip_overlap=False)
+        else:
+            raise NotImplementedError()
+
+    def loss(self, current_file: dict, hypothesis=None):
+        reference = current_file['annotation']
+        uem = get_annotated(current_file)
+
+        precision = DetectionPrecision()
+        recall = DetectionRecall()
+
+        p = precision(reference, hypothesis, uem=uem)
+        r = recall(reference, hypothesis, uem=uem)
+
+        if p > self.precision:
+            return 1. - r
+        else:
+            return 1. + (1. - p)
