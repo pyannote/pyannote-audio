@@ -30,6 +30,8 @@ from itertools import cycle
 
 import numpy as np
 import torch
+import torch.nn.functional as F
+
 from pyannote.core import Annotation
 from pyannote.core import SlidingWindowFeature
 from pyannote.core import Timeline
@@ -178,7 +180,7 @@ class Multilabel(LabelingTask):
         Number of prefetching background generators. Defaults to 1.
         Each generator will prefetch enough batches to cover a whole epoch.
         Set `parallel` to 0 to not use background generators.
-    labels:
+    label_spec: `dict`
         regular: list
             List of classes that need to be predicted.
         union:
@@ -187,6 +189,8 @@ class Multilabel(LabelingTask):
         intersection:
             Dictionnary of intersection meta-labels whose keys are the meta-label names,
             and values are a list of regular classes
+    weighted_loss: 'boolean', optional, default to False
+        Indicates if loss should be weighted by 1 / prior
 
     Usage in config.yml
     --------------------
@@ -196,6 +200,7 @@ class Multilabel(LabelingTask):
             duration: 2.0         # sequences are 2s long
             batch_size: 16        # 64 sequences per batch
             per_epoch: 1          # one epoch = 1 day of audio
+            weighted_loss: True   # Weight loss by 1 / prior
             labels_spec:
                 regular: ['CHI', 'MAL', 'FEM']
                 union:
@@ -240,7 +245,7 @@ class Multilabel(LabelingTask):
     >>> for epoch, model in task.fit_iter(model, task.get_batch_generator(precomputed, protocol)):
     ...     pass
     """
-    def __init__(self, labels_spec, **kwargs):
+    def __init__(self, labels_spec, weighted_loss=False, **kwargs):
         super(Multilabel, self).__init__(**kwargs)
 
         # Labels related attributes
@@ -266,6 +271,9 @@ class Multilabel(LabelingTask):
                              "labels_spec should be mutually exclusive.")
 
         self.nb_regular_labels = len(labels_spec["regular"])
+
+        self.weight_ = None
+        self.weighted_loss = weighted_loss
 
     @staticmethod
     def derives_label(annotation, derivation_type, meta_label, regular_labels):
@@ -343,3 +351,44 @@ class Multilabel(LabelingTask):
             batch_size=self.batch_size,
             parallel=self.parallel,
             labels_spec=self.labels_spec)
+
+    @property
+    def weight(self):
+        return self.weight_
+
+    def on_train_start(self):
+        if self.weighted_loss:
+            weights = dict([(key, 0.0) for key in self.label_names[0:self.nb_regular_labels]])
+            for file in self.batch_generator_.data_.values():
+                y = file['current_file']['annotation']
+                for speaker in self.regular_labels[0:self.nb_regular_labels]:
+                    weights[speaker] += y.label_duration(speaker)
+
+            # Taking the inverse of prior
+            total_speech = sum(weights.values(), 0.0)
+            for key, value in weights.items():
+                if value != 0:
+                    weights[key] = total_speech / value
+
+            # Finally, normalize so that the weights sum to 1
+            norm1 = sum(weights.values())
+            regular_weights = {key: value / norm1 for key, value in weights.items()}
+            meta_weights = {key: 1 for key in self.union_labels + self.intersection_labels}
+
+            weights = list(regular_weights.values()) + list(meta_weights.values())
+            self.weight_ = torch.tensor(np.array(weights), dtype=torch.float32)
+
+        self.task_type_ = self.model_.specifications['task']
+
+        def loss_func(input, target, weight=None, mask=None):
+            if mask is None:
+                return F.binary_cross_entropy(input, target, weight=weight,
+                                              reduction='mean')
+            else:
+                return torch.mean(
+                    mask * F.binary_cross_entropy(input, target,
+                                                  weight=weight,
+                                                  reduction='none'))
+
+        self.loss_func_ = loss_func
+
