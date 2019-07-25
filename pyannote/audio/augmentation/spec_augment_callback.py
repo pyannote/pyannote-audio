@@ -1,6 +1,35 @@
+#!/usr/bin/env python
+# encoding: utf-8
+
+# The MIT License (MIT)
+
+# Copyright (c) 2019 CNRS
+
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+# AUTHORS
+# Marvin Lavechin - marvinlavechin@gmail.com
+
 from pyannote.audio.train.callback import Callback
 import numpy as np
 import random
+
 
 class SpecAugmentCallback(Callback):
     """
@@ -35,12 +64,18 @@ class SpecAugmentCallback(Callback):
         """
         Initialize spectrogram augmentation callback class
 
-        :param self.frequency_masking_para:  Maximal size of the frequency mask, in number of frames
-                                        (random between 0 and self.frequency_masking_para)
-        :param time_masking_para:       Maximal size of the time mask, in number of frames
-                                        (random between 0 and time_masking_para)
-        :param nb_frequency_masks:      Number of frequency masks
-        :param nb_time_masks:           Number of time masks
+        Parameters
+        ----------
+        frequency_masking_para :    `int`, optional, default to 27
+            Maximal size of the frequency mask, in number of frames
+            (random between 0 and frequency_masking_para)
+        time_masking_para :         `int`, optional, default to 100
+            Maximal size of the time mask, in number of frames
+            (random between 0 and time_masking_para)
+        nb_frequency_masks :        `int`, optional, default to 1
+            Number of frequency masks
+        nb_time_masks :             `int`, optional, default to 1
+            Number of time masks
         """
         super().__init__()
         self.frequency_masking_para = frequency_masking_para
@@ -55,6 +90,8 @@ class SpecAugmentCallback(Callback):
         self.time_masking_para = int(min(0.2*nb_frames, self.time_masking_para))
 
     def on_batch_start(self, trainer, batch):
+        # TODO : provide a better implementation, one that would not rely on nested loops
+        # (as this might be slow)
         for i, spec in enumerate(batch['X']):
 
             tau = spec.shape[0]
@@ -63,14 +100,14 @@ class SpecAugmentCallback(Callback):
             augmented_spec = spec.copy()
 
             # 1) Frequency masking
-            for i in range(self.nb_frequency_masks):
+            for j in range(self.nb_frequency_masks):
                 f = np.random.uniform(low=0.0, high=self.frequency_masking_para)
                 f = int(f)
                 f0 = random.randint(0, v - f)
                 augmented_spec[:, f0:f0 + f] = 0
 
             # 2) Time masking
-            for i in range(self.nb_time_masks):
+            for j in range(self.nb_time_masks):
                 t = np.random.uniform(low=0.0, high=self.time_masking_para)
                 t = int(t)
                 t0 = random.randint(0, tau - t)

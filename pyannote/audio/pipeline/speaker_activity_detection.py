@@ -55,7 +55,7 @@ class SpeakerActivityDetection(Pipeline):
         Path to precomputed scores on disk.
     precision : `float`, optional
         Target detection precision. Defaults to 0.8.
-    use_der: 'bool', optional
+    detection: 'bool', optional
         Indicates if detection error rate must be use. Default to False
 
     Hyper-parameters
@@ -71,14 +71,14 @@ class SpeakerActivityDetection(Pipeline):
     def __init__(self, label,
                  scores: Optional[Path] = None,
                  precision: float = 0.8,
-                 use_der: bool = False):
+                 detection: bool = False):
         super().__init__()
         self.label = label
         self.scores = scores
         if self.scores is not None:
             self._precomputed = Precomputed(self.scores)
         self.precision = precision
-        self.use_der = use_der
+        self.detection = detection
 
         # hyper-parameters
         self.onset = Uniform(0., 1.)
@@ -169,7 +169,7 @@ class SpeakerActivityDetection(Pipeline):
                              "not belong to [KCHI,CHI,MAL,FEM,SPEECH]" % self.label)
         uem = get_annotated(current_file)
 
-        if not self.use_der:
+        if not self.detection:
             precision = DetectionPrecision()
             recall = DetectionRecall()
 

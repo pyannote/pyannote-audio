@@ -204,10 +204,8 @@ class FeatureExtraction(object):
         y = self.raw_audio_.crop(current_file, xsegment, mode='center',
                                  fixed=xsegment.duration)
 
-        if "epoch" in inspect.signature(self.get_features).parameters:
-            features = self.get_features(y, self.sample_rate)
-        else:
-            features = self.get_features(y, self.sample_rate)
+        features = self.get_features(y, self.sample_rate)
+
 
         # get rid of additional context before returning
         frames = self.sliding_window
@@ -219,10 +217,11 @@ class FeatureExtraction(object):
 
         # HACK for when start (returned by shifted_frames.crop) is None
         # due to floating point precision.
-        if start < 0 and fixed is not None:
+        if start < 0:
             msg = f'Negative start returned by shifted_frames.crop : Shifting start/end.'
             warnings.warn(msg)
-            end -= start
+            if fixed is not None:
+                end -= start
             start = 0
 
         return features[start:end]
