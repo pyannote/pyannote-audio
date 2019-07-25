@@ -27,7 +27,6 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 import warnings
-import inspect
 import numpy as np
 
 from .utils import RawAudio
@@ -111,8 +110,6 @@ class FeatureExtraction(object):
             Waveform.
         sample_rate : int
             Sample rate.
-        epoch: int
-            Current epoch
 
         Returns
         -------
