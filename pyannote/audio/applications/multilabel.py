@@ -179,11 +179,11 @@ Configuration file:
     >>> protocol = get_protocol('<database.task.protocol>')
     >>> first_test_file = next(protocol.test())
 
-    >>> from pyannote.audio.signal import Peak
-    >>> peak_detection = Peak()
+    >>> from pyannote.audio.signal import Binarize
+    >>> binarizer = Binarize()
 
     >>> raw_scores = precomputed(first_test_file)
-    >>> homogeneous_segments = peak_detection.apply(raw_scores, dimension=1)
+    >>> label_regions = binarizer.apply(raw_scores, dimension=1)
 """
 
 from os.path import dirname, basename
@@ -228,22 +228,6 @@ def validate_helper_func(current_file, pipeline=None, precision=None, recall=Non
 
 
 class Multilabel(BaseLabeling):
-
-    def __init__(self, protocol_name, experiment_dir, db_yml=None, training=False, detection=False):
-        super(BaseLabeling, self).__init__(
-            experiment_dir, db_yml=db_yml, training=training)
-
-        self.detection = detection
-
-        # task
-        Task = get_class_by_name(
-            self.config_['task']['name'],
-            default_module_name='pyannote.audio.labeling.tasks')
-
-        self.task_ = Task(protocol_name=protocol_name,
-                          preprocessors=self.preprocessors_,
-                          **self.config_['task'].get('params', {}))
-
 
     @classmethod
     def from_train_dir(cls, protocol_name, train_dir, db_yml=None, training=False, detection=False):
@@ -485,7 +469,7 @@ def main():
         else: 
             epochs = int(epochs)
 
-        application = Multilabel(protocol_name, experiment_dir, db_yml=db_yml,
+        application = Multilabel(experiment_dir, db_yml=db_yml,
                                  training=True)
         application.device = device
         application.train(protocol_name, subset=subset,

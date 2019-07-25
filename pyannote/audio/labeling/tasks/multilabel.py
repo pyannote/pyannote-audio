@@ -245,12 +245,8 @@ class Multilabel(LabelingTask):
     >>> for epoch, model in task.fit_iter(model, task.get_batch_generator(precomputed, protocol)):
     ...     pass
     """
-    def __init__(self, protocol_name, preprocessors, labels_spec, weighted_loss=False, **kwargs):
+    def __init__(self, labels_spec, **kwargs):
         super(Multilabel, self).__init__(**kwargs)
-
-        # Need protocol to know the classes that need to be predicted
-        # And thus the dimension of the target !
-        self.weighted_loss = weighted_loss
 
         # Labels related attributes
         self.labels_spec = labels_spec
@@ -275,10 +271,6 @@ class Multilabel(LabelingTask):
                              "labels_spec should be mutually exclusive.")
 
         self.nb_regular_labels = len(labels_spec["regular"])
-
-        # Protocol, so that we can loop through the training set
-        # and compute the prior
-        self.protocol = get_protocol(protocol_name, preprocessors=preprocessors)
 
     @staticmethod
     def derives_label(annotation, derivation_type, meta_label, regular_labels):
@@ -356,31 +348,3 @@ class Multilabel(LabelingTask):
             batch_size=self.batch_size,
             parallel=self.parallel,
             labels_spec=self.labels_spec)
-
-    def _get_one_over_the_prior(self):
-        weights = {k: 0.0 for k in self.label_names[0:self.nb_regular_labels]}
-
-        # Compute the cumulated duration
-        for current_file in self.protocol.train():
-            y = current_file["annotation"]
-            for speaker in self.label_names[0:self.nb_regular_labels]:
-                weights[speaker] += y.label_duration(speaker)
-
-        total_speech = sum(weights.values(), 0.0)
-        for key, value in weights.items():
-            if value != 0:
-                weights[key] = total_speech/value
-
-        # Finally normalize, so that the weights sum to 1
-        norm1 = sum(weights.values())
-        regular_weights = {key: value/norm1 for key, value in weights.items()}
-        meta_weights = {key: 1 for key in self.union_labels + self.intersection_labels}
-
-        weights = list(regular_weights.values()) + list(meta_weights.values())
-        return torch.tensor(np.array(weights), dtype=torch.float32)
-
-    @property
-    def weight(self):
-        if self.weighted_loss:
-            return self._get_one_over_the_prior()
-        return None
