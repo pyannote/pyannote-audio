@@ -228,23 +228,6 @@ def validate_helper_func(current_file, pipeline=None, precision=None, recall=Non
 
 class Multilabel(BaseLabeling):
 
-    @classmethod
-    def from_train_dir(cls, protocol_name, train_dir, db_yml=None, training=False, detection=False):
-        experiment_dir = dirname(dirname(train_dir))
-        app = cls(protocol_name, experiment_dir, db_yml=db_yml, training=training, detection=detection)
-        app.train_dir_ = train_dir
-
-        return app
-
-    @classmethod
-    def from_model_pt(cls, protocol_name, model_pt, db_yml=None, training=False, detection=False):
-        train_dir = dirname(dirname(model_pt))
-        app = cls.from_train_dir(protocol_name, train_dir, db_yml=db_yml, training=training, detection=detection)
-        app.model_pt_ = model_pt
-        epoch = int(basename(app.model_pt_)[:-3])
-        app.model_ = app.load_model(epoch, train_dir=train_dir)
-        return app
-
     def validate_init(self, protocol_name, subset='development'):
         if self.label in self.task_.labels_spec["regular"]:
             derivation_type = "regular"
@@ -509,13 +492,14 @@ def main():
         else:
             n_jobs = int(n_jobs)
 
-        application = Multilabel.from_train_dir(protocol_name, train_dir, db_yml=db_yml, training=False, detection=detection)
+        application = Multilabel.from_train_dir(protocol_name, train_dir, db_yml=db_yml, training=False)
 
         application.device = device
         application.batch_size = batch_size
         application.label = label
         application.n_jobs = n_jobs
         application.precision = precision
+        application.detection = detection
 
         application.validate(protocol_name, subset=subset,
                              start=start, end=end, every=every,
