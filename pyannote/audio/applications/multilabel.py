@@ -93,7 +93,6 @@ Configuration file:
             duration: 2.0     # sequences are 2s long
             batch_size: 16     # 64 sequences per batch
             per_epoch: 1       # one epoch = 1 day of audio
-            weighted_loss: True
             labels_spec:
                 regular: ['CHI', 'MAL', 'FEM']
                 union:

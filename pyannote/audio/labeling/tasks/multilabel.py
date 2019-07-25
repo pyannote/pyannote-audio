@@ -187,10 +187,6 @@ class Multilabel(LabelingTask):
         intersection:
             Dictionnary of intersection meta-labels whose keys are the meta-label names,
             and values are a list of regular classes
-    weighted_loss: bool, optional, default to False
-        Compute weights that will be send later to the model.
-        For each of the regular classes : 1/prior
-        For each of the union/intersection classes : 1
 
     Usage in config.yml
     --------------------
@@ -200,7 +196,6 @@ class Multilabel(LabelingTask):
             duration: 2.0         # sequences are 2s long
             batch_size: 16        # 64 sequences per batch
             per_epoch: 1          # one epoch = 1 day of audio
-            weighted_loss: True
             labels_spec:
                 regular: ['CHI', 'MAL', 'FEM']
                 union:
