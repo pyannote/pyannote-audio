@@ -61,7 +61,7 @@ class SpecAugment(Callback):
     -----
     # config.yml
     callbacks:
-      - name: pyannote.audio.augmentation.spec_augment.SpecAugmentCallback
+      - name: pyannote.audio.augmentation.spec_augment.SpecAugment
         params:
           time_masking_para: 100
           frequency_masking_para: 27
