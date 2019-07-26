@@ -77,7 +77,7 @@ class SpeechActivityDetection(Pipeline):
     """
 
     def __init__(self, scores: Optional[Path] = None,
-                 scores_name: Optional[Path] = 'sad_scores',
+                 scores_name: Optional[str] = 'sad_scores',
                  detection: Optional[Path] = True):
         super().__init__()
 
