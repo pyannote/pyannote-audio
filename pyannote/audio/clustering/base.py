@@ -354,7 +354,7 @@ class ClusteringBatchGenerator:
     def specifications(self):
         return {
             'X': {'dimension': self.precomputed_.dimension},
-            'y': {'n_classes': self.conversations_.max_speakers_)},
+            'y': {'n_classes': self.conversations_.max_speakers_},
             'task': TASK_MULTI_CLASS_CLASSIFICATION,
         }
 
