@@ -134,7 +134,7 @@ The following command will train the network using the training set of AMI datab
 
 ```bash
 $ export EXPERIMENT_DIR=tutorials/models/overlap_detection
-$ pyannote-overlap-detection train --gpu --to=1000 ${EXPERIMENT_DIR} AMI.SpeakerDiarization.MixHeadset
+$ pyannote-overlap-detection train --gpu --to=1000 --subset=train ${EXPERIMENT_DIR} AMI.SpeakerDiarization.MixHeadset
 ```
 
 This will create a bunch of files in `TRAIN_DIR` (defined below).
@@ -151,7 +151,7 @@ It can (should!) be run in parallel to training and evaluates the model epoch af
 
 ```bash
 $ export TRAIN_DIR=${EXPERIMENT_DIR}/train/AMI.SpeakerDiarization.MixHeadset.train
-$ pyannote-overlap-detection validate ${TRAIN_DIR} AMI.SpeakerDiarization.MixHeadset
+$ pyannote-overlap-detection validate --gpu --subset=development ${TRAIN_DIR} AMI.SpeakerDiarization.MixHeadset
 ```
 
 In practice, it is tuning a simple overlap speech detection pipeline (pyannote.audio.pipeline.overlap_detection.OverlapDetection) after each epoch 
@@ -178,46 +178,20 @@ One can also use [tensorboard](https://github.com/tensorflow/tensorboard) to fol
 ## Application
 ([↑up to table of contents](#table-of-contents))
 
-Now that we know how the model is doing, we can apply it on all files of the AMI database and store raw overlap scores in `/path/to/precomputed/ovl`:
+Now that we know how the model is doing, we can apply it on test files of the AMI database: 
 
 ```bash
-$ pyannote-overlap-detection apply ${TRAIN_DIR}/weights/0960.pt AMI.SpeakerDiarization.MixHeadset /path/to/precomputed/ovl
+$ export VALIDATE_DIR=${TRAIN_DIR}/validate/AMI.SpeakerDiarization.MixHeadset.development
+$ pyannote-overlap-detection apply --gpu --subset=test ${VALIDATE_DIR} AMI.SpeakerDiarization.MixHeadset 
 ```
 
-We can then use these raw scores to perform overlap speech detection:
-
-```python
-# get first test file of AMI protocol
->>> from pyannote.database import get_protocol
->>> protocol = get_protocol('AMI.SpeakerDiarization.MixHeadset')
->>> test_file = next(protocol.test())
-
-# load precomputed overlap scores as pyannote.core.SlidingWindowFeature
->>> from pyannote.audio.features import Precomputed
->>> precomputed = Precomputed('/path/to/precomputed/ovl')
->>> ovl_scores = precomputed(test_file)
-
-# initialize binarizer
-# onset / offset are tunable parameters (and should be tuned for better 
-# performance). we use log_scale=True because of the final log-softmax in the 
-# StackedRNN model
->>> from pyannote.audio.signal import Binarize
->>> binarize = Binarize(onset=0.6728515625, offset=0.6728515625, log_scale=True)
-
-# binarize overlap scores to obtain overlap regions as pyannote.core.Timeline
->>> ovl_regions = binarize.apply(ovl_scores, dimension=1)
-
-# we are using dimension=1 because dim=0 corresponds to 'non_overlap' scores 
-# and dim=1 corresponds to 'overlap' scores as shown by the following line:
->>> precomputed.labels
-['non_overlap', 'overlap']
-```
+Raw scores and speech activity detection results will be dumped into the following directory: `${VALIDATE_DIR}/apply/{BEST_EPOCH}`.
 
 Here is the type of results you can expect from this model on `AMI`:
 
 ![tensorboard screenshot](results.png)
 
-For an example on how to create the above figure, have a look at [this](../pretrained) tutorial.
+For an example on how to create the above figure, have a look at [this](../own_data/pretrained) tutorial.
 
 ## More options
 

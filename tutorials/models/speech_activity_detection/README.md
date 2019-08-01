@@ -73,7 +73,6 @@ Databases:
 
 Have a look at `pyannote.database` [documentation](http://github.com/pyannote/pyannote-database) to learn how to use other datasets.
 
-
 ## Configuration
 ([↑up to table of contents](#table-of-contents))
 
@@ -133,7 +132,7 @@ The following command will train the network using the training set of AMI datab
 
 ```bash
 $ export EXPERIMENT_DIR=tutorials/models/speech_activity_detection
-$ pyannote-speech-detection train --gpu --to=1000 ${EXPERIMENT_DIR} AMI.SpeakerDiarization.MixHeadset
+$ pyannote-speech-detection train --gpu --to=1000 --subset=train ${EXPERIMENT_DIR} AMI.SpeakerDiarization.MixHeadset
 ```
 
 This will create a bunch of files in `TRAIN_DIR` (defined below).
@@ -153,7 +152,7 @@ It can (should!) be run in parallel to training and evaluates the model epoch af
 
 ```bash
 $ export TRAIN_DIR=${EXPERIMENT_DIR}/train/AMI.SpeakerDiarization.MixHeadset.train
-$ pyannote-speech-detection validate ${TRAIN_DIR} AMI.SpeakerDiarization.MixHeadset
+$ pyannote-speech-detection validate --subset=develop --gpu ${TRAIN_DIR} AMI.SpeakerDiarization.MixHeadset
 ```
 
 In practice, it is tuning a simple speech activity detection pipeline (pyannote.audio.pipeline.speech_activity_detection.SpeechActivityDetection) after each epoch and stores the best hyper-parameter configuration on disk:
@@ -179,51 +178,14 @@ One can also use [tensorboard](https://github.com/tensorflow/tensorboard) to fol
 ## Application
 ([↑up to table of contents](#table-of-contents))
 
-Now that we know how the model is doing, we can apply it on all files of the AMI database and store raw SAD scores in `/path/to/precomputed/sad`:
+Now that we know how the model is doing, we can apply it on test files of the AMI database: 
 
 ```bash
-$ pyannote-speech-detection apply ${TRAIN_DIR}/weights/0280.pt AMI.SpeakerDiarization.MixHeadset /path/to/precomputed/sad
+$ export VALIDATE_DIR=${TRAIN_DIR}/validate/AMI.SpeakerDiarization.MixHeadset.development
+$ pyannote-speech-detection apply --gpu --subset=test ${VALIDATE_DIR} AMI.SpeakerDiarization.MixHeadset 
 ```
 
-We can then use these raw scores to perform actual speech activity detection, and [`pyannote.metrics`](http://pyannote.github.io/pyannote-metrics/) to evaluate the result:
-
-```python
-# AMI protocol
->>> from pyannote.database import get_protocol
->>> protocol = get_protocol('AMI.SpeakerDiarization.MixHeadset')
-
-# precomputed scores
->>> from pyannote.audio.features import Precomputed
->>> precomputed = Precomputed('/path/to/precomputed/sad')
-
-# scores binarizer
->>> from pyannote.audio.signal import Binarize
-# onset / offset are tunable parameters (and should be tuned for better performance)
-# we use log_scale = True because of the final log-softmax in the StackedRNN model
->>> binarize = Binarize(onset=0.55, offset=0.55, log_scale=True)
-
-# evaluation metric
->>> from pyannote.metrics.detection import DetectionErrorRate
->>> metric = DetectionErrorRate()
-
-# loop on test files
->>> from pyannote.database import get_annotated
->>> for test_file in protocol.test():
-...    # load reference annotation
-...    reference = test_file['annotation']
-...    uem = get_annotated(test_file)
-...
-...    # load precomputed SAD scores as pyannote.core.SlidingWindowFeature
-...    sad_scores = precomputed(test_file)
-...
-...    # binarize scores to obtain speech regions as pyannote.core.Timeline
-...    speech_regions = binarize.apply(sad_scores, dimension=1)
-...
-...    # evaluate speech activity detection
-...    metric(reference, speech_regions.to_annotation(), uem=uem)
-
->>> print(f'Detection error rate = {100*abs(metric):.1f}%')
-```
+Raw scores and speech activity detection results will be dumped into the following directory: `${VALIDATE_DIR}/apply/{BEST_EPOCH}`.
 
 ## More options
 
