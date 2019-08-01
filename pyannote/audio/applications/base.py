@@ -88,8 +88,8 @@ class Application(object):
 
         # build path to best epoch model
         epoch = params_yml['epoch']
-        model_pt = self.WEIGHTS_PT.format(train_dir=train_dir,
-                                          epoch=epoch)
+        model_pt = cls.WEIGHTS_PT.format(train_dir=train_dir,
+                                         epoch=epoch)
 
         # instantiate application
         # TODO. get rid of from_model_pt
