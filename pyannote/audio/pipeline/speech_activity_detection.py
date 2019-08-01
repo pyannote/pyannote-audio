@@ -140,6 +140,8 @@ class SpeechActivityDetection(Pipeline):
         speech.uri = current_file['uri']
         return speech.to_annotation(generator='string', modality='speech')
 
-    def get_metric(self) -> DetectionErrorRate:
+    def get_metric(self, parallel=False) -> DetectionErrorRate:
         """Return new instance of detection error rate metric"""
-        return  DetectionErrorRate(collar=0.0, skip_overlap=False)
+        return  DetectionErrorRate(collar=0.0,
+                                   skip_overlap=False,
+                                   parallel=parallel)

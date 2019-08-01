@@ -32,7 +32,7 @@ Speech activity detection
 Usage:
   pyannote-speech-detection train [options] <experiment_dir> <database.task.protocol>
   pyannote-speech-detection validate [options] [--every=<epoch> --chronological] <train_dir> <database.task.protocol>
-  pyannote-speech-detection apply [options] [--step=<step>] <model.pt> <database.task.protocol> <output_dir>
+  pyannote-speech-detection apply [options] [--step=<step>] <validate_dir> <database.task.protocol> <output_dir>
   pyannote-speech-detection -h | --help
   pyannote-speech-detection --version
 
@@ -66,7 +66,8 @@ Common options:
                              models (i.e. the output of "train" mode).
 
 "apply" mode:
-  <model.pt>                 Path to the pretrained model.
+  <validate_dir>             Path to the directory containing validation
+                             results (i.e. the output of "validate" mode).
   --step=<step>              Sliding window step, in seconds.
                              Defaults to 25% of window duration.
 
@@ -178,6 +179,8 @@ def validate_helper_func(current_file, pipeline=None, metric=None):
 
 class SpeechActivityDetection(BaseLabeling):
 
+    Pipeline = SpeechActivityDetectionPipeline
+
     def validate_epoch(self, epoch, protocol_name, subset='development',
                        validation_data=None):
 
@@ -195,7 +198,7 @@ class SpeechActivityDetection(BaseLabeling):
             current_file['sad_scores'] = sequence_labeling(current_file)
 
         # pipeline
-        pipeline = SpeechActivityDetectionPipeline()
+        pipeline = self.Pipeline()
 
         def fun(threshold):
             pipeline.instantiate({'onset': threshold,
@@ -204,7 +207,7 @@ class SpeechActivityDetection(BaseLabeling):
                                   'min_duration_off': 0.,
                                   'pad_onset': 0.,
                                   'pad_offset': 0.})
-            metric = DetectionErrorRate(parallel=True)
+            metric = pipeline.get_metric(parallel=True)
             validate = partial(validate_helper_func,
                                pipeline=pipeline,
                                metric=metric)
@@ -309,13 +312,8 @@ def main():
 
     if arguments['apply']:
 
-        model_pt = Path(arguments['<model.pt>'])
-        model_pt = model_pt.expanduser().resolve(strict=True)
-
-        output_dir = Path(arguments['<output_dir>'])
-        output_dir = output_dir.expanduser().resolve(strict=False)
-
-        # TODO. create README file in <output_dir>
+        validate_dir = Path(arguments['<validate_dir>'])
+        validate_dir = validate_dir.expanduser().resolve(strict=True)
 
         step = arguments['--step']
         if step is not None:
@@ -323,8 +321,8 @@ def main():
 
         batch_size = int(arguments['--batch'])
 
-        application = SpeechActivityDetection.from_model_pt(
-            model_pt, db_yml=db_yml, training=False)
+        application = SpeechActivityDetection.from_validate_dir(
+            validate_dir, db_yml=db_yml, training=False)
         application.device = device
         application.batch_size = batch_size
-        application.apply(protocol_name, output_dir, step=step, subset=subset)
+        application.apply(protocol_name, step=step, subset=subset)

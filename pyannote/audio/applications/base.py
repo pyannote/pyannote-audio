@@ -54,6 +54,7 @@ class Application(object):
     WEIGHTS_DIR = '{train_dir}/weights'
     WEIGHTS_PT = '{train_dir}/weights/{epoch:04d}.pt'
     VALIDATE_DIR = '{train_dir}/validate{_task}/{protocol}.{subset}'
+    APPLY_DIR = '{validate_dir}/apply/{epoch:04d}'
 
     @classmethod
     def from_train_dir(cls, train_dir, db_yml=None, training=False):
@@ -63,19 +64,39 @@ class Application(object):
         return app
 
     @classmethod
-    def from_validate_txt(cls, validate_txt, db_yml=None, training=False):
-        train_dir = dirname(dirname(dirname(validate_txt)))
-        app = cls.from_train_dir(train_dir, db_yml=db_yml, training=training)
-        app.validate_txt_ = validate_txt
-        return app
-
-    @classmethod
     def from_model_pt(cls, model_pt, db_yml=None, training=False):
         train_dir = dirname(dirname(model_pt))
         app = cls.from_train_dir(train_dir, db_yml=db_yml, training=training)
         app.model_pt_ = model_pt
         epoch = int(basename(app.model_pt_)[:-3])
         app.model_ = app.load_model(epoch, train_dir=train_dir)
+        app.epoch_ = epoch
+        return app
+
+    @classmethod
+    def from_validate_dir(cls, validate_dir, db_yml=None, training=False):
+
+        # infer train directory from validate directory
+        train_dir = dirname(dirname(validate_dir))
+
+        # load params.yml file from validate directory
+        with open(validate_dir + '/params.yml', 'r') as fp:
+            params_yml = yaml.load(fp)
+
+        # build path to best epoch model
+        epoch = params_yml['epoch']
+        model_pt = self.WEIGHTS_PT.format(train_dir=train_dir,
+                                          epoch=epoch)
+
+        # instantiate application
+        # TODO. get rid of from_model_pt
+        app = cls.from_model_pt(model_t, db_yml=db_yml, training=training)
+        app.validate_dir_ = validate_dir
+        app.epoch_ = epoch
+
+        # keep track of pipeline parameters
+        app.pipeline_params_ = params_yml['params']
+
         return app
 
     def __init__(self, experiment_dir, db_yml=None, training=False):
