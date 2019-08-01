@@ -93,7 +93,7 @@ class Application(object):
 
         # instantiate application
         # TODO. get rid of from_model_pt
-        app = cls.from_model_pt(model_t, db_yml=db_yml, training=training)
+        app = cls.from_model_pt(model_pt, db_yml=db_yml, training=training)
         app.validate_dir_ = validate_dir
         app.epoch_ = epoch
 
