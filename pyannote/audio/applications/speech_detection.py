@@ -41,8 +41,8 @@ Common options:
   --database=<database.yml>  Path to pyannote.database configuration file.
   --subset=<subset>          Set subset (train|developement|test).
                              Defaults to "train" in "train" mode. Defaults to
-                             "development" in "validate" mode. Defaults to all subsets in
-                             "apply" mode.
+                             "development" in "validate" mode. Defaults to
+                             "test" in "apply" mode.
   --gpu                      Run on GPUs. Defaults to using CPUs.
   --batch=<size>             Set batch size. Has no effect in "train" mode.
                              [default: 32]
@@ -305,6 +305,9 @@ def main():
         validate_dir = Path(arguments['<validate_dir>'])
         validate_dir = validate_dir.expanduser().resolve(strict=True)
 
+        if subset is None:
+            subset = 'test'
+        
         step = arguments['--step']
         if step is not None:
             step = float(step)

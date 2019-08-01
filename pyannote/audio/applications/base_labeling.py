@@ -93,7 +93,7 @@ class BaseLabeling(Application):
 
     def apply(self, protocol_name: str,
                     step: Optional[float] = None,
-                    subset: Optional[str] = None):
+                    subset: Optional[str] = "test"):
 
         model = self.model_.to(self.device)
         model.eval()
@@ -129,19 +129,9 @@ class BaseLabeling(Application):
         protocol = get_protocol(protocol_name, progress=True,
                                 preprocessors=self.preprocessors_)
 
-        if subset is None:
-            files = FileFinder.protocol_file_iter(protocol,
-                                                  extra_keys=['audio'])
-        else:
-            files = getattr(protocol, subset)()
-
-        for current_file in files:
+        for current_file in getattr(protocol, subset)():
             fX = sequence_labeling(current_file)
             precomputed.dump(current_file, fX)
-
-        # do not proceed with the full pipeline when subset is not provided
-        if subset is None:
-            return
 
         # do not proceed with the full pipeline
         # when there is no such thing for current task
@@ -161,7 +151,7 @@ class BaseLabeling(Application):
         # apply pipeline and dump output to RTTM files
         output_rttm = output_dir / f'{protocol_name}.{subset}.rttm'
         with open(output_rttm, 'w') as fp:
-            for current_file in files:
+            for current_file in getattr(protocol, subset)():
                 hypothesis = pipeline(current_file)
                 pipeline.write_rttm(fp, hypothesis)
 
