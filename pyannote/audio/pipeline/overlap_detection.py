@@ -50,7 +50,7 @@ class OverlapDetection(Pipeline):
     scores : `Path`, optional
         Path to precomputed scores on disk.
     precision : `float`, optional
-        Target detection precision. Defaults to 0.8.
+        Target detection precision. Defaults to 0.9.
 
     Hyper-parameters
     ----------------
@@ -63,7 +63,7 @@ class OverlapDetection(Pipeline):
     """
 
     def __init__(self, scores: Optional[Path] = None,
-                       precision: Optional[Path] = 0.8):
+                       precision: Optional[Path] = 0.9):
         super().__init__()
 
         self.scores = scores
