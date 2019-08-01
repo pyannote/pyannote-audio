@@ -31,6 +31,7 @@ import os
 import sys
 import time
 import yaml
+from typing import Optional
 from pathlib import Path
 from os.path import dirname, basename
 import numpy as np
@@ -74,13 +75,15 @@ class Application(object):
         return app
 
     @classmethod
-    def from_validate_dir(cls, validate_dir, db_yml=None, training=False):
+    def from_validate_dir(cls, validate_dir: Path,
+                               db_yml: Optional[Path] = None,
+                               training: Optional[bool] = False):
 
         # infer train directory from validate directory
         train_dir = dirname(dirname(validate_dir))
 
         # load params.yml file from validate directory
-        with open(validate_dir + '/params.yml', 'r') as fp:
+        with open(validate_dir / 'params.yml', 'r') as fp:
             params_yml = yaml.load(fp)
 
         # build path to best epoch model
@@ -95,7 +98,7 @@ class Application(object):
         app.epoch_ = epoch
 
         # keep track of pipeline parameters
-        app.pipeline_params_ = params_yml['params']
+        app.pipeline_params_ = params_yml.get('params', {})
 
         return app
 
