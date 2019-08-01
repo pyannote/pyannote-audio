@@ -155,14 +155,22 @@ class BaseLabeling(Application):
                 hypothesis = pipeline(current_file)
                 pipeline.write_rttm(fp, hypothesis)
 
+                # compute evaluation metric (when possible)
+                if 'annotation' not in current_file:
+                    metric = None
+
                 # compute evaluation metric (when available)
                 if metric is None:
                     continue
+
                 reference = current_file['annotation']
                 uem = get_annotated(current_file)
                 _ = metric(reference, hypothesis, uem=uem)
 
         # print pipeline metric (when available)
-        if metric is not None:
-            _ = metric.report(display=True)
-            # TODO. dump metric report to file
+        if metric is None:
+            return
+
+        output_eval = output_dir / f'{protocol_name}.{subset}.eval'
+        with open(output_eval, 'w') as fp:
+            fp.write(str(metric))
