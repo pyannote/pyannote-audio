@@ -231,7 +231,7 @@ def main():
     gpu = arguments['--gpu']
     device = torch.device('cuda') if gpu else torch.device('cpu')
 
-    # HACK for JHU/CLSP cluster
+    # HACK to "book" GPU as soon as possible
     _ = torch.Tensor([0]).to(device)
 
     if arguments['train']:
@@ -307,7 +307,7 @@ def main():
 
         if subset is None:
             subset = 'test'
-        
+
         step = arguments['--step']
         if step is not None:
             step = float(step)
