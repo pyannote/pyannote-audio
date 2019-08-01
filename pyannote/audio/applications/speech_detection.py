@@ -32,7 +32,7 @@ Speech activity detection
 Usage:
   pyannote-speech-detection train [options] <experiment_dir> <database.task.protocol>
   pyannote-speech-detection validate [options] [--every=<epoch> --chronological] <train_dir> <database.task.protocol>
-  pyannote-speech-detection apply [options] [--step=<step>] <validate_dir> <database.task.protocol> <output_dir>
+  pyannote-speech-detection apply [options] [--step=<step>] <validate_dir> <database.task.protocol>
   pyannote-speech-detection -h | --help
   pyannote-speech-detection --version
 
@@ -138,21 +138,11 @@ Configuration file:
     threshold that minimizes the detection error rate.
 
 "apply" mode:
-    Use the "apply" mode to extract speech activity detection raw scores.
-    Resulting files can then be used in the following way:
+    Use the "apply" mode to extract speech activity detection raw scores and
+    results. This will create the following directory that contains speech
+    activity detection results:
 
-    >>> from pyannote.audio.features import Precomputed
-    >>> precomputed = Precomputed('<output_dir>')
-
-    >>> from pyannote.database import get_protocol
-    >>> protocol = get_protocol('<database.task.protocol>')
-    >>> first_test_file = next(protocol.test())
-
-    >>> from pyannote.audio.signal import Binarize
-    >>> binarizer = Binarize()
-
-    >>> raw_scores = precomputed(first_test_file)
-    >>> speech_regions = binarizer.apply(raw_scores, dimension=1)
+        <validate_dir>/apply/<epoch>
 """
 
 from functools import partial
