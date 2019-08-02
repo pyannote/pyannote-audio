@@ -193,8 +193,8 @@ class SpeechActivityDetection(BaseLabeling):
         def fun(threshold):
             pipeline.instantiate({'onset': threshold,
                                   'offset': threshold,
-                                  'min_duration_on': 0.,
-                                  'min_duration_off': 0.,
+                                  'min_duration_on': 0.100,
+                                  'min_duration_off': 0.100,
                                   'pad_onset': 0.,
                                   'pad_offset': 0.})
             metric = pipeline.get_metric(parallel=True)
@@ -215,8 +215,8 @@ class SpeechActivityDetection(BaseLabeling):
                 'value': res.fun,
                 'pipeline': pipeline.instantiate({'onset': threshold,
                                                   'offset': threshold,
-                                                  'min_duration_on': 0.,
-                                                  'min_duration_off': 0.,
+                                                  'min_duration_on': 0.100,
+                                                  'min_duration_off': 0.100,
                                                   'pad_onset': 0.,
                                                   'pad_offset': 0.})}
 

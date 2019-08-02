@@ -229,8 +229,8 @@ class OverlapDetection(BaseLabeling):
             current_alpha = .5 * (lower_alpha + upper_alpha)
             pipeline.instantiate({'onset': current_alpha,
                                   'offset': current_alpha,
-                                  'min_duration_on': 0.,
-                                  'min_duration_off': 0.,
+                                  'min_duration_on': 0.100,
+                                  'min_duration_off': 0.100,
                                   'pad_onset': 0.,
                                   'pad_offset': 0.})
 
@@ -270,8 +270,8 @@ class OverlapDetection(BaseLabeling):
                          else precision - self.precision,
                 'pipeline': pipeline.instantiate({'onset': best_alpha,
                                                   'offset': best_alpha,
-                                                  'min_duration_on': 0.,
-                                                  'min_duration_off': 0.,
+                                                  'min_duration_on': 0.100,
+                                                  'min_duration_off': 0.100,
                                                   'pad_onset': 0.,
                                                   'pad_offset': 0.})}
 

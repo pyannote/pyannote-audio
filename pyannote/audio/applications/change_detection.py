@@ -210,7 +210,7 @@ class SpeakerChangeDetection(BaseLabeling):
 
             current_alpha = .5 * (lower_alpha + upper_alpha)
             pipeline.instantiate({'alpha': current_alpha,
-                                  'min_duration': 0.})
+                                  'min_duration': 0.100})
 
             if self.diarization:
                 metric = DiarizationPurityCoverageFMeasure(parallel=True)
@@ -239,7 +239,7 @@ class SpeakerChangeDetection(BaseLabeling):
                 'value': best_coverage if best_coverage \
                          else purity - self.purity,
                 'pipeline': pipeline.instantiate({'alpha': best_alpha,
-                                                  'min_duration': 0.})}
+                                                  'min_duration': 0.100})}
 
 
 def main():
