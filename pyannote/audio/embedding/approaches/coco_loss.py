@@ -101,6 +101,8 @@ class CongenerousCosineLoss(Classification):
             Scaling factor used in embedding L2-normalization. Defaults to 6.25.
         """
 
+    CLASSIFIER_PT = '{log_dir}/weights/{epoch:04d}.coco_classifier.pt'
+
     def __init__(self, duration=None, min_duration=None, max_duration=None,
                  per_label=1, per_fold=32, per_epoch=7, parallel=1,
                  label_min_duration=0., alpha=6.25):
