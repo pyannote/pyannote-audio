@@ -70,3 +70,6 @@ experiments
 *.pt
 *events.out.tfevents*
 *.csv
+
+# PyCharm
+.idea/
