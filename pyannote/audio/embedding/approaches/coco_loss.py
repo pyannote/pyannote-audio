@@ -72,7 +72,7 @@ class CocoLinear(nn.Module):
         return logits
 
 
-class CongenerousCosineClassification(Classification):
+class CongenerousCosineLoss(Classification):
     """Train embeddings as last hidden layer of an additive angular margin loss classifier
 
         Parameters

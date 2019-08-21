@@ -97,7 +97,7 @@ class ArcLinear(nn.Module):
         return cos_theta_j
 
 
-class AdditiveAngularMarginClassification(Classification):
+class AdditiveAngularMarginLoss(Classification):
     """Train embeddings as last hidden layer of an additive angular margin loss classifier
 
         Parameters

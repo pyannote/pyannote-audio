@@ -29,4 +29,5 @@
 
 from .classification import Classification
 from .triplet_loss import TripletLoss
-from .additive_angular_margin_loss import AdditiveAngularMarginClassification
+from .arcface_loss import AdditiveAngularMarginLoss
+from .coco_loss import CongenerousCosineLoss
