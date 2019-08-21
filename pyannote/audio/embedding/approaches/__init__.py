@@ -29,3 +29,4 @@
 
 from .classification import Classification
 from .triplet_loss import TripletLoss
+from .additive_angular_margin_loss import AdditiveAngularMarginClassification
