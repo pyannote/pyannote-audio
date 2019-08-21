@@ -167,7 +167,7 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
         self.domain = domain
         self.attachment = attachment
 
-        self.logsoftmax_ = nn.LogSoftmax(dim=1)
+        self.activation_ = nn.LogSoftmax(dim=1)
         self.domain_loss_ = nn.NLLLoss()
 
     def parameters(self, model, specifications, device):
@@ -265,7 +265,8 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
             dtype=torch.int64,
             device=self.device_)
 
-        domain_scores = self.logsoftmax_(self.domain_classifier_(intermediate))
+        domain_scores = self.activation_(self.domain_classifier_(intermediate))
+
         domain_loss = self.domain_loss_(domain_scores, domain_target)
 
         return {'loss': loss + domain_loss,
@@ -275,11 +276,16 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
 
 class DomainAdversarialSpeechActivityDetection(DomainAwareSpeechActivityDetection):
 
-    def __init__(self, domain='domain', attachment=-1, alpha=1., **kwargs):
+    def __init__(self, domain='domain', attachment=-1, alpha=1., domain_loss="negative_lll", **kwargs):
         super().__init__(domain=domain, attachment=attachment, **kwargs)
         self.alpha = alpha
         self.gradient_reversal_ = GradientReversal()
 
+        # Used for sigmoid + mean squared error loss
+        self.domain_loss = domain_loss
+        if self.domain_loss == "mse":
+            self.activation_ = nn.Sigmoid()
+            self.domain_loss_ = nn.MSELoss()
 
     def batch_loss(self, batch):
         """Compute loss for current `batch`
@@ -304,6 +310,7 @@ class DomainAdversarialSpeechActivityDetection(DomainAwareSpeechActivityDetectio
 
         # speech activity detection
         fX = fX.view((-1, self.n_classes_))
+
         target = torch.tensor(
             batch['y'],
             dtype=torch.int64,
@@ -320,8 +327,15 @@ class DomainAdversarialSpeechActivityDetection(DomainAwareSpeechActivityDetectio
             dtype=torch.int64,
             device=self.device_)
 
-        domain_scores = self.logsoftmax_(self.domain_classifier_(
+        domain_scores = self.activation_(self.domain_classifier_(
             self.gradient_reversal_(intermediate)))
+
+        if self.domain_loss == "mse":
+            # One hot encode domain_target for Mean Squared Error Loss
+            nb_domains = domain_scores.shape[1]
+            identity_mat = torch.sparse.torch.eye(nb_domains, device=self.device_)
+            domain_target = identity_mat.index_select(dim=0, index=domain_target)
+
         domain_loss = self.domain_loss_(domain_scores, domain_target)
 
         return {'loss': loss + self.alpha * domain_loss,
