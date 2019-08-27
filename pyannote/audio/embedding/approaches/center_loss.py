@@ -34,7 +34,7 @@ from pyannote.audio.embedding.generators import SpeechSegmentGenerator
 from .base import EmbeddingApproach
 
 
-class Classification(EmbeddingApproach):
+class CenterLoss(EmbeddingApproach):
     """Train embeddings as last hidden layer of a classifier
 
     Parameters
