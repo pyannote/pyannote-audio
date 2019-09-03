@@ -30,6 +30,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from itertools import chain
 from pyannote.audio.embedding.generators import SpeechSegmentGenerator
 from .base import EmbeddingApproach
 
@@ -106,7 +107,7 @@ class CenterLoss(EmbeddingApproach):
         self.classifier_ = nn.Linear(model.dimension, nclass, bias=False).to(device)
         self.center_dist_ = CenterDistanceModule(model.dimension, nclass).to(device)
 
-        return [self.classifier_.parameters(), self.center_dist_.parameters()]
+        return chain(self.classifier_.parameters(), self.center_dist_.parameters())
 
     def load_epoch(self, epoch):
         """Load model and classifier from disk
