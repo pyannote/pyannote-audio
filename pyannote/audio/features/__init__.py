@@ -32,27 +32,10 @@
 
 
 try:
-    from .with_yaafe import YaafeCompound, YaafeZCR, YaafeMFCC
-except ModuleNotFoundError as e:
-    if e.args[0] == "No module named 'yaafelib'":
-        msg = (
-            'Feature extractors based on "yaafe" are not available '
-            'because "yaafelib" could not be found.')
-        print(msg)
-
-try:
     from .with_librosa import LibrosaMFCC, LibrosaSpectrogram, LibrosaMelSpectrogram
 except Exception as e:
         msg = (
             f'Feature extractors based on "librosa" are not available '
-            f'because something went wrong when importing them: "{e}".')
-        print(msg)
-
-try:
-    from .with_python_speech_features import PySpeechFeaturesMFCC
-except Exception as e:
-        msg = (
-            f'Feature extractors based on "python_speech_features" are not available '
             f'because something went wrong when importing them: "{e}".')
         print(msg)
 

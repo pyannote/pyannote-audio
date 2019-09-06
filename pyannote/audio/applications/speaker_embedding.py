@@ -383,7 +383,7 @@ class SpeakerEmbedding(Application):
 
         return {'metric': 'equal_error_rate',
                 'minimize': True,
-                'value': eer}
+                'value': float(eer)}
 
 
     def _validate_epoch_diarization(self, epoch, protocol_name,

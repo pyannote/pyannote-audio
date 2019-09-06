@@ -26,11 +26,13 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
-
+from typing import Optional
+from pathlib import Path
 from tqdm import tqdm
 from .base import Application
 from pyannote.database import FileFinder
 from pyannote.database import get_protocol
+from pyannote.database import get_annotated
 from pyannote.audio.features import Precomputed
 from pyannote.audio.features import RawAudio
 from pyannote.audio.labeling.extraction import SequenceLabeling
@@ -89,7 +91,9 @@ class BaseLabeling(Application):
 
         return validation_data
 
-    def apply(self, protocol_name, output_dir, step=None, subset=None):
+    def apply(self, protocol_name: str,
+                    step: Optional[float] = None,
+                    subset: Optional[str] = "test"):
 
         model = self.model_.to(self.device)
         model.eval()
@@ -97,6 +101,10 @@ class BaseLabeling(Application):
         duration = self.task_.duration
         if step is None:
             step = 0.25 * duration
+
+        output_dir = Path(self.APPLY_DIR.format(
+            validate_dir=self.validate_dir_,
+            epoch=self.epoch_))
 
         # do not use memmap as this would lead to too many open files
         if isinstance(self.feature_extraction_, Precomputed):
@@ -121,12 +129,48 @@ class BaseLabeling(Application):
         protocol = get_protocol(protocol_name, progress=True,
                                 preprocessors=self.preprocessors_)
 
-        if subset is None:
-            files = FileFinder.protocol_file_iter(protocol,
-                                                  extra_keys=['audio'])
-        else:
-            files = getattr(protocol, subset)()
-
-        for current_file in files:
+        for current_file in getattr(protocol, subset)():
             fX = sequence_labeling(current_file)
             precomputed.dump(current_file, fX)
+
+        # do not proceed with the full pipeline
+        # when there is no such thing for current task
+        if not hasattr(self, 'pipeline_params_'):
+            return
+
+        # instantiate pipeline
+        pipeline = self.Pipeline(scores=output_dir)
+        pipeline.instantiate(self.pipeline_params_)
+
+        # load pipeline metric (when available)
+        try:
+            metric = pipeline.get_metric()
+        except NotImplementedError as e:
+            metric = None
+
+        # apply pipeline and dump output to RTTM files
+        output_rttm = output_dir / f'{protocol_name}.{subset}.rttm'
+        with open(output_rttm, 'w') as fp:
+            for current_file in getattr(protocol, subset)():
+                hypothesis = pipeline(current_file)
+                pipeline.write_rttm(fp, hypothesis)
+
+                # compute evaluation metric (when possible)
+                if 'annotation' not in current_file:
+                    metric = None
+
+                # compute evaluation metric (when available)
+                if metric is None:
+                    continue
+
+                reference = current_file['annotation']
+                uem = get_annotated(current_file)
+                _ = metric(reference, hypothesis, uem=uem)
+
+        # print pipeline metric (when available)
+        if metric is None:
+            return
+
+        output_eval = output_dir / f'{protocol_name}.{subset}.eval'
+        with open(output_eval, 'w') as fp:
+            fp.write(str(metric))

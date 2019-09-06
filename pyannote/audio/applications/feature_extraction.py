@@ -54,7 +54,7 @@ Configuration file:
 
     ................... <experiment_dir>/config.yml ...................
     feature_extraction:
-       name: YaafeMFCC
+       name: LibrosaMFCC
        params:
           e: False                   # this experiments relies
           De: True                   # on 11 MFCC coefficients

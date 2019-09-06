@@ -32,7 +32,7 @@ Overlapping speech detection
 Usage:
   pyannote-overlap-detection train [options] <experiment_dir> <database.task.protocol>
   pyannote-overlap-detection validate [options] [--every=<epoch> --chronological --precision=<precision>] <train_dir> <database.task.protocol>
-  pyannote-overlap-detection apply [options] [--step=<step>] <model.pt> <database.task.protocol> <output_dir>
+  pyannote-overlap-detection apply [options] [--step=<step>] <validate_dir> <database.task.protocol>
   pyannote-overlap-detection -h | --help
   pyannote-overlap-detection --version
 
@@ -41,8 +41,8 @@ Common options:
   --database=<database.yml>  Path to pyannote.database configuration file.
   --subset=<subset>          Set subset (train|developement|test).
                              Defaults to "train" in "train" mode. Defaults to
-                             "development" in "validate" mode. Defaults to all subsets in
-                             "apply" mode.
+                             "development" in "validate" mode. Defaults to
+                             "test" in "apply" mode.
   --gpu                      Run on GPUs. Defaults to using CPUs.
   --batch=<size>             Set batch size. Has no effect in "train" mode.
                              [default: 32]
@@ -67,7 +67,8 @@ Common options:
   --precision=<precision>    Target detection precision [default: 0.8].
 
 "apply" mode:
-  <model.pt>                 Path to the pretrained model.
+  <validate_dir>             Path to the directory containing validation
+                             results (i.e. the output of "validate" mode).
   --step=<step>              Sliding window step, in seconds.
                              Defaults to 25% of window duration.
 
@@ -141,23 +142,12 @@ Configuration file:
     "--precision" option.
 
 "apply" mode:
-    Use the "apply" mode to extract overlapping speech detection raw scores.
-    Resulting files can then be used in the following way:
+    Use the "apply" mode to extract overlapped speech detection raw scores and
+    results. This will create the following directory that contains overlapped
+    speech detection results:
 
-    >>> from pyannote.audio.features import Precomputed
-    >>> precomputed = Precomputed('<output_dir>')
-
-    >>> from pyannote.database import get_protocol
-    >>> protocol = get_protocol('<database.task.protocol>')
-    >>> first_test_file = next(protocol.test())
-
-    >>> from pyannote.audio.signal import Binarize
-    >>> binarizer = Binarize()
-
-    >>> raw_scores = precomputed(first_test_file)
-    >>> overlap_regions = binarizer.apply(raw_scores, dimension=1)
+        <validate_dir>/apply/<epoch>
 """
-
 
 from functools import partial
 from pathlib import Path
@@ -187,6 +177,8 @@ def validate_helper_func(current_file, pipeline=None,
 
 
 class OverlapDetection(BaseLabeling):
+
+    Pipeline = OverlapDetectionPipeline
 
     def validate_init(self, protocol_name, subset='development'):
         validation_data = super().validate_init(protocol_name, subset=subset)
@@ -222,7 +214,7 @@ class OverlapDetection(BaseLabeling):
             current_file['ovl_scores'] = sequence_labeling(current_file)
 
         # pipeline
-        pipeline = OverlapDetectionPipeline(precision=self.precision)
+        pipeline = self.Pipeline(precision=self.precision)
 
         # dichotomic search to find threshold that maximizes recall
         # while having at least `target_precision`
@@ -237,8 +229,8 @@ class OverlapDetection(BaseLabeling):
             current_alpha = .5 * (lower_alpha + upper_alpha)
             pipeline.instantiate({'onset': current_alpha,
                                   'offset': current_alpha,
-                                  'min_duration_on': 0.,
-                                  'min_duration_off': 0.,
+                                  'min_duration_on': 0.100,
+                                  'min_duration_off': 0.100,
                                   'pad_onset': 0.,
                                   'pad_offset': 0.})
 
@@ -278,8 +270,8 @@ class OverlapDetection(BaseLabeling):
                          else precision - self.precision,
                 'pipeline': pipeline.instantiate({'onset': best_alpha,
                                                   'offset': best_alpha,
-                                                  'min_duration_on': 0.,
-                                                  'min_duration_off': 0.,
+                                                  'min_duration_on': 0.100,
+                                                  'min_duration_off': 0.100,
                                                   'pad_onset': 0.,
                                                   'pad_offset': 0.})}
 
@@ -293,7 +285,7 @@ def main():
     gpu = arguments['--gpu']
     device = torch.device('cuda') if gpu else torch.device('cpu')
 
-    # HACK for JHU/CLSP cluster
+    # HACK to "book" GPU as soon as possible
     _ = torch.Tensor([0]).to(device)
 
     if arguments['train']:
@@ -369,13 +361,11 @@ def main():
 
     if arguments['apply']:
 
-        model_pt = Path(arguments['<model.pt>'])
-        model_pt = model_pt.expanduser().resolve(strict=True)
+        validate_dir = Path(arguments['<validate_dir>'])
+        validate_dir = validate_dir.expanduser().resolve(strict=True)
 
-        output_dir = Path(arguments['<output_dir>'])
-        output_dir = output_dir.expanduser().resolve(strict=False)
-
-        # TODO. create README file in <output_dir>
+        if subset is None:
+            subset = 'test'
 
         step = arguments['--step']
         if step is not None:
@@ -383,8 +373,8 @@ def main():
 
         batch_size = int(arguments['--batch'])
 
-        application = OverlapDetection.from_model_pt(
-            model_pt, db_yml=db_yml, training=False)
+        application = OverlapDetection.from_validate_dir(
+            validate_dir, db_yml=db_yml, training=False)
         application.device = device
         application.batch_size = batch_size
-        application.apply(protocol_name, output_dir, step=step, subset=subset)
+        application.apply(protocol_name, step=step, subset=subset)

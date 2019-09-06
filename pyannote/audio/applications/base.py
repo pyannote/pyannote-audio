@@ -31,6 +31,7 @@ import os
 import sys
 import time
 import yaml
+from typing import Optional
 from pathlib import Path
 from os.path import dirname, basename
 import numpy as np
@@ -54,6 +55,7 @@ class Application(object):
     WEIGHTS_DIR = '{train_dir}/weights'
     WEIGHTS_PT = '{train_dir}/weights/{epoch:04d}.pt'
     VALIDATE_DIR = '{train_dir}/validate{_task}/{protocol}.{subset}'
+    APPLY_DIR = '{validate_dir}/apply/{epoch:04d}'
 
     @classmethod
     def from_train_dir(cls, train_dir, db_yml=None, training=False):
@@ -63,19 +65,41 @@ class Application(object):
         return app
 
     @classmethod
-    def from_validate_txt(cls, validate_txt, db_yml=None, training=False):
-        train_dir = dirname(dirname(dirname(validate_txt)))
-        app = cls.from_train_dir(train_dir, db_yml=db_yml, training=training)
-        app.validate_txt_ = validate_txt
-        return app
-
-    @classmethod
     def from_model_pt(cls, model_pt, db_yml=None, training=False):
         train_dir = dirname(dirname(model_pt))
         app = cls.from_train_dir(train_dir, db_yml=db_yml, training=training)
         app.model_pt_ = model_pt
         epoch = int(basename(app.model_pt_)[:-3])
         app.model_ = app.load_model(epoch, train_dir=train_dir)
+        app.epoch_ = epoch
+        return app
+
+    @classmethod
+    def from_validate_dir(cls, validate_dir: Path,
+                               db_yml: Optional[Path] = None,
+                               training: Optional[bool] = False):
+
+        # infer train directory from validate directory
+        train_dir = dirname(dirname(validate_dir))
+
+        # load params.yml file from validate directory
+        with open(validate_dir / 'params.yml', 'r') as fp:
+            params_yml = yaml.load(fp)
+
+        # build path to best epoch model
+        epoch = params_yml['epoch']
+        model_pt = cls.WEIGHTS_PT.format(train_dir=train_dir,
+                                         epoch=epoch)
+
+        # instantiate application
+        # TODO. get rid of from_model_pt
+        app = cls.from_model_pt(model_pt, db_yml=db_yml, training=training)
+        app.validate_dir_ = validate_dir
+        app.epoch_ = epoch
+
+        # keep track of pipeline parameters
+        app.pipeline_params_ = params_yml.get('params', {})
+
         return app
 
     def __init__(self, experiment_dir, db_yml=None, training=False):
@@ -98,20 +122,31 @@ class Application(object):
             self.config_ = yaml.load(fp, Loader=yaml.SafeLoader)
 
         # preprocessors
-        preprocessors = {}
-        PREPROCESSORS_DEFAULT = {'audio': db_yml,
-                                 'duration': get_audio_duration}
+        preprocessors = {'audio': FileFinder(db_yml),
+                         'duration': get_audio_duration}
 
-        for key, value in self.config_.get('preprocessors',
-                                            PREPROCESSORS_DEFAULT).items():
-            if callable(value):
-                preprocessors[key] = value
+        for key, preprocessor in self.config_.get('preprocessors', {}).items():
+            # preprocessors:
+            #    key:
+            #       name: package.module.ClassName
+            #       params:
+            #          param1: value1
+            #          param2: value2
+            if isinstance(preprocessor, dict):
+                Klass = get_class_by_name(preprocessor['name'])
+                preprocessors[key] = Klass(**preprocessor.get('params', {}))
                 continue
 
             try:
-                preprocessors[key] = FileFinder(config_yml=value)
+                # preprocessors:
+                #    key: /path/to/database.yml
+                preprocessors[key] = FileFinder(preprocessor)
+
             except FileNotFoundError as e:
-                preprocessors[key] = value
+                # preprocessors:
+                #    key: /path/to/{uri}.wav
+                preprocessors[key] = preprocessor
+
         self.preprocessors_ = preprocessors
 
         # scheduler

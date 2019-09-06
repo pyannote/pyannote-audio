@@ -193,8 +193,13 @@ class Precomputed(object):
         path = Path(self.get_path(current_file))
 
         if not path.exists():
-            uri = get_unique_identifier(current_file)
-            msg = f'No precomputed features for "{uri}".'
+            uri = current_file['uri']
+            database = current_file['database']
+            msg = (
+                f'Directory {self.root_dir} does not contain '
+                f'precomputed features for file "{uri}" of '
+                f'"{database}" database.'
+            )
             raise PyannoteFeatureExtractionError(msg)
 
         if self.use_memmap:

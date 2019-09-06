@@ -25,7 +25,7 @@
 
 
 feature_extraction:
-   name: YaafeMFCC                  # extract MFCCs using Yaafe
+   name: LibrosaMFCC                # extract MFCCs using Librosa
    params:
       e: False                      # no energy
       De: True                      # energy 1st derivative

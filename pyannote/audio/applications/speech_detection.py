@@ -32,7 +32,7 @@ Speech activity detection
 Usage:
   pyannote-speech-detection train [options] <experiment_dir> <database.task.protocol>
   pyannote-speech-detection validate [options] [--every=<epoch> --chronological] <train_dir> <database.task.protocol>
-  pyannote-speech-detection apply [options] [--step=<step>] <model.pt> <database.task.protocol> <output_dir>
+  pyannote-speech-detection apply [options] [--step=<step>] <validate_dir> <database.task.protocol>
   pyannote-speech-detection -h | --help
   pyannote-speech-detection --version
 
@@ -41,8 +41,8 @@ Common options:
   --database=<database.yml>  Path to pyannote.database configuration file.
   --subset=<subset>          Set subset (train|developement|test).
                              Defaults to "train" in "train" mode. Defaults to
-                             "development" in "validate" mode. Defaults to all subsets in
-                             "apply" mode.
+                             "development" in "validate" mode. Defaults to
+                             "test" in "apply" mode.
   --gpu                      Run on GPUs. Defaults to using CPUs.
   --batch=<size>             Set batch size. Has no effect in "train" mode.
                              [default: 32]
@@ -66,7 +66,8 @@ Common options:
                              models (i.e. the output of "train" mode).
 
 "apply" mode:
-  <model.pt>                 Path to the pretrained model.
+  <validate_dir>             Path to the directory containing validation
+                             results (i.e. the output of "validate" mode).
   --step=<step>              Sliding window step, in seconds.
                              Defaults to 25% of window duration.
 
@@ -137,21 +138,11 @@ Configuration file:
     threshold that minimizes the detection error rate.
 
 "apply" mode:
-    Use the "apply" mode to extract speech activity detection raw scores.
-    Resulting files can then be used in the following way:
+    Use the "apply" mode to extract speech activity detection raw scores and
+    results. This will create the following directory that contains speech
+    activity detection results:
 
-    >>> from pyannote.audio.features import Precomputed
-    >>> precomputed = Precomputed('<output_dir>')
-
-    >>> from pyannote.database import get_protocol
-    >>> protocol = get_protocol('<database.task.protocol>')
-    >>> first_test_file = next(protocol.test())
-
-    >>> from pyannote.audio.signal import Binarize
-    >>> binarizer = Binarize()
-
-    >>> raw_scores = precomputed(first_test_file)
-    >>> speech_regions = binarizer.apply(raw_scores, dimension=1)
+        <validate_dir>/apply/<epoch>
 """
 
 from functools import partial
@@ -178,6 +169,8 @@ def validate_helper_func(current_file, pipeline=None, metric=None):
 
 class SpeechActivityDetection(BaseLabeling):
 
+    Pipeline = SpeechActivityDetectionPipeline
+
     def validate_epoch(self, epoch, protocol_name, subset='development',
                        validation_data=None):
 
@@ -195,16 +188,16 @@ class SpeechActivityDetection(BaseLabeling):
             current_file['sad_scores'] = sequence_labeling(current_file)
 
         # pipeline
-        pipeline = SpeechActivityDetectionPipeline()
+        pipeline = self.Pipeline()
 
         def fun(threshold):
             pipeline.instantiate({'onset': threshold,
                                   'offset': threshold,
-                                  'min_duration_on': 0.,
-                                  'min_duration_off': 0.,
+                                  'min_duration_on': 0.100,
+                                  'min_duration_off': 0.100,
                                   'pad_onset': 0.,
                                   'pad_offset': 0.})
-            metric = DetectionErrorRate(parallel=True)
+            metric = pipeline.get_metric(parallel=True)
             validate = partial(validate_helper_func,
                                pipeline=pipeline,
                                metric=metric)
@@ -222,8 +215,8 @@ class SpeechActivityDetection(BaseLabeling):
                 'value': res.fun,
                 'pipeline': pipeline.instantiate({'onset': threshold,
                                                   'offset': threshold,
-                                                  'min_duration_on': 0.,
-                                                  'min_duration_off': 0.,
+                                                  'min_duration_on': 0.100,
+                                                  'min_duration_off': 0.100,
                                                   'pad_onset': 0.,
                                                   'pad_offset': 0.})}
 
@@ -238,7 +231,7 @@ def main():
     gpu = arguments['--gpu']
     device = torch.device('cuda') if gpu else torch.device('cpu')
 
-    # HACK for JHU/CLSP cluster
+    # HACK to "book" GPU as soon as possible
     _ = torch.Tensor([0]).to(device)
 
     if arguments['train']:
@@ -309,13 +302,11 @@ def main():
 
     if arguments['apply']:
 
-        model_pt = Path(arguments['<model.pt>'])
-        model_pt = model_pt.expanduser().resolve(strict=True)
+        validate_dir = Path(arguments['<validate_dir>'])
+        validate_dir = validate_dir.expanduser().resolve(strict=True)
 
-        output_dir = Path(arguments['<output_dir>'])
-        output_dir = output_dir.expanduser().resolve(strict=False)
-
-        # TODO. create README file in <output_dir>
+        if subset is None:
+            subset = 'test'
 
         step = arguments['--step']
         if step is not None:
@@ -323,8 +314,8 @@ def main():
 
         batch_size = int(arguments['--batch'])
 
-        application = SpeechActivityDetection.from_model_pt(
-            model_pt, db_yml=db_yml, training=False)
+        application = SpeechActivityDetection.from_validate_dir(
+            validate_dir, db_yml=db_yml, training=False)
         application.device = device
         application.batch_size = batch_size
-        application.apply(protocol_name, output_dir, step=step, subset=subset)
+        application.apply(protocol_name, step=step, subset=subset)

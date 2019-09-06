@@ -3,16 +3,14 @@ dlib >= 19.16.0
 librosa >= 0.6.2
 pandas >= 0.18.0
 pyannote.core >= 3.0
-pyannote.database >= 2.2
+pyannote.database >= 2.3.1
 pyannote.generators >= 2.0
 pyannote.metrics >= 1.8.1
 pyannote.pipeline >= 1.2
-python_speech_features == 0.6
 pyYAML >= 3.12
 scikit-learn >= 0.20.2
 sortedcollections >= 1.0.1
 sortedcontainers >= 2.0.4
 soundfile >= 0.10.2
 tensorboardX >= 1.7
-torch >= 1.0.0
 tqdm >= 4.29.1

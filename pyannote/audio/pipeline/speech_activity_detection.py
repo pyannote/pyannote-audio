@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2018 CNRS
+# Copyright (c) 2018-2019 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -70,6 +70,15 @@ class SpeechActivityDetection(Pipeline):
     ----------
     scores : `Path`, optional
         Path to precomputed scores on disk.
+
+    Hyper-parameters
+    ----------------
+    onset, offset : `float`
+        Onset/offset detection thresholds
+    min_duration_on, min_duration_off : `float`
+        Minimum duration in either state (speech or not)
+    pad_onset, pad_offset : `float`
+        Padding duration.
     """
 
     def __init__(self, scores: Optional[Path] = None):
@@ -140,6 +149,8 @@ class SpeechActivityDetection(Pipeline):
         speech.uri = current_file['uri']
         return speech.to_annotation(generator='string', modality='speech')
 
-    def get_metric(self) -> DetectionErrorRate:
+    def get_metric(self, parallel=False) -> DetectionErrorRate:
         """Return new instance of detection error rate metric"""
-        return  DetectionErrorRate(collar=0.0, skip_overlap=False)
+        return  DetectionErrorRate(collar=0.0,
+                                   skip_overlap=False,
+                                   parallel=parallel)

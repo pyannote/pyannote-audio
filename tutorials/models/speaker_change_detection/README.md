@@ -135,7 +135,7 @@ The following command will train the network using the training set of AMI datab
 
 ```bash
 $ export EXPERIMENT_DIR=tutorials/models/speaker_change_detection
-$ pyannote-change-detection train --gpu --to=1000 ${EXPERIMENT_DIR} AMI.SpeakerDiarization.MixHeadset
+$ pyannote-change-detection train --gpu --to=1000 --subset=train ${EXPERIMENT_DIR} AMI.SpeakerDiarization.MixHeadset
 ```
 
 This will create a bunch of files in `TRAIN_DIR` (defined below).
@@ -156,7 +156,7 @@ One can use [tensorboard](https://github.com/tensorflow/tensorboard) to follow t
 
 ```bash
 $ export TRAIN_DIR=${EXPERIMENT_DIR}/train/AMI.SpeakerDiarization.MixHeadset.train
-$ pyannote-change-detection validate --purity=0.8 ${TRAIN_DIR} AMI.SpeakerDiarization.MixHeadset
+$ pyannote-change-detection validate --gpu --purity=0.8 --subset=development ${TRAIN_DIR} AMI.SpeakerDiarization.MixHeadset
 ```
 
 In practice, it is tuning a simple speaker change detection pipeline (pyannote.audio.pipeline.speaker_change_detection.SpeakerChangeDetection) after each epoch and stores the best hyper-parameter configuration on disk:
@@ -179,53 +179,14 @@ One can also use [tensorboard](https://github.com/tensorflow/tensorboard) to fol
 ## Application
 ([↑up to table of contents](#table-of-contents))
 
-Now that we know how the model is doing, we can apply it on all files of the AMI database and store raw change scores in `/path/to/precomputed/scd`:
+Now that we know how the model is doing, we can apply it on test files of the AMI database: 
 
 ```bash
-$ pyannote-change-detection apply ${TRAIN_DIR}/weights/0870.pt AMI.SpeakerDiarization.MixHeadset /path/to/precomputed/scd
+$ export VALIDATE_DIR=${TRAIN_DIR}/validate/AMI.SpeakerDiarization.MixHeadset.development
+$ pyannote-change-detection apply --gpu --subset=test ${VALIDATE_DIR} AMI.SpeakerDiarization.MixHeadset 
 ```
 
-We can then use these raw scores to perform actual speaker change detection, and [`pyannote.metrics`](http://pyannote.github.io/pyannote-metrics/) to evaluate the result:
-
-
-```python
-# AMI protocol
->>> from pyannote.database import get_protocol
->>> protocol = get_protocol('AMI.SpeakerDiarization.MixHeadset')
-
-# precomputed scores
->>> from pyannote.audio.features import Precomputed
->>> precomputed = Precomputed('/path/to/precomputed/scd')
-
-# peak detection
->>> from pyannote.audio.signal import Peak
-# alpha / min_duration are tunable parameters (and should be tuned for better performance)
-# we use log_scale = True because of the final log-softmax in the StackedRNN model
->>> peak = Peak(alpha=0.17, min_duration=0.0, log_scale=True)
-
-# evaluation metric
->>> from pyannote.metrics.diarization import DiarizationPurityCoverageFMeasure
->>> metric = DiarizationPurityCoverageFMeasure()
-
-# loop on test files
->>> from pyannote.database import get_annotated
->>> for test_file in protocol.test():
-...    # load reference annotation
-...    reference = test_file['annotation']
-...    uem = get_annotated(test_file)
-...
-...    # load precomputed change scores as pyannote.core.SlidingWindowFeature
-...    scd_scores = precomputed(test_file)
-...
-...    # binarize scores to obtain speech regions as pyannote.core.Timeline
-...    hypothesis = peak.apply(scd_scores, dimension=1)
-...
-...    # evaluate speech activity detection
-...    metric(reference, hypothesis.to_annotation(), uem=uem)
-
->>> purity, coverage, fmeasure = metric.compute_metrics()
->>> print(f'Purity = {100*purity:.1f}% / Coverage = {100*coverage:.1f}%')
-```
+Raw scores and speaker change detection results will be dumped into the following directory: `${VALIDATE_DIR}/apply/{BEST_EPOCH}`.
 
 ## More options
 

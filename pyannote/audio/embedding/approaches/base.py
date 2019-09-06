@@ -123,8 +123,8 @@ class EmbeddingApproach(Trainer):
             # process them separately if model does not support PackedSequence
             else:
                 try:
-                    fX = torch.stack([self.model_(x.unsqueeze(0))
-                                      for x in sequences])
+                    fX = torch.cat([self.model_(x.unsqueeze(0))
+                                    for x in sequences])
                     msg = (
                         'Model does not support variable lengths batch, '
                         'so we are processing sequences separately...'
