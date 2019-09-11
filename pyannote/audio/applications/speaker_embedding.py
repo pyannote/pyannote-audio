@@ -227,8 +227,8 @@ class SpeakerEmbedding(Application):
         else:
             self.frame_info_ = None
 
-        if hasattr(Architecture, 'frame_crop'):
-            self.frame_crop_ = Architecture.frame_crop
+        if hasattr(Architecture, 'get_frame_crop'):
+            self.frame_crop_ = Architecture.get_frame_crop(**params)
         else:
             self.frame_crop_ = None
 

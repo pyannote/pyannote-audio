@@ -307,8 +307,8 @@ class Resegmentation(LabelingTask):
         else:
             frame_info = None
 
-        if hasattr(self.get_model, 'frame_crop'):
-            frame_crop = self.get_model.frame_crop
+        if hasattr(self.get_model, 'get_frame_crop'):
+            frame_crop = self.get_model.get_frame_crop(**params)
         else:
             frame_crop = None
 

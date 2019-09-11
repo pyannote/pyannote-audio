@@ -339,7 +339,18 @@ class PyanNet(nn.Module):
         only has effect when model is used for representation learning.
     """
 
-    frame_crop = SincNet.frame_crop
+    @staticmethod
+    def get_frame_crop(sincnet=None, **kwargs):
+        """
+        """
+
+        if sincnet is None:
+            sincnet = dict()
+
+        if sincnet.get('skip', False):
+            return None
+
+        return SincNet.get_frame_crop(**sincnet)
 
     supports_packed = False
 
@@ -381,6 +392,7 @@ class PyanNet(nn.Module):
 
             self.sincnet_ = SincNet(**sincnet)
             self.frame_info_ = self.sincnet_.get_frame_info(**sincnet)
+            self.frame_crop_ = self.sincnet_.get_frame_crop(**sincnet)
             n_features = self.sincnet_.dimension
 
         if rnn is None:

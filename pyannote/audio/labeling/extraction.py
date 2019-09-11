@@ -100,8 +100,8 @@ class SequenceLabeling(FileBasedBatchGenerator):
         else:
             self.frame_info_ = self.feature_extraction.sliding_window
 
-        if hasattr(self.model, 'frame_crop'):
-            self.frame_crop_ = self.model.frame_crop
+        if hasattr(self.model, 'frame_crop_'):
+            self.frame_crop_ = self.model.frame_crop_
         else:
             self.frame_crop_ = 'center'
 
