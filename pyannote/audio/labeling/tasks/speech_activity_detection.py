@@ -165,30 +165,33 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
 
     DOMAIN_PT = '{log_dir}/weights/{epoch:04d}.domain.pt'
 
-    def __init__(self, domain='domain', attachment=-1, rnn=None, domain_loss="NLLLoss", **kwargs):
+    def __init__(self, 
+                 domain='domain', attachment=-1, 
+                 rnn=None, domain_loss="NLLLoss", 
+                 **kwargs):
         super().__init__(**kwargs)
         self.domain = domain
         self.attachment = attachment
 
         if rnn is None:
             rnn = dict()
-
         self.rnn = rnn
 
-        self.domain_loss = domain_loss      # domain loss such as defined by the user
-
+        self.domain_loss = domain_loss
         if self.domain_loss == "NLLLoss":
             # Default value
             self.domain_loss_ = nn.NLLLoss()
             self.activation_ = nn.LogSoftmax(dim=1)
+            
         elif self.domain_loss == "MSELoss":
             self.domain_loss_ = nn.MSELoss()
             self.activation_ = nn.Sigmoid()
+        
         else:
             msg = (
                 f'{domain_loss} has not been implemented yet.'
             )
-            raise ValueError(msg)
+            raise NotImplementedError(msg)
 
     def parameters(self, model, specifications, device):
         """Initialize trainable trainer parameters
@@ -203,14 +206,17 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
         parameters : iterable
             Trainable trainer parameters
         """
-        domain_classifier_rnn = RNN(n_features=model.intermediate_dimension(self.attachment), **self.rnn)
+        domain_classifier_rnn = RNN(
+            n_features=model.intermediate_dimension(self.attachment), 
+            **self.rnn)
 
         domain_classifier_linear = nn.Linear(
             domain_classifier_rnn.dimension,
             len(specifications[self.domain]['classes']),
             bias=True).to(device)
 
-        self.domain_classifier_ = nn.Sequential(domain_classifier_rnn, domain_classifier_linear).to(device)
+        self.domain_classifier_ = nn.Sequential(domain_classifier_rnn, 
+                                                domain_classifier_linear).to(device)
 
         return list(self.domain_classifier_.parameters())
 
@@ -298,6 +304,7 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
 
 
 class DomainAdversarialSpeechActivityDetection(DomainAwareSpeechActivityDetection):
+    """TODO: docstring"""
 
     def __init__(self, domain='domain', attachment=-1, alpha=1., **kwargs):
         super().__init__(domain=domain, attachment=attachment, **kwargs)
