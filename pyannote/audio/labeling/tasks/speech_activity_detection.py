@@ -158,9 +158,9 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
     attachment : `int`, optional
         Intermediate level where to attach the domain classifier.
         Defaults to -1. Passed to `return_intermediate` in models supporting it.
-    rnn: `pyannote.audio.models.models.RNN`
-        The recurrent neural network model that needs to be used for predicting domains.
-        Please refer to the docstring of this class.
+    rnn: `dict`, optional 
+        Parameters of the RNN used in the domain classifier.
+        See `pyannote.audio.models.models.RNN` for details. 
     """
 
     DOMAIN_PT = '{log_dir}/weights/{epoch:04d}.domain.pt'
