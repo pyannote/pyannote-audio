@@ -444,15 +444,18 @@ class PyanNet(nn.Module):
         else:
             output = self.sincnet_(waveforms)
 
-        if return_intermediate is None or return_intermediate == 0:
-            intermediate = output
+        if return_intermediate is None:
             output = self.rnn_(output)
         else:
-            return_intermediate -= 1
-            # get RNN final AND intermediate outputs
-            output, intermediate = self.rnn_(output, return_intermediate=True)
-            # only keep hidden state of requested layer
-            intermediate = intermediate[return_intermediate]
+            if return_intermediate == 0:
+                intermediate = output
+                output = self.rnn_(output)
+            else:
+                return_intermediate -= 1
+                # get RNN final AND intermediate outputs
+                output, intermediate = self.rnn_(output, return_intermediate=True)
+                # only keep hidden state of requested layer
+                intermediate = intermediate[return_intermediate]
 
         output = self.ff_(output)
 

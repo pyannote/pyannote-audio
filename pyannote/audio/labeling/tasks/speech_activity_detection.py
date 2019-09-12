@@ -165,17 +165,31 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
 
     DOMAIN_PT = '{log_dir}/weights/{epoch:04d}.domain.pt'
 
-    def __init__(self, domain='domain', attachment=-1, rnn=None, **kwargs):
+    def __init__(self, domain='domain', attachment=-1, rnn=None, domain_loss="NLLLoss", **kwargs):
         super().__init__(**kwargs)
         self.domain = domain
         self.attachment = attachment
 
-        self.activation_ = nn.LogSoftmax(dim=1)
-        self.domain_loss_ = nn.NLLLoss()
-
         if rnn is None:
             rnn = dict()
+
         self.rnn = rnn
+
+        self.domain_loss = domain_loss      # domain loss such as defined by the user
+        self.domain_loss_ = nn.NLLLoss()    # domain loss functionnal
+        self.activation_ = nn.LogSoftmax(dim=1)
+
+        if self.domain_loss == "NLLoss":
+            # Default value
+            pass
+        elif self.domain_loss == "MSELoss":
+            self.activation_ = nn.Sigmoid()
+            self.domain_loss_ = nn.MSELoss()
+        else:
+            msg = (
+                f'{domain_loss} has not been implemented yet.'
+            )
+            raise ValueError(msg)
 
     def parameters(self, model, specifications, device):
         """Initialize trainable trainer parameters
@@ -286,17 +300,10 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
 
 class DomainAdversarialSpeechActivityDetection(DomainAwareSpeechActivityDetection):
 
-    def __init__(self, domain='domain', attachment=-1, alpha=1., domain_loss="negative_lll", **kwargs):
+    def __init__(self, domain='domain', attachment=-1, alpha=1., **kwargs):
         super().__init__(domain=domain, attachment=attachment, **kwargs)
         self.alpha = alpha
         self.gradient_reversal_ = GradientReversal()
-
-        # Used for sigmoid + mean squared error loss
-        self.domain_loss = domain_loss
-
-        if self.domain_loss == "mse":
-            self.activation_ = nn.Sigmoid()
-            self.domain_loss_ = nn.MSELoss()
 
     def batch_loss(self, batch):
         """Compute loss for current `batch`
