@@ -176,15 +176,14 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
         self.rnn = rnn
 
         self.domain_loss = domain_loss      # domain loss such as defined by the user
-        self.domain_loss_ = nn.NLLLoss()    # domain loss functionnal
-        self.activation_ = nn.LogSoftmax(dim=1)
 
-        if self.domain_loss == "NLLoss":
+        if self.domain_loss == "NLLLoss":
             # Default value
-            pass
+            self.domain_loss_ = nn.NLLLoss()
+            self.activation_ = nn.LogSoftmax(dim=1)
         elif self.domain_loss == "MSELoss":
-            self.activation_ = nn.Sigmoid()
             self.domain_loss_ = nn.MSELoss()
+            self.activation_ = nn.Sigmoid()
         else:
             msg = (
                 f'{domain_loss} has not been implemented yet.'
@@ -349,7 +348,7 @@ class DomainAdversarialSpeechActivityDetection(DomainAwareSpeechActivityDetectio
         domain_scores = self.activation_(self.domain_classifier_(
             self.gradient_reversal_(intermediate)))
 
-        if self.domain_loss == "mse":
+        if self.domain_loss == "MSELoss":
             # One hot encode domain_target for Mean Squared Error Loss
             nb_domains = domain_scores.shape[1]
             identity_mat = torch.sparse.torch.eye(nb_domains, device=self.device_)
