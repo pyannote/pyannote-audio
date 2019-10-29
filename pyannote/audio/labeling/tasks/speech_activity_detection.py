@@ -306,7 +306,7 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
 
 
 class DomainAdversarialSpeechActivityDetection(DomainAwareSpeechActivityDetection):
-   """Domain Adversarial speech activity detection
+    """Domain Adversarial speech activity detection
 
     Parameters
     ----------
