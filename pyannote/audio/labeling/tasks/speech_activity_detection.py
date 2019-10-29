@@ -158,10 +158,10 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
     attachment : `int`, optional
         Intermediate level where to attach the domain classifier.
         Defaults to -1. Passed to `return_intermediate` in models supporting it.
-    rnn: `dict`, optional 
+    rnn : `dict`, optional 
         Parameters of the RNN used in the domain classifier.
         See `pyannote.audio.models.models.RNN` for details. 
-    domain_loss: `str`, optional
+    domain_loss : `str`, optional
         Loss function to use. Defaults to 'NLLLoss'.
     """
 
