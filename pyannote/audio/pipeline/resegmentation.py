@@ -30,7 +30,6 @@ from typing import Optional
 from pathlib import Path
 import yaml
 
-import torch
 from functools import partial
 from pyannote.core.utils.helper import get_class_by_name
 
@@ -42,10 +41,14 @@ from pyannote.pipeline.parameter import Uniform
 from pyannote.core import Annotation
 from pyannote.metrics.diarization import GreedyDiarizationErrorRate
 
-from pyannote.audio.labeling.tasks.resegmentation \
-    import Resegmentation as _Resegmentation
-from pyannote.audio.labeling.tasks.resegmentation \
-    import ResegmentationWithOverlap as _ResegmentationWithOverlap
+try :            
+    from pyannote.audio.labeling.tasks.resegmentation \
+        import Resegmentation as _Resegmentation
+    from pyannote.audio.labeling.tasks.resegmentation \
+        import ResegmentationWithOverlap as _ResegmentationWithOverlap
+except ModuleNotFoundError as e:
+    print(e)
+
 
 
 class Resegmentation(Pipeline):
@@ -182,7 +185,13 @@ class Resegmentation(Pipeline):
         self.duration = duration
         self.batch_size = batch_size
         self.gpu = gpu
-        self.device_ = torch.device('cuda') if self.gpu else torch.device('cpu')
+        try :            
+            import torch
+        except ModuleNotFoundError as e:
+            print(e, "setting device as cpu")
+            self.device_ = 'cpu'
+        else:
+            self.device_ = torch.device('cuda') if self.gpu else torch.device('cpu')
 
         # hyper-parameters
         self.learning_rate = LogUniform(1e-3, 1)
