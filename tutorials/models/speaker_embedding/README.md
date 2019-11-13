@@ -162,7 +162,7 @@ One can use [tensorboard](https://github.com/tensorflow/tensorboard) to follow t
 
 ```bash
 $ export TRAIN_DIR=${EXPERIMENT_DIR}/train/VoxCeleb.SpeakerVerification.VoxCeleb1.train
-$ pyannote-speaker-embedding validate --subset=test ${TRAIN_DIR} VoxCeleb.SpeakerDiarization.VoxCeleb1
+$ pyannote-speaker-embedding validate --subset=test --duration=1.0 ${TRAIN_DIR} VoxCeleb.SpeakerDiarization.VoxCeleb1
 ```
 
 ![tensorboard screenshot](tb_validate.png)
