@@ -73,3 +73,6 @@ experiments
 
 # PyCharm
 .idea/
+
+#nfs
+.nfs*
