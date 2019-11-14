@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2017-2018 CNRS
+# Copyright (c) 2017-2019 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -31,7 +31,8 @@ from pathlib import Path
 from pyannote.core import Annotation
 from pyannote.database import get_annotated
 
-from pyannote.metrics.diarization import GreedyDiarizationErrorRate,DiarizationPurityCoverageFMeasure
+from pyannote.metrics.diarization import GreedyDiarizationErrorRate
+from pyannote.metrics.diarization import DiarizationPurityCoverageFMeasure
 
 from .speech_turn_segmentation import SpeechTurnSegmentation
 from .speech_turn_clustering import SpeechTurnClustering
@@ -61,8 +62,9 @@ class SpeakerDiarization(Pipeline):
     evaluation_only : `bool`
         Only process the evaluated regions. Default to False.
     purity : `float` or None, optional
-        Target purity. If None, the pipeline will optimize DER.
-        Defaults to None.
+        Optimize coverage for target purity. 
+        Defaults to optimizing diarization error rate.
+    
     Hyper-parameters
     ----------------
     min_duration : `float`
@@ -162,6 +164,7 @@ class SpeakerDiarization(Pipeline):
             shrt_speech_turns, copy=False).support(collar=0.)
 
         # TODO. add GMM-based resegmentation
+
     def loss(self, current_file: dict, hypothesis: Annotation) -> float:
         """Compute (1 - coverage) at target purity
 
@@ -176,9 +179,10 @@ class SpeakerDiarization(Pipeline):
 
         Returns
         -------
-        error : `float`
+        loss : `float`
             1. - cluster coverage.
         """
+
         metric = DiarizationPurityCoverageFMeasure()
         reference  = current_file['annotation']
         uem = get_annotated(current_file)
@@ -190,11 +194,14 @@ class SpeakerDiarization(Pipeline):
             return 1. + (1. - purity)
 
     def get_metric(self) -> GreedyDiarizationErrorRate:
-       """Return new instance of diarization error rate metric"""
-       if self.purity is not None:
-           raise NotImplementedError()
-       return  GreedyDiarizationErrorRate(collar=0.0, skip_overlap=False)
-
+        """Return new instance of diarization error rate metric"""
+        
+        # defaults to optimizing diarization error rate
+        if self.purity is None:
+            return GreedyDiarizationErrorRate(collar=0.0, skip_overlap=False)
+        
+        # fallbacks to using self.loss(...)
+        raise NotImplementedError()
 
 class Yin2018(SpeakerDiarization):
     """Speaker diarization pipeline introduced in Yin et al., 2018
