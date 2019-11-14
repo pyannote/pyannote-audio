@@ -61,7 +61,7 @@ class SpeakerDiarization(Pipeline):
         Clustering method. Defaults to 'pool'.
     evaluation_only : `bool`
         Only process the evaluated regions. Default to False.
-    purity : `float` or None, optional
+    purity : `float`, optional
         Optimize coverage for target purity. 
         Defaults to optimizing diarization error rate.
     
