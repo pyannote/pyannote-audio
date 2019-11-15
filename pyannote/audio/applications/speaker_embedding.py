@@ -515,11 +515,10 @@ class SpeakerEmbedding(Application):
                 if coverage > best_coverage:
                     best_coverage = coverage
                     best_threshold = current_threshold
-
+        value = best_coverage if best_coverage else purity - self.purity
         return {'metric': f'coverage@{self.purity:.2f}purity',
                 'minimize': False,
-                'value': best_coverage if best_coverage \
-                         else purity - self.purity}
+                'value': float(value)}
 
 
     def apply(self, protocol_name: str,
