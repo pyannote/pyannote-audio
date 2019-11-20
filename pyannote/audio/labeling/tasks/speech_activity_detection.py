@@ -124,7 +124,15 @@ class SpeechActivityDetection(LabelingTask):
 
     def get_batch_generator(self, feature_extraction, protocol, subset='train',
                             frame_info=None, frame_crop=None):
-        """
+        """Returns a batch generator for training speech activity detection
+
+         Parameters
+        ----------
+        feature_extraction : `pyannote.audio.features.FeatureExtraction`
+            Feature extraction
+        protocol : `pyannote.database.Protocol`
+        subset : {'train', 'development', 'test'}
+            Dataset subset to use. Defaults to 'train'.
         frame_info : `pyannote.core.SlidingWindow`, optional
             Override `feature_extraction.sliding_window`. This is useful for
             models that include the feature extraction step (e.g. SincNet) and
@@ -200,8 +208,12 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
 
         Parameters
         ----------
+        model : `nn.Module`
+            Model.
         specifications : `dict`
             Batch specs.
+        device : `torch.device`
+            Device
 
         Returns
         -------
