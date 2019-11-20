@@ -150,36 +150,7 @@ class SpeechActivityDetection(LabelingTask):
             duration=self.duration,
             per_epoch=self.per_epoch,
             batch_size=self.batch_size,
-            parallel=self.parallel)
-
-    def batch_loss(self, batch):
-        X = torch.tensor(batch['X'],
-                         dtype=torch.float32,
-                         device=self.device_)
-
-        fX, intermediate = self.model_(X, return_intermediate=self.attachment)
-
-        # speech activity detection
-        fX = fX.view((-1, self.n_classes_))
-
-        target = torch.tensor(
-            batch['y'],
-            dtype=torch.int64,
-            device=self.device_).contiguous().view((-1, ))
-
-        weight = self.weight
-        if weight is not None:
-            weight = weight.to(device=self.device_)
-
-        loss = self.loss_func_(fX, target, weight=weight)
-
-        # domain classification
-        domain_target = torch.tensor(
-            batch[self.domain],
-            dtype=torch.int64,
-            device=self.device_)
-
-        return loss, domain_target 
+            parallel=self.parallel) 
 
 class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
     """Domain-aware speech activity detection
@@ -296,6 +267,35 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
                                              epoch=epoch))
 
         super().save_epoch(epoch=epoch)
+    
+    def _batch_loss(self, batch):
+        X = torch.tensor(batch['X'],
+                         dtype=torch.float32,
+                         device=self.device_)
+
+        fX, intermediate = self.model_(X, return_intermediate=self.attachment)
+
+        # speech activity detection
+        fX = fX.view((-1, self.n_classes_))
+
+        target = torch.tensor(
+            batch['y'],
+            dtype=torch.int64,
+            device=self.device_).contiguous().view((-1, ))
+
+        weight = self.weight
+        if weight is not None:
+            weight = weight.to(device=self.device_)
+
+        loss = self.loss_func_(fX, target, weight=weight)
+
+        # domain classification
+        domain_target = torch.tensor(
+            batch[self.domain],
+            dtype=torch.int64,
+            device=self.device_)
+
+        return loss, domain_target
 
     def batch_loss(self, batch):
         """Compute loss for current `batch`
@@ -336,7 +336,7 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
         #     dtype=torch.int64,
         #     device=self.device_)
 
-        loss, domain_target = super().batch_loss(self, batch)
+        loss, domain_target = self._batch_loss(self, batch)
 
         domain_scores = self.activation_(self.domain_classifier_(intermediate))
 
@@ -411,8 +411,8 @@ class DomainAdversarialSpeechActivityDetection(DomainAwareSpeechActivityDetectio
         # domain_scores = self.activation_(self.domain_classifier_(
         #     self.gradient_reversal_(intermediate)))
 
-        loss, domain_target = super().batch_loss(self, batch)
-        
+        loss, domain_target = super()._batch_loss(self, batch)
+
         if self.domain_loss == "MSELoss":
             # One hot encode domain_target for Mean Squared Error Loss
             nb_domains = domain_scores.shape[1]
