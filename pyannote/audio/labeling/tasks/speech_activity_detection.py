@@ -269,6 +269,19 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
         super().save_epoch(epoch=epoch)
     
     def _batch_loss(self, batch):
+        """Helper function to performs the common operations required for the batch_loss function 
+
+        Parameters
+        ----------
+        batch : `dict`
+            ['X'] (`numpy.ndarray`)
+            ['y'] (`numpy.ndarray`)
+
+        Returns
+        -------
+        loss : Function f(input, target, weight=None) -> loss value
+        domain_target : `torch.Tensor`
+        """
         X = torch.tensor(batch['X'],
                          dtype=torch.float32,
                          device=self.device_)
