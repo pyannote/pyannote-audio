@@ -312,30 +312,6 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
             ['loss'] (`torch.Tensor`) : Loss
         """
 
-        # forward pass
-        # X = torch.tensor(batch['X'],
-        #                  dtype=torch.float32,
-        #                  device=self.device_)
-        # fX, intermediate = self.model_(X, return_intermediate=self.attachment)
-
-        # # speech activity detection
-        # fX = fX.view((-1, self.n_classes_))
-        # target = torch.tensor(
-        #     batch['y'],
-        #     dtype=torch.int64,
-        #     device=self.device_).contiguous().view((-1, ))
-
-        # weight = self.weight
-        # if weight is not None:
-        #     weight = weight.to(device=self.device_)
-        # loss = self.loss_func_(fX, target, weight=weight)
-
-        # # domain classification
-        # domain_target = torch.tensor(
-        #     batch[self.domain],
-        #     dtype=torch.int64,
-        #     device=self.device_)
-
         loss, domain_target = self._batch_loss(self, batch)
 
         domain_scores = self.activation_(self.domain_classifier_(intermediate))
@@ -381,35 +357,6 @@ class DomainAdversarialSpeechActivityDetection(DomainAwareSpeechActivityDetectio
         batch_loss : `dict`
             ['loss'] (`torch.Tensor`) : Loss
         """
-        # forward pass
-        # X = torch.tensor(batch['X'],
-        #                  dtype=torch.float32,
-        #                  device=self.device_)
-
-        # fX, intermediate = self.model_(X, return_intermediate=self.attachment)
-
-        # # speech activity detection
-        # fX = fX.view((-1, self.n_classes_))
-
-        # target = torch.tensor(
-        #     batch['y'],
-        #     dtype=torch.int64,
-        #     device=self.device_).contiguous().view((-1, ))
-
-        # weight = self.weight
-        # if weight is not None:
-        #     weight = weight.to(device=self.device_)
-
-        # loss = self.loss_func_(fX, target, weight=weight)
-
-        # # domain classification
-        # domain_target = torch.tensor(
-        #     batch[self.domain],
-        #     dtype=torch.int64,
-        #     device=self.device_)
-
-        # domain_scores = self.activation_(self.domain_classifier_(
-        #     self.gradient_reversal_(intermediate)))
 
         loss, domain_target = super()._batch_loss(self, batch)
 
