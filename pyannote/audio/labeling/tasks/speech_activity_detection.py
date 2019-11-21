@@ -371,7 +371,7 @@ class DomainAdversarialSpeechActivityDetection(DomainAwareSpeechActivityDetectio
             ['loss'] (`torch.Tensor`) : Loss
         """
 
-        loss, domain_target = super()._batch_loss(self, batch)
+        loss, domain_target = super()._batch_loss(batch)
 
         domain_scores = self.activation_(self.domain_classifier_(
             self.gradient_reversal_(intermediate)))
