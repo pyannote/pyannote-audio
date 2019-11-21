@@ -308,7 +308,7 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
             dtype=torch.int64,
             device=self.device_)
 
-        return loss, domain_target
+        return loss, domain_target, intermediate
 
     def batch_loss(self, batch):
         """Compute loss for current `batch`
@@ -325,7 +325,7 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
             ['loss'] (`torch.Tensor`) : Loss
         """
 
-        loss, domain_target = self._batch_loss(self, batch)
+        loss, domain_target, intermediate = self._batch_loss(self, batch)
 
         domain_scores = self.activation_(self.domain_classifier_(intermediate))
 
@@ -371,7 +371,7 @@ class DomainAdversarialSpeechActivityDetection(DomainAwareSpeechActivityDetectio
             ['loss'] (`torch.Tensor`) : Loss
         """
 
-        loss, domain_target = super()._batch_loss(batch)
+        loss, domain_target, intermediate = super()._batch_loss(batch)
 
         domain_scores = self.activation_(self.domain_classifier_(
             self.gradient_reversal_(intermediate)))
