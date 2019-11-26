@@ -184,6 +184,8 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
 
         if rnn is None:
             rnn = dict()
+            rnn.update({'pool' : 'max'})
+            print("You might want to declare a RNN in your config file and provide a way to do pooling. Max pooling have been used by default at this time.")
         self.rnn = rnn
 
         self.domain_loss = domain_loss
