@@ -287,12 +287,10 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
         X = torch.tensor(batch['X'],
                          dtype=torch.float32,
                          device=self.device_)
-
         fX, intermediate = self.model_(X, return_intermediate=self.attachment)
 
         # speech activity detection
         fX = fX.view((-1, self.n_classes_))
-
         target = torch.tensor(
             batch['y'],
             dtype=torch.int64,
@@ -301,7 +299,6 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
         weight = self.weight
         if weight is not None:
             weight = weight.to(device=self.device_)
-
         loss = self.loss_func_(fX, target, weight=weight)
 
         # domain classification
