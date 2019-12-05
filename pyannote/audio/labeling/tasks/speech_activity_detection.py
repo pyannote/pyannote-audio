@@ -33,8 +33,9 @@ import torch
 import torch.nn as nn
 from .base import LabelingTask
 from .base import LabelingTaskGenerator
-from .base import TASK_MULTI_CLASS_CLASSIFICATION
+from pyannote.audio.train.task import Task, TaskType, TaskOutput
 from ..gradient_reversal import GradientReversal
+from pyannote.audio.models.models import RNN
 
 
 class SpeechActivityDetectionGenerator(LabelingTaskGenerator):
@@ -45,12 +46,13 @@ class SpeechActivityDetectionGenerator(LabelingTaskGenerator):
     feature_extraction : `pyannote.audio.features.FeatureExtraction`
         Feature extraction
     protocol : `pyannote.database.Protocol`
-    subset : {'train', 'development', 'test'}
-    frame_info : `pyannote.core.SlidingWindow`, optional
+    subset : {'train', 'development', 'test'}, optional
+        Protocol and subset
+    resolution : `pyannote.core.SlidingWindow`, optional
         Override `feature_extraction.sliding_window`. This is useful for
         models that include the feature extraction step (e.g. SincNet) and
         therefore output a lower sample rate than that of the input.
-    frame_crop : {'center', 'loose', 'strict'}, optional
+    alignment : {'center', 'loose', 'strict'}, optional
         Which mode to use when cropping labels. This is useful for models
         that include the feature extraction step (e.g. SincNet) and
         therefore use a different cropping mode. Defaults to 'center'.
@@ -93,12 +95,16 @@ class SpeechActivityDetectionGenerator(LabelingTaskGenerator):
 
     @property
     def specifications(self):
-        specs = {
-            'task': TASK_MULTI_CLASS_CLASSIFICATION,
-            'X': {'dimension': self.feature_extraction.dimension},
-            'y': {'classes': ['non_speech', 'speech']},
-        }
+
+        specs = LabelingTaskGenerator.specifications.fget(self)
+        specs['y']['classes'] = ['non_speech', 'speech']
+
         for key, classes in self.file_labels_.items():
+
+            # TODO. add an option to handle this list
+            # TODO. especially useful for domain-adversarial stuff
+            if key in ['duration', 'audio', 'uri']:
+                continue
             specs[key] = {'classes': classes}
 
         return specs
@@ -123,13 +129,13 @@ class SpeechActivityDetection(LabelingTask):
     """
 
     def get_batch_generator(self, feature_extraction, protocol, subset='train',
-                            frame_info=None, frame_crop=None):
+                            resolution=None, alignment=None):
         """
-        frame_info : `pyannote.core.SlidingWindow`, optional
+        resolution : `pyannote.core.SlidingWindow`, optional
             Override `feature_extraction.sliding_window`. This is useful for
             models that include the feature extraction step (e.g. SincNet) and
             therefore output a lower sample rate than that of the input.
-        frame_crop : {'center', 'loose', 'strict'}, optional
+        alignment : {'center', 'loose', 'strict'}, optional
             Which mode to use when cropping labels. This is useful for models
             that include the feature extraction step (e.g. SincNet) and
             therefore use a different cropping mode. Defaults to 'center'.
@@ -137,8 +143,8 @@ class SpeechActivityDetection(LabelingTask):
         return SpeechActivityDetectionGenerator(
             feature_extraction,
             protocol, subset=subset,
-            frame_info=frame_info,
-            frame_crop=frame_crop,
+            resolution=resolution,
+            alignment=alignment,
             duration=self.duration,
             per_epoch=self.per_epoch,
             batch_size=self.batch_size,
@@ -158,73 +164,90 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
     attachment : `int`, optional
         Intermediate level where to attach the domain classifier.
         Defaults to -1. Passed to `return_intermediate` in models supporting it.
+    rnn: `dict`, optional
+        Parameters of the RNN used in the domain classifier.
+        See `pyannote.audio.models.models.RNN` for details.
+    domain_loss : `str`, optional
+        Loss function to use. Defaults to 'NLLLoss'.
     """
 
-    DOMAIN_PT = '{log_dir}/weights/{epoch:04d}.domain.pt'
+    DOMAIN_PT = '{train_dir}/weights/{epoch:04d}.domain.pt'
 
-    def __init__(self, domain='domain', attachment=-1, **kwargs):
+    def __init__(self,
+                 domain='domain', attachment=-1,
+                 rnn=None, domain_loss="NLLLoss",
+                 **kwargs):
         super().__init__(**kwargs)
         self.domain = domain
         self.attachment = attachment
 
-        self.logsoftmax_ = nn.LogSoftmax(dim=1)
-        self.domain_loss_ = nn.NLLLoss()
+        if rnn is None:
+            rnn = dict()
+        self.rnn = rnn
 
-    def parameters(self, model, specifications, device):
+        self.domain_loss = domain_loss
+        if self.domain_loss == "NLLLoss":
+            # Default value
+            self.domain_loss_ = nn.NLLLoss()
+            self.activation_ = nn.LogSoftmax(dim=1)
+
+        elif self.domain_loss == "MSELoss":
+            self.domain_loss_ = nn.MSELoss()
+            self.activation_ = nn.Sigmoid()
+
+        else:
+            msg = (
+                f'{domain_loss} has not been implemented yet.'
+            )
+            raise NotImplementedError(msg)
+
+    def more_parameters(self):
         """Initialize trainable trainer parameters
 
-        Parameters
-        ----------
-        specifications : `dict`
-            Batch specs.
-
-        Returns
-        -------
-        parameters : iterable
+        Yields
+        ------
+        parameter : nn.Parameter
             Trainable trainer parameters
         """
 
-        self.domain_classifier_ = nn.Linear(
-            model.intermediate_dimension(self.attachment),
-            len(specifications[self.domain]['classes']),
-            bias=True).to(device)
+        domain_classifier_rnn = RNN(
+            n_features=self.model.intermediate_dimension(self.attachment),
+            **self.rnn)
 
-        return list(self.domain_classifier_.parameters())
+        n_classes = len(self.specifications[self.domain]['classes'])
+        domain_classifier_linear = nn.Linear(
+            domain_classifier_rnn.dimension,
+            n_classes,
+            bias=True).to(self.device)
 
-    def load_epoch(self, epoch):
-        """Load model and classifier from disk
+        self.domain_classifier_ = nn.Sequential(
+            domain_classifier_rnn, domain_classifier_linear).to(self.device)
 
-        Parameters
-        ----------
-        epoch : `int`
-            Epoch number.
-        """
+        # TODO: check if we really need to do this .to(self.device) twice
 
-        super().load_epoch(epoch)
+        return self.domain_classifier_.parameters()
+
+    def load_more(self, model_pt=None):
+        """Load classifier from disk"""
+
+        if model_pt is None:
+            domain_pt = self.DOMAIN_PT.format(
+                train_dir=self.train_dir_, epoch=self.epoch_)
+        else:
+            msg = 'TODO: infer domain_pt from model_pt'
+            raise NotImplementedError(msg)
+            # domain_pt = ...
 
         domain_classifier_state = torch.load(
-            self.DOMAIN_PT.format(log_dir=self.log_dir_, epoch=epoch),
-            map_location=lambda storage, loc: storage)
+            domain_pt, map_location=lambda storage, loc: storage)
         self.domain_classifier_.load_state_dict(domain_classifier_state)
 
-    def save_epoch(self, epoch=None):
-        """Save model to disk
+    def save_more(self):
+        """Save domain classifier to disk"""
 
-        Parameters
-        ----------
-        epoch : `int`, optional
-            Epoch number. Defaults to self.epoch_
-
-        """
-
-        if epoch is None:
-            epoch = self.epoch_
-
-        torch.save(self.domain_classifier_.state_dict(),
-                   self.DOMAIN_PT.format(log_dir=self.log_dir_,
-                                             epoch=epoch))
-
-        super().save_epoch(epoch=epoch)
+        domain_pt = self.DOMAIN_PT.format(
+            train_dir=self.train_dir_, epoch=self.epoch_)
+        torch.save(self.domain_classifier_.state_dict(), domain_pt)
 
     def batch_loss(self, batch):
         """Compute loss for current `batch`
@@ -265,7 +288,8 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
             dtype=torch.int64,
             device=self.device_)
 
-        domain_scores = self.logsoftmax_(self.domain_classifier_(intermediate))
+        domain_scores = self.activation_(self.domain_classifier_(intermediate))
+
         domain_loss = self.domain_loss_(domain_scores, domain_target)
 
         return {'loss': loss + domain_loss,
@@ -274,12 +298,24 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
 
 
 class DomainAdversarialSpeechActivityDetection(DomainAwareSpeechActivityDetection):
+    """Domain Adversarial speech activity detection
+
+    Parameters
+    ----------
+    domain : `str`, optional
+        Batch key to use as domain. Defaults to 'domain'.
+        Could be 'database' or 'uri' for instance.
+    attachment : `int`, optional
+        Intermediate level where to attach the domain classifier.
+        Defaults to -1. Passed to `return_intermediate` in models supporting it.
+    alpha : `float`, optional
+        Coefficient multiplied with the domain loss
+    """
 
     def __init__(self, domain='domain', attachment=-1, alpha=1., **kwargs):
         super().__init__(domain=domain, attachment=attachment, **kwargs)
         self.alpha = alpha
         self.gradient_reversal_ = GradientReversal()
-
 
     def batch_loss(self, batch):
         """Compute loss for current `batch`
@@ -295,15 +331,16 @@ class DomainAdversarialSpeechActivityDetection(DomainAwareSpeechActivityDetectio
         batch_loss : `dict`
             ['loss'] (`torch.Tensor`) : Loss
         """
-
         # forward pass
         X = torch.tensor(batch['X'],
                          dtype=torch.float32,
                          device=self.device_)
+
         fX, intermediate = self.model_(X, return_intermediate=self.attachment)
 
         # speech activity detection
         fX = fX.view((-1, self.n_classes_))
+
         target = torch.tensor(
             batch['y'],
             dtype=torch.int64,
@@ -312,6 +349,7 @@ class DomainAdversarialSpeechActivityDetection(DomainAwareSpeechActivityDetectio
         weight = self.weight
         if weight is not None:
             weight = weight.to(device=self.device_)
+
         loss = self.loss_func_(fX, target, weight=weight)
 
         # domain classification
@@ -320,8 +358,15 @@ class DomainAdversarialSpeechActivityDetection(DomainAwareSpeechActivityDetectio
             dtype=torch.int64,
             device=self.device_)
 
-        domain_scores = self.logsoftmax_(self.domain_classifier_(
+        domain_scores = self.activation_(self.domain_classifier_(
             self.gradient_reversal_(intermediate)))
+
+        if self.domain_loss == "MSELoss":
+            # One hot encode domain_target for Mean Squared Error Loss
+            nb_domains = domain_scores.shape[1]
+            identity_mat = torch.sparse.torch.eye(nb_domains, device=self.device_)
+            domain_target = identity_mat.index_select(dim=0, index=domain_target)
+
         domain_loss = self.domain_loss_(domain_scores, domain_target)
 
         return {'loss': loss + self.alpha * domain_loss,

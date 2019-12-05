@@ -33,7 +33,7 @@ Speaker change detection
 Usage:
   pyannote-change-detection train [options] <experiment_dir> <database.task.protocol>
   pyannote-change-detection validate [options] [--every=<epoch> --chronological --purity=<purity>] <train_dir> <database.task.protocol>
-  pyannote-change-detection apply [options] [--step=<step>] <model.pt> <database.task.protocol> <output_dir>
+  pyannote-change-detection apply [options] [--step=<step>] <validate_dir> <database.task.protocol>
   pyannote-change-detection -h | --help
   pyannote-change-detection --version
 
@@ -42,8 +42,8 @@ Common options:
   --database=<database.yml>  Path to pyannote.database configuration file.
   --subset=<subset>          Set subset (train|developement|test).
                              Defaults to "train" in "train" mode. Defaults to
-                             "development" in "validate" mode. Defaults to all subsets in
-                             "apply" mode.
+                             "development" in "validate" mode. Defaults to
+                             "test" in "apply" mode.
   --gpu                      Run on GPUs. Defaults to using CPUs.
   --batch=<size>             Set batch size. Has no effect in "train" mode.
                              [default: 32]
@@ -69,7 +69,8 @@ Common options:
   --diarization              Use diarization instead of segmentation metrics.
 
 "apply" mode:
-  <model.pt>                 Path to the pretrained model.
+  <validate_dir>             Path to the directory containing validation
+                             results (i.e. the output of "validate" mode).
   --step=<step>              Sliding window step, in seconds.
                              Defaults to 25% of window duration.
 
@@ -95,15 +96,10 @@ Configuration file:
        params:
           root_dir: tutorials/feature-extraction
 
-    # use the StackedRNN architecture.
-    # see pyannote.audio.labeling.models for more details
+    # use the PyanNet architecture
+    # see pyannote.audio.models for more details
     architecture:
-       name: StackedRNN
-       params:
-         rnn: LSTM
-         recurrent: [32, 20]
-         bidirectional: True
-         linear: [40, 10]
+       name: PyanNet
 
     # use cyclic learning rate scheduler
     scheduler:
@@ -144,21 +140,11 @@ Configuration file:
     "--purity" option.
 
 "apply" mode:
-    Use the "apply" mode to extract speaker change detection raw scores.
-    Resulting files can then be used in the following way:
+    Use the "apply" mode to extract speaker change detection raw scores and
+    results. This will create the following directory that contains speaker
+    change detection results:
 
-    >>> from pyannote.audio.features import Precomputed
-    >>> precomputed = Precomputed('<output_dir>')
-
-    >>> from pyannote.database import get_protocol
-    >>> protocol = get_protocol('<database.task.protocol>')
-    >>> first_test_file = next(protocol.test())
-
-    >>> from pyannote.audio.signal import Peak
-    >>> peak_detection = Peak()
-
-    >>> raw_scores = precomputed(first_test_file)
-    >>> homogeneous_segments = peak_detection.apply(raw_scores, dimension=1)
+        <validate_dir>/apply/<epoch>
 """
 
 from functools import partial
@@ -186,6 +172,8 @@ def validate_helper_func(current_file, pipeline=None, metric=None):
 
 class SpeakerChangeDetection(BaseLabeling):
 
+    Pipeline = SpeakerChangeDetectionPipeline
+
     def validate_epoch(self, epoch, protocol_name, subset='development',
                        validation_data=None):
 
@@ -203,7 +191,7 @@ class SpeakerChangeDetection(BaseLabeling):
             current_file['scd_scores'] = sequence_labeling(current_file)
 
         # pipeline
-        pipeline = SpeakerChangeDetectionPipeline(purity=self.purity)
+        pipeline = self.Pipeline(purity=self.purity)
 
         # dichotomic search to find alpha that maximizes coverage
         # while having at least `self.purity`
@@ -217,7 +205,7 @@ class SpeakerChangeDetection(BaseLabeling):
 
             current_alpha = .5 * (lower_alpha + upper_alpha)
             pipeline.instantiate({'alpha': current_alpha,
-                                  'min_duration': 0.})
+                                  'min_duration': 0.100})
 
             if self.diarization:
                 metric = DiarizationPurityCoverageFMeasure(parallel=True)
@@ -246,7 +234,7 @@ class SpeakerChangeDetection(BaseLabeling):
                 'value': best_coverage if best_coverage \
                          else purity - self.purity,
                 'pipeline': pipeline.instantiate({'alpha': best_alpha,
-                                                  'min_duration': 0.})}
+                                                  'min_duration': 0.100})}
 
 
 def main():
@@ -259,6 +247,9 @@ def main():
     gpu = arguments['--gpu']
     device = torch.device('cuda') if gpu else torch.device('cpu')
 
+    # HACK to "book" GPU as soon as possible
+    _ = torch.Tensor([0]).to(device)
+
     if arguments['train']:
         experiment_dir = Path(arguments['<experiment_dir>'])
         experiment_dir = experiment_dir.expanduser().resolve(strict=True)
@@ -267,7 +258,7 @@ def main():
             subset = 'train'
 
         # start training at this epoch (defaults to 0)
-        restart = int(arguments['--from'])
+        warm_start = int(arguments['--from'])
 
         # stop training at this epoch (defaults to never stop)
         epochs = arguments['--to']
@@ -280,7 +271,7 @@ def main():
                                              training=True)
         application.device = device
         application.train(protocol_name, subset=subset,
-                          restart=restart, epochs=epochs)
+                          warm_start=warm_start, epochs=epochs)
 
     if arguments['validate']:
 
@@ -327,19 +318,18 @@ def main():
         application.purity = purity
         application.diarization = diarization
 
-        application.validate(protocol_name, subset=subset,
-                             start=start, end=end, every=every,
-                             in_order=in_order)
+        task = f'purity={100*purity:.0f}%'
+        application.validate(
+            protocol_name, subset=subset, task=task,
+            start=start, end=end, every=every, in_order=in_order)
 
     if arguments['apply']:
 
-        model_pt = Path(arguments['<model.pt>'])
-        model_pt = model_pt.expanduser().resolve(strict=True)
+        validate_dir = Path(arguments['<validate_dir>'])
+        validate_dir = validate_dir.expanduser().resolve(strict=True)
 
-        output_dir = Path(arguments['<output_dir>'])
-        output_dir = output_dir.expanduser().resolve(strict=False)
-
-        # TODO. create README file in <output_dir>
+        if subset is None:
+            subset = 'test'
 
         step = arguments['--step']
         if step is not None:
@@ -347,8 +337,8 @@ def main():
 
         batch_size = int(arguments['--batch'])
 
-        application = SpeakerChangeDetection.from_model_pt(
-            model_pt, db_yml=db_yml, training=False)
+        application = SpeakerChangeDetection.from_validate_dir(
+            validate_dir, db_yml=db_yml, training=False)
         application.device = device
         application.batch_size = batch_size
-        application.apply(protocol_name, output_dir, step=step, subset=subset)
+        application.apply(protocol_name, step=step, subset=subset)

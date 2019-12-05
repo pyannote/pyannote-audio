@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2018 CNRS
+# Copyright (c) 2018-2019 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -33,11 +33,10 @@ from pathlib import Path
 from glob import glob
 import numpy as np
 from numpy.lib.format import open_memmap
-from struct import unpack
 
 from pyannote.core import SlidingWindow, SlidingWindowFeature
 from pyannote.database.util import get_unique_identifier
-from pyannote.audio.util import mkdir_p
+from pyannote.audio.utils.path import mkdir_p
 
 
 class PyannoteFeatureExtractionError(Exception):
@@ -91,7 +90,7 @@ class Precomputed(object):
         if path.exists():
 
             with io.open(path, 'r') as f:
-                params = yaml.load(f)
+                params = yaml.load(f, Loader=yaml.SafeLoader)
 
             self.dimension_ = params.pop('dimension')
             self.labels_ = params.pop('labels', None)
@@ -150,6 +149,17 @@ class Precomputed(object):
             self.dimension_ = dimension
             self.labels_ = labels
 
+    def augmentation():
+        doc = "Data augmentation."
+        def fget(self):
+            return None
+        def fset(self, augmentation):
+            if augmentation is not None:
+                msg = 'Data augmentation is not supported by `Precomputed`.'
+                raise AttributeError(msg)
+        return locals()
+    augmentation = property(**augmentation())
+
     @property
     def sliding_window(self):
         """Sliding window used for feature extraction"""
@@ -182,8 +192,13 @@ class Precomputed(object):
         path = Path(self.get_path(current_file))
 
         if not path.exists():
-            uri = get_unique_identifier(current_file)
-            msg = f'No precomputed features for "{uri}".'
+            uri = current_file['uri']
+            database = current_file['database']
+            msg = (
+                f'Directory {self.root_dir} does not contain '
+                f'precomputed features for file "{uri}" of '
+                f'"{database}" database.'
+            )
             raise PyannoteFeatureExtractionError(msg)
 
         if self.use_memmap:
@@ -234,71 +249,3 @@ class Precomputed(object):
         path = Path(self.get_path(item))
         mkdir_p(path.parent)
         np.save(path, features.data)
-
-
-class PrecomputedHTK(object):
-
-    def __init__(self, root_dir=None, duration=0.025, step=None):
-        super(PrecomputedHTK, self).__init__()
-        self.root_dir = root_dir
-        self.duration = duration
-
-        # load any htk file in root_dir/database
-        path = '{root_dir}/*/*.htk'.format(root_dir=root_dir)
-        found = glob(path)
-
-        # FIXME switch to Py3.5 and use glob 'recursive' parameter
-        # http://stackoverflow.com/questions/2186525/
-        # use-a-glob-to-find-files-recursively-in-python
-
-        if len(found) > 0:
-            file_htk = found[0]
-        else:
-            msg = "Could not find any HTK file in '{root_dir}'."
-            raise ValueError(msg.format(root_dir=root_dir))
-
-        X, sample_period = self.load_htk(file_htk)
-        self.dimension_ = X.shape[1]
-        self.step = sample_period * 1e-7
-
-        # don't trust HTK header when 'step' is provided by the user.
-        # HACK remove this when Pepe's HTK files are fixed...
-        if step is not None:
-            self.step = step
-
-        self.sliding_window_ = SlidingWindow(start=0.,
-                                             duration=self.duration,
-                                             step=self.step)
-    @property
-    def sliding_window(self):
-        return self.sliding_window_
-
-    @property
-    def dimension(self):
-        return self.dimension_
-
-    @staticmethod
-    def get_path(root_dir, item):
-        uri = get_unique_identifier(item)
-        path = '{root_dir}/{uri}.htk'.format(root_dir=root_dir, uri=uri)
-        return path
-
-    # http://codereview.stackexchange.com/questions/
-    # 1496/reading-a-binary-file-containing-periodic-samples
-    @staticmethod
-    def load_htk(file_htk):
-        with open(file_htk, 'rb') as fp:
-            data = fp.read(12)
-            num_samples, sample_period, sample_size, _ = unpack('>iihh', data)
-            num_features = int(sample_size / 4)
-            num_samples = int(num_samples)
-            X = np.empty((num_samples, num_features))
-            for i in range(num_samples):
-                data = fp.read(sample_size)
-                X[i, :] = unpack('>' + ('f' * (sample_size // 4)), data)
-        return X, sample_period
-
-    def __call__(self, item):
-        file_htk = self.get_path(self.root_dir, item)
-        X, _ = self.load_htk(file_htk)
-        return SlidingWindowFeature(X, self.sliding_window_)

@@ -108,6 +108,8 @@ class EmbeddingApproach(Trainer):
         # if sequences have variable lengths
         if variable_lengths:
 
+            # TODO: use new pytorch feature that handle sorting automatically
+
             # sort them in order of length
             _, sort = torch.sort(torch.tensor(lengths), descending=True)
             _, unsort = torch.sort(sort)
@@ -123,8 +125,8 @@ class EmbeddingApproach(Trainer):
             # process them separately if model does not support PackedSequence
             else:
                 try:
-                    fX = torch.stack([self.model_(x.unsqueeze(0))
-                                      for x in sequences])
+                    fX = torch.cat([self.model_(x.unsqueeze(0))
+                                    for x in sequences])
                     msg = (
                         'Model does not support variable lengths batch, '
                         'so we are processing sequences separately...'

@@ -61,7 +61,7 @@ To ensure reproducibility, `pyannote-speech-feature` relies on a configuration f
 ```bash
 $ cat tutorials/feature-extraction/config.yml
 feature_extraction:
-   name: LibrosaMFCC                # extract MFCCs using Yaafe
+   name: LibrosaMFCC                # extract MFCCs using Librosa
    params:
       e: False                      # no energy
       De: True                      # energy 1st derivative

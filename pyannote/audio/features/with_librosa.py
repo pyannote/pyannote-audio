@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2016-2018 CNRS
+# Copyright (c) 2016-2019 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -64,7 +64,7 @@ class LibrosaFeatureExtraction(FeatureExtraction):
                                              duration=self.duration,
                                              step=self.step)
 
-    def get_frame_info(self):
+    def get_resolution(self):
         return self.sliding_window_
 
 

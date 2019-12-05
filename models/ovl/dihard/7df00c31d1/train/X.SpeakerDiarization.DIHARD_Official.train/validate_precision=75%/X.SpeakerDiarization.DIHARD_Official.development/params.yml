@@ -1,0 +1,9 @@
+epoch: 1201
+params:
+  min_duration_off: 0.1
+  min_duration_on: 0.1
+  offset: 0.640625
+  onset: 0.640625
+  pad_offset: 0.0
+  pad_onset: 0.0
+recall@0.75precision: 0.2440085526540485

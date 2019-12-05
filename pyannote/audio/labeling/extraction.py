@@ -38,6 +38,7 @@ from pyannote.generators.fragment import SlidingSegments
 from pyannote.database import get_unique_identifier
 from pyannote.audio.features import Precomputed
 from pyannote.audio.features import RawAudio
+from pyannote.audio.train.model import RESOLUTION_FRAME, RESOLUTION_CHUNK
 
 
 class SequenceLabeling(FileBasedBatchGenerator):
@@ -86,17 +87,14 @@ class SequenceLabeling(FileBasedBatchGenerator):
         self.device = torch.device('cpu') if device is None \
                                           else torch.device(device)
         self.model = model.eval().to(self.device)
+
+        if feature_extraction.augmentation is not None:
+            msg = (
+                'Data augmentation should not be used '
+                'when applying a pre-trained model.'
+            )
+            raise ValueError(msg)
         self.feature_extraction = feature_extraction
-
-        if hasattr(self.model, 'frame_info_'):
-            self.frame_info_ = self.model.frame_info_
-        else:
-            self.frame_info_ = self.feature_extraction.sliding_window
-
-        if hasattr(self.model, 'frame_crop'):
-            self.frame_crop_ = self.model.frame_crop
-        else:
-            self.frame_crop_ = 'center'
 
         self.duration = duration
         self.min_duration = min_duration
@@ -104,6 +102,17 @@ class SequenceLabeling(FileBasedBatchGenerator):
         generator = SlidingSegments(duration=duration, step=step,
                                     min_duration=min_duration, source='audio')
         self.step = generator.step if step is None else step
+
+        self.resolution_ = self.model.resolution
+
+        # model returns one vector per input frame
+        if self.resolution_ == RESOLUTION_FRAME:
+            self.resolution_ = self.feature_extraction.sliding_window
+
+        # model returns one vector per input window
+        if self.resolution_ == RESOLUTION_CHUNK:
+            self.resolution_ = SlidingWindow(duration=self.duration,
+                                             step=self.step)
 
         self.return_intermediate = return_intermediate
 
@@ -113,17 +122,14 @@ class SequenceLabeling(FileBasedBatchGenerator):
 
     @property
     def dimension(self):
-        if hasattr(self.model, 'n_classes'):
-            return self.model.n_classes
-        elif hasattr(self.model, 'dimension'):
-            return self.model.dimension
-        else:
-            msg = 'Model has no "n_classes" nor "dimension" attribute.'
-            raise ValueError(msg)
+        return len(self.model.classes)
 
     @property
     def sliding_window(self):
-        return self.frame_info_
+        if self.return_intermediate is not None:
+            return SlidingWindow(duration=self.duration, step=self.step)
+
+        return self.resolution_
 
     def preprocess(self, current_file):
         """On-demand feature extraction
@@ -254,26 +260,28 @@ class SequenceLabeling(FileBasedBatchGenerator):
             Predictions.
         """
 
+        # FIXME: make sure this is coherent with other changes related to
+        # resolution_...
+
         # frame and sub-sequence sliding windows
-        frames = self.frame_info_
         batches = [batch for batch in self.from_file(current_file,
                                                      incomplete=True)]
         if not batches:
             data = np.zeros((0, self.dimension), dtype=np.float32)
-            return SlidingWindowFeature(data, frames)
+            return SlidingWindowFeature(data, self.resolution_)
 
         fX = np.vstack(batches)
         subsequences = SlidingWindow(duration=self.duration, step=self.step)
 
         # this happens for tasks that expects just one label per sequence
-        # (rather than one label per frame)
-        if fX.ndim == 2:
+        # (rather than one label per frame) or when requesting
+        # intermediate representation
+        if (fX.ndim == 2) or (self.return_intermediate is not None):
             return SlidingWindowFeature(fX, subsequences)
-        # else: fX.ndim == 3
 
         # get total number of frames (based on last window end time)
         n_subsequences = len(fX)
-        n_frames =  frames.samples(subsequences[n_subsequences].end,
+        n_frames = self.resolution_.samples(subsequences[n_subsequences].end,
                                    mode='center')
 
         # data[i] is the sum of all predictions for frame #i
@@ -285,9 +293,9 @@ class SequenceLabeling(FileBasedBatchGenerator):
         for subsequence, fX_ in zip(subsequences, fX):
 
             # indices of frames overlapped by subsequence
-            indices = frames.crop(subsequence,
-                                  mode=self.frame_crop_,
-                                  fixed=self.duration)
+            indices = self.resolution_.crop(subsequence,
+                                            mode=self.model.alignment,
+                                            fixed=self.duration)
 
             # accumulate the outputs
             data[indices] += fX_
@@ -299,4 +307,4 @@ class SequenceLabeling(FileBasedBatchGenerator):
         # compute average embedding of each frame
         data = data / np.maximum(k, 1)
 
-        return SlidingWindowFeature(data, frames)
+        return SlidingWindowFeature(data, self.resolution_)

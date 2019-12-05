@@ -26,22 +26,23 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
-import warnings
 import torch
+import torch.nn.functional as F
+
 import numpy as np
 import scipy.signal
 
+from pyannote.core import Segment
 from pyannote.core import Timeline
 from pyannote.core import Annotation
 from pyannote.core import SlidingWindowFeature
+
 from pyannote.database import get_unique_identifier
 from pyannote.database import get_annotated
+
 from pyannote.core.utils.numpy import one_hot_encoding
-from pyannote.audio.features import Precomputed
+from pyannote.audio.features import RawAudio
 from pyannote.audio.features.utils import get_audio_duration
-from pyannote.core import Segment
-from pyannote.core import Timeline
-from pyannote.core import SlidingWindowFeature
 
 from pyannote.generators.batch import batchify
 from pyannote.generators.fragment import random_segment
@@ -49,15 +50,12 @@ from pyannote.generators.fragment import random_subsegment
 from pyannote.generators.fragment import SlidingSegments
 
 from pyannote.audio.train.trainer import Trainer
+from pyannote.audio.train.generator import BatchGenerator
 
-from .. import TASK_MULTI_CLASS_CLASSIFICATION
-from .. import TASK_MULTI_LABEL_CLASSIFICATION
-from .. import TASK_REGRESSION
-
-import torch.nn.functional as F
+from pyannote.audio.train.task import Task, TaskType, TaskOutput
 
 
-class LabelingTaskGenerator(object):
+class LabelingTaskGenerator(BatchGenerator):
     """Base batch generator for various labeling tasks
 
     This class should be inherited from: it should not be used directy
@@ -67,13 +65,14 @@ class LabelingTaskGenerator(object):
     feature_extraction : `pyannote.audio.features.FeatureExtraction`
         Feature extraction
     protocol : `pyannote.database.Protocol`
-    subset : {'train', 'development', 'test'}
-    frame_info : `pyannote.core.SlidingWindow`, optional
+    subset : {'train', 'development', 'test'}, optional
+        Protocol and subset.
+    resolution : `pyannote.core.SlidingWindow`, optional
         Override `feature_extraction.sliding_window`. This is useful for
         models that include the feature extraction step (e.g. SincNet) and
         therefore output a lower sample rate than that of the input.
         Defaults to `feature_extraction.sliding_window`
-    frame_crop : {'center', 'loose', 'strict'}, optional
+    alignment : {'center', 'loose', 'strict'}, optional
         Which mode to use when cropping labels. This is useful for models that
         include the feature extraction step (e.g. SincNet) and therefore use a
         different cropping mode. Defaults to 'center'.
@@ -87,6 +86,8 @@ class LabelingTaskGenerator(object):
     per_epoch : float, optional
         Total audio duration per epoch, in days.
         Defaults to one day (1).
+    in_memory : `bool`, optional
+        Pre-load training set in memory.
     parallel : int, optional
         Number of prefetching background generators. Defaults to 1. Each
         generator will prefetch enough batches to cover a whole epoch. Set
@@ -108,26 +109,35 @@ class LabelingTaskGenerator(object):
         Set to True to indicate that mask values are log scaled. Will apply
         exponential. Defaults to False. Has not effect when `mask_dimension`
         is not set.
+
     """
 
-    def __init__(self, feature_extraction, protocol, subset='train',
-                 frame_info=None, frame_crop=None,
-                 duration=3.2, step=None,
-                 batch_size=32, per_epoch=1, parallel=1,
-                 exhaustive=False, shuffle=False,
-                 mask_dimension=None, mask_logscale=False):
-
-        super(LabelingTaskGenerator, self).__init__()
+    def __init__(self,
+                 feature_extraction,
+                 protocol,
+                 subset='train',
+                 resolution=None,
+                 alignment=None,
+                 duration=3.2,
+                 step=None,
+                 batch_size=32,
+                 per_epoch=1,
+                 in_memory=False,
+                 parallel=1,
+                 exhaustive=False,
+                 shuffle=False,
+                 mask_dimension=None,
+                 mask_logscale=False):
 
         self.feature_extraction = feature_extraction
 
-        if frame_info is None:
-            frame_info = self.feature_extraction.sliding_window
-        self.frame_info = frame_info
+        if resolution is None:
+            resolution = self.feature_extraction.sliding_window
+        self.resolution = resolution
 
-        if frame_crop is None:
-            frame_crop = 'center'
-        self.frame_crop = frame_crop
+        if alignment is None:
+            alignment = 'center'
+        self.alignment = alignment
 
         self.duration = duration
         if step is None:
@@ -136,6 +146,16 @@ class LabelingTaskGenerator(object):
         self.batch_size = batch_size
         self.per_epoch = per_epoch
         self.parallel = parallel
+
+        self.in_memory = in_memory
+        if self.in_memory:
+            if not isinstance(feature_extraction, RawAudio):
+                msg = (
+                    f'"in_memory" option is only supported when '
+                    f'working from the waveform.'
+                )
+                raise ValueError(msg)
+
         self.exhaustive = exhaustive
         self.shuffle = shuffle
 
@@ -146,7 +166,17 @@ class LabelingTaskGenerator(object):
 
     def postprocess_y(self, Y):
         """This function does nothing but return its input.
-        It should be overriden by subclasses."""
+        It should be overriden by subclasses.
+
+        Parameters
+        ----------
+        Y :
+
+        Returns
+        -------
+        postprocessed :
+
+        """
         return Y
 
     def initialize_y(self, current_file):
@@ -164,7 +194,7 @@ class LabelingTaskGenerator(object):
         """
         y, _ = one_hot_encoding(current_file['annotation'],
                                 get_annotated(current_file),
-                                self.frame_info,
+                                self.resolution,
                                 labels=self.segment_labels_,
                                 mode='center')
 
@@ -187,7 +217,7 @@ class LabelingTaskGenerator(object):
             y for specified `segment`
         """
 
-        return y.crop(segment, mode=self.frame_crop,
+        return y.crop(segment, mode=self.alignment,
                       fixed=self.duration)
 
     def _load_metadata(self, protocol, subset='train'):
@@ -219,6 +249,10 @@ class LabelingTaskGenerator(object):
                 support, mode='intersection')
             current_file['annotation'] = current_file['annotation'].crop(
                 support, mode='intersection')
+
+            if self.in_memory:
+                current_file['waveform'] = \
+                    self.feature_extraction(current_file).data
 
             # keep track of unique segment labels
             segment_labels.update(current_file['annotation'].labels())
@@ -277,19 +311,17 @@ class LabelingTaskGenerator(object):
         Returns
         -------
         specs : `dict`
-            ['task'] (`str`) : task name
+            ['task'] (`pyannote.audio.train.Task`) : task
             ['X']['dimension'] (`int`) : features dimension
             ['y']['classes'] (`list`) : list of classes
         """
 
         specs = {
-            'task': None,
+            'task': Task(type=TaskType.MULTI_CLASS_CLASSIFICATION,
+                         output=TaskOutput.SEQUENCE),
             'X': {'dimension': self.feature_extraction.dimension},
             'y': {'classes': self.segment_labels_},
         }
-
-        for key, classes in self.file_labels_.items():
-            specs[key] = {'classes': classes}
 
         return specs
 
@@ -512,7 +544,7 @@ class LabelingTask(Trainer):
 
 
     def get_batch_generator(self, feature_extraction, protocol, subset='train',
-                            frame_info=None, frame_crop=None):
+                            resolution=None, alignment=None):
         """This method should be overriden by subclass
 
         Parameters
@@ -521,11 +553,11 @@ class LabelingTask(Trainer):
         protocol : `pyannote.database.Protocol`
         subset : {'train', 'development'}, optional
             Defaults to 'train'.
-        frame_info : `pyannote.core.SlidingWindow`, optional
+        resolution : `pyannote.core.SlidingWindow`, optional
             Override `feature_extraction.sliding_window`. This is useful for
             models that include the feature extraction step (e.g. SincNet) and
             therefore output a lower sample rate than that of the input.
-        frame_crop : {'center', 'loose', 'strict'}, optional
+        alignment : {'center', 'loose', 'strict'}, optional
             Which mode to use when cropping labels. This is useful for models
             that include the feature extraction step (e.g. SincNet) and
             therefore use a different cropping mode. Defaults to 'center'.
@@ -536,7 +568,7 @@ class LabelingTask(Trainer):
         """
         return LabelingTaskGenerator(
             feature_extraction, protocol, subset=subset,
-            frame_info=frame_info, frame_crop=frame_crop,
+            resolution=resolution, alignment=alignment,
             duration=self.duration, step=self.step, per_epoch=self.per_epoch,
             batch_size=self.batch_size, parallel=self.parallel)
 
@@ -556,11 +588,11 @@ class LabelingTask(Trainer):
         loss_func_ = Function f(input, target, weight=None) -> loss value
         """
 
-        self.task_type_ = self.model_.specifications['task']
+        self.task_ = self.model_.task
 
-        if self.task_type_ == TASK_MULTI_CLASS_CLASSIFICATION:
+        if self.task_.is_multiclass_classification:
 
-            self.n_classes_ = len(self.model_.specifications['y']['classes'])
+            self.n_classes_ = len(self.model_.classes)
 
             def loss_func(input, target, weight=None, mask=None):
                 if mask is None:
@@ -572,7 +604,7 @@ class LabelingTask(Trainer):
                                           weight=weight,
                                           reduction='none'))
 
-        if self.task_type_ == TASK_MULTI_LABEL_CLASSIFICATION:
+        if self.task_.is_multilabel_classification:
 
             def loss_func(input, target, weight=None, mask=None):
                 if mask is None:
@@ -584,7 +616,7 @@ class LabelingTask(Trainer):
                                                       weight=weight,
                                                       reduction='none'))
 
-        if self.task_type_ == TASK_REGRESSION:
+        if self.task_.is_regression:
 
             def loss_func(input, target, weight=None, mask=None):
                 if mask is None:
@@ -620,7 +652,7 @@ class LabelingTask(Trainer):
         fX = self.model_(X)
 
         mask = None
-        if self.task_type_ == TASK_MULTI_CLASS_CLASSIFICATION:
+        if self.task_.is_multiclass_classification:
 
             fX = fX.view((-1, self.n_classes_))
 
@@ -636,8 +668,8 @@ class LabelingTask(Trainer):
                     device=self.device_).contiguous().view((-1, ))
 
 
-        elif self.task_type_ in [TASK_MULTI_LABEL_CLASSIFICATION,
-                                 TASK_REGRESSION]:
+        elif self.task_.is_multilabel_classification or \
+             self.task_.is_regression:
 
             target = torch.tensor(
                 batch['y'],

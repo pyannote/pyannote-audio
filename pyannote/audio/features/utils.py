@@ -26,6 +26,7 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
+import warnings
 import numpy as np
 
 import librosa
@@ -317,10 +318,20 @@ class RawAudio(object):
                         segment, mode=mode, fixed=fixed,
                         return_ranges=True)
 
-                audio_file.seek(start)
-                data = audio_file.read(end - start,
-                                       dtype='float32',
-                                       always_2d=True)
+                try:
+                    audio_file.seek(start)
+                    data = audio_file.read(end - start,
+                                           dtype='float32',
+                                           always_2d=True)
+                except RuntimeError as e:
+                    msg = (
+                        f"SoundFile failed to seek-and-read in "
+                        f"{current_file['audio']}: loading the whole file..."
+                    )
+                    warnings.warn(msg)
+                    return self(current_file).crop(segment,
+                                                   mode=mode,
+                                                   fixed=fixed)
 
         # extract specific channel if requested
         channel = current_file.get('channel', None)

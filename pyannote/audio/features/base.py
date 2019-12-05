@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2016-2018 CNRS
+# Copyright (c) 2016-2019 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -66,6 +66,15 @@ class FeatureExtraction(object):
             sample_rate=self.sample_rate, mono=True,
             augmentation=augmentation)
 
+    def augmentation():
+        doc = "Data augmentation."
+        def fget(self):
+            return self.raw_audio_.augmentation
+        def fset(self, augmentation):
+            self.raw_audio_.augmentation = augmentation
+        return locals()
+    augmentation = property(**augmentation())
+
     def get_dimension(self):
         """Get dimension of feature vectors
 
@@ -83,7 +92,7 @@ class FeatureExtraction(object):
         """Dimension of feature vectors"""
         return self.get_dimension()
 
-    def get_frame_info(self):
+    def get_resolution(self):
         """Get sliding window used for feature extraction
 
         Returns
@@ -93,13 +102,13 @@ class FeatureExtraction(object):
         """
 
         msg = ('`FeatureExtraction` subclasses must implement '
-               '`get_frame_info` method.')
+               '`get_resolution` method.')
         raise NotImplementedError(msg)
 
     @property
     def sliding_window(self):
         """Sliding window used for feature extraction"""
-        return self.get_frame_info()
+        return self.get_resolution()
 
     def get_features(self, y, sample_rate):
         """Extract features from waveform

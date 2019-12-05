@@ -31,7 +31,8 @@ import numpy as np
 from pyannote.generators.fragment import random_segment
 from pyannote.generators.fragment import random_subsegment
 from pyannote.generators.batch import batchify
-from ..models import TASK_REPRESENTATION_LEARNING
+from pyannote.audio.train.task import Task, TaskType, TaskOutput
+from pyannote.audio.features import RawAudio
 
 
 class SpeechSegmentGenerator(object):
@@ -63,12 +64,15 @@ class SpeechSegmentGenerator(object):
         Number of prefetching background generators. Defaults to 1.
         Each generator will prefetch enough batches to cover a whole epoch.
         Set `parallel` to 0 to not use background generators.
+    in_memory : `bool`, optional
+        Pre-load training set in memory.
+
     """
 
     def __init__(self, feature_extraction, protocol, subset='train',
                  per_label=3, per_fold=None, per_epoch=7,
                  duration=None, min_duration=None, max_duration=None,
-                 label_min_duration=0., parallel=1):
+                 label_min_duration=0., parallel=1, in_memory=False):
 
         super(SpeechSegmentGenerator, self).__init__()
 
@@ -79,6 +83,15 @@ class SpeechSegmentGenerator(object):
         self.duration = duration
         self.parallel = parallel
         self.label_min_duration = label_min_duration
+
+        self.in_memory = in_memory
+        if self.in_memory:
+            if not isinstance(feature_extraction, RawAudio):
+                msg = (
+                    f'"in_memory" option is only supported when '
+                    f'working from the waveform.'
+                )
+                raise ValueError(msg)
 
         if self.duration is None:
             self.min_duration = min_duration
@@ -112,6 +125,10 @@ class SpeechSegmentGenerator(object):
 
             # get annotation for current file
             annotation = current_file['annotation']
+
+            if self.in_memory:
+                current_file['waveform'] = \
+                    self.feature_extraction(current_file).data
 
             # loop on each label in current file
             for label in annotation.labels():
@@ -273,7 +290,8 @@ class SpeechSegmentGenerator(object):
         return {
             'X': {'dimension': self.feature_extraction.dimension},
             'y': {'classes': self.segment_labels_},
-            'task': TASK_REPRESENTATION_LEARNING,
+            'task': Task(type=TaskType.REPRESENTATION_LEARNING,
+                         output=TaskOutput.VECTOR),
         }
 
     def __call__(self):

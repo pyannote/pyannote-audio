@@ -40,7 +40,7 @@ from pyannote.audio.features import RawAudio
 
 from .base import LabelingTask
 from .base import LabelingTaskGenerator
-from .base import TASK_MULTI_CLASS_CLASSIFICATION
+from pyannote.audio.train.task import Task, TaskType, TaskOutput
 
 
 normalize = lambda wav: wav / (np.sqrt(np.mean(wav ** 2)) + 1e-8)
@@ -55,11 +55,11 @@ class OverlapDetectionGenerator(LabelingTaskGenerator):
         Feature extraction
     protocol : `pyannote.database.Protocol`
     subset : {'train', 'development', 'test'}
-    frame_info : `pyannote.core.SlidingWindow`, optional
+    resolution : `pyannote.core.SlidingWindow`, optional
         Override `feature_extraction.sliding_window`. This is useful for
         models that include the feature extraction step (e.g. SincNet) and
         therefore output a lower sample rate than that of the input.
-    frame_crop : {'center', 'loose', 'strict'}, optional
+    alignment : {'center', 'loose', 'strict'}, optional
         Which mode to use when cropping labels. This is useful for models
         that include the feature extraction step (e.g. SincNet) and
         therefore use a different cropping mode. Defaults to 'center'.
@@ -79,7 +79,7 @@ class OverlapDetectionGenerator(LabelingTaskGenerator):
     """
 
     def __init__(self, feature_extraction, protocol, subset='train',
-                 frame_info=None, frame_crop=None, duration=3.2,
+                 resolution=None, alignment=None, duration=3.2,
                  snr_min=0, snr_max=10,
                  batch_size=32, per_epoch=1, parallel=1):
 
@@ -88,7 +88,7 @@ class OverlapDetectionGenerator(LabelingTaskGenerator):
         self.raw_audio_ = RawAudio(sample_rate=feature_extraction.sample_rate)
 
         super().__init__(feature_extraction, protocol, subset=subset,
-                         frame_info=frame_info, frame_crop=frame_crop,
+                         resolution=resolution, alignment=alignment,
                          duration=duration,
                          batch_size=batch_size, per_epoch=per_epoch,
                          parallel=parallel, shuffle=True)
@@ -132,7 +132,7 @@ class OverlapDetectionGenerator(LabelingTaskGenerator):
 
             # get corresponding labels
             y = datum['y'].crop(sequence,
-                                mode=self.frame_crop,
+                                mode=self.alignment,
                                 fixed=self.duration)
 
             yield {'waveform': normalize(X),
@@ -190,7 +190,7 @@ class OverlapDetectionGenerator(LabelingTaskGenerator):
                     X = waveform.crop(sequence, mode='center',
                                       fixed=self.duration)
 
-                    y = datum['y'].crop(sequence, mode=self.frame_crop,
+                    y = datum['y'].crop(sequence, mode=self.alignment,
                                         fixed=self.duration)
 
                     sample = {'waveform': normalize(X),
@@ -205,18 +205,6 @@ class OverlapDetectionGenerator(LabelingTaskGenerator):
                     np.random.shuffle(samples)
                     for sample in samples:
                         yield sample
-
-    @property
-    def signature(self):
-        return {'X': {'@': (None, np.stack)},
-                'y': {'@': (None, np.stack)}}
-
-    @property
-    def batches_per_epoch(self):
-        """Number of batches needed to complete an epoch"""
-        duration_per_epoch = self.per_epoch * 24 * 60 * 60
-        duration_per_batch = self.duration * self.batch_size
-        return int(np.ceil(duration_per_epoch / duration_per_batch))
 
     def __call__(self):
         """(Parallelized) batch generator"""
@@ -302,7 +290,8 @@ class OverlapDetectionGenerator(LabelingTaskGenerator):
     @property
     def specifications(self):
         return {
-            'task': TASK_MULTI_CLASS_CLASSIFICATION,
+            'task': Task(type=TaskType.MULTI_CLASS_CLASSIFICATION,
+                         output=TaskOutput.SEQUENCE),
             'X': {'dimension': self.feature_extraction.dimension},
             'y': {'classes': ['non_overlap', 'overlap']},
         }
@@ -324,40 +313,16 @@ class OverlapDetection(LabelingTask):
         Number of prefetching background generators. Defaults to 1.
         Each generator will prefetch enough batches to cover a whole epoch.
         Set `parallel` to 0 to not use background generators.
-
-    Usage
-    -----
-    >>> task = OverlapDetection()
-
-    # precomputed features
-    >>> from pyannote.audio.features import Precomputed
-    >>> precomputed = Precomputed('/path/to/features')
-
-    # model architecture
-    >>> from pyannote.audio.labeling.models import StackedRNN
-    >>> model = StackedRNN(precomputed.dimension, task.n_classes)
-
-    # evaluation protocol
-    >>> from pyannote.database import get_protocol
-    >>> protocol = get_protocol('Etape.SpeakerDiarization.TV')
-
-    # train model using protocol training set
-    >>> for epoch, model in task.fit_iter(model, precomputed, protocol):
-    ...     pass
-
     """
 
-    def __init__(self, **kwargs):
-        super(OverlapDetection, self).__init__(**kwargs)
-
     def get_batch_generator(self, feature_extraction, protocol, subset='train',
-                            frame_info=None, frame_crop=None):
+                            resolution=None, alignment=None):
         """
-        frame_info : `pyannote.core.SlidingWindow`, optional
+        resolution : `pyannote.core.SlidingWindow`, optional
             Override `feature_extraction.sliding_window`. This is useful for
             models that include the feature extraction step (e.g. SincNet) and
             therefore output a lower sample rate than that of the input.
-        frame_crop : {'center', 'loose', 'strict'}, optional
+        alignment : {'center', 'loose', 'strict'}, optional
             Which mode to use when cropping labels. This is useful for models
             that include the feature extraction step (e.g. SincNet) and
             therefore use a different cropping mode. Defaults to 'center'.
@@ -365,8 +330,8 @@ class OverlapDetection(LabelingTask):
         return OverlapDetectionGenerator(
             feature_extraction,
             protocol, subset=subset,
-            frame_info=frame_info,
-            frame_crop=frame_crop,
+            resolution=resolution,
+            alignment=alignment,
             duration=self.duration,
             per_epoch=self.per_epoch,
             batch_size=self.batch_size,

@@ -64,7 +64,7 @@ class Classification(EmbeddingApproach):
     # TODO. add option to see this classification step
     #       as cosine similarity to centroids (ie center loss?)
 
-    CLASSIFIER_PT = '{log_dir}/weights/{epoch:04d}.classifier.pt'
+    CLASSIFIER_PT = '{train_dir}/weights/{epoch:04d}.classifier.pt'
 
     def __init__(self, duration=None, min_duration=None, max_duration=None,
                  per_label=1, per_fold=32, per_epoch=7, parallel=1,
@@ -85,13 +85,8 @@ class Classification(EmbeddingApproach):
         self.logsoftmax_ = nn.LogSoftmax(dim=1)
         self.loss_ = nn.NLLLoss()
 
-    def parameters(self, model, specifications, device):
+    def more_parameters(self):
         """Initialize trainable trainer parameters
-
-        Parameters
-        ----------
-        specifications : `dict`
-            Batch specs.
 
         Returns
         -------
@@ -100,60 +95,47 @@ class Classification(EmbeddingApproach):
         """
 
         self.classifier_ = nn.Linear(
-            model.dimension,
-            len(specifications['y']['classes']),
-            bias=True).to(device)
+            self.model.dimension,
+            len(self.specifications['y']['classes']),
+            bias=True).to(self.device)
 
-        return list(self.classifier_.parameters())
+        return self.classifier_.parameters()
 
-    def load_epoch(self, epoch):
-        """Load model and classifier from disk
+    def load_more(self, model_pt=None):
+        """Load classifier from disk"""
 
-        Parameters
-        ----------
-        epoch : `int`
-            Epoch number.
-        """
-
-        super().load_epoch(epoch)
+        if model_pt is None:
+            classifier_pt = self.CLASSIFIER_PT.format(
+                train_dir=self.train_dir_, epoch=self.epoch_)
+        else:
+            msg = 'TODO: infer classifier_pt from model_pt'
+            raise NotImplementedError(msg)
 
         classifier_state = torch.load(
-            self.CLASSIFIER_PT.format(log_dir=self.log_dir_, epoch=epoch),
-            map_location=lambda storage, loc: storage)
+            classifier_pt, map_location=lambda storage, loc: storage)
         self.classifier_.load_state_dict(classifier_state)
 
-    def save_epoch(self, epoch=None):
-        """Save model to disk
+    def save_more(self):
+        """Save classifier weights to disk"""
 
-        Parameters
-        ----------
-        epoch : `int`, optional
-            Epoch number. Defaults to self.epoch_
-
-        """
-
-        if epoch is None:
-            epoch = self.epoch_
-
-        torch.save(self.classifier_.state_dict(),
-                   self.CLASSIFIER_PT.format(log_dir=self.log_dir_,
-                                             epoch=epoch))
-
-        super().save_epoch(epoch=epoch)
+        classifier_pt = self.CLASSIFIER_PT.format(
+            train_dir=self.train_dir_, epoch=self.epoch_)
+        torch.save(self.classifier_.state_dict(), classifier_pt)
 
     def get_batch_generator(self, feature_extraction,
                             protocol, subset='train',
-                            frame_info=None, frame_crop=None):
+                            **kwargs):
         """Get batch generator
 
         Parameters
         ----------
         feature_extraction : `pyannote.audio.features.FeatureExtraction`
+        protocol : `pyannote.database.Protocol`
+        subset : {'train', 'development', 'test'}, optional
 
         Returns
         -------
         generator : `pyannote.audio.embedding.generators.SpeechSegmentGenerator`
-
         """
 
         return SpeechSegmentGenerator(

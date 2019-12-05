@@ -78,7 +78,7 @@ sad_scores = sad(test_file)
 # binarize raw SAD scores (as `pyannote.core.Timeline` instance)
 # NOTE: both onset/offset values were tuned on AMI dataset.
 # you might need to use different values for better results.
-from pyannote.audio.signal import Binarize
+from pyannote.audio.utils.signal import Binarize
 binarize = Binarize(offset=0.94, onset=0.70, log_scale=True)
 speech = binarize.apply(sad_scores, dimension=1)
 
@@ -105,7 +105,7 @@ scd_scores = scd(test_file)
 # (as `pyannote.core.Annotation` instance)
 # NOTE: both alpha/min_duration values were tuned on AMI dataset.
 # you might need to use different values for better results.
-from pyannote.audio.signal import Peak
+from pyannote.audio.utils.signal import Peak
 peak = Peak(alpha=0.08, min_duration=0.40, log_scale=True)
 partition = peak.apply(scd_scores, dimension=1)
 for segment in partition:

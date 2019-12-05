@@ -1,0 +1,9 @@
+detection_error_rate: 0.1007444889290902
+epoch: 140
+params:
+  min_duration_off: 0.1
+  min_duration_on: 0.1
+  offset: 0.5414479589713395
+  onset: 0.5414479589713395
+  pad_offset: 0.0
+  pad_onset: 0.0

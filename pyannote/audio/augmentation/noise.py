@@ -51,7 +51,7 @@ class AddNoise(Augmentation):
 
     Parameters
     ----------
-    collection : str or list of str
+    collection : `str` or `list` of `str`
         `pyannote.database` collection(s) used for adding noise. Defaults to
         'MUSAN.Collection.BackgroundNoise' available in `pyannote.db.musan`
         package.
@@ -147,7 +147,7 @@ class AddNoiseFromGaps(Augmentation):
 
     Parameters
     ----------
-    protocol : `str`
+    protocol : `str` or `pyannote.database.Protocol`
         Protocol name (e.g. AMI.SpeakerDiarization.MixHeadset)
     subset : {'train', 'development', 'test'}, optional
         Use this subset. Defaults to 'train'.
@@ -177,13 +177,16 @@ class AddNoiseFromGaps(Augmentation):
         get_gaps = lambda f: f['annotation'].get_timeline().gaps(
             support=get_annotated(f))
 
-        preprocessors = {
-            'audio': FileFinder(config_yml=db_yml),
-            'duration': get_audio_duration,
-            'gaps': get_gaps}
+        if isinstance(protocol, str):
+            preprocessors = {
+                'audio': FileFinder(config_yml=db_yml),
+                'duration': get_audio_duration,
+                'gaps': get_gaps}
+            protocol = get_protocol(self.protocol,
+                                    preprocessors=preprocessors)
+        else:
+            protocol.preprocessors['gaps'] = get_gaps
 
-        protocol = get_protocol(self.protocol,
-                                preprocessors=preprocessors)
         self.files_ = list(getattr(protocol, self.subset)())
 
     def __call__(self, original, sample_rate):

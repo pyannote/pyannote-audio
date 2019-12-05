@@ -27,13 +27,7 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 
-class Callback(object):
-
-    def __init__(self):
-        super().__init__()
-
-    def load_epoch(self, trainer, epoch):
-        pass
+class Callback:
 
     def on_train_start(self, trainer):
         pass
@@ -61,29 +55,21 @@ class Callback(object):
         pass
 
 
-class Callbacks(object):
+class Callbacks:
+
     def __init__(self, callbacks):
         super().__init__()
         self.callbacks = callbacks
 
-    def load_epoch(self, trainer, epoch):
-        trainer.load_epoch(epoch)
-        for callback in self.callbacks:
-            callback.load_epoch(trainer, epoch)
-
     def on_train_start(self, trainer):
-        trainer.on_train_start()
         for callback in self.callbacks:
             callback.on_train_start(trainer)
 
     def on_epoch_start(self, trainer):
-        trainer.epoch_ += 1
-        trainer.on_epoch_start()
         for callback in self.callbacks:
             callback.on_epoch_start(trainer)
 
     def on_batch_start(self, trainer, batch):
-        batch = trainer.on_batch_start(batch)
         for callback in self.callbacks:
             batch = callback.on_batch_start(trainer, batch)
         return batch

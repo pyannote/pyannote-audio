@@ -25,7 +25,7 @@
 
 # Neural speech turn embedding with `pyannote.audio`
 
-In this tutorial, you will learn how to train a speech turn embedding using `pyannote-speaker-embedding` command line tool.
+In this tutorial, you will learn how to train a speaker embedding using `pyannote-speaker-embedding` command line tool.
 
 ## Table of contents
 - [Citation](#citation)
@@ -172,13 +172,16 @@ This model reaches approximately 7% EER on VoxCeleb1.
 ## Application
 ([↑up to table of contents](#table-of-contents))
 
-Now that we know how the model is doing, we can apply it on all files of the AMI database store embeddings in `/path/to/precomputed/emb`:
+Now that we know how the model is doing, we can apply it on all files of the AMI database:
 
 ```bash
-$ pyannote-speaker-embedding apply ${TRAIN_DIR}/weights/2000.pt AMI.SpeakerDiarization.MixHeadset /path/to/precomputed/emb
+$ export VALIDATE_DIR=${EXPERIMENT_DIR}/validate/VoxCeleb.SpeakerVerification.VoxCeleb1.test
+$ pyannote-speaker-embedding apply --duration=1.0 --step=0.5 ${VALIDATE_DIR} AMI.SpeakerDiarization.MixHeadset 
 ```
 
-We can then use these extracted embeddings like this:
+Embeddings will be extracted in `${VALIDATE_DIR}/apply/{BEST_EPOCH}`
+
+In the above example, embeddings are extracted every 500ms using a 1s sliding window. We can then use these extracted embeddings like this:
 
 
 ```python
@@ -189,7 +192,7 @@ We can then use these extracted embeddings like this:
 
 # precomputed embeddings as pyannote.core.SlidingWindowFeature
 >>> from pyannote.audio.features import Precomputed
->>> precomputed = Precomputed('/path/to/precomputed/emb')
+>>> precomputed = Precomputed('{VALIDATE_DIR}/apply/{BEST_EPOCH}')
 >>> embeddings = precomputed(test_file)
 
 # iterate over all embeddings

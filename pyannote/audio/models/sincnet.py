@@ -208,10 +208,12 @@ class SincNet(nn.Module):
 
     """
 
-    frame_crop = 'strict'
+    @staticmethod
+    def get_alignment(**kwargs):
+        return 'strict'
 
     @staticmethod
-    def get_frame_info(sample_rate=16000, kernel_size=[251, 5, 5],
+    def get_resolution(sample_rate=16000, kernel_size=[251, 5, 5],
                        max_pool=[3, 3, 3], **kwargs):
         """
         """

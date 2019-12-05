@@ -29,9 +29,13 @@
 
 import numpy as np
 from collections import deque
-from dlib import count_steps_without_decrease
-from dlib import count_steps_without_decrease_robust
-from dlib import probability_that_sequence_is_increasing
+
+try:
+    import dlib
+    DLIB_NOT_AVAILABLE = False
+except ImportError as e:
+    DLIB_NOT_AVAILABLE = True
+
 from .callback import Callback
 from tqdm import tqdm
 from scipy.signal import convolve
@@ -95,7 +99,7 @@ class BaseSchedulerCallback(Callback):
                           mode='same', method='auto')
 
         # probability that loss has decreased in the last `K` steps.
-        probability = [probability_that_sequence_is_increasing(-losses[i-K:i])
+        probability = [dlib.probability_that_sequence_is_increasing(-losses[i-K:i])
                        if i > K else np.NAN for i in range(len(losses))]
         probability = np.array(probability)
 
@@ -115,7 +119,19 @@ class BaseSchedulerCallback(Callback):
 
     def auto_lr(self, trainer, beta=0.98):
 
-        trainer.save_epoch()
+        # FIXME
+        msg = 'AutoLR is broken since the removal of Checkpoint class.'
+        raise NotImplementedError(msg)
+
+        if DLIB_NOT_AVAILABLE:
+            msg = (
+                '"auto" learning rate is not supported because "dlib" is not '
+                'available. If you would like to contribute a fix, visit '
+                'https://github.com/pyannote/pyannote-audio/issues/223.'
+            )
+            raise NotImplementedError(msg)
+
+        trainer.save_state()
 
         # initialize optimizer with a low learning rate
         for param_group in trainer.optimizer_.param_groups:
@@ -171,7 +187,7 @@ class BaseSchedulerCallback(Callback):
                 break
 
         # reload model using its initial state
-        trainer.load_epoch(trainer.epoch_)
+        trainer.load_state()
 
         lr = self.choose_lr(lrs, losses_smoothened)
 
@@ -252,6 +268,14 @@ class DavisKingScheduler(BaseSchedulerCallback):
         self.factor = factor
         self.patience = patience
 
+        if DLIB_NOT_AVAILABLE:
+            msg = (
+                '"DavisKing" scheduler is not supported because "dlib" is not '
+                'available. If you would like to contribute a fix, visit '
+                'https://github.com/pyannote/pyannote-audio/issues/223.'
+            )
+            raise NotImplementedError(msg)
+
     def on_train_start(self, trainer):
         super().on_train_start(trainer)
         maxlen = 10 * self.patience * trainer.batches_per_epoch_
@@ -265,8 +289,8 @@ class DavisKingScheduler(BaseSchedulerCallback):
         self.losses_.append(loss)
 
         # compute statistics on batch loss trend
-        count = count_steps_without_decrease(self.losses_)
-        count_robust = count_steps_without_decrease_robust(self.losses_)
+        count = dlib.count_steps_without_decrease(self.losses_)
+        count_robust = dlib.count_steps_without_decrease_robust(self.losses_)
 
         # if batch loss hasn't been decreasing for a while
         patience = self.patience * trainer.batches_per_epoch_
@@ -355,3 +379,5 @@ class CyclicScheduler(BaseSchedulerCallback):
         self.momentum = MOMENTUM_MAX - (MOMENTUM_MAX - MOMENTUM_MIN) * rho
 
         self.n_batches_ += 1
+
+        return batch

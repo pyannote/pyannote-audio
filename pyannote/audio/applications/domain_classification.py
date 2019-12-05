@@ -32,7 +32,7 @@ Domain classification
 Usage:
   pyannote-domain-classification train [options] <experiment_dir> <database.task.protocol>
   pyannote-domain-classification validate [options] [--every=<epoch> --chronological] <train_dir> <database.task.protocol>
-  pyannote-domain-classification apply [options] [--step=<step>] <model.pt> <database.task.protocol> <output_dir>
+  pyannote-domain-classification apply [options] [--step=<step>] <validate_dir> <database.task.protocol>
   pyannote-domain-classification -h | --help
   pyannote-domain-classification --version
 
@@ -41,8 +41,8 @@ Common options:
   --database=<database.yml>  Path to pyannote.database configuration file.
   --subset=<subset>          Set subset (train|developement|test).
                              Defaults to "train" in "train" mode. Defaults to
-                             "development" in "validate" mode. Defaults to all subsets in
-                             "apply" mode.
+                             "development" in "validate" mode. Defaults to
+                             "test" in "apply" mode.
   --gpu                      Run on GPUs. Defaults to using CPUs.
   --batch=<size>             Set batch size. Has no effect in "train" mode.
                              [default: 32]
@@ -64,7 +64,8 @@ Common options:
                              models (i.e. the output of "train" mode).
 
 "apply" mode:
-  <model.pt>                 Path to the pretrained model.
+  <validate_dir>             Path to the directory containing validation
+                             results (i.e. the output of "validate" mode).
   --step=<step>              Sliding window step, in seconds.
                              Defaults to 25% of window duration.
 
@@ -83,27 +84,19 @@ Configuration file:
           per_epoch: 1      # 1 day of audio per epoch
           batch_size: 32    # number of sub-sequences per batch
 
-    # use precomputed features (see feature extraction tutorial)
-    feature_extraction:
-       name: Precomputed
-       params:
-          root_dir: tutorials/feature-extraction
-
-    # use the StackedRNN architecture.
-    # see pyannote.audio.labeling.models for more details
+    # use the PyanNet architecture
+    # see pyannote.audio.models for more details
     architecture:
-       name: StackedRNN
+       name: PyanNet
        params:
-         rnn: LSTM
-         recurrent: [16, 16]
-         bidirectional: True
-         pooling: sum
+         rnn:
+            pool: max
 
     # use cyclic learning rate scheduler
     scheduler:
-       name: CyclicScheduler
+       name: ConstantScheduler
        params:
-           learning_rate: auto
+           learning_rate: 0.1
     ...................................................................
 
 "train" mode:
@@ -136,16 +129,11 @@ Configuration file:
     classification accuracy.
 
 "apply" mode:
-    Use the "apply" mode to extract domain classification raw scores.
-    Resulting files can then be used in the following way:
+    Use the "apply" mode to extract domain classification raw scores and and
+    results. This will create the following directory that contains domain
+    classification results:
 
-    >>> from pyannote.audio.features import Precomputed
-    >>> precomputed = Precomputed('<output_dir>')
-
-    >>> from pyannote.database import get_protocol
-    >>> protocol = get_protocol('<database.task.protocol>')
-    >>> first_test_file = next(protocol.test())
-    >>> raw_scores = precomputed(first_test_file)
+        <validate_dir>/apply/<epoch>
 """
 
 from functools import partial
@@ -164,8 +152,6 @@ from sklearn.metrics import confusion_matrix
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-
-
 
 def plot_confusion_matrix(y_true, y_pred, classes,
                           normalize=False,
@@ -189,8 +175,6 @@ def plot_confusion_matrix(y_true, y_pred, classes,
     else:
         print('Confusion matrix, without normalization')
 
-    print(cm)
-
     fig, ax = plt.subplots()
     im = ax.imshow(cm, interpolation='nearest', cmap=cmap)
     ax.figure.colorbar(im, ax=ax)
@@ -208,10 +192,12 @@ def plot_confusion_matrix(y_true, y_pred, classes,
              rotation_mode="anchor")
 
     # Loop over data dimensions and create text annotations.
-    fmt = '.2f' if normalize else 'd'
+    fmt = '.1f' if normalize else 'd'
     thresh = cm.max() / 2.
     for i in range(cm.shape[0]):
         for j in range(cm.shape[1]):
+            if cm[i, j] == 0.:
+                continue
             ax.text(j, i, format(cm[i, j], fmt),
                     ha="center", va="center",
                     color="white" if cm[i, j] > thresh else "black",
@@ -250,8 +236,9 @@ class DomainClassification(BaseLabeling):
             y_true_file.append(y_true)
 
         accuracy = np.mean(np.array(y_true_file) == np.array(y_pred_file))
-        return {'metric': 'accuracy', 'minimize': False, 'value': accuracy}
-
+        return {'metric': 'accuracy',
+                'minimize': False,
+                'value': float(accuracy)}
 
 def main():
     arguments = docopt(__doc__, version='Domain classification')
@@ -263,6 +250,9 @@ def main():
     gpu = arguments['--gpu']
     device = torch.device('cuda') if gpu else torch.device('cpu')
 
+    # HACK to "book" GPU as soon as possible
+    _ = torch.Tensor([0]).to(device)
+
     if arguments['train']:
         experiment_dir = Path(arguments['<experiment_dir>'])
         experiment_dir = experiment_dir.expanduser().resolve(strict=True)
@@ -271,7 +261,7 @@ def main():
             subset = 'train'
 
         # start training at this epoch (defaults to 0)
-        restart = int(arguments['--from'])
+        warm_start = int(arguments['--from'])
 
         # stop training at this epoch (defaults to never stop)
         epochs = arguments['--to']
@@ -284,7 +274,7 @@ def main():
                                            training=True)
         application.device = device
         application.train(protocol_name, subset=subset,
-                          restart=restart, epochs=epochs)
+                          warm_start=warm_start, epochs=epochs)
 
     if arguments['validate']:
 
@@ -323,13 +313,11 @@ def main():
 
     if arguments['apply']:
 
-        model_pt = Path(arguments['<model.pt>'])
-        model_pt = model_pt.expanduser().resolve(strict=True)
+        validate_dir = Path(arguments['<validate_dir>'])
+        validate_dir = validate_dir.expanduser().resolve(strict=True)
 
-        output_dir = Path(arguments['<output_dir>'])
-        output_dir = output_dir.expanduser().resolve(strict=False)
-
-        # TODO. create README file in <output_dir>
+        if subset is None:
+            subset = 'test'
 
         step = arguments['--step']
         if step is not None:
@@ -337,8 +325,8 @@ def main():
 
         batch_size = int(arguments['--batch'])
 
-        application = DomainClassification.from_model_pt(
-            model_pt, db_yml=db_yml, training=False)
+        application = DomainClassification.from_validate_dir(
+            validate_dir, db_yml=db_yml, training=False)
         application.device = device
         application.batch_size = batch_size
-        application.apply(protocol_name, output_dir, step=step, subset=subset)
+        application.apply(protocol_name, step=step, subset=subset)

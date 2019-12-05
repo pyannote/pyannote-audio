@@ -26,16 +26,17 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
+from typing import Optional
+
 
 import torch
 import torch.nn as nn
 
-from . import TASK_MULTI_CLASS_CLASSIFICATION
-from . import TASK_MULTI_LABEL_CLASSIFICATION
-from . import TASK_REGRESSION
-from . import TASK_REPRESENTATION_LEARNING
-
 from .sincnet import SincNet
+from pyannote.audio.train.model import Model
+from pyannote.audio.train.model import Resolution
+from pyannote.audio.train.model import RESOLUTION_CHUNK
+from pyannote.audio.train.model import RESOLUTION_FRAME
 
 
 class RNN(nn.Module):
@@ -46,7 +47,8 @@ class RNN(nn.Module):
     n_features : `int`
         Input feature shape.
     unit : {'LSTM', 'GRU'}, optional
-    hidden_size : `int`, optional
+        Defaults to 'LSTM'.
+    hidden_size : `int`, optional
         Number of features in the hidden state h. Defaults to 16.
     num_layers : `int`, optional
         Number of recurrent layers. Defaults to 1.
@@ -61,7 +63,7 @@ class RNN(nn.Module):
     concatenate : `boolean`, optional
         Concatenate output of each layer instead of using only the last one
         (which is the default behavior).
-    pool : {'sum', 'max', 'last'}, optional
+    pool : {'sum', 'max', 'last', 'x-vector'}, optional
         Temporal pooling strategy. Defaults to no pooling.
     """
 
@@ -181,9 +183,17 @@ class RNN(nn.Module):
 
         elif self.pool == 'last':
             if self.bidirectional:
-                raise NotImplementedError()
-                # return ...
-            output = output[:, -1]
+                output = torch.cat(
+                    hidden.view(self.num_layers, num_directions,
+                                -1, self.hidden_size)[-1],
+                    dim=0)
+            else:
+                output = output[:, -1]
+
+        elif self.pool == 'x-vector':
+            output = torch.cat((torch.mean(output, dim=1),
+                                torch.std(output, dim=1)),
+                               dim=1)
 
         if return_intermediate:
             return output, intermediate
@@ -198,6 +208,8 @@ class RNN(nn.Module):
                 dimension *= 2
             if self.concatenate:
                 dimension *= self.num_layers
+            if self.pool == 'x-vector':
+                dimension *= 2
             return dimension
         return locals()
     dimension = property(**dimension())
@@ -207,7 +219,6 @@ class RNN(nn.Module):
         if self.bidirectional:
             dimension *= 2
         return dimension
-
 
 
 class FF(nn.Module):
@@ -256,7 +267,9 @@ class FF(nn.Module):
     def dimension():
         doc = "Output dimension."
         def fget(self):
-            return self.hidden_size[-1]
+            if self.hidden_size:
+                return self.hidden_size[-1]
+            return self.n_features
         return locals()
     dimension = property(**dimension())
 
@@ -307,47 +320,112 @@ class Embedding(nn.Module):
     dimension = property(**dimension())
 
 
-class PyanNet(nn.Module):
+
+class PyanNet(Model):
     """waveform -> SincNet -> RNN [-> merge] [-> time_pool] -> FC -> output
 
     Parameters
     ----------
     sincnet : `dict`, optional
+        SincNet parameters. Defaults to `pyannote.audio.models.sincnet.SincNet`
+        default parameters. Use {'skip': True} to use handcrafted features
+        instead of waveforms: [ waveform -> SincNet -> RNN -> ... ] then
+        becomes [ features -> RNN -> ...].
     rnn : `dict`, optional
+        Recurrent network parameters. Defaults to `RNN` default parameters.
     ff : `dict`, optional
+        Feed-forward layers parameters. Defaults to `FF` default parameters.
     embedding : `dict`, optional
+        Embedding parameters. Defaults to `Embedding` default parameters. This
+        only has effect when model is used for representation learning.
     """
 
-    frame_crop = SincNet.frame_crop
+    @staticmethod
+    def get_alignment(sincnet=None, **kwargs):
+        """
+        """
+
+        if sincnet is None:
+            sincnet = dict()
+
+        if sincnet.get('skip', False):
+            return None
+
+        return SincNet.get_alignment(**sincnet)
 
     supports_packed = False
 
     @staticmethod
-    def get_frame_info(**kwargs):
-        return SincNet.get_frame_info(**kwargs)
+    def get_resolution(sincnet : Optional[dict] = None,
+                       rnn : Optional[dict] = None,
+                       **kwargs) -> Resolution:
+        """Get sliding window used for feature extraction
 
-    def __init__(self, specifications, sincnet=None, rnn=None, ff=None,
-                 embedding=None):
-        super().__init__()
+        Parameters
+        ----------
+        sincnet : dict, optional
+        rnn : dict, optional
 
-        self.specifications = specifications
-        self.task_ = specifications['task']
+        Returns
+        -------
+        sliding_window : `pyannote.core.SlidingWindow` or {`window`, `frame`}
+            Returns RESOLUTION_CHUNK if model returns one vector per input
+            chunk, RESOLUTION_FRAME if model returns one vector per input
+            frame, and specific sliding window otherwise.
+        """
 
-        n_features = specifications['X']['dimension']
+        if rnn is None:
+            rnn = {'pool': None}
 
-        if n_features != 1:
-            msg = (
-                f'PyanNet only supports mono waveforms. '
-                f'Here, waveform has {n_features} channels.'
-            )
-            raise ValueError(msg)
+        if rnn.get('pool', None) is not None:
+            return RESOLUTION_CHUNK
+
+        if sincnet is None:
+            sincnet = {'skip': False}
+
+        if sincnet.get('skip', False):
+            return RESOLUTION_FRAME
+
+        return SincNet.get_resolution(**sincnet)
+
+    def init(self,
+             sincnet : Optional[dict] = None,
+             rnn : Optional[dict] = None,
+             ff : Optional[dict] = None,
+             embedding : Optional[dict] = None):
+        """waveform -> SincNet -> RNN [-> merge] [-> time_pool] -> FC -> output
+
+        Parameters
+        ----------
+        sincnet : `dict`, optional
+            SincNet parameters. Defaults to `pyannote.audio.models.sincnet.SincNet`
+            default parameters. Use {'skip': True} to use handcrafted features
+            instead of waveforms: [ waveform -> SincNet -> RNN -> ... ] then
+            becomes [ features -> RNN -> ...].
+        rnn : `dict`, optional
+            Recurrent network parameters. Defaults to `RNN` default parameters.
+        ff : `dict`, optional
+            Feed-forward layers parameters. Defaults to `FF` default parameters.
+        embedding : `dict`, optional
+            Embedding parameters. Defaults to `Embedding` default parameters. This
+            only has effect when model is used for representation learning.
+        """
+
+        n_features = self.n_features
 
         if sincnet is None:
             sincnet = dict()
         self.sincnet = sincnet
-        self.sincnet_ = SincNet(**sincnet)
-        self.frame_info_ = self.sincnet_.get_frame_info(**sincnet)
-        n_features = self.sincnet_.dimension
+
+        if not sincnet.get('skip', False):
+            if n_features != 1:
+                msg = (
+                    f'SincNet only supports mono waveforms. '
+                    f'Here, waveform has {n_features} channels.'
+                )
+                raise ValueError(msg)
+            self.sincnet_ = SincNet(**sincnet)
+            n_features = self.sincnet_.dimension
 
         if rnn is None:
             rnn = dict()
@@ -361,36 +439,24 @@ class PyanNet(nn.Module):
         self.ff_ = FF(n_features, **ff)
         n_features = self.ff_.dimension
 
-        if self.task_ == TASK_REPRESENTATION_LEARNING:
+        if self.task.is_representation_learning:
             if embedding is None:
                 embedding = dict()
             self.embedding = embedding
             self.embedding_ = Embedding(n_features, **embedding)
             return
 
-        n_classes = len(specifications['y']['classes'])
-        self.linear_ = nn.Linear(n_features, n_classes, bias=True)
-
-        if self.task_ == TASK_MULTI_CLASS_CLASSIFICATION:
-            self.activation_ = nn.LogSoftmax(dim=-1)
-
-        elif self.task_ == TASK_MULTI_LABEL_CLASSIFICATION:
-            self.activation_ = nn.Sigmoid()
-
-        elif self.task_ == TASK_REGRESSION:
-            self.activation_ = lambda x: x
-
-        else:
-            msg = f'Unsupported task type: {self.task_}'
-            raise NotImplementedError(msg)
+        self.linear_ = nn.Linear(n_features, len(self.classes), bias=True)
+        self.activation_ = self.task.default_activation
 
     def forward(self, waveforms, return_intermediate=None):
-        """
+        """Forward pass
 
         Parameters
         ----------
-        waveforms : (batch_size, n_samples, 1)
-            Batch of waveforms
+        waveforms : (batch_size, n_samples, 1) `torch.Tensor`
+            Batch of waveforms. In case SincNet is skipped, a tensor with shape
+            (batch_size, n_samples, n_features) is expected.
         return_intermediate : `int`, optional
             Index of RNN layer. Returns RNN intermediate hidden state.
             Defaults to only return the final output.
@@ -403,19 +469,28 @@ class PyanNet(nn.Module):
             Intermediate network output (only when `return_intermediate`
             is provided).
         """
-        output = self.sincnet_(waveforms)
+
+        if self.sincnet.get('skip', False):
+            output = waveforms
+        else:
+            output = self.sincnet_(waveforms)
 
         if return_intermediate is None:
             output = self.rnn_(output)
         else:
-            # get RNN final AND intermediate outputs
-            output, intermediate = self.rnn_(output, return_intermediate=True)
-            # only keep hidden state of requested layer
-            intermediate = intermediate[return_intermediate]
+            if return_intermediate == 0:
+                intermediate = output
+                output = self.rnn_(output)
+            else:
+                return_intermediate -= 1
+                # get RNN final AND intermediate outputs
+                output, intermediate = self.rnn_(output, return_intermediate=True)
+                # only keep hidden state of requested layer
+                intermediate = intermediate[return_intermediate]
 
         output = self.ff_(output)
 
-        if self.task_ == TASK_REPRESENTATION_LEARNING:
+        if self.task.is_representation_learning:
             return self.embedding_(output)
 
         output = self.linear_(output)
@@ -427,61 +502,12 @@ class PyanNet(nn.Module):
 
     @property
     def dimension(self):
-        if self.task_ == TASK_REPRESENTATION_LEARNING:
+        if self.task.is_representation_learning:
             return self.embedding_.dimension
-        msg = (
-            "Only representation learning models "
-            "have a 'dimension' attribute."
-        )
-        raise NotImplementedError(msg)
+
+        return Model.dimension.fget(self)
 
     def intermediate_dimension(self, layer):
-        return self.rnn_.intermediate_dimension(layer)
-
-    @property
-    def classes(self):
-        if self.task_ != TASK_REPRESENTATION_LEARNING:
-            return self.specifications['y']['classes']
-        msg = (
-            "Representation learning models "
-            "do not have a 'classes' attribute."
-        )
-        raise NotImplementedError(msg)
-
-    @property
-    def n_classes(self):
-        if self.task_ != TASK_REPRESENTATION_LEARNING:
-            return len(self.specifications['y']['classes'])
-        msg = (
-            "Representation learning models "
-            "do not have a 'n_classes' attribute."
-        )
-        raise NotImplementedError(msg)
-
-
-class ClopiNet(PyanNet):
-
-    def __init__(self, specifications):
-
-        rnn = {
-            'unit': 'LSTM',
-            'hidden_size': 256,
-            'num_layers': 3,
-            'bidirectional': True,
-            'concatenate': True,
-            'pool': 'sum',
-        }
-
-        ff = {
-            'hidden_size': [256, ],
-        }
-
-        embedding = {
-            'batch_normalize': True,
-            'unit_normalize': False,
-        }
-
-        super().__init__(specifications,
-                         rnn=rnn,
-                         ff=ff,
-                         embedding=embedding)
+        if layer == 0:
+            return self.sincnet_.dimension
+        return self.rnn_.intermediate_dimension(layer-1)

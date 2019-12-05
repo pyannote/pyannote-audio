@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2017-2018 CNRS
+# Copyright (c) 2017-2019 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -32,7 +32,7 @@ Speaker embedding
 Usage:
   pyannote-speaker-embedding train [options] <experiment_dir> <database.task.protocol>
   pyannote-speaker-embedding validate [options] [--duration=<duration> --every=<epoch> --chronological --purity=<purity> --metric=<metric>] <train_dir> <database.task.protocol>
-  pyannote-speaker-embedding apply [options] [--duration=<duration> --step=<step>] <model.pt> <database.task.protocol> <output_dir>
+  pyannote-speaker-embedding apply [options] [--duration=<duration> --step=<step>] <validate_dir> <database.task.protocol>
   pyannote-speaker-embedding -h | --help
   pyannote-speaker-embedding --version
 
@@ -41,8 +41,8 @@ Common options:
   --database=<database.yml>  Path to pyannote.database configuration file.
   --subset=<subset>          Set subset (train|developement|test).
                              Defaults to "train" in "train" mode. Defaults to
-                             "development" in "validate" mode. Defaults to all subsets in
-                             "apply" mode.
+                             "development" in "validate" mode. Defaults to
+                             "test" in "apply" mode.
   --gpu                      Run on GPUs. Defaults to using CPUs.
   --batch=<size>             Set batch size. Has no effect in "train" mode.
                              [default: 32]
@@ -71,7 +71,8 @@ Common options:
                              in "config.yml" configuration file.
 
 "apply" mode:
-  <model.pt>                 Path to the pretrained model.
+  <validate_dir>             Path to the directory containing validation
+                             results (i.e. the output of "validate" mode).
   --step=<step>              Sliding window step, in seconds.
                              Defaults to 25% of window duration.
 
@@ -174,6 +175,7 @@ import numpy as np
 from pathlib import Path
 from docopt import docopt
 from functools import partial
+from typing import Optional
 
 from .base import Application
 
@@ -203,35 +205,13 @@ from pyannote.audio.embedding.extraction import SequenceEmbedding
 
 class SpeakerEmbedding(Application):
 
-    def __init__(self, experiment_dir, db_yml=None, training=False):
+    @property
+    def config_main_section(self):
+        return 'approach'
 
-        super(SpeakerEmbedding, self).__init__(
-            experiment_dir, db_yml=db_yml, training=training)
-
-        # training approach
-        Approach = get_class_by_name(
-            self.config_['approach']['name'],
-            default_module_name='pyannote.audio.embedding.approaches')
-        self.task_ = Approach(
-            **self.config_['approach'].get('params', {}))
-
-        # architecture
-        Architecture = get_class_by_name(
-            self.config_['architecture']['name'],
-            default_module_name='pyannote.audio.embedding.models')
-        params = self.config_['architecture'].get('params', {})
-        self.get_model_ = partial(Architecture, **params)
-
-        if hasattr(Architecture, 'get_frame_info'):
-            self.frame_info_ = Architecture.get_frame_info(**params)
-        else:
-            self.frame_info_ = None
-
-        if hasattr(Architecture, 'frame_crop'):
-            self.frame_crop_ = Architecture.frame_crop
-        else:
-            self.frame_crop_ = None
-
+    @property
+    def config_default_module(self):
+        return 'pyannote.audio.embedding.approaches'
 
     def validate_init(self, protocol_name, subset='development'):
 
@@ -383,7 +363,7 @@ class SpeakerEmbedding(Application):
 
         return {'metric': 'equal_error_rate',
                 'minimize': True,
-                'value': eer}
+                'value': float(eer)}
 
 
     def _validate_epoch_diarization(self, epoch, protocol_name,
@@ -459,7 +439,7 @@ class SpeakerEmbedding(Application):
                 if len(x_) < 1:
                     x_ = embedding.crop(turn, mode='loose')
                 if len(x_) < 1:
-                    msg = (f'No embedding for {turn:s} in {uri:s}.')
+                    msg = (f'No embedding for {turn} in {uri:s}.')
                     raise ValueError(msg)
 
                 # each speech turn is represented by its average embedding
@@ -514,13 +494,15 @@ class SpeakerEmbedding(Application):
                     best_coverage = coverage
                     best_threshold = current_threshold
 
+        value = best_coverage if best_coverage else purity - self.purity
         return {'metric': f'coverage@{self.purity:.2f}purity',
                 'minimize': False,
-                'value': best_coverage if best_coverage \
-                         else purity - self.purity}
+                'value': float(value)}
 
 
-    def apply(self, protocol_name, output_dir, step=None, subset=None):
+    def apply(self, protocol_name: str,
+                    step: Optional[float] = None,
+                    subset: Optional[str] = "test"):
 
         model = self.model_.to(self.device)
         model.eval()
@@ -529,15 +511,22 @@ class SpeakerEmbedding(Application):
         if step is None:
             step = 0.25 * duration
 
+        output_dir = Path(self.APPLY_DIR.format(
+            validate_dir=self.validate_dir_,
+            epoch=self.epoch_))
+
         # do not use memmap as this would lead to too many open files
         if isinstance(self.feature_extraction_, Precomputed):
             self.feature_extraction_.use_memmap = False
 
         # initialize embedding extraction
         sequence_embedding = SequenceEmbedding(
-            model=model, feature_extraction=self.feature_extraction_,
-            duration=duration, step=step, batch_size=self.batch_size,
+            model=model,
+            feature_extraction=self.feature_extraction_,
+            duration=duration, step=step,
+            batch_size=self.batch_size,
             device=self.device)
+
         sliding_window = sequence_embedding.sliding_window
         dimension = sequence_embedding.dimension
 
@@ -552,16 +541,10 @@ class SpeakerEmbedding(Application):
         protocol = get_protocol(protocol_name, progress=True,
                                 preprocessors=self.preprocessors_)
 
-        if subset is None:
-            files = FileFinder.protocol_file_iter(protocol,
-                                                  extra_keys=['audio'])
-        else:
-            files = getattr(protocol, subset)()
-
-        for current_file in files:
-
+        for current_file in getattr(protocol, subset)():
             fX = sequence_embedding(current_file)
             precomputed.dump(current_file, fX)
+
 
 def main():
 
@@ -583,7 +566,7 @@ def main():
             subset = 'train'
 
         # start training at this epoch (defaults to 0)
-        restart = int(arguments['--from'])
+        warm_start = int(arguments['--from'])
 
         # stop training at this epoch (defaults to never stop)
         epochs = arguments['--to']
@@ -596,7 +579,7 @@ def main():
                                        training=True)
         application.device = device
         application.train(protocol_name, subset=subset,
-                          restart=restart, epochs=epochs)
+                          warm_start=warm_start, epochs=epochs)
 
     if arguments['validate']:
 
@@ -653,13 +636,11 @@ def main():
 
     if arguments['apply']:
 
-        model_pt = Path(arguments['<model.pt>'])
-        model_pt = model_pt.expanduser().resolve(strict=True)
+        validate_dir = Path(arguments['<validate_dir>'])
+        validate_dir = validate_dir.expanduser().resolve(strict=True)
 
-        output_dir = Path(arguments['<output_dir>'])
-        output_dir = output_dir.expanduser().resolve(strict=False)
-
-        # TODO. create README file in <output_dir>
+        if subset is None:
+            subset = 'test'
 
         step = arguments['--step']
         if step is not None:
@@ -667,8 +648,8 @@ def main():
 
         batch_size = int(arguments['--batch'])
 
-        application = SpeakerEmbedding.from_model_pt(
-            model_pt, db_yml=db_yml, training=False)
+        application = SpeakerEmbedding.from_validate_dir(
+            validate_dir, db_yml=db_yml, training=False)
         application.device = device
         application.batch_size = batch_size
 
@@ -683,4 +664,4 @@ def main():
             duration = float(duration)
         application.duration = duration
 
-        application.apply(protocol_name, output_dir, step=step, subset=subset)
+        application.apply(protocol_name, step=step, subset=subset)

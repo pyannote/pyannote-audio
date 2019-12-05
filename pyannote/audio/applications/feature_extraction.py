@@ -54,7 +54,7 @@ Configuration file:
 
     ................... <experiment_dir>/config.yml ...................
     feature_extraction:
-       name: YaafeMFCC
+       name: LibrosaMFCC
        params:
           e: False                   # this experiments relies
           De: True                   # on 11 MFCC coefficients
@@ -89,7 +89,7 @@ def init_feature_extraction(experiment_dir):
     # load configuration file
     config_yml = experiment_dir + '/config.yml'
     with open(config_yml, 'r') as fp:
-        config = yaml.load(fp)
+        config = yaml.load(fp, Loader=yaml.SafeLoader)
 
     FeatureExtraction = get_class_by_name(
         config['feature_extraction']['name'],
@@ -155,7 +155,7 @@ def extract(protocol_name, file_finder, experiment_dir,
     # load configuration file
     config_yml = experiment_dir + '/config.yml'
     with open(config_yml, 'r') as fp:
-        config = yaml.load(fp)
+        config = yaml.load(fp, Loader=yaml.SafeLoader)
 
     FeatureExtraction = get_class_by_name(
         config['feature_extraction']['name'],

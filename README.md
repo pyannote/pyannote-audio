@@ -14,6 +14,8 @@ Neural building blocks for speaker diarization:
 $ conda create --name pyannote python=3.6
 $ source activate pyannote
 
+# install pytorch following official instructions from https://pytorch.org/
+
 # install from source in the "develop" branch
 $ git clone https://github.com/pyannote/pyannote-audio.git
 $ cd pyannote-audio
@@ -82,5 +84,5 @@ If you use `pyannote.audio` please use the following citations.
   
 ## Documentation
 
-Part of the API is described in [this](tutorials/models/pretrained) tutorial.  
+Part of the API is described in [this](tutorials/own_data/pretrained) tutorial.  
 Other than that, there is still a lot to do (contribute?) documentation-wise...

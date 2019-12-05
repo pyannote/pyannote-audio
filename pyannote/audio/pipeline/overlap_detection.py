@@ -33,14 +33,18 @@ import numpy as np
 from pyannote.pipeline import Pipeline
 from pyannote.pipeline.parameter import Uniform
 
+from pyannote.core import Timeline
 from pyannote.core import Annotation
 from pyannote.core import SlidingWindowFeature
 
-from pyannote.audio.signal import Binarize
+from pyannote.database import get_annotated
+
+from pyannote.audio.utils.signal import Binarize
 from pyannote.audio.features import Precomputed
 
 from pyannote.metrics.detection import DetectionPrecision
 from pyannote.metrics.detection import DetectionRecall
+
 
 class OverlapDetection(Pipeline):
     """Overlap detection pipeline
@@ -50,7 +54,7 @@ class OverlapDetection(Pipeline):
     scores : `Path`, optional
         Path to precomputed scores on disk.
     precision : `float`, optional
-        Target detection precision. Defaults to 0.8.
+        Target detection precision. Defaults to 0.9.
 
     Hyper-parameters
     ----------------
@@ -63,7 +67,7 @@ class OverlapDetection(Pipeline):
     """
 
     def __init__(self, scores: Optional[Path] = None,
-                       precision: Optional[Path] = 0.8):
+                       precision: Optional[Path] = 0.9):
         super().__init__()
 
         self.scores = scores
@@ -156,7 +160,7 @@ class OverlapDetection(Pipeline):
         recall = DetectionRecall()
 
         # build overlap reference
-        reference = Timeline(uri=uri)
+        reference = Timeline(uri=current_file['uri'])
         turns = current_file['annotation']
         for track1, track2 in turns.co_iter(turns):
             if track1 == track2:
