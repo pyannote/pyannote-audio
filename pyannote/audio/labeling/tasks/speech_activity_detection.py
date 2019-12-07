@@ -181,6 +181,7 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
         super().__init__(**kwargs)
         self.domain = domain
         self.attachment = attachment
+        self.alpha = alpha
 
         if rnn is None:
             rnn = dict()
@@ -270,7 +271,7 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
 
         super().save_epoch(epoch=epoch)
     
-    def _batch_loss(self, batch):
+    def _batch_loss(self, batch, gradient_reversal=False):
         """Helper function to performs the common operations required for the batch_loss function 
 
         Parameters
@@ -282,7 +283,7 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
         Returns
         -------
         loss : Function f(input, target, weight=None) -> loss value
-        domain_target : `torch.Tensor`
+        TO DO 
         """
         X = torch.tensor(batch['X'],
                          dtype=torch.float32,
@@ -307,7 +308,23 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
             dtype=torch.int64,
             device=self.device_)
 
-        return loss, domain_target, intermediate
+        if gradient_reversal:
+            domain_scores = self.activation_(self.domain_classifier_(self.gradient_reversal_(intermediate)))
+        else 
+            domain_scores = self.activation_(self.domain_classifier_(intermediate))
+
+        if self.domain_loss == "MSELoss":
+            # One hot encode domain_target for Mean Squared Error Loss
+            nb_domains = domain_scores.shape[1]
+            identity_mat = torch.sparse.torch.eye(nb_domains, device=self.device_)
+            domain_target = identity_mat.index_select(dim=0, index=domain_target)
+
+        
+        domain_loss = self.domain_loss_(domain_scores, domain_target)
+
+        return {'loss': loss + self.alpha * domain_loss,
+                'loss_domain': domain_loss,
+                'loss_task': loss}
 
     def batch_loss(self, batch):
         """Compute loss for current `batch`
@@ -324,15 +341,17 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
             ['loss'] (`torch.Tensor`) : Loss
         """
 
-        loss, domain_target, intermediate = self._batch_loss(batch)
+        #domain_scores = self.activation_(self.domain_classifier_(intermediate)) 
 
-        domain_scores = self.activation_(self.domain_classifier_(intermediate))
+        return self._batch_loss(batch)
 
-        domain_loss = self.domain_loss_(domain_scores, domain_target)
+        
 
-        return {'loss': loss + domain_loss,
-                'loss_domain': domain_loss,
-                'loss_task': loss}
+        #domain_loss = self.domain_loss_(domain_scores, domain_target)
+
+        # return {'loss': loss + self.alpha * domain_loss,
+        #         'loss_domain': domain_loss,
+        #         'loss_task': loss}
 
 
 class DomainAdversarialSpeechActivityDetection(DomainAwareSpeechActivityDetection):
@@ -351,8 +370,7 @@ class DomainAdversarialSpeechActivityDetection(DomainAwareSpeechActivityDetectio
     """
 
     def __init__(self, domain='domain', attachment=-1, alpha=1., **kwargs):
-        super().__init__(domain=domain, attachment=attachment, **kwargs)
-        self.alpha = alpha
+        super().__init__(domain=domain, attachment=attachment, alpha=alpha, **kwargs)
         self.gradient_reversal_ = GradientReversal()
 
     def batch_loss(self, batch):
@@ -370,19 +388,12 @@ class DomainAdversarialSpeechActivityDetection(DomainAwareSpeechActivityDetectio
             ['loss'] (`torch.Tensor`) : Loss
         """
 
-        loss, domain_target, intermediate = super()._batch_loss(batch)
+        return super()._batch_loss(batch, gradient_reversal=True)
 
-        domain_scores = self.activation_(self.domain_classifier_(
-            self.gradient_reversal_(intermediate)))
+        
 
-        if self.domain_loss == "MSELoss":
-            # One hot encode domain_target for Mean Squared Error Loss
-            nb_domains = domain_scores.shape[1]
-            identity_mat = torch.sparse.torch.eye(nb_domains, device=self.device_)
-            domain_target = identity_mat.index_select(dim=0, index=domain_target)
+        
 
-        domain_loss = self.domain_loss_(domain_scores, domain_target)
-
-        return {'loss': loss + self.alpha * domain_loss,
-                'loss_domain': domain_loss,
-                'loss_task': loss}
+        # return {'loss': loss + self.alpha * domain_loss,
+        #         'loss_domain': domain_loss,
+        #         'loss_task': loss}
