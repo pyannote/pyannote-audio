@@ -358,7 +358,7 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection, DomainBranchSp
 
         #domain_scores = self.activation_(self.domain_classifier_(intermediate)) 
 
-        return super(DomainBranchSpeechActivityDetection)._batch_loss(batch)
+        return super(DomainBranchSpeechActivityDetection, self)._batch_loss(batch)
         #return self._batch_loss(batch)
 
         
@@ -404,7 +404,7 @@ class DomainAdversarialSpeechActivityDetection(DomainAwareSpeechActivityDetectio
             ['loss'] (`torch.Tensor`) : Loss
         """
 
-        return super()._batch_loss(batch)
+        return super(DomainBranchSpeechActivityDetection, self)._batch_loss(batch)
 
         
 
