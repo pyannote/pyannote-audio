@@ -175,7 +175,7 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
     DOMAIN_PT = '{log_dir}/weights/{epoch:04d}.domain.pt'
 
     def __init__(self, 
-                 domain='domain', attachment=-1, 
+                 domain='domain', attachment=-1, alpha=1.,
                  rnn=None, domain_loss="NLLLoss", 
                  **kwargs):
         super().__init__(**kwargs)
