@@ -339,7 +339,7 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection, DomainBranchSp
 
     def get_domain_scores(self, intermediate):
         print("JAI ÉTÉ DANS L'ENFANNNNNNNNNNNNNNNT AWARE!!!!!!!!!!!!")
-        return domain_scores = self.activation_(self.domain_classifier_(intermediate))
+        return self.activation_(self.domain_classifier_(intermediate))
 
     def batch_loss(self, batch):
         """Compute loss for current `batch`
