@@ -310,7 +310,7 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
 
         if gradient_reversal:
             domain_scores = self.activation_(self.domain_classifier_(self.gradient_reversal_(intermediate)))
-        else 
+        else:
             domain_scores = self.activation_(self.domain_classifier_(intermediate))
 
         if self.domain_loss == "MSELoss":
