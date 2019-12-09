@@ -393,6 +393,5 @@ class DomainAdversarialSpeechActivityDetection(DomainAwareSpeechActivityDetectio
         
 
     def get_domain_scores(self, intermediate):
-        print("JAI ÉTÉ DANS L'ENFANNNNNNNNNNNNNNNT ADVERSARIAL!!!!!!!!!!!!")
         return self.activation_(self.domain_classifier_(self.gradient_reversal_(intermediate)))
 
