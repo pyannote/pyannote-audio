@@ -202,7 +202,6 @@ class DomainBranchSpeechActivityDetection(ABC):
             nb_domains = domain_scores.shape[1]
             identity_mat = torch.sparse.torch.eye(nb_domains, device=self.device_)
             domain_target = identity_mat.index_select(dim=0, index=domain_target)
-
         
         domain_loss = self.domain_loss_(domain_scores, domain_target)
 
@@ -389,8 +388,6 @@ class DomainAdversarialSpeechActivityDetection(DomainAwareSpeechActivityDetectio
         """
 
         return super()._batch_loss(batch)
-
-        
 
     def get_domain_scores(self, intermediate):
         return self.activation_(self.domain_classifier_(self.gradient_reversal_(intermediate)))
