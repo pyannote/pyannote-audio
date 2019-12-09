@@ -160,61 +160,61 @@ class DomainBranchSpeechActivityDetection(ABC):
         pass
 
     def _batch_loss(self, batch):
-    """Helper function to performs the common operations required for the batch_loss function 
+        """Helper function to performs the common operations required for the batch_loss function 
 
-    Parameters
-    ----------
-    batch : `dict`
-        ['X'] (`numpy.ndarray`)
-        ['y'] (`numpy.ndarray`)
+        Parameters
+        ----------
+        batch : `dict`
+            ['X'] (`numpy.ndarray`)
+            ['y'] (`numpy.ndarray`)
 
-    Returns
-    -------
-    loss : Function f(input, target, weight=None) -> loss value
-    TO DO 
-    """
-    X = torch.tensor(batch['X'],
-                     dtype=torch.float32,
-                     device=self.device_)
-    fX, intermediate = self.model_(X, return_intermediate=self.attachment)
+        Returns
+        -------
+        loss : Function f(input, target, weight=None) -> loss value
+        TO DO 
+        """
+        X = torch.tensor(batch['X'],
+                         dtype=torch.float32,
+                         device=self.device_)
+        fX, intermediate = self.model_(X, return_intermediate=self.attachment)
 
-    # speech activity detection
-    fX = fX.view((-1, self.n_classes_))
-    target = torch.tensor(
-        batch['y'],
-        dtype=torch.int64,
-        device=self.device_).contiguous().view((-1, ))
+        # speech activity detection
+        fX = fX.view((-1, self.n_classes_))
+        target = torch.tensor(
+            batch['y'],
+            dtype=torch.int64,
+            device=self.device_).contiguous().view((-1, ))
 
-    weight = self.weight
-    if weight is not None:
-        weight = weight.to(device=self.device_)
-    loss = self.loss_func_(fX, target, weight=weight)
+        weight = self.weight
+        if weight is not None:
+            weight = weight.to(device=self.device_)
+        loss = self.loss_func_(fX, target, weight=weight)
 
-    # domain classification
-    domain_target = torch.tensor(
-        batch[self.domain],
-        dtype=torch.int64,
-        device=self.device_)
+        # domain classification
+        domain_target = torch.tensor(
+            batch[self.domain],
+            dtype=torch.int64,
+            device=self.device_)
 
-    domain_scores = self.get_domain_scores(intermediate)
-    
-    # if gradient_reversal:
-    #     domain_scores = self.activation_(self.domain_classifier_(self.gradient_reversal_(intermediate)))
-    # else:
-    #     domain_scores = self.activation_(self.domain_classifier_(intermediate))
+        domain_scores = self.get_domain_scores(intermediate)
+        
+        # if gradient_reversal:
+        #     domain_scores = self.activation_(self.domain_classifier_(self.gradient_reversal_(intermediate)))
+        # else:
+        #     domain_scores = self.activation_(self.domain_classifier_(intermediate))
 
-    if self.domain_loss == "MSELoss":
-        # One hot encode domain_target for Mean Squared Error Loss
-        nb_domains = domain_scores.shape[1]
-        identity_mat = torch.sparse.torch.eye(nb_domains, device=self.device_)
-        domain_target = identity_mat.index_select(dim=0, index=domain_target)
+        if self.domain_loss == "MSELoss":
+            # One hot encode domain_target for Mean Squared Error Loss
+            nb_domains = domain_scores.shape[1]
+            identity_mat = torch.sparse.torch.eye(nb_domains, device=self.device_)
+            domain_target = identity_mat.index_select(dim=0, index=domain_target)
 
-    
-    domain_loss = self.domain_loss_(domain_scores, domain_target)
+        
+        domain_loss = self.domain_loss_(domain_scores, domain_target)
 
-    return {'loss': loss + self.alpha * domain_loss,
-            'loss_domain': domain_loss,
-            'loss_task': loss}
+        return {'loss': loss + self.alpha * domain_loss,
+                'loss_domain': domain_loss,
+                'loss_task': loss}
 
 class DomainAwareSpeechActivityDetection(SpeechActivityDetection, DomainBranchSpeechActivityDetection):
     """Domain-aware speech activity detection
