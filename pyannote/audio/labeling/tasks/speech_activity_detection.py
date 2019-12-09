@@ -160,7 +160,7 @@ class DomainBranchSpeechActivityDetection(ABC):
         pass
 
     def _batch_loss(self, batch):
-        """Helper function to performs the common operations required for the batch_loss function 
+        """Helper function to compute loss for current `batch`
 
         Parameters
         ----------
@@ -171,7 +171,6 @@ class DomainBranchSpeechActivityDetection(ABC):
         Returns
         -------
         loss : Function f(input, target, weight=None) -> loss value
-        TO DO 
         """
         X = torch.tensor(batch['X'],
                          dtype=torch.float32,
@@ -197,11 +196,6 @@ class DomainBranchSpeechActivityDetection(ABC):
             device=self.device_)
 
         domain_scores = self.get_domain_scores(intermediate)
-        
-        # if gradient_reversal:
-        #     domain_scores = self.activation_(self.domain_classifier_(self.gradient_reversal_(intermediate)))
-        # else:
-        #     domain_scores = self.activation_(self.domain_classifier_(intermediate))
 
         if self.domain_loss == "MSELoss":
             # One hot encode domain_target for Mean Squared Error Loss
@@ -338,7 +332,6 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection, DomainBranchSp
 
 
     def get_domain_scores(self, intermediate):
-        print("JAI ÉTÉ DANS L'ENFANNNNNNNNNNNNNNNT AWARE!!!!!!!!!!!!")
         return self.activation_(self.domain_classifier_(intermediate))
 
     def batch_loss(self, batch):
@@ -356,18 +349,9 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection, DomainBranchSp
             ['loss'] (`torch.Tensor`) : Loss
         """
 
-        #domain_scores = self.activation_(self.domain_classifier_(intermediate)) 
-
         return super()._batch_loss(batch)
-        #return self._batch_loss(batch)
 
         
-
-        #domain_loss = self.domain_loss_(domain_scores, domain_target)
-
-        # return {'loss': loss + self.alpha * domain_loss,
-        #         'loss_domain': domain_loss,
-        #         'loss_task': loss}
 
 
 class DomainAdversarialSpeechActivityDetection(DomainAwareSpeechActivityDetection):
@@ -412,6 +396,3 @@ class DomainAdversarialSpeechActivityDetection(DomainAwareSpeechActivityDetectio
         print("JAI ÉTÉ DANS L'ENFANNNNNNNNNNNNNNNT ADVERSARIAL!!!!!!!!!!!!")
         return self.activation_(self.domain_classifier_(self.gradient_reversal_(intermediate)))
 
-        # return {'loss': loss + self.alpha * domain_loss,
-        #         'loss_domain': domain_loss,
-        #         'loss_task': loss}
