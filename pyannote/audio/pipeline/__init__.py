@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2017-2018 CNRS
+# Copyright (c) 2017-2019 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -34,7 +34,8 @@ from .speech_activity_detection import SpeechActivityDetection
 from .overlap_detection import OverlapDetection
 from .speech_turn_segmentation import SpeechTurnSegmentation
 from .speaker_diarization import SpeakerDiarization
-try :
+try:
     from .resegmentation import Resegmentation
 except ModuleNotFoundError as e:
-    print(e)
+    msg = f'Resegmentation module is not available: {e}'
+    print(msg)

@@ -461,7 +461,7 @@ class SpeakerEmbedding(Application):
                 if len(x_) < 1:
                     x_ = embedding.crop(turn, mode='loose')
                 if len(x_) < 1:
-                    msg = (f'No embedding for {turn:s} in {uri:s}.')
+                    msg = (f'No embedding for {turn} in {uri:s}.')
                     raise ValueError(msg)
 
                 # each speech turn is represented by its average embedding
@@ -515,11 +515,10 @@ class SpeakerEmbedding(Application):
                 if coverage > best_coverage:
                     best_coverage = coverage
                     best_threshold = current_threshold
-
+        value = best_coverage if best_coverage else purity - self.purity
         return {'metric': f'coverage@{self.purity:.2f}purity',
                 'minimize': False,
-                'value': best_coverage if best_coverage \
-                         else purity - self.purity}
+                'value': float(value)}
 
 
     def apply(self, protocol_name: str,
