@@ -68,8 +68,9 @@ class SpeechTurnSegmentation(Pipeline):
     sad_scores : `Path` or 'oracle'
         Path to precomputed speech activity detection scores.
         Use 'oracle' to assume perfect speech activity detection.
-    scd_scores : `Path`
-        Path to precomputed speaker change detection scores
+    scd_scores : `Path` or 'oracle'
+        Path to precomputed SCD scores on disk.
+        Use 'oracle' to assume perfect speaker change detection.
     non_speech : `bool`
         Mark non-speech regions as speaker change. Defaults to True.
     purity : `float`, optional
