@@ -92,7 +92,8 @@ class SpeechTurnSegmentation(Pipeline):
 
         self.scd_scores = scd_scores
         if self.scd_scores == 'oracle':
-            self.speaker_change_detection = OracleSpeechTurnSegmentation()
+            self.speaker_change_detection = None
+            self.speech_turn_segmentation = OracleSpeechTurnSegmentation()
         else:
             self.speaker_change_detection = SpeakerChangeDetection(
                 scores=self.scd_scores)
@@ -114,7 +115,10 @@ class SpeechTurnSegmentation(Pipeline):
         hypothesis : `pyannote.core.Annotation`
             Hypothesized speech turns
         """
-
+        if self.scd_scores == 'oracle':
+            speech_turns = self.speech_turn_segmentation(current_file)
+            return speech_turns
+            
         # speech regions
         sad = self.speech_activity_detection(current_file).get_timeline()
 
