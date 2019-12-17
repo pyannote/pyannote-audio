@@ -74,7 +74,7 @@ class SpeakerDiarization(Pipeline):
     """
 
     def __init__(self, sad_scores: Optional[Union[Path, str]] = None,
-                       scd_scores: Optional[Path] = None,
+                       scd_scores: Optional[Union[Path, str]] = None,
                        embedding: Optional[Path] = None,
                        metric: Optional[str] = 'cosine',
                        method: Optional[str] = 'pool',

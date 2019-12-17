@@ -77,7 +77,7 @@ class SpeechTurnSegmentation(Pipeline):
     """
 
     def __init__(self, sad_scores: Optional[Union[Path, str]] = None,
-                       scd_scores: Optional[Path] = None,
+                       scd_scores: Optional[Union[Path, str]] = None,
                        non_speech: Optional[bool] = True,
                        purity: Optional[float] = 0.95):
         super().__init__()
@@ -92,7 +92,7 @@ class SpeechTurnSegmentation(Pipeline):
         self.scd_scores = scd_scores
         if self.scd_scores == 'oracle':
             self.speaker_change_detection = OracleSpeechTurnSegmentation()
-        else:            
+        else:
             self.speaker_change_detection = SpeakerChangeDetection(
                 scores=self.scd_scores)
 
