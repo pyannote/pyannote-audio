@@ -90,8 +90,11 @@ class SpeechTurnSegmentation(Pipeline):
                 scores=self.sad_scores)
 
         self.scd_scores = scd_scores
-        self.speaker_change_detection = SpeakerChangeDetection(
-            scores=self.scd_scores)
+        if self.scd_scores == 'oracle':
+            self.speaker_change_detection = OracleSpeechTurnSegmentation()
+        else:            
+            self.speaker_change_detection = SpeakerChangeDetection(
+                scores=self.scd_scores)
 
         self.non_speech = non_speech
         self.purity = purity

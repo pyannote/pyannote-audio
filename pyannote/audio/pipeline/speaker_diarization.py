@@ -51,8 +51,9 @@ class SpeakerDiarization(Pipeline):
     sad_scores : `Path` or 'oracle'
         Path to precomputed speech activity detection scores.
         Use 'oracle' to assume perfect speech activity detection.
-    scd_scores : `Path`
-        Path to precomputed SCD scores on disk
+    scd_scores : `Path` or 'oracle'
+        Path to precomputed SCD scores on disk.
+        Use 'oracle' to assume perfect speaker change detection.
     embedding : `Path`
         Path to precomputed embedding on disk
     metric : {'euclidean', 'cosine', 'angular'}, optional
@@ -62,9 +63,9 @@ class SpeakerDiarization(Pipeline):
     evaluation_only : `bool`
         Only process the evaluated regions. Default to False.
     purity : `float`, optional
-        Optimize coverage for target purity. 
+        Optimize coverage for target purity.
         Defaults to optimizing diarization error rate.
-    
+
     Hyper-parameters
     ----------------
     min_duration : `float`
@@ -195,11 +196,11 @@ class SpeakerDiarization(Pipeline):
 
     def get_metric(self) -> GreedyDiarizationErrorRate:
         """Return new instance of diarization error rate metric"""
-        
+
         # defaults to optimizing diarization error rate
         if self.purity is None:
             return GreedyDiarizationErrorRate(collar=0.0, skip_overlap=False)
-        
+
         # fallbacks to using self.loss(...)
         raise NotImplementedError()
 
