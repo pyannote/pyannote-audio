@@ -31,7 +31,7 @@ Speaker embedding
 
 Usage:
   pyannote-speaker-embedding train [options] <experiment_dir> <database.task.protocol>
-  pyannote-speaker-embedding validate [options] [--duration=<duration> --every=<epoch> --chronological --purity=<purity> --metric=<metric>] <train_dir> <database.task.protocol>
+  pyannote-speaker-embedding validate [options] [--duration=<duration> --every=<epoch> --chronological --purity=<purity> --metric=<metric> --no_weights] <train_dir> <database.task.protocol>
   pyannote-speaker-embedding apply [options] [--duration=<duration> --step=<step>] <validate_dir> <database.task.protocol>
   pyannote-speaker-embedding -h | --help
   pyannote-speaker-embedding --version
@@ -69,6 +69,9 @@ Common options:
   --metric=<metric>          Use this metric (e.g. "cosine" or "euclidean") to
                              compare embeddings. Defaults to the metric defined
                              in "config.yml" configuration file.
+  --no_weights               bool, optional
+                             When False (default), each cluster is weighted by
+                             its overall duration when computing DiarizationPurityCoverageFMeasure
 
 "apply" mode:
   <validate_dir>             Path to the directory containing validation
@@ -477,9 +480,9 @@ class SpeakerEmbedding(Application):
             Z[uri] = linkage(D, method='median')
             t[uri] = np.array(t_)
 
-        def fun(threshold):
+        def fun(threshold, weighted=True):
 
-            metric = DiarizationPurityCoverageFMeasure(weighted=True)
+            metric = DiarizationPurityCoverageFMeasure(weighted=weighted)
 
             for current_file in getattr(protocol, subset)():
 
@@ -506,7 +509,7 @@ class SpeakerEmbedding(Application):
 
         for _ in range(10):
             current_threshold = .5 * (lower_threshold + upper_threshold)
-            purity, coverage = fun(current_threshold)
+            purity, coverage = fun(current_threshold, self.weighted)
 
             if purity < self.purity:
                 upper_threshold = current_threshold
@@ -651,9 +654,12 @@ def main():
             duration = float(duration)
         application.duration = duration
 
+        application.weighted = not arguments['--no_weights']
+
         application.validate(protocol_name, subset=subset,
                              start=start, end=end, every=every,
                              in_order=in_order)
+
 
     if arguments['apply']:
 
