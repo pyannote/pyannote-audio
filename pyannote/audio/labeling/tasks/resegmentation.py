@@ -44,7 +44,7 @@ from pyannote.database import get_annotated
 from pyannote.audio.labeling.extraction import SequenceLabeling
 from pyannote.audio.train.schedulers import ConstantScheduler
 from torch.optim import SGD
-from pyannote.audio.utils.path import mkdir_p
+from pyannote.audio.util import mkdir_p
 from pathlib import Path
 from pyannote.audio.signal import Binarize
 
