@@ -44,8 +44,6 @@ from pyannote.database import get_annotated
 from pyannote.audio.labeling.extraction import SequenceLabeling
 from pyannote.audio.train.schedulers import ConstantScheduler
 from torch.optim import SGD
-from pyannote.audio.features import Precomputed
-from pyannote.audio.features.utils import get_audio_duration
 from pyannote.audio.util import mkdir_p
 from pathlib import Path
 from pyannote.audio.signal import Binarize
@@ -384,9 +382,6 @@ class Resegmentation(LabelingTask):
             hypothesis = current_file['hypothesis']
         current_file = dict(current_file)
         current_file['annotation'] = hypothesis
-
-        # HACK. we shouldn't need to do that here...
-        current_file['duration'] = get_audio_duration(current_file)
 
         batch_generator = self.get_batch_generator(current_file)
 

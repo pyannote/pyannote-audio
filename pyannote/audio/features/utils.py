@@ -52,11 +52,6 @@ def get_audio_duration(current_file):
         Audio file duration.
     """
 
-    # use precomputed duration when available
-    if 'duration' in current_file:
-        return current_file['duration']
-
-    # otherwise use SoundFile
     with SoundFile(current_file['audio'], 'r') as f:
         duration = float(f.frames) / f.samplerate
 

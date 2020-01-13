@@ -31,17 +31,14 @@ import torch
 import numpy as np
 import scipy.signal
 
+from pyannote.core import Segment
 from pyannote.core import Timeline
 from pyannote.core import Annotation
 from pyannote.core import SlidingWindowFeature
 from pyannote.database import get_unique_identifier
 from pyannote.database import get_annotated
 from pyannote.core.utils.numpy import one_hot_encoding
-from pyannote.audio.features import Precomputed
-from pyannote.audio.features.utils import get_audio_duration
-from pyannote.core import Segment
-from pyannote.core import Timeline
-from pyannote.core import SlidingWindowFeature
+from pyannote.audio.features import RawAudio
 
 from pyannote.generators.batch import batchify
 from pyannote.generators.fragment import random_segment
@@ -214,7 +211,7 @@ class LabelingTaskGenerator(object):
         for current_file in getattr(protocol, subset)():
 
             # ensure annotation/annotated are cropped to actual file duration
-            support = Segment(start=0, end=get_audio_duration(current_file))
+            support = Segment(start=0, end=current_file['duration'])
             current_file['annotated'] = get_annotated(current_file).crop(
                 support, mode='intersection')
             current_file['annotation'] = current_file['annotation'].crop(
@@ -467,7 +464,8 @@ class LabelingTaskGenerator(object):
 
             # batchify sampler without prefetching
             batches = batchify(self._samples(), self.signature,
-                               batch_size=self.batch_size, prefetch=0)
+                               batch_size=self.batch_size,
+                               prefetch=0)
 
             # add it to the list of generators
             # NOTE: this list will only contain one generator

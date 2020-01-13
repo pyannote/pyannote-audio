@@ -116,12 +116,12 @@ class SpeechSegmentGenerator(object):
         for current_file in getattr(protocol, subset)():
 
             # keep track of unique file labels
-            for key, value in current_file.items():
-                if key in ['annotation', 'annotated']:
+            for key in current_file:
+                if key in ['annotation', 'annotated', 'audio', 'duration']:
                     continue
                 if key not in file_labels:
                     file_labels[key] = set()
-                file_labels[key].add(value)
+                file_labels[key].add(current_file[key])
 
             # get annotation for current file
             annotation = current_file['annotation']

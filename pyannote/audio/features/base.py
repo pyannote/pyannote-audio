@@ -30,7 +30,6 @@ import warnings
 import numpy as np
 
 from .utils import RawAudio
-from .utils import get_audio_duration
 
 from pyannote.core import Segment
 from pyannote.core import SlidingWindow
@@ -192,19 +191,12 @@ class FeatureExtraction(object):
         `pyannote.core.SlidingWindowFeature.crop`
         """
 
-        # get_audio_duration can be very long for some file
-        # therefore, it should be computed once and for all
-        if 'duration' not in current_file:
-            msg = ('`FeatureExtraction.crop` method expects `current_file` to '
-                   'contain a precomputed "duration" key.')
-            raise ValueError(msg)
-        duration = current_file['duration']
-
         context = self.get_context_duration()
 
         # extend segment on both sides with requested context
-        xsegment = Segment(max(0, segment.start - context),
-                           min(duration, segment.end + context))
+        xsegment = Segment(
+            max(0, segment.start - context),
+            min(current_file['duration'], segment.end + context))
 
         # obtain (augmented) waveform on this extended segment
         y = self.raw_audio_.crop(current_file, xsegment, mode='center',
