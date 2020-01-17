@@ -246,6 +246,7 @@ from pathlib import Path
 import multiprocessing
 
 import torch
+from .base import apply_pretrained
 from .speech_detection import SpeechActivityDetection
 from .change_detection import SpeakerChangeDetection
 from .overlap_detection import OverlapDetection
@@ -379,22 +380,16 @@ def main():
 
     if arg['apply']:
         validate_dir = Path(arg['<validate>']).expanduser().resolve(strict=True)
-        app = Application.from_validate_dir(validate_dir, training=False)
 
         params['subset'] = 'test' if subset is None else subset
         params['batch_size'] = int(arg['--batch'])
 
         duration = arg['--duration']
-        if duration is None:
-            duration = getattr(app.task_, 'duration', None)
-            if duration is None:
-                msg = ("Task has no 'duration' defined. "
-                       "Use '--duration' option to provide one.")
-                raise ValueError(msg)
-        else:
+        if duration is not None:
             duration = float(duration)
         params['duration'] = duration
 
         params['step'] = float(arg['--step'])
+        params['Pipeline'] = getattr(Application, 'Pipeline', None)
 
-        app.apply(protocol, **params)
+        apply_pretrained(validate_dir, protocol, **params)

@@ -36,12 +36,9 @@ from pyannote.database import get_protocol
 from pyannote.database import get_annotated
 from pyannote.audio.features import Precomputed
 from pyannote.audio.features import RawAudio
-from pyannote.audio.labeling.extraction import SequenceLabeling
 
 
 class BaseLabeling(Application):
-
-    Extraction = SequenceLabeling
 
     @property
     def config_default_module(self):

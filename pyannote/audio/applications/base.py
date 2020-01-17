@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2017-2019 CNRS
+# Copyright (c) 2017-2020 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -51,7 +51,10 @@ from pyannote.core.utils.helper import get_class_by_name
 import warnings
 from pyannote.audio.train.task import Task
 
+from pyannote.audio.features import Pretrained
 from pyannote.audio.features import Precomputed
+from pyannote.audio.applications.config import load_config
+
 
 def create_zip(validate_dir: Path):
     """
@@ -123,49 +126,13 @@ class Application:
         app.train_dir_ = train_dir
         return app
 
-    @classmethod
-    def from_model_pt(cls, model_pt: Path,
-                           training: bool = False):
-
-        train_dir = model_pt.parents[1]
-        app = cls.from_train_dir(model_pt.parents[1], training=training)
-
-        app.model_pt_ = model_pt
-        epoch = int(model_pt.stem)
-        app.model_ = app.load_model(epoch)
-        app.epoch_ = epoch
-        return app
-
-    @classmethod
-    def from_validate_dir(cls, validate_dir: Path,
-                               training: Optional[bool] = False):
-
-        # load params.yml file from validate directory
-        with open(validate_dir / 'params.yml', 'r') as fp:
-            params_yml = yaml.load(fp, Loader=yaml.SafeLoader)
-
-        # build path to best epoch model
-        epoch = params_yml['epoch']
-        model_pt = Path(cls.MODEL_PT.format(
-            train_dir=validate_dir.parents[1], epoch=epoch))
-
-        # instantiate application
-        # TODO. get rid of from_model_pt
-        app = cls.from_model_pt(model_pt, training=training)
-        app.validate_dir_ = validate_dir
-        app.epoch_ = epoch
-
-        # keep track of pipeline parameters
-        app.pipeline_params_ = params_yml.get('params', {})
-
-        return app
-
-    def __init__(self, experiment_dir, training=False):
+    def __init__(self, experiment_dir: str,
+                       training: bool = False):
         """
 
         Parameters
         ----------
-        experiment_dir : str
+        experiment_dir : Path
         training : boolean, optional
             When False, data augmentation is disabled.
         """
@@ -174,116 +141,14 @@ class Application:
 
         # load configuration
         config_yml = self.CONFIG_YML.format(experiment_dir=self.experiment_dir)
-        with open(config_yml, 'r') as fp:
-            self.config_ = yaml.load(fp, Loader=yaml.SafeLoader)
+        config_default_module = getattr(self, 'config_default_module',
+                                        'pyannote.audio.labeling.tasks')
+        config = load_config(Path(config_yml),
+                             training=training,
+                             config_default_module=config_default_module)
 
-        # preprocessors
-        preprocessors = dict()
-
-        for key, preprocessor in self.config_.get('preprocessors', {}).items():
-            # preprocessors:
-            #    key:
-            #       name: package.module.ClassName
-            #       params:
-            #          param1: value1
-            #          param2: value2
-            if isinstance(preprocessor, dict):
-                Klass = get_class_by_name(preprocessor['name'])
-                preprocessors[key] = Klass(**preprocessor.get('params', {}))
-                continue
-
-            try:
-                # preprocessors:
-                #    key: /path/to/database.yml
-                preprocessors[key] = FileFinder(preprocessor)
-
-            except FileNotFoundError as e:
-                # preprocessors:
-                #    key: /path/to/{uri}.wav
-                preprocessors[key] = preprocessor
-
-        if 'audio' not in preprocessors:
-            preprocessors['audio'] = FileFinder()
-
-        if 'duration' not in preprocessors:
-            preprocessors['duration'] = get_audio_duration
-
-        self.preprocessors_ = preprocessors
-
-        # scheduler
-        SCHEDULER_DEFAULT = {'name': 'DavisKingScheduler',
-                             'params': {'learning_rate': 'auto'}}
-        scheduler_cfg = self.config_.get('scheduler', SCHEDULER_DEFAULT)
-        Scheduler = get_class_by_name(
-            scheduler_cfg['name'],
-            default_module_name='pyannote.audio.train.schedulers')
-        scheduler_params = scheduler_cfg.get('params', {})
-        self.learning_rate_ = scheduler_params.pop('learning_rate', 'auto')
-        self.scheduler_ = Scheduler(**scheduler_params)
-
-        # optimizer
-        OPTIMIZER_DEFAULT = {
-            'name': 'SGD',
-            'params': {'momentum': 0.9, 'dampening': 0, 'weight_decay': 0,
-                       'nesterov': True}}
-        optimizer_cfg = self.config_.get('optimizer', OPTIMIZER_DEFAULT)
-        try:
-            Optimizer = get_class_by_name(optimizer_cfg['name'],
-                                          default_module_name='torch.optim')
-            optimizer_params = optimizer_cfg.get('params', {})
-            self.get_optimizer_ = partial(Optimizer, **optimizer_params)
-
-        # do not raise an error here as it is possible that the optimizer is
-        # not really needed (e.g. in pipeline training)
-        except ModuleNotFoundError as e:
-            warnings.warn(e.args[0])
-
-        # data augmentation (only when training the model)
-        if training and 'data_augmentation' in self.config_ :
-            DataAugmentation = get_class_by_name(
-                self.config_['data_augmentation']['name'],
-                default_module_name='pyannote.audio.augmentation')
-            augmentation = DataAugmentation(
-                **self.config_['data_augmentation'].get('params', {}))
-        else:
-            augmentation = None
-
-        # custom callbacks
-        self.callbacks_ = []
-        for callback_config in self.config_.get('callbacks', {}):
-            Callback = get_class_by_name(callback_config['name'])
-            callback = Callback(**callback_config.get('params', {}))
-            self.callbacks_.append(callback)
-
-        # feature extraction
-        FEATURE_DEFAULT = {'name': 'RawAudio',
-                           'params': {'sample_rate': 16000}}
-        feature_cfg = self.config_.get('feature_extraction', FEATURE_DEFAULT)
-        FeatureExtraction = get_class_by_name(
-            feature_cfg['name'],
-            default_module_name='pyannote.audio.features')
-        feature_params = feature_cfg.get('params', {})
-        self.feature_extraction_ = FeatureExtraction(
-            **feature_params,
-            augmentation=augmentation)
-
-        # task
-        TaskClass = get_class_by_name(
-            self.config_['task']['name'],
-            default_module_name=self.config_default_module)
-        self.task_ = TaskClass(
-            **self.config_['task'].get('params', {}))
-
-        # architecture
-        Architecture = get_class_by_name(
-            self.config_['architecture']['name'],
-            default_module_name='pyannote.audio.models')
-        params = self.config_['architecture'].get('params', {})
-
-        self.get_model_from_specs_ = partial(Architecture, **params)
-        self.model_resolution_ = Architecture.get_resolution(**params)
-        self.model_alignment_ =  Architecture.get_alignment(**params)
-
+        for key, value in config.items():
+            setattr(self, f'{key}_', value)
 
     def train(self, protocol_name: str,
                     subset: str = 'train',
@@ -348,39 +213,6 @@ class Application:
 
         for _ in iterations:
             pass
-
-    def load_model(self,
-                   epoch: int,
-                   train_dir: Optional[Path] = None):
-        """Load pretrained model
-
-        Parameters
-        ----------
-        epoch : int
-            Which epoch to load.
-        train_dir : str, optional
-            Path to train directory. Defaults to self.train_dir_.
-        """
-
-        if train_dir is None:
-            train_dir = self.train_dir_
-
-        # initialize model from specs stored on disk
-        specs_yml = self.task_.SPECS_YML.format(train_dir=train_dir)
-        with io.open(specs_yml, 'r') as fp:
-            specifications = yaml.load(fp, Loader=yaml.SafeLoader)
-        specifications['task'] = Task.from_str(specifications['task'])
-        self.model_ = self.get_model_from_specs_(specifications)
-
-        import torch
-        weights_pt = self.MODEL_PT.format(
-            train_dir=train_dir, epoch=epoch)
-
-        # if GPU is not available, load using CPU
-        self.model_.load_state_dict(
-            torch.load(weights_pt, map_location=lambda storage, loc: storage))
-
-        return self.model_
 
     def get_number_of_epochs(self, train_dir=None, return_first=False):
         """Get information about completed epochs
@@ -626,108 +458,101 @@ class Application:
             if next_epoch_to_validate_in_order == next_epoch_to_validate:
                 next_epoch_to_validate_in_order += step
 
+# TODO: add support for torch.hub models directly in docopt
 
-    def apply(self, protocol_name: str,
-                    subset: Optional[str] = "test",
-                    duration: Optional[float] = None,
-                    step: float = 0.25,
-                    device: Optional[torch.device] = None,
-                    batch_size: int = 32,
-                    **kwargs):
-        """Apply pre-trained model
+def apply_pretrained(validate_dir: Path,
+                     protocol_name: str,
+                     subset: Optional[str] = "test",
+                     duration: Optional[float] = None,
+                     step: float = 0.25,
+                     device: Optional[torch.device] = None,
+                     batch_size: int = 32,
+                     Pipeline: type = None,
+                     **kwargs):
+    """Apply pre-trained model
 
-        Parameters
-        ----------
-        protocol_name : `str`
-        step : `float`, optional
+    Parameters
+    ----------
+    protocol_name : `str`
+    step : `float`, optional
 
-        subset : {'train', 'development', 'test'}
-            Defaults to 'test'
-        """
+    subset : {'train', 'development', 'test'}
+        Defaults to 'test'
+    """
 
-        model = self.model_.to(device)
-        model.eval()
+    # initialize extraction
+    pretrained = Pretrained(model=validate_dir,
+                            duration=duration,
+                            step=step,
+                            batch_size=batch_size,
+                            device=device)
 
-        output_dir = Path(self.APPLY_DIR.format(
-            validate_dir=self.validate_dir_,
-            epoch=self.epoch_))
+    output_dir = validate_dir / 'apply' / f'{pretrained.epoch_:04d}'
 
-        # do not use memmap as this would lead to too many open files
-        if isinstance(self.feature_extraction_, Precomputed):
-            self.feature_extraction_.use_memmap = False
+    params = {}
+    try:
+        params['labels'] = pretrained.classes
+    except AttributeError as e:
+        pass
+    try:
+        params['dimension'] = pretrained.dimension
+    except AttributeError as e:
+        pass
 
-        # initialize extraction
-        extraction = self.Extraction(
-            model=model,
-            feature_extraction=self.feature_extraction_,
-            duration=duration,
-            step=step * duration,
-            batch_size=batch_size,
-            device=device)
+    # create metadata file at root that contains
+    # sliding window and dimension information
+    precomputed = Precomputed(
+        root_dir=output_dir,
+        sliding_window=pretrained.sliding_window,
+        **params)
 
-        params = {}
-        try:
-            params['labels'] = model.classes
-        except AttributeError as e:
-            pass
-        try:
-            params['dimension'] = model.dimension
-        except AttributeError as e:
-            pass
+    # file generator
+    protocol = get_protocol(
+        protocol_name, progress=True,
+        preprocessors=pretrained.preprocessors_)
 
-        # create metadata file at root that contains
-        # sliding window and dimension information
-        precomputed = Precomputed(
-            root_dir=output_dir,
-            sliding_window=extraction.sliding_window,
-            **params)
+    for current_file in getattr(protocol, subset)():
+        fX = pretrained(current_file)
+        precomputed.dump(current_file, fX)
 
-        # file generator
-        protocol = get_protocol(protocol_name, progress=True,
-                                preprocessors=self.preprocessors_)
+    # do not proceed with the full pipeline
+    # when there is no such thing for current task
+    if Pipeline is None:
+        return
 
+    # instantiate pipeline
+    pipeline = Pipeline(scores=output_dir)
+    pipeline.instantiate(pretrained.pipeline_params_)
+
+    # load pipeline metric (when available)
+    try:
+        metric = pipeline.get_metric()
+    except NotImplementedError as e:
+        metric = None
+
+    # apply pipeline and dump output to RTTM files
+    output_rttm = output_dir / f'{protocol_name}.{subset}.rttm'
+    with open(output_rttm, 'w') as fp:
         for current_file in getattr(protocol, subset)():
-            fX = extraction(current_file)
-            precomputed.dump(current_file, fX)
+            hypothesis = pipeline(current_file)
+            pipeline.write_rttm(fp, hypothesis)
 
-        # do not proceed with the full pipeline
-        # when there is no such thing for current task
-        if not hasattr(self, 'Pipeline'):
-            return
+            # compute evaluation metric (when possible)
+            if 'annotation' not in current_file:
+                metric = None
 
-        # instantiate pipeline
-        pipeline = self.Pipeline(scores=output_dir)
-        pipeline.instantiate(self.pipeline_params_)
+            # compute evaluation metric (when available)
+            if metric is None:
+                continue
 
-        # load pipeline metric (when available)
-        try:
-            metric = pipeline.get_metric()
-        except NotImplementedError as e:
-            metric = None
+            reference = current_file['annotation']
+            uem = get_annotated(current_file)
+            _ = metric(reference, hypothesis, uem=uem)
 
-        # apply pipeline and dump output to RTTM files
-        output_rttm = output_dir / f'{protocol_name}.{subset}.rttm'
-        with open(output_rttm, 'w') as fp:
-            for current_file in getattr(protocol, subset)():
-                hypothesis = pipeline(current_file)
-                pipeline.write_rttm(fp, hypothesis)
+    # print pipeline metric (when available)
+    if metric is None:
+        return
 
-                # compute evaluation metric (when possible)
-                if 'annotation' not in current_file:
-                    metric = None
-
-                # compute evaluation metric (when available)
-                if metric is None:
-                    continue
-
-                reference = current_file['annotation']
-                uem = get_annotated(current_file)
-                _ = metric(reference, hypothesis, uem=uem)
-
-        # print pipeline metric (when available)
-        if metric is None:
-            return
-
-        output_eval = output_dir / f'{protocol_name}.{subset}.eval'
-        with open(output_eval, 'w') as fp:
-            fp.write(str(metric))
+    output_eval = output_dir / f'{protocol_name}.{subset}.eval'
+    with open(output_eval, 'w') as fp:
+        fp.write(str(metric))

@@ -33,21 +33,21 @@ For the purpose of this tutorial, we use models available on `torch.hub` that we
 import torch
 
 # speech activity detection model trained on AMI training set
-PATH_TO_SAD_MODEL = torch.hub.load('pyannote/pyannote-audio', 
-                                   'sad_ami', return_path=True)
+sad = torch.hub.load('pyannote/pyannote-audio', 'sad_ami')
 
 # speaker change detection model trained on AMI training set
-PATH_TO_SCD_MODEL = torch.hub.load('pyannote/pyannote-audio', 
-                                   'scd_ami', return_path=True)
+scd = torch.hub.load('pyannote/pyannote-audio', 'scd_ami')
 
 # overlapped speech detectoin model trained on AMI training set
-PATH_TO_OVL_MODEL = torch.hub.load('pyannote/pyannote-audio', 
-                                  'ovl_ami', return_path=True)
+ovl = torch.hub.load('pyannote/pyannote-audio', 'ovl_ami')
 
 # speaker embedding model trained on VoxCeleb1
-PATH_TO_EMB_MODEL = torch.hub.load('pyannote/pyannote-audio', 
-                                   'emb_voxceleb', return_path=True)
+emb = torch.hub.load('pyannote/pyannote-audio', 'emb_voxceleb')
 ```
+
+TODO: show both options:
+TODO: option 1: sad = Pretrained(model=validate_dir)
+TODO: option 2: sad = torch.hub.load('pyannote/pyannote-audio', 'sad_ami')
 
 We will apply those pretrained models on the first file of the `AMI` test subset:
 
@@ -71,16 +71,7 @@ test_file = {'uri': 'filename', 'audio': '/path/to/your/filename.wav'}
 
 :warning: Note that, in case of domain mismatch between your data and the `AMI` corpus, you might be better off [training your own models](../models/speech_activity_detection).
 
-## Segmentation into speech turns
-
-```python
-# initialize SAD & SCD sequence labeling models
-from pyannote.audio.labeling.extraction import SequenceLabeling
-device = torch.device('cuda')
-sad = SequenceLabeling(model=PATH_TO_SAD_MODEL, device=device)
-scd = SequenceLabeling(model=PATH_TO_SCD_MODEL, device=device)
-ovl = SequenceLabeling(model=PATH_TO_OVL_MODEL, device=device)
-```
+## Segmentation
 
 ### Speech activity detection
 
@@ -198,12 +189,8 @@ speech_turns = partition.crop(speech)
 ```
 
 ```python
-# initialize sequence embedding model
-from pyannote.audio.embedding.extraction import SequenceEmbedding
-emb = SequenceEmbedding(model=PATH_TO_EMB_MODEL, device=device)
-
 # obtain raw embeddings (as `pyannote.core.SlidingWindowFeature` instance)
-# embeddings are extracted every 250ms on 500ms-long windows
+# embeddings are extracted every FIXME 250ms on FIXME 500ms-long windows
 embeddings = emb(test_file)
 ```
 
