@@ -33,6 +33,7 @@ import torch
 import torch.nn as nn
 
 from .sincnet import SincNet
+from .tdnn import XVectorNet
 from pyannote.audio.train.model import Model
 from pyannote.audio.train.model import Resolution
 from pyannote.audio.train.model import RESOLUTION_CHUNK
@@ -542,3 +543,129 @@ class PyanNet(Model):
         if layer == 0:
             return self.sincnet_.dimension
         return self.rnn_.intermediate_dimension(layer-1)
+
+
+class SincTDNN(Model):
+    """waveform -> SincNet -> XVectorNet (TDNN -> FC) -> output
+
+    Parameters
+    ----------
+    sincnet : `dict`, optional
+        SincNet parameters. Defaults to `pyannote.audio.models.sincnet.SincNet`
+        default parameters.
+    tdnn : `dict`, optional
+        Time-Delay neural network parameters.
+        Defaults to `pyannote.audio.models.tdnn.XVectorNet` default parameters.
+    embedding : `dict`, optional
+        Embedding parameters. Defaults to `Embedding` default parameters. This
+        only has effect when model is used for representation learning.
+    """
+
+    @staticmethod
+    def get_alignment(sincnet=None, **kwargs):
+        """
+        """
+
+        if sincnet is None:
+            sincnet = dict()
+
+        return SincNet.get_alignment(**sincnet)
+
+    supports_packed = False
+
+    @staticmethod
+    def get_resolution(sincnet : Optional[dict] = None, **kwargs) -> Resolution:
+        """Get sliding window used for feature extraction
+
+        Parameters
+        ----------
+        sincnet : dict, optional
+
+        Returns
+        -------
+        sliding_window : `pyannote.core.SlidingWindow` or {`window`, `frame`}
+        """
+
+        if sincnet is None:
+            sincnet = dict()
+
+        return SincNet.get_resolution(**sincnet)
+
+    def init(self,
+             sincnet : Optional[dict] = None,
+             tdnn : Optional[dict] = None,
+             embedding : Optional[dict] = None):
+        """waveform -> SincNet -> RNN [-> merge] [-> time_pool] -> FC -> output
+
+        Parameters
+        ----------
+        sincnet : `dict`, optional
+            SincNet parameters. Defaults to `pyannote.audio.models.sincnet.SincNet`
+            default parameters.
+        tdnn : `dict`, optional
+            Time-Delay neural network parameters.
+            Defaults to `pyannote.audio.models.tdnn.XVectorNet` default parameters.
+        embedding : `dict`, optional
+            Embedding parameters. Defaults to `Embedding` default parameters. This
+            only has effect when model is used for representation learning.
+        """
+
+        n_features = self.n_features
+
+        if sincnet is None:
+            sincnet = dict()
+        self.sincnet = sincnet
+
+        if n_features != 1:
+            raise ValueError('SincNet only supports mono waveforms. '
+                             f'Here, waveform has {n_features} channels.')
+        self.sincnet_ = SincNet(**sincnet)
+        n_features = self.sincnet_.dimension
+
+        if tdnn is None:
+            tdnn = dict()
+        self.tdnn = tdnn
+        self.tdnn_ = XVectorNet(n_features, **tdnn)
+        n_features = self.tdnn_.dimension
+
+        if self.task.is_representation_learning:
+            if embedding is None:
+                embedding = dict()
+            self.embedding = embedding
+            self.embedding_ = Embedding(n_features, **embedding)
+        else:
+            self.linear_ = nn.Linear(n_features, len(self.classes), bias=True)
+            self.activation_ = self.task.default_activation
+
+    def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
+        """Forward pass
+
+        Parameters
+        ----------
+        waveforms : (batch_size, n_samples, 1) `torch.Tensor`
+            Batch of waveforms
+
+        Returns
+        -------
+        output : `torch.Tensor`
+            Final network output or intermediate network output
+            (only when `return_intermediate` is provided).
+        """
+
+        output = self.sincnet_(waveforms)
+
+        return_intermediate = 'segment6' if self.task.is_representation_learning else None
+        output = self.tdnn_(output, return_intermediate)
+
+        if self.task.is_representation_learning:
+            return self.embedding_(output)
+
+        return self.activation_(self.linear_(output))
+
+
+    @property
+    def dimension(self):
+        if self.task.is_representation_learning:
+            return self.embedding_.dimension
+
+        return Model.dimension.fget(self)
