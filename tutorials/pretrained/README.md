@@ -110,7 +110,7 @@ partition = peak.apply(scd_scores, dimension=1)
 
 ```python
 # obtain raw OVL scores (as `pyannote.core.SlidingWindowFeature` instance)
-ovl_scores = sad(test_file)
+ovl_scores = ovl(test_file)
 
 # binarize raw OVL scores
 # NOTE: both onset/offset values were tuned on AMI dataset.
@@ -127,6 +127,7 @@ overlap = binarize.apply(ovl_scores, dimension=1)
 
 ```python
 # let's visualize SAD, SCD and OVL results using pyannote.core visualization API
+import numpy as np
 from matplotlib import pyplot as plt
 from pyannote.core import Segment, notebook
 
