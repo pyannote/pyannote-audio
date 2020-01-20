@@ -102,8 +102,6 @@ class DomainClassification(BaseLabeling):
                        step=0.25,
                        **kwargs):
 
-        domain = self.task_.domain
-        domains = model.specifications['y']['classes']
 
         pretrained = Pretrained(validate_dir=self.validate_dir_,
                                 epoch=epoch,
@@ -111,6 +109,9 @@ class DomainClassification(BaseLabeling):
                                 step=step,
                                 batch_size=batch_size,
                                 device=device)
+
+        domain = self.task_.domain
+        domains = pretrained.classes
 
         y_true_file, y_pred_file = [], []
 
