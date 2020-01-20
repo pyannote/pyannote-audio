@@ -45,7 +45,6 @@ from pyannote.audio.features import FeatureExtraction
 from pyannote.audio.applications.config import load_config
 from pyannote.audio.applications.config import load_specs
 from pyannote.audio.applications.config import load_params
-#from pyannote.audio.applications.base import Application
 
 
 class Pretrained(FeatureExtraction):
