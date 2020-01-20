@@ -69,16 +69,21 @@ class Pretrained(FeatureExtraction):
                        device: Optional[Union[Text, torch.device]] = None,
                        return_intermediate = None):
 
-        super().__init__(augmentation=augmentation,
-                         sample_rate=None)
-
-        self.validate_dir = validate_dir
+        self.validate_dir = validate_dir.expanduser().resolve(strict=True)
 
         train_dir = self.validate_dir.parents[1]
         root_dir = train_dir.parents[1]
 
         config_yml = root_dir / 'config.yml'
         config = load_config(config_yml, training=False)
+
+        # use feature extraction from config.yml configuration file
+        self.feature_extraction_ = config['feature_extraction']
+
+        super().__init__(augmentation=augmentation,
+                         sample_rate=self.feature_extraction_.sample_rate)
+
+        self.feature_extraction_.augmentation = self.augmentation
 
         specs_yml = train_dir / 'specs.yml'
         specifications = load_specs(specs_yml)
@@ -107,10 +112,6 @@ class Pretrained(FeatureExtraction):
 
         # send model to device
         self.model_ = model.eval().to(self.device)
-
-        # use feature extraction from config.yml configuration file
-        self.feature_extraction_ = config['feature_extraction']
-        self.feature_extraction_.augmentation = self.augmentation
 
         # initialize chunks duration with that used during training
         self.duration = getattr(config['task'], 'duration', None)
