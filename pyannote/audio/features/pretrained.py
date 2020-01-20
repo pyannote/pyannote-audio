@@ -152,7 +152,7 @@ class Pretrained(FeatureExtraction):
         self.return_intermediate = return_intermediate
 
     @property
-    def labels(self):
+    def classes(self):
         return self.model_.classes
 
     def get_dimension(self) -> int:

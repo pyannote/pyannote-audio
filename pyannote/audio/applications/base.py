@@ -493,7 +493,7 @@ def apply_pretrained(validate_dir: Path,
 
     params = {}
     try:
-        params['labels'] = pretrained.classes
+        params['classes'] = pretrained.classes
     except AttributeError as e:
         pass
     try:
