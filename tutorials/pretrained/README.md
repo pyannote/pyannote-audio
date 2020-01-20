@@ -190,8 +190,10 @@ speech_turns = partition.crop(speech)
 
 ```python
 # obtain raw embeddings (as `pyannote.core.SlidingWindowFeature` instance)
-# embeddings are extracted every FIXME 250ms on FIXME 500ms-long windows
 embeddings = emb(test_file)
+
+chunks = embeddings.sliding_window
+print(f'Embeddings were extracted every {1000 * chunks.step:g}ms on {1000 * chunks.duration:g}ms-long windows.')
 ```
 
 ```python
