@@ -59,7 +59,7 @@ class SpeechActivityDetection(BaseLabeling):
 
 
         # compute (and store) SAD scores
-        pretrained = Pretrained(model=self.validate_dir_,
+        pretrained = Pretrained(validate_dir=self.validate_dir_,
                                 epoch=epoch,
                                 duration=duration,
                                 step=step,

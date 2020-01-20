@@ -295,6 +295,8 @@ class Application:
         writer = SummaryWriter(log_dir=str(validate_dir),
                                purge_step=start)
 
+        self.validate_dir_ = validate_dir
+
         validation_data = self.validate_init(protocol, subset=subset)
 
         if n_jobs > 1:
@@ -481,7 +483,7 @@ def apply_pretrained(validate_dir: Path,
     """
 
     # initialize extraction
-    pretrained = Pretrained(model=validate_dir,
+    pretrained = Pretrained(validate_dir=validate_dir,
                             duration=duration,
                             step=step,
                             batch_size=batch_size,

@@ -27,29 +27,21 @@
 
 This tutorial assumes that you have already followed the [data preparation](../data_preparation) tutorial.
 
-For the purpose of this tutorial, we use models available on `torch.hub` that were pretrained on `AMI` training subset.
+For the purpose of this tutorial, we use models available on `torch.hub` that were pretrained on `AMI` training subset:
 
 ```python
 import torch
-
 # speech activity detection model trained on AMI training set
 sad = torch.hub.load('pyannote/pyannote-audio', 'sad_ami')
-
 # speaker change detection model trained on AMI training set
 scd = torch.hub.load('pyannote/pyannote-audio', 'scd_ami')
-
 # overlapped speech detectoin model trained on AMI training set
 ovl = torch.hub.load('pyannote/pyannote-audio', 'ovl_ami')
-
 # speaker embedding model trained on VoxCeleb1
 emb = torch.hub.load('pyannote/pyannote-audio', 'emb_voxceleb')
 ```
 
-TODO: show both options:
-TODO: option 1: sad = Pretrained(model=validate_dir)
-TODO: option 2: sad = torch.hub.load('pyannote/pyannote-audio', 'sad_ami')
-
-We will apply those pretrained models on the first file of the `AMI` test subset:
+We will apply those pretrained models on the first file of the `AMI` test subset.
 
 ```python
 # ... or use a file provided by a pyannote.database protocol
@@ -62,14 +54,22 @@ protocol = get_protocol('AMI.SpeakerDiarization.MixHeadset',
 test_file = next(protocol.test())
 ```
 
-:warning: If you would like to test those models on your own data, you could do something like this (or [define your own protocol](../data_preparation))
+:warning: If you trained your own models (e.g. with [this](../models/speech_activity_detection) tutorial) it is obviously possible to use it by providing the path to the validation directory to the `Pretrained` class:
+
+```python
+from pyannote.audio.features import Pretrained
+sad = Pretrained(validate_dir='/path/to/validation/directory')
+```
+
+:warning: If you would like to test those models on your own data, you could do something like this (or [define your own protocol](../data_preparation)). 
+
 
 ```python
 # one can use their own file like this...
 test_file = {'uri': 'filename', 'audio': '/path/to/your/filename.wav'}
 ```
 
-:warning: Note that, in case of domain mismatch between your data and the `AMI` corpus, you might be better off [training your own models](../models/speech_activity_detection).
+Note that, in case of domain mismatch between your data and the `AMI` corpus, you might be better off [training your own models](../models/speech_activity_detection).
 
 ## Segmentation
 

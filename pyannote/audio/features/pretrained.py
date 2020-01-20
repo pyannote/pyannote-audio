@@ -53,16 +53,14 @@ class Pretrained(FeatureExtraction):
 
     Parameters
     ----------
-    model : Text or Path
-        If Text, must be the name of a pretrained model.
-        If Path, must be the path to a validation directory.
+    validate_dir : Path
+        Path to a validation directory.
     epoch : int, optional
-        If provided, load this epoch.
-        Defaults to reading epoch in params.yml.
-
+        If provided, force loading this epoch.
+        Defaults to reading epoch in validate_dir/params.yml.
     """
 
-    def __init__(self, model: Union[Text, Path] = None,
+    def __init__(self, validate_dir: Union[Text, Path] = None,
                        epoch: int = None,
                        augmentation: Optional[Augmentation] = None,
                        duration: float = None,
@@ -74,15 +72,9 @@ class Pretrained(FeatureExtraction):
         super().__init__(augmentation=augmentation,
                          sample_rate=None)
 
-        self.model = model
+        self.validate_dir = validate_dir
 
-        if isinstance(model, Path):
-            validate_dir = model
-        else:
-            validate_dir = torch.hub.load('pyannote/pyannote-audio:develop',
-                                          model, return_path=True)
-
-        train_dir = validate_dir.parents[1]
+        train_dir = self.validate_dir.parents[1]
         root_dir = train_dir.parents[1]
 
         config_yml = root_dir / 'config.yml'
@@ -92,7 +84,7 @@ class Pretrained(FeatureExtraction):
         specifications = load_specs(specs_yml)
 
         if epoch is None:
-            params_yml = validate_dir / 'params.yml'
+            params_yml = self.validate_dir / 'params.yml'
             params = load_params(params_yml)
             self.epoch_ = params['epoch']
             # keep track of pipeline parameters

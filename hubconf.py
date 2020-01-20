@@ -91,14 +91,14 @@ def _generic(task: str = 'sad',
 
     Returns
     -------
-    model : `pyannote.audio.features.Pretrained`
+    pretrained : `pyannote.audio.features.Pretrained`
 
     Usage
     -----
-    >>> model = torch.hub.load('pyannote/pyannote-audio', '_generic',
-    ...                        task='sad', corpus='ami',
-    ...                        batch_size=32)
-    >>> sad_scores = model({'audio': '/path/to/audio.wav'})
+    >>> pretrained = torch.hub.load('pyannote/pyannote-audio', '_generic',
+    ...                             task='sad', corpus='ami',
+    ...                             batch_size=32)
+    >>> sad_scores = pretrained({'audio': '/path/to/audio.wav'})
     """
 
     # path where pre-trained model is downloaded by torch.hub
@@ -114,7 +114,7 @@ def _generic(task: str = 'sad',
     # print(msg)
 
     # initialize  extraction
-    return Pretrained(model=validate_dir,
+    return Pretrained(validate_dir=validate_dir,
                       batch_size=batch_size,
                       device=device)
 
