@@ -163,7 +163,8 @@ class Pretrained(FeatureExtraction):
 
     def apply(self, X: np.ndarray) -> np.ndarray:
         tX = torch.tensor(X, dtype=torch.float32, device=self.device)
-        fX = self.model_(tX)
+        # FIXME: fix support for return_intermediate
+        fX = self.model_(tX, return_intermediate=self.return_intermediate)
         return fX.detach().to('cpu').numpy()
 
     def get_features(self, y, sample_rate) -> np.ndarray:
