@@ -65,8 +65,11 @@ class BaseLabeling(Application):
                                 preprocessors=self.preprocessors_)
         files = getattr(protocol, subset)()
 
+        # convert lazy ProtocolFile to regular dict for multiprocessing
+        files = [dict(file) for file in files]
+
         if isinstance(self.feature_extraction_, (Precomputed, RawAudio)):
-            return list(files)
+            return files
 
         validation_data = []
         for current_file in tqdm(files, desc='Feature extraction'):
