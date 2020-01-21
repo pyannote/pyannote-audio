@@ -32,26 +32,35 @@ import scipy.optimize
 from .base_labeling import BaseLabeling
 from pyannote.database import get_annotated
 from pyannote.audio.features import Pretrained
+from pyannote.metrics.detection import DetectionRecall
+from pyannote.metrics.detection import DetectionPrecision
 from pyannote.audio.pipeline import SpeechActivityDetection \
                              as SpeechActivityDetectionPipeline
 
 
-def validate_helper_func(current_file, pipeline=None, metric=None):
+def validate_helper_func(current_file, pipeline=None,
+                         precision=None, recall=None):
     reference = current_file['annotation']
     uem = get_annotated(current_file)
     hypothesis = pipeline(current_file)
-    return metric(reference, hypothesis, uem=uem)
+    p = precision(reference, hypothesis, uem=uem)
+    r = recall(reference, hypothesis, uem=uem)
+    return p, r
 
 
 class SpeechActivityDetection(BaseLabeling):
 
     Pipeline = SpeechActivityDetectionPipeline
 
+    def validation_criterion(self, protocol, precision=0.9, **kwargs):
+        return f'precision={100*precision:.0f}%'
+
     def validate_epoch(self,
                        epoch,
                        validation_data,
                        device=None,
                        batch_size=32,
+                       precision=0.9,
                        n_jobs=1,
                        duration=None,
                        step=0.25,
@@ -72,35 +81,65 @@ class SpeechActivityDetection(BaseLabeling):
         # pipeline
         pipeline = self.Pipeline()
 
-        def fun(threshold):
-            pipeline.instantiate({'onset': threshold,
-                                  'offset': threshold,
+        # dichotomic search to find alpha that maximizes recall
+        # while having at least `self.precision`
+
+        lower_alpha = 0.
+        upper_alpha = 1.
+        best_alpha = .5 * (lower_alpha + upper_alpha)
+        best_recall = 0.
+
+        for _ in range(10):
+
+            current_alpha = .5 * (lower_alpha + upper_alpha)
+            pipeline.instantiate({'onset': current_alpha,
+                                  'offset': current_alpha,
                                   'min_duration_on': 0.100,
                                   'min_duration_off': 0.100,
                                   'pad_onset': 0.,
                                   'pad_offset': 0.})
-            metric = pipeline.get_metric(parallel=True)
+
+            _precision = DetectionPrecision(parallel=True)
+            _recall = DetectionRecall(parallel=True)
+
             validate = partial(validate_helper_func,
                                pipeline=pipeline,
-                               metric=metric)
+                               precision=_precision,
+                               recall=_recall)
+
             if n_jobs > 1:
                 _ = self.pool_.map(validate, validation_data)
             else:
                 for file in validation_data:
                     _ = validate(file)
 
-            return abs(metric)
+            _precision = abs(_precision)
+            _recall = abs(_recall)
 
-        res = scipy.optimize.minimize_scalar(
-            fun, bounds=(0., 1.), method='bounded', options={'maxiter': 10})
+            if not _recall:
+                # lower the threshold until we at least return something...
+                upper_alpha = current_alpha
+                best_alpha = current_alpha
+                _precision = 0.
 
-        threshold = res.x.item()
+            elif _precision < precision:
+                # increase the threshold while precision is not good enough
+                lower_alpha = current_alpha
 
-        return {'metric': 'detection_error_rate',
-                'minimize': True,
-                'value': res.fun,
-                'pipeline': pipeline.instantiate({'onset': threshold,
-                                                  'offset': threshold,
+            else:
+                # lower the threshold if we return something and
+                # precision is good enough
+                upper_alpha = current_alpha
+                if _recall > best_recall:
+                    best_recall = _recall
+                    best_alpha = current_alpha
+
+        return {'metric': f'recall@{precision:.2f}precision',
+                'minimize': False,
+                'value': best_recall if best_recall \
+                         else _precision - precision,
+                'pipeline': pipeline.instantiate({'onset': best_alpha,
+                                                  'offset': best_alpha,
                                                   'min_duration_on': 0.100,
                                                   'min_duration_off': 0.100,
                                                   'pad_onset': 0.,

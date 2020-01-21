@@ -222,9 +222,9 @@ Validation options
   --diarization           Use diarization purity and coverage instead of
                           segmentation purity and coverage.
 
-  For overlapped speech detection, validation consists in looking for the value
-  of the detection threshold that maximizes recall, given that precision is
-  greater than a target value:
+  For speech activity and overlapped speech detection, validation consists in
+  looking for the value of the detection threshold that maximizes recall, given
+  that precision is greater than a target value:
 
   --precision=<value>     Set target precision [default: 0.8].
 
