@@ -1,7 +1,12 @@
-# Part of this code was taken from https://github.com/cvqluu/TDNN
+# Part of this code was taken from https://github.com/jonasvdd/TDNN
 
 # Please give proper credit to the authors if you are using TDNN based or X-Vector based
 # models by citing their papers:
+
+# Waibel, Alexander H., Toshiyuki Hanazawa, Geoffrey E. Hinton, Kiyohiro Shikano and Kevin J. Lang.
+# "Phoneme recognition using time-delay neural networks."
+# IEEE Trans. Acoustics, Speech, and Signal Processing 37 (1989): 328-339.
+# https://pdfs.semanticscholar.org/cd62/c9976534a6a2096a38244f6cbb03635a127e.pdf?_ga=2.86820248.1800960571.1579515113-23298545.1575886658
 
 # Peddinti, Vijayaditya, Daniel Povey and Sanjeev Khudanpur.
 # "A time delay neural network architecture for efficient modeling of long temporal contexts."
@@ -15,6 +20,7 @@
 
 import torch
 import torch.nn as nn
+from torch.nn.utils import weight_norm
 import torch.nn.functional as F
 from typing import Optional
 
@@ -35,81 +41,69 @@ def stats_pool(x: torch.Tensor):
     return torch.cat((mean, std), dim=1)
 
 
-class TDNNLayer(nn.Module):
-    """
-    TDNN as defined by https://www.danielpovey.com/files/2015_interspeech_multisplice.pdf
-
-    Affine transformation not applied globally to all frames but smaller windows with local context
-
-    batch_norm: True to include batch normalisation after the non linearity
-
-    Context size and dilation determine the frames selected
-    (although context size is not really defined in the traditional sense)
-    For example:
-        context size 5 and dilation 1 is equivalent to [-2,-1,0,1,2]
-        context size 3 and dilation 2 is equivalent to [-2, 0, 2]
-        context size 1 and dilation 1 is equivalent to [0]
-    """
-    
-    def __init__(self,
-                 input_dim: int = 23,
-                 output_dim: int = 512,
-                 context_size: int = 5,
-                 stride: int = 1,
-                 dilation: int = 1,
-                 batch_norm: bool = True,
-                 dropout_p: float = 0.0):
-        super(TDNNLayer, self).__init__()
-        self.context_size = context_size
-        self.stride = stride
-        self.input_dim = input_dim
-        self.output_dim = output_dim
-        self.dilation = dilation
-        self.dropout_p = dropout_p
-        self.batch_norm = batch_norm
-      
-        self.kernel = nn.Linear(input_dim*context_size, output_dim)
-        self.nonlinearity = nn.ReLU()
-        if self.batch_norm:
-            self.bn = nn.BatchNorm1d(output_dim)
-        if self.dropout_p:
-            self.drop = nn.Dropout(p=self.dropout_p)
-        
-    def forward(self, x: torch.Tensor):
-        """Calculate TDNN layer activations
-
-        Parameters
-        ----------
-        x : (batch_size, n_frames, out_channels)
-            Batch of frames
-
-        Returns
-        -------
-        new_frames : (batch_size, new_n_frames, new_out_channels)
+class TDNN(nn.Module):
+    def __init__(self, context: list, input_channels: int, output_channels: int, full_context: bool = True):
         """
-        _, _, d = x.shape
-        assert (d == self.input_dim), f'Input dimension was wrong. Expected ({self.input_dim}), got ({d})'
-        x = x.unsqueeze(1)
+        Implementation of a 'Fast' TDNN layer by exploiting the dilation argument of the PyTorch Conv1d class
 
-        # Unfold input into smaller temporal contexts
-        x = F.unfold(x, (self.context_size, self.input_dim),
-                     stride=(1, self.input_dim),
-                     dilation=(self.dilation, 1))
+        Due to its fastness the context has gained two constraints:
+            * The context must be symmetric
+            * The context must have equal spacing between each consecutive element
 
-        # N, output_dim*context_size, new_t = x.shape
-        x = x.transpose(1, 2)
-        x = self.kernel(x)
-        x = self.nonlinearity(x)
-        
-        if self.dropout_p:
-            x = self.drop(x)
+        For example: the non-full and symmetric context {-3, -2, 0, +2, +3} is not valid since it doesn't have
+        equal spacing; The non-full context {-6, -3, 0, 3, 6} is both symmetric and has an equal spacing, this is
+        considered valid.
 
-        if self.batch_norm:
-            x = x.transpose(1, 2)
-            x = self.bn(x)
-            x = x.transpose(1, 2)
+        :param context: The temporal context
+        :param input_channels: The number of input channels
+        :param output_channels: The number of channels produced by the temporal convolution
+        :param full_context: Indicates whether a full context needs to be used
+        """
+        super(TDNN, self).__init__()
+        self.full_context = full_context
+        self.input_dim = input_channels
+        self.output_dim = output_channels
 
-        return x
+        context = sorted(context)
+        self.check_valid_context(context, full_context)
+
+        if full_context:
+            kernel_size = context[-1] - context[0] + 1 if len(context) > 1 else 1
+            self.temporal_conv = weight_norm(nn.Conv1d(input_channels, output_channels, kernel_size))
+        else:
+            # use dilation
+            delta = context[1] - context[0]
+            self.temporal_conv = weight_norm(
+                nn.Conv1d(input_channels, output_channels, kernel_size=len(context), dilation=delta))
+
+    def forward(self, x):
+        """
+        :param x: is one batch of data, x.size(): [batch_size, sequence_length, input_channels]
+            sequence length is the dimension of the arbitrary length data
+        :return: [batch_size, len(valid_steps), output_dim]
+        """
+        x = self.temporal_conv(torch.transpose(x, 1, 2))
+        return F.relu(torch.transpose(x, 1, 2))
+
+    @staticmethod
+    def check_valid_context(context: list, full_context: bool) -> None:
+        """
+        Check whether the context is symmetrical and whether and whether the passed
+        context can be used for creating a convolution kernel with dil
+
+        :param full_context: indicates whether the full context (dilation=1) will be used
+        :param context: The context of the model, must be symmetric if no full context and have an equal spacing.
+        """
+        if full_context:
+            assert len(context) <= 2, "If the full context is given one must only define the smallest and largest"
+            if len(context) == 2:
+                assert context[0] + context[-1] == 0, "The context must be symmetric"
+        else:
+            assert len(context) % 2 != 0, "The context size must be odd"
+            assert context[len(context) // 2] == 0, "The context contain 0 in the center"
+            if len(context) > 1:
+                delta = [context[i] - context[i - 1] for i in range(1, len(context))]
+                assert all(delta[0] == delta[i] for i in range(1, len(delta))), "Intra context spacing must be equal!"
 
 
 class XVectorNet(nn.Module):
@@ -130,11 +124,11 @@ class XVectorNet(nn.Module):
 
     def __init__(self, input_dim: int = 24, embedding_dim: int = 512):
         super(XVectorNet, self).__init__()
-        frame1 = TDNNLayer(input_dim=input_dim, output_dim=512, context_size=5, dilation=1)
-        frame2 = TDNNLayer(input_dim=512, output_dim=512, context_size=3, dilation=2)
-        frame3 = TDNNLayer(input_dim=512, output_dim=512, context_size=3, dilation=3)
-        frame4 = TDNNLayer(input_dim=512, output_dim=512, context_size=1, dilation=1)
-        frame5 = TDNNLayer(input_dim=512, output_dim=1500, context_size=1, dilation=1)
+        frame1 = TDNN(context=[-2, 2], input_channels=input_dim, output_channels=512, full_context=True)
+        frame2 = TDNN(context=[-2, 0, 2], input_channels=512, output_channels=512, full_context=False)
+        frame3 = TDNN(context=[-3, 0, 3], input_channels=512, output_channels=512, full_context=False)
+        frame4 = TDNN(context=[0], input_channels=512, output_channels=512, full_context=True)
+        frame5 = TDNN(context=[0], input_channels=512, output_channels=1500, full_context=True)
         self.tdnn = nn.Sequential(frame1, frame2, frame3, frame4, frame5)
         self.segment6 = nn.Linear(3000, embedding_dim)
         self.segment7 = nn.Linear(embedding_dim, embedding_dim)
