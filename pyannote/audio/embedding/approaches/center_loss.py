@@ -50,7 +50,8 @@ class CenterLoss(EmbeddingApproach):
     per_fold : `int`, optional
         Number of different speakers per batch. Defaults to 32.
     per_epoch : `float`, optional
-        Number of days per epoch. Defaults to 7 (a week).
+        Force total audio duration per epoch, in days.
+        Defaults to total duration of protocol subset.
     label_min_duration : `float`, optional
         Remove speakers with less than that many seconds of speech.
         Defaults to 0 (i.e. keep them all).
@@ -63,7 +64,7 @@ class CenterLoss(EmbeddingApproach):
                        per_label=1,
                        per_fold=32,
                        loss_weight=1.,
-                       per_epoch=7,
+                       per_epoch: float = None,
                        label_min_duration=0.):
         super().__init__()
 

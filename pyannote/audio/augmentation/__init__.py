@@ -30,6 +30,7 @@
 # Data augmentation
 """
 
+from .base import Augmentation
 from .base import NoAugmentation
 from .noise import AddNoise
 from .noise import AddNoiseFromGaps

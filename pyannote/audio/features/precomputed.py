@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2018-2019 CNRS
+# Copyright (c) 2018-2020 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -58,7 +58,7 @@ class Precomputed(object):
     dimension : `int`, optional
         Dimension of feature vectors. This is not used when `root_dir` already
         exists and contains `metadata.yml`.
-    labels : iterable, optional
+    classes : iterable, optional
         Human-readable name for each dimension.
 
     Notes
@@ -75,7 +75,7 @@ class Precomputed(object):
         return path
 
     def __init__(self, root_dir=None, use_memmap=True,
-                 sliding_window=None, dimension=None, labels=None,
+                 sliding_window=None, dimension=None, classes=None,
                  augmentation=None):
 
         if augmentation is not None:
@@ -93,16 +93,16 @@ class Precomputed(object):
                 params = yaml.load(f, Loader=yaml.SafeLoader)
 
             self.dimension_ = params.pop('dimension')
-            self.labels_ = params.pop('labels', None)
+            self.classes_ = params.pop('classes', None)
             self.sliding_window_ = SlidingWindow(**params)
 
             if dimension is not None and self.dimension_ != dimension:
                 msg = 'inconsistent "dimension" (is: {0}, should be: {1})'
                 raise ValueError(msg.format(dimension, self.dimensions_))
 
-            if labels is not None and self.labels_ != labels:
-                msg = 'inconsistent "labels" (is {0}, should be: {1})'
-                raise ValueError(msg.format(labels, self.labels_))
+            if classes is not None and self.classes_ != classes:
+                msg = 'inconsistent "classes" (is {0}, should be: {1})'
+                raise ValueError(msg.format(classes, self.classes_))
 
             if ((sliding_window is not None) and
                 ((sliding_window.start != self.sliding_window_.start) or
@@ -114,13 +114,13 @@ class Precomputed(object):
         else:
 
             if dimension is None:
-                if labels is None:
+                if classes is None:
                     msg = (
-                        f'Please provide either `dimension` or `labels` '
+                        f'Please provide either `dimension` or `classes` '
                         f'parameters (or both) when instantiating '
                         f'`Precomputed`.'
                     )
-                dimension = len(labels)
+                dimension = len(classes)
 
             if sliding_window is None or dimension is None:
                 msg = (
@@ -139,15 +139,15 @@ class Precomputed(object):
                       'duration': sliding_window.duration,
                       'step': sliding_window.step,
                       'dimension': dimension}
-            if labels is not None:
-                params['labels'] = labels
+            if classes is not None:
+                params['classes'] = classes
 
             with io.open(path, 'w') as f:
                 yaml.dump(params, f, default_flow_style=False)
 
             self.sliding_window_ = sliding_window
             self.dimension_ = dimension
-            self.labels_ = labels
+            self.classes_ = classes
 
     def augmentation():
         doc = "Data augmentation."
@@ -171,9 +171,9 @@ class Precomputed(object):
         return self.dimension_
 
     @property
-    def labels(self):
+    def classes(self):
         """Human-readable label of each dimension"""
-        return self.labels_
+        return self.classes_
 
     def __call__(self, current_file):
         """Obtain features for file

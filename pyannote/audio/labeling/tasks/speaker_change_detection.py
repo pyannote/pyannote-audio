@@ -67,12 +67,20 @@ class SpeakerChangeDetectionGenerator(LabelingTaskGenerator):
     batch_size : int, optional
         Batch size. Defaults to 32.
     per_epoch : float, optional
-        Total audio duration per epoch, in days. Defaults to one day (1).
+        Force total audio duration per epoch, in days.
+        Defaults to total duration of protocol subset.
     """
 
-    def __init__(self, feature_extraction, protocol, subset='train',
-                 resolution=None, alignment=None, collar=0.100,
-                 regression=False, non_speech=False, **kwargs):
+    def __init__(self,
+                 feature_extraction,
+                 protocol,
+                 subset='train',
+                 resolution=None,
+                 alignment=None,
+                 collar=0.100,
+                 regression=False,
+                 non_speech=False,
+                 **kwargs):
 
         self.collar = collar
         self.regression = regression

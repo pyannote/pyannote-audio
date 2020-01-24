@@ -27,29 +27,21 @@
 
 This tutorial assumes that you have already followed the [data preparation](../data_preparation) tutorial.
 
-For the purpose of this tutorial, we use models available on `torch.hub` that were pretrained on `AMI` training subset.
+For the purpose of this tutorial, we use models available on `torch.hub` that were pretrained on `AMI` training subset:
 
 ```python
 import torch
-
 # speech activity detection model trained on AMI training set
-PATH_TO_SAD_MODEL = torch.hub.load('pyannote/pyannote-audio', 
-                                   'sad_ami', return_path=True)
-
+sad = torch.hub.load('pyannote/pyannote-audio', 'sad_ami')
 # speaker change detection model trained on AMI training set
-PATH_TO_SCD_MODEL = torch.hub.load('pyannote/pyannote-audio', 
-                                   'scd_ami', return_path=True)
-
+scd = torch.hub.load('pyannote/pyannote-audio', 'scd_ami')
 # overlapped speech detectoin model trained on AMI training set
-PATH_TO_OVL_MODEL = torch.hub.load('pyannote/pyannote-audio', 
-                                  'ovl_ami', return_path=True)
-
+ovl = torch.hub.load('pyannote/pyannote-audio', 'ovl_ami')
 # speaker embedding model trained on VoxCeleb1
-PATH_TO_EMB_MODEL = torch.hub.load('pyannote/pyannote-audio', 
-                                   'emb_voxceleb', return_path=True)
+emb = torch.hub.load('pyannote/pyannote-audio', 'emb_voxceleb')
 ```
 
-We will apply those pretrained models on the first file of the `AMI` test subset:
+We will apply those pretrained models on the first file of the `AMI` test subset.
 
 ```python
 # ... or use a file provided by a pyannote.database protocol
@@ -62,25 +54,24 @@ protocol = get_protocol('AMI.SpeakerDiarization.MixHeadset',
 test_file = next(protocol.test())
 ```
 
-:warning: If you would like to test those models on your own data, you could do something like this (or [define your own protocol](../data_preparation))
+:warning: If you trained your own models (e.g. with [this](../models/speech_activity_detection) tutorial) it is obviously possible to use it by providing the path to the validation directory to the `Pretrained` class:
+
+```python
+from pyannote.audio.features import Pretrained
+sad = Pretrained(validate_dir='/path/to/validation/directory')
+```
+
+:warning: If you would like to test those models on your own data, you could do something like this (or [define your own protocol](../data_preparation)). 
+
 
 ```python
 # one can use their own file like this...
 test_file = {'uri': 'filename', 'audio': '/path/to/your/filename.wav'}
 ```
 
-:warning: Note that, in case of domain mismatch between your data and the `AMI` corpus, you might be better off [training your own models](../models/speech_activity_detection).
+Note that, in case of domain mismatch between your data and the `AMI` corpus, you might be better off [training your own models](../models/speech_activity_detection).
 
-## Segmentation into speech turns
-
-```python
-# initialize SAD & SCD sequence labeling models
-from pyannote.audio.labeling.extraction import SequenceLabeling
-device = torch.device('cuda')
-sad = SequenceLabeling(model=PATH_TO_SAD_MODEL, device=device)
-scd = SequenceLabeling(model=PATH_TO_SCD_MODEL, device=device)
-ovl = SequenceLabeling(model=PATH_TO_OVL_MODEL, device=device)
-```
+## Segmentation
 
 ### Speech activity detection
 
@@ -119,7 +110,7 @@ partition = peak.apply(scd_scores, dimension=1)
 
 ```python
 # obtain raw OVL scores (as `pyannote.core.SlidingWindowFeature` instance)
-ovl_scores = sad(test_file)
+ovl_scores = ovl(test_file)
 
 # binarize raw OVL scores
 # NOTE: both onset/offset values were tuned on AMI dataset.
@@ -136,6 +127,7 @@ overlap = binarize.apply(ovl_scores, dimension=1)
 
 ```python
 # let's visualize SAD, SCD and OVL results using pyannote.core visualization API
+import numpy as np
 from matplotlib import pyplot as plt
 from pyannote.core import Segment, notebook
 
@@ -198,13 +190,11 @@ speech_turns = partition.crop(speech)
 ```
 
 ```python
-# initialize sequence embedding model
-from pyannote.audio.embedding.extraction import SequenceEmbedding
-emb = SequenceEmbedding(model=PATH_TO_EMB_MODEL, device=device)
-
 # obtain raw embeddings (as `pyannote.core.SlidingWindowFeature` instance)
-# embeddings are extracted every 250ms on 500ms-long windows
 embeddings = emb(test_file)
+
+chunks = embeddings.sliding_window
+print(f'Embeddings were extracted every {1000 * chunks.step:g}ms on {1000 * chunks.duration:g}ms-long windows.')
 ```
 
 ```python

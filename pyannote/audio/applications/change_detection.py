@@ -33,7 +33,7 @@ from pyannote.database import get_annotated
 from pyannote.metrics.diarization import DiarizationPurityCoverageFMeasure
 from pyannote.metrics.segmentation import SegmentationPurityCoverageFMeasure
 
-from pyannote.audio.labeling.extraction import SequenceLabeling
+from pyannote.audio.features import Pretrained
 from pyannote.audio.pipeline.speaker_change_detection \
     import SpeakerChangeDetection as SpeakerChangeDetectionPipeline
 
@@ -63,21 +63,16 @@ class SpeakerChangeDetection(BaseLabeling):
                              step=0.25,
                              **kwargs):
 
-        # load model for current epoch
-        model = self.load_model(epoch).to(device)
-        model.eval()
-
         # compute (and store) SCD scores
-        sequence_labeling = SequenceLabeling(
-            model=model,
-            feature_extraction=self.feature_extraction_,
-            duration=duration,
-            step=step * duration,
-            batch_size=batch_size,
-            device=device)
+        pretrained = Pretrained(validate_dir=self.validate_dir_,
+                                epoch=epoch,
+                                duration=duration,
+                                step=step,
+                                batch_size=batch_size,
+                                device=device)
 
         for current_file in validation_data:
-            current_file['scd_scores'] = sequence_labeling(current_file)
+            current_file['scd_scores'] = pretrained(current_file)
 
         # pipeline
         pipeline = self.Pipeline(purity=purity)

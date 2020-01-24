@@ -45,7 +45,8 @@ class Classification(EmbeddingApproach):
     per_fold : `int`, optional
         Number of different speakers per batch. Defaults to 32.
     per_epoch : `float`, optional
-        Number of days per epoch. Defaults to 7 (a week).
+        Force total audio duration per epoch, in days.
+        Defaults to total duration of protocol subset.
     label_min_duration : `float`, optional
         Remove speakers with less than that many seconds of speech.
         Defaults to 0 (i.e. keep them all).
@@ -62,7 +63,7 @@ class Classification(EmbeddingApproach):
     def __init__(self, duration: float = 1.0,
                        per_label: int = 1,
                        per_fold: int = 32,
-                       per_epoch: int = 7,
+                       per_epoch: float = None,
                        label_min_duration: float = 0.,
                        bias: bool = False):
         super().__init__()

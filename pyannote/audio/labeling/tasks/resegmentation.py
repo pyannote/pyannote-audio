@@ -28,6 +28,9 @@
 
 """Resegmentation"""
 
+raise NotImplementedError(
+    'Resegmentation is broken for now. Come back later ;)')
+
 import torch
 import tempfile
 import numpy as np
@@ -38,12 +41,12 @@ from pyannote.core import SlidingWindowFeature
 from pyannote.database.protocol import SpeakerDiarizationProtocol
 from pyannote.audio.augmentation import AddNoiseFromGaps
 from pyannote.core.utils.numpy import one_hot_decoding
-from pyannote.audio.labeling.extraction import SequenceLabeling
 from pyannote.audio.train.schedulers import ConstantScheduler
 from torch.optim import SGD
 from pyannote.audio.utils.path import mkdir_p
 from pathlib import Path
 from pyannote.audio.utils.signal import Binarize
+
 
 
 class ResegmentationGenerator(LabelingTaskGenerator):
