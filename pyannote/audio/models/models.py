@@ -33,6 +33,7 @@ import torch
 import torch.nn as nn
 
 from .sincnet import SincNet
+from .pooling import get_pooling_strategy
 from pyannote.audio.train.model import Model
 from pyannote.audio.train.model import Resolution
 from pyannote.audio.train.model import RESOLUTION_CHUNK
@@ -83,7 +84,7 @@ class RNN(nn.Module):
         self.dropout = dropout
         self.bidirectional = bidirectional
         self.concatenate = concatenate
-        self.pool = pool
+        self.pool = get_pooling_strategy(pool, bidirectional, num_layers)
 
         if num_layers < 1:
             msg = ('"bidirectional" must be set to False when num_layers < 1')
@@ -194,25 +195,8 @@ class RNN(nn.Module):
                     intermediate = h.transpose(2, 1).contiguous().view(
                         self.num_layers, -1, num_directions * self.hidden_size)
 
-        if self.pool == 'sum':
-            output = output.sum(dim=1)
-
-        elif self.pool == 'max':
-            output = output.max(dim=1)[0]
-
-        elif self.pool == 'last':
-            if self.bidirectional:
-                output = torch.cat(
-                    hidden.view(self.num_layers, num_directions,
-                                -1, self.hidden_size)[-1],
-                    dim=0)
-            else:
-                output = output[:, -1]
-
-        elif self.pool == 'x-vector':
-            output = torch.cat((torch.mean(output, dim=1),
-                                torch.std(output, dim=1)),
-                               dim=1)
+        if self.pool is not None:
+            output = self.pool(hidden if self.bidirectional else output)
 
         if return_intermediate:
             return output, intermediate
