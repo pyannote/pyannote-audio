@@ -32,43 +32,70 @@ import torch
 import torch.nn as nn
 
 
-def get_temporal_pooling(name: Optional[str],
-                         bidirectional: Optional[bool] = None,
-                         num_layers: Optional[int] = None,
-                         hidden_size: Optional[int] = None) -> Optional[nn.Module]:
-    """Pooling strategy factory. returns an instance of a pooling module given its name
+class TemporalPooling(nn.Module):
+    """Pooling strategy over RNN sequences.
 
     Parameters
     ----------
-    name : {'sum', 'max', 'last', 'x-vector'}, optional
-        Temporal pooling strategy.
-    bidirectional : `bool`, optional
-        If True, assumes the input to come from a bidirectional RNN.
-        Mandatory if name == `last`. Defaults to None.
-    num_layers : `int`, optional
-        Number of recurrent layers of the RNN.
-        Mandatory if name == `last`. Defaults to None.
-    hidden_size : `int`, optional
+    bidirectional : `boolean`
+        If True, the hidden outputs of a bidirectional RNN are assumed as the input. Usual output otherwise.
+        Defaults to False.
+    num_layers : `int`
+        Number of recurrent layers of the RNN. Defaults to 1.
+    hidden_size : `int`
         Number of features in the hidden state of the RNN. Defaults to 16.
-        Mandatory if name == `last`. Defaults to None.
-    Returns
-    -------
-    output : nn.Module or None if invalid name
-        the pooling strategy
     """
-    if name == 'sum':
-        return SumPool()
-    elif name == 'max':
-        return MaxPool()
-    elif name == 'last':
-        return LastPool(bidirectional, num_layers, hidden_size)
-    elif name == 'x-vector':
-        return StatsPool()
-    else:
-        return None
+
+    @staticmethod
+    def create(name: Optional[str],
+               bidirectional: Optional[bool] = None,
+               num_layers: Optional[int] = None,
+               hidden_size: Optional[int] = None) -> Optional[nn.Module]:
+        """Pooling strategy factory. returns an instance of `TemporalPooling` given its name
+
+        Parameters
+        ----------
+        name : {'sum', 'max', 'last', 'x-vector'}, optional
+            Temporal pooling strategy.
+        bidirectional : `bool`, optional
+            If True, assumes the input to come from a bidirectional RNN.
+            Mandatory if name == `last`. Defaults to None.
+        num_layers : `int`, optional
+            Number of recurrent layers of the RNN.
+            Mandatory if name == `last`. Defaults to None.
+        hidden_size : `int`, optional
+            Number of features in the hidden state of the RNN. Defaults to 16.
+            Mandatory if name == `last`. Defaults to None.
+        Returns
+        -------
+        output : nn.Module or None if invalid name
+            the pooling strategy
+        """
+        klass = None
+
+        if name == 'sum':
+            klass = SumPool
+        elif name == 'max':
+            klass = MaxPool
+        elif name == 'last':
+            klass = LastPool
+        elif name == 'x-vector':
+            klass = StatsPool
+
+        return klass(bidirectional, num_layers, hidden_size) if klass is not None else None
+
+    def __init__(self, bidirectional: bool = False, num_layers: int = 1, hidden_size: int = 16):
+        super(TemporalPooling, self).__init__()
+        self.bidirectional = bidirectional
+        self.num_layers = num_layers
+        self.hidden_size = hidden_size
+        self.num_directions = 2 if bidirectional else 1
+
+    def forward(self, hidden: Optional[torch.Tensor], x: torch.Tensor):
+        raise NotImplementedError("TemporalPooling subclass must implement `forward`")
 
 
-class SumPool(nn.Module):
+class SumPool(TemporalPooling):
 
     def forward(self, hidden: Optional[torch.Tensor], x: torch.Tensor):
         """Calculate pooling as the sum over a RNN sequence.
@@ -86,7 +113,7 @@ class SumPool(nn.Module):
         return x.sum(dim=1)
 
 
-class MaxPool(nn.Module):
+class MaxPool(TemporalPooling):
 
     def forward(self, hidden: Optional[torch.Tensor], x: torch.Tensor):
         """Calculate pooling as the maximum values over a RNN sequence.
@@ -104,26 +131,7 @@ class MaxPool(nn.Module):
         return x.max(dim=1)[0]
 
 
-class LastPool(nn.Module):
-    """Pooling strategy to keep the last activation of a RNN.
-
-    Parameters
-    ----------
-    bidirectional : `boolean`
-        If True, the hidden outputs of a bidirectional RNN are assumed as the input. Usual output otherwise.
-        Defaults to False.
-    num_layers : `int`
-        Number of recurrent layers of the RNN. Defaults to 1.
-    hidden_size : `int`
-        Number of features in the hidden state of the RNN. Defaults to 16.
-    """
-
-    def __init__(self, bidirectional: bool = False, num_layers: int = 1, hidden_size: int = 16):
-        super(LastPool, self).__init__()
-        self.bidirectional = bidirectional
-        self.num_layers = num_layers
-        self.hidden_size = hidden_size
-        self.num_directions = 2 if bidirectional else 1
+class LastPool(TemporalPooling):
 
     def forward(self, hidden: torch.Tensor, x: torch.Tensor):
         """Return the last activation of a RNN sequence.
@@ -140,6 +148,7 @@ class LastPool(nn.Module):
         output : `torch.Tensor`, shape (batch_size, num_directions * hidden_size)
         """
         if self.bidirectional:
+            # FIXME this operation fails
             return torch.cat(
                 hidden.view(self.num_layers, self.num_directions, -1, self.hidden_size)[-1],
                 dim=0)
@@ -147,9 +156,9 @@ class LastPool(nn.Module):
             return x[:, -1]
 
 
-class StatsPool(nn.Module):
+class StatsPool(TemporalPooling):
 
-    def forward(self, hidden, x):
+    def forward(self, hidden: Optional[torch.Tensor], x: torch.Tensor):
         """Calculate mean and standard deviation of a RNN sequence and concatenate them.
 
         Parameters

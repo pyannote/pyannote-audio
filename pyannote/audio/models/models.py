@@ -33,7 +33,7 @@ import torch
 import torch.nn as nn
 
 from .sincnet import SincNet
-from .pooling import get_temporal_pooling
+from .pooling import TemporalPooling
 from pyannote.audio.train.model import Model
 from pyannote.audio.train.model import Resolution
 from pyannote.audio.train.model import RESOLUTION_CHUNK
@@ -85,7 +85,7 @@ class RNN(nn.Module):
         self.bidirectional = bidirectional
         self.concatenate = concatenate
         self.pool = pool
-        self.pool_ = get_temporal_pooling(pool, bidirectional, num_layers, hidden_size)
+        self.pool_ = TemporalPooling.create(pool, bidirectional, num_layers, hidden_size)
 
         if num_layers < 1:
             msg = ('"bidirectional" must be set to False when num_layers < 1')
