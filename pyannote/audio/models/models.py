@@ -25,6 +25,7 @@
 
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
+# Juan Manuel Coria
 
 from typing import Optional
 
@@ -85,7 +86,7 @@ class RNN(nn.Module):
         self.bidirectional = bidirectional
         self.concatenate = concatenate
         self.pool = pool
-        self.pool_ = TemporalPooling.create(pool, bidirectional, num_layers, hidden_size)
+        self.pool_ = TemporalPooling.create(pool)
 
         if num_layers < 1:
             msg = ('"bidirectional" must be set to False when num_layers < 1')
@@ -196,7 +197,7 @@ class RNN(nn.Module):
                         self.num_layers, -1, num_directions * self.hidden_size)
 
         if self.pool_ is not None:
-            output = self.pool_(hidden[0] if self.unit == 'LSTM' else hidden, output)
+            output = self.pool_(output)
 
         if return_intermediate:
             return output, intermediate
