@@ -32,9 +32,10 @@ import torch
 import torch.nn as nn
 
 
-def get_pooling_strategy(name: Optional[str],
+def get_temporal_pooling(name: Optional[str],
                          bidirectional: Optional[bool] = None,
-                         num_layers: Optional[int] = None) -> Optional[nn.Module]:
+                         num_layers: Optional[int] = None,
+                         hidden_size: Optional[int] = None) -> Optional[nn.Module]:
     """Pooling strategy factory. returns an instance of a pooling module given its name
 
     Parameters
@@ -43,10 +44,13 @@ def get_pooling_strategy(name: Optional[str],
         Temporal pooling strategy.
     bidirectional : `bool`, optional
         If True, assumes the input to come from a bidirectional RNN.
-        It cannot be None if name == `last`. Defaults to None.
+        Mandatory if name == `last`. Defaults to None.
     num_layers : `int`, optional
-        Number of recurrent layers if the input comes from a RNN
-        It cannot be None if name == `last`. Defaults to None.
+        Number of recurrent layers of the RNN.
+        Mandatory if name == `last`. Defaults to None.
+    hidden_size : `int`, optional
+        Number of features in the hidden state of the RNN. Defaults to 16.
+        Mandatory if name == `last`. Defaults to None.
     Returns
     -------
     output : nn.Module or None if invalid name
@@ -57,7 +61,7 @@ def get_pooling_strategy(name: Optional[str],
     elif name == 'max':
         return MaxPool()
     elif name == 'last':
-        return LastPool(bidirectional, num_layers)
+        return LastPool(bidirectional, num_layers, hidden_size)
     elif name == 'x-vector':
         return StatsPool()
     else:
@@ -66,62 +70,78 @@ def get_pooling_strategy(name: Optional[str],
 
 class SumPool(nn.Module):
 
-    def forward(self, x: torch.Tensor):
-        """Calculate sum of the input frames
+    def forward(self, hidden: Optional[torch.Tensor], x: torch.Tensor):
+        """Calculate pooling as the sum over a RNN sequence.
 
         Parameters
         ----------
-        x : (batch_size, n_frames, out_channels)
-            Batch of frames
+        hidden : unused, kept to respect common interface
+        x : `torch.Tensor`, shape (seq_len, batch_size, num_directions * hidden_size)
+            Output of a RNN.
 
         Returns
         -------
-        output : (batch_size, out_channels)
+        output : `torch.Tensor`, shape (batch_size, num_directions * hidden_size)
         """
         return x.sum(dim=1)
 
 
 class MaxPool(nn.Module):
 
-    def forward(self, x: torch.Tensor):
-        """Calculate maximum of the input frames
+    def forward(self, hidden: Optional[torch.Tensor], x: torch.Tensor):
+        """Calculate pooling as the maximum values over a RNN sequence.
 
         Parameters
         ----------
-        x : (batch_size, n_frames, out_channels)
-            Batch of frames
+        hidden : unused, kept to respect common interface
+        x : `torch.Tensor`, shape (seq_len, batch_size, num_directions * hidden_size)
+            Output of a RNN.
 
         Returns
         -------
-        output : (batch_size, out_channels)
+        output : `torch.Tensor`, shape (batch_size, num_directions * hidden_size)
         """
         return x.max(dim=1)[0]
 
 
 class LastPool(nn.Module):
-    """TODO
+    """Pooling strategy to keep the last activation of a RNN.
 
     Parameters
     ----------
-    bidirectional : `boolean`, optional
+    bidirectional : `boolean`
         If True, the hidden outputs of a bidirectional RNN are assumed as the input. Usual output otherwise.
         Defaults to False.
-    num_layers : `int`, optional
+    num_layers : `int`
         Number of recurrent layers of the RNN. Defaults to 1.
+    hidden_size : `int`
+        Number of features in the hidden state of the RNN. Defaults to 16.
     """
 
-    def __init__(self, bidirectional: bool = False, num_layers: int = 1):
+    def __init__(self, bidirectional: bool = False, num_layers: int = 1, hidden_size: int = 16):
         super(LastPool, self).__init__()
         self.bidirectional = bidirectional
         self.num_layers = num_layers
+        self.hidden_size = hidden_size
         self.num_directions = 2 if bidirectional else 1
 
-    def forward(self, x):
-        """TODO"""
+    def forward(self, hidden: torch.Tensor, x: torch.Tensor):
+        """Return the last activation of a RNN sequence.
+
+        Parameters
+        ----------
+        hidden : `torch.Tensor`, shape (num_layers * num_directions, batch_size, hidden_size)
+            Hidden states of a RNN.
+        x : `torch.Tensor`, shape (seq_len, batch_size, num_directions * hidden_size)
+            Output of a RNN.
+
+        Returns
+        -------
+        output : `torch.Tensor`, shape (batch_size, num_directions * hidden_size)
+        """
         if self.bidirectional:
             return torch.cat(
-                x.view(self.num_layers, self.num_directions,
-                       -1, self.hidden_size)[-1],
+                hidden.view(self.num_layers, self.num_directions, -1, self.hidden_size)[-1],
                 dim=0)
         else:
             return x[:, -1]
@@ -129,17 +149,18 @@ class LastPool(nn.Module):
 
 class StatsPool(nn.Module):
 
-    def forward(self, x: torch.Tensor):
-        """Calculate mean and standard deviation of the input frames and concatenate them
+    def forward(self, hidden, x):
+        """Calculate mean and standard deviation of a RNN sequence and concatenate them.
 
         Parameters
         ----------
-        x : (batch_size, n_frames, out_channels)
-            Batch of frames
+        hidden : unused, kept to respect common interface
+        x : `torch.Tensor`, shape (seq_len, batch_size, num_directions * hidden_size)
+            Output of a RNN.
 
         Returns
         -------
-        output : (batch_size, 2 * out_channels)
+        output : `torch.Tensor`, shape (batch_size, 2 * num_directions * hidden_size)
         """
         mean, std = torch.mean(x, dim=1), torch.std(x, dim=1)
         return torch.cat((mean, std), dim=1)

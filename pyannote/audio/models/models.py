@@ -33,7 +33,7 @@ import torch
 import torch.nn as nn
 
 from .sincnet import SincNet
-from .pooling import get_pooling_strategy
+from .pooling import get_temporal_pooling
 from pyannote.audio.train.model import Model
 from pyannote.audio.train.model import Resolution
 from pyannote.audio.train.model import RESOLUTION_CHUNK
@@ -84,7 +84,8 @@ class RNN(nn.Module):
         self.dropout = dropout
         self.bidirectional = bidirectional
         self.concatenate = concatenate
-        self.pool = get_pooling_strategy(pool, bidirectional, num_layers)
+        self.pool = pool
+        self.pool_ = get_temporal_pooling(pool, bidirectional, num_layers, hidden_size)
 
         if num_layers < 1:
             msg = ('"bidirectional" must be set to False when num_layers < 1')
@@ -124,7 +125,6 @@ class RNN(nn.Module):
                               num_layers=self.num_layers, bias=self.bias,
                               batch_first=True, dropout=self.dropout,
                               bidirectional=self.bidirectional)
-
 
     def forward(self, features, return_intermediate=False):
         """Apply recurrent layer (and optional temporal pooling)
@@ -195,8 +195,8 @@ class RNN(nn.Module):
                     intermediate = h.transpose(2, 1).contiguous().view(
                         self.num_layers, -1, num_directions * self.hidden_size)
 
-        if self.pool is not None:
-            output = self.pool(hidden if self.bidirectional else output)
+        if self.pool_ is not None:
+            output = self.pool_(hidden[0] if self.unit == 'LSTM' else hidden, output)
 
         if return_intermediate:
             return output, intermediate
@@ -333,7 +333,6 @@ class Embedding(nn.Module):
             return self.n_features
         return locals()
     dimension = property(**dimension())
-
 
 
 class PyanNet(Model):
