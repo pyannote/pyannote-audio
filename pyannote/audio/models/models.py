@@ -637,7 +637,7 @@ class SincTDNN(Model):
             self.linear_ = nn.Linear(n_features, len(self.classes), bias=True)
             self.activation_ = self.task.default_activation
 
-    def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
+    def forward(self, waveforms: torch.Tensor, **kwargs) -> torch.Tensor:
         """Forward pass
 
         Parameters
