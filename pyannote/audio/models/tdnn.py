@@ -46,27 +46,14 @@
 # 2018 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) (2018): 5329-5333.
 # https://www.danielpovey.com/files/2018_icassp_xvectors.pdf
 
+from typing import Optional
+
 import torch
 import torch.nn as nn
 from torch.nn.utils import weight_norm
 import torch.nn.functional as F
-from typing import Optional
 
-
-def stats_pool(x: torch.Tensor):
-    """Calculate mean and standard deviation of the input frames and concatenate them
-
-    Parameters
-    ----------
-    x : (batch_size, n_frames, out_channels)
-        Batch of frames
-
-    Returns
-    -------
-    mean_std : (batch_size, 2 * out_channels)
-    """
-    mean, std = torch.mean(x, dim=1), torch.std(x, dim=1)
-    return torch.cat((mean, std), dim=1)
+from .pooling import StatsPool
 
 
 class TDNN(nn.Module):
@@ -157,7 +144,7 @@ class XVectorNet(nn.Module):
         frame3 = TDNN(context=[-3, 0, 3], input_channels=512, output_channels=512, full_context=False)
         frame4 = TDNN(context=[0], input_channels=512, output_channels=512, full_context=True)
         frame5 = TDNN(context=[0], input_channels=512, output_channels=1500, full_context=True)
-        self.tdnn = nn.Sequential(frame1, frame2, frame3, frame4, frame5)
+        self.tdnn = nn.Sequential(frame1, frame2, frame3, frame4, frame5, StatsPool())
         self.segment6 = nn.Linear(3000, embedding_dim)
         self.segment7 = nn.Linear(embedding_dim, embedding_dim)
         self.embedding_dim = embedding_dim
@@ -181,7 +168,7 @@ class XVectorNet(nn.Module):
             (batch_size, embedding_dim)      if return_intermediate == 'segment6' | 'segment7' | None
         """
 
-        x = stats_pool(self.tdnn(x))
+        x = self.tdnn(x)
 
         if return_intermediate == 'stats_pool':
             return x
