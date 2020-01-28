@@ -26,7 +26,8 @@
 # AUTHORS
 # Juan Manuel Coria
 
-from typing import Optional
+from typing_extensions import Literal
+from warnings import warn
 
 import torch
 import torch.nn as nn
@@ -36,103 +37,103 @@ class TemporalPooling(nn.Module):
     """Pooling strategy over RNN sequences."""
 
     @staticmethod
-    def create(name: Optional[str]) -> Optional[nn.Module]:
+    def create(method: Literal['sum', 'max', 'last', 'stats']) -> nn.Module:
         """Pooling strategy factory. returns an instance of `TemporalPooling` given its name.
 
         Parameters
         ----------
-        name : {'sum', 'max', 'last', 'x-vector'}, optional
-            Temporal pooling strategy.
+        method : {'sum', 'max', 'last', 'stats', 'x-vector'}
+            Temporal pooling strategy. The `x-vector` method name
+            for stats pooling (equivalent to `stats`) is kept for
+            retrocompatibility but it will be removed in a future version.
         Returns
         -------
-        output : nn.Module or None if invalid name
+        output : nn.Module
             The temporal pooling strategy object
         """
-        klass = None
-
-        if name == 'sum':
+        if method == 'sum':
             klass = SumPool
-        elif name == 'max':
+        elif method == 'max':
             klass = MaxPool
-        elif name == 'last':
+        elif method == 'last':
             klass = LastPool
-        elif name == 'x-vector':
+        elif method == 'stats':
             klass = StatsPool
-
-        return klass() if klass is not None else None
+        elif method == 'x-vector':
+            klass = StatsPool
+            warn("`x-vector` is deprecated and will be removed in a future version. Please use `stats` instead")
+        else:
+            raise ValueError(f"`{method}` is not a valid temporal pooling method")
+        return klass()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError("TemporalPooling subclass must implement `forward`")
 
 
 class SumPool(TemporalPooling):
+    """Calculate pooling as the sum over a sequence"""
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Calculate pooling as the sum over a RNN sequence.
-
+        """
         Parameters
         ----------
-        x : `torch.Tensor`, shape (batch_size, seq_len, num_directions * hidden_size)
-            Output of a RNN.
+        x : `torch.Tensor`, shape (batch_size, seq_len, hidden_size)
+            A batch of sequences.
 
         Returns
         -------
-        output : `torch.Tensor`, shape (batch_size, num_directions * hidden_size)
+        output : `torch.Tensor`, shape (batch_size, hidden_size)
         """
         return x.sum(dim=1)
 
 
 class MaxPool(TemporalPooling):
+    """Calculate pooling as the maximum over a sequence"""
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Calculate pooling as the maximum values over a RNN sequence.
-
+        """
         Parameters
         ----------
-        x : `torch.Tensor`, shape (batch_size, seq_len, num_directions * hidden_size)
-            Output of a RNN.
+        x : `torch.Tensor`, shape (batch_size, seq_len, hidden_size)
+            A batch of sequences.
 
         Returns
         -------
-        output : `torch.Tensor`, shape (batch_size, num_directions * hidden_size)
+        output : `torch.Tensor`, shape (batch_size, hidden_size)
         """
         return x.max(dim=1)[0]
 
 
 class LastPool(TemporalPooling):
+    """Calculate pooling as the last element of a sequence"""
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Return the last activation of a RNN sequence.
-
+        """
         Parameters
         ----------
-        x : `torch.Tensor`, shape (batch_size, seq_len, num_directions * hidden_size)
-            Output of a RNN.
+        x : `torch.Tensor`, shape (batch_size, seq_len, hidden_size)
+            A batch of sequences.
 
         Returns
         -------
-        output : `torch.Tensor`, shape (batch_size, num_directions * hidden_size)
+        output : `torch.Tensor`, shape (batch_size, hidden_size)
         """
-        if self.bidirectional:
-            # TODO does this really make sense?
-            raise NotImplementedError("LastPool does not yet support bidirectional RNNs")
-        else:
-            return x[:, -1]
+        return x[:, -1]
 
 
 class StatsPool(TemporalPooling):
+    """Calculate pooling as the concatenated mean and standard deviation of a sequence"""
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Calculate mean and standard deviation of a RNN sequence and concatenate them.
-
+        """
         Parameters
         ----------
-        x : `torch.Tensor`, shape (batch_size, seq_len, num_directions * hidden_size)
-            Output of a RNN.
+        x : `torch.Tensor`, shape (batch_size, seq_len, hidden_size)
+            A batch of sequences.
 
         Returns
         -------
-        output : `torch.Tensor`, shape (batch_size, 2 * num_directions * hidden_size)
+        output : `torch.Tensor`, shape (batch_size, 2 * hidden_size)
         """
         mean, std = torch.mean(x, dim=1), torch.std(x, dim=1)
         return torch.cat((mean, std), dim=1)

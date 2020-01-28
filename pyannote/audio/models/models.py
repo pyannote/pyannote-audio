@@ -86,7 +86,7 @@ class RNN(nn.Module):
         self.bidirectional = bidirectional
         self.concatenate = concatenate
         self.pool = pool
-        self.pool_ = TemporalPooling.create(pool)
+        self.pool_ = TemporalPooling.create(pool) if pool is not None else None
 
         if num_layers < 1:
             msg = ('"bidirectional" must be set to False when num_layers < 1')
