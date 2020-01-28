@@ -34,7 +34,7 @@ import torch.nn as nn
 
 
 class TemporalPooling(nn.Module):
-    """Pooling strategy over RNN sequences."""
+    """Pooling strategy over temporal sequences."""
 
     @staticmethod
     def create(method: Literal['sum', 'max', 'last', 'stats']) -> nn.Module:
