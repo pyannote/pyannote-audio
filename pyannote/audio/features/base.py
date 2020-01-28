@@ -211,4 +211,12 @@ class FeatureExtraction(object):
                                        duration=frames.duration)
         (start, end), = shifted_frames.crop(segment, mode=mode, fixed=fixed,
                                             return_ranges=True)
+
+        # HACK for when start (returned by shifted_frames.crop) is negative
+        # due to floating point precision.
+        if start < 0:
+            if fixed is not None:
+                end -= start
+            start = 0
+
         return features[start:end]

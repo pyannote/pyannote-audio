@@ -45,29 +45,34 @@ class Classification(EmbeddingApproach):
     per_fold : `int`, optional
         Number of different speakers per batch. Defaults to 32.
     per_epoch : `float`, optional
-        Number of days per epoch. Defaults to 7 (a week).
+        Force total audio duration per epoch, in days.
+        Defaults to total duration of protocol subset.
     label_min_duration : `float`, optional
         Remove speakers with less than that many seconds of speech.
         Defaults to 0 (i.e. keep them all).
+    bias : `bool`, optional
+        Use bias in the classification layer
+        Defaults to False.
     """
 
-    # TODO. add option to **not** use bias in classification layer
     # TODO. add option to see this classification step
     #       as cosine similarity to centroids (ie center loss?)
 
     CLASSIFIER_PT = '{train_dir}/weights/{epoch:04d}.classifier.pt'
 
-    def __init__(self, duration=1.0,
-                       per_label=1,
-                       per_fold=32,
-                       per_epoch=7,
-                       label_min_duration=0.):
+    def __init__(self, duration: float = 1.0,
+                       per_label: int = 1,
+                       per_fold: int = 32,
+                       per_epoch: float = None,
+                       label_min_duration: float = 0.,
+                       bias: bool = False):
         super().__init__()
 
         self.per_label = per_label
         self.per_fold = per_fold
         self.per_epoch = per_epoch
         self.label_min_duration = label_min_duration
+        self.bias = bias
 
         self.duration = duration
 
@@ -86,7 +91,7 @@ class Classification(EmbeddingApproach):
         self.classifier_ = nn.Linear(
             self.model.dimension,
             len(self.specifications['y']['classes']),
-            bias=True).to(self.device)
+            bias=self.bias).to(self.device)
 
         return self.classifier_.parameters()
 

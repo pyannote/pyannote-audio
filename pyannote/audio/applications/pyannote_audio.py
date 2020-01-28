@@ -160,6 +160,9 @@ Common options
 
   <validate>              Path to <train> sub-directory containing validation
                           artifacts (e.g. <train>/validate/<protocol>.development)
+                          In case option --pretrained=<model> is used, the
+                          output of the pretrained model is dumped into the
+                          <validate> directory.
 
   --subset=<subset>       Subset to use for training (resp. validation,
                           inference). Defaults to "train" (resp. "development",
@@ -198,13 +201,15 @@ Speaker embedding
                           compare embeddings. Defaults to the metric defined in
                           <root>/config.yml configuration file.
 
-Training options
-~~~~~~~~~~~~~~~~
+Pretrained model options
+~~~~~~~~~~~~~~~~~~~~~~~~
 
   --pretrained=<model>    Warm start training with pre-trained model. Can be
                           either a path to an existing checkpoint (e.g.
                           <train>/weights/0050.pt) or the name of a model
                           available in torch.hub.list('pyannote/pyannote.audio')
+                          This option can also be used to apply a pretrained
+                          model. See description of <validate> for more details.
 
 Validation options
 ~~~~~~~~~~~~~~~~~~
@@ -246,6 +251,7 @@ from pathlib import Path
 import multiprocessing
 
 import torch
+from .base import apply_pretrained
 from .speech_detection import SpeechActivityDetection
 from .change_detection import SpeakerChangeDetection
 from .overlap_detection import OverlapDetection
@@ -278,9 +284,6 @@ def main():
     params['device'] = torch.device('cuda') if arg['--gpu'] else \
                        torch.device('cpu')
 
-    # "book" GPU as soon as possible
-    _ = torch.Tensor([0]).to(params['device'])
-
     protocol = arg['<protocol>']
     subset = arg['--subset']
 
@@ -311,8 +314,11 @@ def main():
 
             else:
                 try:
-                    warm_start = torch.hub.load('pyannote/pyannote-audio:v2',
-                                                pretrained, return_path=True)
+                    warm_start = torch.hub.load(
+                        # TODO. change to 'pyannote/pyannote-audio'
+                        # after 2.0 release
+                        'pyannote/pyannote-audio:develop',
+                        pretrained).weights_pt_
                 except Exception as e:
                     msg = (
                         f'Could not load "{warm_start}" model from torch.hub.'
@@ -375,26 +381,26 @@ def main():
                     raise ValueError(msg)
             params['metric'] = metric
 
+        # FIXME: parallel is broken in pyannote.metrics
+        params['n_jobs'] = 1
+
         app.validate(protocol, **params)
 
     if arg['apply']:
+
         validate_dir = Path(arg['<validate>']).expanduser().resolve(strict=True)
-        app = Application.from_validate_dir(validate_dir, training=False)
 
         params['subset'] = 'test' if subset is None else subset
         params['batch_size'] = int(arg['--batch'])
 
         duration = arg['--duration']
-        if duration is None:
-            duration = getattr(app.task_, 'duration', None)
-            if duration is None:
-                msg = ("Task has no 'duration' defined. "
-                       "Use '--duration' option to provide one.")
-                raise ValueError(msg)
-        else:
+        if duration is not None:
             duration = float(duration)
         params['duration'] = duration
 
         params['step'] = float(arg['--step'])
+        params['Pipeline'] = getattr(Application, 'Pipeline', None)
 
-        app.apply(protocol, **params)
+        params['pretrained'] = arg['--pretrained']
+
+        apply_pretrained(validate_dir, protocol, **params)

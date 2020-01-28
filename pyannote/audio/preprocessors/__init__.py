@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2018-2019 CNRS
+# Copyright (c) 2020 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -26,13 +26,5 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
-"""
-# Data augmentation
-"""
 
-from .base import Augmentation
-from .base import NoAugmentation
-from .noise import AddNoise
-from .noise import AddNoiseFromGaps
-
-# from .reverb import Reverb
+from .speech_activity_detection import RemoveNonSpeech

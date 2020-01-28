@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2019 CNRS
+# Copyright (c) 2019-2020 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -29,23 +29,13 @@
 dependencies = ['pyannote.audio', 'torch']
 
 import yaml
-import pathlib
-import typing
+from pathlib import Path
+from typing import Optional, Union
 import functools
 
+
 import torch
-from pyannote.audio.labeling.extraction import SequenceLabeling \
-    as _SequenceLabeling
-from pyannote.audio.embedding.extraction import SequenceEmbedding \
-    as _SequenceEmbedding
-from pyannote.audio.applications.speech_detection import SpeechActivityDetection \
-    as _SpeechActivityDetection
-from pyannote.audio.applications.overlap_detection import OverlapDetection \
-    as _OverlapDetection
-from pyannote.audio.applications.change_detection import SpeakerChangeDetection \
-    as _SpeakerChangeDetection
-from pyannote.audio.applications.speaker_embedding import SpeakerEmbedding \
-    as _SpeakerEmbedding
+from pyannote.audio.features import Pretrained
 
 
 MODELS = {
@@ -73,18 +63,17 @@ MODELS = {
 
     # speaker embedding
     "emb": {
-        "voxceleb": "615dfe0439",
+        "voxceleb": "21ba139a32",
     },
 }
 
-_DEVICE = typing.Union[str, torch.device]
-_PRETRAINED = typing.Union[_SequenceLabeling, _SequenceEmbedding, pathlib.Path]
+_DEVICE = Union[str, torch.device]
 
 def _generic(task: str = 'sad',
              corpus: str = 'AMI',
-             device: typing.Optional[_DEVICE] = None,
+             device: Optional[_DEVICE] = None,
              batch_size: int = 32,
-             return_path: bool = False) -> _PRETRAINED:
+             step: float = 0.25) -> Pretrained:
     """Load pretrained model
 
     Parameters
@@ -98,78 +87,43 @@ def _generic(task: str = 'sad',
         'etape' for ETAPE corpus, 'voxceleb' for VoxCeleb corpus.
     device : str or torch.device, optional
         Device used for inference.
+        Defaults to GPU when available.
     batch_size : int, optional
         Batch size used for inference.
-    return_path : bool
-        Return path to model checkpoint.
-        Defaults to returning `Sequence{Labeling|Embedding}` instance.
+    step : float, optional
+        Ratio of audio chunk duration used as step between two consecutive
+        audio chunks. Defaults to 0.25.
 
     Returns
     -------
-    model : `SequenceLabeling` or `SequenceEmbedding` or `Path`
+    pretrained : `Pretrained`
 
     Usage
     -----
-    >>> model = torch.hub.load('pyannote/pyannote-audio', '_generic',
-    ...                        task='sad', corpus='ami',
-    ...                        device='cuda', batch_size=32)
-    >>> sad_scores = model({'audio': '/path/to/audio.wav'})
+    # TODO. change to 'pyannote/pyannote-audio' after 2.0 release
+    >>> pretrained = torch.hub.load('pyannote/pyannote-audio:develop',
+                                    '_generic', task='sad', corpus='ami',
+    ...                             batch_size=32)
+    >>> sad_scores = pretrained({'audio': '/path/to/audio.wav'})
     """
 
     # path where pre-trained model is downloaded by torch.hub
-    hub_dir = pathlib.Path(__file__).parent / 'models' / task / corpus / MODELS[task][corpus]
+    hub_dir = Path(__file__).parent / 'models' / task / corpus / MODELS[task][corpus]
 
     # guess path to "params.yml"
     params_yml, = hub_dir.glob('*/*/*/*/params.yml')
-
-    if return_path:
-        # get epoch from params_yml
-        with open(params_yml, 'r') as fp:
-            params = yaml.load(fp, Loader=yaml.SafeLoader)
-            epoch = params['epoch']
-
-        # infer path to model
-        return params_yml.parents[2] / 'weights' / f'{epoch:04d}.pt'
+    validate_dir = params_yml.parent
 
     # TODO: print a message to the user providing information about it
     # *_, train, _, development, _ = params_yml.parts
     # msg = 'Model trained on {train}'
     # print(msg)
 
-    if task == 'sad':
-        Application = _SpeechActivityDetection
-        Extraction = _SequenceLabeling
-
-    elif task == 'ovl':
-        Application = _OverlapDetection
-        Extraction = _SequenceLabeling
-
-    elif task == 'scd':
-        Application = _SpeakerChangeDetection
-        Extraction = _SequenceLabeling
-
-    elif task == 'emb':
-        Application = _SpeakerEmbedding
-        Extraction = _SequenceEmbedding
-
-    else:
-        msg = 'Only SAD, OVL, and SCD models are available.'
-        raise ValueError(msg)
-
-    app = Application.from_validate_dir(params_yml.parent,
-                                        training=False)
-    feature_extraction = app.feature_extraction_
-    model = app.model_
-    duration = app.task_.duration
-    step = 0.25 * duration
-    device = torch.device('cpu') if device is None else torch.device(device)
-
     # initialize  extraction
-    return Extraction(
-        feature_extraction=feature_extraction,
-        model=model,
-        duration=duration, step=step,
-        batch_size=batch_size, device=device)
+    return Pretrained(validate_dir=validate_dir,
+                      batch_size=batch_size,
+                      device=device,
+                      step=step)
 
 _sad = functools.partial(_generic, task='sad')
 sad_ami = functools.partial(_sad, corpus='ami')
@@ -206,6 +160,6 @@ Options:
     from docopt import docopt
     from pyannote.audio.applications.base import create_zip
     arguments = docopt(DOCOPT, version='hubconf')
-    validate_dir = pathlib.Path(arguments['<validate_dir>'])
+    validate_dir = Path(arguments['<validate_dir>'])
     hub_zip = create_zip(validate_dir)
     print(f'Created file "{hub_zip.name}" in directory "{validate_dir}".')

@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2019 CNRS
+# Copyright (c) 2019-2020 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -29,7 +29,7 @@
 
 import numpy as np
 from .base_labeling import BaseLabeling
-from pyannote.audio.labeling.extraction import SequenceLabeling
+from pyannote.audio.features import Pretrained
 from collections import Counter
 from sklearn.metrics import confusion_matrix
 
@@ -102,26 +102,22 @@ class DomainClassification(BaseLabeling):
                        step=0.25,
                        **kwargs):
 
-        # load model for current epoch
-        model = self.load_model(epoch).to(device)
-        model.eval()
+
+        pretrained = Pretrained(validate_dir=self.validate_dir_,
+                                epoch=epoch,
+                                duration=duration,
+                                step=step,
+                                batch_size=batch_size,
+                                device=device)
 
         domain = self.task_.domain
-        domains = model.specifications['y']['classes']
-
-        sequence_labeling = SequenceLabeling(
-            model=model,
-            feature_extraction=self.feature_extraction_,
-            duration=duration,
-            step=step * duration,
-            batch_size=batch_size,
-            device=device)
+        domains = pretrained.classes
 
         y_true_file, y_pred_file = [], []
 
         for current_file in validation_data:
 
-            y_pred = sequence_labeling(current_file).data.argmax(axis=1)
+            y_pred = pretrained(current_file).data.argmax(axis=1)
             y_pred_file.append(Counter(y_pred).most_common(1)[0][0])
 
             y_true = domains.index(current_file[domain])

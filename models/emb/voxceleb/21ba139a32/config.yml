@@ -42,7 +42,6 @@ task:
      per_fold: 64
      per_label: 4
      per_epoch: 1
-     in_memory: False
      label_min_duration: 30
 
 scheduler:

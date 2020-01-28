@@ -54,9 +54,8 @@ class ContrastiveLoss(EmbeddingApproach):
         If provided, sample triplets from groups of `per_fold` speakers at a
         time. Defaults to sample triplets from the whole speaker set.
     per_epoch : float, optional
-        Number of days per epoch. Defaults to 7 (a week).
-    in_memory : `bool`, optional
-        Pre-load training set in memory.
+        Force total audio duration per epoch, in days.
+        Defaults to total duration of protocol subset.
     """
 
     def __init__(self, duration=1.0,
@@ -65,9 +64,8 @@ class ContrastiveLoss(EmbeddingApproach):
                        size_average=True,
                        per_label=3,
                        per_fold=None,
-                       per_epoch=7,
-                       label_min_duration=0.,
-                       in_memory=False):
+                       per_epoch: float = None,
+                       label_min_duration=0.):
 
         super().__init__()
 
@@ -81,10 +79,7 @@ class ContrastiveLoss(EmbeddingApproach):
         self.per_label = per_label
         self.per_epoch = per_epoch
         self.label_min_duration = label_min_duration
-
         self.duration = duration
-
-        self.in_memory = in_memory
 
     def get_batch_generator(self, feature_extraction,
                             protocol, subset='train',
@@ -110,8 +105,7 @@ class ContrastiveLoss(EmbeddingApproach):
             per_label=self.per_label,
             per_fold=self.per_fold,
             per_epoch=self.per_epoch,
-            duration=self.duration,
-            in_memory=self.in_memory)
+            duration=self.duration)
 
     def batch_loss(self, batch):
         """Compute loss for current `batch`

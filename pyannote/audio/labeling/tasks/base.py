@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2018-2019 CNRS
+# Copyright (c) 2018-2020 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -33,19 +33,22 @@ import numpy as np
 import scipy.signal
 
 from pyannote.core import Segment
+from pyannote.core import SlidingWindow
 from pyannote.core import Timeline
 from pyannote.core import Annotation
 from pyannote.core import SlidingWindowFeature
 
 from pyannote.database import get_unique_identifier
 from pyannote.database import get_annotated
+from pyannote.database.protocol.protocol import Protocol
 
 from pyannote.core.utils.numpy import one_hot_encoding
+
+from pyannote.audio.features import FeatureExtraction
 from pyannote.audio.features import RawAudio
 
-from pyannote.generators.fragment import random_segment
-from pyannote.generators.fragment import random_subsegment
-from pyannote.generators.fragment import SlidingSegments
+from pyannote.core.utils.random import random_segment
+from pyannote.core.utils.random import random_subsegment
 
 from pyannote.audio.train.trainer import Trainer
 from pyannote.audio.train.generator import BatchGenerator
@@ -82,10 +85,8 @@ class LabelingTaskGenerator(BatchGenerator):
     batch_size : int, optional
         Batch size. Defaults to 32.
     per_epoch : float, optional
-        Total audio duration per epoch, in days.
-        Defaults to one day (1).
-    in_memory : `bool`, optional
-        Pre-load training set in memory.
+        Force total audio duration per epoch, in days.
+        Defaults to total duration of protocol subset.
     exhaustive : bool, optional
         Ensure training files are covered exhaustively (useful in case of
         non-uniform label distribution).
@@ -107,16 +108,15 @@ class LabelingTaskGenerator(BatchGenerator):
     """
 
     def __init__(self,
-                 feature_extraction,
-                 protocol,
+                 feature_extraction: FeatureExtraction,
+                 protocol: Protocol,
                  subset='train',
                  resolution=None,
                  alignment=None,
                  duration=3.2,
                  step=None,
-                 batch_size=32,
-                 per_epoch=1,
-                 in_memory=False,
+                 batch_size: int = 32,
+                 per_epoch: float = None,
                  exhaustive=False,
                  shuffle=False,
                  mask_dimension=None,
@@ -137,16 +137,6 @@ class LabelingTaskGenerator(BatchGenerator):
             step = duration
         self.step = step
         self.batch_size = batch_size
-        self.per_epoch = per_epoch
-
-        self.in_memory = in_memory
-        if self.in_memory:
-            if not isinstance(feature_extraction, RawAudio):
-                msg = (
-                    f'"in_memory" option is only supported when '
-                    f'working from the waveform.'
-                )
-                raise ValueError(msg)
 
         self.exhaustive = exhaustive
         self.shuffle = shuffle
@@ -154,7 +144,11 @@ class LabelingTaskGenerator(BatchGenerator):
         self.mask_dimension = mask_dimension
         self.mask_logscale = mask_logscale
 
-        self._load_metadata(protocol, subset=subset)
+        total_duration = self._load_metadata(protocol, subset=subset)
+        if per_epoch is None:
+            per_epoch = total_duration / (24 * 60 * 60)
+        self.per_epoch = per_epoch
+
 
     def postprocess_y(self, Y):
         """This function does nothing but return its input.
@@ -212,9 +206,14 @@ class LabelingTaskGenerator(BatchGenerator):
         return y.crop(segment, mode=self.alignment,
                       fixed=self.duration)
 
-    def _load_metadata(self, protocol, subset='train'):
-        """Gather the following information about the training subset:
+    def _load_metadata(self, protocol, subset='train') -> float:
+        """Load training set metadata
 
+        This function is called once at instantiation time, returns the total
+        training set duration, and populates the following attributes:
+
+        Attributes
+        ----------
         data_ : dict
 
             {'segments': <list of annotated segments>,
@@ -227,6 +226,11 @@ class LabelingTaskGenerator(BatchGenerator):
 
         file_labels_ : dict of list
             Sorted lists of (unique) file labels in protocol
+
+        Returns
+        -------
+        duration : float
+            Total duration of annotated segments, in seconds.
         """
 
         self.data_ = {}
@@ -241,10 +245,6 @@ class LabelingTaskGenerator(BatchGenerator):
                 support, mode='intersection')
             current_file['annotation'] = current_file['annotation'].crop(
                 support, mode='intersection')
-
-            if self.in_memory:
-                current_file['waveform'] = \
-                    self.feature_extraction(current_file).data
 
             # keep track of unique segment labels
             segment_labels.update(current_file['annotation'].labels())
@@ -282,6 +282,8 @@ class LabelingTaskGenerator(BatchGenerator):
         for current_file in getattr(protocol, subset)():
             uri = get_unique_identifier(current_file)
             self.data_[uri]['y'] = self.initialize_y(current_file)
+
+        return sum(datum['duration'] for datum in self.data_.values())
 
     @property
     def specifications(self):
@@ -375,10 +377,8 @@ class LabelingTaskGenerator(BatchGenerator):
         uris = list(self.data_)
         durations = np.array([self.data_[uri]['duration'] for uri in uris])
         probabilities = durations / np.sum(durations)
-
-        sliding_segments = SlidingSegments(duration=self.duration,
-                                           step=self.step,
-                                           source='annotated')
+        sliding_segments = SlidingWindow(duration=self.duration,
+                                         step=self.step)
 
         while True:
 
@@ -404,12 +404,11 @@ class LabelingTaskGenerator(BatchGenerator):
                         segment.end)
                     if shifted_segment:
                         annotated.add(shifted_segment)
-                current_file['annotated'] = annotated
 
                 if self.shuffle:
                     samples = []
 
-                for sequence in sliding_segments.from_file(current_file):
+                for sequence in sliding_segments(annotated):
 
                     X = features.crop(sequence, mode='center',
                                       fixed=self.duration)

@@ -50,12 +50,10 @@ from pyannote.audio.features.precomputed import Precomputed
 from pyannote.metrics.binary_classification import det_curve
 from pyannote.metrics.diarization import DiarizationPurityCoverageFMeasure
 
-from pyannote.audio.embedding.extraction import SequenceEmbedding
+from pyannote.audio.features import Pretrained
 
 
 class SpeakerEmbedding(Application):
-
-    Extraction = SequenceEmbedding
 
     @property
     def config_default_module(self):
@@ -125,21 +123,13 @@ class SpeakerEmbedding(Application):
                                      metric : str = None,
                                      **kwargs):
 
-        # load current model
-        model = self.load_model(epoch).to(device)
-        model.eval()
-
-        if isinstance(self.feature_extraction_, Precomputed):
-            self.feature_extraction_.use_memmap = False
-
         # initialize embedding extraction
-        sequence_embedding = SequenceEmbedding(
-            model=model,
-            feature_extraction=self.feature_extraction_,
-            duration=duration,
-            step=step * duration,
-            batch_size=batch_size,
-            device=device)
+        pretrained = Pretrained(validate_dir=self.validate_dir_,
+                                epoch=epoch,
+                                duration=duration,
+                                step=step,
+                                batch_size=batch_size,
+                                device=device)
 
         _protocol = get_protocol(protocol, progress=False,
                                 preprocessors=self.preprocessors_)
@@ -154,8 +144,9 @@ class SpeakerEmbedding(Application):
             if hash1 in cache:
                 emb1 = cache[hash1]
             else:
-                emb1 = sequence_embedding.crop(file1, file1['try_with'])
-                emb1 = np.mean(np.stack(emb1), axis=0, keepdims=True)
+                emb1 = np.vstack([pretrained.crop(file1, segment)
+                                  for segment in file1['try_with']])
+                emb1 = np.mean(emb1, axis=0, keepdims=True)
                 cache[hash1] = emb1
 
             # compute embedding for file2
@@ -164,8 +155,9 @@ class SpeakerEmbedding(Application):
             if hash2 in cache:
                 emb2 = cache[hash2]
             else:
-                emb2 = sequence_embedding.crop(file2, file2['try_with'])
-                emb2 = np.mean(np.stack(emb2), axis=0, keepdims=True)
+                emb2 = np.vstack([pretrained.crop(file2, segment)
+                                  for segment in file2['try_with']])
+                emb2 = np.mean(emb2, axis=0, keepdims=True)
                 cache[hash2] = emb2
 
             # compare embeddings
@@ -196,21 +188,13 @@ class SpeakerEmbedding(Application):
                                     purity : float = 0.9,
                                     **kwargs):
 
-        # load current model
-        model = self.load_model(epoch).to(device)
-        model.eval()
-
-        if isinstance(self.feature_extraction_, Precomputed):
-            self.feature_extraction_.use_memmap = False
-
         # initialize embedding extraction
-        sequence_embedding = SequenceEmbedding(
-            model=model,
-            feature_extraction=self.feature_extraction_,
-            duration=duration,
-            step=step * duration,
-            batch_size=batch_size,
-            device=device)
+        pretrained = Pretrained(validate_dir=self.validate_dir_,
+                                epoch=epoch,
+                                duration=duration,
+                                step=step,
+                                batch_size=batch_size,
+                                device=device)
 
         _protocol = get_protocol(protocol, progress=False,
                                 preprocessors=self.preprocessors_)
@@ -225,7 +209,7 @@ class SpeakerEmbedding(Application):
             reference = current_file['annotation']
 
             X_, t_ = [], []
-            embedding = sequence_embedding(current_file)
+            embedding = pretrained(current_file)
             for i, (turn, _) in enumerate(reference.itertracks()):
 
                 # extract embedding for current speech turn. whenever possible,

@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2019 CNRS
+# Copyright (c) 2019-2020 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -36,7 +36,7 @@ import random
 import numpy as np
 
 from pyannote.core import Segment
-from pyannote.generators.fragment import random_subsegment
+from pyannote.core.utils.random import random_subsegment
 
 from pyannote.audio.features import RawAudio
 from pyannote.audio.features.utils import get_audio_duration
