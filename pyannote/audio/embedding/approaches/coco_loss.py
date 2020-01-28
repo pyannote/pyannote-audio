@@ -79,6 +79,11 @@ class CongenerousCosineLoss(Classification):
     ----------
     duration : float, optional
         Chunks duration, in seconds. Defaults to 1.
+    per_turn : int, optional
+        Number of chunks per speech turn. Defaults to 1.
+        If per_turn is greater than one, embeddings of the same speech turn
+        are averaged before classification. The intuition is that it might
+        help learn embeddings meant to be averaged/summed.
     per_label : `int`, optional
         Number of sequences per speaker in each batch. Defaults to 1.
     per_fold : `int`, optional
@@ -93,18 +98,21 @@ class CongenerousCosineLoss(Classification):
         Scaling factor used in embedding L2-normalization. Defaults to 6.25.
     """
 
-    def __init__(self, duration=1.0,
-                       per_label=1,
-                       per_fold=32,
+    def __init__(self, duration: float = 1.0,
+                       per_turn: int = 1,
+                       per_label: int = 1,
+                       per_fold: int = 32,
                        per_epoch: float = None,
-                       label_min_duration=0.,
-                       alpha=6.25):
+                       label_min_duration: float = 0.,
+                       alpha: float = 6.25):
 
         super().__init__(duration=duration,
+                         per_turn=per_turn,
                          per_label=per_label,
                          per_fold=per_fold,
                          per_epoch=per_epoch,
                          label_min_duration=label_min_duration)
+
         self.alpha = alpha
 
     def more_parameters(self):

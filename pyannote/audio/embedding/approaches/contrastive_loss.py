@@ -28,84 +28,67 @@
 # Juan Manuel CORIA
 
 import torch
-from pyannote.audio.embedding.generators import SpeechSegmentGenerator
-from .base import EmbeddingApproach
+from .base import RepresentationLearning
 
 
-class ContrastiveLoss(EmbeddingApproach):
-    """Train embeddings using triplet loss
+class ContrastiveLoss(RepresentationLearning):
+    """Contrasitve loss
+
+    TODO explain
 
     Parameters
     ----------
     duration : float, optional
         Chunks duration, in seconds. Defaults to 1.
+    per_turn : int, optional
+        Number of chunks per speech turn. Defaults to 1.
+        If per_turn is greater than one, embeddings of the same speech turn
+        are averaged before comparison. The intuition is that it might help
+        learn embeddings meant to be averaged/summed.
+    per_label : `int`, optional
+        Number of sequences per speaker in each batch. Defaults to 1.
+    per_fold : `int`, optional
+        Number of different speakers per batch. Defaults to 32.
+    per_epoch : `float`, optional
+        Force total audio duration per epoch, in days.
+        Defaults to total duration of protocol subset.
+    label_min_duration : `float`, optional
+        Remove speakers with less than that many seconds of speech.
+        Defaults to 0 (i.e. keep them all).
     metric : {'euclidean', 'cosine', 'angular'}, optional
         Defaults to 'cosine'.
     margin: float, optional
         Margin multiplicative factor. Defaults to 0.2.
-    size_average : `bool`, optional
-        Divide total loss by batch size
-    per_label : int, optional
-        Number of sequences per speaker in each batch. Defaults to 3.
-    label_min_duration : float, optional
-        Remove speakers with less than `label_min_duration` seconds of speech.
-        Defaults to 0 (i.e. keep them all).
-    per_fold : int, optional
-        If provided, sample triplets from groups of `per_fold` speakers at a
-        time. Defaults to sample triplets from the whole speaker set.
-    per_epoch : float, optional
-        Force total audio duration per epoch, in days.
-        Defaults to total duration of protocol subset.
+
+    Reference
+    ---------
+    TODO
     """
 
-    def __init__(self, duration=1.0,
-                       metric='cosine',
-                       margin=0.2,
-                       size_average=True,
-                       per_label=3,
-                       per_fold=None,
+    def __init__(self, duration: float = 1.0,
+                       per_turn: int = 1,
+                       per_label: int = 1,
+                       per_fold: int = 32,
                        per_epoch: float = None,
-                       label_min_duration=0.):
+                       label_min_duration: float = 0.,
+                       # FIXME create a Literal type for metric
+                       # FIXME maybe in pyannote.core.utils.distance
+                       metric: str = 'cosine',
+                       # FIXME homogeneize the meaning of margin parameter
+                       # FIXME it has a different meaning in ArcFace, right?
+                       margin: float = 0.2):
 
-        super().__init__()
+        super().__init__(duration=duration,
+                         per_turn=per_turn,
+                         per_label=per_label,
+                         per_fold=per_fold,
+                         per_epoch=per_epoch,
+                         label_min_duration=label_min_duration)
 
         self.metric = metric
         self.margin = margin
-
+        # FIXME see above
         self.margin_ = self.margin * self.max_distance
-
-        self.size_average = size_average
-        self.per_fold = per_fold
-        self.per_label = per_label
-        self.per_epoch = per_epoch
-        self.label_min_duration = label_min_duration
-        self.duration = duration
-
-    def get_batch_generator(self, feature_extraction,
-                            protocol, subset='train',
-                            **kwargs):
-        """Get batch generator
-
-        Parameters
-        ----------
-        feature_extraction : `pyannote.audio.features.FeatureExtraction`
-        protocol : `pyannote.database.Protocol`
-        subset : {'train', 'development', 'test'}, optional
-
-        Returns
-        -------
-        generator : `pyannote.audio.embedding.generators.SpeechSegmentGenerator`
-        """
-
-        return SpeechSegmentGenerator(
-            feature_extraction,
-            protocol,
-            subset=subset,
-            label_min_duration=self.label_min_duration,
-            per_label=self.per_label,
-            per_fold=self.per_fold,
-            per_epoch=self.per_epoch,
-            duration=self.duration)
 
     def batch_loss(self, batch):
         """Compute loss for current `batch`
@@ -122,24 +105,29 @@ class ContrastiveLoss(EmbeddingApproach):
             ['loss'] (`torch.Tensor`) : Triplet loss
         """
 
-        fX = self.forward(batch)
-        y = batch['y']
+        fX, y = self.embed(batch)
 
         # calculate the distances between every sample in the batch
-        nbatch = fX.size(0)
+        batch_size = fX.size(0)
         dist = self.pdist(fX).to(self.device_)
 
         # calculate the ground truth for each pair
+        # TODO. this can be done much more cleanly with
+        # pyannote.core.utils.distance.pdist(y, metric='equal')
         gt = []
-        for i in range(nbatch - 1):
-            for j in range(i + 1, nbatch):
+        for i in range(batch_size - 1):
+            for j in range(i + 1, batch_size):
                 gt.append(int(y[i] != y[j]))
         gt = torch.Tensor(gt).float().to(self.device_)
 
         # Calculate the losses as described in the paper
         losses = (1 - gt) * torch.pow(dist, 2) + gt * torch.pow(torch.clamp(self.margin_ - dist, min=1e-8), 2)
+
+        # FIXME: why divive by 2?
         losses = torch.sum(losses) / 2
         # Average by batch size if requested
-        losses = losses / dist.size(0) if self.size_average else losses
+        # FIXME: switch to torch.mean directly (size_average has been removed)
+        loss = losses / dist.size(0)
 
-        return {'loss': losses}
+        return {'loss': loss,
+                'loss_contrastive': loss}

@@ -28,18 +28,23 @@
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from .base import EmbeddingApproach
-from pyannote.audio.embedding.generators import SpeechSegmentGenerator
+from .base import RepresentationLearning
 
 
-class Classification(EmbeddingApproach):
-    """Train embeddings as last hidden layer of a classifier
+class Classification(RepresentationLearning):
+    """Classification
+
+    TODO explain
 
     Parameters
     ----------
     duration : float, optional
         Chunks duration, in seconds. Defaults to 1.
+    per_turn : int, optional
+        Number of chunks per speech turn. Defaults to 1.
+        If per_turn is greater than one, embeddings of the same speech turn
+        are averaged before classification. The intuition is that it might
+        help learn embeddings meant to be averaged/summed.
     per_label : `int`, optional
         Number of sequences per speaker in each batch. Defaults to 1.
     per_fold : `int`, optional
@@ -61,21 +66,21 @@ class Classification(EmbeddingApproach):
     CLASSIFIER_PT = '{train_dir}/weights/{epoch:04d}.classifier.pt'
 
     def __init__(self, duration: float = 1.0,
+                       per_turn: int = 1,
                        per_label: int = 1,
                        per_fold: int = 32,
                        per_epoch: float = None,
                        label_min_duration: float = 0.,
                        bias: bool = False):
-        super().__init__()
 
-        self.per_label = per_label
-        self.per_fold = per_fold
-        self.per_epoch = per_epoch
-        self.label_min_duration = label_min_duration
+        super().__init__(duration=duration,
+                         per_turn=per_turn,
+                         per_label=per_label,
+                         per_fold=per_fold,
+                         per_epoch=per_epoch,
+                         label_min_duration=label_min_duration)
+
         self.bias = bias
-
-        self.duration = duration
-
         self.logsoftmax_ = nn.LogSoftmax(dim=1)
         self.loss_ = nn.NLLLoss()
 
@@ -115,31 +120,9 @@ class Classification(EmbeddingApproach):
             train_dir=self.train_dir_, epoch=self.epoch_)
         torch.save(self.classifier_.state_dict(), classifier_pt)
 
-    def get_batch_generator(self, feature_extraction,
-                            protocol, subset='train',
-                            **kwargs):
-        """Get batch generator
-
-        Parameters
-        ----------
-        feature_extraction : `pyannote.audio.features.FeatureExtraction`
-        protocol : `pyannote.database.Protocol`
-        subset : {'train', 'development', 'test'}, optional
-
-        Returns
-        -------
-        generator : `pyannote.audio.embedding.generators.SpeechSegmentGenerator`
-        """
-
-        return SpeechSegmentGenerator(
-            feature_extraction,
-            protocol,
-            subset=subset,
-            label_min_duration=self.label_min_duration,
-            per_label=self.per_label,
-            per_fold=self.per_fold,
-            per_epoch=self.per_epoch,
-            duration=self.duration)
+    @property
+    def metric(self):
+        return 'cosine'
 
     def batch_loss(self, batch):
         """Compute loss for current `batch`
@@ -156,15 +139,17 @@ class Classification(EmbeddingApproach):
             ['loss'] (`torch.Tensor`) : Cross-entropy loss
         """
 
-        # extract embeddings
-        fX = self.forward(batch)
+        # extract and aggregate embeddings
+        fX, y = self.embed(batch)
 
         # apply classification layer
-        scores = self.logsoftmax_(self.classifier_(fX))
+        logits = self.logsoftmax_(self.classifier_(fX))
 
         # compute classification loss
-        target = torch.tensor(
-            batch['y'],
-            dtype=torch.int64,
-            device=self.device_)
-        return {'loss': self.loss_(scores, target)}
+        targets = torch.tensor(y, dtype=torch.int64, device=self.device)
+        loss_classification = self.loss_(logits, targets)
+
+        return {
+            'loss': loss_classification,
+            # add this for Tensorboard comparison with other compound losses
+            'loss_classification': loss_classification}

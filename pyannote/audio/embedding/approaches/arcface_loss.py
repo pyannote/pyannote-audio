@@ -32,7 +32,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from .classification import Classification
 
-#torch.autograd.set_detect_anomaly(True)
 
 class ArcLinear(nn.Module):
     """Additive Angular Margin linear module (ArcFace)
@@ -93,23 +92,27 @@ class ArcLinear(nn.Module):
         one_hot.scatter_(1, y, 1.0)
         # project margin differences into cosθj
         return self.s * (cos_theta_j + one_hot * (cos_theta_yi_margin - cos_theta_yi))
-        #cos_theta_j += one_hot * (cos_theta_yi_margin - cos_theta_yi)
-        # apply the scaling
-        #cos_theta_j = self.s * cos_theta_j
-        #return cos_theta_j
 
 
 class AdditiveAngularMarginLoss(Classification):
-    """Train embeddings as last hidden layer of an additive angular margin loss classifier
+    """Additive angular margin loss
+
+    TODO explain
 
     Parameters
     ----------
     duration : float, optional
         Chunks duration, in seconds. Defaults to 1.
+    per_turn : int, optional
+        Number of chunks per speech turn. Defaults to 1.
+        If per_turn is greater than one, embeddings of the same speech turn
+        are averaged before classification. The intuition is that it might
+        help learn embeddings meant to be averaged/summed.
     per_label : `int`, optional
         Number of sequences per speaker in each batch. Defaults to 1.
     per_fold : `int`, optional
         Number of different speakers per batch. Defaults to 32.
+    per_epoch : `float`, optional
         Force total audio duration per epoch, in days.
         Defaults to total duration of protocol subset.
     label_min_duration : `float`, optional
@@ -119,17 +122,24 @@ class AdditiveAngularMarginLoss(Classification):
         Angular margin value. Defaults to 0.1.
     s : float, optional
         Scaling parameter value for the logits. Defaults to 7.
+
+    Reference
+    ---------
+    TODO
+
     """
 
-    def __init__(self, duration=1.0,
-                       per_label=1,
-                       per_fold=32,
+    def __init__(self, duration: float = 1.0,
+                       per_turn: int = 1,
+                       per_label: int = 1,
+                       per_fold: int = 32,
                        per_epoch: float = None,
-                       label_min_duration=0.,
-                       margin=0.1,
-                       s=7.0):
+                       label_min_duration: float = 0.,
+                       margin: float = 0.1,
+                       s: float = 7.0):
 
         super().__init__(duration=duration,
+                         per_turn=per_turn,
                          per_label=per_label,
                          per_fold=per_fold,
                          per_epoch=per_epoch,
@@ -153,33 +163,3 @@ class AdditiveAngularMarginLoss(Classification):
             self.s).to(self.device)
 
         return self.classifier_.parameters()
-
-    def batch_loss(self, batch):
-        """Compute loss for current `batch`
-
-        Parameters
-        ----------
-        batch : `dict`
-            ['X'] (`numpy.ndarray`)
-            ['y'] (`numpy.ndarray`)
-
-        Returns
-        -------
-        batch_loss : `dict`
-            ['loss'] (`torch.Tensor`) : Additive angular margin loss
-        """
-
-        # extract embeddings
-        fX = self.forward(batch)
-
-        # transform labels into tensor
-        target = torch.tensor(
-            batch['y'],
-            dtype=torch.int64,
-            device=self.device_)
-
-        # apply classification layer
-        scores = self.logsoftmax_(self.classifier_(fX, target))
-
-        # compute classification loss
-        return {'loss': self.loss_(scores, target)}
