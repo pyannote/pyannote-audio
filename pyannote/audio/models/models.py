@@ -25,6 +25,7 @@
 
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
+# Juan Manuel Coria
 
 from typing import Optional
 
@@ -34,6 +35,7 @@ import torch.nn as nn
 
 from .sincnet import SincNet
 from .tdnn import XVectorNet
+from .pooling import TemporalPooling
 from pyannote.audio.train.model import Model
 from pyannote.audio.train.model import Resolution
 from pyannote.audio.train.model import RESOLUTION_CHUNK
@@ -85,6 +87,7 @@ class RNN(nn.Module):
         self.bidirectional = bidirectional
         self.concatenate = concatenate
         self.pool = pool
+        self.pool_ = TemporalPooling.create(pool) if pool is not None else None
 
         if num_layers < 1:
             msg = ('"bidirectional" must be set to False when num_layers < 1')
@@ -124,7 +127,6 @@ class RNN(nn.Module):
                               num_layers=self.num_layers, bias=self.bias,
                               batch_first=True, dropout=self.dropout,
                               bidirectional=self.bidirectional)
-
 
     def forward(self, features, return_intermediate=False):
         """Apply recurrent layer (and optional temporal pooling)
@@ -195,25 +197,8 @@ class RNN(nn.Module):
                     intermediate = h.transpose(2, 1).contiguous().view(
                         self.num_layers, -1, num_directions * self.hidden_size)
 
-        if self.pool == 'sum':
-            output = output.sum(dim=1)
-
-        elif self.pool == 'max':
-            output = output.max(dim=1)[0]
-
-        elif self.pool == 'last':
-            if self.bidirectional:
-                output = torch.cat(
-                    hidden.view(self.num_layers, num_directions,
-                                -1, self.hidden_size)[-1],
-                    dim=0)
-            else:
-                output = output[:, -1]
-
-        elif self.pool == 'x-vector':
-            output = torch.cat((torch.mean(output, dim=1),
-                                torch.std(output, dim=1)),
-                               dim=1)
+        if self.pool_ is not None:
+            output = self.pool_(output)
 
         if return_intermediate:
             return output, intermediate
@@ -350,7 +335,6 @@ class Embedding(nn.Module):
             return self.n_features
         return locals()
     dimension = property(**dimension())
-
 
 
 class PyanNet(Model):
