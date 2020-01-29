@@ -64,5 +64,6 @@ class RemoveNonSpeech:
         self.sad_ = load_rttm(self.sad_rttm)
 
     def __call__(self, current_file: ProtocolFile) -> Annotation:
-        speech_regions = self.sad_[current_file['uri']].get_timeline()
+        speech_regions = self.sad_.get(
+            current_file['uri'], Annotation()).get_timeline()
         return current_file['annotation'].crop(speech_regions)
