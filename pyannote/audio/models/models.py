@@ -537,7 +537,7 @@ class SincTDNN(Model):
     sincnet : `dict`, optional
         SincNet parameters. Defaults to `pyannote.audio.models.sincnet.SincNet`
         default parameters.
-    xvector : `dict`, optional
+    tdnn : `dict`, optional
         X-Vector Time-Delay neural network parameters.
         Defaults to `pyannote.audio.models.tdnn.XVectorNet` default parameters.
     embedding : `dict`, optional
@@ -577,7 +577,7 @@ class SincTDNN(Model):
 
     def init(self,
              sincnet : Optional[dict] = None,
-             xvector : Optional[dict] = None,
+             tdnn : Optional[dict] = None,
              embedding : Optional[dict] = None):
         """waveform -> SincNet -> XVectorNet (TDNN -> FC) -> output
 
@@ -586,7 +586,7 @@ class SincTDNN(Model):
         sincnet : `dict`, optional
             SincNet parameters. Defaults to `pyannote.audio.models.sincnet.SincNet`
             default parameters.
-        xvector : `dict`, optional
+        tdnn : `dict`, optional
             X-Vector Time-Delay neural network parameters.
             Defaults to `pyannote.audio.models.tdnn.XVectorNet` default parameters.
         embedding : `dict`, optional
@@ -606,11 +606,11 @@ class SincTDNN(Model):
         self.sincnet_ = SincNet(**sincnet)
         n_features = self.sincnet_.dimension
 
-        if xvector is None:
-            xvector = dict()
-        self.xvector = xvector
-        self.xvector_ = XVectorNet(n_features, **xvector)
-        n_features = self.xvector_.dimension
+        if tdnn is None:
+            tdnn = dict()
+        self.tdnn = tdnn
+        self.tdnn_ = XVectorNet(n_features, **tdnn)
+        n_features = self.tdnn_.dimension
 
         if self.task.is_representation_learning:
             if embedding is None:
@@ -639,7 +639,7 @@ class SincTDNN(Model):
         output = self.sincnet_(waveforms)
 
         return_intermediate = 'segment6' if self.task.is_representation_learning else None
-        output = self.xvector_(output, return_intermediate=return_intermediate)
+        output = self.tdnn_(output, return_intermediate=return_intermediate)
 
         if self.task.is_representation_learning:
             return self.embedding_(output)
