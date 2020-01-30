@@ -639,7 +639,7 @@ class SincTDNN(Model):
         output = self.sincnet_(waveforms)
 
         return_intermediate = 'segment6' if self.task.is_representation_learning else None
-        output = self.tdnn_(output, return_intermediate)
+        output = self.tdnn_(output, return_intermediate=return_intermediate)
 
         if self.task.is_representation_learning:
             return self.embedding_(output)
