@@ -104,14 +104,14 @@ class SpeakerEmbedding(Application):
     @staticmethod
     def get_hash(file):
         hashable = []
-        for f in FileFinder.current_file_iter(file, extra_keys=['try_with']):
+        for f in file.files():
             hashable.append((f['uri'], tuple(f['try_with'])))
         return hash(tuple(sorted(hashable)))
 
     @staticmethod
     def get_embedding(file, pretrained):
         emb = []
-        for f in FileFinder.current_file_iter(file, extra_keys=['try_with', 'audio']):
+        for f in file.files():
             if isinstance(f['try_with'], Segment):
                 segments = [f['try_with']]
             else:
@@ -120,7 +120,6 @@ class SpeakerEmbedding(Application):
                 emb.append(pretrained.crop(f, segment))
 
         return np.mean(np.vstack(emb), axis=0, keepdims=True)
-
 
     def _validate_epoch_verification(self,
                                      epoch,
