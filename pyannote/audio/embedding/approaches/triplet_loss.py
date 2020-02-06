@@ -331,7 +331,7 @@ class TripletLoss(RepresentationLearning):
             ['loss'] (`torch.Tensor`) : Triplet loss
         """
 
-        fX, y = self.emb(batch)
+        fX, y = self.embed(batch)
         distances = self.pdist(fX)
 
         # sample triplets
