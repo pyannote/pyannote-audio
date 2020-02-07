@@ -171,6 +171,11 @@ Common options
 
   --gpu                   Run on GPUs. Defaults to using CPUs.
 
+  --debug                 Run using PyTorch's anomaly detection. This will throw
+                          an error if a NaN value is produced, and the stacktrace
+                          will point to the origin of it. This option can
+                          considerably slow execution.
+
   --from=<epoch>          Start training (resp. validating) at epoch <epoch>.
                           Use --from=last to start from last available epoch at
                           launch time. Not used for inference [default: 0].
@@ -246,6 +251,7 @@ Validation options
 """
 
 import sys
+import warnings
 from docopt import docopt
 from pathlib import Path
 import multiprocessing
@@ -286,6 +292,10 @@ def main():
 
     protocol = arg['<protocol>']
     subset = arg['--subset']
+
+    if arg['--debug']:
+        warnings.warn('Debug mode is enabled, this option might slow execution considerably', RuntimeWarning)
+        torch.autograd.set_detect_anomaly(True)
 
     n_jobs = arg['--parallel']
     if n_jobs is None:
