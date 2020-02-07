@@ -29,7 +29,3 @@
 """
 # Frame-based audio labeling
 """
-
-from ..models  import TASK_MULTI_CLASS_CLASSIFICATION
-from ..models import TASK_MULTI_LABEL_CLASSIFICATION
-from ..models import TASK_REGRESSION

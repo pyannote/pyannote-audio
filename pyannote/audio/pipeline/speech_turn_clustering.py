@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2018 CNRS
+# Copyright (c) 2018-2019 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -31,6 +31,8 @@ from pathlib import Path
 from typing import Optional
 
 from pyannote.core import Annotation
+from pyannote.core import Timeline
+from pyannote.core.utils.numpy import one_hot_decoding
 from pyannote.pipeline import Pipeline
 from pyannote.audio.features import Precomputed
 from pyannote.pipeline.blocks.clustering import \
@@ -49,11 +51,19 @@ class SpeechTurnClustering(Pipeline):
     metric : {'euclidean', 'cosine', 'angular'}, optional
         Metric used for comparing embeddings. Defaults to 'cosine'.
     method : {'pool', 'affinity_propagation'}
+        Set method used for clustering. "pool" stands for agglomerative
+        hierarchical clustering with embedding pooling. "affinity_propagation"
+        is for clustering based on affinity propagation. Defaults to "pool".
+    window_wise : `bool`, optional
+        Set `window_wise` to True to apply clustering on embedding extracted
+        using the built-in sliding window. Defaults to apply clustering at
+        speech turn level (one average embedding per speech turn).
     """
 
     def __init__(self, embedding: Optional[Path],
                        metric: Optional[str] = 'cosine',
-                       method: Optional[str] = 'pool'):
+                       method: Optional[str] = 'pool',
+                       window_wise: Optional[bool] = False):
         super().__init__()
 
         self.embedding = embedding
@@ -81,9 +91,67 @@ class SpeechTurnClustering(Pipeline):
             self.clustering = HierarchicalAgglomerativeClustering(
                 method=self.method, metric=self.metric, use_threshold=True)
 
-    def __call__(self, current_file: dict,
-                       speech_turns: Annotation) -> Annotation:
-        """Apply speech turn clustering
+        self.window_wise = window_wise
+
+    def _window_level(self, current_file: dict,
+                            speech_regions: Timeline) -> Annotation:
+        """Apply clustering at window level
+
+        Parameters
+        ----------
+        current_file : `dict`
+            File as provided by a pyannote.database protocol.
+        speech_regions : `Timeline`
+            Speech regions.
+
+        Returns
+        -------
+        hypothesis : `pyannote.core.Annotation`
+            Clustering result.
+        """
+
+        # load embeddings
+        embedding = self._precomputed(current_file)
+        window = embedding.sliding_window
+
+        # extract and stack embeddings of speech regions
+        X = np.vstack([
+            embedding.crop(segment, mode='center', fixed=segment.duration)
+            for segment in speech])
+
+        # apply clustering
+        y_pred = self.clustering(X)
+
+        # reconstruct
+        y = np.zeros(len(embedding), dtype=np.int8)
+
+        # n = total number of "speech" embeddings
+        # s_pred = current position in y_pred
+        s_pred, n = 0, len(y_pred)
+
+        for segment in speech:
+
+            # get indices of current speech segment
+            (s, e), = window.crop(segment, mode='center',
+                                  fixed=segment.duration,
+                                  return_ranges=True)
+
+            # hack for the very last segment that might overflow by 1
+            e_pred = min(s_pred + e - s, n - 1)
+            e = s + (e_pred - s_pred)
+
+            # assign y_pred to the corresponding speech regions
+            y[s:e] = y_pred[s_pred:e_pred]
+
+            # increment current position in y_red
+            s_pred += e - s
+
+        # reconstruct hypothesis
+        return one_hot_decoding(y, window)
+
+    def _turn_level(self, current_file: dict,
+                          speech_turns: Annotation) -> Annotation:
+        """Apply clustering at speech turn level
 
         Parameters
         ----------
@@ -94,8 +162,8 @@ class SpeechTurnClustering(Pipeline):
 
         Returns
         -------
-        speech_turns : `pyannote.core.Annotation`
-            Clustered speech turns.
+        hypothesis : `pyannote.core.Annotation`
+            Clustering result.
         """
 
         assert_string_labels(speech_turns, 'speech_turns')
@@ -136,3 +204,30 @@ class SpeechTurnClustering(Pipeline):
 
         # do the actual mapping
         return speech_turns.rename_labels(mapping=mapping)
+
+    def __call__(self, current_file: dict,
+                       speech_turns: Optional[Annotation] = None) -> Annotation:
+        """Apply speech turn clustering
+
+        Parameters
+        ----------
+        current_file : `dict`
+            File as provided by a pyannote.database protocol.
+        speech_turns : `Annotation`, optional
+            Speech turns. Should only contain `str` labels.
+            Defaults to `current_file['speech_turns']`.
+
+        Returns
+        -------
+        speech_turns : `pyannote.core.Annotation`
+            Clustered speech turns (or windows in case `window_wise` is True)
+        """
+
+        if speech_turns is None:
+            speech_turns = current_file['speech_turns']
+
+        if self.window_wise:
+            return self._window_level(
+                current_file, speech_turns.get_timeline().support())
+
+        return self._turn_level(current_file, speech_turns)

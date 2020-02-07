@@ -30,6 +30,7 @@
 # Feature extraction
 """
 
+from .base import FeatureExtraction
 
 try:
     from .with_librosa import LibrosaMFCC, LibrosaSpectrogram, LibrosaMelSpectrogram
@@ -40,10 +41,17 @@ except Exception as e:
         print(msg)
 
 from .precomputed import Precomputed
-from .precomputed import PrecomputedHTK
 
 try:
     from .utils import RawAudio
 except Exception as e:
     msg = f'Loading raw audio might fail because something went wrong: {e}.'
+    print(msg)
+
+try:
+    from .pretrained import Pretrained
+except Exception as e:
+    msg = (
+        f'Feature extraction using pretrained models are not available '
+        f'because something went wrong at import: "{e}".')
     print(msg)

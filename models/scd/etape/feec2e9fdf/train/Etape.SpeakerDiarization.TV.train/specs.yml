@@ -1,0 +1,7 @@
+X:
+  dimension: 1
+task: frame-wise multi-class classification
+y:
+  classes:
+  - non_change
+  - change

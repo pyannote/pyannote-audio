@@ -1,0 +1,34 @@
+task:
+   name: SpeechActivityDetection
+   params:
+      duration: 2.0
+      batch_size: 64
+      per_epoch: 1
+
+data_augmentation:
+   name: AddNoise
+   params:
+      snr_min: 5
+      snr_max: 20
+      collection: MUSAN.Collection.BackgroundNoise
+
+feature_extraction:
+   name: RawAudio
+   params:
+      sample_rate: 16000
+
+architecture:
+   name: pyannote.audio.models.PyanNet
+   params:
+      rnn:
+         unit: LSTM
+         hidden_size: 128
+         num_layers: 2
+         bidirectional: True
+      ff:
+         hidden_size: [128, 128]
+
+scheduler:
+   name: ConstantScheduler
+   params:
+      learning_rate: 0.01

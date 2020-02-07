@@ -1,0 +1,5 @@
+coverage@0.90purity: 0.8353882776749547
+epoch: 841
+params:
+  alpha: 0.1015625
+  min_duration: 0.1

@@ -1,0 +1,46 @@
+task:
+   name: OverlapDetection
+   params:
+      duration: 2.0
+      batch_size: 64
+      per_epoch: 1
+
+data_augmentation:
+   name: AddNoise
+   params:
+      snr_min: 5
+      snr_max: 20
+      collection: MUSAN.Collection.BackgroundNoise
+
+feature_extraction:
+   name: RawAudio
+   params:
+      sample_rate: 16000
+
+architecture:
+   name: pyannote.audio.models.PyanNet
+   params:
+      sincnet:
+         waveform_normalize: True
+         sample_rate: 16000
+         min_low_hz: 50
+         min_band_hz: 50
+         out_channels: [80, 60, 60]
+         kernel_size: [251, 5, 5]
+         max_pool: [3, 3, 3]
+         instance_normalize: True
+         activation: leaky_relu
+         dropout: 0.
+
+      rnn:
+         unit: LSTM
+         hidden_size: 128
+         num_layers: 2
+         bidirectional: True
+      ff:
+         hidden_size: [128, 128]
+
+scheduler:
+   name: ConstantScheduler
+   params:
+      learning_rate: 0.01

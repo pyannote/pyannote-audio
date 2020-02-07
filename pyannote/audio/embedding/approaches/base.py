@@ -63,30 +63,18 @@ class EmbeddingApproach(Trainer):
             Condensed pairwise distance matrix
         """
 
-        n_sequences, _ = fX.size()
-        distances = []
+        if self.metric == 'euclidean':
+            return F.pdist(fX)
 
-        # FIXME. with 'euclidean' metric, use torch.nn.functional.pdist()
+        elif self.metric in ('cosine', 'angular'):
 
-        for i in range(n_sequences - 1):
+            distance = 0.5 * torch.pow(F.pdist(F.normalize(fX)), 2)
+            if self.metric == 'cosine':
+                return distance
 
-            if self.metric in ('cosine', 'angular'):
-                d = 1. - F.cosine_similarity(
-                    fX[i, :].expand(n_sequences - 1 - i, -1),
-                    fX[i+1:, :], dim=1, eps=1e-8)
-
-                if self.metric == 'angular':
-                    d = torch.acos(torch.clamp(1. - d, -1 + 1e-6, 1 - 1e-6))
-
-            elif self.metric == 'euclidean':
-                d = F.pairwise_distance(
-                    fX[i, :].expand(n_sequences - 1 - i, -1),
-                    fX[i+1:, :], p=2, eps=1e-06).view(-1)
-
-            distances.append(d)
-
-        return torch.cat(distances)
-
+            return torch.acos(torch.clamp(1. - distance,
+                                          -1 + 1e-12,
+                                          1 - 1e-12))
 
     def forward(self, batch):
         """Forward pass on current batch
@@ -107,6 +95,8 @@ class EmbeddingApproach(Trainer):
 
         # if sequences have variable lengths
         if variable_lengths:
+
+            # TODO: use new pytorch feature that handle sorting automatically
 
             # sort them in order of length
             _, sort = torch.sort(torch.tensor(lengths), descending=True)

@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2018 CNRS
+# Copyright (c) 2018-2020 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -31,12 +31,13 @@
 """
 
 
+import random
 import numpy as np
 from pyannote.core import Segment
 from pyannote.audio.features.utils import RawAudio
 from pyannote.audio.features.utils import get_audio_duration
-from pyannote.generators.fragment import random_subsegment
-from pyannote.generators.fragment import random_segment
+from pyannote.core.utils.random import random_subsegment
+from pyannote.core.utils.random import random_segment
 from pyannote.database import get_protocol
 from pyannote.database import get_annotated
 from pyannote.database import FileFinder
@@ -109,7 +110,7 @@ class AddNoise(Augmentation):
         while left > 0:
 
             # select noise file at random
-            file = np.random.choice(self.files_)
+            file = random.choice(self.files_)
             duration = file['duration']
 
             # if noise file is longer than what is needed, crop it
@@ -213,7 +214,7 @@ class AddNoiseFromGaps(Augmentation):
         while len_left > 0:
 
             # select noise file at random
-            file = np.random.choice(self.files_)
+            file = random.choice(self.files_)
 
             # select noise segment at random
             segment = next(random_segment(file['gaps'], weighted=False))

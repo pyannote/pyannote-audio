@@ -33,18 +33,32 @@ from .callback import Callback
 
 
 class Logging(Callback):
-    """Log loss and processing time to tensorboard and progress bar"""
+    """Log loss and processing time to tensorboard and progress bar
 
-    def __init__(self, epochs, beta=0.98):
+    Parameters
+    ----------
+    epochs : `int`, optional
+        Total number of epochs. Main progress bar will be prettier if provided.
+    verbosity : `int`, optional
+        Set level of verbosity.
+        Use 0 (default) to not show any progress bar.
+        Use 1 to show a progress bar updated at the end of each epoch.
+        Use 2 to add a second progress bar updated at the end of each batch.
+    """
+
+    def __init__(self, epochs: int = None,
+                       verbosity: int = 0):
         super().__init__()
         self.epochs = epochs
-        self.beta = beta
+        self.verbosity = verbosity
+        self.beta_ = 0.98
 
     def on_train_start(self, trainer):
-        self.epochs_pbar_ = tqdm(
-            desc=f'Training',
-            total=self.epochs, leave=True, ncols=80,
-            unit='epoch', initial=trainer.epoch_, position=0)
+        if self.verbosity > 0:
+            self.epochs_pbar_ = tqdm(
+                desc=f'Training',
+                total=self.epochs, leave=True, ncols=80,
+                unit='epoch', initial=trainer.epoch_, position=0)
 
     def on_epoch_start(self, trainer):
 
@@ -57,12 +71,15 @@ class Logging(Callback):
         self.n_batches_ = 0
         self.loss_moving_avg_ = dict()
 
-        self.epochs_pbar_.update(1)
-        self.batches_pbar_ = tqdm(
-            desc=f'Epoch #{trainer.epoch_}',
-            total=trainer.batches_per_epoch_,
-            leave=False, ncols=80,
-            unit='batch', position=1)
+        if self.verbosity > 0:
+            self.epochs_pbar_.update(1)
+
+        if self.verbosity > 1:
+            self.batches_pbar_ = tqdm(
+                desc=f'Epoch #{trainer.epoch_}',
+                total=trainer.batches_per_epoch_,
+                leave=False, ncols=80,
+                unit='batch', position=1)
 
         self.t_batch_end_ = time.time()
 
@@ -96,13 +113,14 @@ class Logging(Callback):
                 continue
             loss = batch_loss[key].detach().cpu().item()
             self.loss_moving_avg_[key] = \
-                self.beta * self.loss_moving_avg_.setdefault(key, 0.) + \
-                (1 - self.beta) * loss
+                self.beta_ * self.loss_moving_avg_.setdefault(key, 0.) + \
+                (1 - self.beta_) * loss
             self.loss[key] = \
-                self.loss_moving_avg_[key] / (1 - self.beta ** self.n_batches_)
+                self.loss_moving_avg_[key] / (1 - self.beta_ ** self.n_batches_)
 
-        self.batches_pbar_.set_postfix(ordered_dict=self.loss)
-        self.batches_pbar_.update(1)
+        if self.verbosity > 1:
+            self.batches_pbar_.set_postfix(ordered_dict=self.loss)
+            self.batches_pbar_.update(1)
 
     def on_epoch_end(self, trainer):
 

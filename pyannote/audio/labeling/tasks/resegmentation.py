@@ -28,25 +28,25 @@
 
 """Resegmentation"""
 
+raise NotImplementedError(
+    'Resegmentation is broken for now. Come back later ;)')
+
 import torch
 import tempfile
-import collections
 import numpy as np
 from .base import LabelingTask
 from .base import LabelingTaskGenerator
-from .base import TASK_MULTI_CLASS_CLASSIFICATION
+from pyannote.audio.train.task import Task, TaskType, TaskOutput
 from pyannote.core import SlidingWindowFeature
 from pyannote.database.protocol import SpeakerDiarizationProtocol
-from pyannote.audio.labeling.models import StackedRNN
 from pyannote.audio.augmentation import AddNoiseFromGaps
 from pyannote.core.utils.numpy import one_hot_decoding
-from pyannote.database import get_annotated
-from pyannote.audio.labeling.extraction import SequenceLabeling
 from pyannote.audio.train.schedulers import ConstantScheduler
 from torch.optim import SGD
-from pyannote.audio.util import mkdir_p
+from pyannote.audio.utils.path import mkdir_p
 from pathlib import Path
-from pyannote.audio.signal import Binarize
+from pyannote.audio.utils.signal import Binarize
+
 
 
 class ResegmentationGenerator(LabelingTaskGenerator):
@@ -58,12 +58,12 @@ class ResegmentationGenerator(LabelingTaskGenerator):
         Feature extraction
     current_file : `dict`
 
-    frame_info : `pyannote.core.SlidingWindow`, optional
+    resolution : `pyannote.core.SlidingWindow`, optional
         Override `feature_extraction.sliding_window`. This is useful for
         models that include the feature extraction step (e.g. SincNet) and
         therefore output a lower sample rate than that of the input.
         Defaults to `feature_extraction.sliding_window`
-    frame_crop : {'center', 'loose', 'strict'}, optional
+    alignment : {'center', 'loose', 'strict'}, optional
         Which mode to use when cropping labels. This is useful for models that
         include the feature extraction step (e.g. SincNet) and therefore use a
         different cropping mode. Defaults to 'center'.
@@ -91,8 +91,8 @@ class ResegmentationGenerator(LabelingTaskGenerator):
     def __init__(self,
                  feature_extraction,
                  current_file,
-                 frame_info=None,
-                 frame_crop=None,
+                 resolution=None,
+                 alignment=None,
                  duration=3.2,
                  batch_size=32,
                  mask_dimension=None,
@@ -121,8 +121,8 @@ class ResegmentationGenerator(LabelingTaskGenerator):
             feature_extraction,
             dummy_protocol,
             subset='train',
-            frame_info=frame_info,
-            frame_crop=frame_crop,
+            resolution=resolution,
+            alignment=alignment,
             duration=duration,
             step=0.25 * duration,
             batch_size=batch_size,
@@ -196,13 +196,14 @@ class ResegmentationGenerator(LabelingTaskGenerator):
         Returns
         -------
         specs : `dict`
-            ['task'] (`str`) : task name
+            ['task'] (`pyannote.audio.train.Task`) : task
             ['X']['dimension'] (`int`) : features dimension
             ['y']['classes'] (`list`) : list of classes
         """
 
         specs = {
-            'task': TASK_MULTI_CLASS_CLASSIFICATION,
+            'task': Task(type=TaskType.MULTI_CLASS_CLASSIFICATION,
+                         output=TaskOutput.SEQUENCE),
             'X': {'dimension': self.feature_extraction.dimension},
             'y': {'classes': ['non_speech'] + self.segment_labels_},
         }
@@ -227,9 +228,8 @@ class Resegmentation(LabelingTask):
     ----------
     feature_extraction : `pyannote.audio.features.FeatureExtraction`
         Feature extraction.
-    get_model : callable
-        Callable that takes `specifications` as input and returns a
-        `nn.Module` instance.
+    Architecture :
+    architecture_params :
     keep_sad: `boolean`, optional
         Keep speech/non-speech state unchanged. Defaults to False.
     epochs : `int`, optional
@@ -258,7 +258,8 @@ class Resegmentation(LabelingTask):
 
     def __init__(self,
                  feature_extraction,
-                 get_model,
+                 Architecture,
+                 architecture_params,
                  keep_sad=False,
                  epochs=30,
                  learning_rate=0.1,
@@ -271,7 +272,8 @@ class Resegmentation(LabelingTask):
                  augmentation=False):
 
         self.feature_extraction = feature_extraction
-        self.get_model = get_model
+        self.Architecture = Architecture
+        self.architecture_params = architecture_params
         self.keep_sad = keep_sad
         self.epochs = epochs
         self.learning_rate = learning_rate
@@ -300,21 +302,16 @@ class Resegmentation(LabelingTask):
         batch_generator : `ResegmentationGenerator`
         """
 
-        if hasattr(self.get_model, 'get_frame_info'):
-            frame_info = self.get_model.get_frame_info(**params)
-        else:
-            frame_info = None
-
-        if hasattr(self.get_model, 'get_frame_crop'):
-            frame_crop = self.get_model.get_frame_crop(**params)
-        else:
-            frame_crop = None
+        resolution = self.Architecture.get_resolution(
+            **self.architecture_params)
+        alignment = self.Architecture.get_alignment(
+            **self.architecture_params)
 
         return ResegmentationGenerator(
             self.feature_extraction,
             current_file,
-            frame_info=frame_info,
-            frame_crop=frame_crop,
+            resolution=resolution,
+            alignment=alignment,
             duration=self.duration,
             batch_size=self.batch_size,
             mask_dimension=self.mask_dimension,
@@ -385,20 +382,23 @@ class Resegmentation(LabelingTask):
 
         batch_generator = self.get_batch_generator(current_file)
 
+        model = self.Architecture(batch_generator.specifications,
+                                  **self.architecture_params)
+
         # create a temporary directory to store models and log files
         # it is removed automatically before returning.
-        with tempfile.TemporaryDirectory() as log_dir:
+        with tempfile.TemporaryDirectory() as train_dir:
 
-            # create log_dir/weights
-            mkdir_p(Path(log_dir) / 'weights')
+            # create train_dir/weights
+            mkdir_p(Path(train_dir) / 'weights')
 
             epochs = self.fit_iter(
-                self.get_model, batch_generator,
-                restart=0, epochs=self.epochs,
+                model, batch_generator,
+                warm_start=0, epochs=self.epochs,
                 get_optimizer=SGD,
-                get_scheduler=ConstantScheduler,
+                scheduler=ConstantScheduler(),
                 learning_rate=self.learning_rate,
-                log_dir=log_dir, quiet=True,
+                train_dir=Path(train_dir), verbosity=0,
                 device=self.device)
 
             scores = []
@@ -444,9 +444,8 @@ class ResegmentationWithOverlap(Resegmentation):
     ----------
     feature_extraction : `pyannote.audio.features.FeatureExtraction`
         Feature extraction.
-    get_model : callable
-        Callable that takes `specifications` as input and returns a
-        `nn.Module` instance.
+    Architecture :
+    architecture_params :
     overlap_threshold : `float`, optional
         Defaults to 0.5.
     keep_sad: `boolean`, optional
@@ -477,7 +476,8 @@ class ResegmentationWithOverlap(Resegmentation):
 
     def __init__(self,
                  feature_extraction,
-                 get_model,
+                 Architecture,
+                 architecture_params,
                  keep_sad=False,
                  overlap_threshold=0.5,
                  epochs=30,
@@ -491,7 +491,8 @@ class ResegmentationWithOverlap(Resegmentation):
                  augmentation=False):
 
         super().__init__(feature_extraction,
-                         get_model,
+                         Architecture,
+                         architecture_params,
                          keep_sad=keep_sad,
                          epochs=epochs,
                          learning_rate=learning_rate,

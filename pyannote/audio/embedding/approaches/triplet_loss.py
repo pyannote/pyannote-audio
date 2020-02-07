@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2018-2019 CNRS
+# Copyright (c) 2018-2020 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -26,6 +26,7 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
+from typing import Optional
 import numpy as np
 import torch
 from pyannote.audio.embedding.generators import SpeechSegmentGenerator
@@ -40,13 +41,6 @@ class TripletLoss(EmbeddingApproach):
 
     Parameters
     ----------
-    duration : float, optional
-        Use fixed duration segments with this `duration`.
-        Defaults (None) to using variable duration segments.
-    min_duration : float, optional
-        In case `duration` is None, set segment minimum duration.
-    max_duration : float, optional
-        In case `duration` is None, set segment maximum duration.
     metric : {'euclidean', 'cosine', 'angular'}, optional
         Defaults to 'cosine'.
     margin: float, optional
@@ -59,22 +53,25 @@ class TripletLoss(EmbeddingApproach):
         each anchor. 'negative' sampling use hardest negative for each
         (anchor, positive) pairs. 'easy' sampling only use easy triplets (i.e.
         those for which d(anchor, positive) < d(anchor, negative)).
+    duration : float, optional
+        Chunks duration, in seconds. Defaults to 1.
+    per_turn : int, optional
+        Number of chunks per speech turn. Defaults to 1.
+        If per_turn is greater than one, embeddings of the same speech turn
+        are averaged before building triplets. The intuition is that it might
+        help learn embeddings meant to be averaged/summed.
     per_label : int, optional
-        Number of sequences per speaker in each batch. Defaults to 3.
+        Number of speech turns per speaker in each batch.
+        Defaults to 3.
+    per_fold : int, optional
+        Number of different speakers in each batch.
+        Defaults to all speakers.
+    per_epoch : float, optional
+        Force total audio duration per epoch, in days.
+        Defaults to total duration of protocol subset.
     label_min_duration : float, optional
         Remove speakers with less than `label_min_duration` seconds of speech.
-        Defaults to 0 (i.e. keep them all).
-    per_fold : int, optional
-        If provided, sample triplets from groups of `per_fold` speakers at a
-        time. Defaults to sample triplets from the whole speaker set.
-    per_epoch : float, optional
-        Number of days per epoch. Defaults to 7 (a week).
-    parallel : int, optional
-        Number of prefetching background generators. Defaults to 1.
-        Each generator will prefetch enough batches to cover a whole epoch.
-        Set `parallel` to 0 to not use background generators.
-    in_memory : `bool`, optional
-        Pre-load training set in memory.
+        Defaults to 0 (i.e. keep it all).
 
     Notes
     -----
@@ -89,10 +86,16 @@ class TripletLoss(EmbeddingApproach):
 
     """
 
-    def __init__(self, duration=None, min_duration=None, max_duration=None,
-                 metric='cosine', margin=0.2, clamp='positive',
-                 sampling='all', per_label=3, per_fold=None, per_epoch=7,
-                 parallel=1, label_min_duration=0., in_memory=False):
+    def __init__(self, metric='cosine',
+                       margin: float = 0.2,
+                       clamp='positive',
+                       sampling='all',
+                       duration: float = 1.,
+                       per_turn: int = 1,
+                       per_label: int = 3,
+                       per_fold: Optional[int] = None,
+                       per_epoch: float = None,
+                       label_min_duration: float = 0.):
 
         super().__init__()
 
@@ -111,17 +114,13 @@ class TripletLoss(EmbeddingApproach):
             raise ValueError(msg)
         self.sampling = sampling
 
+        self.per_turn = per_turn
         self.per_fold = per_fold
         self.per_label = per_label
         self.per_epoch = per_epoch
         self.label_min_duration = label_min_duration
 
         self.duration = duration
-        self.min_duration = min_duration
-        self.max_duration = max_duration
-
-        self.parallel = parallel
-        self.in_memory = in_memory
 
     def batch_easy(self, y, distances):
         """Build easy triplets"""
@@ -319,26 +318,30 @@ class TripletLoss(EmbeddingApproach):
 
     def get_batch_generator(self, feature_extraction,
                             protocol, subset='train',
-                            frame_info=None, frame_crop=None):
+                            **kwargs):
         """Get batch generator
 
         Parameters
         ----------
         feature_extraction : `pyannote.audio.features.FeatureExtraction`
+        protocol : `pyannote.database.Protocol`
+        subset : {'train', 'development', 'test'}, optional
 
         Returns
         -------
         generator : `pyannote.audio.embedding.generators.SpeechSegmentGenerator`
-
         """
 
         return SpeechSegmentGenerator(
-            feature_extraction, protocol, subset=subset,
-            label_min_duration=self.label_min_duration,
-            per_label=self.per_label, per_fold=self.per_fold,
-            per_epoch=self.per_epoch, duration=self.duration,
-            min_duration=self.min_duration, max_duration=self.max_duration,
-            parallel=self.parallel, in_memory=self.in_memory)
+            feature_extraction,
+            protocol,
+            subset=subset,
+            duration=self.duration,
+            per_turn=self.per_turn,
+            per_label=self.per_label,
+            per_fold=self.per_fold,
+            per_epoch=self.per_epoch,
+            label_min_duration=self.label_min_duration)
 
     def batch_loss(self, batch):
         """Compute loss for current `batch`
@@ -357,12 +360,22 @@ class TripletLoss(EmbeddingApproach):
 
         fX = self.forward(batch)
 
-        # pre-compute pairwise distances
-        distances = self.pdist(fX)
+        # If per_turn is greater than one, embeddings of the same speech turn
+        # are averaged before building triplets. The intuition is that it might
+        # help learn embeddings meant to be averaged/summed.
+        if self.per_turn > 1:
+            y = batch['y'][::self.per_turn]
+            avg_fX = fX.view(self.per_fold * self.per_label,
+                             self.per_turn, -1).mean(axis=1)
+            distances = self.pdist(avg_fX)
+
+        else:
+            y = batch['y']
+            distances = self.pdist(fX)
 
         # sample triplets
         triplets = getattr(self, 'batch_{0}'.format(self.sampling))
-        anchors, positives, negatives = triplets(batch['y'], distances)
+        anchors, positives, negatives = triplets(y, distances)
 
         # compute loss for each triplet
         losses, deltas, _, _ = self.triplet_loss(

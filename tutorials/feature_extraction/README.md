@@ -32,8 +32,6 @@ In this tutorial, you will learn how to perform feature extraction using `pyanno
 - [Configuration](#configuration)
 - [Extraction](#extraction)
 - [Usage](#usage)
-  - [In other command line tools](#in-other-command-line-tools)
-  - [In your own code](#in-your-own-code)
 
 ## AMI database
 ([↑up to table of contents](#table-of-contents))
@@ -102,25 +100,6 @@ EN2002b.Mix-Headset.npy
 ## Usage
 ([↑up to table of contents](#table-of-contents))
 
-### In other command line tools
-([↑up to table of contents](#table-of-contents))
-
-Now that features are extracted, they can be used by other command line tools (instead of re-computing them on-the-fly).
-
-For instance, the `feature_extraction` section of the configuration file of the [speech activity detection tutorial](/tutorials/models/speech_activity_detection) can be updated to look like that:
-
-```bash
-$ cat tutorials/models/speech_activity_detection/config.yml
-feature_extraction:
-   name: Precomputed
-   params:
-      root_dir: tutorials/feature_extraction
-
-[...]
-```
-
-### In your own code
-([↑up to table of contents](#table-of-contents))
 
 ```python
 >>> from pyannote.audio.features import Precomputed

@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2019 CNRS
+# Copyright (c) 2019-2020 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -39,59 +39,48 @@ class Classification(EmbeddingApproach):
     Parameters
     ----------
     duration : float, optional
-        Use fixed duration segments with this `duration`.
-        Defaults (None) to using variable duration segments.
-    min_duration : float, optional
-        In case `duration` is None, set segment minimum duration.
-    max_duration : float, optional
-        In case `duration` is None, set segment maximum duration.
+        Chunks duration, in seconds. Defaults to 1.
     per_label : `int`, optional
         Number of sequences per speaker in each batch. Defaults to 1.
     per_fold : `int`, optional
         Number of different speakers per batch. Defaults to 32.
     per_epoch : `float`, optional
-        Number of days per epoch. Defaults to 7 (a week).
+        Force total audio duration per epoch, in days.
+        Defaults to total duration of protocol subset.
     label_min_duration : `float`, optional
         Remove speakers with less than that many seconds of speech.
         Defaults to 0 (i.e. keep them all).
-    parallel : int, optional
-        Number of prefetching background generators. Defaults to 1.
-        Each generator will prefetch enough batches to cover a whole epoch.
-        Set `parallel` to 0 to not use background generators.
+    bias : `bool`, optional
+        Use bias in the classification layer
+        Defaults to False.
     """
 
-    # TODO. add option to **not** use bias in classification layer
     # TODO. add option to see this classification step
     #       as cosine similarity to centroids (ie center loss?)
 
-    CLASSIFIER_PT = '{log_dir}/weights/{epoch:04d}.classifier.pt'
+    CLASSIFIER_PT = '{train_dir}/weights/{epoch:04d}.classifier.pt'
 
-    def __init__(self, duration=None, min_duration=None, max_duration=None,
-                 per_label=1, per_fold=32, per_epoch=7, parallel=1,
-                 label_min_duration=0.):
+    def __init__(self, duration: float = 1.0,
+                       per_label: int = 1,
+                       per_fold: int = 32,
+                       per_epoch: float = None,
+                       label_min_duration: float = 0.,
+                       bias: bool = False):
         super().__init__()
 
         self.per_label = per_label
         self.per_fold = per_fold
         self.per_epoch = per_epoch
         self.label_min_duration = label_min_duration
+        self.bias = bias
 
         self.duration = duration
-        self.min_duration = min_duration
-        self.max_duration = max_duration
-
-        self.parallel = parallel
 
         self.logsoftmax_ = nn.LogSoftmax(dim=1)
         self.loss_ = nn.NLLLoss()
 
-    def parameters(self, model, specifications, device):
+    def more_parameters(self):
         """Initialize trainable trainer parameters
-
-        Parameters
-        ----------
-        specifications : `dict`
-            Batch specs.
 
         Returns
         -------
@@ -100,69 +89,57 @@ class Classification(EmbeddingApproach):
         """
 
         self.classifier_ = nn.Linear(
-            model.dimension,
-            len(specifications['y']['classes']),
-            bias=True).to(device)
+            self.model.dimension,
+            len(self.specifications['y']['classes']),
+            bias=self.bias).to(self.device)
 
-        return list(self.classifier_.parameters())
+        return self.classifier_.parameters()
 
-    def load_epoch(self, epoch):
-        """Load model and classifier from disk
+    def load_more(self, model_pt=None):
+        """Load classifier from disk"""
 
-        Parameters
-        ----------
-        epoch : `int`
-            Epoch number.
-        """
-
-        super().load_epoch(epoch)
+        if model_pt is None:
+            classifier_pt = self.CLASSIFIER_PT.format(
+                train_dir=self.train_dir_, epoch=self.epoch_)
+        else:
+            classifier_pt = model_pt.with_suffix('.classifier.pt')
 
         classifier_state = torch.load(
-            self.CLASSIFIER_PT.format(log_dir=self.log_dir_, epoch=epoch),
-            map_location=lambda storage, loc: storage)
+            classifier_pt, map_location=lambda storage, loc: storage)
         self.classifier_.load_state_dict(classifier_state)
 
-    def save_epoch(self, epoch=None):
-        """Save model to disk
+    def save_more(self):
+        """Save classifier weights to disk"""
 
-        Parameters
-        ----------
-        epoch : `int`, optional
-            Epoch number. Defaults to self.epoch_
-
-        """
-
-        if epoch is None:
-            epoch = self.epoch_
-
-        torch.save(self.classifier_.state_dict(),
-                   self.CLASSIFIER_PT.format(log_dir=self.log_dir_,
-                                             epoch=epoch))
-
-        super().save_epoch(epoch=epoch)
+        classifier_pt = self.CLASSIFIER_PT.format(
+            train_dir=self.train_dir_, epoch=self.epoch_)
+        torch.save(self.classifier_.state_dict(), classifier_pt)
 
     def get_batch_generator(self, feature_extraction,
                             protocol, subset='train',
-                            frame_info=None, frame_crop=None):
+                            **kwargs):
         """Get batch generator
 
         Parameters
         ----------
         feature_extraction : `pyannote.audio.features.FeatureExtraction`
+        protocol : `pyannote.database.Protocol`
+        subset : {'train', 'development', 'test'}, optional
 
         Returns
         -------
         generator : `pyannote.audio.embedding.generators.SpeechSegmentGenerator`
-
         """
 
         return SpeechSegmentGenerator(
-            feature_extraction, protocol, subset=subset,
+            feature_extraction,
+            protocol,
+            subset=subset,
             label_min_duration=self.label_min_duration,
-            per_label=self.per_label, per_fold=self.per_fold,
-            per_epoch=self.per_epoch, duration=self.duration,
-            min_duration=self.min_duration, max_duration=self.max_duration,
-            parallel=self.parallel)
+            per_label=self.per_label,
+            per_fold=self.per_fold,
+            per_epoch=self.per_epoch,
+            duration=self.duration)
 
     def batch_loss(self, batch):
         """Compute loss for current `batch`

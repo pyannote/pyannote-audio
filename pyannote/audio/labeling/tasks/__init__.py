@@ -26,6 +26,8 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
+
+
 from .speech_activity_detection import SpeechActivityDetection
 from .speech_activity_detection import DomainAwareSpeechActivityDetection
 from .speech_activity_detection import DomainAdversarialSpeechActivityDetection
@@ -33,4 +35,15 @@ from .speech_activity_detection import DomainAdversarialSpeechActivityDetection
 from .overlap_detection import OverlapDetection
 from .speaker_change_detection import SpeakerChangeDetection
 from .domain_classification import DomainClassification
-from .resegmentation import Resegmentation
+
+
+try:
+    from .resegmentation import Resegmentation
+except NotImplementedError:
+    pass
+
+
+__all__ = ['SpeechActivityDetection',
+           'OverlapDetection',
+           'SpeakerChangeDetection',
+           'Resegmentation']

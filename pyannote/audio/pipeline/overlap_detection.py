@@ -39,7 +39,7 @@ from pyannote.core import SlidingWindowFeature
 
 from pyannote.database import get_annotated
 
-from pyannote.audio.signal import Binarize
+from pyannote.audio.utils.signal import Binarize
 from pyannote.audio.features import Precomputed
 
 from pyannote.metrics.detection import DetectionPrecision

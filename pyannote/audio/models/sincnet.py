@@ -34,6 +34,7 @@
 # "Speaker Recognition from raw waveform with SincNet".
 # SLT 2018. https://arxiv.org/abs/1808.00158
 
+from typing import List
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -53,6 +54,8 @@ class SincConv1d(nn.Module):
         Number of filters.
     kernel_size : `int`
         Filter length.
+    stride : `int`, optional
+        Defaults to 1.
     sample_rate : `int`, optional
         Sample rate. Defaults to 16000.
     min_low_hz: `int`, optional
@@ -209,23 +212,25 @@ class SincNet(nn.Module):
     """
 
     @staticmethod
-    def get_frame_crop(**kwargs):
+    def get_alignment(**kwargs):
         return 'strict'
 
     @staticmethod
-    def get_frame_info(sample_rate=16000, kernel_size=[251, 5, 5],
+    def get_resolution(sample_rate=16000,
+                       kernel_size=[251, 5, 5],
+                       stride=[1, 1, 1],
                        max_pool=[3, 3, 3], **kwargs):
         """
         """
 
         # https://medium.com/mlreview/a-guide-to-receptive-field-arithmetic-for-convolutional-neural-networks-e0f514068807
-        stride, padding = 1, 0
+        padding = 0
         receptive_field, jump, start = 1, 1, 0.5
-        for ks, mp in zip(kernel_size, max_pool):
+        for ks, s, mp in zip(kernel_size, stride, max_pool):
             # increase due to (Sinc)Conv1d
             receptive_field += (ks - 1) * jump
             start += ((ks - 1) / 2 - padding) * jump
-            jump *= stride
+            jump *= s
             # increase in receptive field due to MaxPool1d
             receptive_field += (mp - 1) * jump
             start += ((mp - 1) / 2 - padding) * jump
@@ -236,12 +241,34 @@ class SincNet(nn.Module):
                              start=0.)
 
 
-    def __init__(self, waveform_normalize=True, sample_rate=16000,
-                 min_low_hz=50, min_band_hz=50,
-                 out_channels=[80, 60, 60], kernel_size=[251, 5, 5],
+    def __init__(self,
+                 waveform_normalize=True,
+                 sample_rate=16000,
+                 min_low_hz=50,
+                 min_band_hz=50,
+                 out_channels=[80, 60, 60],
+                 kernel_size: List[int] = [251, 5, 5],
+                 stride=[1, 1, 1],
                  max_pool=[3, 3, 3],
-                 instance_normalize=True, activation='leaky_relu', dropout=0.):
+                 instance_normalize=True,
+                 activation='leaky_relu',
+                 dropout=0.):
         super().__init__()
+
+        # check parameters values
+        n_layers = len(out_channels)
+        if len(kernel_size) != n_layers:
+            msg = (f'out_channels ({len(out_channels):d}) and kernel_size '
+                   f'({len(kernel_size):d}) should have the same length.')
+            raise ValueError(msg)
+        if len(stride) != n_layers:
+            msg = (f'out_channels ({len(out_channels):d}) and stride '
+                   f'({len(stride):d}) should have the same length.')
+            raise ValueError(msg)
+        if len(max_pool) != n_layers:
+            msg = (f'out_channels ({len(out_channels):d}) and max_pool '
+                   f'({len(max_pool):d}) should have the same length.')
+            raise ValueError(msg)
 
         # Waveform normalization
         self.waveform_normalize = waveform_normalize
@@ -256,6 +283,7 @@ class SincNet(nn.Module):
         # Conv1D parameters
         self.out_channels = out_channels
         self.kernel_size = kernel_size
+        self.stride = stride
         self.conv1d_ = nn.ModuleList([])
 
         # Max-pooling parameters
@@ -269,22 +297,33 @@ class SincNet(nn.Module):
 
         config = zip(self.out_channels,
                      self.kernel_size,
+                     self.stride,
                      self.max_pool)
 
-        for i, (out_channels, kernel_size, max_pool) in enumerate(config):
+        for i, (out_channels, kernel_size, stride, max_pool) in enumerate(config):
 
             # 1D convolution
             if i > 0:
-                conv1d = nn.Conv1d(in_channels, out_channels, kernel_size,
-                                   stride=1, padding=0, dilation=1,
-                                   groups=1, bias=True)
+                conv1d = nn.Conv1d(in_channels,
+                                   out_channels,
+                                   kernel_size,
+                                   stride=stride,
+                                   padding=0,
+                                   dilation=1,
+                                   groups=1,
+                                   bias=True)
             else:
-                conv1d = SincConv1d(1, out_channels, kernel_size,
+                conv1d = SincConv1d(1,
+                                    out_channels,
+                                    kernel_size,
                                     sample_rate=self.sample_rate,
                                     min_low_hz=self.min_low_hz,
                                     min_band_hz=self.min_band_hz,
-                                    stride=1, padding=0, dilation=1,
-                                    bias=False, groups=1)
+                                    stride=stride,
+                                    padding=0,
+                                    dilation=1,
+                                    bias=False,
+                                    groups=1)
             self.conv1d_.append(conv1d)
 
             # 1D max-pooling

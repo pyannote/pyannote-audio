@@ -34,8 +34,8 @@ from .speech_activity_detection import SpeechActivityDetection
 from .overlap_detection import OverlapDetection
 from .speech_turn_segmentation import SpeechTurnSegmentation
 from .speaker_diarization import SpeakerDiarization
+
 try:
     from .resegmentation import Resegmentation
-except ModuleNotFoundError as e:
-    msg = f'Resegmentation module is not available: {e}'
-    print(msg)
+except NotImplementedError:
+    pass

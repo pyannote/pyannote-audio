@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2018 CNRS
+# Copyright (c) 2018-2020 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -33,11 +33,10 @@ from pathlib import Path
 from glob import glob
 import numpy as np
 from numpy.lib.format import open_memmap
-from struct import unpack
 
 from pyannote.core import SlidingWindow, SlidingWindowFeature
 from pyannote.database.util import get_unique_identifier
-from pyannote.audio.util import mkdir_p
+from pyannote.audio.utils.path import mkdir_p
 
 
 class PyannoteFeatureExtractionError(Exception):
@@ -59,7 +58,7 @@ class Precomputed(object):
     dimension : `int`, optional
         Dimension of feature vectors. This is not used when `root_dir` already
         exists and contains `metadata.yml`.
-    labels : iterable, optional
+    classes : iterable, optional
         Human-readable name for each dimension.
 
     Notes
@@ -76,7 +75,7 @@ class Precomputed(object):
         return path
 
     def __init__(self, root_dir=None, use_memmap=True,
-                 sliding_window=None, dimension=None, labels=None,
+                 sliding_window=None, dimension=None, classes=None,
                  augmentation=None):
 
         if augmentation is not None:
@@ -94,16 +93,16 @@ class Precomputed(object):
                 params = yaml.load(f, Loader=yaml.SafeLoader)
 
             self.dimension_ = params.pop('dimension')
-            self.labels_ = params.pop('labels', None)
+            self.classes_ = params.pop('classes', None)
             self.sliding_window_ = SlidingWindow(**params)
 
             if dimension is not None and self.dimension_ != dimension:
                 msg = 'inconsistent "dimension" (is: {0}, should be: {1})'
                 raise ValueError(msg.format(dimension, self.dimensions_))
 
-            if labels is not None and self.labels_ != labels:
-                msg = 'inconsistent "labels" (is {0}, should be: {1})'
-                raise ValueError(msg.format(labels, self.labels_))
+            if classes is not None and self.classes_ != classes:
+                msg = 'inconsistent "classes" (is {0}, should be: {1})'
+                raise ValueError(msg.format(classes, self.classes_))
 
             if ((sliding_window is not None) and
                 ((sliding_window.start != self.sliding_window_.start) or
@@ -115,13 +114,13 @@ class Precomputed(object):
         else:
 
             if dimension is None:
-                if labels is None:
+                if classes is None:
                     msg = (
-                        f'Please provide either `dimension` or `labels` '
+                        f'Please provide either `dimension` or `classes` '
                         f'parameters (or both) when instantiating '
                         f'`Precomputed`.'
                     )
-                dimension = len(labels)
+                dimension = len(classes)
 
             if sliding_window is None or dimension is None:
                 msg = (
@@ -140,15 +139,15 @@ class Precomputed(object):
                       'duration': sliding_window.duration,
                       'step': sliding_window.step,
                       'dimension': dimension}
-            if labels is not None:
-                params['labels'] = labels
+            if classes is not None:
+                params['classes'] = classes
 
             with io.open(path, 'w') as f:
                 yaml.dump(params, f, default_flow_style=False)
 
             self.sliding_window_ = sliding_window
             self.dimension_ = dimension
-            self.labels_ = labels
+            self.classes_ = classes
 
     def augmentation():
         doc = "Data augmentation."
@@ -172,9 +171,9 @@ class Precomputed(object):
         return self.dimension_
 
     @property
-    def labels(self):
+    def classes(self):
         """Human-readable label of each dimension"""
-        return self.labels_
+        return self.classes_
 
     def __call__(self, current_file):
         """Obtain features for file
@@ -250,71 +249,3 @@ class Precomputed(object):
         path = Path(self.get_path(item))
         mkdir_p(path.parent)
         np.save(path, features.data)
-
-
-class PrecomputedHTK(object):
-
-    def __init__(self, root_dir=None, duration=0.025, step=None):
-        super(PrecomputedHTK, self).__init__()
-        self.root_dir = root_dir
-        self.duration = duration
-
-        # load any htk file in root_dir/database
-        path = '{root_dir}/*/*.htk'.format(root_dir=root_dir)
-        found = glob(path)
-
-        # FIXME switch to Py3.5 and use glob 'recursive' parameter
-        # http://stackoverflow.com/questions/2186525/
-        # use-a-glob-to-find-files-recursively-in-python
-
-        if len(found) > 0:
-            file_htk = found[0]
-        else:
-            msg = "Could not find any HTK file in '{root_dir}'."
-            raise ValueError(msg.format(root_dir=root_dir))
-
-        X, sample_period = self.load_htk(file_htk)
-        self.dimension_ = X.shape[1]
-        self.step = sample_period * 1e-7
-
-        # don't trust HTK header when 'step' is provided by the user.
-        # HACK remove this when Pepe's HTK files are fixed...
-        if step is not None:
-            self.step = step
-
-        self.sliding_window_ = SlidingWindow(start=0.,
-                                             duration=self.duration,
-                                             step=self.step)
-    @property
-    def sliding_window(self):
-        return self.sliding_window_
-
-    @property
-    def dimension(self):
-        return self.dimension_
-
-    @staticmethod
-    def get_path(root_dir, item):
-        uri = get_unique_identifier(item)
-        path = '{root_dir}/{uri}.htk'.format(root_dir=root_dir, uri=uri)
-        return path
-
-    # http://codereview.stackexchange.com/questions/
-    # 1496/reading-a-binary-file-containing-periodic-samples
-    @staticmethod
-    def load_htk(file_htk):
-        with open(file_htk, 'rb') as fp:
-            data = fp.read(12)
-            num_samples, sample_period, sample_size, _ = unpack('>iihh', data)
-            num_features = int(sample_size / 4)
-            num_samples = int(num_samples)
-            X = np.empty((num_samples, num_features))
-            for i in range(num_samples):
-                data = fp.read(sample_size)
-                X[i, :] = unpack('>' + ('f' * (sample_size // 4)), data)
-        return X, sample_period
-
-    def __call__(self, item):
-        file_htk = self.get_path(self.root_dir, item)
-        X, _ = self.load_htk(file_htk)
-        return SlidingWindowFeature(X, self.sliding_window_)

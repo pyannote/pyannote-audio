@@ -76,3 +76,8 @@ experiments
 
 #nfs
 .nfs*
+
+gh-pages
+gh-pages.pub
+
+*.zip

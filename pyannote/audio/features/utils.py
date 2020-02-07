@@ -117,8 +117,10 @@ def read_audio(current_file, sample_rate=None, mono=True):
         y = np.mean(y, axis=1, keepdims=True)
 
     # resample if sample rates mismatch
-    if file_sample_rate != sample_rate:
+    if (sample_rate is not None) and (file_sample_rate != sample_rate):
         y = librosa.core.resample(y.T, file_sample_rate, sample_rate).T
+    else:
+        sample_rate = file_sample_rate
 
     return y, sample_rate
 
@@ -157,6 +159,30 @@ class RawAudio(object):
     @property
     def sliding_window(self):
         return self.sliding_window_
+
+    def get_features(self, y, sample_rate):
+
+        # convert to mono
+        if self.mono:
+            y = np.mean(y, axis=1, keepdims=True)
+
+        # resample if sample rates mismatch
+        if (self.sample_rate is not None) and (self.sample_rate != sample_rate):
+            y = librosa.core.resample(y.T, sample_rate, self.sample_rate).T
+            sample_rate = self.sample_rate
+
+        # augment data
+        if self.augmentation is not None:
+            y = self.augmentation(y, sample_rate)
+
+        # TODO: how time consuming is this thing (needs profiling...)
+        try:
+            valid = valid_audio(y[:, 0], mono=True)
+        except ParameterError as e:
+            msg = (f"Something went wrong when augmenting waveform.")
+            raise ValueError(msg)
+
+        return y
 
     def __call__(self, current_file, return_sr=False):
         """Obtain waveform
@@ -204,25 +230,7 @@ class RawAudio(object):
         if channel is not None:
             y = y[:, channel-1:channel]
 
-        # convert to mono
-        if self.mono:
-            y = np.mean(y, axis=1, keepdims=True)
-
-        # resample if sample rates mismatch
-        if (self.sample_rate is not None) and (self.sample_rate != sample_rate):
-            y = librosa.core.resample(y.T, sample_rate, self.sample_rate).T
-            sample_rate = self.sample_rate
-
-        # augment data
-        if self.augmentation is not None:
-            y = self.augmentation(y, sample_rate)
-
-            # TODO: how time consuming is this thing (needs profiling...)
-            try:
-                valid = valid_audio(y[:, 0], mono=True)
-            except ParameterError as e:
-                msg = (f"Something went wrong when augmenting waveform.")
-                raise ValueError(msg)
+        y = self.get_features(y, sample_rate)
 
         sliding_window = SlidingWindow(
             start=-.5/sample_rate,
@@ -230,7 +238,9 @@ class RawAudio(object):
             step=1./sample_rate)
 
         if return_sr:
-            return SlidingWindowFeature(y, sliding_window), sample_rate
+            return (
+                SlidingWindowFeature(y, sliding_window),
+                sample_rate if self.sample_rate is None else self.sample_rate)
 
         return SlidingWindowFeature(y, sliding_window)
 
@@ -333,31 +343,7 @@ class RawAudio(object):
         if channel is not None:
             data = data[:, channel-1:channel]
 
-        # convert to mono if needed
-        if self.mono:
-            data = np.mean(data, axis=1, keepdims=True)
-
-        # resample if sample rates mismatch
-        if sample_rate != self.sample_rate:
-            data = librosa.core.resample(data.T,
-                                         sample_rate,
-                                         self.sample_rate).T
-            sample_rate = self.sample_rate
-            data = data[:n_samples]
-
-        # TODO: how time consuming is this thing (needs profiling...)
-        try:
-            valid = valid_audio(data[:, 0], mono=True)
-        except ParameterError as e:
-            msg = (f"Something went wrong when trying to extract waveform of "
-                   f"file {current_file['database']}/{current_file['uri']} "
-                   f"between {segment.start:.3f}s and {segment.end:.3f}s.")
-            raise ValueError(msg)
-
-        if self.augmentation is not None:
-            data = self.augmentation(data, sample_rate)
-
-        return data
+        return self.get_features(data, sample_rate)
 
 # # THIS SCRIPT CAN BE USED TO CRASH-TEST THE ON-THE-FLY RESAMPLING
 

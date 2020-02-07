@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2016-2018 CNRS
+# Copyright (c) 2016-2019 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -91,7 +91,7 @@ class FeatureExtraction(object):
         """Dimension of feature vectors"""
         return self.get_dimension()
 
-    def get_frame_info(self):
+    def get_resolution(self):
         """Get sliding window used for feature extraction
 
         Returns
@@ -101,13 +101,13 @@ class FeatureExtraction(object):
         """
 
         msg = ('`FeatureExtraction` subclasses must implement '
-               '`get_frame_info` method.')
+               '`get_resolution` method.')
         raise NotImplementedError(msg)
 
     @property
     def sliding_window(self):
         """Sliding window used for feature extraction"""
-        return self.get_frame_info()
+        return self.get_resolution()
 
     def get_features(self, y, sample_rate):
         """Extract features from waveform
@@ -211,4 +211,12 @@ class FeatureExtraction(object):
                                        duration=frames.duration)
         (start, end), = shifted_frames.crop(segment, mode=mode, fixed=fixed,
                                             return_ranges=True)
+
+        # HACK for when start (returned by shifted_frames.crop) is negative
+        # due to floating point precision.
+        if start < 0:
+            if fixed is not None:
+                end -= start
+            start = 0
+
         return features[start:end]

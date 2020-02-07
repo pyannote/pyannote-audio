@@ -26,11 +26,4 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
-
-TASK_MULTI_CLASS_CLASSIFICATION = 'multi_class_classification'
-TASK_MULTI_LABEL_CLASSIFICATION = 'multi_label_classification'
-TASK_REGRESSION = 'regression'
-TASK_REPRESENTATION_LEARNING = 'representation_learning'
-
-from .models import PyanNet
-from .models import ClopiNet
+from .models import PyanNet, SincTDNN

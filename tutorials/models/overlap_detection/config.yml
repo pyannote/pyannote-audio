@@ -1,42 +1,50 @@
+# An overlapped speech detection model is trained.
+# Here, training relies on 2s-long audio chunks,
+# batches of 64 audio chunks, and saves model to
+# disk every one (1) day worth of audio.
 task:
    name: OverlapDetection
    params:
-      duration: 2.0      # sequences are 2s long
-      batch_size: 64     # 64 sequences per batch
-      per_epoch: 1       # one epoch = 1 day of audio
-      parallel: 1        # pre-fetch training data in 1 parallel generator
+      duration: 2.0
+      batch_size: 64
+      per_epoch: 1
 
+# Data augmentation is applied during training.
+# Here, it consists in additive noise from the
+# MUSAN database, with random signal-to-noise
+# ratio between 5 and 20 dB
 data_augmentation:
-   name: AddNoise                                   # add noise on-the-fly
+   name: AddNoise
    params:
-      snr_min: 10                                   # using random signal-to-noise
-      snr_max: 20                                   # ratio between 10 and 20 dBs
-      collection: MUSAN.Collection.BackgroundNoise  # use background noise from MUSAN
-                                                    # (needs pyannote.db.musan)
+      snr_min: 5
+      snr_max: 20
+      collection: MUSAN.Collection.BackgroundNoise
+
+# Since we are training an end-to-end model, the
+# feature extraction step simply returns the raw
+# waveform.
 feature_extraction:
-   name: LibrosaMFCC      # use MFCC from librosa
+   name: RawAudio
    params:
-      e: False            # do not use energy
-      De: True            # use energy 1st derivative
-      DDe: True           # use energy 2nd derivative
-      coefs: 19           # use 19 MFCC coefficients
-      D: True             # use coefficients 1st derivative
-      DD: True            # use coefficients 2nd derivative
-      duration: 0.025     # extract MFCC from 25ms windows
-      step: 0.010         # extract MFCC every 10ms
-      sample_rate: 16000  # convert to 16KHz first (if needed)
+      sample_rate: 16000
 
+# We use the PyanNet architecture in Figure 2 of
+# pyannote.audio introductory paper. More details
+# about the architecture and its parameters can be
+# found directly in PyanNet docstring.
 architecture:
-   name: StackedRNN
+   name: pyannote.audio.models.PyanNet
    params:
-      instance_normalize: True  # normalize sequences
-      rnn: LSTM                 # use LSTM (could be GRU)
-      recurrent: [128, 128]     # two layers with 128 hidden states
-      bidirectional: True       # bidirectional LSTMs
-      linear: [32, 32]          # add two linear layers at the end
+      rnn:
+         unit: LSTM
+         hidden_size: 128
+         num_layers: 2
+         bidirectional: True
+      ff:
+         hidden_size: [128, 128]
 
+# We use a constant learning rate of 1e-2
 scheduler:
-   name: CyclicScheduler        # use cyclic learning rate (LR) scheduler
+   name: ConstantScheduler
    params:
-      learning_rate: auto       # automatically guess LR upper bound
-      epochs_per_cycle: 14      # 14 epochs per cycle
+      learning_rate: 0.01

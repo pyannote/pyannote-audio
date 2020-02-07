@@ -1,16 +1,24 @@
-feature_extraction:
-   name: LibrosaMFCC
+# A speaker embedding model is trained with triplet loss.
+# Here, training relies on 1s-long audio chunks, batches
+# of audio chunks from 48 different speakers x 3 chunks
+# per speaker, and saves model to disk every half (0.5)
+# day worth of audio.
+task:
+   name: TripletLoss
    params:
-      e: False
-      De: True
-      DDe: True
-      coefs: 19
-      D: True
-      DD: True
-      duration: 0.025
-      step: 0.010
-      sample_rate: 16000
+     metric: angular
+     clamp: sigmoid
+     margin: 0.0
+     duration: 1.000
+     sampling: all
+     per_fold: 48
+     per_label: 3
+     per_epoch: 0.5
 
+# Data augmentation is applied during training.
+# Here, it consists in additive noise from the
+# MUSAN database, with random signal-to-noise
+# ratio between 10 and 20 dB
 data_augmentation:
    name: AddNoise
    params:
@@ -18,33 +26,43 @@ data_augmentation:
      snr_max: 20
      collection: MUSAN.Collection.BackgroundNoise
 
+# Since we are training an end-to-end model, the
+# feature extraction step simply returns the raw
+# waveform.
+feature_extraction:
+   name: pyannote.audio.features.RawAudio
+   params:
+      sample_rate: 16000
+
+# We use the PyanNet architecture in Figure 2 of
+# pyannote.audio introductory paper. More details
+# about the architecture and its parameters can be
+# found directly in PyanNet docstring.
 architecture:
-   name: ClopiNet
+   name: pyannote.audio.models.PyanNet
    params:
-     instance_normalize: True
-     rnn: LSTM
-     recurrent: [256, 256, 256]
-     linear: [256]
-     bidirectional: True
-     pooling: sum
-     batch_normalize: True
-     normalize: True
+      sincnet:
+         stride: [5, 1, 1]
+         waveform_normalize: True
+         instance_normalize: True
+      rnn:
+         unit: LSTM
+         hidden_size: 512
+         num_layers: 3
+         bias: True
+         dropout: 0
+         bidirectional: True
+         concatenate: False
+         pool: x-vector
+      ff:
+         hidden_size: [512, 512]
+      embedding:
+         batch_normalize: False
+         unit_normalize: False
 
-approach:
-   name: TripletLoss
-   params:
-     metric: cosine
-     clamp: sigmoid
-     margin: 0.0
-     min_duration: 0.500
-     max_duration: 1.500
-     sampling: all
-     per_fold: 20
-     per_label: 3
-     per_epoch: 1
-     label_min_duration: 60
-
+# We use a constant learning rate that is determined
+# automagically at the start of training (0.1 is fine)
 scheduler:
-   name: CyclicScheduler
+   name: ConstantScheduler
    params:
-      epochs_per_cycle: 14
+      learning_rate: auto

@@ -1,0 +1,20 @@
+X:
+  dimension: 1
+domain:
+  classes:
+  - audiobooks
+  - broadcast_interview
+  - child
+  - clinical
+  - court
+  - maptask
+  - meeting
+  - restaurant
+  - socio_field
+  - socio_lab
+  - webvideo
+task: frame-wise multi-class classification
+y:
+  classes:
+  - non_speech
+  - speech

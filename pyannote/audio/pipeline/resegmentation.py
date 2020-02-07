@@ -129,8 +129,6 @@ class Resegmentation(Pipeline):
                        batch_size: Optional[float] = 32,
                        gpu: Optional[bool] = False):
 
-        super().__init__()
-
         # feature extraction
         if feature_extraction is None:
             from pyannote.audio.features import LibrosaMFCC
@@ -149,22 +147,15 @@ class Resegmentation(Pipeline):
 
         # network architecture
         if architecture is None:
-            from pyannote.audio.labeling.models import StackedRNN
-            self.get_model_ = partial(
-                StackedRNN,
-                instance_normalize=False,
-                rnn='LSTM',
-                recurrent=[64, 32,],
-                bidirectional=True,
-                linear=[32, ],
-            )
+            from pyannote.audio.models import PyanNet
+            self.Architecture_ = PyanNet
+            self.architecture_params_ = {'sincnet': {'skip': True}}
 
         else:
-            Architecture = get_class_by_name(
+            self.Architecture_ = get_class_by_name(
                 architecture['name'],
-                default_module_name='pyannote.audio.labeling.models')
-            params = architecture.get('params', {})
-            self.get_model_ = partial(Architecture, **params)
+                default_module_name='pyannote.audio.models')
+            self.architecture_params_ = architecture.get('params', {})
 
         self.overlap = overlap
         self.keep_sad = keep_sad
@@ -199,7 +190,8 @@ class Resegmentation(Pipeline):
         if self.overlap:
             self._resegmentation = _ResegmentationWithOverlap(
                 self.feature_extraction_,
-                self.get_model_,
+                self.Architecture_,
+                self.architecture_params_,
                 keep_sad=self.keep_sad,
                 mask_dimension=self.mask_dimension_,
                 mask_logscale=self.mask_logscale_,
@@ -215,7 +207,8 @@ class Resegmentation(Pipeline):
         else:
             self._resegmentation = _Resegmentation(
                 self.feature_extraction_,
-                self.get_model_,
+                self.Architecture_,
+                self.architecture_params_,
                 keep_sad=self.keep_sad,
                 mask_dimension=self.mask_dimension_,
                 mask_logscale=self.mask_logscale_,
@@ -228,7 +221,7 @@ class Resegmentation(Pipeline):
             )
 
     def __call__(self, current_file: dict) -> Annotation:
-        """Apply speech activity detection
+        """Apply resegmentation
 
         Parameters
         ----------

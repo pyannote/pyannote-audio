@@ -1,0 +1,45 @@
+task:
+   name: DomainAdversarialSpeechActivityDetection
+   params:
+      duration: 2.0      # sequences are 2s long
+      batch_size: 64     # 64 sequences per batch
+      domain: domain
+      attachment: 0
+      per_epoch: 1       # one epoch = 1 day of audio
+      alpha: 1
+      domain_loss: MSELoss
+      rnn:
+         unit: LSTM
+         hidden_size: 128
+         num_layers: 1
+         bidirectional: False
+         pool: max
+
+data_augmentation:
+   name: AddNoise                                   # add noise on-the-fly
+   params:
+      snr_min: 10                                   # using random signal-to-noise
+      snr_max: 20                                   # ratio between 10 and 20 dBs
+      collection: MUSAN.Collection.BackgroundNoise  # use background noise from MUSAN
+                                                    # (needs pyannote.db.musan)
+feature_extraction:
+   name: RawAudio      # use MFCC from librosa
+   params:
+     sample_rate: 16000
+
+architecture:
+   name: pyannote.audio.models.PyanNet
+   params:
+     rnn:
+        unit: LSTM
+        hidden_size: 128
+        num_layers: 2
+        bidirectional: True
+     ff:
+        hidden_size: [128, 128]
+
+scheduler:
+   name: CyclicScheduler        # use cyclic learning rate (LR) scheduler
+   params:
+      learning_rate: auto       # automatically guess LR upper bound
+      epochs_per_cycle: 14      # 14 epochs per cycle

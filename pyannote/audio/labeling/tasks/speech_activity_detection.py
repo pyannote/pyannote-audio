@@ -33,9 +33,10 @@ import torch
 import torch.nn as nn
 from .base import LabelingTask
 from .base import LabelingTaskGenerator
-from .base import TASK_MULTI_CLASS_CLASSIFICATION
+from pyannote.audio.train.task import Task, TaskType, TaskOutput
 from ..gradient_reversal import GradientReversal
 from pyannote.audio.models.models import RNN
+
 
 class SpeechActivityDetectionGenerator(LabelingTaskGenerator):
     """Batch generator for training speech activity detection
@@ -45,12 +46,13 @@ class SpeechActivityDetectionGenerator(LabelingTaskGenerator):
     feature_extraction : `pyannote.audio.features.FeatureExtraction`
         Feature extraction
     protocol : `pyannote.database.Protocol`
-    subset : {'train', 'development', 'test'}
-    frame_info : `pyannote.core.SlidingWindow`, optional
+    subset : {'train', 'development', 'test'}, optional
+        Protocol and subset
+    resolution : `pyannote.core.SlidingWindow`, optional
         Override `feature_extraction.sliding_window`. This is useful for
         models that include the feature extraction step (e.g. SincNet) and
         therefore output a lower sample rate than that of the input.
-    frame_crop : {'center', 'loose', 'strict'}, optional
+    alignment : {'center', 'loose', 'strict'}, optional
         Which mode to use when cropping labels. This is useful for models
         that include the feature extraction step (e.g. SincNet) and
         therefore use a different cropping mode. Defaults to 'center'.
@@ -59,12 +61,8 @@ class SpeechActivityDetectionGenerator(LabelingTaskGenerator):
     batch_size : int, optional
         Batch size. Defaults to 32.
     per_epoch : float, optional
-        Total audio duration per epoch, in days.
-        Defaults to one day (1).
-    parallel : int, optional
-        Number of prefetching background generators. Defaults to 1.
-        Each generator will prefetch enough batches to cover a whole epoch.
-        Set `parallel` to 0 to not use background generators.
+        Force total audio duration per epoch, in days.
+        Defaults to total duration of protocol subset.
     """
 
     def postprocess_y(self, Y):
@@ -93,12 +91,16 @@ class SpeechActivityDetectionGenerator(LabelingTaskGenerator):
 
     @property
     def specifications(self):
-        specs = {
-            'task': TASK_MULTI_CLASS_CLASSIFICATION,
-            'X': {'dimension': self.feature_extraction.dimension},
-            'y': {'classes': ['non_speech', 'speech']},
-        }
+
+        specs = LabelingTaskGenerator.specifications.fget(self)
+        specs['y']['classes'] = ['non_speech', 'speech']
+
         for key, classes in self.file_labels_.items():
+
+            # TODO. add an option to handle this list
+            # TODO. especially useful for domain-adversarial stuff
+            if key in ['duration', 'audio', 'uri']:
+                continue
             specs[key] = {'classes': classes}
 
         return specs
@@ -116,20 +118,16 @@ class SpeechActivityDetection(LabelingTask):
     per_epoch : float, optional
         Total audio duration per epoch, in days.
         Defaults to one day (1).
-    parallel : int, optional
-        Number of prefetching background generators. Defaults to 1.
-        Each generator will prefetch enough batches to cover a whole epoch.
-        Set `parallel` to 0 to not use background generators.
     """
 
     def get_batch_generator(self, feature_extraction, protocol, subset='train',
-                            frame_info=None, frame_crop=None):
+                            resolution=None, alignment=None):
         """
-        frame_info : `pyannote.core.SlidingWindow`, optional
+        resolution : `pyannote.core.SlidingWindow`, optional
             Override `feature_extraction.sliding_window`. This is useful for
             models that include the feature extraction step (e.g. SincNet) and
             therefore output a lower sample rate than that of the input.
-        frame_crop : {'center', 'loose', 'strict'}, optional
+        alignment : {'center', 'loose', 'strict'}, optional
             Which mode to use when cropping labels. This is useful for models
             that include the feature extraction step (e.g. SincNet) and
             therefore use a different cropping mode. Defaults to 'center'.
@@ -137,12 +135,11 @@ class SpeechActivityDetection(LabelingTask):
         return SpeechActivityDetectionGenerator(
             feature_extraction,
             protocol, subset=subset,
-            frame_info=frame_info,
-            frame_crop=frame_crop,
+            resolution=resolution,
+            alignment=alignment,
             duration=self.duration,
             per_epoch=self.per_epoch,
-            batch_size=self.batch_size,
-            parallel=self.parallel)
+            batch_size=self.batch_size)
 
 
 class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
@@ -158,18 +155,18 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
     attachment : `int`, optional
         Intermediate level where to attach the domain classifier.
         Defaults to -1. Passed to `return_intermediate` in models supporting it.
-    rnn : `dict`, optional 
+    rnn: `dict`, optional
         Parameters of the RNN used in the domain classifier.
-        See `pyannote.audio.models.models.RNN` for details. 
+        See `pyannote.audio.models.models.RNN` for details.
     domain_loss : `str`, optional
         Loss function to use. Defaults to 'NLLLoss'.
     """
 
-    DOMAIN_PT = '{log_dir}/weights/{epoch:04d}.domain.pt'
+    DOMAIN_PT = '{train_dir}/weights/{epoch:04d}.domain.pt'
 
-    def __init__(self, 
-                 domain='domain', attachment=-1, 
-                 rnn=None, domain_loss="NLLLoss", 
+    def __init__(self,
+                 domain='domain', attachment=-1,
+                 rnn=None, domain_loss="NLLLoss",
                  **kwargs):
         super().__init__(**kwargs)
         self.domain = domain
@@ -184,78 +181,62 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
             # Default value
             self.domain_loss_ = nn.NLLLoss()
             self.activation_ = nn.LogSoftmax(dim=1)
-            
+
         elif self.domain_loss == "MSELoss":
             self.domain_loss_ = nn.MSELoss()
             self.activation_ = nn.Sigmoid()
-        
+
         else:
             msg = (
                 f'{domain_loss} has not been implemented yet.'
             )
             raise NotImplementedError(msg)
 
-    def parameters(self, model, specifications, device):
+    def more_parameters(self):
         """Initialize trainable trainer parameters
 
-        Parameters
-        ----------
-        specifications : `dict`
-            Batch specs.
-
-        Returns
-        -------
-        parameters : iterable
+        Yields
+        ------
+        parameter : nn.Parameter
             Trainable trainer parameters
         """
+
         domain_classifier_rnn = RNN(
-            n_features=model.intermediate_dimension(self.attachment), 
+            n_features=self.model.intermediate_dimension(self.attachment),
             **self.rnn)
 
+        n_classes = len(self.specifications[self.domain]['classes'])
         domain_classifier_linear = nn.Linear(
             domain_classifier_rnn.dimension,
-            len(specifications[self.domain]['classes']),
-            bias=True).to(device)
+            n_classes,
+            bias=True).to(self.device)
 
-        self.domain_classifier_ = nn.Sequential(domain_classifier_rnn, 
-                                                domain_classifier_linear).to(device)
+        self.domain_classifier_ = nn.Sequential(
+            domain_classifier_rnn, domain_classifier_linear).to(self.device)
 
-        return list(self.domain_classifier_.parameters())
+        # TODO: check if we really need to do this .to(self.device) twice
 
-    def load_epoch(self, epoch):
-        """Load model and classifier from disk
+        return self.domain_classifier_.parameters()
 
-        Parameters
-        ----------
-        epoch : `int`
-            Epoch number.
-        """
+    def load_more(self, model_pt=None):
+        """Load classifier from disk"""
 
-        super().load_epoch(epoch)
+        if model_pt is None:
+            domain_pt = self.DOMAIN_PT.format(
+                train_dir=self.train_dir_, epoch=self.epoch_)
+        else:
+            domain_pt = model_pt.with_suffix('.domain.pt')
 
         domain_classifier_state = torch.load(
-            self.DOMAIN_PT.format(log_dir=self.log_dir_, epoch=epoch),
-            map_location=lambda storage, loc: storage)
+            domain_pt, map_location=lambda storage, loc: storage)
         self.domain_classifier_.load_state_dict(domain_classifier_state)
 
-    def save_epoch(self, epoch=None):
-        """Save model to disk
+    def save_more(self):
+        """Save domain classifier to disk"""
 
-        Parameters
-        ----------
-        epoch : `int`, optional
-            Epoch number. Defaults to self.epoch_
-
-        """
-
-        if epoch is None:
-            epoch = self.epoch_
-
-        torch.save(self.domain_classifier_.state_dict(),
-                   self.DOMAIN_PT.format(log_dir=self.log_dir_,
-                                             epoch=epoch))
-
-        super().save_epoch(epoch=epoch)
+        domain_pt = self.DOMAIN_PT.format(
+            train_dir=self.train_dir_, epoch=self.epoch_)
+        torch.save(self.domain_classifier_.state_dict(), domain_pt)
 
     def batch_loss(self, batch):
         """Compute loss for current `batch`

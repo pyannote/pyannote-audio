@@ -29,60 +29,47 @@
 from typing import Optional
 from pathlib import Path
 from tqdm import tqdm
+
+import torch
 from .base import Application
-from pyannote.database import FileFinder
 from pyannote.database import get_protocol
 from pyannote.database import get_annotated
 from pyannote.audio.features import Precomputed
 from pyannote.audio.features import RawAudio
-from pyannote.audio.labeling.extraction import SequenceLabeling
-from pyannote.core.utils.helper import get_class_by_name
-from functools import partial
-import multiprocessing as mp
 
 
 class BaseLabeling(Application):
 
-    def __init__(self, experiment_dir, db_yml=None, training=False):
+    @property
+    def config_default_module(self):
+        return 'pyannote.audio.labeling.tasks'
 
-        super(BaseLabeling, self).__init__(
-            experiment_dir, db_yml=db_yml, training=training)
+    def validate_init(self, protocol_name,
+                            subset='development'):
+        """Initialize validation data
 
-        # task
-        Task = get_class_by_name(
-            self.config_['task']['name'],
-            default_module_name='pyannote.audio.labeling.tasks')
-        self.task_ = Task(
-            **self.config_['task'].get('params', {}))
+        Parameters
+        ----------
+        protocol_name : `str`
+        subset : {'train', 'development', 'test'}
+            Defaults to 'development'.
 
-        # architecture
-        Architecture = get_class_by_name(
-            self.config_['architecture']['name'],
-            default_module_name='pyannote.audio.labeling.models')
-        params = self.config_['architecture'].get('params', {})
-        self.get_model_ = partial(Architecture, **params)
+        Returns
+        -------
+        validation_data : object
+            Validation data.
 
-        if hasattr(Architecture, 'get_frame_info'):
-            self.frame_info_ = Architecture.get_frame_info(**params)
-        else:
-            self.frame_info_ = None
-
-        if hasattr(Architecture, 'get_frame_crop'):
-            self.frame_crop_ = Architecture.get_frame_crop(**params)
-        else:
-            self.frame_crop_ = None
-
-    def validate_init(self, protocol_name, subset='development'):
+        """
 
         protocol = get_protocol(protocol_name, progress=False,
                                 preprocessors=self.preprocessors_)
         files = getattr(protocol, subset)()
 
-        n_jobs = getattr(self, 'n_jobs', 1)
-        self.pool_ = mp.Pool(n_jobs)
+        # convert lazy ProtocolFile to regular dict for multiprocessing
+        files = [dict(file) for file in files]
 
         if isinstance(self.feature_extraction_, (Precomputed, RawAudio)):
-            return list(files)
+            return files
 
         validation_data = []
         for current_file in tqdm(files, desc='Feature extraction'):
@@ -90,87 +77,3 @@ class BaseLabeling(Application):
             validation_data.append(current_file)
 
         return validation_data
-
-    def apply(self, protocol_name: str,
-                    step: Optional[float] = None,
-                    subset: Optional[str] = "test"):
-
-        model = self.model_.to(self.device)
-        model.eval()
-
-        duration = self.task_.duration
-        if step is None:
-            step = 0.25 * duration
-
-        output_dir = Path(self.APPLY_DIR.format(
-            validate_dir=self.validate_dir_,
-            epoch=self.epoch_))
-
-        # do not use memmap as this would lead to too many open files
-        if isinstance(self.feature_extraction_, Precomputed):
-            self.feature_extraction_.use_memmap = False
-
-        # initialize embedding extraction
-        sequence_labeling = SequenceLabeling(
-            model=model, feature_extraction=self.feature_extraction_,
-            duration=duration, step=step, batch_size=self.batch_size,
-            device=self.device)
-
-        sliding_window = sequence_labeling.sliding_window
-
-        # create metadata file at root that contains
-        # sliding window and dimension information
-        precomputed = Precomputed(
-            root_dir=output_dir,
-            sliding_window=sliding_window,
-            labels=model.classes)
-
-        # file generator
-        protocol = get_protocol(protocol_name, progress=True,
-                                preprocessors=self.preprocessors_)
-
-        for current_file in getattr(protocol, subset)():
-            fX = sequence_labeling(current_file)
-            precomputed.dump(current_file, fX)
-
-        # do not proceed with the full pipeline
-        # when there is no such thing for current task
-        if not hasattr(self, 'pipeline_params_'):
-            return
-
-        # instantiate pipeline
-        pipeline = self.Pipeline(scores=output_dir)
-        pipeline.instantiate(self.pipeline_params_)
-
-        # load pipeline metric (when available)
-        try:
-            metric = pipeline.get_metric()
-        except NotImplementedError as e:
-            metric = None
-
-        # apply pipeline and dump output to RTTM files
-        output_rttm = output_dir / f'{protocol_name}.{subset}.rttm'
-        with open(output_rttm, 'w') as fp:
-            for current_file in getattr(protocol, subset)():
-                hypothesis = pipeline(current_file)
-                pipeline.write_rttm(fp, hypothesis)
-
-                # compute evaluation metric (when possible)
-                if 'annotation' not in current_file:
-                    metric = None
-
-                # compute evaluation metric (when available)
-                if metric is None:
-                    continue
-
-                reference = current_file['annotation']
-                uem = get_annotated(current_file)
-                _ = metric(reference, hypothesis, uem=uem)
-
-        # print pipeline metric (when available)
-        if metric is None:
-            return
-
-        output_eval = output_dir / f'{protocol_name}.{subset}.eval'
-        with open(output_eval, 'w') as fp:
-            fp.write(str(metric))

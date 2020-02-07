@@ -1,0 +1,50 @@
+feature_extraction:
+   name: pyannote.audio.features.RawAudio
+   params:
+      sample_rate: 16000
+
+data_augmentation:
+   name: AddNoise
+   params:
+     snr_min: 10
+     snr_max: 20
+     collection: MUSAN.Collection.BackgroundNoise
+
+architecture:
+   name: pyannote.audio.models.PyanNet
+   params:
+      sincnet:
+         waveform_normalize: True
+         instance_normalize: True
+      rnn:
+         unit: LSTM
+         hidden_size: 512
+         num_layers: 3
+         bias: True
+         dropout: 0
+         bidirectional: True
+         concatenate: False
+         pool: x-vector
+      ff:
+         hidden_size: [512, 512]
+      embedding:
+         batch_normalize: False
+         unit_normalize: False
+
+task:
+   name: TripletLoss
+   params:
+     metric: angular
+     clamp: sigmoid
+     margin: 0.0
+     duration: 0.500
+     sampling: all
+     per_fold: 64
+     per_label: 4
+     per_epoch: 1
+     label_min_duration: 30
+
+scheduler:
+   name: ConstantScheduler
+   params:
+      learning_rate: 0.1

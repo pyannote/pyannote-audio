@@ -36,7 +36,7 @@ from pyannote.pipeline.parameter import Uniform
 from pyannote.core import Annotation
 from pyannote.core import SlidingWindowFeature
 
-from pyannote.audio.signal import Binarize
+from pyannote.audio.utils.signal import Binarize
 from pyannote.audio.features import Precomputed
 
 from pyannote.metrics.detection import DetectionErrorRate

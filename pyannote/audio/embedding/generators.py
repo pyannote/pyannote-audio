@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2017-2019 CNRS
+# Copyright (c) 2017-2020 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -26,16 +26,17 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
-
+from typing import Optional
+import itertools
 import numpy as np
-from pyannote.generators.fragment import random_segment
-from pyannote.generators.fragment import random_subsegment
-from pyannote.generators.batch import batchify
-from ..models import TASK_REPRESENTATION_LEARNING
+from pyannote.core.utils.random import random_segment
+from pyannote.core.utils.random import random_subsegment
+from pyannote.audio.train.task import Task, TaskType, TaskOutput
 from pyannote.audio.features import RawAudio
+from ..train.generator import BatchGenerator
 
 
-class SpeechSegmentGenerator(object):
+class SpeechSegmentGenerator(BatchGenerator):
     """Generate batch of pure speech segments with associated speaker labels
 
     Parameters
@@ -44,70 +45,73 @@ class SpeechSegmentGenerator(object):
         Feature extraction.
     protocol : `pyannote.database.Protocol`
     subset : {'train', 'development', 'test'}
+    duration : float, optional
+        Chunks duration, in seconds. Defaults to 1.
+    per_turn : int, optional
+        Number of chunks per speech turn. Defaults to 1.
     per_label : int, optional
-        Number of speech turns per speaker in each batch. Defaults to 3.
+        Number of speech turns per speaker in each batch.
+        Defaults to 3.
+    per_fold : int, optional
+        Number of different speakers in each batch.
+        Defaults to all speakers.
+    per_epoch : float, optional
+        Force total audio duration per epoch, in days.
+        Defaults to total duration of protocol subset.
     label_min_duration : float, optional
         Remove speakers with less than `label_min_duration` seconds of speech.
         Defaults to 0 (i.e. keep it all).
-    per_fold : int, optional
-        Number of speakers in each batch. Defaults to all speakers.
-    per_epoch : float, optional
-        Number of days per epoch. Defaults to 7 (a week).
-    duration : float, optional
-        Use fixed duration segments with this `duration`.
-        Defaults (None) to using variable duration segments.
-    min_duration : float, optional
-        In case `duration` is None, set segment minimum duration.
-    max_duration : float, optional
-        In case `duration` is None, set segment maximum duration.
-    parallel : int, optional
-        Number of prefetching background generators. Defaults to 1.
-        Each generator will prefetch enough batches to cover a whole epoch.
-        Set `parallel` to 0 to not use background generators.
-    in_memory : `bool`, optional
-        Pre-load training set in memory.
-
     """
 
-    def __init__(self, feature_extraction, protocol, subset='train',
-                 per_label=3, per_fold=None, per_epoch=7,
-                 duration=None, min_duration=None, max_duration=None,
-                 label_min_duration=0., parallel=1, in_memory=False):
-
-        super(SpeechSegmentGenerator, self).__init__()
+    def __init__(self, feature_extraction,
+                       protocol,
+                       subset='train',
+                       duration: float = 1.,
+                       per_turn: int = 1,
+                       per_label: int = 3,
+                       per_fold: Optional[int] = None,
+                       per_epoch: float = None,
+                       label_min_duration: float = 0.):
 
         self.feature_extraction = feature_extraction
+        self.per_turn = per_turn
         self.per_label = per_label
         self.per_fold = per_fold
-        self.per_epoch = per_epoch
         self.duration = duration
-        self.parallel = parallel
         self.label_min_duration = label_min_duration
-
-        self.in_memory = in_memory
-        if self.in_memory:
-            if not isinstance(feature_extraction, RawAudio):
-                msg = (
-                    f'"in_memory" option is only supported when '
-                    f'working from the waveform.'
-                )
-                raise ValueError(msg)
-
-        if self.duration is None:
-            self.min_duration = min_duration
-            self.max_duration = max_duration
-        else:
-            self.min_duration = self.duration
-            self.max_duration = self.duration
-
-        self.min_duration_ = 0. if self.min_duration is None \
-                                else self.min_duration
-
         self.weighted_ = True
 
-        self._load_metadata(protocol, subset=subset)
+        total_duration = self._load_metadata(protocol, subset=subset)
+        if per_epoch is None:
+            per_epoch = total_duration / (24 * 60 * 60)
+        self.per_epoch = per_epoch
 
-    def _load_metadata(self, protocol, subset='train'):
+    def _load_metadata(self, protocol, subset='train') -> float:
+        """Load training set metadata
+
+        This function is called once at instantiation time, returns the total
+        training set duration, and populates the following attributes:
+
+        Attributes
+        ----------
+        data_ : dict
+            Dictionary where keys are speaker labels and values are lists of
+            (segments, duration, current_file) tuples where
+            - segments is a list of segments by the speaker in the file
+            - duration is total duration of speech by the speaker in the file
+            - current_file is the file (as ProtocolFile)
+
+        segment_labels_ : list
+            Sorted list of (unique) labels in protocol.
+
+        file_labels_ : dict of list
+            Sorted lists of (unique) file-level labels in protocol
+
+        Returns
+        -------
+        duration : float
+            Total duration of annotated segments, in seconds.
+        """
 
         self.data_ = {}
         segment_labels, file_labels = set(), dict()
@@ -126,19 +130,15 @@ class SpeechSegmentGenerator(object):
             # get annotation for current file
             annotation = current_file['annotation']
 
-            if self.in_memory:
-                current_file['waveform'] = \
-                    self.feature_extraction(current_file).data
-
             # loop on each label in current file
             for label in annotation.labels():
 
                 # get all segments with current label
                 timeline = annotation.label_timeline(label)
 
-                # remove segments shorter than min_duration (when provided)
+                # remove segments shorter than 'duration'
                 segments = [s for s in timeline
-                              if s.duration > self.min_duration_]
+                              if s.duration > self.duration]
 
                 # corner case where no segment is long enough
                 # and we removed them all...
@@ -168,7 +168,10 @@ class SpeechSegmentGenerator(object):
         self.file_labels_ = {k: sorted(file_labels[k]) for k in file_labels}
         self.segment_labels_ = sorted(self.data_)
 
-    def generator(self):
+        return sum(sum(datum[1] for datum in data)
+                   for data in self.data_.values())
+
+    def samples(self):
 
         labels = list(self.data_)
 
@@ -200,63 +203,23 @@ class SpeechSegmentGenerator(object):
                     segment = next(
                         random_segment(segments[i], weighted=self.weighted_))
 
-                    if self.duration is None:
+                    # choose per_turn chunk(s) at random
+                    for chunk in itertools.islice(
+                        random_subsegment(segment, self.duration),
+                        self.per_turn):
 
-                        if self.min_duration is None:
-
-                            # case: no duration | no min | no max
-                            # keep segment as it is
-                            if self.max_duration is None:
-                                sub_segment = segment
-
-                            # case: no duration | no min | max
-                            else:
-
-                                # if segment is too long, choose sub-segment
-                                # at random at exactly max_duration
-                                if segment.duration > self.max_duration:
-                                    sub_segment = next(random_subsegment(
-                                        segment, self.max_duration))
-
-                                # otherwise, keep segment as it is
-                                else:
-                                    sub_segment = segment
-
-                        else:
-                            # case: no duration | min | no max
-                            # keep segment as it is (too short segments have
-                            # already been filtered out)
-                            if self.max_duration is None:
-                                sub_segment = segment
-
-                            # case: no duration | min | max
-                            else:
-                                # choose sub-segment at random between
-                                # min_duration and max_duration
-                                sub_segment = next(random_subsegment(
-                                    segment, self.max_duration,
-                                    min_duration=self.min_duration))
-
-                        X = self.feature_extraction.crop(
-                            files[i], sub_segment, mode='center')
-
-                    else:
-
-                        # choose sub-segment at random at exactly duration
-                        sub_segment = next(random_subsegment(
-                            segment, self.duration))
-
-                        X = self.feature_extraction.crop(
-                            files[i], sub_segment, mode='center',
-                            fixed=self.duration)
-
-                    yield {'X': X, 'y': self.segment_labels_.index(label)}
+                        yield {
+                            'X': self.feature_extraction.crop(
+                                files[i], chunk, mode='center',
+                                fixed=self.duration),
+                            'y': self.segment_labels_.index(label),
+                        }
 
     @property
     def batch_size(self):
         if self.per_fold is not None:
-            return self.per_label * self.per_fold
-        return self.per_label * len(self.data_)
+            return self.per_turn * self.per_label * self.per_fold
+        return self.per_turn * self.per_label * len(self.data_)
 
     @property
     def batches_per_epoch(self):
@@ -264,57 +227,17 @@ class SpeechSegmentGenerator(object):
         # duration per epoch
         duration_per_epoch = self.per_epoch * 24 * 60 * 60
 
-        # (average) duration per segment
-        if self.duration is None:
-            min_duration = 0. if self.min_duration is None \
-                              else self.min_duration
-            duration = .5 * (min_duration + self.max_duration)
-        else:
-            duration = self.duration
-
         # (average) duration per batch
-        duration_per_batch = duration * self.batch_size
+        duration_per_batch = self.duration * self.batch_size
 
         # number of batches per epoch
         return int(np.ceil(duration_per_epoch / duration_per_batch))
-
-    @property
-    def signature(self):
-        return {
-            'X': {'@': (None, None)},
-            'y': {'@': (None, np.stack)},
-        }
 
     @property
     def specifications(self):
         return {
             'X': {'dimension': self.feature_extraction.dimension},
             'y': {'classes': self.segment_labels_},
-            'task': TASK_REPRESENTATION_LEARNING,
+            'task': Task(type=TaskType.REPRESENTATION_LEARNING,
+                         output=TaskOutput.VECTOR),
         }
-
-    def __call__(self):
-
-        batch_size = self.batch_size
-        batches_per_epoch = self.batches_per_epoch
-
-        generators = []
-        if self.parallel:
-
-            for i in range(self.parallel):
-                generator = self.generator()
-                batches = batchify(generator, self.signature,
-                                   batch_size=batch_size,
-                                   prefetch=batches_per_epoch)
-                generators.append(batches)
-        else:
-            generator = self.generator()
-            batches = batchify(generator, self.signature,
-                               batch_size=batch_size, prefetch=0)
-            generators.append(batches)
-
-        while True:
-            # get `batches_per_epoch` batches from each generator
-            for batches in generators:
-                for _ in range(batches_per_epoch):
-                    yield next(batches)

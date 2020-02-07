@@ -45,12 +45,8 @@ setup(
     install_requires=requirements,
     entry_points = {
         'console_scripts': [
+            'pyannote-audio=pyannote.audio.applications.pyannote_audio:main',
             'pyannote-speech-feature=pyannote.audio.applications.feature_extraction:main',
-            'pyannote-speech-detection=pyannote.audio.applications.speech_detection:main',
-            'pyannote-change-detection=pyannote.audio.applications.change_detection:main',
-            'pyannote-overlap-detection=pyannote.audio.applications.overlap_detection:main',
-            'pyannote-domain-classification=pyannote.audio.applications.domain_classification:main',
-            'pyannote-speaker-embedding=pyannote.audio.applications.speaker_embedding:main',
         ],
     },
 
@@ -71,8 +67,8 @@ setup(
         "License :: OSI Approved :: MIT License",
         "Natural Language :: English",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.6",
         "Programming Language :: Python :: 3.7",
+        "Programming Language :: Python :: 3.8",
         "Topic :: Scientific/Engineering"
     ],
 )

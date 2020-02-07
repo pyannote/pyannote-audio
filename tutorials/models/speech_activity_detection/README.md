@@ -1,6 +1,6 @@
 > The MIT License (MIT)
 >
-> Copyright (c) 2017-2019 CNRS
+> Copyright (c) 2017-2020 CNRS
 >
 > Permission is hereby granted, free of charge, to any person obtaining a copy
 > of this software and associated documentation files (the "Software"), to deal
@@ -23,13 +23,12 @@
 > AUTHOR
 > Hervé Bredin - http://herve.niderb.fr
 
-# Speech activity detection with `pyannote.audio`
+# End-to-end speech activity detection with `pyannote.audio`
 
-In this tutorial, you will learn how to train, validate, and apply a speech activity detector based on MFCCs and LSTMs, using `pyannote-speech-detection` command line tool.
+This tutorial assumes that you have already followed the [data preparation](../../data_preparation) tutorial, and teaches how to train, validate, and apply a speech activity detection neural network on the [AMI](http://groups.inf.ed.ac.uk/ami/corpus) dataset using `pyannote-audio` command line tool. In particular, this should reproduce the result reported in second line of Table 1 of [this introductory paper](https://arxiv.org/abs/1911.01255).
 
 ## Table of contents
 - [Citation](#citation)
-- [Databases](#databases)
 - [Configuration](#configuration)
 - [Training](#training)
 - [Validation](#validation)
@@ -42,103 +41,102 @@ In this tutorial, you will learn how to train, validate, and apply a speech acti
 If you use `pyannote-audio` for speech activity detection, please cite the following paper:
 
 ```bibtex
-@inproceedings{Yin2017,
-  Author = {Ruiqing Yin and Herv\'e Bredin and Claude Barras},
-  Title = {{Speaker Change Detection in Broadcast TV using Bidirectional Long Short-Term Memory Networks}},
-  Booktitle = {{Interspeech 2017, 18th Annual Conference of the International Speech Communication Association}},
-  Year = {2017},
-  Month = {August},
-  Address = {Stockholm, Sweden},
-  Url = {https://github.com/yinruiqing/change_detection}
+@inproceedings{Bredin2020,
+  Title = {{pyannote.audio: neural building blocks for speaker diarization}},
+  Author = {{Bredin}, Herv{\'e} and {Yin}, Ruiqing and {Coria}, Juan Manuel and {Gelly}, Gregory and {Korshunov}, Pavel and {Lavechin}, Marvin and {Fustes}, Diego and {Titeux}, Hadrien and {Bouaziz}, Wassim and {Gill}, Marie-Philippe},
+  Booktitle = {ICASSP 2020, IEEE International Conference on Acoustics, Speech, and Signal Processing},
+  Address = {Barcelona, Spain},
+  Month = {May},
+  Year = {2020},
 }
 ```
 
-## Databases
-([↑up to table of contents](#table-of-contents))
-
-```bash
-$ source activate pyannote
-$ pip install pyannote.db.odessa.ami
-$ pip install pyannote.db.musan
+```bibtex
+@inproceedings{Lavechin2020,
+  Title = {{End-to-end Domain-Adversarial Voice Activity Detection}},
+  Author = {{Lavechin}, Marvin and {Gill}, Marie-Philippe and {Bousbib}, Ruben and {Bredin}, Herv{\'e} and {Garcia-Perera}, Leibny Paola},
+  Booktitle = {ICASSP 2020, IEEE International Conference on Acoustics, Speech, and Signal Processing},
+  Address = {Barcelona, Spain},
+  Month = {May},
+  Year = {2020},
+}
 ```
 
-This tutorial relies on the [AMI](http://groups.inf.ed.ac.uk/ami/corpus) and [MUSAN](http://www.openslr.org/17/) databases. We first need to tell `pyannote` where the audio files are located:
-
-```bash
-$ cat ~/.pyannote/database.yml
-Databases:
-  AMI: /path/to/ami/amicorpus/*/audio/{uri}.wav
-  MUSAN: /path/to/musan/{uri}.wav
-```
-
-Have a look at `pyannote.database` [documentation](http://github.com/pyannote/pyannote-database) to learn how to use other datasets.
 
 ## Configuration
 ([↑up to table of contents](#table-of-contents))
 
-To ensure reproducibility, `pyannote-speech-detection` relies on a configuration file defining the experimental setup:
+To ensure reproducibility, `pyannote-audio` relies on a configuration file defining the experimental setup:
 
 ```bash
-$ cat tutorials/models/speech_activity_detection/config.yml
+$ export EXP_DIR=tutorials/models/speech_activity_detection
+$ cat ${EXP_DIR}/config.yml
 ```
 ```yaml
+# A speech activity detection model is trained.
+# Here, training relies on 2s-long audio chunks,
+# batches of 64 audio chunks, and saves model to
+# disk every one (1) day worth of audio.
 task:
    name: SpeechActivityDetection
    params:
-      duration: 2.0      # sequences are 2s long
-      batch_size: 64     # 64 sequences per batch
-      per_epoch: 1       # one epoch = 1 day of audio
+      duration: 2.0
+      batch_size: 64
+      per_epoch: 1
 
+# Data augmentation is applied during training.
+# Here, it consists in additive noise from the
+# MUSAN database, with random signal-to-noise
+# ratio between 5 and 20 dB
 data_augmentation:
-   name: AddNoise                                   # add noise on-the-fly
+   name: AddNoise
    params:
-      snr_min: 10                                   # using random signal-to-noise
-      snr_max: 20                                   # ratio between 10 and 20 dBs
-      collection: MUSAN.Collection.BackgroundNoise  # use background noise from MUSAN
-                                                    # (needs pyannote.db.musan)
+      snr_min: 5
+      snr_max: 20
+      collection: MUSAN.Collection.BackgroundNoise
+
+# Since we are training an end-to-end model, the
+# feature extraction step simply returns the raw
+# waveform.
 feature_extraction:
-   name: LibrosaMFCC      # use MFCC from librosa
+   name: RawAudio
    params:
-      e: False            # do not use energy
-      De: True            # use energy 1st derivative
-      DDe: True           # use energy 2nd derivative
-      coefs: 19           # use 19 MFCC coefficients
-      D: True             # use coefficients 1st derivative
-      DD: True            # use coefficients 2nd derivative
-      duration: 0.025     # extract MFCC from 25ms windows
-      step: 0.010         # extract MFCC every 10ms
-      sample_rate: 16000  # convert to 16KHz first (if needed)
+      sample_rate: 16000
 
+# We use the PyanNet architecture in Figure 2 of
+# pyannote.audio introductory paper. More details
+# about the architecture and its parameters can be
+# found directly in PyanNet docstring.
 architecture:
-   name: StackedRNN
+   name: pyannote.audio.models.PyanNet
    params:
-      instance_normalize: True  # normalize sequences
-      rnn: LSTM                 # use LSTM (could be GRU)
-      recurrent: [128, 128]     # two layers with 128 hidden states
-      bidirectional: True       # bidirectional LSTMs
-      linear: [32, 32]          # add two linear layers at the end 
+      rnn:
+         unit: LSTM
+         hidden_size: 128
+         num_layers: 2
+         bidirectional: True
+      ff:
+         hidden_size: [128, 128]
 
+# We use a constant learning rate of 1e-2
 scheduler:
-   name: CyclicScheduler        # use cyclic learning rate (LR) scheduler
+   name: ConstantScheduler
    params:
-      learning_rate: auto       # automatically guess LR upper bound
-      epochs_per_cycle: 14      # 14 epochs per cycle
+      learning_rate: 0.01
 ```
 
 ## Training
 ([↑up to table of contents](#table-of-contents))
 
-The following command will train the network using the training set of AMI database for 1000 epochs:
+The following command will train the network using the training subset of AMI database for 200 epochs:
 
 ```bash
-$ export EXPERIMENT_DIR=tutorials/models/speech_activity_detection
-$ pyannote-speech-detection train --gpu --to=1000 --subset=train ${EXPERIMENT_DIR} AMI.SpeakerDiarization.MixHeadset
+$ pyannote-audio sad train --subset=train --gpu --to=200 --parallel=4 ${EXP_DIR} AMI.SpeakerDiarization.MixHeadset
 ```
 
-This will create a bunch of files in `TRAIN_DIR` (defined below).
-One can follow along the training process using [tensorboard](https://github.com/tensorflow/tensorboard).
+This will create a bunch of files in `TRN_DIR` (defined below). One can also follow along the training process using [tensorboard](https://github.com/tensorflow/tensorboard):
 ```bash
-$ tensorboard --logdir=${EXPERIMENT_DIR}
+$ tensorboard --logdir=${EXP_DIR}
 ```
 
 ![tensorboard screenshot](tb_train.png)
@@ -147,33 +145,42 @@ $ tensorboard --logdir=${EXPERIMENT_DIR}
 ## Validation
 ([↑up to table of contents](#table-of-contents))
 
-To get a quick idea of how the network is doing during training, one can use the `validate` mode.
-It can (should!) be run in parallel to training and evaluates the model epoch after epoch.
+To get a quick idea of how the network is doing on the development set, one can use the `validate` mode.
 
 ```bash
-$ export TRAIN_DIR=${EXPERIMENT_DIR}/train/AMI.SpeakerDiarization.MixHeadset.train
-$ pyannote-speech-detection validate --subset=develop --gpu ${TRAIN_DIR} AMI.SpeakerDiarization.MixHeadset
+$ export TRN_DIR=${EXP_DIR}/train/AMI.SpeakerDiarization.MixHeadset.train
+$ pyannote-audio sad validate --subset=develop --gpu --to=200 --every=10 ${TRN_DIR} AMI.SpeakerDiarization.MixHeadset
 ```
+It can be run while the model is still training and evaluates the model every 10 epochs. This will create a bunch of files in `VAL_DIR` (defined below). 
 
-In practice, it is tuning a simple speech activity detection pipeline (pyannote.audio.pipeline.speech_activity_detection.SpeechActivityDetection) after each epoch and stores the best hyper-parameter configuration on disk:
+In practice, it tunes a simple speech activity detection pipeline every 10 epochs and stores the best hyper-parameter configuration on disk:
 
 ```bash
-$ cat ${TRAIN_DIR}/validate/AMI.SpeakerDiarization.MixHeadset/params.yml
+$ export VAL_DIR = ${TRN_DIR}/validate/AMI.SpeakerDiarization.MixHeadset.development
+$ cat ${VAL_DIR}/params.yml
 ```
 ```yaml
-epoch: 280
+detection_error_rate: 0.058083631103952316
+epoch: 121
 params:
-  min_duration_off: 0.0
-  min_duration_on: 0.0
-  offset: 0.5503037490496294
-  onset: 0.5503037490496294
+  min_duration_off: 0.1
+  min_duration_on: 0.1
+  offset: 0.5218292976870024
+  onset: 0.5218292976870024
   pad_offset: 0.0
   pad_onset: 0.0
 ```
 
-One can also use [tensorboard](https://github.com/tensorflow/tensorboard) to follow the validation process.
+See `pyannote.audio.pipeline.speech_activity_detection.SpeechActivityDetection` for details on the role of each parameter.
+
+Like for training, one can also use [tensorboard](https://github.com/tensorflow/tensorboard) to follow the validation process:
+
+```bash
+$ tensorboard --logdir=${EXP_DIR}
+```
 
 ![tensorboard screenshot](tb_validate.png)
+
 
 ## Application
 ([↑up to table of contents](#table-of-contents))
@@ -181,18 +188,17 @@ One can also use [tensorboard](https://github.com/tensorflow/tensorboard) to fol
 Now that we know how the model is doing, we can apply it on test files of the AMI database: 
 
 ```bash
-$ export VALIDATE_DIR=${TRAIN_DIR}/validate/AMI.SpeakerDiarization.MixHeadset.development
-$ pyannote-speech-detection apply --gpu --subset=test ${VALIDATE_DIR} AMI.SpeakerDiarization.MixHeadset 
+$ pyannote-audio sad apply --subset=test --gpu ${VAL_DIR} AMI.SpeakerDiarization.MixHeadset 
 ```
 
-Raw scores and speech activity detection results will be dumped into the following directory: `${VALIDATE_DIR}/apply/{BEST_EPOCH}`.
+Raw model output and speech activity detection results will be dumped into the following directory: `${VAL_DIR}/apply/{BEST_EPOCH}`.
 
 ## More options
 
 For more options, see:
 
 ```bash
-$ pyannote-speech-detection --help
+$ pyannote-audio --help
 ```
 
 That's all folks!

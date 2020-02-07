@@ -25,7 +25,3 @@
 
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
-
-from .vggvox import VGGVox
-from .tristounet import TristouNet
-from .clopinet import ClopiNet

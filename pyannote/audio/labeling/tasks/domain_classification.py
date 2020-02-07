@@ -31,7 +31,7 @@
 import numpy as np
 from .base import LabelingTask
 from .base import LabelingTaskGenerator
-from .base import TASK_MULTI_CLASS_CLASSIFICATION
+from pyannote.audio.train.task import Task, TaskType, TaskOutput
 
 
 class DomainClassificationGenerator(LabelingTaskGenerator):
@@ -43,14 +43,6 @@ class DomainClassificationGenerator(LabelingTaskGenerator):
         Feature extraction
     protocol : `pyannote.database.Protocol`
     subset : {'train', 'development', 'test'}
-    frame_info : `pyannote.core.SlidingWindow`, optional
-        Override `feature_extraction.sliding_window`. This is useful for
-        models that include the feature extraction step (e.g. SincNet) and
-        therefore output a lower sample rate than that of the input.
-    frame_crop : {'center', 'loose', 'strict'}, optional
-        Which mode to use when cropping labels. This is useful for models
-        that include the feature extraction step (e.g. SincNet) and
-        therefore use a different cropping mode. Defaults to 'center'.
     domain : `str`, optional
         Key to use as domain. Defaults to 'domain'.
     duration : float, optional
@@ -58,23 +50,19 @@ class DomainClassificationGenerator(LabelingTaskGenerator):
     batch_size : int, optional
         Batch size. Defaults to 32.
     per_epoch : float, optional
-        Total audio duration per epoch, in days.
-        Defaults to one day (1).
-    parallel : int, optional
-        Number of prefetching background generators. Defaults to 1.
-        Each generator will prefetch enough batches to cover a whole epoch.
-        Set `parallel` to 0 to not use background generators.
+        Force total audio duration per epoch, in days.
+        Defaults to total duration of protocol subset.
     """
 
-    def __init__(self, feature_extraction, protocol, subset='train',
-                 frame_info=None, frame_crop=None, domain='domain',
+    def __init__(self,
+                 feature_extraction,
+                 protocol,
+                 subset='train',
+                 domain='domain',
                  **kwargs):
 
         self.domain = domain
-        super().__init__(
-            feature_extraction, protocol, subset=subset,
-            frame_info=frame_info, frame_crop=frame_crop,
-            **kwargs)
+        super().__init__(feature_extraction, protocol, subset=subset, **kwargs)
 
     def initialize_y(self, current_file):
         return self.file_labels_[self.domain].index(current_file[self.domain])
@@ -85,7 +73,8 @@ class DomainClassificationGenerator(LabelingTaskGenerator):
     @property
     def specifications(self):
         return {
-            'task': TASK_MULTI_CLASS_CLASSIFICATION,
+            'task': Task(type=TaskType.MULTI_CLASS_CLASSIFICATION,
+                         output=TaskOutput.VECTOR),
             'X': {'dimension': self.feature_extraction.dimension},
             'y': {'classes': self.file_labels_[self.domain]},
         }
@@ -105,36 +94,37 @@ class DomainClassification(LabelingTask):
     per_epoch : float, optional
         Total audio duration per epoch, in days.
         Defaults to one day (1).
-    parallel : int, optional
-        Number of prefetching background generators. Defaults to 1.
-        Each generator will prefetch enough batches to cover a whole epoch.
-        Set `parallel` to 0 to not use background generators.
     """
 
     def __init__(self, domain='domain', **kwargs):
         super().__init__(**kwargs)
         self.domain = domain
 
-    def get_batch_generator(self, feature_extraction, protocol, subset='train',
-                            frame_info=None, frame_crop=None):
-        """
-        frame_info : `pyannote.core.SlidingWindow`, optional
-            Override `feature_extraction.sliding_window`. This is useful for
-            models that include the feature extraction step (e.g. SincNet) and
-            therefore output a lower sample rate than that of the input.
-        frame_crop : {'center', 'loose', 'strict'}, optional
-            Which mode to use when cropping labels. This is useful for models
-            that include the feature extraction step (e.g. SincNet) and
-            therefore use a different cropping mode. Defaults to 'center'.
+    def get_batch_generator(self,
+                            feature_extraction,
+                            protocol,
+                            subset='train',
+                            **kwargs):
+        """Get batch generator for domain classification
 
+        Parameters
+        ----------
+        feature_extraction : `pyannote.audio.features.FeatureExtraction`
+            Feature extraction.
+        protocol : `pyannote.database.Protocol`
+        subset : {'train', 'development', 'test'}, optional
+            Protocol and subset used for batch generation.
+
+        Returns
+        -------
+        batch_generator : `DomainClassificationGenerator`
+            Batch generator
         """
         return DomainClassificationGenerator(
             feature_extraction,
-            protocol, subset=subset,
-            frame_info=frame_info,
-            frame_crop=frame_crop,
+            protocol,
+            subset=subset,
             domain=self.domain,
             duration=self.duration,
             per_epoch=self.per_epoch,
-            batch_size=self.batch_size,
-            parallel=self.parallel)
+            batch_size=self.batch_size)

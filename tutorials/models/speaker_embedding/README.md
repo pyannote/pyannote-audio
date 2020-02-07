@@ -1,6 +1,6 @@
 > The MIT License (MIT)
 >
-> Copyright (c) 2017-2019 CNRS
+> Copyright (c) 2017-2020 CNRS
 >
 > Permission is hereby granted, free of charge, to any person obtaining a copy
 > of this software and associated documentation files (the "Software"), to deal
@@ -23,13 +23,12 @@
 > AUTHOR
 > Hervé Bredin - http://herve.niderb.fr
 
-# Neural speech turn embedding with `pyannote.audio`
+# End-to-end speaker embedding with `pyannote.audio`
 
-In this tutorial, you will learn how to train a speaker embedding using `pyannote-speaker-embedding` command line tool.
+This tutorial teaches how to train, validate, and apply a speaker embedding neural network with [VoxCeleb](http://www.robots.ox.ac.uk/~vgg/data/voxceleb/) dataset. It assumes that you have already followed both the [data preparation](../../data_preparation) tutorial and the [VoxCeleb installation instructions](https://github.com/pyannote/pyannote-db-voxceleb). It should reproduce the result reported in the first line of Table 4 of [this introductory paper](https://arxiv.org/abs/1911.01255).
 
 ## Table of contents
 - [Citation](#citation)
-- [Databases](#databases)
 - [Configuration](#configuration)
 - [Training](#training)
 - [Validation](#validation)
@@ -39,7 +38,18 @@ In this tutorial, you will learn how to train a speaker embedding using `pyannot
 ## Citation
 ([↑up to table of contents](#table-of-contents))
 
-If you use `pyannote-audio` for speaker (or audio) neural embedding, please cite the following paper:
+If you use `pyannote-audio` for speaker (or audio) neural embedding, please cite the following papers:
+
+```bibtex
+@inproceedings{Bredin2020,
+  Title = {{pyannote.audio: neural building blocks for speaker diarization}},
+  Author = {{Bredin}, Herv{\'e} and {Yin}, Ruiqing and {Coria}, Juan Manuel and {Gelly}, Gregory and {Korshunov}, Pavel and {Lavechin}, Marvin and {Fustes}, Diego and {Titeux}, Hadrien and {Bouaziz}, Wassim and {Gill}, Marie-Philippe},
+  Booktitle = {ICASSP 2020, IEEE International Conference on Acoustics, Speech, and Signal Processing},
+  Address = {Barcelona, Spain},
+  Month = {May},
+  Year = {2020},
+}
+```
 
 ```bibtex
 @inproceedings{Bredin2017,
@@ -51,50 +61,37 @@ If you use `pyannote-audio` for speaker (or audio) neural embedding, please cite
 }
 ```
 
-## Databases
-([↑up to table of contents](#table-of-contents))
-
-```bash
-$ source activate pyannote
-$ pip install pyannote.db.odessa.ami
-$ pip install pyannote.db.musan
-$ pip install pyannote.db.voxceleb
-```
-
-This tutorial relies on the [VoxCeleb](http://www.robots.ox.ac.uk/~vgg/data/voxceleb/), [AMI](http://groups.inf.ed.ac.uk/ami/corpus) and [MUSAN](http://www.openslr.org/17/) databases. We first need to tell `pyannote` where the audio files are located:
-
-```bash
-$ cat ~/.pyannote/database.yml
-Databases:
-  VoxCeleb: /path/to/voxceleb1/*/wav/{uri}.wav
-  AMI: /path/to/ami/amicorpus/*/audio/{uri}.wav
-  MUSAN: /path/to/musan/{uri}.wav
-```
-
-Have a look at `pyannote.database` [documentation](http://github.com/pyannote/pyannote-database) to learn how to use other datasets.
-
 ## Configuration
 ([↑up to table of contents](#table-of-contents))
 
-To ensure reproducibility, `pyannote-speaker-embedding` relies on a configuration file defining the experimental setup:
+To ensure reproducibility, `pyannote-audio` relies on a configuration file defining the experimental setup:
 
 ```bash
-$ cat tutorials/models/speaker_embedding/config.yml
+$ export EXP_DIR=tutorials/models/speaker_embedding
+$ cat ${EXP_DIR}/config.yml
 ```
 ```yaml
-feature_extraction:
-   name: LibrosaMFCC
+# A speaker embedding model is trained with triplet loss.
+# Here, training relies on 1s-long audio chunks, batches
+# of audio chunks from 48 different speakers x 3 chunks
+# per speaker, and saves model to disk every half (0.5)
+# day worth of audio.
+task:
+   name: TripletLoss
    params:
-      e: False
-      De: True
-      DDe: True
-      coefs: 19
-      D: True
-      DD: True
-      duration: 0.025
-      step: 0.010
-      sample_rate: 16000
+     metric: angular
+     clamp: sigmoid
+     margin: 0.0
+     duration: 1.000
+     sampling: all
+     per_fold: 48
+     per_label: 3
+     per_epoch: 0.5
 
+# Data augmentation is applied during training.
+# Here, it consists in additive noise from the
+# MUSAN database, with random signal-to-noise
+# ratio between 10 and 20 dB
 data_augmentation:
    name: AddNoise
    params:
@@ -102,52 +99,60 @@ data_augmentation:
      snr_max: 20
      collection: MUSAN.Collection.BackgroundNoise
 
-architecture:
-   name: ClopiNet
+# Since we are training an end-to-end model, the
+# feature extraction step simply returns the raw
+# waveform.
+feature_extraction:
+   name: pyannote.audio.features.RawAudio
    params:
-     instance_normalize: True
-     rnn: LSTM
-     recurrent: [256, 256, 256]
-     linear: [256]
-     bidirectional: True
-     pooling: sum
-     batch_normalize: True
-     normalize: True
-     
-approach:
-   name: TripletLoss
-   params:
-     metric: cosine
-     clamp: sigmoid
-     margin: 0.0
-     min_duration: 0.500
-     max_duration: 1.500
-     sampling: all
-     per_fold: 20
-     per_label: 3
-     per_epoch: 1
-     label_min_duration: 60
+      sample_rate: 16000
 
-scheduler:
-   name: CyclicScheduler
+# We use the PyanNet architecture in Figure 2 of
+# pyannote.audio introductory paper. More details
+# about the architecture and its parameters can be
+# found directly in PyanNet docstring.
+architecture:
+   name: pyannote.audio.models.PyanNet
    params:
-      epochs_per_cycle: 14
+      sincnet:
+         stride: [5, 1, 1]
+         waveform_normalize: True
+         instance_normalize: True
+      rnn:
+         unit: LSTM
+         hidden_size: 512
+         num_layers: 3
+         bias: True
+         dropout: 0
+         bidirectional: True
+         concatenate: False
+         pool: x-vector
+      ff:
+         hidden_size: [512, 512]
+      embedding:
+         batch_normalize: False
+         unit_normalize: False
+
+# We use a constant learning rate that is determined
+# automagically at the start of training (0.1 is fine)
+scheduler:
+   name: ConstantScheduler
+   params:
+      learning_rate: auto
 ```
 
 ## Training
 ([↑up to table of contents](#table-of-contents))
 
-The following command will train the network using VoxCeleb1 for 1000 epochs (one epoch = one day of audio)
+The following command will train the network using the training subset of VoxCeleb1 database for 2000 epochs:
 
 ```bash
-$ export EXPERIMENT_DIR=tutorials/models/speaker_embedding
-$ pyannote-speaker-embedding train --gpu --to=1000 ${EXPERIMENT_DIR} VoxCeleb.SpeakerVerification.VoxCeleb1
+$ pyannote-audio emb train --subset=train --gpu --to=2000 --parallel=4 ${EXP_DIR} VoxCeleb.SpeakerVerification.VoxCeleb1
 ```
 
-This will create a bunch of files in `TRAIN_DIR` (defined below).
-One can follow along the training process using [tensorboard](https://github.com/tensorflow/tensorboard).
+This will create a bunch of files in `TRN_DIR` (defined below). One can also follow along the training process using [tensorboard](https://github.com/tensorflow/tensorboard):
 ```bash
-$ tensorboard --logdir=${EXPERIMENT_DIR}
+$ tensorboard --logdir=${EXP_DIR}
 ```
 
 ![tensorboard screenshot](tb_train.png)
@@ -156,33 +161,40 @@ $ tensorboard --logdir=${EXPERIMENT_DIR}
 ## Validation
 ([↑up to table of contents](#table-of-contents))
 
-To get a quick idea of how the network is doing during training, one can use the `validate` mode.
-It can (should!) be run in parallel to training and evaluates the model epoch after epoch.
-One can use [tensorboard](https://github.com/tensorflow/tensorboard) to follow the validation process.
+To get a quick idea of how the network is doing on the development set, one can use the `validate` mode.
 
 ```bash
-$ export TRAIN_DIR=${EXPERIMENT_DIR}/train/VoxCeleb.SpeakerVerification.VoxCeleb1.train
-$ pyannote-speaker-embedding validate --subset=test --duration=1.0 ${TRAIN_DIR} VoxCeleb.SpeakerDiarization.VoxCeleb1
+$ export TRN_DIR=${EXP_DIR}/train/VoxCeleb.SpeakerVerification.VoxCeleb1.train
+$ pyannote-audio emb validate --subset=test --gpu --to=2000 --every=20 ${TRN_DIR} VoxCeleb.SpeakerDiarization.VoxCeleb1
+```
+It can be run while the model is still training and evaluates the model every 20 epochs. This will create a bunch of files in `VAL_DIR` (defined below). 
+
+In practice, it is tuning a simple speaker verification experiment and stores the best hyper-parameter configuration on disk:
+
+```bash
+$ export VAL_DIR = ${TRN_DIR}/validate_equal_error_rate/VoxCeleb.SpeakerDiarization.VoxCeleb1.test
+$ cat ${VAL_DIR}/params.yml
+```
+```yaml
+epoch: 1891
+equal_error_rate: 0.0637
 ```
 
 ![tensorboard screenshot](tb_validate.png)
 
-This model reaches approximately 7% EER on VoxCeleb1.
 
 ## Application
 ([↑up to table of contents](#table-of-contents))
 
-Now that we know how the model is doing, we can apply it on all files of the AMI database:
+Now that we know how the model is doing, we can apply it on test files of the AMI database: 
 
 ```bash
-$ export VALIDATE_DIR=${EXPERIMENT_DIR}/validate/VoxCeleb.SpeakerVerification.VoxCeleb1.test
-$ pyannote-speaker-embedding apply --duration=1.0 --step=0.5 ${VALIDATE_DIR} AMI.SpeakerDiarization.MixHeadset 
+$ pyannote-audio emb apply --subset=test --gpu ${VAL_DIR} AMI.SpeakerDiarization.MixHeadset 
 ```
 
-Embeddings will be extracted in `${VALIDATE_DIR}/apply/{BEST_EPOCH}`
+Embeddings will be extracted in `${VAL_DIR}/apply/{BEST_EPOCH}`
 
-In the above example, embeddings are extracted every 500ms using a 1s sliding window. We can then use these extracted embeddings like this:
-
+In the above example, embeddings are extracted every 250ms using a 1s sliding window. We can then use these extracted embeddings like this:
 
 ```python
 # first test file of AMI protocol
@@ -192,7 +204,7 @@ In the above example, embeddings are extracted every 500ms using a 1s sliding wi
 
 # precomputed embeddings as pyannote.core.SlidingWindowFeature
 >>> from pyannote.audio.features import Precomputed
->>> precomputed = Precomputed('{VALIDATE_DIR}/apply/{BEST_EPOCH}')
+>>> precomputed = Precomputed('{VAL_DIR}/apply/{BEST_EPOCH}')
 >>> embeddings = precomputed(test_file)
 
 # iterate over all embeddings
@@ -212,7 +224,7 @@ In the above example, embeddings are extracted every 500ms using a 1s sliding wi
 For more options, see:
 
 ```bash
-$ pyannote-speaker-embedding --help
+$ pyannote-audio --help
 ```
 
 That's all folks!
