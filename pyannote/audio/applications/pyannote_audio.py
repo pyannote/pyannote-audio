@@ -294,7 +294,8 @@ def main():
     subset = arg['--subset']
 
     if arg['--debug']:
-        warnings.warn('Debug mode is enabled, this option might slow execution considerably', RuntimeWarning)
+        msg = 'Debug mode is enabled, this option might slow execution considerably.'
+        warnings.warn(msg, RuntimeWarning)
         torch.autograd.set_detect_anomaly(True)
 
     n_jobs = arg['--parallel']
