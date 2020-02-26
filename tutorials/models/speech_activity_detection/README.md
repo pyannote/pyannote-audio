@@ -160,13 +160,13 @@ $ export VAL_DIR = ${TRN_DIR}/validate/AMI.SpeakerDiarization.MixHeadset.develop
 $ cat ${VAL_DIR}/params.yml
 ```
 ```yaml
-detection_error_rate: 0.058083631103952316
-epoch: 121
+detection_fscore: 0.xxx
+epoch: xxx
 params:
   min_duration_off: 0.1
   min_duration_on: 0.1
-  offset: 0.5218292976870024
-  onset: 0.5218292976870024
+  offset: 0.xxx
+  onset: 0.xxx
   pad_offset: 0.0
   pad_onset: 0.0
 ```

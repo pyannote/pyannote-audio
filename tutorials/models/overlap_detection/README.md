@@ -151,22 +151,22 @@ $ pyannote-audio ovl validate --subset=develop --to=1000 --every=20 ${TRN_DIR} A
 ```
 It can be run while the model is still training and evaluates the model every 20 epochs. This will create a bunch of files in `VAL_DIR` (defined below). 
 
-In practice, it is tuning a simple speaker change detection pipeline and stores the best hyper-parameter configuration on disk:
+In practice, it is tuning a simple overlapped speech detection pipeline and stores the best hyper-parameter configuration on disk:
 
 ```bash
 $ export VAL_DIR = ${TRN_DIR}/validate/AMI.SpeakerDiarization.MixHeadset.development
 $ cat ${VAL_DIR}/params.yml
 ```
 ```yaml
-epoch: 901
+epoch: xxx
 params:
   min_duration_off: 0.1
   min_duration_on: 0.1
-  offset: 0.552734375
-  onset: 0.552734375
+  offset: 0.xxx
+  onset: 0.xxx
   pad_offset: 0.0
   pad_onset: 0.0
-recall@0.90precision: 0.6376457965578912
+detection_fscore: 0.xxx
 ```
 
 See `pyannote.audio.pipeline.overlap_detection.OverlapDetection ` for details on the role of each parameter.
