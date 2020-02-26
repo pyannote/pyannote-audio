@@ -100,7 +100,8 @@ class SpeakerChangeDetection(BaseLabeling):
 
         threshold = res.x.item()
 
-        return {'metric': self.validation_criterion(None),
+        return {'metric': self.validation_criterion(None,
+                                                    diarization=diarization),
                 'minimize': False,
                 'value': float(1. - res.fun),
                 'pipeline': pipeline.instantiate({'alpha': threshold,
