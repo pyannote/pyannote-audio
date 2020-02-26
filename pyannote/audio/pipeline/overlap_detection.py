@@ -150,6 +150,9 @@ class OverlapDetection(Pipeline):
         overlap.uri = current_file['uri']
         return overlap.to_annotation(generator='string', modality='overlap')
 
+    def get_metric(self, **kwargs):
+        raise NotImplementedError()
+
     def loss(self, current_file: dict, hypothesis: Annotation) -> float:
         """Compute (1 - recall) at target precision
 
