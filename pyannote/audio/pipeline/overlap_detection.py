@@ -46,6 +46,7 @@ from pyannote.audio.features import Precomputed
 
 from pyannote.metrics.detection import DetectionPrecision
 from pyannote.metrics.detection import DetectionRecall
+from pyannote.metrics import f_measure
 from pyannote.audio.utils.path import Pre___ed
 
 
@@ -62,6 +63,9 @@ class OverlapDetection(Pipeline):
         that protocol files provide the scores in the "ovl_scores" key.
     precision : `float`, optional
         Target detection precision. Defaults to 0.9.
+    fscore : bool, optional
+        Optimize (precision/recall) fscore. Defaults to optimizing recall at
+        target precision.
 
     Hyper-parameters
     ----------------
@@ -74,7 +78,8 @@ class OverlapDetection(Pipeline):
     """
 
     def __init__(self, scores: Union[Text, Path] = None,
-                       precision: Optional[Path] = 0.9):
+                       precision: Optional[Path] = 0.9,
+                       fscore: bool = False):
         super().__init__()
 
         if scores is None:
@@ -83,6 +88,7 @@ class OverlapDetection(Pipeline):
         self._scores = Pre___ed(self.scores)
 
         self.precision = precision
+        self.fscore = fscore
 
         # hyper-parameters
         self.onset = Uniform(0., 1.)
@@ -165,20 +171,26 @@ class OverlapDetection(Pipeline):
         precision = DetectionPrecision()
         recall = DetectionRecall()
 
-        # build overlap reference
-        reference = Timeline(uri=current_file['uri'])
-        turns = current_file['annotation']
-        for track1, track2 in turns.co_iter(turns):
-            if track1 == track2:
-                continue
-            reference.add(track1[0] & track2[0])
-        reference = reference.support().to_annotation()
+        if 'overlap' in current_file:
+            reference = current_file['overlap']
+
+        else:
+            # build overlap reference
+            reference = Timeline(uri=current_file['uri'])
+            turns = current_file['annotation']
+            for track1, track2 in turns.co_iter(turns):
+                if track1 == track2:
+                    continue
+                reference.add(track1[0] & track2[0])
+            reference = reference.support().to_annotation()
 
         uem = get_annotated(current_file)
         p = precision(reference, hypothesis, uem=uem)
         r = recall(reference, hypothesis, uem=uem)
 
+        if self.fscore:
+            return f_measure(p, r)
+
         if p > self.precision:
             return 1. - r
-        else:
-            return 1. + (1. - p)
+        return 1. + (1. - p)
