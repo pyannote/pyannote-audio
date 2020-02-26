@@ -57,7 +57,7 @@ for the following blocks of a speaker diarization pipeline:
 Running a complete speech activity detection experiment on the provided
 "debug" dataset would go like this:
 
-    * Blah balh
+    * Run experiment on this pyannote.database protocol
       $ export DATABASE=Debug.SpeakerDiarization.Debug
 
     * This directory will contain experiments artifacts:
@@ -236,30 +236,26 @@ Validation options
 
   --evergreen             Prioritize validation of most recent epoch.
 
-  For speaker change detection, validation consists in looking for the value of
-  the peak detection threshold that maximizes segmentation coverage, given that
-  segmentation purity is greater than a target value:
+  For speech activity and overlapped speech detection, validation consists in
+  looking for the value of the detection threshold that maximizes the f-score
+  of recall and precision.
 
-  --purity=<value>        Set target purity [default: 0.9].
+  For speaker change detection, validation consists in looking for the value of
+  the peak detection threshold that maximizes the f-score of purity and
+  coverage:
 
   --diarization           Use diarization purity and coverage instead of
-                          segmentation purity and coverage.
+                          (default) segmentation purity and coverage.
 
-  For overlapped speech detection, validation consists in looking for the value
-  of the detection threshold that maximizes recall, given that precision is
-  greater than a target value:
+  For speaker embedding and verification protocols, validation runs the actual
+  speaker verification experiment (representing each recording by its average
+  embedding) and reports equal error rate.
 
-  --precision=<value>     Set target precision [default: 0.8].
-
-  For speaker embedding,
-    * validation of speaker verification protocols runs the actual speaker
-      verification experiment (representing each recording by its average
-      embedding) and reports equal error rate.
-    * validation of speaker diarization protocols runs a speaker diarization
-      pipeline based on oracle segmentation and "median-linkage" agglomerative
-      clustering of speech turns (represented by their average embedding), and
-      looks for the threshold that maximizes coverage, given that purity is
-      greater than a target value.
+  For speaker embedding and diarization protocols, validation runs a speaker
+  diarization pipeline based on oracle segmentation and "pool-linkage"
+  agglomerative clustering of speech turns (represented by their average
+  embedding), and looks for the threshold that maximizes the f-score of purity
+  and coverage.
 
 """
 
@@ -387,9 +383,7 @@ def main():
         params['chronological'] = not arg['--evergreen']
         params['batch_size'] = int(arg['--batch'])
 
-        params['purity'] = float(arg['--purity'])
         params['diarization'] = arg['--diarization']
-        params['precision'] = float(arg['--precision'])
 
         duration = arg['--duration']
         if duration is None:
