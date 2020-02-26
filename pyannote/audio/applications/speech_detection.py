@@ -101,7 +101,7 @@ class SpeechActivityDetection(BaseLabeling):
 
         return {'metric': self.validation_criterion(None),
                 'minimize': False,
-                'value': 1. - res.fun,
+                'value': float(1. - res.fun),
                 'pipeline': pipeline.instantiate({'onset': threshold,
                                                   'offset': threshold,
                                                   'min_duration_on': 0.100,

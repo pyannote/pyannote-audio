@@ -268,4 +268,4 @@ class SpeakerEmbedding(Application):
 
         return {'metric': 'diarization_fscore',
                 'minimize': False,
-                'value': 1. - res.fun}
+                'value': float(1. - res.fun)}

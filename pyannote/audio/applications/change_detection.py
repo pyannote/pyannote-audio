@@ -102,6 +102,6 @@ class SpeakerChangeDetection(BaseLabeling):
 
         return {'metric': self.validation_criterion(None),
                 'minimize': False,
-                'value': 1. - res.fun,
+                'value': float(1. - res.fun),
                 'pipeline': pipeline.instantiate({'alpha': threshold,
                                                   'min_duration': 0.100})}
