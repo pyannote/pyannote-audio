@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2018-2019 CNRS
+# Copyright (c) 2018-2020 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -27,6 +27,8 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 from typing import Optional
+from typing import Union
+from typing import Text
 from pathlib import Path
 import numpy as np
 
@@ -44,6 +46,7 @@ from pyannote.audio.features import Precomputed
 
 from pyannote.metrics.detection import DetectionPrecision
 from pyannote.metrics.detection import DetectionRecall
+from pyannote.audio.utils.path import Pre___ed
 
 
 class OverlapDetection(Pipeline):
@@ -51,8 +54,12 @@ class OverlapDetection(Pipeline):
 
     Parameters
     ----------
-    scores : `Path`, optional
-        Path to precomputed scores on disk.
+    scores : Text or Path, optional
+        Describes how raw overlapped speech detection scores should be obtained.
+        It can be either the name of a torch.hub model, or the path to the
+        output of the validation step of a model trained locally, or the path
+        to scores precomputed on disk. Defaults to "@ovl_scores" that indicates
+        that protocol files provide the scores in the "ovl_scores" key.
     precision : `float`, optional
         Target detection precision. Defaults to 0.9.
 
@@ -66,13 +73,15 @@ class OverlapDetection(Pipeline):
         Padding duration.
     """
 
-    def __init__(self, scores: Optional[Path] = None,
+    def __init__(self, scores: Union[Text, Path] = None,
                        precision: Optional[Path] = 0.9):
         super().__init__()
 
+        if scores is None:
+            scores = "@ovl_scores"
         self.scores = scores
-        if self.scores is not None:
-            self._precomputed = Precomputed(self.scores)
+        self._scores = Pre___ed(self.scores)
+
         self.precision = precision
 
         # hyper-parameters
@@ -109,10 +118,7 @@ class OverlapDetection(Pipeline):
             Overlap regions.
         """
 
-        # precomputed overlap scores
-        ovl_scores = current_file.get('ovl_scores')
-        if ovl_scores is None:
-            ovl_scores = self._precomputed(current_file)
+        ovl_scores = self._scores(current_file)
 
         # if this check has not been done yet, do it once and for all
         if not hasattr(self, "log_scale_"):

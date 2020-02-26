@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2017-2019 CNRS
+# Copyright (c) 2017-2020 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -27,6 +27,9 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 from pathlib import Path
+from typing import Optional
+from typing import Union
+from typing import Text
 
 from pyannote.core import Annotation
 from pyannote.database import get_annotated
@@ -38,8 +41,6 @@ from .speech_turn_segmentation import SpeechTurnSegmentation
 from .speech_turn_clustering import SpeechTurnClustering
 from .speech_turn_assignment import SpeechTurnClosestAssignment
 
-from typing import Optional
-from typing import Union
 from pyannote.pipeline import Pipeline
 from pyannote.pipeline.parameter import Uniform
 
@@ -48,13 +49,22 @@ class SpeakerDiarization(Pipeline):
 
     Parameters
     ----------
-    sad_scores : `Path` or 'oracle'
-        Path to precomputed speech activity detection scores.
-        Use 'oracle' to assume perfect speech activity detection.
-    scd_scores : `Path`
-        Path to precomputed SCD scores on disk
-    embedding : `Path`
-        Path to precomputed embedding on disk
+    sad_scores : Text or Path or 'oracle', optional
+    scd_scores : Text or Path, optional
+        Describes how raw speech activity and speaker change detection scores
+        should be obtained. It can be either the name of a torch.hub model, or
+        the path to the output of the validation step of a model trained
+        locally, or the path to scores precomputed on disk. Defaults to
+        "@sad_scores" and "@scd_scores" respectively, indicating that protocol
+        files provide the scores in the corresponding "sad_scores" and
+        "scd_scores" keys. Use 'oracle' to assume perfect speech activity detection.
+        Path to precomputed speaker change detection scores
+    embedding : Text or Path, optional
+        Describes how raw speaker embeddings should be obtained. It can be
+        either the name of a torch.hub model, or the path to the output of the
+        validation step of a model trained locally, or the path to embeddings
+        precomputed on disk. Defaults to "@emb" that indicates that protocol
+        files provide the embeddings in the "emb" key.
     metric : {'euclidean', 'cosine', 'angular'}, optional
         Metric used for comparing embeddings. Defaults to 'cosine'.
     method : {'pool', 'affinity_propagation'}
@@ -62,9 +72,9 @@ class SpeakerDiarization(Pipeline):
     evaluation_only : `bool`
         Only process the evaluated regions. Default to False.
     purity : `float`, optional
-        Optimize coverage for target purity. 
+        Optimize coverage for target purity.
         Defaults to optimizing diarization error rate.
-    
+
     Hyper-parameters
     ----------------
     min_duration : `float`
@@ -72,9 +82,9 @@ class SpeakerDiarization(Pipeline):
         the closest cluster (of long speech turns) instead.
     """
 
-    def __init__(self, sad_scores: Optional[Union[Path, str]] = None,
-                       scd_scores: Optional[Path] = None,
-                       embedding: Optional[Path] = None,
+    def __init__(self, sad_scores: Union[Text, Path] = None,
+                       scd_scores: Union[Text, Path] = None,
+                       embedding: Union[Text, Path] = None,
                        metric: Optional[str] = 'cosine',
                        method: Optional[str] = 'pool',
                        evaluation_only: Optional[bool] = False,
@@ -163,7 +173,8 @@ class SpeakerDiarization(Pipeline):
         return long_speech_turns.update(
             shrt_speech_turns, copy=False).support(collar=0.)
 
-        # TODO. add GMM-based resegmentation
+        # TODO. add overlap detection
+        # TODO. add overlap-aware resegmentation
 
     def loss(self, current_file: dict, hypothesis: Annotation) -> float:
         """Compute (1 - coverage) at target purity
@@ -195,11 +206,11 @@ class SpeakerDiarization(Pipeline):
 
     def get_metric(self) -> GreedyDiarizationErrorRate:
         """Return new instance of diarization error rate metric"""
-        
+
         # defaults to optimizing diarization error rate
         if self.purity is None:
             return GreedyDiarizationErrorRate(collar=0.0, skip_overlap=False)
-        
+
         # fallbacks to using self.loss(...)
         raise NotImplementedError()
 
@@ -212,20 +223,30 @@ class Yin2018(SpeakerDiarization):
 
     Parameters
     ----------
-    sad_scores : `Path`
-        Path to precomputed speech activity detection scores.
-    scd_scores : `Path`
+    sad_scores : Text or Path or 'oracle', optional
+    scd_scores : Text or Path, optional
+        Describes how raw speech activity and speaker change detection scores
+        should be obtained. It can be either the name of a torch.hub model, or
+        the path to the output of the validation step of a model trained
+        locally, or the path to scores precomputed on disk. Defaults to
+        "@sad_scores" and "@scd_scores" respectively, indicating that protocol
+        files provide the scores in the corresponding "sad_scores" and
+        "scd_scores" keys. Use 'oracle' to assume perfect speech activity detection.
         Path to precomputed speaker change detection scores
-    embedding : `Path
-        Path to precomputed embeddings.
+    embedding : Text or Path, optional
+        Describes how raw speaker embeddings should be obtained. It can be
+        either the name of a torch.hub model, or the path to the output of the
+        validation step of a model trained locally, or the path to embeddings
+        precomputed on disk. Defaults to "@emb" that indicates that protocol
+        files provide the embeddings in the "emb" key.
     metric : {'euclidean', 'cosine', 'angular'}, optional
         Metric used for comparing embeddings. Defaults to 'cosine'.
     evaluation_only : `bool`
         Only process the evaluated regions. Default to False.
     """
-    def __init__(self, sad_scores: Optional[Path] = None,
-                       scd_scores: Optional[Path] = None,
-                       embedding: Optional[Path] = None,
+    def __init__(self, sad_scores: Union[Text, Path] = None,
+                       scd_scores: Union[Text, Path] = None,
+                       embedding: Union[Text, Path] = None,
                        metric: Optional[str] = 'cosine',
                        evaluation_only: Optional[bool] = False):
 

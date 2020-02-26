@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2018-2019 CNRS
+# Copyright (c) 2018-2020 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -28,6 +28,8 @@
 
 import numpy as np
 from pathlib import Path
+from typing import Union
+from typing import Text
 from typing import Optional
 
 from pyannote.core import Annotation
@@ -40,14 +42,20 @@ from pyannote.pipeline.blocks.clustering import \
 from pyannote.pipeline.blocks.clustering import AffinityPropagationClustering
 from .utils import assert_string_labels
 
+from pyannote.audio.utils.path import Pre___ed
+
 
 class SpeechTurnClustering(Pipeline):
     """Speech turn clustering
 
     Parameters
     ----------
-    embedding : `Path`
-        Path to precomputed embeddings.
+    embedding : Text or Path, optional
+        Describes how raw speaker embeddings should be obtained. It can be
+        either the name of a torch.hub model, or the path to the output of the
+        validation step of a model trained locally, or the path to embeddings
+        precomputed on disk. Defaults to "@emb" that indicates that protocol
+        files provide the embeddings in the "emb" key.
     metric : {'euclidean', 'cosine', 'angular'}, optional
         Metric used for comparing embeddings. Defaults to 'cosine'.
     method : {'pool', 'affinity_propagation'}
@@ -60,14 +68,16 @@ class SpeechTurnClustering(Pipeline):
         speech turn level (one average embedding per speech turn).
     """
 
-    def __init__(self, embedding: Optional[Path],
+    def __init__(self, embedding: Union[Text, Path] = None,
                        metric: Optional[str] = 'cosine',
                        method: Optional[str] = 'pool',
                        window_wise: Optional[bool] = False):
         super().__init__()
 
+        if embedding is None:
+            embedding = "@emb"
         self.embedding = embedding
-        self._precomputed = Precomputed(self.embedding)
+        self._embedding = Pre___ed(self.embedding)
 
         self.metric = metric
         self.method = method
@@ -111,13 +121,13 @@ class SpeechTurnClustering(Pipeline):
         """
 
         # load embeddings
-        embedding = self._precomputed(current_file)
+        embedding = self._embedding(current_file)
         window = embedding.sliding_window
 
         # extract and stack embeddings of speech regions
         X = np.vstack([
             embedding.crop(segment, mode='center', fixed=segment.duration)
-            for segment in speech])
+            for segment in speech_regions])
 
         # apply clustering
         y_pred = self.clustering(X)
@@ -129,7 +139,7 @@ class SpeechTurnClustering(Pipeline):
         # s_pred = current position in y_pred
         s_pred, n = 0, len(y_pred)
 
-        for segment in speech:
+        for segment in speech_regions:
 
             # get indices of current speech segment
             (s, e), = window.crop(segment, mode='center',
@@ -168,7 +178,7 @@ class SpeechTurnClustering(Pipeline):
 
         assert_string_labels(speech_turns, 'speech_turns')
 
-        embedding = self._precomputed(current_file)
+        embedding = self._embedding(current_file)
 
         labels = speech_turns.labels()
         X, clustered_labels, skipped_labels = [], [], []

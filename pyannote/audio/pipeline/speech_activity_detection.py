@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2018-2019 CNRS
+# Copyright (c) 2018-2020 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -45,6 +45,7 @@ from pyannote.audio.utils.signal import Binarize
 from pyannote.audio.features import Precomputed
 
 from pyannote.metrics.detection import DetectionErrorRate
+from pyannote.audio.utils.path import Pre___ed
 
 
 class OracleSpeechActivityDetection(Pipeline):
@@ -73,11 +74,12 @@ class SpeechActivityDetection(Pipeline):
 
     Parameters
     ----------
-    precomputed : Path, optional
-        Path to precomputed scores on disk.
-    pretrained : Text or Path, optional
-        Name of pretrained speech activity detection model from torch.hub, or
-        path to local pretrained model validation directory.
+    scores : Text or Path, optional
+        Describes how raw speech activity detection scores should be obtained.
+        It can be either the name of a torch.hub model, or the path to the
+        output of the validation step of a model trained locally, or the path
+        to scores precomputed on disk. Defaults to "@sad_scores" that indicates
+        that protocol files provide the scores in the "sad_scores" key.
 
     Hyper-parameters
     ----------------
@@ -89,28 +91,13 @@ class SpeechActivityDetection(Pipeline):
         Padding duration.
     """
 
-    def __init__(self, precomputed: Path = None,
-                       scores: Path = None,
-                       pretrained: Union[Text, Path] = None):
+    def __init__(self, scores: Union[Text, Path] = None):
         super().__init__()
 
-        # deprecationg warning (scores --> precomputed)
-        if scores is not None:
-            msg = f'"scores" is being deprecated in favor of "precomputed".'
-            warnings.warn(msg)
-            precomputed = scores
-
-        self.precomputed = precomputed
-        if self.precomputed is not None:
-            self._precomputed = Precomputed(self.precomputed)
-
-        self.pretrained = pretrained
-        if self.pretrained is not None:
-            if Path(self.pretrained).exists():
-                self._pretrained = Pretrained(validate_dir=self.pretrained)
-            else:
-                self._pretrained = torch.hub.load('pyannote/pyannote-audio',
-                                                  self.pretrained)
+        if scores is None:
+            scores = "@sad_scores"
+        self.scores = scores
+        self._scores = Pre___ed(self.scores)
 
         # hyper-parameters
         self.onset = Uniform(0., 1.)
@@ -146,22 +133,7 @@ class SpeechActivityDetection(Pipeline):
             Speech regions.
         """
 
-        # use pre-loaded SAD scores when available
-        sad_scores = current_file.get('sad_scores')
-
-        if sad_scores is None:
-            # use precomputed SAD scores when available
-            # otherwise use pretrained model
-            if self.precomputed is None:
-                sad_scores = self._pretrained(current_file)
-            else:
-                sad_scores = self._precomputed(current_file)
-
-        if sad_scores is None:
-            msg = (
-                f"Could not get raw SAD scores for file {current_file['uri']}."
-            )
-            raise ValueError(msg)
+        sad_scores = self._scores(current_file)
 
         # if this check has not been done yet, do it once and for all
         if not hasattr(self, "log_scale_"):
