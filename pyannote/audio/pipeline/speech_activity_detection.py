@@ -166,13 +166,12 @@ class SpeechActivityDetection(Pipeline):
 
 
     def get_metric(self, parallel=False) -> Union[DetectionErrorRate, DetectionPrecisionRecallFMeasure]:
-        """Return new instance of detection error rate metric"""
+        """Return new instance of detection metric"""
 
         if self.fscore:
             return DetectionPrecisionRecallFMeasure(collar=0.0,
                                                     skip_overlap=False,
                                                     parallel=parallel)
-
         else:
             return  DetectionErrorRate(collar=0.0,
                                        skip_overlap=False,
