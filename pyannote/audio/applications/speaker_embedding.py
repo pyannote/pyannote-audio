@@ -41,8 +41,9 @@ from pyannote.database import FileFinder
 from pyannote.database.protocol import SpeakerDiarizationProtocol
 from pyannote.database.protocol import SpeakerVerificationProtocol
 
+import scipy.optimize
 from scipy.cluster.hierarchy import fcluster
-from scipy.cluster.hierarchy import linkage
+from pyannote.core.utils.hierarchy import linkage
 
 from pyannote.core.utils.distance import pdist
 from pyannote.core.utils.distance import cdist
@@ -60,12 +61,12 @@ class SpeakerEmbedding(Application):
     def config_default_module(self):
         return 'pyannote.audio.embedding.approaches'
 
-    def validation_criterion(self, protocol_name, purity=0.9, **kwargs):
+    def validation_criterion(self, protocol_name, **kwargs):
         protocol = get_protocol(protocol_name)
         if isinstance(protocol, SpeakerVerificationProtocol):
-            return f'equal_error_rate'
+            return 'equal_error_rate'
         elif isinstance(protocol, SpeakerDiarizationProtocol):
-            return f'purity={100*purity:.0f}%'
+            return 'diarization_fscore'
 
     def validate_init(self, protocol_name,
                             subset='development'):
@@ -117,7 +118,7 @@ class SpeakerEmbedding(Application):
             else:
                 segments = f['try_with']
             for segment in segments:
-                emb.append(pretrained.crop(f, segment))
+                emb.append(pretrained.crop(f, segment, mode='center'))
 
         return np.mean(np.vstack(emb), axis=0, keepdims=True)
 
@@ -192,7 +193,6 @@ class SpeakerEmbedding(Application):
                                     duration: float = None,
                                     step: float = 0.25,
                                     metric : str = None,
-                                    purity : float = 0.9,
                                     **kwargs):
 
         # initialize embedding extraction
@@ -219,11 +219,8 @@ class SpeakerEmbedding(Application):
             embedding = pretrained(current_file)
             for i, (turn, _) in enumerate(reference.itertracks()):
 
-                # extract embedding for current speech turn. whenever possible,
-                # only use those fully included in the speech turn ('strict')
-                x_ = embedding.crop(turn, mode='strict')
-                if len(x_) < 1:
-                    x_ = embedding.crop(turn, mode='center')
+                # extract embedding for current speech turn
+                x_ = embedding.crop(turn, mode='center')
                 if len(x_) < 1:
                     x_ = embedding.crop(turn, mode='loose')
                 if len(x_) < 1:
@@ -240,7 +237,7 @@ class SpeakerEmbedding(Application):
             min_d = min(np.min(D), min_d)
             max_d = max(np.max(D), max_d)
 
-            Z[uri] = linkage(D, method='median')
+            Z[uri] = linkage(D, method='pool')
             t[uri] = np.array(t_)
 
         def fun(threshold):
@@ -261,28 +258,13 @@ class SpeakerEmbedding(Application):
 
                 _ = _metric(reference, hypothesis, uem=uem)
 
-            _purity, _coverage, _ = _metric.compute_metrics()
+            return 1. - abs(_metric)
 
-            return _purity, _coverage
+        res = scipy.optimize.minimize_scalar(
+            fun, bounds=(0., 1.), method='bounded', options={'maxiter': 10})
 
-        lower_threshold = min_d
-        upper_threshold = max_d
-        best_threshold = .5 * (lower_threshold + upper_threshold)
-        best_coverage = 0.
+        threshold = res.x.item()
 
-        for _ in range(10):
-            current_threshold = .5 * (lower_threshold + upper_threshold)
-            _purity, _coverage = fun(current_threshold)
-
-            if _purity < purity:
-                upper_threshold = current_threshold
-            else:
-                lower_threshold = current_threshold
-                if _coverage > best_coverage:
-                    best_coverage = _coverage
-                    best_threshold = current_threshold
-
-        value = best_coverage if best_coverage else _purity - purity
-        return {'metric': f'coverage@{purity:.2f}purity',
+        return {'metric': 'diarization_fscore',
                 'minimize': False,
-                'value': float(value)}
+                'value': 1. - res.fun}
