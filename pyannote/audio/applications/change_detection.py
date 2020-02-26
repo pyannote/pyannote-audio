@@ -28,10 +28,9 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 from functools import partial
+import scipy.optimize
 from .base_labeling import BaseLabeling
 from pyannote.database import get_annotated
-from pyannote.metrics.diarization import DiarizationPurityCoverageFMeasure
-from pyannote.metrics.segmentation import SegmentationPurityCoverageFMeasure
 
 from pyannote.audio.features import Pretrained
 from pyannote.audio.pipeline.speaker_change_detection \
@@ -49,14 +48,16 @@ class SpeakerChangeDetection(BaseLabeling):
 
     Pipeline = SpeakerChangeDetectionPipeline
 
-    def validation_criterion(self, protocol, purity=0.9, **kwargs):
-        return f'purity={100*purity:.0f}%'
+    def validation_criterion(self, protocol, diarization=False, **kwargs):
+        if diarization:
+            return 'diarization_fscore'
+        else:
+            return 'segmentation_fscore'
 
     def validate_epoch(self, epoch,
                              validation_data,
                              device=None,
                              batch_size=32,
-                             purity=0.9,
                              diarization=False,
                              n_jobs=1,
                              duration=None,
@@ -72,55 +73,35 @@ class SpeakerChangeDetection(BaseLabeling):
                                 device=device)
 
         for current_file in validation_data:
-            current_file['scd_scores'] = pretrained(current_file)
+            current_file['scores'] = pretrained(current_file)
 
         # pipeline
-        pipeline = self.Pipeline(purity=purity)
+        pipeline = self.Pipeline(scores="@scores",
+                                 fscore=True,
+                                 diarization=diarization)
 
-        # dichotomic search to find alpha that maximizes coverage
-        # while having at least `self.purity`
-
-        lower_alpha = 0.
-        upper_alpha = 1.
-        best_alpha = .5 * (lower_alpha + upper_alpha)
-        best_coverage = 0.
-
-        for _ in range(10):
-
-            current_alpha = .5 * (lower_alpha + upper_alpha)
-            pipeline.instantiate({'alpha': current_alpha,
+        def fun(threshold):
+            pipeline.instantiate({'alpha': threshold,
                                   'min_duration': 0.100})
-
-            if diarization:
-                metric = DiarizationPurityCoverageFMeasure(parallel=True)
-            else:
-                metric = SegmentationPurityCoverageFMeasure(parallel=True)
-
+            metric = pipeline.get_metric(parallel=True)
             validate = partial(validate_helper_func,
                                pipeline=pipeline,
                                metric=metric)
-
             if n_jobs > 1:
                 _ = self.pool_.map(validate, validation_data)
             else:
                 for file in validation_data:
                     _ = validate(file)
 
-            _purity, _coverage, _ = metric.compute_metrics()
-            # TODO: normalize coverage with what one could achieve if
-            # we were to put all reference speech turns in its own cluster
+            return 1. - abs(metric)
 
-            if _purity < purity:
-                upper_alpha = current_alpha
-            else:
-                lower_alpha = current_alpha
-                if _coverage > best_coverage:
-                    best_coverage = _coverage
-                    best_alpha = current_alpha
+        res = scipy.optimize.minimize_scalar(
+            fun, bounds=(0., 1.), method='bounded', options={'maxiter': 10})
 
-        return {'metric': f'coverage@{purity:.2f}purity',
+        threshold = res.x.item()
+
+        return {'metric': self.validation_criterion(None),
                 'minimize': False,
-                'value': best_coverage if best_coverage \
-                         else _purity - purity,
-                'pipeline': pipeline.instantiate({'alpha': best_alpha,
+                'value': 1. - res.fun,
+                'pipeline': pipeline.instantiate({'alpha': threshold,
                                                   'min_duration': 0.100})}

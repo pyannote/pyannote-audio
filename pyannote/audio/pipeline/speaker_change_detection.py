@@ -44,6 +44,8 @@ from pyannote.audio.features import Precomputed
 from pyannote.database import get_annotated
 from pyannote.database import get_unique_identifier
 from pyannote.metrics.segmentation import SegmentationPurityCoverageFMeasure
+from pyannote.metrics.diarization import DiarizationPurityCoverageFMeasure
+
 from pyannote.audio.utils.path import Pre___ed
 
 
@@ -60,6 +62,12 @@ class SpeakerChangeDetection(Pipeline):
         that protocol files provide the scores in the "scd_scores" key.
     purity : `float`, optional
         Target segments purity. Defaults to 0.95.
+    fscore : bool, optional
+        Optimize (precision/recall) fscore. Defaults to optimizing coverage at
+        given target `purity`.
+    diarization : bool, optional
+        Use diarization purity and coverage. Defaults to segmentation purity
+        and coverage.
 
     Hyper-parameters
     ----------------
@@ -70,7 +78,9 @@ class SpeakerChangeDetection(Pipeline):
     """
 
     def __init__(self, scores: Union[Text, Path] = None,
-                       purity: Optional[float] = 0.95):
+                       purity: Optional[float] = 0.95,
+                       fscore: bool = False,
+                       diarization: bool = False):
         super().__init__()
 
         if scores is None:
@@ -79,6 +89,8 @@ class SpeakerChangeDetection(Pipeline):
         self._scores = Pre___ed(self.scores)
 
         self.purity = purity
+        self.fscore = fscore
+        self.diarization = diarization
 
         # hyper-parameters
         self.alpha = Uniform(0., 1.)
@@ -130,6 +142,19 @@ class SpeakerChangeDetection(Pipeline):
         change.uri = current_file['uri']
 
         return change.to_annotation(generator='string', modality='audio')
+
+    def get_metric(self, parallel=False) -> Union[DiarizationPurityCoverageFMeasure,
+                                                  SegmentationPurityCoverageFMeasure]:
+        """Return new instance of f-score metric"""
+
+        if not self.fscore:
+            raise NotImplementedError()
+
+        if self.diarization:
+            return DiarizationPurityCoverageFMeasure(parallel=parallel)
+
+        return SegmentationPurityCoverageFMeasure(tolerance=0.5,
+                                                  parallel=parallel)
 
     def loss(self, current_file: dict, hypothesis: Annotation) -> float:
         """Compute (1 - coverage) at target purity
