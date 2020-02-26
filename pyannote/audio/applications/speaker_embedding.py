@@ -231,13 +231,14 @@ class SpeakerEmbedding(Application):
                 X_.append(np.mean(x_, axis=0))
                 t_.append(turn)
 
+            X_ = np.array(X_)
             # apply hierarchical agglomerative clustering
             # all the way up to just one cluster (ie complete dendrogram)
-            D = pdist(np.array(X_), metric=metric)
+            D = pdist(X_, metric=metric)
             min_d = min(np.min(D), min_d)
             max_d = max(np.max(D), max_d)
 
-            Z[uri] = linkage(D, method='pool')
+            Z[uri] = linkage(X_, method='pool', metric=metric)
             t[uri] = np.array(t_)
 
         def fun(threshold):
