@@ -70,7 +70,7 @@ class SpeechActivityDetection(BaseLabeling):
             current_file['sad_scores'] = pretrained(current_file)
 
         # pipeline
-        pipeline = self.Pipeline()
+        pipeline = self.Pipeline(fscore=True)
 
         def fun(threshold):
             pipeline.instantiate({'onset': threshold,
@@ -89,16 +89,16 @@ class SpeechActivityDetection(BaseLabeling):
                 for file in validation_data:
                     _ = validate(file)
 
-            return abs(metric)
+            return 1. - abs(metric)
 
         res = scipy.optimize.minimize_scalar(
             fun, bounds=(0., 1.), method='bounded', options={'maxiter': 10})
 
         threshold = res.x.item()
 
-        return {'metric': 'detection_error_rate',
-                'minimize': True,
-                'value': res.fun,
+        return {'metric': 'detection_fscore',
+                'minimize': False,
+                'value': 1. - res.fun,
                 'pipeline': pipeline.instantiate({'onset': threshold,
                                                   'offset': threshold,
                                                   'min_duration_on': 0.100,

@@ -45,6 +45,7 @@ from pyannote.audio.utils.signal import Binarize
 from pyannote.audio.features import Precomputed
 
 from pyannote.metrics.detection import DetectionErrorRate
+from pyannote.metrics.detection import DetectionPrecisionRecallFMeasure
 from pyannote.audio.utils.path import Pre___ed
 
 
@@ -80,6 +81,9 @@ class SpeechActivityDetection(Pipeline):
         output of the validation step of a model trained locally, or the path
         to scores precomputed on disk. Defaults to "@sad_scores" that indicates
         that protocol files provide the scores in the "sad_scores" key.
+    fscore : bool, optional
+        Optimize (precision/recall) fscore. Defaults to optimizing detection
+        error rate.
 
     Hyper-parameters
     ----------------
@@ -91,13 +95,16 @@ class SpeechActivityDetection(Pipeline):
         Padding duration.
     """
 
-    def __init__(self, scores: Union[Text, Path] = None):
+    def __init__(self, scores: Union[Text, Path] = None,
+                       fscore: bool = False):
         super().__init__()
 
         if scores is None:
             scores = "@sad_scores"
         self.scores = scores
         self._scores = Pre___ed(self.scores)
+
+        self.fscore = fscore
 
         # hyper-parameters
         self.onset = Uniform(0., 1.)
@@ -157,8 +164,16 @@ class SpeechActivityDetection(Pipeline):
         speech.uri = current_file['uri']
         return speech.to_annotation(generator='string', modality='speech')
 
-    def get_metric(self, parallel=False) -> DetectionErrorRate:
+
+    def get_metric(self, parallel=False) -> Union[DetectionErrorRate, DetectionPrecisionRecallFMeasure]:
         """Return new instance of detection error rate metric"""
-        return  DetectionErrorRate(collar=0.0,
-                                   skip_overlap=False,
-                                   parallel=parallel)
+
+        if self.fscore:
+            return DetectionPrecisionRecallFMeasure(collar=0.0,
+                                                    skip_overlap=False,
+                                                    parallel=parallel)
+
+        else:
+            return  DetectionErrorRate(collar=0.0,
+                                       skip_overlap=False,
+                                       parallel=parallel)
