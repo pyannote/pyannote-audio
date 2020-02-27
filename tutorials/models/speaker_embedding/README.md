@@ -25,7 +25,7 @@
 
 # End-to-end speaker embedding with `pyannote.audio`
 
-This tutorial teaches how to train, validate, and apply a speaker embedding neural network with [VoxCeleb](http://www.robots.ox.ac.uk/~vgg/data/voxceleb/) dataset. It assumes that you have already followed both the [data preparation](../../data_preparation) tutorial and the [VoxCeleb installation instructions](https://github.com/pyannote/pyannote-db-voxceleb). It should reproduce the result reported in the first line of Table 4 of [this introductory paper](https://arxiv.org/abs/1911.01255).
+This tutorial teaches how to train, validate, and apply a speaker embedding neural network with [VoxCeleb](http://www.robots.ox.ac.uk/~vgg/data/voxceleb/) dataset. It assumes that you have already followed both the [data preparation](../../data_preparation) tutorial and the [VoxCeleb installation instructions](https://github.com/pyannote/pyannote-db-voxceleb). 
 
 ## Table of contents
 - [Citation](#citation)
@@ -51,16 +51,6 @@ If you use `pyannote-audio` for speaker (or audio) neural embedding, please cite
 }
 ```
 
-```bibtex
-@inproceedings{Bredin2017,
-    author = {Herv\'{e} Bredin},
-    title = {{TristouNet: Triplet Loss for Speaker Turn Embedding}},
-    booktitle = {42nd IEEE International Conference on Acoustics, Speech and Signal Processing, ICASSP 2017},
-    year = {2017},
-    url = {http://arxiv.org/abs/1609.04301},
-}
-```
-
 ## Configuration
 ([↑up to table of contents](#table-of-contents))
 
@@ -71,34 +61,6 @@ $ export EXP_DIR=tutorials/models/speaker_embedding
 $ cat ${EXP_DIR}/config.yml
 ```
 ```yaml
-# A speaker embedding model is trained with triplet loss.
-# Here, training relies on 1s-long audio chunks, batches
-# of audio chunks from 48 different speakers x 3 chunks
-# per speaker, and saves model to disk every half (0.5)
-# day worth of audio.
-task:
-   name: TripletLoss
-   params:
-     metric: angular
-     clamp: sigmoid
-     margin: 0.0
-     duration: 1.000
-     sampling: all
-     per_fold: 48
-     per_label: 3
-     per_epoch: 0.5
-
-# Data augmentation is applied during training.
-# Here, it consists in additive noise from the
-# MUSAN database, with random signal-to-noise
-# ratio between 10 and 20 dB
-data_augmentation:
-   name: AddNoise
-   params:
-     snr_min: 10
-     snr_max: 20
-     collection: MUSAN.Collection.BackgroundNoise
-
 # Since we are training an end-to-end model, the
 # feature extraction step simply returns the raw
 # waveform.
@@ -107,47 +69,55 @@ feature_extraction:
    params:
       sample_rate: 16000
 
-# We use the PyanNet architecture in Figure 2 of
-# pyannote.audio introductory paper. More details
-# about the architecture and its parameters can be
-# found directly in PyanNet docstring.
+# add background noise and music from MUSAN
+data_augmentation:
+   name: pyannote.audio.augmentation.noise.AddNoise
+   params:
+     snr_min: 5
+     snr_max: 15
+     collection:
+       - MUSAN.Collection.BackgroundNoise
+       - MUSAN.Collection.Music
+
+# use SincTDNN architecture (basically an x-vector
+# but where filters are learned instead of being handcrafted)
 architecture:
-   name: pyannote.audio.models.PyanNet
+   name: pyannote.audio.models.SincTDNN
    params:
       sincnet:
          stride: [5, 1, 1]
          waveform_normalize: True
          instance_normalize: True
-      rnn:
-         unit: LSTM
-         hidden_size: 512
-         num_layers: 3
-         bias: True
-         dropout: 0
-         bidirectional: True
-         concatenate: False
-         pool: x-vector
-      ff:
-         hidden_size: [512, 512]
+      tdnn:
+         embedding_dim: 512
       embedding:
          batch_normalize: False
          unit_normalize: False
 
-# We use a constant learning rate that is determined
-# automagically at the start of training (0.1 is fine)
+# we use additive angular margin loss
+task:
+   name: AdditiveAngularMarginLoss
+   params:
+      margin: 0.05
+      s: 10
+      duration: 2.0   # train on 2s audio chunks
+      per_fold: 256   # number of speakers per batch
+      per_label: 1    # number of sample per speaker
+      per_epoch: 5    # one epoch = 5 days worth of audio
+
 scheduler:
    name: ConstantScheduler
    params:
-      learning_rate: auto
+      learning_rate: 0.01
 ```
 
 ## Training
 ([↑up to table of contents](#table-of-contents))
 
-The following command will train the network using the training subset of VoxCeleb1 database for 2000 epochs:
+The following command will train the network using the training subset of VoxCeleb2 database for 200 epochs:
 
 ```bash
-$ pyannote-audio emb train --subset=train --to=2000 --parallel=4 ${EXP_DIR} VoxCeleb.SpeakerVerification.VoxCeleb1
+$ pyannote-audio emb train --subset=train --to=250 --parallel=8 ${EXP_DIR} VoxCeleb.SpeakerVerification.VoxCeleb2
 ```
 
 This will create a bunch of files in `TRN_DIR` (defined below). One can also follow along the training process using [tensorboard](https://github.com/tensorflow/tensorboard):
@@ -165,9 +135,9 @@ To get a quick idea of how the network is doing on the development set, one can 
 
 ```bash
 $ export TRN_DIR=${EXP_DIR}/train/VoxCeleb.SpeakerVerification.VoxCeleb1.train
-$ pyannote-audio emb validate --subset=test --to=2000 --every=20 ${TRN_DIR} VoxCeleb.SpeakerDiarization.VoxCeleb1
+$ pyannote-audio emb validate --subset=test --to=250 --every=5 ${TRN_DIR} VoxCeleb.SpeakerDiarization.VoxCeleb1
 ```
-It can be run while the model is still training and evaluates the model every 20 epochs. This will create a bunch of files in `VAL_DIR` (defined below). 
+It can be run while the model is still training and evaluates the model every 5 epochs. This will create a bunch of files in `VAL_DIR` (defined below). 
 
 In practice, it is tuning a simple speaker verification experiment and stores the best hyper-parameter configuration on disk:
 
@@ -176,11 +146,15 @@ $ export VAL_DIR = ${TRN_DIR}/validate_equal_error_rate/VoxCeleb.SpeakerDiarizat
 $ cat ${VAL_DIR}/params.yml
 ```
 ```yaml
-epoch: 1891
-equal_error_rate: 0.0637
+epoch: 221
+equal_error_rate: 0.043624072110286335
 ```
 
+This model reaches 4.4% EER after 220 epochs (approximately 3 days of training).
+
 ![tensorboard screenshot](tb_validate.png)
+
+
 
 
 ## Application
@@ -189,12 +163,12 @@ equal_error_rate: 0.0637
 Now that we know how the model is doing, we can apply it on test files of the AMI database: 
 
 ```bash
-$ pyannote-audio emb apply --subset=test ${VAL_DIR} AMI.SpeakerDiarization.MixHeadset 
+$ pyannote-audio emb apply --step=0.1 --subset=test ${VAL_DIR} AMI.SpeakerDiarization.MixHeadset 
 ```
 
 Embeddings will be extracted in `${VAL_DIR}/apply/{BEST_EPOCH}`
 
-In the above example, embeddings are extracted every 250ms using a 1s sliding window. We can then use these extracted embeddings like this:
+In the above example, embeddings are extracted every 200ms (0.1 * 2s) using a 2s sliding window. We can then use these extracted embeddings like this:
 
 ```python
 # first test file of AMI protocol
