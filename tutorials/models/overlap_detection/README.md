@@ -147,26 +147,26 @@ To get a quick idea of how the network is doing on the development set, one can 
 
 ```bash
 $ export TRN_DIR=${EXP_DIR}/train/AMI.SpeakerDiarization.MixHeadset.train
-$ pyannote-audio ovl validate --subset=develop --to=1000 --every=20 ${TRN_DIR} AMI.SpeakerDiarization.MixHeadset
+$ pyannote-audio ovl validate --subset=develop --from=200 --to=1000 --every=100 ${TRN_DIR} AMI.SpeakerDiarization.MixHeadset
 ```
-It can be run while the model is still training and evaluates the model every 20 epochs. This will create a bunch of files in `VAL_DIR` (defined below). 
+It can be run while the model is still training and evaluates the model every 100 epochs. This will create a bunch of files in `VAL_DIR` (defined below). 
 
-In practice, it is tuning a simple overlapped speech detection pipeline and stores the best hyper-parameter configuration on disk:
+In practice, it is tuning a simple overlapped speech detection pipeline and stores the best hyper-parameter configuration on disk (i.e. the one that maximizes detection f-score):
 
 ```bash
 $ export VAL_DIR = ${TRN_DIR}/validate/AMI.SpeakerDiarization.MixHeadset.development
 $ cat ${VAL_DIR}/params.yml
 ```
 ```yaml
-epoch: xxx
+detection_fscore: 0.7778446845594343
+epoch: 800
 params:
   min_duration_off: 0.1
   min_duration_on: 0.1
-  offset: 0.xxx
-  onset: 0.xxx
+  offset: 0.4685761398070873
+  onset: 0.4685761398070873
   pad_offset: 0.0
   pad_onset: 0.0
-detection_fscore: 0.xxx
 ```
 
 See `pyannote.audio.pipeline.overlap_detection.OverlapDetection ` for details on the role of each parameter.
