@@ -150,11 +150,9 @@ epoch: 221
 equal_error_rate: 0.043624072110286335
 ```
 
-This model reaches 4.4% EER after 220 epochs (approximately 3 days of training).
+This model reaches 4.4% EER after 220 epochs (approximately 3 days of training). Note that this is obtained by simply using cosine distance between average embedding. This can be further reduced by using a different backend.
 
 ![tensorboard screenshot](tb_validate.png)
-
-
 
 
 ## Application
