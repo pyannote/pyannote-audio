@@ -32,6 +32,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from itertools import chain
 from .base import RepresentationLearning
+from .classification import Linear
+import warnings
 
 
 class CenterDistanceModule(nn.Module):
@@ -132,8 +134,8 @@ class CenterLoss(RepresentationLearning):
         """
 
         n_classes = len(self.specifications['y']['classes'])
-        self.classifier_ = nn.Linear(self.model.dimension,
-                                     n_classes, bias=False).to(self.device)
+        self.classifier_ = Linear(self.model.dimension,
+                                  n_classes, bias=False).to(self.device)
         self.center_dist_ = CenterDistanceModule(self.model.dimension,
                                                  n_classes).to(self.device)
 
@@ -146,11 +148,9 @@ class CenterLoss(RepresentationLearning):
         Returns
         -------
         success : bool
-            FIXME True if state was loaded successfully, False otherwise.
+            True if state was loaded successfully, False otherwise.
 
         """
-
-        # FIXME add support for pretrained model with different specs
 
         if model_pt is None:
             classifier_pt = self.CLASSIFIER_PT.format(
@@ -162,15 +162,25 @@ class CenterLoss(RepresentationLearning):
             classifier_pt = model_pt.with_suffix('.classifier.pt')
             centers_pt = model_pt.with_suffix('.centers.pt')
 
-        classifier_state = torch.load(
-            classifier_pt, map_location=lambda storage, loc: storage)
-        self.classifier_.load_state_dict(classifier_state)
+        try:
+            classifier_state = torch.load(
+                classifier_pt, map_location=lambda storage, loc: storage)
+            self.classifier_.load_state_dict(classifier_state)
 
-        centers_state = torch.load(
-            centers_pt, map_location=lambda storage, loc: storage)
-        self.center_dist_.load_state_dict(centers_state)
+            centers_state = torch.load(
+                centers_pt, map_location=lambda storage, loc: storage)
+            self.center_dist_.load_state_dict(centers_state)
 
-        return True
+            success = True
+        except Exception as e:
+            msg = (
+                f'Did not load classifier and center states (most likely because current '
+                f'training session uses a different training set than the one '
+                f'used for pre-training).')
+            warnings.warn(msg)
+            success = False
+
+        return success
 
     def save_more(self):
         """Save classifier and centers to disk"""
