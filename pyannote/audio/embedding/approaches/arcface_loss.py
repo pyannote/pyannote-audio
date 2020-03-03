@@ -104,6 +104,9 @@ class AdditiveAngularMarginLoss(Classification):
     ----------
     duration : float, optional
         Chunks duration, in seconds. Defaults to 1.
+    min_duration : float, optional
+        When provided, use chunks of random duration between `min_duration` and
+        `duration` for training. Defaults to using fixed duration chunks.
     per_turn : int, optional
         Number of chunks per speech turn. Defaults to 1.
         If per_turn is greater than one, embeddings of the same speech turn
@@ -131,6 +134,7 @@ class AdditiveAngularMarginLoss(Classification):
     """
 
     def __init__(self, duration: float = 1.0,
+                       min_duration: float = None,
                        per_turn: int = 1,
                        per_label: int = 1,
                        per_fold: int = 32,
@@ -140,6 +144,7 @@ class AdditiveAngularMarginLoss(Classification):
                        s: float = 7.0):
 
         super().__init__(duration=duration,
+                         min_duration=min_duration,
                          per_turn=per_turn,
                          per_label=per_label,
                          per_fold=per_fold,

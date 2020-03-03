@@ -47,6 +47,10 @@ class SpeechSegmentGenerator(BatchGenerator):
     subset : {'train', 'development', 'test'}
     duration : float, optional
         Chunks duration, in seconds. Defaults to 1.
+    min_duration : float, optional
+        When provided, generate chunks of random duration between `min_duration`
+        and `duration`. All chunks in a batch will still use the same duration.
+        Defaults to generating fixed duration chunks.
     per_turn : int, optional
         Number of chunks per speech turn. Defaults to 1.
     per_label : int, optional
@@ -67,6 +71,7 @@ class SpeechSegmentGenerator(BatchGenerator):
                        protocol,
                        subset='train',
                        duration: float = 1.,
+                       min_duration: float = None,
                        per_turn: int = 1,
                        per_label: int = 3,
                        per_fold: Optional[int] = None,
@@ -78,6 +83,7 @@ class SpeechSegmentGenerator(BatchGenerator):
         self.per_label = per_label
         self.per_fold = per_fold
         self.duration = duration
+        self.min_duration = duration if min_duration is None else min_duration
         self.label_min_duration = label_min_duration
         self.weighted_ = True
 
@@ -136,7 +142,7 @@ class SpeechSegmentGenerator(BatchGenerator):
                 # get all segments with current label
                 timeline = annotation.label_timeline(label)
 
-                # remove segments shorter than 'duration'
+                # remove segments shorter than maximum chunk duration
                 segments = [s for s in timeline
                               if s.duration > self.duration]
 
@@ -175,6 +181,13 @@ class SpeechSegmentGenerator(BatchGenerator):
 
         labels = list(self.data_)
 
+        # batch_counter counts samples in current batch.
+        # as soon as it reaches batch_size, a new random duration is selected
+        # so that the next batch will use a different chunk duration
+        batch_counter = 0
+        batch_size = self.batch_size
+        batch_duration = self.min_duration + np.random.rand() * (self.duration - self.min_duration)
+
         while True:
 
             # shuffle labels
@@ -205,15 +218,25 @@ class SpeechSegmentGenerator(BatchGenerator):
 
                     # choose per_turn chunk(s) at random
                     for chunk in itertools.islice(
-                        random_subsegment(segment, self.duration),
+                        random_subsegment(segment, batch_duration),
                         self.per_turn):
 
                         yield {
                             'X': self.feature_extraction.crop(
                                 files[i], chunk, mode='center',
-                                fixed=self.duration),
+                                fixed=batch_duration),
                             'y': self.segment_labels_.index(label),
                         }
+
+                        # increment number of samples in current batch
+                        batch_counter += 1
+
+                        # as soon as the batch is complete, a new random
+                        # duration is selected so that the next batch will use
+                        # a different chunk duration
+                        if batch_counter == batch_size:
+                            batch_counter = 0
+                            batch_duration = self.min_duration + np.random.rand() * (self.duration - self.min_duration)
 
     @property
     def batch_size(self):
@@ -228,7 +251,7 @@ class SpeechSegmentGenerator(BatchGenerator):
         duration_per_epoch = self.per_epoch * 24 * 60 * 60
 
         # (average) duration per batch
-        duration_per_batch = self.duration * self.batch_size
+        duration_per_batch = .5 * (self.min_duration + self.duration) * self.batch_size
 
         # number of batches per epoch
         return int(np.ceil(duration_per_epoch / duration_per_batch))
