@@ -300,7 +300,7 @@ def main():
     if arg['--gpu'] and device == 'cpu':
         msg = 'No GPU is available. Using CPU instead.'
         warnings.warn(msg)
-    if arg['--cpu'] and device == 'gpu':
+    if arg['--cpu'] and device == 'cuda':
         device = 'cpu'
 
     params['device'] = torch.device(device)
