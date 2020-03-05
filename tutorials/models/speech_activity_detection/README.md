@@ -38,7 +38,7 @@ This tutorial assumes that you have already followed the [data preparation](../.
 ## Citation
 ([↑up to table of contents](#table-of-contents))
 
-If you use `pyannote-audio` for speech activity detection, please cite the following paper:
+If you use `pyannote-audio` for speech activity detection, please cite the following papers:
 
 ```bibtex
 @inproceedings{Bredin2020,
@@ -131,7 +131,7 @@ scheduler:
 The following command will train the network using the training subset of AMI database for 200 epochs:
 
 ```bash
-$ pyannote-audio sad train --subset=train --gpu --to=200 --parallel=4 ${EXP_DIR} AMI.SpeakerDiarization.MixHeadset
+$ pyannote-audio sad train --subset=train --to=200 --parallel=4 ${EXP_DIR} AMI.SpeakerDiarization.MixHeadset
 ```
 
 This will create a bunch of files in `TRN_DIR` (defined below). One can also follow along the training process using [tensorboard](https://github.com/tensorflow/tensorboard):
@@ -149,24 +149,24 @@ To get a quick idea of how the network is doing on the development set, one can 
 
 ```bash
 $ export TRN_DIR=${EXP_DIR}/train/AMI.SpeakerDiarization.MixHeadset.train
-$ pyannote-audio sad validate --subset=develop --gpu --to=200 --every=10 ${TRN_DIR} AMI.SpeakerDiarization.MixHeadset
+$ pyannote-audio sad validate --subset=development --from=10 --to=200 --every=10 ${TRN_DIR} AMI.SpeakerDiarization.MixHeadset
 ```
 It can be run while the model is still training and evaluates the model every 10 epochs. This will create a bunch of files in `VAL_DIR` (defined below). 
 
-In practice, it tunes a simple speech activity detection pipeline every 10 epochs and stores the best hyper-parameter configuration on disk:
+In practice, it tunes a simple speech activity detection pipeline every 10 epochs and stores the best hyper-parameter configuration on disk (i.e. the one that maximizes detection f-score):
 
 ```bash
 $ export VAL_DIR = ${TRN_DIR}/validate/AMI.SpeakerDiarization.MixHeadset.development
 $ cat ${VAL_DIR}/params.yml
 ```
 ```yaml
-detection_error_rate: 0.058083631103952316
-epoch: 121
+detection_fscore: 0.9713032559713921
+epoch: 140
 params:
   min_duration_off: 0.1
   min_duration_on: 0.1
-  offset: 0.5218292976870024
-  onset: 0.5218292976870024
+  offset: 0.48012924491559134
+  onset: 0.48012924491559134
   pad_offset: 0.0
   pad_onset: 0.0
 ```
@@ -188,7 +188,7 @@ $ tensorboard --logdir=${EXP_DIR}
 Now that we know how the model is doing, we can apply it on test files of the AMI database: 
 
 ```bash
-$ pyannote-audio sad apply --subset=test --gpu ${VAL_DIR} AMI.SpeakerDiarization.MixHeadset 
+$ pyannote-audio sad apply --subset=test ${VAL_DIR} AMI.SpeakerDiarization.MixHeadset 
 ```
 
 Raw model output and speech activity detection results will be dumped into the following directory: `${VAL_DIR}/apply/{BEST_EPOCH}`.

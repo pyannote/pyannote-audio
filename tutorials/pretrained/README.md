@@ -35,11 +35,13 @@ import torch
 sad = torch.hub.load('pyannote/pyannote-audio', 'sad_ami')
 # speaker change detection model trained on AMI training set
 scd = torch.hub.load('pyannote/pyannote-audio', 'scd_ami')
-# overlapped speech detectoin model trained on AMI training set
+# overlapped speech detection model trained on AMI training set
 ovl = torch.hub.load('pyannote/pyannote-audio', 'ovl_ami')
 # speaker embedding model trained on VoxCeleb1
 emb = torch.hub.load('pyannote/pyannote-audio', 'emb_voxceleb')
 ```
+
+:warning: Until pretrained models are released officially, you should replace `'pyannote/pyannote-audio'` by `'pyannote/pyannote-audio:develop'`.
 
 We will apply those pretrained models on the first file of the `AMI` test subset.
 

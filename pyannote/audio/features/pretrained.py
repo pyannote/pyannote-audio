@@ -62,7 +62,7 @@ class Pretrained(FeatureExtraction):
 
     # TODO: add progress bar (at least for demo purposes)
 
-    def __init__(self, validate_dir: Union[Text, Path] = None,
+    def __init__(self, validate_dir: Path = None,
                        epoch: int = None,
                        augmentation: Optional[Augmentation] = None,
                        duration: float = None,
@@ -70,6 +70,15 @@ class Pretrained(FeatureExtraction):
                        batch_size: int = 32,
                        device: Optional[Union[Text, torch.device]] = None,
                        return_intermediate = None):
+
+        try:
+            validate_dir = Path(validate_dir)
+        except TypeError as e:
+            msg = (
+                f'"validate_dir" must be str, bytes or os.PathLike object, '
+                f'not {type(validate_dir).__name__}.'
+            )
+            raise TypeError(msg)
 
         self.validate_dir = validate_dir.expanduser().resolve(strict=True)
 

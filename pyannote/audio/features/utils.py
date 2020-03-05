@@ -125,7 +125,7 @@ def read_audio(current_file, sample_rate=None, mono=True):
     return y, sample_rate
 
 
-class RawAudio(object):
+class RawAudio:
     """Raw audio with on-the-fly data augmentation
 
     Parameters
@@ -141,7 +141,7 @@ class RawAudio(object):
     def __init__(self, sample_rate=None, mono=True,
                  augmentation=None):
 
-        super(RawAudio, self).__init__()
+        super().__init__()
         self.sample_rate = sample_rate
         self.mono = mono
 

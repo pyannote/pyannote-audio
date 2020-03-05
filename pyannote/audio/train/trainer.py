@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2018-2019 CNRS
+# Copyright (c) 2018-2020 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -38,6 +38,7 @@ import sys
 import yaml
 import torch
 import tempfile
+import warnings
 from itertools import chain
 from torch.nn import Module
 from torch.optim import Optimizer, SGD
@@ -50,7 +51,7 @@ from .schedulers import ConstantScheduler
 from .generator import BatchGenerator
 from .model import Model
 from ..utils.timeout import timeout
-from .generator import SmartBackground
+from ..utils.background import AdaptiveBackgroundGenerator
 
 
 ARBITRARY_LR = 0.1
@@ -70,7 +71,7 @@ class Trainer:
     MODEL_PT = '{train_dir}/weights/{epoch:04d}.pt'
     OPTIMIZER_PT = '{train_dir}/weights/{epoch:04d}.optimizer.pt'
 
-    def load_state(self, model_pt: Optional[Path] = None):
+    def load_state(self, model_pt: Optional[Path] = None) -> bool:
         """Load model and optimizer states from disk
 
         Parameters
@@ -78,6 +79,11 @@ class Trainer:
         model_pt : `Path`, optional
             Path to file containing model state.
             Defaults to guessing it from trainer status.
+
+        Returns
+        -------
+        success : bool
+            True if state was loaded successfully, False otherwise.
         """
 
         if model_pt is None:
@@ -90,20 +96,30 @@ class Trainer:
             _model_pt = model_pt
             optimizer_pt = model_pt.with_suffix('.optimizer.pt')
 
-
-
         model_state = torch.load(
             _model_pt, map_location=lambda storage, loc: storage)
         self.model_.load_state_dict(model_state)
 
-        optimizer_state = torch.load(
-            optimizer_pt, map_location=lambda storage, loc: storage)
-        self.optimizer_.load_state_dict(optimizer_state)
+        success = self.load_more(model_pt=model_pt)
 
-        self.load_more(model_pt=model_pt)
+        if success:
 
-    def load_more(self, model_pt=None):
-        """Called after model and optimizer states are loaded
+            try:
+                optimizer_state = torch.load(
+                    optimizer_pt, map_location=lambda storage, loc: storage)
+                self.optimizer_.load_state_dict(optimizer_state)
+            except Exception as e:
+                msg = (
+                    f'Did not load optimizer state (most likely because current '
+                    f'training session uses a different loss than the one used '
+                    f'for pre-training).')
+                warnings.warn(msg)
+
+        return success
+
+
+    def load_more(self, model_pt=None) -> bool:
+        """Called after model state is loaded
 
         This method can be overriden to load additional states.
         For instance, it can be used to load the state of a domain classifier
@@ -114,8 +130,13 @@ class Trainer:
         model_pt : `Path`, optional
             Path to file containing model state.
             Defaults to guessing it from trainer status.
+
+        Returns
+        -------
+        success : bool
+            True if state was loaded successfully, False otherwise.
         """
-        pass
+        return True
 
     def save_state(self):
         """Save model and optimizer states to disk"""
@@ -203,9 +224,8 @@ class Trainer:
         pass
 
     @property
-    def model(self):
+    def model(self) -> Model:
         return self.model_
-
 
     @property
     def optimizer(self):
@@ -216,15 +236,15 @@ class Trainer:
         return self.batch_generator_.specifications
 
     @property
-    def device(self):
+    def device(self) -> torch.device:
         return self.device_
 
     @property
-    def epoch(self):
+    def epoch(self) -> int:
         return self.epoch_
 
     @property
-    def batches_per_epoch(self):
+    def batches_per_epoch(self) -> int:
         return self.batches_per_epoch_
 
     def get_new_batch(self):
@@ -300,8 +320,8 @@ class Trainer:
 
         # BATCH GENERATOR
         self.batch_generator_ = batch_generator
-        sbg = SmartBackground(self.batch_generator_, n_jobs=n_jobs)
-        self.batches_ = iter(sbg)
+        self.batches_ = AdaptiveBackgroundGenerator(self.batch_generator_,
+                                                    n_jobs=n_jobs)
         self.batches_per_epoch_ = self.batch_generator_.batches_per_epoch
 
         # OPTIMIZER
@@ -352,13 +372,13 @@ class Trainer:
                 self.epoch_ = warm_start
 
                 # ... and load corresponding model if requested
-                self.load_state(model_pt=None)
+                success = self.load_state(model_pt=None)
 
         # when warm_start is a Path, it means that the user wants to
         # restart training from a pretrained model
         else:
             try:
-                self.load_state(model_pt=warm_start)
+                success = self.load_state(model_pt=warm_start)
 
             except Exception as e:
                 msg = (
@@ -376,6 +396,10 @@ class Trainer:
             specifications = dict(self.specifications)
             specifications['task'] = str(specifications['task'])
             yaml.dump(specifications, fp, default_flow_style=False)
+
+        # TODO in case success = False, one should freeze the main network for
+        # TODO a few epochs and train the "more" part alone first before
+        # TODO unfreezing everything. this could be done through a callback
 
         callbacks_ = []
 
@@ -435,4 +459,4 @@ class Trainer:
 
         callbacks.on_train_end(self)
 
-        sbg.deactivate()
+        self.batches_.deactivate()

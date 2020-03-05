@@ -47,6 +47,9 @@ class SpeechActivityDetection(BaseLabeling):
 
     Pipeline = SpeechActivityDetectionPipeline
 
+    def validation_criterion(self, protocol, **kwargs):
+        return f'detection_fscore'
+
     def validate_epoch(self,
                        epoch,
                        validation_data,
@@ -57,7 +60,6 @@ class SpeechActivityDetection(BaseLabeling):
                        step=0.25,
                        **kwargs):
 
-
         # compute (and store) SAD scores
         pretrained = Pretrained(validate_dir=self.validate_dir_,
                                 epoch=epoch,
@@ -67,10 +69,11 @@ class SpeechActivityDetection(BaseLabeling):
                                 device=device)
 
         for current_file in validation_data:
-            current_file['sad_scores'] = pretrained(current_file)
+            current_file['scores'] = pretrained(current_file)
 
         # pipeline
-        pipeline = self.Pipeline()
+        pipeline = self.Pipeline(scores="@scores",
+                                 fscore=True)
 
         def fun(threshold):
             pipeline.instantiate({'onset': threshold,
@@ -89,16 +92,16 @@ class SpeechActivityDetection(BaseLabeling):
                 for file in validation_data:
                     _ = validate(file)
 
-            return abs(metric)
+            return 1. - abs(metric)
 
         res = scipy.optimize.minimize_scalar(
             fun, bounds=(0., 1.), method='bounded', options={'maxiter': 10})
 
         threshold = res.x.item()
 
-        return {'metric': 'detection_error_rate',
-                'minimize': True,
-                'value': res.fun,
+        return {'metric': self.validation_criterion(None),
+                'minimize': False,
+                'value': float(1. - res.fun),
                 'pipeline': pipeline.instantiate({'onset': threshold,
                                                   'offset': threshold,
                                                   'min_duration_on': 0.100,

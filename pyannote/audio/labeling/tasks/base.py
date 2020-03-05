@@ -55,6 +55,10 @@ from pyannote.audio.train.generator import BatchGenerator
 
 from pyannote.audio.train.task import Task, TaskType, TaskOutput
 
+from pyannote.audio.train.model import Resolution
+from pyannote.audio.train.model import RESOLUTION_CHUNK
+from pyannote.audio.train.model import RESOLUTION_FRAME
+
 
 class LabelingTaskGenerator(BatchGenerator):
     """Base batch generator for various labeling tasks
@@ -107,11 +111,12 @@ class LabelingTaskGenerator(BatchGenerator):
 
     """
 
+
     def __init__(self,
                  feature_extraction: FeatureExtraction,
                  protocol: Protocol,
                  subset='train',
-                 resolution=None,
+                 resolution: Resolution = None,
                  alignment=None,
                  duration=3.2,
                  step=None,
@@ -124,18 +129,27 @@ class LabelingTaskGenerator(BatchGenerator):
 
         self.feature_extraction = feature_extraction
 
-        if resolution is None:
+        self.duration = duration
+
+        # TODO: update 'step' semantics for consistency
+        # TODO: should mean "ratio of duration"
+        if step is None:
+            step = duration
+        self.step = step
+
+        # TODO: create a reusable guess_resolution(self) function
+        # TODO: in pyannote.audio.train.model
+        if resolution in [None, RESOLUTION_FRAME]:
             resolution = self.feature_extraction.sliding_window
+        elif resolution == RESOLUTION_CHUNK:
+            resolution = SlidingWindow(duration=self.duration,
+                                       step=self.step)
         self.resolution = resolution
 
         if alignment is None:
             alignment = 'center'
         self.alignment = alignment
 
-        self.duration = duration
-        if step is None:
-            step = duration
-        self.step = step
         self.batch_size = batch_size
 
         self.exhaustive = exhaustive

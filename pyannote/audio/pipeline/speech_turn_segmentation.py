@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2018-2019 CNRS
+# Copyright (c) 2018-2020 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -28,6 +28,7 @@
 
 from typing import Optional
 from typing import Union
+from typing import Text
 from pathlib import Path
 
 from pyannote.core import Annotation
@@ -65,10 +66,15 @@ class SpeechTurnSegmentation(Pipeline):
 
     Parameters
     ----------
-    sad_scores : `Path` or 'oracle'
-        Path to precomputed speech activity detection scores.
-        Use 'oracle' to assume perfect speech activity detection.
-    scd_scores : `Path`
+    sad_scores : Text or Path or 'oracle', optional
+    scd_scores : Text or Path, optional
+        Describes how raw speech activity and speaker change detection scores
+        should be obtained. It can be either the name of a torch.hub model, or
+        the path to the output of the validation step of a model trained
+        locally, or the path to scores precomputed on disk. Defaults to
+        "@sad_scores" and "@scd_scores" respectively, indicating that protocol
+        files provide the scores in the corresponding "sad_scores" and
+        "scd_scores" keys. Use 'oracle' to assume perfect speech activity detection.
         Path to precomputed speaker change detection scores
     non_speech : `bool`
         Mark non-speech regions as speaker change. Defaults to True.
@@ -76,8 +82,8 @@ class SpeechTurnSegmentation(Pipeline):
         Target purity. Defaults to 0.95
     """
 
-    def __init__(self, sad_scores: Optional[Union[Path, str]] = None,
-                       scd_scores: Optional[Path] = None,
+    def __init__(self, sad_scores: Union[Text, Path] = None,
+                       scd_scores: Union[Text, Path] = None,
                        non_speech: Optional[bool] = True,
                        purity: Optional[float] = 0.95):
         super().__init__()

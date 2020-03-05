@@ -30,10 +30,12 @@ import warnings
 from functools import partial
 
 from pathlib import Path
+import shutil
 from typing import Text
 from typing import Dict
 import yaml
 
+import collections
 from pyannote.core.utils.helper import get_class_by_name
 from pyannote.database import FileFinder
 from pyannote.audio.features.utils import get_audio_duration
@@ -41,9 +43,21 @@ from pyannote.audio.train.task import Task
 
 
 
+
+
+def merge_cfg(pretrained_cfg, cfg):
+    for k, v in cfg.items():
+        if isinstance(v, collections.abc.Mapping):
+            pretrained_cfg[k] = merge_cfg(pretrained_cfg.get(k, {}), v)
+        else:
+            pretrained_cfg[k] = v
+    return pretrained_cfg
+
+
 def load_config(config_yml: Path,
                 training: bool = False,
-                config_default_module: Text = None) -> Dict:
+                config_default_module: Text = None,
+                pretrained_config_yml: Path = None) -> Dict:
     """
 
     Returns
@@ -59,11 +73,35 @@ def load_config(config_yml: Path,
         ['get_model_from_specs']
         ['model_resolution']
         ['model_alignment']
-
     """
 
-    with open(config_yml, 'r') as fp:
-        cfg = yaml.load(fp, Loader=yaml.SafeLoader)
+    # load pretrained model configuration
+    pretrained_cfg = dict()
+    if pretrained_config_yml is not None:
+        with open(pretrained_config_yml, 'r') as fp:
+            pretrained_cfg = yaml.load(fp, Loader=yaml.SafeLoader)
+
+    # load configuration or complain it's missing
+    cfg = dict()
+    if config_yml.exists():
+        with open(config_yml, 'r') as fp:
+            cfg = yaml.load(fp, Loader=yaml.SafeLoader)
+
+        # backup user-provided config because it will be updated
+        if pretrained_config_yml is not None:
+            shutil.copy(config_yml, config_yml.parent / 'backup+config.yml')
+
+    elif pretrained_config_yml is None:
+        msg = f'{config_yml} configuration file is missing.'
+        raise FileNotFoundError(msg)
+
+    # override pretrained model config with user-provided config
+    cfg = merge_cfg(pretrained_cfg, cfg)
+
+    # save (updated) config to disk
+    if pretrained_config_yml is not None:
+        with open(config_yml, 'w') as fp:
+            yaml.dump(cfg, fp, default_flow_style=False)
 
     # preprocessors
     preprocessors = dict()

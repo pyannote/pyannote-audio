@@ -1,68 +1,43 @@
-# A speaker embedding model is trained with triplet loss.
-# Here, training relies on 1s-long audio chunks, batches
-# of audio chunks from 48 different speakers x 3 chunks
-# per speaker, and saves model to disk every half (0.5)
-# day worth of audio.
-task:
-   name: TripletLoss
-   params:
-     metric: angular
-     clamp: sigmoid
-     margin: 0.0
-     duration: 1.000
-     sampling: all
-     per_fold: 48
-     per_label: 3
-     per_epoch: 0.5
-
-# Data augmentation is applied during training.
-# Here, it consists in additive noise from the
-# MUSAN database, with random signal-to-noise
-# ratio between 10 and 20 dB
-data_augmentation:
-   name: AddNoise
-   params:
-     snr_min: 10
-     snr_max: 20
-     collection: MUSAN.Collection.BackgroundNoise
-
-# Since we are training an end-to-end model, the
-# feature extraction step simply returns the raw
-# waveform.
 feature_extraction:
    name: pyannote.audio.features.RawAudio
    params:
       sample_rate: 16000
 
-# We use the PyanNet architecture in Figure 2 of
-# pyannote.audio introductory paper. More details
-# about the architecture and its parameters can be
-# found directly in PyanNet docstring.
+data_augmentation:
+   name: pyannote.audio.augmentation.noise.AddNoise
+   params:
+     snr_min: 5
+     snr_max: 15
+     collection:
+       - MUSAN.Collection.BackgroundNoise
+       - MUSAN.Collection.Music
+
 architecture:
-   name: pyannote.audio.models.PyanNet
+   name: pyannote.audio.models.SincTDNN
    params:
       sincnet:
          stride: [5, 1, 1]
          waveform_normalize: True
          instance_normalize: True
-      rnn:
-         unit: LSTM
-         hidden_size: 512
-         num_layers: 3
-         bias: True
-         dropout: 0
-         bidirectional: True
-         concatenate: False
-         pool: x-vector
-      ff:
-         hidden_size: [512, 512]
+      tdnn:
+         embedding_dim: 512
       embedding:
          batch_normalize: False
          unit_normalize: False
 
-# We use a constant learning rate that is determined
-# automagically at the start of training (0.1 is fine)
+task:
+   name: AdditiveAngularMarginLoss
+   params:
+      margin: 0.05
+      s: 10
+      duration: 2.0
+      per_fold: 256
+      per_label: 1
+      per_epoch: 5
+      per_turn: 1
+      label_min_duration: 30
+
 scheduler:
    name: ConstantScheduler
    params:
-      learning_rate: auto
+      learning_rate: 0.01

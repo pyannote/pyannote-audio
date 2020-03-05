@@ -41,7 +41,7 @@ from librosa.util import valid_audio
 from librosa.util.exceptions import ParameterError
 
 
-class FeatureExtraction(object):
+class FeatureExtraction:
     """Base class for feature extraction
 
     Parameters

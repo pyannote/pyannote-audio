@@ -218,7 +218,7 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
 
         return self.domain_classifier_.parameters()
 
-    def load_more(self, model_pt=None):
+    def load_more(self, model_pt=None) -> bool:
         """Load classifier from disk"""
 
         if model_pt is None:
@@ -230,6 +230,9 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
         domain_classifier_state = torch.load(
             domain_pt, map_location=lambda storage, loc: storage)
         self.domain_classifier_.load_state_dict(domain_classifier_state)
+
+        # FIXME add support for different domains
+        return True
 
     def save_more(self):
         """Save domain classifier to disk"""

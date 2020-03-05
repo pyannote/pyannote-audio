@@ -40,8 +40,7 @@ Documentation is a work in progress and is scheduled to be ready by end of April
   * [Speaker change detection](tutorials/models/speaker_change_detection)
   * [Overlapped speech detection](tutorials/models/overlap_detection)
   * [Speaker embedding](tutorials/models/speaker_embedding)
-* Fine-tuning pretrained models to your own data
-  * TODO
+* [Fine-tune pretrained models to your own data](tutorials/finetune)
 * Tune pipelines on your own data
   * [Speech activity detection pipeline](tutorials/pipelines/speech_activity_detection)
   * [Speaker diarization pipeline](tutorials/pipelines/speaker_diarization)

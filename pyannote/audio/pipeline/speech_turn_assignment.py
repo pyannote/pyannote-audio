@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2017-2019 CNRS
+# Copyright (c) 2017-2020 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -28,6 +28,8 @@
 
 
 from typing import Optional
+from typing import Union
+from typing import Text
 from pathlib import Path
 import numpy as np
 
@@ -38,24 +40,32 @@ from .utils import assert_int_labels
 from .utils import assert_string_labels
 from ..features import Precomputed
 
+from pyannote.audio.utils.path import Pre___ed
+
 
 class SpeechTurnClosestAssignment(Pipeline):
     """Assign speech turn to closest cluster
 
     Parameters
     ----------
-    embedding : `Path
-        Path to precomputed embeddings.
+    embedding : Text or Path, optional
+        Describes how raw speaker embeddings should be obtained. It can be
+        either the name of a torch.hub model, or the path to the output of the
+        validation step of a model trained locally, or the path to embeddings
+        precomputed on disk. Defaults to "@emb" that indicates that protocol
+        files provide the embeddings in the "emb" key.
     metric : {'euclidean', 'cosine', 'angular'}, optional
         Metric used for comparing embeddings. Defaults to 'cosine'.
     """
 
-    def __init__(self, embedding: Optional[Path] = None,
+    def __init__(self, embedding: Union[Path, Text] = None,
                        metric: Optional[str] = 'cosine'):
         super().__init__()
 
+        if embedding is None:
+            embedding = "@emb"
         self.embedding = embedding
-        self.precomputed_ = Precomputed(self.embedding)
+        self._embedding = Pre___ed(self.embedding)
 
         self.metric = metric
 
@@ -84,7 +94,7 @@ class SpeechTurnClosestAssignment(Pipeline):
         assert_string_labels(targets, 'targets')
         assert_int_labels(speech_turns, 'speech_turns')
 
-        embedding = self.precomputed_(current_file)
+        embedding = self._embedding(current_file)
 
         # gather targets embedding
         labels = targets.labels()

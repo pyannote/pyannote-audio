@@ -1,7 +1,8 @@
 # A speaker change detection model is trained.
 # Here, training relies on 2s-long audio chunks,
 # batches of 64 audio chunks, and saves model to
-# disk every one (1) day worth of audio.task:
+# disk every one (1) day worth of audio.
+task:
    name: SpeakerChangeDetection
    params:
       duration: 2.0

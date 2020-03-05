@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2019 CNRS
+# Copyright (c) 2019-2020 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -32,9 +32,9 @@ Neural building blocks for speaker diarization
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Usage:
-  pyannote-audio (sad | scd | ovl | emb | dom) train    [options] <root>     <protocol>
-  pyannote-audio (sad | scd | ovl | emb | dom) validate [options] <train>    <protocol>
-  pyannote-audio (sad | scd | ovl | emb | dom) apply    [options] <validate> <protocol>
+  pyannote-audio (sad | scd | ovl | emb | dom) train    [--cpu | --gpu] [options] <root>     <protocol>
+  pyannote-audio (sad | scd | ovl | emb | dom) validate [--cpu | --gpu] [options] <train>    <protocol>
+  pyannote-audio (sad | scd | ovl | emb | dom) apply    [--cpu | --gpu] [options] <validate> <protocol>
   pyannote-audio -h | --help
   pyannote-audio --version
 
@@ -57,7 +57,7 @@ for the following blocks of a speaker diarization pipeline:
 Running a complete speech activity detection experiment on the provided
 "debug" dataset would go like this:
 
-    * Blah balh
+    * Run experiment on this pyannote.database protocol
       $ export DATABASE=Debug.SpeakerDiarization.Debug
 
     * This directory will contain experiments artifacts:
@@ -134,6 +134,13 @@ Configuration file <root>/config.yml
     callbacks:
     ...................................................................
 
+    File <root>/config.yml is mandatory, unless option --pretrained is used.
+
+    When fine-tuning a model with option --pretrained=<model>, one can omit it
+    and the original <model> configuration file is used instead. If (a possibly
+    partial) <root>/config.yml file is provided anyway, it is used to override
+    <model> configuration file.
+
 Tensorboard support
 ~~~~~~~~~~~~~~~~~~~
 
@@ -147,7 +154,8 @@ Common options
 ~~~~~~~~~~~~~~
 
   <root>                  Experiment root directory. Should contain config.yml
-                          configuration file.
+                          configuration file, unless --pretrained option is
+                          used (for which config.yml is optional).
 
   <protocol>              Name of protocol to use for training, validation, or
                           inference. Have a look at pyannote.database
@@ -169,7 +177,17 @@ Common options
                           "test") for strict enforcement of machine learning
                           good practices.
 
-  --gpu                   Run on GPUs. Defaults to using CPUs.
+  --gpu                   Run on GPU. When multiple GPUs are available, use
+                          CUDA_AVAILABLE_DEVICES environment variable to force
+                          using a specific one. Defaults to using CPU if no GPU
+                          is available.
+
+  --cpu                   Run on CPU. Defaults to using GPU when available.
+
+  --debug                 Run using PyTorch's anomaly detection. This will throw
+                          an error if a NaN value is produced, and the stacktrace
+                          will point to the origin of it. This option can
+                          considerably slow execution.
 
   --from=<epoch>          Start training (resp. validating) at epoch <epoch>.
                           Use --from=last to start from last available epoch at
@@ -218,34 +236,31 @@ Validation options
 
   --evergreen             Prioritize validation of most recent epoch.
 
-  For speaker change detection, validation consists in looking for the value of
-  the peak detection threshold that maximizes segmentation coverage, given that
-  segmentation purity is greater than a target value:
+  For speech activity and overlapped speech detection, validation consists in
+  looking for the value of the detection threshold that maximizes the f-score
+  of recall and precision.
 
-  --purity=<value>        Set target purity [default: 0.9].
+  For speaker change detection, validation consists in looking for the value of
+  the peak detection threshold that maximizes the f-score of purity and
+  coverage:
 
   --diarization           Use diarization purity and coverage instead of
-                          segmentation purity and coverage.
+                          (default) segmentation purity and coverage.
 
-  For overlapped speech detection, validation consists in looking for the value
-  of the detection threshold that maximizes recall, given that precision is
-  greater than a target value:
+  For speaker embedding and verification protocols, validation runs the actual
+  speaker verification experiment (representing each recording by its average
+  embedding) and reports equal error rate.
 
-  --precision=<value>     Set target precision [default: 0.8].
-
-  For speaker embedding,
-    * validation of speaker verification protocols runs the actual speaker
-      verification experiment (representing each recording by its average
-      embedding) and reports equal error rate.
-    * validation of speaker diarization protocols runs a speaker diarization
-      pipeline based on oracle segmentation and "median-linkage" agglomerative
-      clustering of speech turns (represented by their average embedding), and
-      looks for the threshold that maximizes coverage, given that purity is
-      greater than a target value.
+  For speaker embedding and diarization protocols, validation runs a speaker
+  diarization pipeline based on oracle segmentation and "pool-linkage"
+  agglomerative clustering of speech turns (represented by their average
+  embedding), and looks for the threshold that maximizes the f-score of purity
+  and coverage.
 
 """
 
 import sys
+import warnings
 from docopt import docopt
 from pathlib import Path
 import multiprocessing
@@ -281,11 +296,22 @@ def main():
     elif arg['dom']:
         Application = DomainClassification
 
-    params['device'] = torch.device('cuda') if arg['--gpu'] else \
-                       torch.device('cpu')
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    if arg['--gpu'] and device == 'cpu':
+        msg = 'No GPU is available. Using CPU instead.'
+        warnings.warn(msg)
+    if arg['--cpu'] and device == 'cuda':
+        device = 'cpu'
+
+    params['device'] = torch.device(device)
 
     protocol = arg['<protocol>']
     subset = arg['--subset']
+
+    if arg['--debug']:
+        msg = 'Debug mode is enabled, this option might slow execution considerably.'
+        warnings.warn(msg, RuntimeWarning)
+        torch.autograd.set_detect_anomaly(True)
 
     n_jobs = arg['--parallel']
     if n_jobs is None:
@@ -293,8 +319,6 @@ def main():
     params['n_jobs'] = int(n_jobs)
 
     if arg['train']:
-        root_dir = Path(arg['<root>']).expanduser().resolve(strict=True)
-        app = Application(root_dir, training=True)
 
         params['subset'] = 'train' if subset is None else subset
 
@@ -305,6 +329,7 @@ def main():
 
         # or start from pretrained model
         pretrained = arg['--pretrained']
+        pretrained_config_yml = None
         if pretrained is not None:
 
             # start from an existing model checkpoint
@@ -325,11 +350,16 @@ def main():
                         f'The following exception was raised:\n\n{e}\n\n')
                     sys.exit(msg)
 
+            pretrained_config_yml = warm_start.parents[3] / 'config.yml'
+
         params['warm_start'] = warm_start
 
         # stop training at this epoch (defaults to never stop)
         params['epochs'] = int(arg['--to'])
 
+        root_dir = Path(arg['<root>']).expanduser().resolve(strict=True)
+        app = Application(root_dir, training=True,
+                          pretrained_config_yml=pretrained_config_yml)
         app.train(protocol, **params)
 
     if arg['validate']:
@@ -353,9 +383,7 @@ def main():
         params['chronological'] = not arg['--evergreen']
         params['batch_size'] = int(arg['--batch'])
 
-        params['purity'] = float(arg['--purity'])
         params['diarization'] = arg['--diarization']
-        params['precision'] = float(arg['--precision'])
 
         duration = arg['--duration']
         if duration is None:

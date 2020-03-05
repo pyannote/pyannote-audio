@@ -51,7 +51,7 @@ class Precomputed(object):
     root_dir : `str`
         Path to directory where precomputed features are stored.
     use_memmap : `bool`, optional
-        Defaults to True.
+        Defaults to False.
     sliding_window : `SlidingWindow`, optional
         Sliding window used for feature extraction. This is not used when
         `root_dir` already exists and contains `metadata.yml`.
@@ -74,7 +74,7 @@ class Precomputed(object):
         path = '{root_dir}/{uri}.npy'.format(root_dir=self.root_dir, uri=uri)
         return path
 
-    def __init__(self, root_dir=None, use_memmap=True,
+    def __init__(self, root_dir=None, use_memmap=False,
                  sliding_window=None, dimension=None, classes=None,
                  augmentation=None):
 

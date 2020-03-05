@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2019 CNRS
+# Copyright (c) 2019-2020 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -26,15 +26,93 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
-import warnings
 import torch
 import torch.nn.functional as F
-from torch.nn.utils.rnn import pack_sequence
 from pyannote.audio.train.trainer import Trainer
 import numpy as np
 
+from typing import Optional
+from pyannote.audio.embedding.generators import SpeechSegmentGenerator
+from pyannote.audio.features import FeatureExtraction
+from pyannote.database.protocol.protocol import Protocol
 
-class EmbeddingApproach(Trainer):
+
+class RepresentationLearning(Trainer):
+    """
+
+    Parameters
+    ----------
+    duration : float, optional
+        Chunks duration, in seconds. Defaults to 1.
+    min_duration : float, optional
+        When provided, use chunks of random duration between `min_duration` and
+        `duration` for training. Defaults to using fixed duration chunks.
+    per_turn : int, optional
+        Number of chunks per speech turn. Defaults to 1.
+        If per_turn is greater than one, embeddings of the same speech turn
+        are averaged before classification. The intuition is that it might
+        help learn embeddings meant to be averaged/summed.
+    per_label : `int`, optional
+        Number of sequences per speaker in each batch. Defaults to 1.
+    per_fold : `int`, optional
+        Number of different speakers per batch. Defaults to 32.
+    per_epoch : `float`, optional
+        Force total audio duration per epoch, in days.
+        Defaults to total duration of protocol subset.
+    label_min_duration : `float`, optional
+        Remove speakers with less than that many seconds of speech.
+        Defaults to 0 (i.e. keep them all).
+    """
+
+    def __init__(self,
+                 duration: float = 1.0,
+                 min_duration: float = None,
+                 per_turn: int = 1,
+                 per_label: int = 1,
+                 per_fold: Optional[int] = None,
+                 per_epoch: Optional[float] = None,
+                 label_min_duration: float = 0.,
+    ):
+
+        super().__init__()
+        self.duration = duration
+        self.min_duration = min_duration
+        self.per_turn = per_turn
+        self.per_label = per_label
+        self.per_fold = per_fold
+        self.per_epoch = per_epoch
+        self.label_min_duration = label_min_duration
+
+    def get_batch_generator(self,
+                            feature_extraction: FeatureExtraction,
+                            protocol: Protocol,
+                            subset: str = 'train',
+                            **kwargs
+    ):
+        """Get batch generator
+
+        Parameters
+        ----------
+        feature_extraction : `FeatureExtraction`
+        protocol : `Protocol`
+        subset : {'train', 'development', 'test'}, optional
+
+        Returns
+        -------
+        generator : `SpeechSegmentGenerator`
+        """
+
+        return SpeechSegmentGenerator(
+            feature_extraction,
+            protocol,
+            subset=subset,
+            duration=self.duration,
+            min_duration=self.min_duration,
+            per_turn=self.per_turn,
+            per_label=self.per_label,
+            per_fold=self.per_fold,
+            per_epoch=self.per_epoch,
+            label_min_duration=self.label_min_duration)
 
     @property
     def max_distance(self):
@@ -76,68 +154,39 @@ class EmbeddingApproach(Trainer):
                                           -1 + 1e-12,
                                           1 - 1e-12))
 
-    def forward(self, batch):
-        """Forward pass on current batch
+    def embed(self, batch):
+        """Extract embeddings (and aggregate per turn)
 
         Parameters
         ----------
         batch : `dict`
-            ['X'] (`list`of `numpy.ndarray`)
+            ['X'] (batch_size, n_samples, n_features) `np.ndarray`
+            ['y'] (batch_size, ) `np.ndarray`
 
         Returns
         -------
-        fX : `torch.Tensor`
-            self.model_(batch['X'])
+        fX : (batch_size / per_turn, n_dimensions) `torch.Tensor`
+        y : (batch_size / per_turn, ) `np.ndarray`
         """
 
-        lengths = [len(x) for x in batch['X']]
-        variable_lengths = len(set(lengths)) > 1
+        X = torch.tensor(batch['X'],
+                         dtype=torch.float32,
+                         device=self.device_)
+        fX = self.model_(X)
 
-        # if sequences have variable lengths
-        if variable_lengths:
+        if self.per_turn > 1:
+            # TODO. add support for other aggregation functions, e.g. replacing
+            # mean by product may encourage sparse representation
+            agg_fX = fX.view(self.per_fold * self.per_label,
+                             self.per_turn, -1).mean(axis=1)
 
-            # TODO: use new pytorch feature that handle sorting automatically
+            agg_y = batch['y'][::self.per_turn]
 
-            # sort them in order of length
-            _, sort = torch.sort(torch.tensor(lengths), descending=True)
-            _, unsort = torch.sort(sort)
-            sequences = [torch.tensor(batch['X'][i],
-                                      dtype=torch.float32,
-                                      device=self.device_) for i in sort]
+        else:
+            agg_fX = fX
+            agg_y = batch['y']
 
-            # pack them if model supports PackedSequences
-            if getattr(self.model_, 'supports_packed', False):
-                batch['X'] = pack_sequence(sequences)
-                fX = self.model_(batch['X'])
-
-            # process them separately if model does not support PackedSequence
-            else:
-                try:
-                    fX = torch.cat([self.model_(x.unsqueeze(0))
-                                    for x in sequences])
-                    msg = (
-                        'Model does not support variable lengths batch, '
-                        'so we are processing sequences separately...'
-                    )
-                    warnings.warn(msg)
-
-                except ValueError as e:
-                    min_length = min(lengths)
-                    fX = self.model_(torch.stack([x[:min_length]
-                                                  for x in sequences]))
-                    msg = (
-                        'Model does not support variable lengths batch, '
-                        'so we cropped them all to the shortest one.'
-                    )
-                    warnings.warn(msg)
-
-            return fX[unsort]
-
-        # if sequences share the same length
-        batch['X'] = torch.tensor(np.stack(batch['X']),
-                                  dtype=torch.float32,
-                                  device=self.device_)
-        return self.model_(batch['X'])
+        return agg_fX, agg_y
 
     def to_numpy(self, tensor):
         """Convert torch.Tensor to numpy array"""

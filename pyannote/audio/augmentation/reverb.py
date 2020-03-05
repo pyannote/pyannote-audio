@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2019 CNRS
+# Copyright (c) 2019-2020 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -26,6 +26,7 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
+
 from typing import Tuple
 from typing import Optional
 from .utils import NoiseCollection
@@ -34,7 +35,8 @@ from .base import Augmentation
 from .utils import Noise
 import pyroomacoustics as pra
 import numpy as np
-
+import threading
+import collections
 
 normalize = lambda wav: wav / (np.sqrt(np.mean(wav ** 2)) + 1e-8)
 
@@ -50,7 +52,7 @@ class Reverb(Augmentation):
     width : (float, float), optional
         Minimum and maximum values for room width (in meters).
         Defaults to (1.0, 10.0).
-    heigth : (float, float), optional
+    height : (float, float), optional
         Minimum and maximum values for room heigth (in meters).
         Defaults to (2.0, 5.0).
     absorption : (float, float), optional
@@ -64,7 +66,6 @@ class Reverb(Augmentation):
         Defaults to (5.0, 15.0)
 
     """
-
 
     def __init__(self,
                  depth: Tuple[float, float] = (2.0, 10.0),
@@ -86,16 +87,17 @@ class Reverb(Augmentation):
         self.snr = snr
         self.noise_ = Noise(collection=self.noise)
 
+        self.n_rooms_ = 128
+        self.new_rooms_prob_ = 0.001
+        self.main_lock_ = threading.Lock()
+        self.rooms_ = collections.deque(maxlen=self.n_rooms_)
+        self.room_lock_ = [threading.Lock() for _ in range(self.n_rooms_)]
+
     @staticmethod
     def random(m: float, M: float):
         return (M - m) * np.random.random_sample() + m
 
-    def __call__(self,
-                 original: np.ndarray,
-                 sample_rate: int) -> np.ndarray:
-
-        original = normalize(original).squeeze()
-        n_samples = len(original)
+    def new_room(self, sample_rate: int):
 
         # generate a room at random
         depth = self.random(*self.depth)
@@ -107,39 +109,67 @@ class Reverb(Augmentation):
                            absorption=absorption,
                            max_order=self.max_order_)
 
-        # play the original audio chunk at a random location within the room
-        source = [self.random(0, depth),
-                  self.random(0, width),
-                  self.random(0, height)]
-        room.add_source(source,
-                        signal=original,
-                        delay=0.)
+        # play the original audio chunk at a random location
+        original = [self.random(0, depth),
+                    self.random(0, width),
+                    self.random(0, height)]
+        room.add_source(original)
 
-        # generate noise with random SNR
-        noise = self.noise_(n_samples, sample_rate)
-        snr = self.random(*self.snr)
-        alpha = np.exp(-np.log(10) * snr / 20)
-        noise *= alpha
+        # play the noise audio chunk at a random location
+        noise = [self.random(0, depth),
+                 self.random(0, width),
+                 self.random(0, height)]
+        room.add_source(noise)
 
-        # play noise at a random location within the room
-        noise_source = [self.random(0, depth),
-                        self.random(0, width),
-                        self.random(0, height)]
-        room.add_source(noise_source,
-                        signal=noise.squeeze(),
-                        delay=0.)
-
-        # place the microphone at a random location within the room
+        # place the microphone at a random location
         microphone = [self.random(0, depth),
                       self.random(0, width),
                       self.random(0, height)]
         room.add_microphone_array(
             pra.MicrophoneArray(np.c_[microphone, microphone], sample_rate))
 
-        # create the Room Impulse Response (RIR)
         room.compute_rir()
 
-        # simulate sound propagation
-        room.simulate()
+        return room
 
-        return room.mic_array.signals[0,:n_samples, np.newaxis]
+    def __call__(self,
+                 original: np.ndarray,
+                 sample_rate: int) -> np.ndarray:
+
+        with self.main_lock_:
+
+            # initialize rooms (with 2 sources and 1 microphone)
+            while len(self.rooms_) < self.n_rooms_:
+                room = self.new_room(sample_rate)
+                self.rooms_.append(room)
+
+            # create new room with probability new_rooms_prob_
+            if np.random.rand() > 1. - self.new_rooms_prob_:
+                room = self.new_room(sample_rate)
+                self.rooms_.append(room)
+
+            # choose one room at random
+            index = np.random.choice(self.n_rooms_)
+
+        # lock chosen room to ensure room.sources are not updated concurrently
+        with self.room_lock_[index]:
+
+            room = self.rooms_[index]
+
+            # play normalized original audio chunk at source #1
+            n_samples = len(original)
+            original = normalize(original).squeeze()
+            room.sources[0].add_signal(original)
+
+            # generate noise with random SNR
+            noise = self.noise_(n_samples, sample_rate).squeeze()
+            snr = self.random(*self.snr)
+            alpha = np.exp(-np.log(10) * snr / 20)
+            noise *= alpha
+
+            # play noise at source #2
+            room.sources[1].add_signal(noise)
+
+            # simulate room and return microphone signal
+            room.simulate()
+            return room.mic_array.signals[0,:n_samples, np.newaxis]

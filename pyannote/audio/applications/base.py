@@ -127,7 +127,8 @@ class Application:
         return app
 
     def __init__(self, experiment_dir: str,
-                       training: bool = False):
+                       training: bool = False,
+                       pretrained_config_yml: Path = None):
         """
 
         Parameters
@@ -135,6 +136,7 @@ class Application:
         experiment_dir : Path
         training : boolean, optional
             When False, data augmentation is disabled.
+        pretrained_config_yml : Path, optional
         """
 
         self.experiment_dir = experiment_dir
@@ -143,9 +145,11 @@ class Application:
         config_yml = self.CONFIG_YML.format(experiment_dir=self.experiment_dir)
         config_default_module = getattr(self, 'config_default_module',
                                         'pyannote.audio.labeling.tasks')
+
         config = load_config(Path(config_yml),
                              training=training,
-                             config_default_module=config_default_module)
+                             config_default_module=config_default_module,
+                             pretrained_config_yml=pretrained_config_yml)
 
         for key, value in config.items():
             setattr(self, f'{key}_', value)

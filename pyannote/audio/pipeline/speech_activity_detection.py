@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2018-2019 CNRS
+# Copyright (c) 2018-2020 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -26,9 +26,14 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
+"""Speech activity detection pipelines"""
+
 from typing import Optional
+from typing import Union
+from typing import Text
 from pathlib import Path
 import numpy as np
+import warnings
 
 from pyannote.pipeline import Pipeline
 from pyannote.pipeline.parameter import Uniform
@@ -40,6 +45,8 @@ from pyannote.audio.utils.signal import Binarize
 from pyannote.audio.features import Precomputed
 
 from pyannote.metrics.detection import DetectionErrorRate
+from pyannote.metrics.detection import DetectionPrecisionRecallFMeasure
+from pyannote.audio.utils.path import Pre___ed
 
 
 class OracleSpeechActivityDetection(Pipeline):
@@ -68,8 +75,15 @@ class SpeechActivityDetection(Pipeline):
 
     Parameters
     ----------
-    scores : `Path`, optional
-        Path to precomputed scores on disk.
+    scores : Text or Path, optional
+        Describes how raw speech activity detection scores should be obtained.
+        It can be either the name of a torch.hub model, or the path to the
+        output of the validation step of a model trained locally, or the path
+        to scores precomputed on disk. Defaults to "@sad_scores" that indicates
+        that protocol files provide the scores in the "sad_scores" key.
+    fscore : bool, optional
+        Optimize (precision/recall) fscore. Defaults to optimizing detection
+        error rate.
 
     Hyper-parameters
     ----------------
@@ -81,12 +95,16 @@ class SpeechActivityDetection(Pipeline):
         Padding duration.
     """
 
-    def __init__(self, scores: Optional[Path] = None):
+    def __init__(self, scores: Union[Text, Path] = None,
+                       fscore: bool = False):
         super().__init__()
 
+        if scores is None:
+            scores = "@sad_scores"
         self.scores = scores
-        if self.scores is not None:
-            self._precomputed = Precomputed(self.scores)
+        self._scores = Pre___ed(self.scores)
+
+        self.fscore = fscore
 
         # hyper-parameters
         self.onset = Uniform(0., 1.)
@@ -122,10 +140,7 @@ class SpeechActivityDetection(Pipeline):
             Speech regions.
         """
 
-        # precomputed SAD scores
-        sad_scores = current_file.get('sad_scores')
-        if sad_scores is None:
-            sad_scores = self._precomputed(current_file)
+        sad_scores = self._scores(current_file)
 
         # if this check has not been done yet, do it once and for all
         if not hasattr(self, "log_scale_"):
@@ -149,8 +164,15 @@ class SpeechActivityDetection(Pipeline):
         speech.uri = current_file['uri']
         return speech.to_annotation(generator='string', modality='speech')
 
-    def get_metric(self, parallel=False) -> DetectionErrorRate:
-        """Return new instance of detection error rate metric"""
-        return  DetectionErrorRate(collar=0.0,
-                                   skip_overlap=False,
-                                   parallel=parallel)
+
+    def get_metric(self, parallel=False) -> Union[DetectionErrorRate, DetectionPrecisionRecallFMeasure]:
+        """Return new instance of detection metric"""
+
+        if self.fscore:
+            return DetectionPrecisionRecallFMeasure(collar=0.0,
+                                                    skip_overlap=False,
+                                                    parallel=parallel)
+        else:
+            return  DetectionErrorRate(collar=0.0,
+                                       skip_overlap=False,
+                                       parallel=parallel)

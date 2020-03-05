@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2018-2019 CNRS
+# Copyright (c) 2018-2020 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -27,6 +27,8 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 from typing import Optional
+from typing import Union
+from typing import Text
 from pathlib import Path
 import numpy as np
 
@@ -42,6 +44,9 @@ from pyannote.audio.features import Precomputed
 from pyannote.database import get_annotated
 from pyannote.database import get_unique_identifier
 from pyannote.metrics.segmentation import SegmentationPurityCoverageFMeasure
+from pyannote.metrics.diarization import DiarizationPurityCoverageFMeasure
+
+from pyannote.audio.utils.path import Pre___ed
 
 
 class SpeakerChangeDetection(Pipeline):
@@ -49,10 +54,20 @@ class SpeakerChangeDetection(Pipeline):
 
     Parameters
     ----------
-    scores : `Path`, optional
-        Path to precomputed scores on disk.
+    scores : Text or Path, optional
+        Describes how raw speaker change detection scores should be obtained.
+        It can be either the name of a torch.hub model, or the path to the
+        output of the validation step of a model trained locally, or the path
+        to scores precomputed on disk. Defaults to "@scd_scores" that indicates
+        that protocol files provide the scores in the "scd_scores" key.
     purity : `float`, optional
         Target segments purity. Defaults to 0.95.
+    fscore : bool, optional
+        Optimize (precision/recall) fscore. Defaults to optimizing coverage at
+        given target `purity`.
+    diarization : bool, optional
+        Use diarization purity and coverage. Defaults to segmentation purity
+        and coverage.
 
     Hyper-parameters
     ----------------
@@ -62,14 +77,20 @@ class SpeakerChangeDetection(Pipeline):
         Segment minimum duration.
     """
 
-    def __init__(self, scores: Optional[Path] = None,
-                       purity: Optional[float] = 0.95):
+    def __init__(self, scores: Union[Text, Path] = None,
+                       purity: Optional[float] = 0.95,
+                       fscore: bool = False,
+                       diarization: bool = False):
         super().__init__()
 
+        if scores is None:
+            scores = "@scd_scores"
         self.scores = scores
-        if self.scores is not None:
-            self._precomputed = Precomputed(self.scores)
+        self._scores = Pre___ed(self.scores)
+
         self.purity = purity
+        self.fscore = fscore
+        self.diarization = diarization
 
         # hyper-parameters
         self.alpha = Uniform(0., 1.)
@@ -96,10 +117,7 @@ class SpeakerChangeDetection(Pipeline):
             Speech regions.
         """
 
-        # precomputed SCD scores
-        scd_scores = current_file.get('scd_scores')
-        if scd_scores is None:
-            scd_scores = self._precomputed(current_file)
+        scd_scores = self._scores(current_file)
 
         # if this check has not been done yet, do it once and for all
         if not hasattr(self, "log_scale_"):
@@ -124,6 +142,19 @@ class SpeakerChangeDetection(Pipeline):
         change.uri = current_file['uri']
 
         return change.to_annotation(generator='string', modality='audio')
+
+    def get_metric(self, parallel=False) -> Union[DiarizationPurityCoverageFMeasure,
+                                                  SegmentationPurityCoverageFMeasure]:
+        """Return new instance of f-score metric"""
+
+        if not self.fscore:
+            raise NotImplementedError()
+
+        if self.diarization:
+            return DiarizationPurityCoverageFMeasure(parallel=parallel)
+
+        return SegmentationPurityCoverageFMeasure(tolerance=0.5,
+                                                  parallel=parallel)
 
     def loss(self, current_file: dict, hypothesis: Annotation) -> float:
         """Compute (1 - coverage) at target purity

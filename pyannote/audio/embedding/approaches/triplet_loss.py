@@ -29,18 +29,38 @@
 from typing import Optional
 import numpy as np
 import torch
-from pyannote.audio.embedding.generators import SpeechSegmentGenerator
 from pyannote.core.utils.distance import to_condensed
 from scipy.spatial.distance import squareform
-from pyannote.metrics.binary_classification import det_curve
-from .base import EmbeddingApproach
+from .base import RepresentationLearning
 
 
-class TripletLoss(EmbeddingApproach):
-    """Train embeddings using triplet loss
+class TripletLoss(RepresentationLearning):
+    """Triplet loss
+
+    TODO explain
 
     Parameters
     ----------
+    duration : float, optional
+        Chunks duration, in seconds. Defaults to 1.
+    min_duration : float, optional
+        When provided, use chunks of random duration between `min_duration` and
+        `duration` for training. Defaults to using fixed duration chunks.
+    per_turn : int, optional
+        Number of chunks per speech turn. Defaults to 1.
+        If per_turn is greater than one, embeddings of the same speech turn
+        are averaged before comparison. The intuition is that it might help
+        learn embeddings meant to be averaged/summed.
+    per_label : `int`, optional
+        Number of sequences per speaker in each batch. Defaults to 1.
+    per_fold : `int`, optional
+        Number of different speakers per batch. Defaults to 32.
+    per_epoch : `float`, optional
+        Force total audio duration per epoch, in days.
+        Defaults to total duration of protocol subset.
+    label_min_duration : `float`, optional
+        Remove speakers with less than that many seconds of speech.
+        Defaults to 0 (i.e. keep them all).
     metric : {'euclidean', 'cosine', 'angular'}, optional
         Defaults to 'cosine'.
     margin: float, optional
@@ -53,25 +73,6 @@ class TripletLoss(EmbeddingApproach):
         each anchor. 'negative' sampling use hardest negative for each
         (anchor, positive) pairs. 'easy' sampling only use easy triplets (i.e.
         those for which d(anchor, positive) < d(anchor, negative)).
-    duration : float, optional
-        Chunks duration, in seconds. Defaults to 1.
-    per_turn : int, optional
-        Number of chunks per speech turn. Defaults to 1.
-        If per_turn is greater than one, embeddings of the same speech turn
-        are averaged before building triplets. The intuition is that it might
-        help learn embeddings meant to be averaged/summed.
-    per_label : int, optional
-        Number of speech turns per speaker in each batch.
-        Defaults to 3.
-    per_fold : int, optional
-        Number of different speakers in each batch.
-        Defaults to all speakers.
-    per_epoch : float, optional
-        Force total audio duration per epoch, in days.
-        Defaults to total duration of protocol subset.
-    label_min_duration : float, optional
-        Remove speakers with less than `label_min_duration` seconds of speech.
-        Defaults to 0 (i.e. keep it all).
 
     Notes
     -----
@@ -84,24 +85,40 @@ class TripletLoss(EmbeddingApproach):
 
     where d(., .) varies in range [0, D] (e.g. D=2 for euclidean distance).
 
+    Reference
+    ---------
+    TODO
     """
 
-    def __init__(self, metric='cosine',
-                       margin: float = 0.2,
-                       clamp='positive',
-                       sampling='all',
-                       duration: float = 1.,
+    def __init__(self, duration: float = 1.0,
+                       min_duration: float = None,
                        per_turn: int = 1,
-                       per_label: int = 3,
-                       per_fold: Optional[int] = None,
-                       per_epoch: float = None,
-                       label_min_duration: float = 0.):
+                       per_label: int = 1,
+                       per_fold: int = 32,
+                       per_epoch: Optional[float] = None,
+                       label_min_duration: float = 0.,
+                       # FIXME create a Literal type for metric
+                       # FIXME maybe in pyannote.core.utils.distance
+                       metric: str = 'cosine',
+                       # FIXME homogeneize the meaning of margin parameter
+                       # FIXME it has a different meaning in ArcFace, right?
+                       margin: float = 0.2,
+                       # FIXME create a Literal type for clamp
+                       clamp='positive',
+                       # FIXME create a Literal type for sampling
+                       sampling='all'):
 
-        super().__init__()
+        super().__init__(duration=duration,
+                         min_duration=min_duration,
+                         per_turn=per_turn,
+                         per_label=per_label,
+                         per_fold=per_fold,
+                         per_epoch=per_epoch,
+                         label_min_duration=label_min_duration)
 
         self.metric = metric
         self.margin = margin
-
+        # FIXME see above
         self.margin_ = self.margin * self.max_distance
 
         if clamp not in {'positive', 'sigmoid', 'softmargin'}:
@@ -113,14 +130,6 @@ class TripletLoss(EmbeddingApproach):
             msg = "'sampling' must be one of {'all', 'hard', 'negative', 'easy'}."
             raise ValueError(msg)
         self.sampling = sampling
-
-        self.per_turn = per_turn
-        self.per_fold = per_fold
-        self.per_label = per_label
-        self.per_epoch = per_epoch
-        self.label_min_duration = label_min_duration
-
-        self.duration = duration
 
     def batch_easy(self, y, distances):
         """Build easy triplets"""
@@ -267,8 +276,10 @@ class TripletLoss(EmbeddingApproach):
 
         return anchors, positives, negatives
 
-    def triplet_loss(self, distances, anchors, positives, negatives,
-                     return_delta=False):
+    def triplet_loss(self, distances,
+                           anchors,
+                           positives,
+                           negatives):
         """Compute triplet loss
 
         Parameters
@@ -277,8 +288,6 @@ class TripletLoss(EmbeddingApproach):
             Condensed matrix of pairwise distances.
         anchors, positives, negatives : list of int
             Triplets indices.
-        return_delta : bool, optional
-            Return delta before clamping.
 
         Returns
         -------
@@ -310,38 +319,7 @@ class TripletLoss(EmbeddingApproach):
             # TODO. log-sigmoid
             loss = torch.sigmoid(10 * (delta + self.margin_))
 
-        # return triplet losses
-        if return_delta:
-            return loss, delta.view((-1, 1)), pos, neg
-        else:
-            return loss
-
-    def get_batch_generator(self, feature_extraction,
-                            protocol, subset='train',
-                            **kwargs):
-        """Get batch generator
-
-        Parameters
-        ----------
-        feature_extraction : `pyannote.audio.features.FeatureExtraction`
-        protocol : `pyannote.database.Protocol`
-        subset : {'train', 'development', 'test'}, optional
-
-        Returns
-        -------
-        generator : `pyannote.audio.embedding.generators.SpeechSegmentGenerator`
-        """
-
-        return SpeechSegmentGenerator(
-            feature_extraction,
-            protocol,
-            subset=subset,
-            duration=self.duration,
-            per_turn=self.per_turn,
-            per_label=self.per_label,
-            per_fold=self.per_fold,
-            per_epoch=self.per_epoch,
-            label_min_duration=self.label_min_duration)
+        return loss
 
     def batch_loss(self, batch):
         """Compute loss for current `batch`
@@ -358,29 +336,21 @@ class TripletLoss(EmbeddingApproach):
             ['loss'] (`torch.Tensor`) : Triplet loss
         """
 
-        fX = self.forward(batch)
-
-        # If per_turn is greater than one, embeddings of the same speech turn
-        # are averaged before building triplets. The intuition is that it might
-        # help learn embeddings meant to be averaged/summed.
-        if self.per_turn > 1:
-            y = batch['y'][::self.per_turn]
-            avg_fX = fX.view(self.per_fold * self.per_label,
-                             self.per_turn, -1).mean(axis=1)
-            distances = self.pdist(avg_fX)
-
-        else:
-            y = batch['y']
-            distances = self.pdist(fX)
+        fX, y = self.embed(batch)
+        distances = self.pdist(fX)
 
         # sample triplets
         triplets = getattr(self, 'batch_{0}'.format(self.sampling))
         anchors, positives, negatives = triplets(y, distances)
 
         # compute loss for each triplet
-        losses, deltas, _, _ = self.triplet_loss(
-            distances, anchors, positives, negatives,
-            return_delta=True)
+        losses = self.triplet_loss(distances,
+                                   anchors,
+                                   positives,
+                                   negatives)
+
+        loss = torch.mean(losses)
 
         # average over all triplets
-        return {'loss': torch.mean(losses)}
+        return {'loss': loss,
+                'loss_triplet': loss}

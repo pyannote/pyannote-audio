@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2018-2019 CNRS
+# Copyright (c) 2018-2020 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -27,6 +27,8 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 from typing import Optional
+from typing import Union
+from typing import Text
 from pathlib import Path
 import numpy as np
 
@@ -44,6 +46,9 @@ from pyannote.audio.features import Precomputed
 
 from pyannote.metrics.detection import DetectionPrecision
 from pyannote.metrics.detection import DetectionRecall
+from pyannote.metrics.detection import DetectionPrecisionRecallFMeasure
+from pyannote.metrics import f_measure
+from pyannote.audio.utils.path import Pre___ed
 
 
 class OverlapDetection(Pipeline):
@@ -51,10 +56,18 @@ class OverlapDetection(Pipeline):
 
     Parameters
     ----------
-    scores : `Path`, optional
-        Path to precomputed scores on disk.
+    scores : Text or Path, optional
+        Describes how raw overlapped speech detection scores should be obtained.
+        It can be either the name of a torch.hub model, or the path to the
+        output of the validation step of a model trained locally, or the path
+        to scores precomputed on disk. Defaults to "@ovl_scores" that indicates
+        that protocol files provide the scores in the "ovl_scores" key.
     precision : `float`, optional
         Target detection precision. Defaults to 0.9.
+    fscore : bool, optional
+        Optimize (precision/recall) fscore. Defaults to optimizing recall at
+        target precision.
+
 
     Hyper-parameters
     ----------------
@@ -66,14 +79,18 @@ class OverlapDetection(Pipeline):
         Padding duration.
     """
 
-    def __init__(self, scores: Optional[Path] = None,
-                       precision: Optional[Path] = 0.9):
+    def __init__(self, scores: Union[Text, Path] = None,
+                       precision: Optional[Path] = 0.9,
+                       fscore: bool = False):
         super().__init__()
 
+        if scores is None:
+            scores = "@ovl_scores"
         self.scores = scores
-        if self.scores is not None:
-            self._precomputed = Precomputed(self.scores)
+        self._scores = Pre___ed(self.scores)
+
         self.precision = precision
+        self.fscore = fscore
 
         # hyper-parameters
         self.onset = Uniform(0., 1.)
@@ -109,10 +126,7 @@ class OverlapDetection(Pipeline):
             Overlap regions.
         """
 
-        # precomputed overlap scores
-        ovl_scores = current_file.get('ovl_scores')
-        if ovl_scores is None:
-            ovl_scores = self._precomputed(current_file)
+        ovl_scores = self._scores(current_file)
 
         # if this check has not been done yet, do it once and for all
         if not hasattr(self, "log_scale_"):
@@ -138,6 +152,53 @@ class OverlapDetection(Pipeline):
         overlap.uri = current_file['uri']
         return overlap.to_annotation(generator='string', modality='overlap')
 
+    @staticmethod
+    def to_overlap(reference: Annotation) -> Annotation:
+        """Get overlapped speech reference annotation
+
+        Parameters
+        ----------
+        reference : Annotation
+            File yielded by pyannote.database protocols.
+
+        Returns
+        -------
+        overlap : `pyannote.core.Annotation`
+            Overlapped speech reference.
+        """
+
+        overlap = Timeline(uri=reference.uri)
+        for (s1, t1), (s2, t2) in reference.co_iter(reference):
+            l1 = reference[s1, t1]
+            l2 = reference[s2, t2]
+            if l1 == l2:
+                continue
+            overlap.add(s1 & s2)
+        return overlap.support().to_annotation()
+
+    def get_metric(self, **kwargs) -> DetectionPrecisionRecallFMeasure:
+        """Get overlapped speech detection metric
+
+        Returns
+        -------
+        metric : DetectionPrecisionRecallFMeasure
+            Detection metric.
+        """
+
+        if not self.fscore:
+            raise NotImplementedError()
+
+        class _Metric(DetectionPrecisionRecallFMeasure):
+            def compute_components(_self, reference: Annotation,
+                                          hypothesis: Annotation,
+                                          uem: Timeline = None,
+                                          **kwargs) -> dict:
+                return super().compute_components(
+                    self.to_overlap(reference),
+                    hypothesis,
+                    uem=uem, **kwargs)
+        return _Metric()
+
     def loss(self, current_file: dict, hypothesis: Annotation) -> float:
         """Compute (1 - recall) at target precision
 
@@ -159,20 +220,18 @@ class OverlapDetection(Pipeline):
         precision = DetectionPrecision()
         recall = DetectionRecall()
 
-        # build overlap reference
-        reference = Timeline(uri=current_file['uri'])
-        turns = current_file['annotation']
-        for track1, track2 in turns.co_iter(turns):
-            if track1 == track2:
-                continue
-            reference.add(track1[0] & track2[0])
-        reference = reference.support().to_annotation()
+        if 'overlap_reference' in current_file:
+            overlap_reference = current_file['overlap_reference']
+
+        else:
+            reference = current_file['annotation']
+            overlap_reference = self.to_overlap(reference)
+            current_file['overlap_reference'] = overlap_reference
 
         uem = get_annotated(current_file)
-        p = precision(reference, hypothesis, uem=uem)
-        r = recall(reference, hypothesis, uem=uem)
+        p = precision(overlap_reference, hypothesis, uem=uem)
+        r = recall(overlap_reference, hypothesis, uem=uem)
 
         if p > self.precision:
             return 1. - r
-        else:
-            return 1. + (1. - p)
+        return 1. + (1. - p)

@@ -1,4 +1,8 @@
 pipeline:
    name: pyannote.audio.pipeline.speech_activity_detection.SpeechActivityDetection
    params:
-      scores: /path/to/precomputed/sad
+      scores: sad_ami
+
+freeze:
+  pad_onset: 0.0
+  pad_offset: 0.0
