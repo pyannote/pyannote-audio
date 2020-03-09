@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2017-2019 CNRS
+# Copyright (c) 2017-2020 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -27,7 +27,11 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 
+import yaml
+from pathlib import Path
 from pyannote.core import Annotation
+from pyannote.pipeline import Pipeline
+from pyannote.core.utils.helper import get_class_by_name
 
 
 def assert_string_labels(annotation: Annotation, name: str):
@@ -58,3 +62,30 @@ def assert_int_labels(annotation: Annotation, name: str):
     if any(not isinstance(label, int) for label in annotation.labels()):
         msg = f'{name} must contain `int` labels only.'
         raise ValueError(msg)
+
+
+def load_pretrained_pipeline(train_dir: Path) -> Pipeline:
+    """Load pretrained pipeline
+
+    Parameters
+    ----------
+    train_dir : Path
+        Path to training directory (i.e. the one that contains `params.yml`
+        created by calling `pyannote-pipeline train ...`)
+
+    Returns
+    -------
+    pipeline : Pipeline
+        Pretrained pipeline
+    """
+
+    config_yml = train_dir.parents[1] / 'config.yml'
+    with open(config_yml, 'r') as fp:
+        config = yaml.load(fp, Loader=yaml.SafeLoader)
+
+    pipeline_name = config['pipeline']['name']
+    Klass = get_class_by_name(
+        pipeline_name, default_module_name='pyannote.audio.pipeline')
+    pipeline = Klass(**config['pipeline'].get('params', {}))
+
+    return pipeline.load_params(train_dir / 'params.yml')

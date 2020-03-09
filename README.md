@@ -6,9 +6,9 @@
 <img src="pipeline.png">
 </p>
 
-`pyannote.audio` also comes with pretrained models covering a wide range of domains for voice activity detection, speaker change detection, overlapped speech detection, and speaker embedding:
+`pyannote.audio` also comes with [pretrained models](https://github.com/pyannote/pyannote-audio-hub) covering a wide range of domains for voice activity detection, speaker change detection, overlapped speech detection, and speaker embedding:
 
-![segmentation](tutorials/pretrained/segmentation.png)
+![segmentation](tutorials/pretrained/model/segmentation.png)
 
 ## Installation
 
@@ -27,24 +27,25 @@ $ pip install .
 
 ## Documentation
 
-Part of the API is described in [this](tutorials/pretrained) tutorial.  
+Part of the API is described in [this](tutorials/pretrained/model) tutorial.  
 
 Documentation is a work in progress and is scheduled to be ready by end of April 2020.
 
 ## Tutorials
 
-* [Apply pretrained models on your own data](tutorials/pretrained)
-* [Prepare your own dataset for training](tutorials/data_preparation)
+* Use [pretrained](https://github.com/pyannote/pyannote-audio-hub) models and pipelines
+  * [Apply pretrained pipelines on your own data](tutorials/pretrained/pipeline)
+  * [Apply pretrained models on your own data](tutorials/pretrained/model)
+* [Prepare your own dataset for training or fine-tuning](tutorials/data_preparation)
+* [Fine-tune pretrained models to your own data](tutorials/finetune)
 * Train models on your own data
   * [Speech activity detection](tutorials/models/speech_activity_detection)
   * [Speaker change detection](tutorials/models/speaker_change_detection)
   * [Overlapped speech detection](tutorials/models/overlap_detection)
   * [Speaker embedding](tutorials/models/speaker_embedding)
-* [Fine-tune pretrained models to your own data](tutorials/finetune)
 * Tune pipelines on your own data
   * [Speech activity detection pipeline](tutorials/pipelines/speech_activity_detection)
   * [Speaker diarization pipeline](tutorials/pipelines/speaker_diarization)
-
 
 ## Citation
 

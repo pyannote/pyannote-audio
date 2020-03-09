@@ -295,8 +295,9 @@ class LabelingTaskGenerator(BatchGenerator):
 
         for current_file in getattr(protocol, subset)():
             uri = get_unique_identifier(current_file)
-            self.data_[uri]['y'] = self.initialize_y(current_file)
-
+            if uri in self.data_:
+                self.data_[uri]['y'] = self.initialize_y(current_file)
+                
         return sum(datum['duration'] for datum in self.data_.values())
 
     @property

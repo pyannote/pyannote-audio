@@ -510,8 +510,7 @@ def apply_pretrained(validate_dir: Path,
     else:
         output_dir = validate_dir / pretrained
         pretrained = torch.hub.load(
-            # TODO: change to 'pyannote/pyannote-audio' after 2.0 release
-            'pyannote/pyannote-audio:develop',
+            'pyannote/pyannote-audio',
             pretrained,
             device=device,
             batch_size=batch_size,

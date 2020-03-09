@@ -40,6 +40,8 @@ Subset = Literal['train', 'development', 'test']
 from pyannote.audio.features.base import FeatureExtraction
 from pyannote.database.protocol.protocol import Protocol
 
+import warnings
+import numpy as np
 import pescador
 
 
@@ -96,5 +98,16 @@ class BatchGenerator(metaclass=ABCMeta):
                                               self.batch_size,
                                               partial=False,
                                               axis=None)
+
         while True:
-            yield next(batches)
+            next_batch = next(batches)
+            # HACK in some rare cases, .samples() yields samples
+            # HACK with different length leading to batch being of
+            # HACK type "object". for now, we simply discard those
+            # HACK buggy batches.
+            # TODO fix the problem upstream in .samples()
+            if any(batch.dtype == np.object_ for batch in next_batch.values()):
+                msg = f'Skipping malformed batch.'
+                warnings.warn(msg)
+                continue
+            yield next_batch

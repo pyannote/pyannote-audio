@@ -81,20 +81,25 @@ class Pre___ed:
 
     Parameter
     ---------
-    placeholder : Text or Path
+    placeholder : Text, Path, Precomputed, or Pretrained
     """
 
-    def __init__(self, placeholder: Union[Text, Path]):
+    def __init__(self, placeholder: Union[Text, Path, 'Precomputed', 'Pretrained']):
         super().__init__()
 
+        from pyannote.audio.features import Pretrained
+        from pyannote.audio.features import Precomputed
+
+        if isinstance(placeholder, (Pretrained, Precomputed)):
+            scorer = placeholder
+
         # if the path to a directory is provided
-        if Path(placeholder).is_dir():
+        elif Path(placeholder).is_dir():
             directory = Path(placeholder)
 
             # if this succeeds, it means that 'placeholder' was indeed a path
             # to the output of "pyannote-audio ... apply"
             try:
-                from pyannote.audio.features import Precomputed
                 scorer = Precomputed(root_dir=directory)
             except Exception as e:
                 scorer = None
@@ -103,7 +108,6 @@ class Pre___ed:
                 # if this succeeds, it means that 'placeholder' was indeed a
                 # path to the output of "pyannote-audio ... validate"
                 try:
-                    from pyannote.audio.features import Pretrained
                     scorer = Pretrained(validate_dir=directory)
                 except Exception as e:
                     scorer = None
@@ -128,7 +132,7 @@ class Pre___ed:
             else:
                 try:
                     import torch
-                    scorer = torch.hub.load('pyannote/pyannote-audio:develop',
+                    scorer = torch.hub.load('pyannote/pyannote-audio',
                                             placeholder)
                 except Exception as e:
                     msg = (

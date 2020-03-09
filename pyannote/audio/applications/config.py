@@ -42,15 +42,22 @@ from pyannote.audio.features.utils import get_audio_duration
 from pyannote.audio.train.task import Task
 
 
-
-
-
 def merge_cfg(pretrained_cfg, cfg):
     for k, v in cfg.items():
-        if isinstance(v, collections.abc.Mapping):
+
+        # case where the user purposedly set a section value to "null"
+        # this might happen when fine-tuning a pretrained model
+        if v is None:
+            _ = pretrained_cfg.pop(k, None)
+
+        # if v is a dictionary, go deeper and merge recursively
+        elif isinstance(v, collections.abc.Mapping):
             pretrained_cfg[k] = merge_cfg(pretrained_cfg.get(k, {}), v)
+
+        # in any other case, override pretrained_cfg[k] by cfg[k]
         else:
             pretrained_cfg[k] = v
+
     return pretrained_cfg
 
 
@@ -165,8 +172,8 @@ def load_config(config_yml: Path,
     except ModuleNotFoundError as e:
         warnings.warn(e.args[0])
 
-    # data augmentation (only when training the model)
-    if training and 'data_augmentation' in cfg :
+    # data augmentation should only be active when training a model
+    if training and 'data_augmentation' in cfg:
         DataAugmentation = get_class_by_name(
             cfg['data_augmentation']['name'],
             default_module_name='pyannote.audio.augmentation')
