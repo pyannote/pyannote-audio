@@ -33,6 +33,7 @@
 from .speech_activity_detection import SpeechActivityDetection
 from .overlap_detection import OverlapDetection
 from .speech_turn_segmentation import SpeechTurnSegmentation
+from .speech_turn_segmentation import OracleSpeechTurnSegmentation
 from .speaker_diarization import SpeakerDiarization
 
 try:
