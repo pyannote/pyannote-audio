@@ -512,9 +512,10 @@ def apply_pretrained(validate_dir: Path,
         pretrained = torch.hub.load(
             'pyannote/pyannote-audio',
             pretrained,
-            device=device,
+            duration=duration,
+            step=step,
             batch_size=batch_size,
-            step=step)
+            device=device)
 
     params = {}
     try:

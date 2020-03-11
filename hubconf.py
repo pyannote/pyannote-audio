@@ -41,7 +41,7 @@ dependencies = ['pyannote.audio', 'torch']
 # shasum -a 256 models/sad_ami.zip
 _MODELS = {
     'sad_dihard': 'ee924bd1751e6960e4e4322425dcdfdc77abec33a5f3ac1b74759229c176ff70',
-    'scd_dihard': '809aabd69c8116783b1d5cc1ba2f043d2b2d2fe693b34520c948ad5b2940e07c',
+    'scd_dihard': 'e46b194ee8ce2f9e07ea9600beb381a840597d90f213b02c2d18d94c3bc49887',
     'ovl_dihard': '0ae57e5fc099b498db19aabc1d4f29e21cad44751227137909bd500048830dbd',
     'emb_voxceleb': '7342eaaa39968635d81b73bd723231b677439fab0acebb7c2bd62fc687106a59',
     'sad_ami': 'cb77c5ddfeec41288f428ee3edfe70aae908240e724a44c6592c8074462c6707',

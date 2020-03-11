@@ -215,7 +215,7 @@ Speaker embedding
   --duration=<duration>   Use audio chunks with that duration. Defaults to the
                           fixed duration used during training, when available.
 
-   --metric=<metric>      Use this metric (e.g. "cosine" or "euclidean") to
+  --metric=<metric>       Use this metric (e.g. "cosine" or "euclidean") to
                           compare embeddings. Defaults to the metric defined in
                           <root>/config.yml configuration file.
 
