@@ -174,7 +174,7 @@ class LabelingTaskGenerator(BatchGenerator):
 
         return self.resolution_
 
-    def postprocess_y(self, Y):
+    def postprocess_y(self, Y: np.ndarray) -> np.ndarray:
         """This function does nothing but return its input.
         It should be overriden by subclasses.
 
@@ -227,7 +227,8 @@ class LabelingTaskGenerator(BatchGenerator):
             y for specified `segment`
         """
 
-        return y.crop(segment, mode=self.alignment,
+        return y.crop(segment,
+                      mode=self.alignment,
                       fixed=self.duration)
 
     def _load_metadata(self, protocol, subset='train') -> float:
@@ -303,10 +304,13 @@ class LabelingTaskGenerator(BatchGenerator):
         self.file_labels_ = {k: sorted(file_labels[k]) for k in file_labels}
         self.segment_labels_ = sorted(segment_labels)
 
-        for current_file in getattr(protocol, subset)():
-            uri = get_unique_identifier(current_file)
-            if uri in self.data_:
-                self.data_[uri]['y'] = self.initialize_y(current_file)
+        for uri in list(self.data_):
+            current_file = self.data_[uri]['current_file']
+            y = self.initialize_y(current_file)
+            self.data_[uri]['y'] = y
+            if self.mask is not None:
+                mask = current_file[self.mask]
+                current_file[self.mask] = mask.align(y)
 
         return sum(datum['duration'] for datum in self.data_.values())
 
@@ -367,24 +371,17 @@ class LabelingTaskGenerator(BatchGenerator):
             subsegment = next(random_subsegment(segment, self.duration))
 
             X = self.feature_extraction.crop(current_file,
-                                             subsegment, mode='center',
+                                             subsegment,
+                                             mode='center',
                                              fixed=self.duration)
 
-            y = self.crop_y(datum['y'], subsegment)
+            y = self.crop_y(datum['y'],
+                            subsegment)
             sample = {'X': X, 'y': y}
 
             if self.mask is not None:
-
-                # extract mask for current sub-segment
-                mask = current_file[self.mask].crop(subsegment,
-                                                    mode='center',
-                                                    fixed=self.duration)
-
-                # it might happen that "mask" and "y" use different sliding
-                # windows. therefore, we simply resample "mask" to match "y"
-                if len(mask) != len(y):
-                    mask = scipy.signal.resample(mask, len(y), axis=0)
-
+                mask = self.crop_y(current_file[self.mask],
+                                   subsegment)
                 sample['mask'] = mask
 
             for key, classes in self.file_labels_.items():

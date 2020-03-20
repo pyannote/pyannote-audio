@@ -403,14 +403,8 @@ class Resegmentation(LabelingTask):
                 self.mask = 'speech'
 
             else:
-                n_mask = len(current_file[self.mask])
-                n_speech = len(current_file['speech'])
-
-                if n_mask != n_speech:
-                    speech.data = scipy.signal.resample(speech.data,
-                                                        n_mask, axis=0)
-
-                current_file[self.mask] = current_file[self.mask] * speech
+                mask = current_file[self.mask]
+                current_file[self.mask] = mask * speech.align(mask)
 
             debug['mask'] = current_file[self.mask]
 
