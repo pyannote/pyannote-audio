@@ -123,6 +123,7 @@ class LabelingTaskGenerator(BatchGenerator):
         self.duration = duration
         self.exhaustive = exhaustive
         self.step = step
+        self.mask = mask
 
         self.resolution_ = resolution
 
@@ -158,7 +159,6 @@ class LabelingTaskGenerator(BatchGenerator):
                 per_epoch *= np.ceil(1 / self.step)
 
         self.per_epoch = per_epoch
-        self.mask = mask
 
     # TODO. use cached property (Python 3.8 only)
     # https://docs.python.org/fr/3/library/functools.html#functools.cached_property
