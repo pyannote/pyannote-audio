@@ -53,6 +53,7 @@ from pyannote.audio.train.task import Task
 
 from pyannote.audio.features import Pretrained
 from pyannote.audio.features import Precomputed
+from pyannote.audio.features.wrapper import Wrapper
 from pyannote.audio.applications.config import load_config
 
 
@@ -508,14 +509,17 @@ def apply_pretrained(validate_dir: Path,
                                 device=device)
         output_dir = validate_dir / 'apply' / f'{pretrained.epoch_:04d}'
     else:
-        output_dir = validate_dir / pretrained
-        pretrained = torch.hub.load(
-            'pyannote/pyannote-audio',
-            pretrained,
-            duration=duration,
-            step=step,
-            batch_size=batch_size,
-            device=device)
+
+        if pretrained in torch.hub.list('pyannote/pyannote-audio'):
+            output_dir = validate_dir / pretrained
+        else:
+            output_dir = validate_dir
+
+        pretrained = Wrapper(pretrained,
+                             duration=duration,
+                             step=step,
+                             batch_size=batch_size,
+                             device=device)
 
     params = {}
     try:
