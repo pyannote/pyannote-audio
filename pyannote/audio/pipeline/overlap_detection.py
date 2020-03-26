@@ -48,7 +48,7 @@ from pyannote.metrics.detection import DetectionPrecision
 from pyannote.metrics.detection import DetectionRecall
 from pyannote.metrics.detection import DetectionPrecisionRecallFMeasure
 from pyannote.metrics import f_measure
-from pyannote.audio.features.wrapper import FeatureExtractionWrapper
+from pyannote.audio.features.wrapper import Wrapper
 
 
 class OverlapDetection(Pipeline):
@@ -87,7 +87,7 @@ class OverlapDetection(Pipeline):
         if scores is None:
             scores = "@ovl_scores"
         self.scores = scores
-        self._scores = FeatureExtractionWrapper(self.scores)
+        self._scores = Wrapper(self.scores)
 
         self.precision = precision
         self.fscore = fscore

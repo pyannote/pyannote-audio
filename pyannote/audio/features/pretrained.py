@@ -88,7 +88,8 @@ class Pretrained(FeatureExtraction):
             )
             raise TypeError(msg)
 
-        self.validate_dir = validate_dir.expanduser().resolve(strict=True)
+        strict = epoch is None
+        self.validate_dir = validate_dir.expanduser().resolve(strict=strict)
 
         train_dir = self.validate_dir.parents[1]
         root_dir = train_dir.parents[1]

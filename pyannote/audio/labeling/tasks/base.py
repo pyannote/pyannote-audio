@@ -49,7 +49,7 @@ from pyannote.core.utils.numpy import one_hot_encoding
 
 from pyannote.audio.features import FeatureExtraction
 from pyannote.audio.features import RawAudio
-from pyannote.audio.features.wrapper import FeatureExtractionWrapper
+from pyannote.audio.features.wrapper import Wrapper
 
 from pyannote.core.utils.random import random_segment
 from pyannote.core.utils.random import random_subsegment
@@ -119,7 +119,7 @@ class LabelingTaskGenerator(BatchGenerator):
                  step: float = 0.1,
                  mask: Text = None):
 
-        self.feature_extraction = FeatureExtractionWrapper(feature_extraction)
+        self.feature_extraction = Wrapper(feature_extraction)
         self.duration = duration
         self.exhaustive = exhaustive
         self.step = step

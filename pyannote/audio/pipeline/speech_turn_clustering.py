@@ -42,7 +42,7 @@ from pyannote.pipeline.blocks.clustering import \
 from pyannote.pipeline.blocks.clustering import AffinityPropagationClustering
 from .utils import assert_string_labels
 
-from pyannote.audio.features.wrapper import FeatureExtractionWrapper
+from pyannote.audio.features.wrapper import Wrapper
 
 
 class SpeechTurnClustering(Pipeline):
@@ -77,7 +77,7 @@ class SpeechTurnClustering(Pipeline):
         if embedding is None:
             embedding = "@emb"
         self.embedding = embedding
-        self._embedding = FeatureExtractionWrapper(self.embedding)
+        self._embedding = Wrapper(self.embedding)
 
         self.metric = metric
         self.method = method

@@ -46,7 +46,7 @@ from pyannote.database import get_unique_identifier
 from pyannote.metrics.segmentation import SegmentationPurityCoverageFMeasure
 from pyannote.metrics.diarization import DiarizationPurityCoverageFMeasure
 
-from pyannote.audio.features.wrapper import FeatureExtractionWrapper
+from pyannote.audio.features.wrapper import Wrapper
 
 
 class SpeakerChangeDetection(Pipeline):
@@ -86,7 +86,7 @@ class SpeakerChangeDetection(Pipeline):
         if scores is None:
             scores = "@scd_scores"
         self.scores = scores
-        self._scores = FeatureExtractionWrapper(self.scores)
+        self._scores = Wrapper(self.scores)
 
         self.purity = purity
         self.fscore = fscore

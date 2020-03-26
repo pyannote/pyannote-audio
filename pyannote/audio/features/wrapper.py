@@ -40,54 +40,74 @@ import numpy as np
 Wrappable = Union['Precomputed', 'Pretrained', 'RawAudio', 'FeatureExtraction',
                   Dict, Text, Path]
 
-class FeatureExtractionWrapper:
-    """Wrapper around classes that share the same FeatureExtraction API
+class Wrapper:
+    """FeatureExtraction-compliant wrapper
 
-    This class allows user-facing APIs to support (torch.hub or locally)
-    pretrained models or precomputed output interchangeably.
+    Parameters
+    ----------
+    wrappable : Wrappable
+        Wrappable object. See "Usage" section for a detailed description.
+    **params : Dict
+        Keyword parameters passed to the wrapped object when supported.
 
-    * FeatureExtractionWrapper('sad_ami') is equivalent to
-      torch.hub.load('pyannote/pyannote-audio', 'sad_ami')
+    Usage
+    -----
+    If `wrappable` already complies with the `FeatureExtraction` API , it is
+    kept unchanged. This includes instances of any `FeatureExtraction` subclass,
+    `RawAudio` instances, `Precomputed` instances, and `Pretrained instances.
+    In this case, keyword parameters are not used.
 
-    * FeatureExtractionWrapper('/path/to/xp/train/.../validate/...') is equivalent to
-      Pretrained('/path/to/xp/train/.../validate/...')
+    * If `wrappable` is a `Path` to a directory containing precomputed features
+      or scores (e.g. the one created by `pyannote-audio [...] apply [...]`), it
+      stands for:
 
-    * FeatureExtractionWrapper('/path/to/xp/train/.../validate/.../apply/...') is equivalent to
-      Precomputed('/path/to/xp/train/.../validate/.../apply/...')
+      Precomputed(root_dir=wrappable, **params)
 
-    * FeatureExtractionWrapper('@scores') is equivalent to lambda f: f['scores']
+    * If `wrappable` is a `Path` to the validation directory created by calling
+      `pyannote-audio [...] validate [...]`, it stands for:
 
-    * FeatureExtractionWrapper(pretrained) is equivalent to pretrained if pretrained is an
-      instance of Pretrained.
+      Pretrained(validate_dir=wrappable, **params)
 
-    * FeatureExtractionWrapper(precomputed) is equivalent to precomputed if precomputed is an
-      instance of Precomputed.
+    * If `wrappable` is a `Path` to a checkpoint created by calling
+      `pyannote-audio [...] train [...]`, (i.e. with the following structure:
+      '{root_dir}/train/{protocol}.train/weights/{epoch}.pt)', it stands for:
 
-    Parameter
-    ---------
-    placeholder : Dict, Text, Path, Precomputed, Pretrained, RawAudio, FeatureExtraction
+      Pretrained(validate_dir='{root_dir}/train/{protocol}.train/validate/fake',
+                 epoch=int({epoch}), **params)
 
-    Custom parameters
-    -----------------
-    It is also possible to provide custom parameters to torch.hub.load
-    and Pretrained by providing a dictionary whose unique key is the name of the
-    model (or the path to the validation directory) and value is a dictionary of
-    custom parameters. For instance,
+    * If `wrappable` is a `Text` containing the name of an existing `torch.hub`
+      model, it stands for:
 
-        FeatureExtractionWrapper({'sad_ami': {'duration': 2, 'step': 0.05}})
+      torch.hub.load('pyannote/pyannote-audio', wrappable, **params)
 
-    is equivalent to
+    * If `wrappable` is a `Text` starting with '@' such as '@key', it stands for:
 
-        FeatureExtractionWrapper('sad_ami', duration=2, step=0.05)
+      lambda current_file: current_file['key']
 
-    which is equivalent to
+    In any other situation, it will raise an error.
 
-        torch.hub.load('pyannote/pyannote-audio', 'sad_ami',
-                       duration=2, step=0.05)
+    Notes
+    -----
+    It is also possible to provide a `Dict` `wrappable`, in which case it is
+    expected to contain a unique key which is the name of a `torch.hub` model
+    (or any supported `Path` described above), whose corresponding value is a
+    dictionary of custom parameters. For instance,
 
+      Wrapper({'sad': {'step': 0.1}}) is the same as Wrapper('sad', step=0.1)
+
+    This is especially useful in `pyannote-pipeline` configuration files:
+
+        ~~~~~ content of 'config.yml' ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+          pipeline:
+             name: pyannote.audio.pipeline.SpeechActivityDetection
+             params:
+                scores:
+                   sad:
+                      step: 0.1
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     """
 
-    def __init__(self, placeholder: Wrappable, **params):
+    def __init__(self, wrappable: Wrappable, **params):
         super().__init__()
 
         from pyannote.audio.features import Pretrained
@@ -95,28 +115,34 @@ class FeatureExtractionWrapper:
         from pyannote.audio.features import FeatureExtraction
         from pyannote.audio.features import RawAudio
 
-        if isinstance(placeholder, dict):
-            placeholder, custom_params = dict(placeholder).popitem()
+        scorer = None
+        msg = ''
+
+        # corner
+        if isinstance(wrappable, dict):
+            wrappable, custom_params = dict(wrappable).popitem()
             params.update(**custom_params)
 
-        if isinstance(placeholder, (Pretrained, Precomputed,
-                                    RawAudio, FeatureExtraction)):
-            scorer = placeholder
+        # If `wrappable` already complies with the `FeatureExtraction` API , it
+        # is kept unchanged. This includes instances of any `FeatureExtraction`
+        # subclass,`RawAudio` instances, `Precomputed` instances, and
+        # `Pretrained` instances.
+        if isinstance(wrappable, (FeatureExtraction, RawAudio, Pretrained, Precomputed)):
+            scorer = wrappable
 
-        # if the path to a directory is provided
-        elif Path(placeholder).is_dir():
-            directory = Path(placeholder)
+        elif Path(wrappable).is_dir():
+            directory = Path(wrappable)
 
-            # if this succeeds, it means that 'placeholder' was indeed a path
-            # to the output of "pyannote-audio ... apply"
+            # If `wrappable` is a `Path` to a directory containing precomputed
+            # features or scores, wrap the corresponding `Precomputed` instance
             try:
                 scorer = Precomputed(root_dir=directory)
             except Exception as e:
                 scorer = None
 
+            # If `wrappable` is a `Path` to a validation directory,
+            # wrap the corresponding `Pretrained` instance
             if scorer is None:
-                # if this succeeds, it means that 'placeholder' was indeed a
-                # path to the output of "pyannote-audio ... validate"
                 try:
                     scorer = Pretrained(validate_dir=directory, **params)
                 except Exception as e:
@@ -124,29 +150,53 @@ class FeatureExtractionWrapper:
 
             if scorer is None:
                 msg = (
-                    f'"{placeholder}" directory does not seem to be the path '
+                    f'"{wrappable}" directory does not seem to be the path '
                     f'to precomputed features nor the path to a model '
                     f'validation step.'
                 )
 
-        # otherwise it should be a string
-        elif isinstance(placeholder, Text):
+        # If `wrappable` is a `Path` to a pretrined model checkpoint,
+        # wrap the corresponding `Pretrained` instance
+        elif Path(wrappable).is_file():
+            checkpoint = Path(wrappable)
 
-            # @key means that one should read the "key" key of protocol files
-            if placeholder.startswith('@'):
-                key = placeholder[1:]
+            try:
+                validate_dir = checkpoint.parents[1] / 'validate' / 'fake'
+                epoch = int(checkpoint.stem)
+                scorer = Pretrained(validate_dir=validate_dir, epoch=epoch,
+                                    **params)
+            except Exception as e:
+                msg = (
+                    f'"{wrappable}" directory does not seem to be the path '
+                    f'to a pretrained model checkpoint.
+                )
+                scorer = None
+
+        elif isinstance(wrappable, Text):
+
+            # If `wrappable` is a `Text` starting with '@' such as '@key',
+            # it means that one should read the "key" key of protocol files
+            if wrappable.startswith('@'):
+                key = wrappable[1:]
                 scorer = lambda current_file: current_file[key]
 
-            # if string does not start with "@", it means that 'placeholder'
-            # is the name of a torch.hub model
+            # If `wrappable` is a `Text` containing the name of an existing
+            # `torch.hub` model, wrap the corresponding `Pretrained`.
             else:
                 try:
                     import torch
                     scorer = torch.hub.load('pyannote/pyannote-audio',
-                                            placeholder, **params)
+                                            wrappable, **params)
+                    if not isinstance(scores, Pretrained):
+                        msg = (
+                            f'"{wrappable}" exists on torch.hub but does not '
+                            f'return a `Pretrained` model instance.'
+                        )
+                        scorer = None
+
                 except Exception as e:
                     msg = (
-                        f'Could not load {placeholder} model from torch.hub. '
+                        f'Could not load {wrappable} model from torch.hub. '
                         f'The following exception was raised:\n{e}')
                     scorer = None
 

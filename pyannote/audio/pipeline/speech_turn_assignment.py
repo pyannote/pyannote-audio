@@ -40,7 +40,7 @@ from .utils import assert_int_labels
 from .utils import assert_string_labels
 from ..features import Precomputed
 
-from pyannote.audio.features.wrapper import FeatureExtractionWrapper
+from pyannote.audio.features.wrapper import Wrapper
 
 
 class SpeechTurnClosestAssignment(Pipeline):
@@ -65,7 +65,7 @@ class SpeechTurnClosestAssignment(Pipeline):
         if embedding is None:
             embedding = "@emb"
         self.embedding = embedding
-        self._embedding = FeatureExtractionWrapper(self.embedding)
+        self._embedding = Wrapper(self.embedding)
 
         self.metric = metric
 
