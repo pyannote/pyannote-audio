@@ -168,7 +168,7 @@ class Wrapper:
             except Exception as e:
                 msg = (
                     f'"{wrappable}" directory does not seem to be the path '
-                    f'to a pretrained model checkpoint.
+                    f'to a pretrained model checkpoint.'
                 )
                 scorer = None
 
