@@ -187,7 +187,7 @@ class Wrapper:
                     import torch
                     scorer = torch.hub.load('pyannote/pyannote-audio',
                                             wrappable, **params)
-                    if not isinstance(scores, Pretrained):
+                    if not isinstance(scorer, Pretrained):
                         msg = (
                             f'"{wrappable}" exists on torch.hub but does not '
                             f'return a `Pretrained` model instance.'
