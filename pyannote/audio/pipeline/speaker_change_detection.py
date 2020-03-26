@@ -28,8 +28,6 @@
 
 from typing import Optional
 from typing import Union
-from typing import Text
-from pathlib import Path
 import numpy as np
 
 from pyannote.pipeline import Pipeline
@@ -46,7 +44,7 @@ from pyannote.database import get_unique_identifier
 from pyannote.metrics.segmentation import SegmentationPurityCoverageFMeasure
 from pyannote.metrics.diarization import DiarizationPurityCoverageFMeasure
 
-from pyannote.audio.features.wrapper import Wrapper
+from pyannote.audio.features.wrapper import Wrapper, Wrappable
 
 
 class SpeakerChangeDetection(Pipeline):
@@ -54,12 +52,11 @@ class SpeakerChangeDetection(Pipeline):
 
     Parameters
     ----------
-    scores : Text or Path, optional
+    scores : Wrappable, optional
         Describes how raw speaker change detection scores should be obtained.
-        It can be either the name of a torch.hub model, or the path to the
-        output of the validation step of a model trained locally, or the path
-        to scores precomputed on disk. Defaults to "@scd_scores" that indicates
-        that protocol files provide the scores in the "scd_scores" key.
+        See pyannote.audio.features.wrapper.Wrapper documentation for details.
+        Defaults to "@scd_scores" that indicates that protocol files provide
+        the scores in the "scd_scores" key.
     purity : `float`, optional
         Target segments purity. Defaults to 0.95.
     fscore : bool, optional
@@ -77,7 +74,7 @@ class SpeakerChangeDetection(Pipeline):
         Segment minimum duration.
     """
 
-    def __init__(self, scores: Union[Text, Path] = None,
+    def __init__(self, scores: Wrappable = None,
                        purity: Optional[float] = 0.95,
                        fscore: bool = False,
                        diarization: bool = False):
