@@ -47,9 +47,8 @@ from pyannote.database.protocol.protocol import Protocol
 
 from pyannote.core.utils.numpy import one_hot_encoding
 
-from pyannote.audio.features import FeatureExtraction
 from pyannote.audio.features import RawAudio
-from pyannote.audio.features.wrapper import Wrapper
+from pyannote.audio.features.wrapper import Wrapper, Wrappable
 
 from pyannote.core.utils.random import random_segment
 from pyannote.core.utils.random import random_subsegment
@@ -74,8 +73,9 @@ class LabelingTaskGenerator(BatchGenerator):
 
     Parameters
     ----------
-    feature_extraction : FeatureExtraction
-        Feature extraction
+    feature_extraction : Wrappable
+        Describes how features should be obtained.
+        See pyannote.audio.features.wrapper.Wrapper documentation for details.
     protocol : Protocol
     subset : {'train', 'development', 'test'}, optional
         Protocol and subset.
@@ -107,7 +107,7 @@ class LabelingTaskGenerator(BatchGenerator):
     """
 
     def __init__(self,
-                 feature_extraction: FeatureExtraction,
+                 feature_extraction: Wrappable,
                  protocol: Protocol,
                  subset: Text = 'train',
                  resolution: Optional[Resolution] = None,
@@ -495,7 +495,7 @@ class LabelingTask(Trainer):
         self.exhaustive = exhaustive
         self.step = step
 
-    def get_batch_generator(self, feature_extraction: FeatureExtraction,
+    def get_batch_generator(self, feature_extraction: Wrappable,
                                   protocol: Protocol,
                                   subset: Text = 'train',
                                   resolution: Optional[Resolution] = None,
@@ -504,7 +504,9 @@ class LabelingTask(Trainer):
 
         Parameters
         ----------
-        feature_extraction : FeatureExtraction
+        feature_extraction : Wrappable
+            Describes how features should be obtained.
+            See pyannote.audio.features.wrapper.Wrapper documentation for details.
         protocol : Protocol
         subset : {'train', 'development'}, optional
             Defaults to 'train'.
