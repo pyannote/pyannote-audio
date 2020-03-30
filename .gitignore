@@ -74,6 +74,9 @@ experiments
 # PyCharm
 .idea/
 
+#nfs
+.nfs*
+
 gh-pages
 gh-pages.pub
 
