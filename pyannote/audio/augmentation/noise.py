@@ -56,14 +56,11 @@ class AddNoise(Augmentation):
         `pyannote.database` collection(s) used for adding noise. Defaults to
         'MUSAN.Collection.BackgroundNoise' available in `pyannote.db.musan`
         package.
-    db_yml : str, optional
-        Path to `pyannote.database` configuration file.
-        See `pyannote.database.FileFinder` for more details.
     snr_min, snr_max : int, optional
         Defines Signal-to-Noise Ratio (SNR) range in dB. Defaults to [5, 20].
     """
 
-    def __init__(self, collection=None, db_yml=None, snr_min=5, snr_max=20):
+    def __init__(self, collection=None, snr_min=5, snr_max=20):
         super().__init__()
 
         if collection is None:
@@ -71,14 +68,13 @@ class AddNoise(Augmentation):
         if not isinstance(collection, (list, tuple)):
             collection = [collection]
         self.collection = collection
-        self.db_yml = db_yml
 
         self.snr_min = snr_min
         self.snr_max = snr_max
 
         # load noise database
         self.files_ = []
-        preprocessors = {'audio': FileFinder(config_yml=db_yml),
+        preprocessors = {'audio': FileFinder(),
                          'duration': get_audio_duration}
         for collection in self.collection:
             protocol = get_protocol(collection, preprocessors=preprocessors)
@@ -152,9 +148,6 @@ class AddNoiseFromGaps(Augmentation):
         Protocol name (e.g. AMI.SpeakerDiarization.MixHeadset)
     subset : {'train', 'development', 'test'}, optional
         Use this subset. Defaults to 'train'.
-    db_yml : str, optional
-        Path to `pyannote.database` configuration file.
-        See `pyannote.database.FileFinder` for more details.
     snr_min, snr_max : int, optional
         Defines Signal-to-Noise Ratio (SNR) range in dB. Defaults to [5, 20].
 
@@ -163,14 +156,12 @@ class AddNoiseFromGaps(Augmentation):
     `AddNoise`
     """
 
-    def __init__(self, protocol=None, subset='train', db_yml=None,
+    def __init__(self, protocol=None, subset='train',
                  snr_min=5, snr_max=20):
         super().__init__()
 
         self.protocol = protocol
         self.subset = subset
-        self.db_yml = db_yml
-
         self.snr_min = snr_min
         self.snr_max = snr_max
 
@@ -180,7 +171,7 @@ class AddNoiseFromGaps(Augmentation):
 
         if isinstance(protocol, str):
             preprocessors = {
-                'audio': FileFinder(config_yml=db_yml),
+                'audio': FileFinder(),
                 'duration': get_audio_duration,
                 'gaps': get_gaps}
             protocol = get_protocol(self.protocol,

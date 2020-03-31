@@ -128,7 +128,7 @@ def load_config(config_yml: Path,
         try:
             # preprocessors:
             #    key: /path/to/database.yml
-            preprocessors[key] = FileFinder(preprocessor)
+            preprocessors[key] = FileFinder(database_yml=preprocessor)
 
         except FileNotFoundError as e:
             # preprocessors:
