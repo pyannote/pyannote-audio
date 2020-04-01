@@ -145,7 +145,7 @@ class OverlapDetection(Pipeline):
 
         overlap = self._binarize.apply(overlap_prob)
 
-        overlap.uri = current_file['uri']
+        overlap.uri = current_file.get('uri', None)
         return overlap.to_annotation(generator='string', modality='overlap')
 
     @staticmethod

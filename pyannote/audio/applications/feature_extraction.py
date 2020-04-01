@@ -30,8 +30,8 @@
 Feature extraction
 
 Usage:
-  pyannote-speech-feature [--robust --parallel --database=<database.yml>] <experiment_dir> <database.task.protocol>
-  pyannote-speech-feature check [--database=<database.yml>] <experiment_dir> <database.task.protocol>
+  pyannote-speech-feature [--robust --parallel] <experiment_dir> <database.task.protocol>
+  pyannote-speech-feature check <experiment_dir> <database.task.protocol>
   pyannote-speech-feature -h | --help
   pyannote-speech-feature --version
 
@@ -41,7 +41,6 @@ Options:
                              in this directory. See "Configuration file"
                              section below for more details.
   <database.task.protocol>   Set evaluation protocol (e.g. "Etape.SpeakerDiarization.TV")
-  --database=<database.yml>  Path to pyannote.database configuration file.
   --robust                   When provided, skip files for which feature extraction fails.
   --parallel                 When provided, process files in parallel.
   -h --help                  Show this screen.
@@ -246,8 +245,7 @@ def main():
 
     arguments = docopt(__doc__, version='Feature extraction')
 
-    db_yml = arguments['--database']
-    file_finder = FileFinder(config_yml=db_yml)
+    file_finder = FileFinder()
 
     protocol_name = arguments['<database.task.protocol>']
     experiment_dir = arguments['<experiment_dir>']

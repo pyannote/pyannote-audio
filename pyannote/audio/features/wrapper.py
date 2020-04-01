@@ -237,8 +237,11 @@ class Wrapper:
 
         from pyannote.audio.features import Precomputed
         from pyannote.audio.features import Pretrained
+        from pyannote.audio.features import RawAudio
+        from pyannote.audio.features import FeatureExtraction
 
-        if isinstance(self.scorer_, (Precomputed, Pretrained)):
+
+        if isinstance(self.scorer_, (FeatureExtraction, RawAudio, Pretrained, Precomputed)):
             return self.scorer_.crop(current_file,
                                      segment,
                                      mode=mode,
