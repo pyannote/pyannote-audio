@@ -27,9 +27,6 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 from typing import Optional
-from typing import Union
-from typing import Text
-from pathlib import Path
 import numpy as np
 
 from pyannote.pipeline import Pipeline
@@ -48,7 +45,7 @@ from pyannote.metrics.detection import DetectionPrecision
 from pyannote.metrics.detection import DetectionRecall
 from pyannote.metrics.detection import DetectionPrecisionRecallFMeasure
 from pyannote.metrics import f_measure
-from pyannote.audio.utils.path import Pre___ed
+from pyannote.audio.features.wrapper import Wrapper, Wrappable
 
 
 class OverlapDetection(Pipeline):
@@ -56,12 +53,11 @@ class OverlapDetection(Pipeline):
 
     Parameters
     ----------
-    scores : Text or Path, optional
+    scores : Wrappable, optional
         Describes how raw overlapped speech detection scores should be obtained.
-        It can be either the name of a torch.hub model, or the path to the
-        output of the validation step of a model trained locally, or the path
-        to scores precomputed on disk. Defaults to "@ovl_scores" that indicates
-        that protocol files provide the scores in the "ovl_scores" key.
+        See pyannote.audio.features.wrapper.Wrapper documentation for details.
+        Defaults to "@ovl_scores" that indicates that protocol files provide
+        the scores in the "ovl_scores" key.
     precision : `float`, optional
         Target detection precision. Defaults to 0.9.
     fscore : bool, optional
@@ -79,15 +75,15 @@ class OverlapDetection(Pipeline):
         Padding duration.
     """
 
-    def __init__(self, scores: Union[Text, Path] = None,
-                       precision: Optional[Path] = 0.9,
+    def __init__(self, scores: Wrappable = None,
+                       precision: float = 0.9,
                        fscore: bool = False):
         super().__init__()
 
         if scores is None:
             scores = "@ovl_scores"
         self.scores = scores
-        self._scores = Pre___ed(self.scores)
+        self._scores = Wrapper(self.scores)
 
         self.precision = precision
         self.fscore = fscore
@@ -149,7 +145,7 @@ class OverlapDetection(Pipeline):
 
         overlap = self._binarize.apply(overlap_prob)
 
-        overlap.uri = current_file['uri']
+        overlap.uri = current_file.get('uri', None)
         return overlap.to_annotation(generator='string', modality='overlap')
 
     @staticmethod

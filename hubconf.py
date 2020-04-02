@@ -33,32 +33,34 @@ import functools
 import shutil
 import zipfile
 import torch
+import yaml
 from pyannote.audio.features import Pretrained as _Pretrained
 from pyannote.pipeline import Pipeline as _Pipeline
 
 dependencies = ['pyannote.audio', 'torch']
 
-# shasum -a 256 models/sad_ami.zip
-_MODELS = {
-    'sad_dihard': 'ee924bd1751e6960e4e4322425dcdfdc77abec33a5f3ac1b74759229c176ff70',
-    'scd_dihard': 'e46b194ee8ce2f9e07ea9600beb381a840597d90f213b02c2d18d94c3bc49887',
-    'ovl_dihard': '0ae57e5fc099b498db19aabc1d4f29e21cad44751227137909bd500048830dbd',
-    'emb_voxceleb': '7342eaaa39968635d81b73bd723231b677439fab0acebb7c2bd62fc687106a59',
-    'sad_ami': 'cb77c5ddfeec41288f428ee3edfe70aae908240e724a44c6592c8074462c6707',
-    'scd_ami': 'd2f59569c485ba3674130d441e9519993f26b7a1d3ad7d106739da0fc1dccea2',
-    'ovl_ami': 'debcb45c94d36b9f24550faba35c234b87cdaf367ac25729e4d8a140ac44fe64',
-    'emb_ami': '93c40c6fac98017f2655066a869766c536b10c8228e6a149a33e9d9a2ae80fd8',
-}
+_HUB_REPO = 'https://github.com/pyannote/pyannote-audio-hub'
+_ZIP_URL = f'{_HUB_REPO}/raw/master/{{kind}}s/{{name}}.zip'
+_PRETRAINED_URL = f'{_HUB_REPO}/raw/master/pretrained.yml'
 
-# shasum -a 256 pipelines/dia_ami.zip
-_PIPELINES = {
-    'dia_dihard': None,
-    'dia_ami': '81bb175bbcdbcfe7989e09dd9afbbd853649d075a6ed63477cd8c288a179e77b',
-}
+# path where pre-trained models and pipelines are downloaded and cached
+_HUB_DIR = pathlib.Path(os.environ.get("PYANNOTE_AUDIO_HUB",
+                                       "~/.pyannote/hub")).expanduser().resolve()
 
-_GITHUB = 'https://github.com/pyannote/pyannote-audio-models'
-_URL = f'{_GITHUB}/raw/master/{{kind}}s/{{name}}.zip'
+# download pretrained.yml if needed
+_PRETRAINED_YML = _HUB_DIR / 'pretrained.yml'
 
+if not _PRETRAINED_YML.exists():
+    msg = (
+        f'Downloading list of pretrained models and pipelines '
+        f'to "{_PRETRAINED_YML}".'
+    )
+    print(msg)
+    from pyannote.audio.utils.path import mkdir_p
+    mkdir_p(_PRETRAINED_YML.parent)
+    torch.hub.download_url_to_file(_PRETRAINED_URL,
+                                   _PRETRAINED_YML,
+                                   progress=True)
 
 def _generic(name: str,
              duration: float = None,
@@ -115,13 +117,13 @@ def _generic(name: str,
 
         if pipeline:
             kind = 'pipeline'
-            zip_url = _URL.format(kind=kind, name=name)
+            zip_url = _ZIP_URL.format(kind=kind, name=name)
             sha256 = _PIPELINES[name]
             return_pipeline = True
 
         else:
             kind = 'model'
-            zip_url = _URL.format(kind=kind, name=name)
+            zip_url = _ZIP_URL.format(kind=kind, name=name)
             sha256 = _MODELS[name]
             return_pipeline = False
 
@@ -139,7 +141,7 @@ def _generic(name: str,
             raise ValueError(msg)
 
         kind = 'pipeline'
-        zip_url = _URL.format(kind=kind, name=name)
+        zip_url = _ZIP_URL.format(kind=kind, name=name)
         sha256 = _PIPELINES[name]
         return_pipeline = True
 
@@ -149,7 +151,7 @@ def _generic(name: str,
             pipeline = False
 
         kind = 'model'
-        zip_url = _URL.format(kind=kind, name=name)
+        zip_url = _ZIP_URL.format(kind=kind, name=name)
         sha256 = _MODELS[name]
         return_pipeline = pipeline
 
@@ -173,11 +175,7 @@ def _generic(name: str,
         )
         raise NotImplementedError(msg)
 
-    # path where pre-trained models and pipelines are downloaded and cached
-    hub_dir = pathlib.Path(os.environ.get("PYANNOTE_AUDIO_HUB",
-                                  "~/.pyannote/hub")).expanduser().resolve()
-
-    pretrained_dir = hub_dir / f'{kind}s'
+    pretrained_dir = _HUB_DIR / f'{kind}s'
     pretrained_subdir = pretrained_dir / f'{name}'
     pretrained_zip = pretrained_dir / f'{name}.zip'
 
@@ -245,41 +243,17 @@ def _generic(name: str,
         params_yml, *_ = pretrained_subdir.glob('*/*/params.yml')
         return load_pretrained_pipeline(params_yml.parent)
 
-sad_dihard = functools.partial(_generic, 'sad_dihard')
-scd_dihard = functools.partial(_generic, 'scd_dihard')
-ovl_dihard = functools.partial(_generic, 'ovl_dihard')
-dia_dihard = functools.partial(_generic, 'dia_dihard')
+with open(_PRETRAINED_YML, 'r') as fp:
+    _pretrained = yaml.load(fp, Loader=yaml.SafeLoader)
 
-sad_ami = functools.partial(_generic, 'sad_ami')
-scd_ami = functools.partial(_generic, 'scd_ami')
-ovl_ami = functools.partial(_generic, 'ovl_ami')
-emb_ami = functools.partial(_generic, 'emb_ami')
-dia_ami = functools.partial(_generic, 'dia_ami')
+_MODELS = _pretrained['models']
+for name in _MODELS:
+    locals()[name] = functools.partial(_generic, name)
 
-emb_voxceleb = functools.partial(_generic, 'emb_voxceleb')
+_PIPELINES = _pretrained['pipelines']
+for name in _PIPELINES:
+    locals()[name] = functools.partial(_generic, name)
 
-sad = sad_dihard
-scd = scd_dihard
-ovl = ovl_dihard
-emb = emb_voxceleb
-dia = dia_dihard
-
-
-if __name__ == '__main__':
-    DOCOPT = """Create torch.hub zip file from validation directory
-
-Usage:
-  hubconf.py <validate_dir>
-  hubconf.py (-h | --help)
-  hubconf.py --version
-
-Options:
-  -h --help     Show this screen.
-  --version     Show version.
-    """
-    from docopt import docopt
-    from pyannote.audio.applications.base import create_zip
-    arguments = docopt(DOCOPT, version='hubconf')
-    validate_dir = pathlib.Path(arguments['<validate_dir>'])
-    hub_zip = create_zip(validate_dir)
-    print(f'Created file "{hub_zip.name}" in directory "{validate_dir}".')
+_SHORTCUTS = _pretrained['shortcuts']
+for shortcut, name in _SHORTCUTS.items():
+    locals()[shortcut] = locals()[name]

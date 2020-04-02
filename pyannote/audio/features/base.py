@@ -128,7 +128,7 @@ class FeatureExtraction:
                '`get_features` method.')
         raise NotImplementedError(msg)
 
-    def __call__(self, current_file):
+    def __call__(self, current_file) -> SlidingWindowFeature:
         """Extract features from file
 
         Parameters
@@ -157,7 +157,7 @@ class FeatureExtraction:
         # wrap features in a `SlidingWindowFeature` instance
         return SlidingWindowFeature(features, self.sliding_window)
 
-    def get_context_duration(self):
+    def get_context_duration(self) -> float:
         """
 
         TODO. explain why this is needed
@@ -169,7 +169,7 @@ class FeatureExtraction:
         """
         return 0.
 
-    def crop(self, current_file, segment, mode='center', fixed=None):
+    def crop(self, current_file, segment, mode='center', fixed=None) -> np.ndarray:
         """Fast version of self(current_file).crop(segment, mode='center',
 +                                                  fixed=segment.duration)
 

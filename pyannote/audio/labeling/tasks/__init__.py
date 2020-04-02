@@ -36,11 +36,7 @@ from .overlap_detection import OverlapDetection
 from .speaker_change_detection import SpeakerChangeDetection
 from .domain_classification import DomainClassification
 
-
-try:
-    from .resegmentation import Resegmentation
-except NotImplementedError:
-    pass
+from .resegmentation import Resegmentation
 
 
 __all__ = ['SpeechActivityDetection',

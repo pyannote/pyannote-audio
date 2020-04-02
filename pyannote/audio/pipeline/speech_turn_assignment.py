@@ -28,9 +28,6 @@
 
 
 from typing import Optional
-from typing import Union
-from typing import Text
-from pathlib import Path
 import numpy as np
 
 from pyannote.pipeline import Pipeline
@@ -40,7 +37,7 @@ from .utils import assert_int_labels
 from .utils import assert_string_labels
 from ..features import Precomputed
 
-from pyannote.audio.utils.path import Pre___ed
+from pyannote.audio.features.wrapper import Wrapper, Wrappable
 
 
 class SpeechTurnClosestAssignment(Pipeline):
@@ -48,24 +45,23 @@ class SpeechTurnClosestAssignment(Pipeline):
 
     Parameters
     ----------
-    embedding : Text or Path, optional
-        Describes how raw speaker embeddings should be obtained. It can be
-        either the name of a torch.hub model, or the path to the output of the
-        validation step of a model trained locally, or the path to embeddings
-        precomputed on disk. Defaults to "@emb" that indicates that protocol
-        files provide the embeddings in the "emb" key.
+    embedding : Wrappable, optional
+        Describes how raw speaker embeddings should be obtained.
+        See pyannote.audio.features.wrapper.Wrapper documentation for details.
+        Defaults to "@emb" that indicates that protocol files provide
+        the scores in the "emb" key.
     metric : {'euclidean', 'cosine', 'angular'}, optional
         Metric used for comparing embeddings. Defaults to 'cosine'.
     """
 
-    def __init__(self, embedding: Union[Path, Text] = None,
+    def __init__(self, embedding: Wrappable = None,
                        metric: Optional[str] = 'cosine'):
         super().__init__()
 
         if embedding is None:
             embedding = "@emb"
         self.embedding = embedding
-        self._embedding = Pre___ed(self.embedding)
+        self._embedding = Wrapper(self.embedding)
 
         self.metric = metric
 

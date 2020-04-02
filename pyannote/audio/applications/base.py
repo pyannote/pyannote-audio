@@ -53,6 +53,7 @@ from pyannote.audio.train.task import Task
 
 from pyannote.audio.features import Pretrained
 from pyannote.audio.features import Precomputed
+from pyannote.audio.features.wrapper import Wrapper
 from pyannote.audio.applications.config import load_config
 
 
@@ -149,7 +150,8 @@ class Application:
         config = load_config(Path(config_yml),
                              training=training,
                              config_default_module=config_default_module,
-                             pretrained_config_yml=pretrained_config_yml)
+                             pretrained_config_yml=pretrained_config_yml,
+                             add_audio_preprocessors=True)
 
         for key, value in config.items():
             setattr(self, f'{key}_', value)
@@ -508,14 +510,17 @@ def apply_pretrained(validate_dir: Path,
                                 device=device)
         output_dir = validate_dir / 'apply' / f'{pretrained.epoch_:04d}'
     else:
-        output_dir = validate_dir / pretrained
-        pretrained = torch.hub.load(
-            'pyannote/pyannote-audio',
-            pretrained,
-            duration=duration,
-            step=step,
-            batch_size=batch_size,
-            device=device)
+
+        if pretrained in torch.hub.list('pyannote/pyannote-audio'):
+            output_dir = validate_dir / pretrained
+        else:
+            output_dir = validate_dir
+
+        pretrained = Wrapper(pretrained,
+                             duration=duration,
+                             step=step,
+                             batch_size=batch_size,
+                             device=device)
 
     params = {}
     try:
@@ -548,9 +553,16 @@ def apply_pretrained(validate_dir: Path,
     if Pipeline is None:
         return
 
+    # do not proceed with the full pipeline when its parameters cannot be loaded.
+    # this might happen when applying a model that has not been validated yet
+    try:
+        pipeline_params = pretrained.pipeline_params_
+    except AttributeError as e:
+        return
+
     # instantiate pipeline
     pipeline = Pipeline(scores=output_dir)
-    pipeline.instantiate(pretrained.pipeline_params_)
+    pipeline.instantiate(pipeline_params)
 
     # load pipeline metric (when available)
     try:

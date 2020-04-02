@@ -90,12 +90,13 @@ $ find . | grep wav | sort | head -n 5
 ```
 
 `pyannote.audio` relies on `pyannote.database` that itself relies on a configuration file that indicates where files are located. 
-For convenience, we also provide a [template](./database.yml) that needs to be customized for your own environment:
+For convenience, we also provide [such a file](./database.yml) that needs to be copied at the root of the directory that contains the datasets.
 
 ```bash
-# replace DONWLOAD_TO placeholder with actual location
-$ sed -i '' "s|DOWNLOAD_TO|${DOWNLOAD_TO}|" ${TUTORIAL_DIR}/database.yml
+$ cp ${TUTORIAL}/database.yml ${DOWNLOAD_TO}
 ```
+
+See [`pyannote.database` documentation](https://github.com/pyannote/pyannote-database#preprocessors) for other possible locations for `database.yml`.
 
 ## Reference files
 
@@ -113,7 +114,7 @@ where
 * `{duration}` is its duration (in seconds),
 * `{identifier}` is the unique speaker identifier.
 
-For convenience, we also provide RTTM reference files for AMI dataset.  
+For convenience, we also provide RTTM reference files for AMI dataset.
 Here what it looks like for the training subset:
 
 ```bash
@@ -162,43 +163,43 @@ EN2009b.Mix-Headset 1 0.000 2474.282688
 
 `pyannote.database` relies on the same configuration file to define train/development/test splits. Once again, we have prepared this for you, following the official split defined [here](http://groups.inf.ed.ac.uk/ami/corpus/datasets.shtml).
 
-All you have to do is update the [template](./database.yml) to be customized for your own environment:
+All you have to do is to copy the annotation files at the root of the directory that contains the datasets.
 
 ```bash
 # replace TUTORIAL_DIR placeholder with actual location
-$ sed -i '' "s|TUTORIAL_DIR|${TUTORIAL_DIR}|" ${TUTORIAL_DIR}/database.yml
+$ cp -r ${TUTORIAL_DIR}/AMI ${DOWNLOAD_TO}
 ```
 
 It should look like this:
 
 ```bash
 # have a quick look at what it looks like
-$ cat ${TUTORIAL_DIR}/database.yml
+$ cat ${DOWNLOAD_TO}/database.yml
 ```
 
 ```yaml
 Databases:
-   AMI: DOWNLOAD_TO/amicorpus/*/audio/{uri}.wav
-   MUSAN: DOWNLOAD_TO/musan/{uri}.wav
+   AMI: ./amicorpus/*/audio/{uri}.wav
+   MUSAN: ./musan/{uri}.wav
 
 Protocols:
    AMI:
       SpeakerDiarization:
          MixHeadset:
            train:
-              annotation: TUTORIAL_DIR/AMI/MixHeadset.train.rttm
-              annotated: TUTORIAL_DIR/AMI/MixHeadset.train.uem
+              annotation: ./AMI/MixHeadset.train.rttm
+              annotated: ./AMI/MixHeadset.train.uem
            development:
-              annotation: TUTORIAL_DIR/AMI/MixHeadset.development.rttm
-              annotated: TUTORIAL_DIR/AMI/MixHeadset.development.uem
+              annotation: ./AMI/MixHeadset.development.rttm
+              annotated: ./AMI/MixHeadset.development.uem
            test:
-              annotation: TUTORIAL_DIR/AMI/MixHeadset.test.rttm
-              annotated: TUTORIAL_DIR/AMI/MixHeadset.test.uem
+              annotation: ./AMI/MixHeadset.test.rttm
+              annotated: ./AMI/MixHeadset.test.uem
 ```
 
-where `DOWNLOAD_TO` and `TUTORIAL_DIR` have been replaced with their customized values. You might want to have a look at `pyannote.database` [documentation](http://github.com/pyannote/pyannote-database) to learn more about other features provided by `pyannote.database` and the syntax of its configuration file.
+You might want to have a look at `pyannote.database` [documentation](http://github.com/pyannote/pyannote-database) to learn more about other features provided by `pyannote.database` and the syntax of its configuration file.
 
-Did you notice that we did not provide any `MUSAN` entry in the `Protocols` section. This is because another (more advanced) way of providing annotations is possible through the provision of `pyannote.database` [plugins](https://github.com/pyannote/pyannote-db-template). And it happens that `MUSAN` has one called `pyannote.db.musan`. Simply install it with the following command line:
+Did you notice that we did not provide any `MUSAN` entry in the `Protocols` section. This is because another (more flexible) way of providing annotations is possible through the provision of `pyannote.database` [plugins](https://github.com/pyannote/pyannote-db-template). And it happens that `MUSAN` has one called `pyannote.db.musan`. Simply install it with the following command line:
 
 ```bash
 # install MUSAN plugin
@@ -209,7 +210,7 @@ The final step is to tell `pyannote.database` about the location of the configur
 
 ```bash
 # tell pyannote.database about the location of the configuration file
-$ export PYANNOTE_DATABASE_CONFIG=${TUTORIAL_DIR}/database.yml
+$ export PYANNOTE_DATABASE_CONFIG=${DOWNLOAD_TO}/database.yml
 ```
 
 **Congratulations:** you have just defined a new `pyannote.database` protocol called `AMI.SpeakerDiarization.MixHeadset` that will be used in other tutorials.

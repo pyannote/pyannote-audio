@@ -27,9 +27,6 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 import numpy as np
-from pathlib import Path
-from typing import Union
-from typing import Text
 from typing import Optional
 
 from pyannote.core import Annotation
@@ -42,7 +39,7 @@ from pyannote.pipeline.blocks.clustering import \
 from pyannote.pipeline.blocks.clustering import AffinityPropagationClustering
 from .utils import assert_string_labels
 
-from pyannote.audio.utils.path import Pre___ed
+from pyannote.audio.features.wrapper import Wrapper, Wrappable
 
 
 class SpeechTurnClustering(Pipeline):
@@ -50,12 +47,11 @@ class SpeechTurnClustering(Pipeline):
 
     Parameters
     ----------
-    embedding : Text or Path, optional
-        Describes how raw speaker embeddings should be obtained. It can be
-        either the name of a torch.hub model, or the path to the output of the
-        validation step of a model trained locally, or the path to embeddings
-        precomputed on disk. Defaults to "@emb" that indicates that protocol
-        files provide the embeddings in the "emb" key.
+    embedding : Wrappable, optional
+        Describes how raw speaker embeddings should be obtained.
+        See pyannote.audio.features.wrapper.Wrapper documentation for details.
+        Defaults to "@emb" that indicates that protocol files provide
+        the scores in the "emb" key.
     metric : {'euclidean', 'cosine', 'angular'}, optional
         Metric used for comparing embeddings. Defaults to 'cosine'.
     method : {'pool', 'affinity_propagation'}
@@ -68,7 +64,7 @@ class SpeechTurnClustering(Pipeline):
         speech turn level (one average embedding per speech turn).
     """
 
-    def __init__(self, embedding: Union[Text, Path] = None,
+    def __init__(self, embedding: Wrappable = None,
                        metric: Optional[str] = 'cosine',
                        method: Optional[str] = 'pool',
                        window_wise: Optional[bool] = False):
@@ -77,7 +73,7 @@ class SpeechTurnClustering(Pipeline):
         if embedding is None:
             embedding = "@emb"
         self.embedding = embedding
-        self._embedding = Pre___ed(self.embedding)
+        self._embedding = Wrapper(self.embedding)
 
         self.metric = metric
         self.method = method

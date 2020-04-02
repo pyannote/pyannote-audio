@@ -38,6 +38,8 @@ from pyannote.metrics.diarization import GreedyDiarizationErrorRate
 from pyannote.metrics.diarization import DiarizationPurityCoverageFMeasure
 
 from .speech_turn_segmentation import SpeechTurnSegmentation
+from .speech_turn_segmentation import OracleSpeechTurnSegmentation
+
 from .speech_turn_clustering import SpeechTurnClustering
 from .speech_turn_assignment import SpeechTurnClosestAssignment
 
@@ -50,15 +52,22 @@ class SpeakerDiarization(Pipeline):
     Parameters
     ----------
     sad_scores : Text or Path or 'oracle', optional
-    scd_scores : Text or Path, optional
-        Describes how raw speech activity and speaker change detection scores
+        Describes how raw speech activity detection scores
         should be obtained. It can be either the name of a torch.hub model, or
         the path to the output of the validation step of a model trained
-        locally, or the path to scores precomputed on disk. Defaults to
-        "@sad_scores" and "@scd_scores" respectively, indicating that protocol
-        files provide the scores in the corresponding "sad_scores" and
-        "scd_scores" keys. Use 'oracle' to assume perfect speech activity detection.
-        Path to precomputed speaker change detection scores
+        locally, or the path to scores precomputed on disk.
+        Defaults to "@sad_scores", indicating that protocol
+        files provide the scores in the corresponding "sad_scores" key.
+        Use 'oracle' to assume perfect speech activity detection.
+    scd_scores : Text or Path or 'oracle', optional
+        Describes how raw speaker change detection scores
+        should be obtained. It can be either the name of a torch.hub model, or
+        the path to the output of the validation step of a model trained
+        locally, or the path to scores precomputed on disk.
+        Defaults to "@scd_scores", indicating that protocol
+        files provide the scores in the corresponding "scd_scores" key.
+        Use 'oracle' to assume perfect speech turn segmentation,
+        `sad_scores` should then be set to 'oracle' too.
     embedding : Text or Path, optional
         Describes how raw speaker embeddings should be obtained. It can be
         either the name of a torch.hub model, or the path to the output of the
@@ -93,9 +102,18 @@ class SpeakerDiarization(Pipeline):
         super().__init__()
         self.sad_scores = sad_scores
         self.scd_scores = scd_scores
-        self.speech_turn_segmentation = SpeechTurnSegmentation(
-            sad_scores=self.sad_scores,
-            scd_scores=self.scd_scores)
+        if self.scd_scores == 'oracle':
+            if self.sad_scores == 'oracle':
+                self.speech_turn_segmentation = OracleSpeechTurnSegmentation()
+            else:
+                msg = (f"Both sad_scores and scd_scores should be set to 'oracle' "
+                       f"for oracle speech turn segmentation, "
+                       f"got {self.sad_scores} and {self.scd_scores}, respectively.")
+                raise ValueError(msg)
+        else:
+            self.speech_turn_segmentation = SpeechTurnSegmentation(
+                sad_scores=self.sad_scores,
+                scd_scores=self.scd_scores)
         self.evaluation_only = evaluation_only
         self.purity = purity
 

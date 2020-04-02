@@ -43,7 +43,7 @@ class PyannoteFeatureExtractionError(Exception):
     pass
 
 
-class Precomputed(object):
+class Precomputed:
     """Precomputed features
 
     Parameters

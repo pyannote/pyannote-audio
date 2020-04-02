@@ -89,11 +89,13 @@ class OverlapDetectionGenerator(LabelingTaskGenerator):
         self.snr_max = snr_max
         self.raw_audio_ = RawAudio(sample_rate=feature_extraction.sample_rate)
 
-        super().__init__(feature_extraction, protocol, subset=subset,
-                         resolution=resolution, alignment=alignment,
+        super().__init__(feature_extraction,
+                         protocol, subset=subset,
+                         resolution=resolution,
+                         alignment=alignment,
                          duration=duration,
-                         batch_size=batch_size, per_epoch=per_epoch,
-                         shuffle=True)
+                         batch_size=batch_size,
+                         per_epoch=per_epoch)
 
     def overlap_samples(self):
         """Random overlap samples
@@ -182,9 +184,7 @@ class OverlapDetectionGenerator(LabelingTaskGenerator):
                 shifted_segments = [s for s in shifted_segments if s]
                 annotated = Timeline(segments=shifted_segments)
 
-                if self.shuffle:
-                    samples = []
-
+                samples = []
                 for sequence in sliding_segments(annotated):
 
                     X = waveform.crop(sequence, mode='center',
@@ -202,15 +202,11 @@ class OverlapDetectionGenerator(LabelingTaskGenerator):
                               'duration': current_file['duration'],
                     }
 
-                    if self.shuffle:
-                        samples.append(sample)
-                    else:
-                        yield sample
+                    samples.append(sample)
 
-                if self.shuffle:
-                    np.random.shuffle(samples)
-                    for sample in samples:
-                        yield sample
+                np.random.shuffle(samples)
+                for sample in samples:
+                    yield sample
 
     def samples(self):
         """Training sample generator"""

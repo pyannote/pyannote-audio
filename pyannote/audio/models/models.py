@@ -365,7 +365,7 @@ class PyanNet(Model):
             sincnet = dict()
 
         if sincnet.get('skip', False):
-            return None
+            return 'center'
 
         return SincNet.get_alignment(**sincnet)
 

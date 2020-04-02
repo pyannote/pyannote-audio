@@ -28,10 +28,7 @@
 
 """Speech activity detection pipelines"""
 
-from typing import Optional
 from typing import Union
-from typing import Text
-from pathlib import Path
 import numpy as np
 import warnings
 
@@ -46,7 +43,7 @@ from pyannote.audio.features import Precomputed
 
 from pyannote.metrics.detection import DetectionErrorRate
 from pyannote.metrics.detection import DetectionPrecisionRecallFMeasure
-from pyannote.audio.utils.path import Pre___ed
+from pyannote.audio.features.wrapper import Wrapper, Wrappable
 
 
 class OracleSpeechActivityDetection(Pipeline):
@@ -75,12 +72,11 @@ class SpeechActivityDetection(Pipeline):
 
     Parameters
     ----------
-    scores : Text or Path, optional
+    scores : Wrappable, optional
         Describes how raw speech activity detection scores should be obtained.
-        It can be either the name of a torch.hub model, or the path to the
-        output of the validation step of a model trained locally, or the path
-        to scores precomputed on disk. Defaults to "@sad_scores" that indicates
-        that protocol files provide the scores in the "sad_scores" key.
+        See pyannote.audio.features.wrapper.Wrapper documentation for details.
+        Defaults to "@sad_scores" that indicates that protocol files provide
+        the scores in the "sad_scores" key.
     fscore : bool, optional
         Optimize (precision/recall) fscore. Defaults to optimizing detection
         error rate.
@@ -95,14 +91,14 @@ class SpeechActivityDetection(Pipeline):
         Padding duration.
     """
 
-    def __init__(self, scores: Union[Text, Path] = None,
+    def __init__(self, scores: Wrappable = None,
                        fscore: bool = False):
         super().__init__()
 
         if scores is None:
             scores = "@sad_scores"
         self.scores = scores
-        self._scores = Pre___ed(self.scores)
+        self._scores = Wrapper(self.scores)
 
         self.fscore = fscore
 
@@ -161,7 +157,7 @@ class SpeechActivityDetection(Pipeline):
 
         speech = self._binarize.apply(speech_prob)
 
-        speech.uri = current_file['uri']
+        speech.uri = current_file.get('uri', None)
         return speech.to_annotation(generator='string', modality='speech')
 
 

@@ -1,0 +1,16 @@
+Protocols:
+   Debug:
+      SpeakerDiarization:
+         Debug:
+            train:
+               annotation: debug.train.rttm
+               annotated: debug.train.uem
+            development:
+               annotation: debug.development.rttm
+               annotated: debug.development.uem
+            test:
+               annotation: debug.test.rttm
+               annotated: debug.test.uem
+
+Databases:
+   Debug: ./{uri}.wav

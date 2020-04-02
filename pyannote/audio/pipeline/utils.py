@@ -79,6 +79,8 @@ def load_pretrained_pipeline(train_dir: Path) -> Pipeline:
         Pretrained pipeline
     """
 
+    train_dir = Path(train_dir).expanduser().resolve(strict=True)
+
     config_yml = train_dir.parents[1] / 'config.yml'
     with open(config_yml, 'r') as fp:
         config = yaml.load(fp, Loader=yaml.SafeLoader)

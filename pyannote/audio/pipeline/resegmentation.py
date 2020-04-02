@@ -26,6 +26,8 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
+raise NotImplementedError('FIXME')
+
 from typing import Optional
 from pathlib import Path
 import yaml
