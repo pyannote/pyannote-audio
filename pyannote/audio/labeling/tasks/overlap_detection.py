@@ -252,16 +252,11 @@ class OverlapDetectionGenerator(LabelingTaskGenerator):
             original['y'] = np.int64(speaker_count > 1)
 
             # run feature extraction
-            original['duration'] = self.duration
             original['X'] = self.feature_extraction.crop(
                 original, Segment(0, self.duration), mode='center',
                 fixed=self.duration)
 
-            # FIXME
-            del original['waveform']
-            # del original['duration']
-
-            yield original
+            yield {'X': original['X'], 'y': original['y']}
 
     @property
     def specifications(self):
