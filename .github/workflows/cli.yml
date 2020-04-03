@@ -32,4 +32,4 @@ jobs:
         pip install .
     - name: Run a basic SAD experiment
       run: |
-        sh ./tests/test_sad.sh
+        sh ./tests/cli/sad.sh
