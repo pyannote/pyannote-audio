@@ -28,10 +28,17 @@
 
 """Domain classification"""
 
+from typing import Optional
+from typing import Text
+
 import numpy as np
 from .base import LabelingTask
 from .base import LabelingTaskGenerator
 from pyannote.audio.train.task import Task, TaskType, TaskOutput
+from pyannote.audio.features.wrapper import Wrappable
+from pyannote.database.protocol.protocol import Protocol
+from pyannote.audio.train.model import Resolution
+from pyannote.audio.train.model import Alignment
 
 
 class DomainClassificationGenerator(LabelingTaskGenerator):
@@ -39,30 +46,54 @@ class DomainClassificationGenerator(LabelingTaskGenerator):
 
     Parameters
     ----------
-    feature_extraction : `pyannote.audio.features.FeatureExtraction`
-        Feature extraction
-    protocol : `pyannote.database.Protocol`
-    subset : {'train', 'development', 'test'}
-    domain : `str`, optional
-        Key to use as domain. Defaults to 'domain'.
+    feature_extraction : Wrappable
+        Describes how features should be obtained.
+        See pyannote.audio.features.wrapper.Wrapper documentation for details.
+    protocol : Protocol
+    subset : {'train', 'development', 'test'}, optional
+        Protocol and subset.
+    resolution : `pyannote.core.SlidingWindow`, optional
+        Override `feature_extraction.sliding_window`. This is useful for
+        models that include the feature extraction step (e.g. SincNet) and
+        therefore output a lower sample rate than that of the input.
+        Defaults to `feature_extraction.sliding_window`
+    alignment : {'center', 'loose', 'strict'}, optional
+        Which mode to use when cropping labels. This is useful for models that
+        include the feature extraction step (e.g. SincNet) and therefore use a
+        different cropping mode. Defaults to 'center'.
     duration : float, optional
-        Duration of sub-sequences. Defaults to 3.2s.
+        Duration of audio chunks. Defaults to 2s.
     batch_size : int, optional
         Batch size. Defaults to 32.
     per_epoch : float, optional
         Force total audio duration per epoch, in days.
         Defaults to total duration of protocol subset.
+    domain : `str`, optional
+        Key to use as domain. Defaults to 'domain'.
     """
-
     def __init__(self,
-                 feature_extraction,
-                 protocol,
-                 subset='train',
-                 domain='domain',
-                 **kwargs):
+                 feature_extraction: Wrappable,
+                 protocol: Protocol,
+                 subset: Text = 'train',
+                 resolution: Optional[Resolution] = None,
+                 alignment: Optional[Alignment] = None,
+                 duration: float = 2.0,
+                 batch_size: int = 32,
+                 per_epoch: float = None,
+                 domain: Text = 'domain'):
+
 
         self.domain = domain
-        super().__init__(feature_extraction, protocol, subset=subset, **kwargs)
+
+        super().__init__(feature_extraction,
+                         protocol,
+                         subset=subset,
+                         resolution=resolution,
+                         alignment=alignment,
+                         duration=duration,
+                         batch_size=batch_size,
+                         per_epoch=per_epoch,
+                         exhaustive=False)
 
     def initialize_y(self, current_file):
         return self.file_labels_[self.domain].index(current_file[self.domain])

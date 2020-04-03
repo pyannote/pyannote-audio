@@ -102,8 +102,14 @@ class LabelingTaskGenerator(BatchGenerator):
         Ratio of audio chunk duration used as step between two consecutive
         audio chunks. Defaults to 0.1. Has not effect when exhaustive is False.
     mask : str, optional
-        When provided, current_file[mask] is used by the loss function to weigh
-        samples.
+        When provided, protocol files are expected to contain a key named after
+        this `mask` variable and providing a `SlidingWindowFeature` instance.
+        Generated batches will contain an additional "mask" key (on top of
+        existing "X" and "y" keys) computed as an excerpt of `current_file[mask]`
+        time-aligned with "y". Defaults to not add any "mask" key.
+    local_labels : bool, optional
+        Set to True to yield samples with local (file-level) labels.
+        Defaults to use global (protocol-level) labels.
     """
 
     def __init__(self,
@@ -117,13 +123,15 @@ class LabelingTaskGenerator(BatchGenerator):
                  per_epoch: float = None,
                  exhaustive: bool = False,
                  step: float = 0.1,
-                 mask: Text = None):
+                 mask: Text = None,
+                 local_labels: bool = False):
 
         self.feature_extraction = Wrapper(feature_extraction)
         self.duration = duration
         self.exhaustive = exhaustive
         self.step = step
         self.mask = mask
+        self.local_labels = local_labels
 
         self.resolution_ = resolution
 
@@ -202,10 +210,16 @@ class LabelingTaskGenerator(BatchGenerator):
         y : `SlidingWindowFeature`
             Precomputed y for the whole file
         """
+
+        if self.local_labels:
+            labels = current_file['annotation'].labels()
+        else:
+            labels = self.segment_labels_
+
         y, _ = one_hot_encoding(current_file['annotation'],
                                 get_annotated(current_file),
                                 self.resolution,
-                                labels=self.segment_labels_,
+                                labels=labels,
                                 mode='center')
 
         return SlidingWindowFeature(self.postprocess_y(y.data),
@@ -329,9 +343,10 @@ class LabelingTaskGenerator(BatchGenerator):
         specs = {
             'task': Task(type=TaskType.MULTI_CLASS_CLASSIFICATION,
                          output=TaskOutput.SEQUENCE),
-            'X': {'dimension': self.feature_extraction.dimension},
-            'y': {'classes': self.segment_labels_},
-        }
+            'X': {'dimension': self.feature_extraction.dimension}}
+
+        if not self.local_labels:
+            specs['y'] = {'classes': self.segment_labels_}
 
         return specs
 

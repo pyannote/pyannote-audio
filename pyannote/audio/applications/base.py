@@ -150,7 +150,8 @@ class Application:
         config = load_config(Path(config_yml),
                              training=training,
                              config_default_module=config_default_module,
-                             pretrained_config_yml=pretrained_config_yml)
+                             pretrained_config_yml=pretrained_config_yml,
+                             add_audio_preprocessors=True)
 
         for key, value in config.items():
             setattr(self, f'{key}_', value)
@@ -541,7 +542,7 @@ def apply_pretrained(validate_dir: Path,
     # file generator
     protocol = get_protocol(
         protocol_name, progress=True,
-        preprocessors=pretrained.preprocessors_)
+        preprocessors=getattr(pretrained, "preprocessors_", None))
 
     for current_file in getattr(protocol, subset)():
         fX = pretrained(current_file)

@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2018-2019 CNRS
+# Copyright (c) 2018-2020 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -28,11 +28,19 @@
 
 """Speaker change detection"""
 
+from typing import Optional
+from typing import Text
+
 import numpy as np
 from .base import LabelingTask
 from .base import LabelingTaskGenerator
 from pyannote.audio.train.task import Task, TaskType, TaskOutput
 import scipy.signal
+from pyannote.audio.features.wrapper import Wrappable
+from pyannote.database.protocol.protocol import Protocol
+from pyannote.audio.train.model import Resolution
+from pyannote.audio.train.model import Alignment
+
 
 
 class SpeakerChangeDetectionGenerator(LabelingTaskGenerator):
@@ -40,18 +48,34 @@ class SpeakerChangeDetectionGenerator(LabelingTaskGenerator):
 
     Parameters
     ----------
-    feature_extraction : `pyannote.audio.features.FeatureExtraction`
-        Feature extraction
-    protocol : `pyannote.database.Protocol`
-    subset : {'train', 'development', 'test'}
+    feature_extraction : Wrappable
+        Describes how features should be obtained.
+        See pyannote.audio.features.wrapper.Wrapper documentation for details.
+    protocol : Protocol
+    subset : {'train', 'development', 'test'}, optional
+        Protocol and subset.
     resolution : `pyannote.core.SlidingWindow`, optional
         Override `feature_extraction.sliding_window`. This is useful for
         models that include the feature extraction step (e.g. SincNet) and
         therefore output a lower sample rate than that of the input.
+        Defaults to `feature_extraction.sliding_window`
     alignment : {'center', 'loose', 'strict'}, optional
-        Which mode to use when cropping labels. This is useful for models
-        that include the feature extraction step (e.g. SincNet) and
-        therefore use a different cropping mode. Defaults to 'center'.
+        Which mode to use when cropping labels. This is useful for models that
+        include the feature extraction step (e.g. SincNet) and therefore use a
+        different cropping mode. Defaults to 'center'.
+    duration : float, optional
+        Duration of audio chunks. Defaults to 2s.
+    batch_size : int, optional
+        Batch size. Defaults to 32.
+    per_epoch : float, optional
+        Force total audio duration per epoch, in days.
+        Defaults to total duration of protocol subset.
+    mask : str, optional
+        When provided, protocol files are expected to contain a key named after
+        this `mask` variable and providing a `SlidingWindowFeature` instance.
+        Generated batches will contain an additional "mask" key (on top of
+        existing "X" and "y" keys) computed as an excerpt of `current_file[mask]`
+        time-aligned with "y". Defaults to not add any "mask" key.
     collar : float, optional
         Duration of positive collar, in seconds. Default to 0.1 (i.e. frames
         less than 100ms away from the actual change are also labeled as
@@ -60,27 +84,23 @@ class SpeakerChangeDetectionGenerator(LabelingTaskGenerator):
         Use triangle-shaped label sequences centered on actual changes.
         Defaults to False (i.e. rectangle-shaped label sequences).
     non_speech : bool, optional
-        Keep non-speech/speaker changes (and vice-versa). Defauls to False
-        (i.e. only keep speaker/speaker changes).
-    duration : float, optional
-        Duration of sub-sequences. Defaults to 3.2s.
-    batch_size : int, optional
-        Batch size. Defaults to 32.
-    per_epoch : float, optional
-        Force total audio duration per epoch, in days.
-        Defaults to total duration of protocol subset.
+        Keep non-speech/speaker changes. Defauls to False (i.e. only
+        speaker/speaker changes are marked as such).
     """
 
     def __init__(self,
-                 feature_extraction,
-                 protocol,
-                 subset='train',
-                 resolution=None,
-                 alignment=None,
-                 collar=0.100,
-                 regression=False,
-                 non_speech=False,
-                 **kwargs):
+                 feature_extraction: Wrappable,
+                 protocol: Protocol,
+                 subset: Text = 'train',
+                 resolution: Optional[Resolution] = None,
+                 alignment: Optional[Alignment] = None,
+                 duration: float = 2.0,
+                 batch_size: int = 32,
+                 per_epoch: float = None,
+                 mask: Text = None,
+                 collar: float = 0.1,
+                 regression: bool = False,
+                 non_speech: bool = False):
 
         self.collar = collar
         self.regression = regression
@@ -94,12 +114,19 @@ class SpeakerChangeDetectionGenerator(LabelingTaskGenerator):
         # window
         self.window_ = scipy.signal.triang(self.collar_)[:, np.newaxis]
 
-        super(SpeakerChangeDetectionGenerator, self).__init__(
-            feature_extraction, protocol, subset=subset,
-            resolution=resolution, alignment=alignment, **kwargs)
+        super().__init__(feature_extraction,
+                         protocol,
+                         subset=subset,
+                         resolution=resolution,
+                         alignment=alignment,
+                         duration=duration,
+                         batch_size=batch_size,
+                         per_epoch=per_epoch,
+                         exhaustive=False,
+                         mask=mask,
+                         local_labels=True)
 
-
-    def postprocess_y(self, Y):
+    def postprocess_y(self, Y: np.ndarray) -> np.ndarray:
         """Generate labels for speaker change detection
 
         Parameters

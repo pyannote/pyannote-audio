@@ -64,7 +64,8 @@ def merge_cfg(pretrained_cfg, cfg):
 def load_config(config_yml: Path,
                 training: bool = False,
                 config_default_module: Text = None,
-                pretrained_config_yml: Path = None) -> Dict:
+                pretrained_config_yml: Path = None,
+                add_audio_preprocessors: bool = True) -> Dict:
     """
 
     Returns
@@ -135,7 +136,7 @@ def load_config(config_yml: Path,
             #    key: /path/to/{uri}.wav
             preprocessors[key] = preprocessor
 
-    if 'audio' not in preprocessors:
+    if 'audio' not in preprocessors and add_audio_preprocessors:
         preprocessors['audio'] = FileFinder()
 
     if 'duration' not in preprocessors:

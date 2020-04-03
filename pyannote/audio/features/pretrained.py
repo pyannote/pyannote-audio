@@ -95,7 +95,9 @@ class Pretrained(FeatureExtraction):
         root_dir = train_dir.parents[1]
 
         config_yml = root_dir / 'config.yml'
-        config = load_config(config_yml, training=False)
+        config = load_config(config_yml,
+                             training=False,
+                             add_audio_preprocessors=False)
 
         # use feature extraction from config.yml configuration file
         self.feature_extraction_ = config['feature_extraction']
