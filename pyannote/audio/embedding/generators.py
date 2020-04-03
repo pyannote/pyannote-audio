@@ -29,6 +29,7 @@
 from typing import Optional
 import itertools
 import numpy as np
+from pyannote.core import Segment
 from pyannote.core.utils.random import random_segment
 from pyannote.core.utils.random import random_subsegment
 from pyannote.audio.train.task import Task, TaskType, TaskOutput
