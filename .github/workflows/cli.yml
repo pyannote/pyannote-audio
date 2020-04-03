@@ -11,7 +11,7 @@ on:
       - release/*
 
 jobs:
-  sad_xp:
+  cli:
     runs-on: ubuntu-latest
     strategy:
       max-parallel: 4
