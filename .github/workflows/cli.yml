@@ -26,6 +26,7 @@ jobs:
         python-version: ${{ matrix.python-version }}
     - name: Install from source
       run: |
+        sudo apt-get install libsndfile1
         python -m pip install --upgrade pip
         pip install numpy scipy torch
         pip install .
