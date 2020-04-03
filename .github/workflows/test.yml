@@ -1,4 +1,4 @@
-name: Test
+name: Test API
 
 on:
   pull_request:
