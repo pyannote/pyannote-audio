@@ -36,3 +36,6 @@ jobs:
     - name: Run a basic SCD experiment
       run: |
         sh ./tests/cli/scd.sh
+    - name: Run a basic OVL experiment
+      run: |
+        sh ./tests/cli/ovl.sh
