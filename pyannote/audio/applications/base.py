@@ -542,7 +542,7 @@ def apply_pretrained(validate_dir: Path,
     # file generator
     protocol = get_protocol(
         protocol_name, progress=True,
-        preprocessors=pretrained.preprocessors_)
+        preprocessors=getattr(pretrained, "preprocessors_", None))
 
     for current_file in getattr(protocol, subset)():
         fX = pretrained(current_file)
