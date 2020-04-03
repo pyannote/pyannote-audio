@@ -134,7 +134,10 @@ class SpeechSegmentGenerator(BatchGenerator):
                 file_labels[key].add(current_file[key])
 
             # get annotation for current file
-            annotation = current_file['annotation']
+            # ensure annotation is cropped to actual file duration
+            support = Segment(start=0, end=current_file['duration'])
+            annotation = current_file['annotation'].crop(
+                support, mode='intersection')
 
             # loop on each label in current file
             for label in annotation.labels():
