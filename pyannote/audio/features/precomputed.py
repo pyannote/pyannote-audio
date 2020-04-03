@@ -71,29 +71,35 @@ class Precomputed:
 
     def get_path(self, item):
         uri = get_unique_identifier(item)
-        path = '{root_dir}/{uri}.npy'.format(root_dir=self.root_dir, uri=uri)
+        path = "{root_dir}/{uri}.npy".format(root_dir=self.root_dir, uri=uri)
         return path
 
-    def __init__(self, root_dir=None, use_memmap=False,
-                 sliding_window=None, dimension=None, classes=None,
-                 augmentation=None):
+    def __init__(
+        self,
+        root_dir=None,
+        use_memmap=False,
+        sliding_window=None,
+        dimension=None,
+        classes=None,
+        augmentation=None,
+    ):
 
         if augmentation is not None:
-            msg = 'Data augmentation is not supported by `Precomputed`.'
+            msg = "Data augmentation is not supported by `Precomputed`."
             raise ValueError(msg)
 
         super(Precomputed, self).__init__()
         self.root_dir = Path(root_dir).expanduser().resolve(strict=False)
         self.use_memmap = use_memmap
 
-        path = self.root_dir / 'metadata.yml'
+        path = self.root_dir / "metadata.yml"
         if path.exists():
 
-            with io.open(path, 'r') as f:
+            with io.open(path, "r") as f:
                 params = yaml.load(f, Loader=yaml.SafeLoader)
 
-            self.dimension_ = params.pop('dimension')
-            self.classes_ = params.pop('classes', None)
+            self.dimension_ = params.pop("dimension")
+            self.classes_ = params.pop("classes", None)
             self.sliding_window_ = SlidingWindow(**params)
 
             if dimension is not None and self.dimension_ != dimension:
@@ -104,10 +110,11 @@ class Precomputed:
                 msg = 'inconsistent "classes" (is {0}, should be: {1})'
                 raise ValueError(msg.format(classes, self.classes_))
 
-            if ((sliding_window is not None) and
-                ((sliding_window.start != self.sliding_window_.start) or
-                 (sliding_window.duration != self.sliding_window_.duration) or
-                 (sliding_window.step != self.sliding_window_.step))):
+            if (sliding_window is not None) and (
+                (sliding_window.start != self.sliding_window_.start)
+                or (sliding_window.duration != self.sliding_window_.duration)
+                or (sliding_window.step != self.sliding_window_.step)
+            ):
                 msg = 'inconsistent "sliding_window"'
                 raise ValueError(msg)
 
@@ -116,33 +123,35 @@ class Precomputed:
             if dimension is None:
                 if classes is None:
                     msg = (
-                        f'Please provide either `dimension` or `classes` '
-                        f'parameters (or both) when instantiating '
-                        f'`Precomputed`.'
+                        f"Please provide either `dimension` or `classes` "
+                        f"parameters (or both) when instantiating "
+                        f"`Precomputed`."
                     )
                 dimension = len(classes)
 
             if sliding_window is None or dimension is None:
                 msg = (
-                    f'Either directory {self.root_dir} does not exist or it '
-                    f'does not contain precomputed features. In case it exists '
-                    f'and this was done on purpose, please provide both '
-                    f'`sliding_window` and `dimension` parameters when '
-                    f'instantianting `Precomputed`.')
+                    f"Either directory {self.root_dir} does not exist or it "
+                    f"does not contain precomputed features. In case it exists "
+                    f"and this was done on purpose, please provide both "
+                    f"`sliding_window` and `dimension` parameters when "
+                    f"instantianting `Precomputed`."
+                )
                 raise ValueError(msg)
 
             # create parent directory
             mkdir_p(path.parent)
 
-
-            params = {'start': sliding_window.start,
-                      'duration': sliding_window.duration,
-                      'step': sliding_window.step,
-                      'dimension': dimension}
+            params = {
+                "start": sliding_window.start,
+                "duration": sliding_window.duration,
+                "step": sliding_window.step,
+                "dimension": dimension,
+            }
             if classes is not None:
-                params['classes'] = classes
+                params["classes"] = classes
 
-            with io.open(path, 'w') as f:
+            with io.open(path, "w") as f:
                 yaml.dump(params, f, default_flow_style=False)
 
             self.sliding_window_ = sliding_window
@@ -151,13 +160,17 @@ class Precomputed:
 
     def augmentation():
         doc = "Data augmentation."
+
         def fget(self):
             return None
+
         def fset(self, augmentation):
             if augmentation is not None:
-                msg = 'Data augmentation is not supported by `Precomputed`.'
+                msg = "Data augmentation is not supported by `Precomputed`."
                 raise AttributeError(msg)
+
         return locals()
+
     augmentation = property(**augmentation())
 
     @property
@@ -192,23 +205,23 @@ class Precomputed:
         path = Path(self.get_path(current_file))
 
         if not path.exists():
-            uri = current_file['uri']
-            database = current_file['database']
+            uri = current_file["uri"]
+            database = current_file["database"]
             msg = (
-                f'Directory {self.root_dir} does not contain '
+                f"Directory {self.root_dir} does not contain "
                 f'precomputed features for file "{uri}" of '
                 f'"{database}" database.'
             )
             raise PyannoteFeatureExtractionError(msg)
 
         if self.use_memmap:
-            data = np.load(str(path), mmap_mode='r')
+            data = np.load(str(path), mmap_mode="r")
         else:
             data = np.load(str(path))
 
         return SlidingWindowFeature(data, self.sliding_window_)
 
-    def crop(self, current_file, segment, mode='center', fixed=None):
+    def crop(self, current_file, segment, mode="center", fixed=None):
         """Fast version of self(current_file).crop(segment, **kwargs)
 
         Parameters
@@ -229,10 +242,10 @@ class Precomputed:
         """
 
         # match default FeatureExtraction.crop behavior
-        if mode == 'center' and fixed is None:
+        if mode == "center" and fixed is None:
             fixed = segment.duration
 
-        memmap = open_memmap(self.get_path(current_file), mode='r')
+        memmap = open_memmap(self.get_path(current_file), mode="r")
         swf = SlidingWindowFeature(memmap, self.sliding_window_)
         result = swf.crop(segment, mode=mode, fixed=fixed)
         del memmap
@@ -240,7 +253,7 @@ class Precomputed:
 
     def shape(self, item):
         """Faster version of precomputed(item).data.shape"""
-        memmap = open_memmap(self.get_path(item), mode='r')
+        memmap = open_memmap(self.get_path(item), mode="r")
         shape = memmap.shape
         del memmap
         return shape

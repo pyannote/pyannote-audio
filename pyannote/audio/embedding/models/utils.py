@@ -30,17 +30,15 @@
 import math
 
 
-def get_conv1d_output_shape(input_shape, kernel_size,
-                            stride=1, padding=0, dilation=1):
+def get_conv1d_output_shape(input_shape, kernel_size, stride=1, padding=0, dilation=1):
     """Predict output shape of Conv1D"""
 
-    out_shape = (input_shape + 2 * padding - dilation * (kernel_size - 1) - 1)
+    out_shape = input_shape + 2 * padding - dilation * (kernel_size - 1) - 1
     out_shape = out_shape / stride + 1
     return int(math.floor(out_shape))
 
 
-def get_conv2d_output_shape(input_shape, kernel_size,
-                            stride=1, padding=0, dilation=1):
+def get_conv2d_output_shape(input_shape, kernel_size, stride=1, padding=0, dilation=1):
     """Predict output shape of Conv2D"""
 
     if not isinstance(kernel_size, tuple):

@@ -102,22 +102,27 @@ class CongenerousCosineLoss(Classification):
         Scaling factor used in embedding L2-normalization. Defaults to 6.25.
     """
 
-    def __init__(self, duration: float = 1.0,
-                       min_duration: float = None,
-                       per_turn: int = 1,
-                       per_label: int = 1,
-                       per_fold: int = 32,
-                       per_epoch: float = None,
-                       label_min_duration: float = 0.,
-                       alpha: float = 6.25):
+    def __init__(
+        self,
+        duration: float = 1.0,
+        min_duration: float = None,
+        per_turn: int = 1,
+        per_label: int = 1,
+        per_fold: int = 32,
+        per_epoch: float = None,
+        label_min_duration: float = 0.0,
+        alpha: float = 6.25,
+    ):
 
-        super().__init__(duration=duration,
-                         min_duration=min_duration,
-                         per_turn=per_turn,
-                         per_label=per_label,
-                         per_fold=per_fold,
-                         per_epoch=per_epoch,
-                         label_min_duration=label_min_duration)
+        super().__init__(
+            duration=duration,
+            min_duration=min_duration,
+            per_turn=per_turn,
+            per_label=per_label,
+            per_fold=per_fold,
+            per_epoch=per_epoch,
+            label_min_duration=label_min_duration,
+        )
 
         self.alpha = alpha
 
@@ -131,8 +136,7 @@ class CongenerousCosineLoss(Classification):
         """
 
         self.classifier_ = CocoLinear(
-            self.model.dimension,
-            len(self.specifications['y']['classes']),
-            self.alpha).to(self.device)
+            self.model.dimension, len(self.specifications["y"]["classes"]), self.alpha
+        ).to(self.device)
 
         return self.classifier_.parameters()

@@ -33,7 +33,6 @@ from typing import Text
 from typing import Union
 
 
-
 def mkdir_p(path: Union[Text, Path]):
     """Create directory and all its parents if they do not exist
 

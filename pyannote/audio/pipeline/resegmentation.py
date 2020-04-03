@@ -26,7 +26,7 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
-raise NotImplementedError('FIXME')
+raise NotImplementedError("FIXME")
 
 from typing import Optional
 from pathlib import Path
@@ -44,10 +44,12 @@ from pyannote.pipeline.parameter import Uniform
 from pyannote.core import Annotation
 from pyannote.metrics.diarization import GreedyDiarizationErrorRate
 
-from pyannote.audio.labeling.tasks.resegmentation \
-    import Resegmentation as _Resegmentation
-from pyannote.audio.labeling.tasks.resegmentation \
-    import ResegmentationWithOverlap as _ResegmentationWithOverlap
+from pyannote.audio.labeling.tasks.resegmentation import (
+    Resegmentation as _Resegmentation,
+)
+from pyannote.audio.labeling.tasks.resegmentation import (
+    ResegmentationWithOverlap as _ResegmentationWithOverlap,
+)
 
 
 class Resegmentation(Pipeline):
@@ -118,46 +120,58 @@ class Resegmentation(Pipeline):
 
     """
 
-    CONFIG_YML = '{experiment_dir}/config.yml'
+    CONFIG_YML = "{experiment_dir}/config.yml"
 
     # TODO. add support for data augmentation
-    def __init__(self, feature_extraction: Optional[dict] = None,
-                       architecture: Optional[dict] = None,
-                       overlap: Optional[bool] = False,
-                       keep_sad: Optional[bool] = False,
-                       mask: Optional[dict] = None,
-                       augmentation: Optional[bool] = False,
-                       duration: Optional[float] = 2.0,
-                       batch_size: Optional[float] = 32,
-                       gpu: Optional[bool] = False):
+    def __init__(
+        self,
+        feature_extraction: Optional[dict] = None,
+        architecture: Optional[dict] = None,
+        overlap: Optional[bool] = False,
+        keep_sad: Optional[bool] = False,
+        mask: Optional[dict] = None,
+        augmentation: Optional[bool] = False,
+        duration: Optional[float] = 2.0,
+        batch_size: Optional[float] = 32,
+        gpu: Optional[bool] = False,
+    ):
 
         # feature extraction
         if feature_extraction is None:
             from pyannote.audio.features import LibrosaMFCC
+
             self.feature_extraction_ = LibrosaMFCC(
-                e=False, De=True, DDe=True,
-                coefs=19, D=True, DD=True,
-                duration=0.025, step=0.010, sample_rate=16000,
+                e=False,
+                De=True,
+                DDe=True,
+                coefs=19,
+                D=True,
+                DD=True,
+                duration=0.025,
+                step=0.010,
+                sample_rate=16000,
             )
         else:
             FeatureExtraction = get_class_by_name(
-                feature_extraction['name'],
-                default_module_name='pyannote.audio.features')
+                feature_extraction["name"],
+                default_module_name="pyannote.audio.features",
+            )
             self.feature_extraction_ = FeatureExtraction(
-                **feature_extraction.get('params', {}),
-                augmentation=None)
+                **feature_extraction.get("params", {}), augmentation=None
+            )
 
         # network architecture
         if architecture is None:
             from pyannote.audio.models import PyanNet
+
             self.Architecture_ = PyanNet
-            self.architecture_params_ = {'sincnet': {'skip': True}}
+            self.architecture_params_ = {"sincnet": {"skip": True}}
 
         else:
             self.Architecture_ = get_class_by_name(
-                architecture['name'],
-                default_module_name='pyannote.audio.models')
-            self.architecture_params_ = architecture.get('params', {})
+                architecture["name"], default_module_name="pyannote.audio.models"
+            )
+            self.architecture_params_ = architecture.get("params", {})
 
         self.overlap = overlap
         self.keep_sad = keep_sad
@@ -167,15 +181,15 @@ class Resegmentation(Pipeline):
             self.mask_dimension_ = None
             self.mask_logscale_ = False
         else:
-            self.mask_dimension_ = mask['dimension']
-            self.mask_logscale_ = mask['log_scale']
+            self.mask_dimension_ = mask["dimension"]
+            self.mask_logscale_ = mask["log_scale"]
 
         self.augmentation = augmentation
 
         self.duration = duration
         self.batch_size = batch_size
         self.gpu = gpu
-        self.device_ = torch.device('cuda') if self.gpu else torch.device('cpu')
+        self.device_ = torch.device("cuda") if self.gpu else torch.device("cpu")
 
         # hyper-parameters
         self.learning_rate = LogUniform(1e-3, 1)
@@ -242,4 +256,4 @@ class Resegmentation(Pipeline):
 
     def get_metric(self) -> GreedyDiarizationErrorRate:
         """Return new instance of detection error rate metric"""
-        return  GreedyDiarizationErrorRate(collar=0.0, skip_overlap=False)
+        return GreedyDiarizationErrorRate(collar=0.0, skip_overlap=False)

@@ -71,29 +71,33 @@ class DomainClassificationGenerator(LabelingTaskGenerator):
     domain : `str`, optional
         Key to use as domain. Defaults to 'domain'.
     """
-    def __init__(self,
-                 feature_extraction: Wrappable,
-                 protocol: Protocol,
-                 subset: Text = 'train',
-                 resolution: Optional[Resolution] = None,
-                 alignment: Optional[Alignment] = None,
-                 duration: float = 2.0,
-                 batch_size: int = 32,
-                 per_epoch: float = None,
-                 domain: Text = 'domain'):
 
+    def __init__(
+        self,
+        feature_extraction: Wrappable,
+        protocol: Protocol,
+        subset: Text = "train",
+        resolution: Optional[Resolution] = None,
+        alignment: Optional[Alignment] = None,
+        duration: float = 2.0,
+        batch_size: int = 32,
+        per_epoch: float = None,
+        domain: Text = "domain",
+    ):
 
         self.domain = domain
 
-        super().__init__(feature_extraction,
-                         protocol,
-                         subset=subset,
-                         resolution=resolution,
-                         alignment=alignment,
-                         duration=duration,
-                         batch_size=batch_size,
-                         per_epoch=per_epoch,
-                         exhaustive=False)
+        super().__init__(
+            feature_extraction,
+            protocol,
+            subset=subset,
+            resolution=resolution,
+            alignment=alignment,
+            duration=duration,
+            batch_size=batch_size,
+            per_epoch=per_epoch,
+            exhaustive=False,
+        )
 
     def initialize_y(self, current_file):
         return self.file_labels_[self.domain].index(current_file[self.domain])
@@ -104,10 +108,11 @@ class DomainClassificationGenerator(LabelingTaskGenerator):
     @property
     def specifications(self):
         return {
-            'task': Task(type=TaskType.MULTI_CLASS_CLASSIFICATION,
-                         output=TaskOutput.VECTOR),
-            'X': {'dimension': self.feature_extraction.dimension},
-            'y': {'classes': self.file_labels_[self.domain]},
+            "task": Task(
+                type=TaskType.MULTI_CLASS_CLASSIFICATION, output=TaskOutput.VECTOR
+            ),
+            "X": {"dimension": self.feature_extraction.dimension},
+            "y": {"classes": self.file_labels_[self.domain]},
         }
 
 
@@ -127,15 +132,13 @@ class DomainClassification(LabelingTask):
         Defaults to one day (1).
     """
 
-    def __init__(self, domain='domain', **kwargs):
+    def __init__(self, domain="domain", **kwargs):
         super().__init__(**kwargs)
         self.domain = domain
 
-    def get_batch_generator(self,
-                            feature_extraction,
-                            protocol,
-                            subset='train',
-                            **kwargs):
+    def get_batch_generator(
+        self, feature_extraction, protocol, subset="train", **kwargs
+    ):
         """Get batch generator for domain classification
 
         Parameters
@@ -158,4 +161,5 @@ class DomainClassification(LabelingTask):
             domain=self.domain,
             duration=self.duration,
             per_epoch=self.per_epoch,
-            batch_size=self.batch_size)
+            batch_size=self.batch_size,
+        )

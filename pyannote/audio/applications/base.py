@@ -68,39 +68,39 @@ def create_zip(validate_dir: Path):
 
     """
 
-    existing_zips = list(validate_dir.glob('*.zip'))
+    existing_zips = list(validate_dir.glob("*.zip"))
     if len(existing_zips) == 1:
         existing_zips[0].unlink()
     elif len(existing_zips) > 1:
         msg = (
-            f'Looks like there are too many torch.hub zip files '
-            f'in {validate_dir}.')
+            f"Looks like there are too many torch.hub zip files " f"in {validate_dir}."
+        )
         raise NotImplementedError(msg)
 
-    params_yml = validate_dir / 'params.yml'
+    params_yml = validate_dir / "params.yml"
 
-    with open(params_yml, 'r') as fp:
+    with open(params_yml, "r") as fp:
         params = yaml.load(fp, Loader=yaml.SafeLoader)
-        epoch = params['epoch']
+        epoch = params["epoch"]
 
     xp_dir = validate_dir.parents[3]
-    config_yml = xp_dir / 'config.yml'
+    config_yml = xp_dir / "config.yml"
 
     train_dir = validate_dir.parents[1]
-    weights_dir = train_dir / 'weights'
-    specs_yml = train_dir / 'specs.yml'
+    weights_dir = train_dir / "weights"
+    specs_yml = train_dir / "specs.yml"
 
-    hub_zip = validate_dir / 'hub.zip'
-    with zipfile.ZipFile(hub_zip, 'w') as z:
+    hub_zip = validate_dir / "hub.zip"
+    with zipfile.ZipFile(hub_zip, "w") as z:
         z.write(config_yml, arcname=config_yml.relative_to(xp_dir))
         z.write(specs_yml, arcname=specs_yml.relative_to(xp_dir))
         z.write(params_yml, arcname=params_yml.relative_to(xp_dir))
-        for pt in weights_dir.glob(f'{epoch:04d}*.pt'):
+        for pt in weights_dir.glob(f"{epoch:04d}*.pt"):
             z.write(pt, arcname=pt.relative_to(xp_dir))
 
     sha256_hash = hashlib.sha256()
-    with open(hub_zip,"rb") as fp:
-        for byte_block in iter(lambda: fp.read(4096),b""):
+    with open(hub_zip, "rb") as fp:
+        for byte_block in iter(lambda: fp.read(4096), b""):
             sha256_hash.update(byte_block)
 
     hash_prefix = sha256_hash.hexdigest()[:10]
@@ -112,24 +112,26 @@ def create_zip(validate_dir: Path):
 
 class Application:
 
-    CONFIG_YML = '{experiment_dir}/config.yml'
-    TRAIN_DIR = '{experiment_dir}/train/{protocol}.{subset}'
-    WEIGHTS_DIR = '{train_dir}/weights'
-    MODEL_PT = '{train_dir}/weights/{epoch:04d}.pt'
-    VALIDATE_DIR = '{train_dir}/validate{_criterion}/{protocol}.{subset}'
-    APPLY_DIR = '{validate_dir}/apply/{epoch:04d}'
+    CONFIG_YML = "{experiment_dir}/config.yml"
+    TRAIN_DIR = "{experiment_dir}/train/{protocol}.{subset}"
+    WEIGHTS_DIR = "{train_dir}/weights"
+    MODEL_PT = "{train_dir}/weights/{epoch:04d}.pt"
+    VALIDATE_DIR = "{train_dir}/validate{_criterion}/{protocol}.{subset}"
+    APPLY_DIR = "{validate_dir}/apply/{epoch:04d}"
 
     @classmethod
-    def from_train_dir(cls, train_dir: Path,
-                            training: bool = False):
+    def from_train_dir(cls, train_dir: Path, training: bool = False):
 
         app = cls(train_dir.parents[1], training=training)
         app.train_dir_ = train_dir
         return app
 
-    def __init__(self, experiment_dir: str,
-                       training: bool = False,
-                       pretrained_config_yml: Path = None):
+    def __init__(
+        self,
+        experiment_dir: str,
+        training: bool = False,
+        pretrained_config_yml: Path = None,
+    ):
         """
 
         Parameters
@@ -144,23 +146,29 @@ class Application:
 
         # load configuration
         config_yml = self.CONFIG_YML.format(experiment_dir=self.experiment_dir)
-        config_default_module = getattr(self, 'config_default_module',
-                                        'pyannote.audio.labeling.tasks')
+        config_default_module = getattr(
+            self, "config_default_module", "pyannote.audio.labeling.tasks"
+        )
 
-        config = load_config(Path(config_yml),
-                             training=training,
-                             config_default_module=config_default_module,
-                             pretrained_config_yml=pretrained_config_yml)
+        config = load_config(
+            Path(config_yml),
+            training=training,
+            config_default_module=config_default_module,
+            pretrained_config_yml=pretrained_config_yml,
+        )
 
         for key, value in config.items():
-            setattr(self, f'{key}_', value)
+            setattr(self, f"{key}_", value)
 
-    def train(self, protocol_name: str,
-                    subset: str = 'train',
-                    warm_start: Union[int, Literal['last'], Path] = 0,
-                    epochs: int = 1000,
-                    device: Optional[torch.device] = None,
-                    n_jobs: int = 1):
+    def train(
+        self,
+        protocol_name: str,
+        subset: str = "train",
+        warm_start: Union[int, Literal["last"], Path] = 0,
+        epochs: int = 1000,
+        device: Optional[torch.device] = None,
+        n_jobs: int = 1,
+    ):
         """Train model
 
         Parameters
@@ -184,29 +192,33 @@ class Application:
         preprocessors = self.preprocessors_
         if "audio" not in preprocessors:
             preprocessors["audio"] = FileFinder()
-        if 'duration' not in preprocessors:
-            preprocessors['duration'] = get_audio_duration
-        protocol = get_protocol(protocol_name,
-                                progress=True,
-                                preprocessors=preprocessors)
+        if "duration" not in preprocessors:
+            preprocessors["duration"] = get_audio_duration
+        protocol = get_protocol(
+            protocol_name, progress=True, preprocessors=preprocessors
+        )
 
         batch_generator = self.task_.get_batch_generator(
             self.feature_extraction_,
             protocol,
             subset=subset,
             resolution=self.model_resolution_,
-            alignment=self.model_alignment_)
+            alignment=self.model_alignment_,
+        )
 
         # initialize model architecture based on specifications
         model = self.get_model_from_specs_(batch_generator.specifications)
 
-        train_dir = Path(self.TRAIN_DIR.format(
-            experiment_dir=self.experiment_dir,
-            protocol=protocol_name,
-            subset=subset))
+        train_dir = Path(
+            self.TRAIN_DIR.format(
+                experiment_dir=self.experiment_dir,
+                protocol=protocol_name,
+                subset=subset,
+            )
+        )
 
         # use last available epoch as starting point
-        if warm_start == 'last':
+        if warm_start == "last":
             warm_start = self.get_number_of_epochs(train_dir=train_dir) - 1
 
         iterations = self.task_.fit_iter(
@@ -220,7 +232,8 @@ class Application:
             train_dir=train_dir,
             device=device,
             callbacks=self.callbacks_,
-            n_jobs=n_jobs)
+            n_jobs=n_jobs,
+        )
 
         for _ in iterations:
             pass
@@ -242,7 +255,7 @@ class Application:
             train_dir = self.train_dir_
 
         directory = self.MODEL_PT.format(train_dir=train_dir, epoch=0)[:-7]
-        weights = sorted(glob(directory + '*[0-9][0-9][0-9][0-9].pt'))
+        weights = sorted(glob(directory + "*[0-9][0-9][0-9][0-9].pt"))
 
         if not weights:
             number_of_epochs = 0
@@ -252,59 +265,65 @@ class Application:
             number_of_epochs = int(basename(weights[-1])[:-3]) + 1
             first_epoch = int(basename(weights[0])[:-3])
 
-        return (number_of_epochs, first_epoch) if return_first \
-                                               else number_of_epochs
+        return (number_of_epochs, first_epoch) if return_first else number_of_epochs
 
-    def validate_init(self, protocol_name,
-                            subset='development'):
-        raise NotImplementedError('')
+    def validate_init(self, protocol_name, subset="development"):
+        raise NotImplementedError("")
 
-    def validate_epoch(self, epoch,
-                             validation_data,
-                             protocol=None,
-                             subset='development',
-                             device: Optional[torch.device] = None,
-                             batch_size: int = 32,
-                             n_jobs: int = 1,
-                             **kwargs):
+    def validate_epoch(
+        self,
+        epoch,
+        validation_data,
+        protocol=None,
+        subset="development",
+        device: Optional[torch.device] = None,
+        batch_size: int = 32,
+        n_jobs: int = 1,
+        **kwargs,
+    ):
 
-        raise NotImplementedError('')
+        raise NotImplementedError("")
 
     def validation_criterion(self, protocol, **kwargs):
         return None
 
-    def validate(self, protocol: str,
-                       subset: str = 'development',
-                       every: int = 1,
-                       start: Union[int, Literal['last']] = 1,
-                       end: Union[int, Literal['last']] = 100,
-                       chronological: bool = False,
-                       device: Optional[torch.device] = None,
-                       batch_size: int = 32,
-                       n_jobs: int = 1,
-                       **kwargs):
+    def validate(
+        self,
+        protocol: str,
+        subset: str = "development",
+        every: int = 1,
+        start: Union[int, Literal["last"]] = 1,
+        end: Union[int, Literal["last"]] = 100,
+        chronological: bool = False,
+        device: Optional[torch.device] = None,
+        batch_size: int = 32,
+        n_jobs: int = 1,
+        **kwargs,
+    ):
 
         # use last available epoch as starting point
-        if start == 'last':
+        if start == "last":
             start = self.get_number_of_epochs() - 1
 
         # use last available epoch as end point
-        if end == 'last':
+        if end == "last":
             end = self.get_number_of_epochs() - 1
 
-        criterion = self.validation_criterion(protocol,
-                                              **kwargs)
+        criterion = self.validation_criterion(protocol, **kwargs)
 
-        validate_dir = Path(self.VALIDATE_DIR.format(
-            train_dir=self.train_dir_,
-            _criterion=f'_{criterion}' if criterion is not None else '',
-            protocol=protocol, subset=subset))
+        validate_dir = Path(
+            self.VALIDATE_DIR.format(
+                train_dir=self.train_dir_,
+                _criterion=f"_{criterion}" if criterion is not None else "",
+                protocol=protocol,
+                subset=subset,
+            )
+        )
 
-        params_yml = validate_dir / 'params.yml'
+        params_yml = validate_dir / "params.yml"
 
         validate_dir.mkdir(parents=True, exist_ok=True)
-        writer = SummaryWriter(log_dir=str(validate_dir),
-                               purge_step=start)
+        writer = SummaryWriter(log_dir=str(validate_dir), purge_step=start)
 
         self.validate_dir_ = validate_dir
 
@@ -313,49 +332,55 @@ class Application:
         if n_jobs > 1:
             self.pool_ = multiprocessing.Pool(n_jobs)
 
-        progress_bar = tqdm(unit='iteration')
+        progress_bar = tqdm(unit="iteration")
 
         for i, epoch in enumerate(
-            self.validate_iter(start=start, end=end, step=every,
-                               chronological=chronological)):
+            self.validate_iter(
+                start=start, end=end, step=every, chronological=chronological
+            )
+        ):
 
             # {'metric': 'detection_error_rate',
             #  'minimize': True,
             #  'value': 0.9,
             #  'pipeline': ...}
-            details = self.validate_epoch(epoch,
-                                          validation_data,
-                                          protocol=protocol,
-                                          subset=subset,
-                                          device=device,
-                                          batch_size=batch_size,
-                                          n_jobs=n_jobs,
-                                          **kwargs)
+            details = self.validate_epoch(
+                epoch,
+                validation_data,
+                protocol=protocol,
+                subset=subset,
+                device=device,
+                batch_size=batch_size,
+                n_jobs=n_jobs,
+                **kwargs,
+            )
 
             # initialize
             if i == 0:
                 # what is the name of the metric?
-                metric = details['metric']
+                metric = details["metric"]
                 # should the metric be minimized?
-                minimize = details['minimize']
+                minimize = details["minimize"]
                 # epoch -> value dictionary
                 values = SortedDict()
 
                 # load best epoch and value from past executions
                 if params_yml.exists():
-                    with open(params_yml, 'r') as fp:
+                    with open(params_yml, "r") as fp:
                         params = yaml.load(fp, Loader=yaml.SafeLoader)
-                    best_epoch = params['epoch']
+                    best_epoch = params["epoch"]
                     best_value = params[metric]
                     values[best_epoch] = best_value
 
             # metric value for current epoch
-            values[epoch] = details['value']
+            values[epoch] = details["value"]
 
             # send value to tensorboard
             writer.add_scalar(
-                f'validate/{protocol}.{subset}/{metric}',
-                values[epoch], global_step=epoch)
+                f"validate/{protocol}.{subset}/{metric}",
+                values[epoch],
+                global_step=epoch,
+            )
 
             # keep track of best value so far
             if minimize:
@@ -372,26 +397,27 @@ class Application:
 
                 best = {
                     metric: best_value,
-                    'epoch': epoch,
+                    "epoch": epoch,
                 }
-                if 'pipeline' in details:
-                    pipeline = details['pipeline']
-                    best['params'] = pipeline.parameters(instantiated=True)
-                with open(params_yml, mode='w') as fp:
+                if "pipeline" in details:
+                    pipeline = details["pipeline"]
+                    best["params"] = pipeline.parameters(instantiated=True)
+                with open(params_yml, mode="w") as fp:
                     fp.write(yaml.dump(best, default_flow_style=False))
 
                 # create/update zip file for later upload to torch.hub
                 hub_zip = create_zip(validate_dir)
 
             # progress bar
-            desc = (f'{metric} | '
-                    f'Epoch #{best_epoch} = {100 * best_value:g}% (best) | '
-                    f'Epoch #{epoch} = {100 * details["value"]:g}%')
+            desc = (
+                f"{metric} | "
+                f"Epoch #{best_epoch} = {100 * best_value:g}% (best) | "
+                f'Epoch #{epoch} = {100 * details["value"]:g}%'
+            )
             progress_bar.set_description(desc=desc)
             progress_bar.update(1)
 
-    def validate_iter(self, start=1, end=None, step=1, sleep=10,
-                      chronological=False):
+    def validate_iter(self, start=1, end=None, step=1, sleep=10, chronological=False):
         """Continuously watches `train_dir` for newly completed epochs
         and yields them for validation
 
@@ -429,7 +455,7 @@ class Application:
             # wait for first epoch to complete
             _, first_epoch = self.get_number_of_epochs(return_first=True)
             if first_epoch is None:
-                print('waiting for first epoch to complete...')
+                print("waiting for first epoch to complete...")
                 time.sleep(sleep)
                 continue
 
@@ -479,18 +505,22 @@ class Application:
             if next_epoch_to_validate_in_order == next_epoch_to_validate:
                 next_epoch_to_validate_in_order += step
 
+
 # TODO: add support for torch.hub models directly in docopt
 
-def apply_pretrained(validate_dir: Path,
-                     protocol_name: str,
-                     subset: Optional[str] = "test",
-                     duration: Optional[float] = None,
-                     step: float = 0.25,
-                     device: Optional[torch.device] = None,
-                     batch_size: int = 32,
-                     pretrained: Optional[str] = None,
-                     Pipeline: type = None,
-                     **kwargs):
+
+def apply_pretrained(
+    validate_dir: Path,
+    protocol_name: str,
+    subset: Optional[str] = "test",
+    duration: Optional[float] = None,
+    step: float = 0.25,
+    device: Optional[torch.device] = None,
+    batch_size: int = 32,
+    pretrained: Optional[str] = None,
+    Pipeline: type = None,
+    **kwargs,
+):
     """Apply pre-trained model
 
     Parameters
@@ -508,51 +538,52 @@ def apply_pretrained(validate_dir: Path,
     """
 
     if pretrained is None:
-        pretrained = Pretrained(validate_dir=validate_dir,
-                                duration=duration,
-                                step=step,
-                                batch_size=batch_size,
-                                device=device)
-        output_dir = validate_dir / 'apply' / f'{pretrained.epoch_:04d}'
+        pretrained = Pretrained(
+            validate_dir=validate_dir,
+            duration=duration,
+            step=step,
+            batch_size=batch_size,
+            device=device,
+        )
+        output_dir = validate_dir / "apply" / f"{pretrained.epoch_:04d}"
     else:
 
-        if pretrained in torch.hub.list('pyannote/pyannote-audio'):
+        if pretrained in torch.hub.list("pyannote/pyannote-audio"):
             output_dir = validate_dir / pretrained
         else:
             output_dir = validate_dir
 
-        pretrained = Wrapper(pretrained,
-                             duration=duration,
-                             step=step,
-                             batch_size=batch_size,
-                             device=device)
+        pretrained = Wrapper(
+            pretrained,
+            duration=duration,
+            step=step,
+            batch_size=batch_size,
+            device=device,
+        )
 
     params = {}
     try:
-        params['classes'] = pretrained.classes
+        params["classes"] = pretrained.classes
     except AttributeError as e:
         pass
     try:
-        params['dimension'] = pretrained.dimension
+        params["dimension"] = pretrained.dimension
     except AttributeError as e:
         pass
 
     # create metadata file at root that contains
     # sliding window and dimension information
     precomputed = Precomputed(
-        root_dir=output_dir,
-        sliding_window=pretrained.sliding_window,
-        **params)
+        root_dir=output_dir, sliding_window=pretrained.sliding_window, **params
+    )
 
     # file generator
     preprocessors = getattr(pretrained, "preprocessors_", dict())
     if "audio" not in preprocessors:
         preprocessors["audio"] = FileFinder()
-    if 'duration' not in preprocessors:
-        preprocessors['duration'] = get_audio_duration
-    protocol = get_protocol(protocol_name,
-                            progress=True,
-                            preprocessors=preprocessors)
+    if "duration" not in preprocessors:
+        preprocessors["duration"] = get_audio_duration
+    protocol = get_protocol(protocol_name, progress=True, preprocessors=preprocessors)
 
     for current_file in getattr(protocol, subset)():
         fX = pretrained(current_file)
@@ -581,21 +612,21 @@ def apply_pretrained(validate_dir: Path,
         metric = None
 
     # apply pipeline and dump output to RTTM files
-    output_rttm = output_dir / f'{protocol_name}.{subset}.rttm'
-    with open(output_rttm, 'w') as fp:
+    output_rttm = output_dir / f"{protocol_name}.{subset}.rttm"
+    with open(output_rttm, "w") as fp:
         for current_file in getattr(protocol, subset)():
             hypothesis = pipeline(current_file)
             pipeline.write_rttm(fp, hypothesis)
 
             # compute evaluation metric (when possible)
-            if 'annotation' not in current_file:
+            if "annotation" not in current_file:
                 metric = None
 
             # compute evaluation metric (when available)
             if metric is None:
                 continue
 
-            reference = current_file['annotation']
+            reference = current_file["annotation"]
             uem = get_annotated(current_file)
             _ = metric(reference, hypothesis, uem=uem)
 
@@ -603,6 +634,6 @@ def apply_pretrained(validate_dir: Path,
     if metric is None:
         return
 
-    output_eval = output_dir / f'{protocol_name}.{subset}.eval'
-    with open(output_eval, 'w') as fp:
+    output_eval = output_dir / f"{protocol_name}.{subset}.eval"
+    with open(output_eval, "w") as fp:
         fp.write(str(metric))

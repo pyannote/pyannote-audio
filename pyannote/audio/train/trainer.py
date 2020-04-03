@@ -27,6 +27,7 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 from typing import Optional, Iterator, Callable, Union, List
+
 try:
     from typing import Literal
 except ImportError as e:
@@ -67,9 +68,9 @@ class Trainer:
     device : torch.device
     """
 
-    SPECS_YML = '{train_dir}/specs.yml'
-    MODEL_PT = '{train_dir}/weights/{epoch:04d}.pt'
-    OPTIMIZER_PT = '{train_dir}/weights/{epoch:04d}.optimizer.pt'
+    SPECS_YML = "{train_dir}/specs.yml"
+    MODEL_PT = "{train_dir}/weights/{epoch:04d}.pt"
+    OPTIMIZER_PT = "{train_dir}/weights/{epoch:04d}.optimizer.pt"
 
     def load_state(self, model_pt: Optional[Path] = None) -> bool:
         """Load model and optimizer states from disk
@@ -88,16 +89,17 @@ class Trainer:
 
         if model_pt is None:
             _model_pt = self.MODEL_PT.format(
-                train_dir=self.train_dir_, epoch=self.epoch_)
+                train_dir=self.train_dir_, epoch=self.epoch_
+            )
             optimizer_pt = self.OPTIMIZER_PT.format(
-                train_dir=self.train_dir_, epoch=self.epoch_)
+                train_dir=self.train_dir_, epoch=self.epoch_
+            )
 
         else:
             _model_pt = model_pt
-            optimizer_pt = model_pt.with_suffix('.optimizer.pt')
+            optimizer_pt = model_pt.with_suffix(".optimizer.pt")
 
-        model_state = torch.load(
-            _model_pt, map_location=lambda storage, loc: storage)
+        model_state = torch.load(_model_pt, map_location=lambda storage, loc: storage)
         self.model_.load_state_dict(model_state)
 
         success = self.load_more(model_pt=model_pt)
@@ -106,17 +108,18 @@ class Trainer:
 
             try:
                 optimizer_state = torch.load(
-                    optimizer_pt, map_location=lambda storage, loc: storage)
+                    optimizer_pt, map_location=lambda storage, loc: storage
+                )
                 self.optimizer_.load_state_dict(optimizer_state)
             except Exception as e:
                 msg = (
-                    f'Did not load optimizer state (most likely because current '
-                    f'training session uses a different loss than the one used '
-                    f'for pre-training).')
+                    f"Did not load optimizer state (most likely because current "
+                    f"training session uses a different loss than the one used "
+                    f"for pre-training)."
+                )
                 warnings.warn(msg)
 
         return success
-
 
     def load_more(self, model_pt=None) -> bool:
         """Called after model state is loaded
@@ -142,13 +145,13 @@ class Trainer:
         """Save model and optimizer states to disk"""
 
         # save model state
-        model_pt = self.MODEL_PT.format(train_dir=self.train_dir_,
-                                        epoch=self.epoch_)
+        model_pt = self.MODEL_PT.format(train_dir=self.train_dir_, epoch=self.epoch_)
         torch.save(self.model_.state_dict(), model_pt)
 
         # save optimizer state
-        optimizer_pt = self.OPTIMIZER_PT.format(train_dir=self.train_dir_,
-                                                epoch=self.epoch_)
+        optimizer_pt = self.OPTIMIZER_PT.format(
+            train_dir=self.train_dir_, epoch=self.epoch_
+        )
         torch.save(self.optimizer_.state_dict(), optimizer_pt)
 
         self.save_more()
@@ -250,20 +253,21 @@ class Trainer:
     def get_new_batch(self):
         return next(self.batches_)
 
-    def fit_iter(self,
-                 model: Model,
-                 batch_generator: BatchGenerator,
-                 warm_start: Union[int, Path] = 0,
-                 epochs: int = 1000,
-                 get_optimizer: Callable[..., Optimizer] = SGD,
-                 scheduler: Optional[BaseSchedulerCallback] = None,
-                 learning_rate: Union[Literal["auto"], float] = "auto",
-                 train_dir: Optional[Path] = None,
-                 verbosity: int = 2,
-                 device: Optional[torch.device] = None,
-                 callbacks: Optional[List[Callback]] = None,
-                 n_jobs: int = 1,
-                 ) -> Iterator[Model]:
+    def fit_iter(
+        self,
+        model: Model,
+        batch_generator: BatchGenerator,
+        warm_start: Union[int, Path] = 0,
+        epochs: int = 1000,
+        get_optimizer: Callable[..., Optimizer] = SGD,
+        scheduler: Optional[BaseSchedulerCallback] = None,
+        learning_rate: Union[Literal["auto"], float] = "auto",
+        train_dir: Optional[Path] = None,
+        verbosity: int = 2,
+        device: Optional[torch.device] = None,
+        callbacks: Optional[List[Callback]] = None,
+        n_jobs: int = 1,
+    ) -> Iterator[Model]:
         """Train model
 
         Parameters
@@ -313,19 +317,20 @@ class Trainer:
         self.train_dir_ = train_dir
 
         # DEVICE
-        self.device_ = torch.device('cpu') if device is None else device
+        self.device_ = torch.device("cpu") if device is None else device
 
         # MODEL
         self.model_ = model.to(self.device_)
 
         # BATCH GENERATOR
         self.batch_generator_ = batch_generator
-        self.batches_ = AdaptiveBackgroundGenerator(self.batch_generator_,
-                                                    n_jobs=n_jobs)
+        self.batches_ = AdaptiveBackgroundGenerator(
+            self.batch_generator_, n_jobs=n_jobs
+        )
         self.batches_per_epoch_ = self.batch_generator_.batches_per_epoch
 
         # OPTIMIZER
-        lr = ARBITRARY_LR if learning_rate == 'auto' else learning_rate
+        lr = ARBITRARY_LR if learning_rate == "auto" else learning_rate
         self.optimizer_ = get_optimizer(self.parameters(), lr=lr)
         self.base_learning_rate_ = learning_rate
 
@@ -338,7 +343,7 @@ class Trainer:
 
             try:
                 # this will fail if the directory already exists
-                os.makedirs(self.train_dir_ / 'weights')
+                os.makedirs(self.train_dir_ / "weights")
 
             except FileExistsError as e:
 
@@ -347,15 +352,15 @@ class Trainer:
                     with timeout(60):
                         msg = (
                             f'Directory "{self.train_dir_}" exists.\n'
-                            f'Are you OK to overwrite existing models? [y/N]: '
+                            f"Are you OK to overwrite existing models? [y/N]: "
                         )
                         overwrite = (input(msg) or "n").lower()
                 except TimeoutError:
                     # defaults to "no" after 60 seconds
-                    overwrite = 'n'
+                    overwrite = "n"
 
                 # stop everything if the user did not say "yes" after a while
-                if overwrite != 'y':
+                if overwrite != "y":
                     sys.exit()
 
         # defaults to 0
@@ -382,9 +387,10 @@ class Trainer:
 
             except Exception as e:
                 msg = (
-                    f'Could not assign model weights. The following exception '
-                    f'was raised:\n\n{e}\n\nAre you sure the architectures '
-                    f'are consistent?')
+                    f"Could not assign model weights. The following exception "
+                    f"was raised:\n\n{e}\n\nAre you sure the architectures "
+                    f"are consistent?"
+                )
                 sys.exit(msg)
 
             # save pretrained model as epoch 0
@@ -392,9 +398,9 @@ class Trainer:
 
         # save specifications to weights/specs.yml
         specs_yml = self.SPECS_YML.format(train_dir=self.train_dir_)
-        with io.open(specs_yml, 'w') as fp:
+        with io.open(specs_yml, "w") as fp:
             specifications = dict(self.specifications)
-            specifications['task'] = str(specifications['task'])
+            specifications["task"] = str(specifications["task"])
             yaml.dump(specifications, fp, default_flow_style=False)
 
         # TODO in case success = False, one should freeze the main network for
@@ -413,13 +419,14 @@ class Trainer:
 
         # CUSTOM CALLBACKS
         if callbacks is not None:
-          callbacks_.extend(callbacks)
+            callbacks_.extend(callbacks)
 
         callbacks = Callbacks(callbacks_)
 
         # TRAINING STARTS
-        self.tensorboard_ = SummaryWriter(log_dir=self.train_dir_,
-                                          purge_step=self.epoch_)
+        self.tensorboard_ = SummaryWriter(
+            log_dir=self.train_dir_, purge_step=self.epoch_
+        )
         self.on_train_start()
         callbacks.on_train_start(self)
 
@@ -442,7 +449,7 @@ class Trainer:
                 loss = self.batch_loss(batch)
 
                 # BACKWARD PASS
-                loss['loss'].backward()
+                loss["loss"].backward()
                 self.optimizer_.step()
                 self.optimizer_.zero_grad()
 

@@ -34,8 +34,7 @@ from pyannote.core import Timeline
 from pyannote.core.utils.numpy import one_hot_decoding
 from pyannote.pipeline import Pipeline
 from pyannote.audio.features import Precomputed
-from pyannote.pipeline.blocks.clustering import \
-    HierarchicalAgglomerativeClustering
+from pyannote.pipeline.blocks.clustering import HierarchicalAgglomerativeClustering
 from pyannote.pipeline.blocks.clustering import AffinityPropagationClustering
 from .utils import assert_string_labels
 
@@ -64,10 +63,13 @@ class SpeechTurnClustering(Pipeline):
         speech turn level (one average embedding per speech turn).
     """
 
-    def __init__(self, embedding: Wrappable = None,
-                       metric: Optional[str] = 'cosine',
-                       method: Optional[str] = 'pool',
-                       window_wise: Optional[bool] = False):
+    def __init__(
+        self,
+        embedding: Wrappable = None,
+        metric: Optional[str] = "cosine",
+        method: Optional[str] = "pool",
+        window_wise: Optional[bool] = False,
+    ):
         super().__init__()
 
         if embedding is None:
@@ -78,9 +80,8 @@ class SpeechTurnClustering(Pipeline):
         self.metric = metric
         self.method = method
 
-        if self.method == 'affinity_propagation':
-            self.clustering = AffinityPropagationClustering(
-                metric=self.metric)
+        if self.method == "affinity_propagation":
+            self.clustering = AffinityPropagationClustering(metric=self.metric)
 
             # sklearn documentation: Preferences for each point - points with
             # larger values of preferences are more likely to be chosen as
@@ -95,12 +96,12 @@ class SpeechTurnClustering(Pipeline):
 
         else:
             self.clustering = HierarchicalAgglomerativeClustering(
-                method=self.method, metric=self.metric, use_threshold=True)
+                method=self.method, metric=self.metric, use_threshold=True
+            )
 
         self.window_wise = window_wise
 
-    def _window_level(self, current_file: dict,
-                            speech_regions: Timeline) -> Annotation:
+    def _window_level(self, current_file: dict, speech_regions: Timeline) -> Annotation:
         """Apply clustering at window level
 
         Parameters
@@ -121,9 +122,12 @@ class SpeechTurnClustering(Pipeline):
         window = embedding.sliding_window
 
         # extract and stack embeddings of speech regions
-        X = np.vstack([
-            embedding.crop(segment, mode='center', fixed=segment.duration)
-            for segment in speech_regions])
+        X = np.vstack(
+            [
+                embedding.crop(segment, mode="center", fixed=segment.duration)
+                for segment in speech_regions
+            ]
+        )
 
         # apply clustering
         y_pred = self.clustering(X)
@@ -138,9 +142,9 @@ class SpeechTurnClustering(Pipeline):
         for segment in speech_regions:
 
             # get indices of current speech segment
-            (s, e), = window.crop(segment, mode='center',
-                                  fixed=segment.duration,
-                                  return_ranges=True)
+            ((s, e),) = window.crop(
+                segment, mode="center", fixed=segment.duration, return_ranges=True
+            )
 
             # hack for the very last segment that might overflow by 1
             e_pred = min(s_pred + e - s, n - 1)
@@ -155,8 +159,7 @@ class SpeechTurnClustering(Pipeline):
         # reconstruct hypothesis
         return one_hot_decoding(y, window)
 
-    def _turn_level(self, current_file: dict,
-                          speech_turns: Annotation) -> Annotation:
+    def _turn_level(self, current_file: dict, speech_turns: Annotation) -> Annotation:
         """Apply clustering at speech turn level
 
         Parameters
@@ -172,7 +175,7 @@ class SpeechTurnClustering(Pipeline):
             Clustering result.
         """
 
-        assert_string_labels(speech_turns, 'speech_turns')
+        assert_string_labels(speech_turns, "speech_turns")
 
         embedding = self._embedding(current_file)
 
@@ -184,7 +187,7 @@ class SpeechTurnClustering(Pipeline):
 
             # be more and more permissive until we have
             # at least one embedding for current speech turn
-            for mode in ['strict', 'center', 'loose']:
+            for mode in ["strict", "center", "loose"]:
                 x = embedding.crop(timeline, mode=mode)
                 if len(x) > 0:
                     break
@@ -211,8 +214,9 @@ class SpeechTurnClustering(Pipeline):
         # do the actual mapping
         return speech_turns.rename_labels(mapping=mapping)
 
-    def __call__(self, current_file: dict,
-                       speech_turns: Optional[Annotation] = None) -> Annotation:
+    def __call__(
+        self, current_file: dict, speech_turns: Optional[Annotation] = None
+    ) -> Annotation:
         """Apply speech turn clustering
 
         Parameters
@@ -230,10 +234,11 @@ class SpeechTurnClustering(Pipeline):
         """
 
         if speech_turns is None:
-            speech_turns = current_file['speech_turns']
+            speech_turns = current_file["speech_turns"]
 
         if self.window_wise:
             return self._window_level(
-                current_file, speech_turns.get_timeline().support())
+                current_file, speech_turns.get_timeline().support()
+            )
 
         return self._turn_level(current_file, speech_turns)

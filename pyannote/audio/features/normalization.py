@@ -36,7 +36,7 @@ class GlobalStandardization(object):
     """Mean/variance normalization"""
 
     def get_context_duration(self):
-        return 0.
+        return 0.0
 
     def __call__(self, features, sliding_window=None):
         """Apply global standardization
@@ -61,7 +61,7 @@ class GlobalStandardization(object):
 
         mu = np.mean(data, axis=0)
         sigma = np.std(data, axis=0, ddof=1)
-        sigma[sigma == 0.] = 1e-6
+        sigma[sigma == 0.0] = 1e-6
 
         normalized = (data - mu) / sigma
 
@@ -80,12 +80,12 @@ class ShortTermStandardization(object):
         Window duration in seconds.
     """
 
-    def __init__(self, duration=3.):
+    def __init__(self, duration=3.0):
         super(ShortTermStandardization, self).__init__()
         self.duration = duration
 
     def get_context_duration(self):
-        return .5 * self.duration
+        return 0.5 * self.duration
 
     def __call__(self, features, sliding_window=None):
         """Apply short-term standardization
@@ -109,27 +109,27 @@ class ShortTermStandardization(object):
         else:
             features_ = SlidingWindowFeature(features, sliding_window)
 
-        window = features_.sliding_window.samples(self.duration,
-                                                  mode='center')
+        window = features_.sliding_window.samples(self.duration, mode="center")
         if not window % 2:
             window += 1
 
         rolling = pd.DataFrame(features_.data).rolling(
-            window=window, center=True, min_periods=window)
+            window=window, center=True, min_periods=window
+        )
         mu = np.array(rolling.mean())
         sigma = np.array(rolling.std(ddof=1))
 
         for i in range(window // 2):
 
-            data = features_.data[:i + window // 2 + 1, :]
+            data = features_.data[: i + window // 2 + 1, :]
             mu[i] = np.mean(data, axis=0)
             sigma[i] = np.std(data, axis=0, ddof=1)
 
-            data = features_.data[-i - window // 2 - 1:, :]
+            data = features_.data[-i - window // 2 - 1 :, :]
             mu[-i - 1] = np.mean(data, axis=0)
             sigma[-i - 1] = np.std(data, axis=0, ddof=1)
 
-        sigma[sigma == 0.] = 1e-6
+        sigma[sigma == 0.0] = 1e-6
 
         normalized_ = (features_.data - mu) / sigma
 

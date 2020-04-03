@@ -62,6 +62,7 @@ class TaskType(Enum):
     REPRESENTATION_LEARNING
         representation learning
     """
+
     MULTI_CLASS_CLASSIFICATION = 0
     MULTI_LABEL_CLASSIFICATION = 1
     REGRESSION = 2
@@ -78,38 +79,39 @@ class TaskOutput(Enum):
     VECTOR
         A single vector is expected.
     """
+
     SEQUENCE = 0
     VECTOR = 1
 
 
 class Task(NamedTuple):
-    type : TaskType
-    output : TaskOutput
+    type: TaskType
+    output: TaskOutput
 
     @classmethod
     def from_str(cls, representation: str):
-        task_output, task_type = representation.split(' ', 1)
+        task_output, task_type = representation.split(" ", 1)
 
-        if task_output == 'frame-wise':
+        if task_output == "frame-wise":
             task_output = TaskOutput.SEQUENCE
 
-        elif task_output == 'chunk-wise':
+        elif task_output == "chunk-wise":
             task_output = TaskOutput.VECTOR
 
         else:
             msg = f'"{task_output}" task output is not supported.'
             raise NotImplementedError(msg)
 
-        if task_type == 'multi-class classification':
+        if task_type == "multi-class classification":
             task_type = TaskType.MULTI_CLASS_CLASSIFICATION
 
-        elif task_type == 'multi-label classification':
+        elif task_type == "multi-label classification":
             task_type = TaskType.MULTI_LABEL_CLASSIFICATION
 
-        elif task_type == 'regression':
+        elif task_type == "regression":
             task_type = TaskType.REGRESSION
 
-        elif task_type == 'representation learning':
+        elif task_type == "representation learning":
             task_type = TaskType.REPRESENTATION_LEARNING
 
         else:
@@ -118,39 +120,39 @@ class Task(NamedTuple):
 
         return cls(type=task_type, output=task_output)
 
-
     def __str__(self) -> str:
         """String representation"""
 
         if self.returns_sequence:
-            name = 'frame-wise'
+            name = "frame-wise"
 
         elif self.returns_vector:
-            name = 'chunk-wise'
+            name = "chunk-wise"
 
         else:
             msg = (
-                'string representation (__str__) is not implemented '
-                'for this task output.')
+                "string representation (__str__) is not implemented "
+                "for this task output."
+            )
             raise NotImplementedError(msg)
 
-
         if self.is_multiclass_classification:
-            name = f'{name} multi-class classification'
+            name = f"{name} multi-class classification"
 
         elif self.is_multilabel_classification:
-            name = f'{name} multi-label classification'
+            name = f"{name} multi-label classification"
 
         elif self.is_regression:
-            name = f'{name} regression'
+            name = f"{name} regression"
 
         elif self.is_representation_learning:
-            name = f'{name} representation learning'
+            name = f"{name} representation learning"
 
         else:
             msg = (
-                'string representation (__str__) is not implemented '
-                'for this type of task.')
+                "string representation (__str__) is not implemented "
+                "for this type of task."
+            )
             raise NotImplementedError(msg)
 
         return name
@@ -249,5 +251,5 @@ class Task(NamedTuple):
             return torch.nn.Identity()
 
         else:
-            msg = f'Unknown default activation for {self} task.'
+            msg = f"Unknown default activation for {self} task."
             raise NotImplementedError(msg)

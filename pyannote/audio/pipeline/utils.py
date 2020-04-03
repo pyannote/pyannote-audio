@@ -45,7 +45,7 @@ def assert_string_labels(annotation: Annotation, name: str):
         Name of the annotation (used for user feedback in case of failure)
     """
     if any(not isinstance(label, str) for label in annotation.labels()):
-        msg = f'{name} must contain `str` labels only.'
+        msg = f"{name} must contain `str` labels only."
         raise ValueError(msg)
 
 
@@ -60,7 +60,7 @@ def assert_int_labels(annotation: Annotation, name: str):
         Name of the annotation (used for user feedback in case of failure)
     """
     if any(not isinstance(label, int) for label in annotation.labels()):
-        msg = f'{name} must contain `int` labels only.'
+        msg = f"{name} must contain `int` labels only."
         raise ValueError(msg)
 
 
@@ -81,13 +81,14 @@ def load_pretrained_pipeline(train_dir: Path) -> Pipeline:
 
     train_dir = Path(train_dir).expanduser().resolve(strict=True)
 
-    config_yml = train_dir.parents[1] / 'config.yml'
-    with open(config_yml, 'r') as fp:
+    config_yml = train_dir.parents[1] / "config.yml"
+    with open(config_yml, "r") as fp:
         config = yaml.load(fp, Loader=yaml.SafeLoader)
 
-    pipeline_name = config['pipeline']['name']
+    pipeline_name = config["pipeline"]["name"]
     Klass = get_class_by_name(
-        pipeline_name, default_module_name='pyannote.audio.pipeline')
-    pipeline = Klass(**config['pipeline'].get('params', {}))
+        pipeline_name, default_module_name="pyannote.audio.pipeline"
+    )
+    pipeline = Klass(**config["pipeline"].get("params", {}))
 
-    return pipeline.load_params(train_dir / 'params.yml')
+    return pipeline.load_params(train_dir / "params.yml")

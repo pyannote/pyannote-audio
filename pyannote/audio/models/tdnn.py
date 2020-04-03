@@ -57,7 +57,13 @@ from .pooling import StatsPool
 
 
 class TDNN(nn.Module):
-    def __init__(self, context: list, input_channels: int, output_channels: int, full_context: bool = True):
+    def __init__(
+        self,
+        context: list,
+        input_channels: int,
+        output_channels: int,
+        full_context: bool = True,
+    ):
         """
         Implementation of a 'Fast' TDNN layer by exploiting the dilation argument of the PyTorch Conv1d class
 
@@ -84,12 +90,20 @@ class TDNN(nn.Module):
 
         if full_context:
             kernel_size = context[-1] - context[0] + 1 if len(context) > 1 else 1
-            self.temporal_conv = weight_norm(nn.Conv1d(input_channels, output_channels, kernel_size))
+            self.temporal_conv = weight_norm(
+                nn.Conv1d(input_channels, output_channels, kernel_size)
+            )
         else:
             # use dilation
             delta = context[1] - context[0]
             self.temporal_conv = weight_norm(
-                nn.Conv1d(input_channels, output_channels, kernel_size=len(context), dilation=delta))
+                nn.Conv1d(
+                    input_channels,
+                    output_channels,
+                    kernel_size=len(context),
+                    dilation=delta,
+                )
+            )
 
     def forward(self, x):
         """
@@ -110,15 +124,21 @@ class TDNN(nn.Module):
         :param context: The context of the model, must be symmetric if no full context and have an equal spacing.
         """
         if full_context:
-            assert len(context) <= 2, "If the full context is given one must only define the smallest and largest"
+            assert (
+                len(context) <= 2
+            ), "If the full context is given one must only define the smallest and largest"
             if len(context) == 2:
                 assert context[0] + context[-1] == 0, "The context must be symmetric"
         else:
             assert len(context) % 2 != 0, "The context size must be odd"
-            assert context[len(context) // 2] == 0, "The context contain 0 in the center"
+            assert (
+                context[len(context) // 2] == 0
+            ), "The context contain 0 in the center"
             if len(context) > 1:
                 delta = [context[i] - context[i - 1] for i in range(1, len(context))]
-                assert all(delta[0] == delta[i] for i in range(1, len(delta))), "Intra context spacing must be equal!"
+                assert all(
+                    delta[0] == delta[i] for i in range(1, len(delta))
+                ), "Intra context spacing must be equal!"
 
 
 class XVectorNet(nn.Module):
@@ -139,11 +159,30 @@ class XVectorNet(nn.Module):
 
     def __init__(self, input_dim: int = 24, embedding_dim: int = 512):
         super(XVectorNet, self).__init__()
-        frame1 = TDNN(context=[-2, 2], input_channels=input_dim, output_channels=512, full_context=True)
-        frame2 = TDNN(context=[-2, 0, 2], input_channels=512, output_channels=512, full_context=False)
-        frame3 = TDNN(context=[-3, 0, 3], input_channels=512, output_channels=512, full_context=False)
-        frame4 = TDNN(context=[0], input_channels=512, output_channels=512, full_context=True)
-        frame5 = TDNN(context=[0], input_channels=512, output_channels=1500, full_context=True)
+        frame1 = TDNN(
+            context=[-2, 2],
+            input_channels=input_dim,
+            output_channels=512,
+            full_context=True,
+        )
+        frame2 = TDNN(
+            context=[-2, 0, 2],
+            input_channels=512,
+            output_channels=512,
+            full_context=False,
+        )
+        frame3 = TDNN(
+            context=[-3, 0, 3],
+            input_channels=512,
+            output_channels=512,
+            full_context=False,
+        )
+        frame4 = TDNN(
+            context=[0], input_channels=512, output_channels=512, full_context=True
+        )
+        frame5 = TDNN(
+            context=[0], input_channels=512, output_channels=1500, full_context=True
+        )
         self.tdnn = nn.Sequential(frame1, frame2, frame3, frame4, frame5, StatsPool())
         self.segment6 = nn.Linear(3000, embedding_dim)
         self.segment7 = nn.Linear(embedding_dim, embedding_dim)
@@ -170,17 +209,17 @@ class XVectorNet(nn.Module):
 
         x = self.tdnn(x)
 
-        if return_intermediate == 'stats_pool':
+        if return_intermediate == "stats_pool":
             return x
 
         x = self.segment6(x)
 
-        if return_intermediate == 'segment6':
+        if return_intermediate == "segment6":
             return x
 
         x = self.segment7(F.relu(x))
 
-        if return_intermediate == 'segment7':
+        if return_intermediate == "segment7":
             return x
 
         return F.relu(x)

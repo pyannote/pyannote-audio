@@ -105,25 +105,30 @@ class CenterLoss(RepresentationLearning):
         Defaults to 1.
     """
 
-    CLASSIFIER_PT = '{train_dir}/weights/{epoch:04d}.classifier.pt'
-    CENTERS_PT = '{train_dir}/weights/{epoch:04d}.centers.pt'
+    CLASSIFIER_PT = "{train_dir}/weights/{epoch:04d}.classifier.pt"
+    CENTERS_PT = "{train_dir}/weights/{epoch:04d}.centers.pt"
 
-    def __init__(self, duration: float = 1.0,
-                       min_duration: float = None,
-                       per_turn: int = 1,
-                       per_label: int = 1,
-                       per_fold: int = 32,
-                       per_epoch: float = None,
-                       label_min_duration: float = 0.,
-                       loss_weight: float = 1.):
+    def __init__(
+        self,
+        duration: float = 1.0,
+        min_duration: float = None,
+        per_turn: int = 1,
+        per_label: int = 1,
+        per_fold: int = 32,
+        per_epoch: float = None,
+        label_min_duration: float = 0.0,
+        loss_weight: float = 1.0,
+    ):
 
-        super().__init__(duration=duration,
-                         min_duration=min_duration,
-                         per_turn=per_turn,
-                         per_label=per_label,
-                         per_fold=per_fold,
-                         per_epoch=per_epoch,
-                         label_min_duration=label_min_duration)
+        super().__init__(
+            duration=duration,
+            min_duration=min_duration,
+            per_turn=per_turn,
+            per_label=per_label,
+            per_fold=per_fold,
+            per_epoch=per_epoch,
+            label_min_duration=label_min_duration,
+        )
 
         self.loss_weight = loss_weight
         self.logsoftmax_ = nn.LogSoftmax(dim=1)
@@ -138,14 +143,15 @@ class CenterLoss(RepresentationLearning):
             Trainable trainer parameters
         """
 
-        n_classes = len(self.specifications['y']['classes'])
-        self.classifier_ = Linear(self.model.dimension,
-                                  n_classes, bias=False).to(self.device)
-        self.center_dist_ = CenterDistanceModule(self.model.dimension,
-                                                 n_classes).to(self.device)
+        n_classes = len(self.specifications["y"]["classes"])
+        self.classifier_ = Linear(self.model.dimension, n_classes, bias=False).to(
+            self.device
+        )
+        self.center_dist_ = CenterDistanceModule(self.model.dimension, n_classes).to(
+            self.device
+        )
 
-        return chain(self.classifier_.parameters(),
-                     self.center_dist_.parameters())
+        return chain(self.classifier_.parameters(), self.center_dist_.parameters())
 
     def load_more(self, model_pt=None) -> bool:
         """Load classifier and centers from disk
@@ -159,29 +165,34 @@ class CenterLoss(RepresentationLearning):
 
         if model_pt is None:
             classifier_pt = self.CLASSIFIER_PT.format(
-                train_dir=self.train_dir_, epoch=self.epoch_)
+                train_dir=self.train_dir_, epoch=self.epoch_
+            )
             centers_pt = self.CENTERS_PT.format(
-                train_dir=self.train_dir_, epoch=self.epoch_)
+                train_dir=self.train_dir_, epoch=self.epoch_
+            )
 
         else:
-            classifier_pt = model_pt.with_suffix('.classifier.pt')
-            centers_pt = model_pt.with_suffix('.centers.pt')
+            classifier_pt = model_pt.with_suffix(".classifier.pt")
+            centers_pt = model_pt.with_suffix(".centers.pt")
 
         try:
             classifier_state = torch.load(
-                classifier_pt, map_location=lambda storage, loc: storage)
+                classifier_pt, map_location=lambda storage, loc: storage
+            )
             self.classifier_.load_state_dict(classifier_state)
 
             centers_state = torch.load(
-                centers_pt, map_location=lambda storage, loc: storage)
+                centers_pt, map_location=lambda storage, loc: storage
+            )
             self.center_dist_.load_state_dict(centers_state)
 
             success = True
         except Exception as e:
             msg = (
-                f'Did not load classifier and center states (most likely because current '
-                f'training session uses a different training set than the one '
-                f'used for pre-training).')
+                f"Did not load classifier and center states (most likely because current "
+                f"training session uses a different training set than the one "
+                f"used for pre-training)."
+            )
             warnings.warn(msg)
             success = False
 
@@ -191,16 +202,18 @@ class CenterLoss(RepresentationLearning):
         """Save classifier and centers to disk"""
 
         classifier_pt = self.CLASSIFIER_PT.format(
-            train_dir=self.train_dir_, epoch=self.epoch_)
+            train_dir=self.train_dir_, epoch=self.epoch_
+        )
         centers_pt = self.CENTERS_PT.format(
-            train_dir=self.train_dir_, epoch=self.epoch_)
+            train_dir=self.train_dir_, epoch=self.epoch_
+        )
 
         torch.save(self.classifier_.state_dict(), classifier_pt)
         torch.save(self.center_dist_.state_dict(), centers_pt)
 
     @property
     def metric(self):
-        return 'cosine'
+        return "cosine"
 
     def batch_loss(self, batch):
         """Compute loss for current `batch`
@@ -233,7 +246,8 @@ class CenterLoss(RepresentationLearning):
         loss_classification = self.nll_(logits, target)
 
         return {
-            'loss': loss_classification + self.loss_weight * loss_centers,
+            "loss": loss_classification + self.loss_weight * loss_centers,
             # add this for Tensorboard comparison with other compound losses
-            'loss_classification': loss_classification,
-            'loss_center': loss_centers}
+            "loss_classification": loss_classification,
+            "loss_center": loss_centers,
+        }

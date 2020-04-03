@@ -68,27 +68,32 @@ class ContrastiveLoss(RepresentationLearning):
     TODO
     """
 
-    def __init__(self, duration: float = 1.0,
-                       min_duration: float = None,
-                       per_turn: int = 1,
-                       per_label: int = 1,
-                       per_fold: int = 32,
-                       per_epoch: float = None,
-                       label_min_duration: float = 0.,
-                       # FIXME create a Literal type for metric
-                       # FIXME maybe in pyannote.core.utils.distance
-                       metric: str = 'cosine',
-                       # FIXME homogeneize the meaning of margin parameter
-                       # FIXME it has a different meaning in ArcFace, right?
-                       margin: float = 0.2):
+    def __init__(
+        self,
+        duration: float = 1.0,
+        min_duration: float = None,
+        per_turn: int = 1,
+        per_label: int = 1,
+        per_fold: int = 32,
+        per_epoch: float = None,
+        label_min_duration: float = 0.0,
+        # FIXME create a Literal type for metric
+        # FIXME maybe in pyannote.core.utils.distance
+        metric: str = "cosine",
+        # FIXME homogeneize the meaning of margin parameter
+        # FIXME it has a different meaning in ArcFace, right?
+        margin: float = 0.2,
+    ):
 
-        super().__init__(duration=duration,
-                         min_duration=min_duration,
-                         per_turn=per_turn,
-                         per_label=per_label,
-                         per_fold=per_fold,
-                         per_epoch=per_epoch,
-                         label_min_duration=label_min_duration)
+        super().__init__(
+            duration=duration,
+            min_duration=min_duration,
+            per_turn=per_turn,
+            per_label=per_label,
+            per_fold=per_fold,
+            per_epoch=per_epoch,
+            label_min_duration=label_min_duration,
+        )
 
         self.metric = metric
         self.margin = margin
@@ -126,7 +131,9 @@ class ContrastiveLoss(RepresentationLearning):
         gt = torch.Tensor(gt).float().to(self.device_)
 
         # Calculate the losses as described in the paper
-        losses = (1 - gt) * torch.pow(dist, 2) + gt * torch.pow(torch.clamp(self.margin_ - dist, min=1e-8), 2)
+        losses = (1 - gt) * torch.pow(dist, 2) + gt * torch.pow(
+            torch.clamp(self.margin_ - dist, min=1e-8), 2
+        )
 
         # FIXME: why divive by 2?
         losses = torch.sum(losses) / 2
@@ -134,5 +141,4 @@ class ContrastiveLoss(RepresentationLearning):
         # FIXME: switch to torch.mean directly (size_average has been removed)
         loss = losses / dist.size(0)
 
-        return {'loss': loss,
-                'loss_contrastive': loss}
+        return {"loss": loss, "loss_contrastive": loss}

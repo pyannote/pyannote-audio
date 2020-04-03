@@ -46,8 +46,7 @@ class Logging(Callback):
         Use 2 to add a second progress bar updated at the end of each batch.
     """
 
-    def __init__(self, epochs: int = None,
-                       verbosity: int = 0):
+    def __init__(self, epochs: int = None, verbosity: int = 0):
         super().__init__()
         self.epochs = epochs
         self.verbosity = verbosity
@@ -56,9 +55,14 @@ class Logging(Callback):
     def on_train_start(self, trainer):
         if self.verbosity > 0:
             self.epochs_pbar_ = tqdm(
-                desc=f'Training',
-                total=self.epochs, leave=True, ncols=80,
-                unit='epoch', initial=trainer.epoch_, position=0)
+                desc=f"Training",
+                total=self.epochs,
+                leave=True,
+                ncols=80,
+                unit="epoch",
+                initial=trainer.epoch_,
+                position=0,
+            )
 
     def on_epoch_start(self, trainer):
 
@@ -76,10 +80,13 @@ class Logging(Callback):
 
         if self.verbosity > 1:
             self.batches_pbar_ = tqdm(
-                desc=f'Epoch #{trainer.epoch_}',
+                desc=f"Epoch #{trainer.epoch_}",
                 total=trainer.batches_per_epoch_,
-                leave=False, ncols=80,
-                unit='batch', position=1)
+                leave=False,
+                ncols=80,
+                unit="batch",
+                position=1,
+            )
 
         self.t_batch_end_ = time.time()
 
@@ -89,9 +96,7 @@ class Logging(Callback):
         self.t_batch_start_ = time.time()
 
         # time spent in batch generation
-        self.t_batch_.append(
-            self.t_batch_start_ - self.t_batch_end_
-        )
+        self.t_batch_.append(self.t_batch_start_ - self.t_batch_end_)
 
         return batch
 
@@ -101,22 +106,22 @@ class Logging(Callback):
         self.t_batch_end_ = time.time()
 
         # time spent in forward/backward
-        self.t_model_.append(
-            self.t_batch_end_ - self.t_batch_start_
-        )
+        self.t_model_.append(self.t_batch_end_ - self.t_batch_start_)
 
         self.n_batches_ += 1
 
         self.loss = dict()
         for key in batch_loss:
-            if not key.startswith('loss'):
+            if not key.startswith("loss"):
                 continue
             loss = batch_loss[key].detach().cpu().item()
-            self.loss_moving_avg_[key] = \
-                self.beta_ * self.loss_moving_avg_.setdefault(key, 0.) + \
-                (1 - self.beta_) * loss
-            self.loss[key] = \
-                self.loss_moving_avg_[key] / (1 - self.beta_ ** self.n_batches_)
+            self.loss_moving_avg_[key] = (
+                self.beta_ * self.loss_moving_avg_.setdefault(key, 0.0)
+                + (1 - self.beta_) * loss
+            )
+            self.loss[key] = self.loss_moving_avg_[key] / (
+                1 - self.beta_ ** self.n_batches_
+            )
 
         if self.verbosity > 1:
             self.batches_pbar_.set_postfix(ordered_dict=self.loss)
@@ -126,17 +131,19 @@ class Logging(Callback):
 
         for key, loss in self.loss.items():
             trainer.tensorboard_.add_scalar(
-                f'train/{key}', loss,
-                global_step=trainer.epoch_)
+                f"train/{key}", loss, global_step=trainer.epoch_
+            )
 
         trainer.tensorboard_.add_histogram(
-            'profiling/model', np.array(self.t_model_),
+            "profiling/model",
+            np.array(self.t_model_),
             global_step=trainer.epoch_,
-            bins='fd',
+            bins="fd",
         )
 
         trainer.tensorboard_.add_histogram(
-            'profiling/batch', np.array(self.t_batch_),
+            "profiling/batch",
+            np.array(self.t_batch_),
             global_step=trainer.epoch_,
-            bins='fd',
+            bins="fd",
         )

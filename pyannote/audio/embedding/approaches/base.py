@@ -64,14 +64,15 @@ class RepresentationLearning(Trainer):
         Defaults to 0 (i.e. keep them all).
     """
 
-    def __init__(self,
-                 duration: float = 1.0,
-                 min_duration: float = None,
-                 per_turn: int = 1,
-                 per_label: int = 1,
-                 per_fold: Optional[int] = None,
-                 per_epoch: Optional[float] = None,
-                 label_min_duration: float = 0.,
+    def __init__(
+        self,
+        duration: float = 1.0,
+        min_duration: float = None,
+        per_turn: int = 1,
+        per_label: int = 1,
+        per_fold: Optional[int] = None,
+        per_epoch: Optional[float] = None,
+        label_min_duration: float = 0.0,
     ):
 
         super().__init__()
@@ -83,11 +84,12 @@ class RepresentationLearning(Trainer):
         self.per_epoch = per_epoch
         self.label_min_duration = label_min_duration
 
-    def get_batch_generator(self,
-                            feature_extraction: FeatureExtraction,
-                            protocol: Protocol,
-                            subset: str = 'train',
-                            **kwargs
+    def get_batch_generator(
+        self,
+        feature_extraction: FeatureExtraction,
+        protocol: Protocol,
+        subset: str = "train",
+        **kwargs
     ):
         """Get batch generator
 
@@ -112,17 +114,18 @@ class RepresentationLearning(Trainer):
             per_label=self.per_label,
             per_fold=self.per_fold,
             per_epoch=self.per_epoch,
-            label_min_duration=self.label_min_duration)
+            label_min_duration=self.label_min_duration,
+        )
 
     @property
     def max_distance(self):
-        if self.metric == 'cosine':
-            return 2.
-        elif self.metric == 'angular':
+        if self.metric == "cosine":
+            return 2.0
+        elif self.metric == "angular":
             return np.pi
-        elif self.metric == 'euclidean':
+        elif self.metric == "euclidean":
             # FIXME. incorrect if embedding are not unit-normalized
-            return 2.
+            return 2.0
         else:
             msg = "'metric' must be one of {'euclidean', 'cosine', 'angular'}."
             raise ValueError(msg)
@@ -141,18 +144,16 @@ class RepresentationLearning(Trainer):
             Condensed pairwise distance matrix
         """
 
-        if self.metric == 'euclidean':
+        if self.metric == "euclidean":
             return F.pdist(fX)
 
-        elif self.metric in ('cosine', 'angular'):
+        elif self.metric in ("cosine", "angular"):
 
             distance = 0.5 * torch.pow(F.pdist(F.normalize(fX)), 2)
-            if self.metric == 'cosine':
+            if self.metric == "cosine":
                 return distance
 
-            return torch.acos(torch.clamp(1. - distance,
-                                          -1 + 1e-12,
-                                          1 - 1e-12))
+            return torch.acos(torch.clamp(1.0 - distance, -1 + 1e-12, 1 - 1e-12))
 
     def embed(self, batch):
         """Extract embeddings (and aggregate per turn)
@@ -169,26 +170,25 @@ class RepresentationLearning(Trainer):
         y : (batch_size / per_turn, ) `np.ndarray`
         """
 
-        X = torch.tensor(batch['X'],
-                         dtype=torch.float32,
-                         device=self.device_)
+        X = torch.tensor(batch["X"], dtype=torch.float32, device=self.device_)
         fX = self.model_(X)
 
         if self.per_turn > 1:
             # TODO. add support for other aggregation functions, e.g. replacing
             # mean by product may encourage sparse representation
-            agg_fX = fX.view(self.per_fold * self.per_label,
-                             self.per_turn, -1).mean(axis=1)
+            agg_fX = fX.view(self.per_fold * self.per_label, self.per_turn, -1).mean(
+                axis=1
+            )
 
-            agg_y = batch['y'][::self.per_turn]
+            agg_y = batch["y"][:: self.per_turn]
 
         else:
             agg_fX = fX
-            agg_y = batch['y']
+            agg_y = batch["y"]
 
         return agg_fX, agg_y
 
     def to_numpy(self, tensor):
         """Convert torch.Tensor to numpy array"""
-        cpu = torch.device('cpu')
+        cpu = torch.device("cpu")
         return tensor.detach().to(cpu).numpy()

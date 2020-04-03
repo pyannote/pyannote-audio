@@ -28,8 +28,8 @@
 
 
 class Augmentation(object):
-
     def __call__(self, waveform, sample_rate):
         return waveform
+
 
 NoAugmentation = Augmentation

@@ -34,15 +34,17 @@ from pyannote.core import SlidingWindow, SlidingWindowFeature
 
 
 class Stream:
-    EndOfStream = 'EndOfStream'
+    EndOfStream = "EndOfStream"
     NoNewData = None
+
 
 class More(object):
     def __init__(self, output):
         super(More, self).__init__()
         self.output = output
 
-def stream_audio(current_file, sample_rate=None, mono=True, duration=1.):
+
+def stream_audio(current_file, sample_rate=None, mono=True, duration=1.0):
     """Simulate audio file streaming
 
     Parameters
@@ -73,25 +75,23 @@ def stream_audio(current_file, sample_rate=None, mono=True, duration=1.):
 
     """
 
-    y, sample_rate = read_audio(current_file,
-                                sample_rate=sample_rate,
-                                mono=mono)
+    y, sample_rate = read_audio(current_file, sample_rate=sample_rate, mono=mono)
 
     n_samples_total = len(y)
     n_samples_buffer = int(duration * sample_rate)
 
     for i in range(0, n_samples_total, n_samples_buffer):
-        data = y[i: i + n_samples_buffer, np.newaxis]
-        sw = SlidingWindow(start=i / sample_rate,
-                           duration=1 / sample_rate,
-                           step=1 / sample_rate)
+        data = y[i : i + n_samples_buffer, np.newaxis]
+        sw = SlidingWindow(
+            start=i / sample_rate, duration=1 / sample_rate, step=1 / sample_rate
+        )
         yield SlidingWindowFeature(data, sw)
 
     while True:
         yield Stream.EndOfStream
 
 
-def stream_features(feature_extraction, current_file, duration=1.):
+def stream_features(feature_extraction, current_file, duration=1.0):
     """Simulate online feature extraction
 
     Parameters
@@ -120,13 +120,15 @@ def stream_features(feature_extraction, current_file, duration=1.):
     data = features.data
 
     n_samples_total = len(data)
-    n_samples_buffer = sliding_window.samples(duration, mode='center')
+    n_samples_buffer = sliding_window.samples(duration, mode="center")
 
     for i in range(0, n_samples_total, n_samples_buffer):
-        sw = SlidingWindow(start=sliding_window[i].start,
-                           duration=sliding_window.duration,
-                           step=sliding_window.step)
-        yield SlidingWindowFeature(data[i: i+n_samples_buffer], sw)
+        sw = SlidingWindow(
+            start=sliding_window[i].start,
+            duration=sliding_window.duration,
+            step=sliding_window.step,
+        )
+        yield SlidingWindowFeature(data[i : i + n_samples_buffer], sw)
 
     while True:
         yield Stream.EndOfStream
@@ -158,17 +160,15 @@ class StreamBuffer(object):
 
         # common time base
         sw = sequence.sliding_window
-        self.frames_ = SlidingWindow(start=sw.start,
-                                     duration=sw.duration,
-                                     step=sw.step)
+        self.frames_ = SlidingWindow(start=sw.start, duration=sw.duration, step=sw.step)
 
         self.buffer_ = np.array(sequence.data)
 
-        self.window_ = SlidingWindow(start=sw.start,
-                                     duration=self.duration,
-                                     step=self.step)
+        self.window_ = SlidingWindow(
+            start=sw.start, duration=self.duration, step=self.step
+        )
         self.current_window_ = next(self.window_)
-        self.n_samples_ = self.frames_.samples(self.duration, mode='center')
+        self.n_samples_ = self.frames_.samples(self.duration, mode="center")
         self.initialized_ = True
 
     def __call__(self, sequence=Stream.NoNewData):
@@ -208,8 +208,7 @@ class StreamBuffer(object):
                 assert np.allclose(expected, sw[0])
 
                 # append the new samples at the end of buffer
-                self.buffer_ = np.concatenate([self.buffer_, sequence.data],
-                                              axis=0)
+                self.buffer_ = np.concatenate([self.buffer_, sequence.data], axis=0)
 
             # initialize buffer
             else:
@@ -220,20 +219,21 @@ class StreamBuffer(object):
             return Stream.NoNewData
 
         # if enough samples are available, prepare output
-        output = SlidingWindowFeature(self.buffer_[:self.n_samples_],
-                                      self.frames_)
+        output = SlidingWindowFeature(self.buffer_[: self.n_samples_], self.frames_)
 
         # switch to next window
         self.current_window_ = next(self.window_)
 
         # update buffer by removing old samples and updating start time
-        first_valid = self.frames_.crop(self.current_window_,
-                                        mode='center',
-                                        fixed=self.duration)[0]
+        first_valid = self.frames_.crop(
+            self.current_window_, mode="center", fixed=self.duration
+        )[0]
         self.buffer_ = self.buffer_[first_valid:]
-        self.frames_ = SlidingWindow(start=self.frames_[first_valid].start,
-                                     duration=self.frames_.duration,
-                                     step=self.frames_.step)
+        self.frames_ = SlidingWindow(
+            start=self.frames_[first_valid].start,
+            duration=self.frames_.duration,
+            step=self.frames_.step,
+        )
 
         # if enough samples are available for next window
         # wrap output into a More instance
@@ -255,9 +255,7 @@ class StreamAccumulate(object):
 
         # common time base
         sw = sequence.sliding_window
-        self.frames_ = SlidingWindow(start=sw.start,
-                                     duration=sw.duration,
-                                     step=sw.step)
+        self.frames_ = SlidingWindow(start=sw.start, duration=sw.duration, step=sw.step)
 
         self.buffer_ = np.array(sequence.data)
         self.initialized_ = True
@@ -283,15 +281,13 @@ class StreamAccumulate(object):
             assert np.allclose(expected, sw[0])
 
             # append the new samples at the end of buffer
-            self.buffer_ = np.concatenate(
-                [self.buffer_, sequence.data], axis=0)
+            self.buffer_ = np.concatenate([self.buffer_, sequence.data], axis=0)
 
         # initialize buffer
         else:
             self.initialize(sequence)
 
         return SlidingWindowFeature(self.buffer_, self.frames_)
-
 
 
 class StreamBinarize(object):
@@ -395,9 +391,7 @@ class StreamAggregate(object):
 
         # common time base
         sw = sequence.sliding_window
-        self.frames_ = SlidingWindow(start=sw.start,
-                                     duration=sw.duration,
-                                     step=sw.step)
+        self.frames_ = SlidingWindow(start=sw.start, duration=sw.duration, step=sw.step)
 
         data = sequence.data
         shape = (1,) + data.shape
@@ -435,14 +429,12 @@ class StreamAggregate(object):
         assert sw.start > self.frames_.start
 
         delta_start = sw.start - self.frames_.start
-        ready = self.frames_.samples(delta_start, mode='center')
+        ready = self.frames_.samples(delta_start, mode="center")
         data = self.agg_func(self.buffer_[:, :ready], axis=0)
         output = SlidingWindowFeature(data, self.frames_)
 
         self.buffer_ = self.buffer_[:, ready:]
-        self.frames_ = SlidingWindow(start=sw.start,
-                                     duration=sw.duration,
-                                     step=sw.step)
+        self.frames_ = SlidingWindow(start=sw.start, duration=sw.duration, step=sw.step)
 
         # remove empty (all NaN) buffers
         n_buffers = self.buffer_.shape[0]
@@ -455,16 +447,16 @@ class StreamAggregate(object):
         n_new_samples = sequence.data.shape[0]
         pad_width = ((0, 1), (0, max(0, n_new_samples - n_samples)))
         for _ in sequence.data.shape[1:]:
-            pad_width += ((0, 0), )
-        self.buffer_ = np.pad(self.buffer_, pad_width, 'constant',
-                              constant_values=np.NAN)
+            pad_width += ((0, 0),)
+        self.buffer_ = np.pad(
+            self.buffer_, pad_width, "constant", constant_values=np.NAN
+        )
         self.buffer_[-1] = sequence.data
 
         return output
 
 
 class StreamPassthrough(object):
-
     def __init__(self):
         super(StreamPassthrough, self).__init__()
 
@@ -477,7 +469,6 @@ class StreamPassthrough(object):
 
 
 class StreamProcess(object):
-
     def __init__(self, process_func):
 
         super(StreamProcess, self).__init__()
@@ -529,14 +520,15 @@ class StreamEmbed(object):
 
         output_layer = self.model.get_layer(index=-1)
 
-        input_layer = self.model.get_layer(name='input')
+        input_layer = self.model.get_layer(name="input")
         K_func = K.function(
-            [input_layer.input, K.learning_phase()], [output_layer.output])
+            [input_layer.input, K.learning_phase()], [output_layer.output]
+        )
 
         def embed(batch):
             return K_func([batch, 0])[0]
-        self.embed_ = embed
 
+        self.embed_ = embed
 
     def __call__(self, sequence=Stream.NoNewData):
 
@@ -549,7 +541,7 @@ class StreamEmbed(object):
         X = sequence.data[np.newaxis, :, :]
         embedded = self.embed_(X)[0]
 
-        raise NotImplementedError('')
+        raise NotImplementedError("")
         # data = ????
         # extent = sequence.getExtent()
         # sw = SlidingWindow(duration=extent.duration,
@@ -559,7 +551,6 @@ class StreamEmbed(object):
 
 
 class Pipeline(object):
-
     def __init__(self, dsk):
         super(Pipeline, self).__init__()
         # TODO -- check that at least one input depends on 'input'
@@ -572,22 +563,23 @@ class Pipeline(object):
 
     def __call__(self, input_buffer):
 
-        keys = sorted(['input'] + list(self.dsk.keys()))
+        keys = sorted(["input"] + list(self.dsk.keys()))
         more = False
 
         while True:
 
             if more:
-                self.dsk['input'] = Stream.NoNewData
+                self.dsk["input"] = Stream.NoNewData
                 more = False
             else:
                 buf = next(input_buffer)
                 if buf not in [Stream.EndOfStream, Stream.NoNewData]:
                     self.t_ |= buf.getExtent()
-                self.dsk['input'] = buf
+                self.dsk["input"] = buf
 
-            outputs = {key: output
-                       for key, output in zip(keys, dask.get(self.dsk, keys))}
+            outputs = {
+                key: output for key, output in zip(keys, dask.get(self.dsk, keys))
+            }
 
             for key in keys:
                 if isinstance(outputs[key], More):
@@ -597,6 +589,6 @@ class Pipeline(object):
             if all(Stream.EndOfStream == o for o in outputs.values()):
                 return
 
-            outputs['t'] = self.t_.end
+            outputs["t"] = self.t_.end
 
             yield outputs

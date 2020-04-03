@@ -104,8 +104,7 @@ class BackgroundGenerator(threading.Thread):
     # StopIteration: Background generator is no longer active.
     """
 
-    def __init__(self, producer: Callable[[], Iterator],
-                       prefetch: int = 1):
+    def __init__(self, producer: Callable[[], Iterator], prefetch: int = 1):
         super().__init__(daemon=True)
         self.producer = producer
         self.prefetch = prefetch
@@ -114,12 +113,10 @@ class BackgroundGenerator(threading.Thread):
         self.producer_ = producer()
 
         # used to keep track of how long it took to generate latest samples
-        self.production_time_ = \
-            collections.deque([], max(10, 2 * self.prefetch))
+        self.production_time_ = collections.deque([], max(10, 2 * self.prefetch))
 
         # used to keep track of how long it took to consume latest samples
-        self.consumption_time_ = \
-            collections.deque([], max(10, 2 * self.prefetch))
+        self.consumption_time_ = collections.deque([], max(10, 2 * self.prefetch))
 
         # used to keep track of last time
         self.last_ready_ = None
@@ -203,7 +200,7 @@ class BackgroundGenerator(threading.Thread):
 
         # raise a StopIteration once the generator has been deactivated
         if not self.activated_:
-            msg = 'Background generator is no longer active.'
+            msg = "Background generator is no longer active."
             raise StopIteration(msg)
 
         # keep track of how long it took to consume the last sample
@@ -216,7 +213,7 @@ class BackgroundGenerator(threading.Thread):
 
         # this happens when producer stopped yielding samples
         if sample is None:
-            msg = 'Producer stopped yielding samples.'
+            msg = "Producer stopped yielding samples."
             raise StopIteration(msg)
 
         # keep track of the last time a sample was taken from the queue
@@ -289,10 +286,13 @@ class AdaptiveBackgroundGenerator:
     # raises: "StopIteration: Background generator is no longer active."
     """
 
-    def __init__(self, producer: Callable[[], Iterator],
-                       n_jobs: int = 4,
-                       prefetch: int = 10,
-                       verbose: bool = False):
+    def __init__(
+        self,
+        producer: Callable[[], Iterator],
+        n_jobs: int = 4,
+        prefetch: int = 10,
+        verbose: bool = False,
+    ):
 
         self.producer = producer
         self.n_jobs = n_jobs
@@ -303,9 +303,7 @@ class AdaptiveBackgroundGenerator:
         self.generators_ = []
 
         if self.verbose:
-            msg = (
-                f'Starting with one producer.'
-            )
+            msg = f"Starting with one producer."
             print(msg)
 
         # start by creating one background generator to the pool
@@ -327,8 +325,9 @@ class AdaptiveBackgroundGenerator:
     def _add_generator(self) -> None:
         """Add one more producer to the pool"""
 
-        self.generators_.append(BackgroundGenerator(self.producer,
-                                                    prefetch=self.prefetch))
+        self.generators_.append(
+            BackgroundGenerator(self.producer, prefetch=self.prefetch)
+        )
 
         for g in self.generators_:
             g.reset()
@@ -414,7 +413,7 @@ class AdaptiveBackgroundGenerator:
         while True:
 
             if not self.generators_:
-                msg = 'Background generator is no longer active.'
+                msg = "Background generator is no longer active."
                 raise StopIteration(msg)
 
             dead_generators = []
@@ -430,9 +429,7 @@ class AdaptiveBackgroundGenerator:
                 yield sample
 
             if self.verbose and dead_generators:
-                msg = (
-                    f'Replacing {len(dead_generators)} exhausted producers.'
-                )
+                msg = f"Replacing {len(dead_generators)} exhausted producers."
                 print(msg)
 
             # replace dead generators by new ones
@@ -456,9 +453,9 @@ class AdaptiveBackgroundGenerator:
 
                     if self.verbose:
                         msg = (
-                            f'Adding one producer because consumer is '
-                            f'{ratio:.2f}x faster than current {n_jobs:d} '
-                            f'producer(s).'
+                            f"Adding one producer because consumer is "
+                            f"{ratio:.2f}x faster than current {n_jobs:d} "
+                            f"producer(s)."
                         )
                         print(msg)
 
@@ -467,9 +464,9 @@ class AdaptiveBackgroundGenerator:
                 else:
                     if not self.reached_max_ and self.verbose:
                         msg = (
-                            f'Consumer is {ratio:.2f}x faster than the pool of '
-                            f'{n_jobs:d} producer(s) but the maximum number of '
-                            f'producers has been reached.'
+                            f"Consumer is {ratio:.2f}x faster than the pool of "
+                            f"{n_jobs:d} producer(s) but the maximum number of "
+                            f"producers has been reached."
                         )
                         print(msg)
 
@@ -480,9 +477,9 @@ class AdaptiveBackgroundGenerator:
 
                 if self.verbose:
                     msg = (
-                        f'Removing one producer because consumer is '
-                        f'{1 / ratio:.2f}x slower than current {n_jobs:d} '
-                        f'producer(s).'
+                        f"Removing one producer because consumer is "
+                        f"{1 / ratio:.2f}x slower than current {n_jobs:d} "
+                        f"producer(s)."
                     )
                     print(msg)
 

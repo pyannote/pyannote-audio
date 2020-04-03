@@ -48,7 +48,13 @@ DEFAULT_TIMEOUT_MESSAGE = os.strerror(errno.ETIME)
 
 
 class timeout(contextlib.ContextDecorator):
-    def __init__(self, seconds, *, timeout_message=DEFAULT_TIMEOUT_MESSAGE, suppress_timeout_errors=False):
+    def __init__(
+        self,
+        seconds,
+        *,
+        timeout_message=DEFAULT_TIMEOUT_MESSAGE,
+        suppress_timeout_errors=False
+    ):
         self.seconds = int(seconds)
         self.timeout_message = timeout_message
         self.suppress = bool(suppress_timeout_errors)

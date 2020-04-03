@@ -37,7 +37,7 @@ class TemporalPooling(nn.Module):
     """Pooling strategy over temporal sequences."""
 
     @staticmethod
-    def create(method: Literal['sum', 'max', 'last', 'stats']) -> nn.Module:
+    def create(method: Literal["sum", "max", "last", "stats"]) -> nn.Module:
         """Pooling strategy factory. returns an instance of `TemporalPooling` given its name.
 
         Parameters
@@ -51,17 +51,19 @@ class TemporalPooling(nn.Module):
         output : nn.Module
             The temporal pooling strategy object
         """
-        if method == 'sum':
+        if method == "sum":
             klass = SumPool
-        elif method == 'max':
+        elif method == "max":
             klass = MaxPool
-        elif method == 'last':
+        elif method == "last":
             klass = LastPool
-        elif method == 'stats':
+        elif method == "stats":
             klass = StatsPool
-        elif method == 'x-vector':
+        elif method == "x-vector":
             klass = StatsPool
-            warn("`x-vector` is deprecated and will be removed in a future version. Please use `stats` instead")
+            warn(
+                "`x-vector` is deprecated and will be removed in a future version. Please use `stats` instead"
+            )
         else:
             raise ValueError(f"`{method}` is not a valid temporal pooling method")
         return klass()

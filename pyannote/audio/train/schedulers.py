@@ -76,11 +76,10 @@ def decreasing_probability(values: np.ndarray) -> float:
     sigma2 = np.sum((values - values_) ** 2) / (n_steps - 2)
 
     scale = np.sqrt(12 * sigma2 / (n_steps ** 3 - n_steps))
-    return scipy.stats.norm.cdf(0., loc=loc, scale=scale)
+    return scipy.stats.norm.cdf(0.0, loc=loc, scale=scale)
 
 
-def steps_without_decrease(values: np.ndarray,
-                           robust: bool = False) -> int:
+def steps_without_decrease(values: np.ndarray, robust: bool = False) -> int:
     """Count number of steps without decrease
 
     Parameters
@@ -122,18 +121,18 @@ class BaseSchedulerCallback(Callback):
     IEEE Winter Conference on Applications of Computer Vision (WACV, 2017).
     """
 
-    def on_train_start(self, trainer: 'Trainer') -> None:
+    def on_train_start(self, trainer: "Trainer") -> None:
         self.optimizer_ = trainer.optimizer
-        if trainer.base_learning_rate_ == 'auto':
+        if trainer.base_learning_rate_ == "auto":
             trainer.base_learning_rate_ = self.auto_lr(trainer)
         self.learning_rate = trainer.base_learning_rate_
 
-    def on_epoch_start(self, trainer: 'Trainer') -> None:
+    def on_epoch_start(self, trainer: "Trainer") -> None:
         """Log learning rate to tensorboard"""
 
         trainer.tensorboard_.add_scalar(
-            f'train/lr', self.learning_rate,
-            global_step=trainer.epoch_)
+            f"train/lr", self.learning_rate, global_step=trainer.epoch_
+        )
 
     @property
     def learning_rate(self) -> float:
@@ -142,8 +141,8 @@ class BaseSchedulerCallback(Callback):
     @learning_rate.setter
     def learning_rate(self, learning_rate: float) -> None:
         for g in self.optimizer_.param_groups:
-            g['lr'] = learning_rate
-            g['momentum'] = MOMENTUM_MAX
+            g["lr"] = learning_rate
+            g["momentum"] = MOMENTUM_MAX
         self._learning_rate = learning_rate
 
     @staticmethod
@@ -173,12 +172,13 @@ class BaseSchedulerCallback(Callback):
         # `K` batches to increase the learning rate by one order of magnitude
         K = int(np.log(10) / np.log(factor))
 
-        losses = convolve(losses, 3 * np.ones(K // 3) / K,
-                          mode='same', method='auto')
+        losses = convolve(losses, 3 * np.ones(K // 3) / K, mode="same", method="auto")
 
         # probability that loss has decreased in the last `K` steps.
-        probability = [1. - decreasing_probability(-losses[i-K:i])
-                       if i > K else np.NAN for i in range(len(losses))]
+        probability = [
+            1.0 - decreasing_probability(-losses[i - K : i]) if i > K else np.NAN
+            for i in range(len(losses))
+        ]
         probability = np.array(probability)
 
         # find longest decreasing region
@@ -186,8 +186,8 @@ class BaseSchedulerCallback(Callback):
         starts_decreasing = np.where(np.diff(decreasing) == 1)[0]
         stops_decreasing = np.where(np.diff(decreasing) == -1)[0]
         i = np.argmax(
-            [stop - start for start, stop in zip(starts_decreasing,
-                                                 stops_decreasing)])
+            [stop - start for start, stop in zip(starts_decreasing, stops_decreasing)]
+        )
         stop = stops_decreasing[i]
 
         # upper bound
@@ -195,7 +195,7 @@ class BaseSchedulerCallback(Callback):
         # so we'd rather bound the learning rate slighgly before stop - K
         return lrs[int(stop - 1.1 * K)]
 
-    def auto_lr(self, trainer: 'Trainer') -> float:
+    def auto_lr(self, trainer: "Trainer") -> float:
         """Find optimal learning rate automatically
 
         Parameters
@@ -244,14 +244,15 @@ class BaseSchedulerCallback(Callback):
 
         # progress bar
         pbar = tqdm(
-            desc='AutoLR',
+            desc="AutoLR",
             total=n_batches,
             leave=False,
             ncols=80,
-            unit='batch',
-            position=1)
+            unit="batch",
+            position=1,
+        )
 
-        loss_moving_avg = 0.
+        loss_moving_avg = 0.0
         losses, losses_smoothened, lrs = [], [], []
 
         # loop on n_batches batches
@@ -259,27 +260,27 @@ class BaseSchedulerCallback(Callback):
 
             batch = trainer.get_new_batch()
             loss = trainer.batch_loss(batch)
-            loss['loss'].backward()
+            loss["loss"].backward()
             trainer.optimizer_.step()
             trainer.optimizer_.zero_grad()
 
-            l = loss['loss'].item()
+            l = loss["loss"].item()
             if np.isnan(l):
                 break
 
             losses.append(l)
             lrs.append(self.learning_rate)
 
-            loss_moving_avg = AUTOLR_BETA * loss_moving_avg + \
-                (1 - AUTOLR_BETA) * losses[-1]
-            losses_smoothened.append(
-                loss_moving_avg / (1 - AUTOLR_BETA ** (i + 1)))
+            loss_moving_avg = (
+                AUTOLR_BETA * loss_moving_avg + (1 - AUTOLR_BETA) * losses[-1]
+            )
+            losses_smoothened.append(loss_moving_avg / (1 - AUTOLR_BETA ** (i + 1)))
 
             # update progress bar
             pbar.update(1)
             pbar.set_postfix(
-                ordered_dict={'loss': losses_smoothened[-1],
-                              'lr': self.learning_rate})
+                ordered_dict={"loss": losses_smoothened[-1], "lr": self.learning_rate}
+            )
 
             # increase learning rate
             self.learning_rate = factor * self.learning_rate
@@ -298,23 +299,24 @@ class BaseSchedulerCallback(Callback):
         try:
             # import matplotlib with headless backend
             import matplotlib
-            matplotlib.use('Agg')
+
+            matplotlib.use("Agg")
             import matplotlib.pyplot as plt
 
             # create AutoLR loss = f(learning_rate) curve
             fig, ax = plt.subplots()
-            ax.semilogx(lrs, losses, '.', alpha=0.3, label='Raw loss')
-            ax.semilogx(lrs, losses_smoothened, linewidth=2,
-                        label='Smoothened loss')
-            ax.set_xlabel('Learning rate')
-            ax.set_ylabel('Loss')
+            ax.semilogx(lrs, losses, ".", alpha=0.3, label="Raw loss")
+            ax.semilogx(lrs, losses_smoothened, linewidth=2, label="Smoothened loss")
+            ax.set_xlabel("Learning rate")
+            ax.set_ylabel("Loss")
             ax.legend()
 
             # indicate selected learning rate by a vertical line
             ax.plot(
                 [auto_lr, auto_lr],
                 [np.nanmin(losses_smoothened), np.nanmax(losses_smoothened)],
-                linewidth=3)
+                linewidth=3,
+            )
 
             # zoom on meaningful part of the curve
             m = np.nanmin(losses_smoothened)
@@ -322,27 +324,26 @@ class BaseSchedulerCallback(Callback):
             ax.set_ylim(m, M)
 
             # indicate selected learning rate in the figure title
-            ax.set_title(f'AutoLR = {auto_lr:g}')
+            ax.set_title(f"AutoLR = {auto_lr:g}")
 
             # send matplotlib figure to Tensorboard
             trainer.tensorboard_.add_figure(
-                'train/auto_lr', fig,
-                global_step=trainer.epoch_,
-                close=True)
+                "train/auto_lr", fig, global_step=trainer.epoch_, close=True
+            )
 
         except ImportError as e:
             msg = (
-                f'Something went wrong when trying to send AutoLR figure '
-                f'to Tensorboard. Did you install matplotlib?\n\n{e}\n\n'
+                f"Something went wrong when trying to send AutoLR figure "
+                f"to Tensorboard. Did you install matplotlib?\n\n{e}\n\n"
             )
             print(msg)
             print(e)
 
         except Exception as e:
             msg = (
-                f'Something went wrong when trying to send AutoLR figure '
-                f'to Tensorboard. It is OK but you might want to have a '
-                f'look at why this happened.\n\n{e}\n\n'
+                f"Something went wrong when trying to send AutoLR figure "
+                f"to Tensorboard. It is OK but you might want to have a "
+                f"look at why this happened.\n\n{e}\n\n"
             )
             print(msg)
 
@@ -351,6 +352,7 @@ class BaseSchedulerCallback(Callback):
 
 class ConstantScheduler(BaseSchedulerCallback):
     """Constant learning rate"""
+
     pass
 
 
@@ -374,18 +376,16 @@ class DavisKingScheduler(BaseSchedulerCallback):
         self.factor = factor
         self.patience = patience
 
-    def on_train_start(self, trainer: 'Trainer') -> None:
+    def on_train_start(self, trainer: "Trainer") -> None:
         super().on_train_start(trainer)
         maxlen = 2 * self.patience * trainer.batches_per_epoch
         self.losses_ = deque([], maxlen=maxlen)
 
-    def on_epoch_end(self, trainer: 'Trainer') -> None:
+    def on_epoch_end(self, trainer: "Trainer") -> None:
 
         # compute statistics on batch loss trend
-        count = steps_without_decrease(
-            np.array(self.losses_))
-        count_robust = steps_without_decrease(
-            np.array(self.losses_), robust=True)
+        count = steps_without_decrease(np.array(self.losses_))
+        count_robust = steps_without_decrease(np.array(self.losses_), robust=True)
 
         # if batch loss hasn't been decreasing for a while
         patience = self.patience * trainer.batches_per_epoch
@@ -397,7 +397,7 @@ class DavisKingScheduler(BaseSchedulerCallback):
         super().on_batch_end(trainer, batch_loss)
 
         # store current batch loss
-        self.losses_.append(batch_loss['loss'].item())
+        self.losses_.append(batch_loss["loss"].item())
 
 
 class CyclicScheduler(BaseSchedulerCallback):
@@ -419,8 +419,7 @@ class CyclicScheduler(BaseSchedulerCallback):
     IEEE Winter Conference on Applications of Computer Vision (WACV, 2017).
     """
 
-    def __init__(self, epochs_per_cycle: int = 10,
-                       decay=None):
+    def __init__(self, epochs_per_cycle: int = 10, decay=None):
         super().__init__()
         self.epochs_per_cycle = epochs_per_cycle
         self.decay = decay
@@ -432,21 +431,20 @@ class CyclicScheduler(BaseSchedulerCallback):
     @momentum.setter
     def momentum(self, momentum: float) -> None:
         for g in self.optimizer_.param_groups:
-            g['momentum'] = momentum
+            g["momentum"] = momentum
         self._momentum = momentum
 
-    def on_train_start(self, trainer: 'Trainer') -> None:
+    def on_train_start(self, trainer: "Trainer") -> None:
         """Initialize batch/epoch counters"""
 
         super().on_train_start(trainer)
-        self.batches_per_cycle_ = \
-            self.epochs_per_cycle * trainer.batches_per_epoch
+        self.batches_per_cycle_ = self.epochs_per_cycle * trainer.batches_per_epoch
         self.n_batches_ = 0
         self.n_epochs_ = 0
 
         self.learning_rate = trainer.base_learning_rate_ * 0.1
 
-    def on_epoch_end(self, trainer: 'Trainer') -> None:
+    def on_epoch_end(self, trainer: "Trainer") -> None:
         """Update base learning rate at the end of cycle"""
 
         super().on_epoch_end(trainer)
@@ -456,7 +454,7 @@ class CyclicScheduler(BaseSchedulerCallback):
         if self.n_epochs_ % self.epochs_per_cycle == 0:
 
             # apply AutoLR
-            if self.decay == 'auto':
+            if self.decay == "auto":
                 trainer.base_learning_rate_ = self.auto_lr(trainer)
 
             # decay base learning rate
@@ -467,13 +465,13 @@ class CyclicScheduler(BaseSchedulerCallback):
             self.n_epochs_ = 0
             self.n_batches_ = 0
 
-    def on_batch_start(self, trainer: 'Trainer', batch: dict) -> dict:
+    def on_batch_start(self, trainer: "Trainer", batch: dict) -> dict:
         """Update learning rate & momentum according to position in cycle"""
 
         super().on_batch_start(trainer, batch)
 
         # position within current cycle (reversed V)
-        rho = 1. - abs(2 * (self.n_batches_ / self.batches_per_cycle_ - 0.5))
+        rho = 1.0 - abs(2 * (self.n_batches_ / self.batches_per_cycle_ - 0.5))
 
         self.learning_rate = trainer.base_learning_rate_ * (0.1 + 0.9 * rho)
         self.momentum = MOMENTUM_MAX - (MOMENTUM_MAX - MOMENTUM_MIN) * rho

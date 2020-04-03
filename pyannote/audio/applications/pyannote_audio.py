@@ -277,58 +277,58 @@ from .domain_classification import DomainClassification
 def main():
 
     # TODO: update version automatically
-    arg = docopt(__doc__, version='pyannote-audio 2.0')
+    arg = docopt(__doc__, version="pyannote-audio 2.0")
 
     params = {}
 
-    if arg['sad']:
+    if arg["sad"]:
         Application = SpeechActivityDetection
 
-    elif arg['scd']:
+    elif arg["scd"]:
         Application = SpeakerChangeDetection
 
-    elif arg['ovl']:
+    elif arg["ovl"]:
         Application = OverlapDetection
 
-    elif arg['emb']:
+    elif arg["emb"]:
         Application = SpeakerEmbedding
 
-    elif arg['dom']:
+    elif arg["dom"]:
         Application = DomainClassification
 
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    if arg['--gpu'] and device == 'cpu':
-        msg = 'No GPU is available. Using CPU instead.'
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    if arg["--gpu"] and device == "cpu":
+        msg = "No GPU is available. Using CPU instead."
         warnings.warn(msg)
-    if arg['--cpu'] and device == 'cuda':
-        device = 'cpu'
+    if arg["--cpu"] and device == "cuda":
+        device = "cpu"
 
-    params['device'] = torch.device(device)
+    params["device"] = torch.device(device)
 
-    protocol = arg['<protocol>']
-    subset = arg['--subset']
+    protocol = arg["<protocol>"]
+    subset = arg["--subset"]
 
-    if arg['--debug']:
-        msg = 'Debug mode is enabled, this option might slow execution considerably.'
+    if arg["--debug"]:
+        msg = "Debug mode is enabled, this option might slow execution considerably."
         warnings.warn(msg, RuntimeWarning)
         torch.autograd.set_detect_anomaly(True)
 
-    n_jobs = arg['--parallel']
+    n_jobs = arg["--parallel"]
     if n_jobs is None:
         n_jobs = max(1, multiprocessing.cpu_count() - 1)
-    params['n_jobs'] = int(n_jobs)
+    params["n_jobs"] = int(n_jobs)
 
-    if arg['train']:
+    if arg["train"]:
 
-        params['subset'] = 'train' if subset is None else subset
+        params["subset"] = "train" if subset is None else subset
 
         # start training at this epoch (defaults to 0, but 'last' is supported)
-        warm_start = arg['--from']
-        if warm_start != 'last':
+        warm_start = arg["--from"]
+        if warm_start != "last":
             warm_start = int(warm_start)
 
         # or start from pretrained model
-        pretrained = arg['--pretrained']
+        pretrained = arg["--pretrained"]
         pretrained_config_yml = None
         if pretrained is not None:
 
@@ -342,93 +342,100 @@ def main():
                     warm_start = torch.hub.load(
                         # TODO. change to 'pyannote/pyannote-audio'
                         # after 2.0 release
-                        'pyannote/pyannote-audio:develop',
-                        pretrained).weights_pt_
+                        "pyannote/pyannote-audio:develop",
+                        pretrained,
+                    ).weights_pt_
                 except Exception as e:
                     msg = (
                         f'Could not load "{warm_start}" model from torch.hub.'
-                        f'The following exception was raised:\n\n{e}\n\n')
+                        f"The following exception was raised:\n\n{e}\n\n"
+                    )
                     sys.exit(msg)
 
-            pretrained_config_yml = warm_start.parents[3] / 'config.yml'
+            pretrained_config_yml = warm_start.parents[3] / "config.yml"
 
-        params['warm_start'] = warm_start
+        params["warm_start"] = warm_start
 
         # stop training at this epoch (defaults to never stop)
-        params['epochs'] = int(arg['--to'])
+        params["epochs"] = int(arg["--to"])
 
-        root_dir = Path(arg['<root>']).expanduser().resolve(strict=True)
-        app = Application(root_dir, training=True,
-                          pretrained_config_yml=pretrained_config_yml)
+        root_dir = Path(arg["<root>"]).expanduser().resolve(strict=True)
+        app = Application(
+            root_dir, training=True, pretrained_config_yml=pretrained_config_yml
+        )
         app.train(protocol, **params)
 
-    if arg['validate']:
+    if arg["validate"]:
 
-        train_dir = Path(arg['<train>']).expanduser().resolve(strict=True)
+        train_dir = Path(arg["<train>"]).expanduser().resolve(strict=True)
         app = Application.from_train_dir(train_dir, training=False)
 
-        params['subset'] = 'development' if subset is None else subset
+        params["subset"] = "development" if subset is None else subset
 
-        start = arg['--from']
-        if start != 'last':
+        start = arg["--from"]
+        if start != "last":
             start = int(start)
-        params['start'] = start
+        params["start"] = start
 
-        end = arg['--to']
-        if end != 'last':
+        end = arg["--to"]
+        if end != "last":
             end = int(end)
-        params['end'] = end
+        params["end"] = end
 
-        params['every'] = int(arg['--every'])
-        params['chronological'] = not arg['--evergreen']
-        params['batch_size'] = int(arg['--batch'])
+        params["every"] = int(arg["--every"])
+        params["chronological"] = not arg["--evergreen"]
+        params["batch_size"] = int(arg["--batch"])
 
-        params['diarization'] = arg['--diarization']
+        params["diarization"] = arg["--diarization"]
 
-        duration = arg['--duration']
+        duration = arg["--duration"]
         if duration is None:
-            duration = getattr(app.task_, 'duration', None)
+            duration = getattr(app.task_, "duration", None)
             if duration is None:
-                msg = ("Task has no 'duration' defined. "
-                       "Use '--duration' option to provide one.")
+                msg = (
+                    "Task has no 'duration' defined. "
+                    "Use '--duration' option to provide one."
+                )
                 raise ValueError(msg)
         else:
             duration = float(duration)
-        params['duration'] = duration
+        params["duration"] = duration
 
-        params['step'] = float(arg['--step'])
+        params["step"] = float(arg["--step"])
 
-        if arg['emb']:
+        if arg["emb"]:
 
-            metric = arg['--metric']
+            metric = arg["--metric"]
             if metric is None:
-                metric = getattr(app.task_, 'metric', None)
+                metric = getattr(app.task_, "metric", None)
                 if metric is None:
-                    msg = ("Approach has no 'metric' defined. "
-                           "Use '--metric' option to provide one.")
+                    msg = (
+                        "Approach has no 'metric' defined. "
+                        "Use '--metric' option to provide one."
+                    )
                     raise ValueError(msg)
-            params['metric'] = metric
+            params["metric"] = metric
 
         # FIXME: parallel is broken in pyannote.metrics
-        params['n_jobs'] = 1
+        params["n_jobs"] = 1
 
         app.validate(protocol, **params)
 
-    if arg['apply']:
+    if arg["apply"]:
 
-        validate_dir = Path(arg['<validate>']).expanduser().resolve(strict=True)
+        validate_dir = Path(arg["<validate>"]).expanduser().resolve(strict=True)
 
-        params['subset'] = 'test' if subset is None else subset
-        params['batch_size'] = int(arg['--batch'])
+        params["subset"] = "test" if subset is None else subset
+        params["batch_size"] = int(arg["--batch"])
 
-        duration = arg['--duration']
+        duration = arg["--duration"]
         if duration is not None:
             duration = float(duration)
-        params['duration'] = duration
+        params["duration"] = duration
 
-        params['step'] = float(arg['--step'])
-        params['Pipeline'] = getattr(Application, 'Pipeline', None)
+        params["step"] = float(arg["--step"])
+        params["Pipeline"] = getattr(Application, "Pipeline", None)
 
-        params['pretrained'] = arg['--pretrained']
+        params["pretrained"] = arg["--pretrained"]
 
         apply_pretrained(validate_dir, protocol, **params)

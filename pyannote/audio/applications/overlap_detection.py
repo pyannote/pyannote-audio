@@ -26,9 +26,11 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
-from pyannote.audio.pipeline.overlap_detection \
-    import OverlapDetection as OverlapDetectionPipeline
+from pyannote.audio.pipeline.overlap_detection import (
+    OverlapDetection as OverlapDetectionPipeline,
+)
 from .speech_detection import SpeechActivityDetection
+
 
 class OverlapDetection(SpeechActivityDetection):
     Pipeline = OverlapDetectionPipeline

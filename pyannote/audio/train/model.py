@@ -30,6 +30,7 @@
 
 from typing import Union
 from typing import List
+
 try:
     from typing import Literal
 except ImportError as e:
@@ -38,13 +39,13 @@ from typing import Callable
 from pyannote.core import SlidingWindow
 from pyannote.core import SlidingWindowFeature
 
-RESOLUTION_FRAME = 'frame'
-RESOLUTION_CHUNK = 'chunk'
+RESOLUTION_FRAME = "frame"
+RESOLUTION_CHUNK = "chunk"
 Resolution = Union[SlidingWindow, Literal[RESOLUTION_FRAME, RESOLUTION_CHUNK]]
 
-ALIGNMENT_CENTER = 'center'
-ALIGNMENT_STRICT = 'strict'
-ALIGNMENT_LOOSE = 'loose'
+ALIGNMENT_CENTER = "center"
+ALIGNMENT_STRICT = "strict"
+ALIGNMENT_LOOSE = "loose"
 Alignment = Literal[ALIGNMENT_CENTER, ALIGNMENT_STRICT, ALIGNMENT_LOOSE]
 
 from pyannote.audio.train.task import Task
@@ -72,9 +73,7 @@ class Model(Module):
         Architecture hyper-parameters.
     """
 
-    def __init__(self,
-                 specifications: dict,
-                 **architecture_params):
+    def __init__(self, specifications: dict, **architecture_params):
         super().__init__()
         self.specifications = specifications
         self.resolution_ = self.get_resolution(**architecture_params)
@@ -119,7 +118,7 @@ class Model(Module):
 
         Shortcut for self.specifications['task']
         """
-        return self.specifications['task']
+        return self.specifications["task"]
 
     def get_resolution(self, **architecture_params) -> Resolution:
         """Get target resolution
@@ -200,7 +199,7 @@ class Model(Module):
         n_features : `int`
             Number of input features
         """
-        return self.specifications['X']['dimension']
+        return self.specifications["X"]["dimension"]
 
     @property
     def dimension(self) -> int:
@@ -228,7 +227,7 @@ class Model(Module):
             )
             raise NotImplementedError(msg)
 
-        msg = (f"{self.task} tasks do not define attribute 'dimension'.")
+        msg = f"{self.task} tasks do not define attribute 'dimension'."
         raise AttributeError(msg)
 
     @property
@@ -250,19 +249,22 @@ class Model(Module):
         """
 
         if not self.task.is_representation_learning:
-            return self.specifications['y']['classes']
+            return self.specifications["y"]["classes"]
 
-        msg = (f"{self.task} tasks do not define attribute 'classes'.")
+        msg = f"{self.task} tasks do not define attribute 'classes'."
         raise AttributeError(msg)
 
-    def slide(self, features: SlidingWindowFeature,
-                    sliding_window: SlidingWindow,
-                    batch_size: int = 32,
-                    device: torch.device = None,
-                    skip_average: bool = None,
-                    postprocess: Callable[[np.ndarray], np.ndarray] = None,
-                    return_intermediate = None,
-                    progress_hook = None) -> SlidingWindowFeature:
+    def slide(
+        self,
+        features: SlidingWindowFeature,
+        sliding_window: SlidingWindow,
+        batch_size: int = 32,
+        device: torch.device = None,
+        skip_average: bool = None,
+        postprocess: Callable[[np.ndarray], np.ndarray] = None,
+        return_intermediate=None,
+        progress_hook=None,
+    ) -> SlidingWindowFeature:
         """Slide and apply model on features
 
         Parameters
@@ -292,12 +294,13 @@ class Model(Module):
         """
 
         if device is None:
-            device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            device = "cuda" if torch.cuda.is_available() else "cpu"
         device = torch.device(device)
 
         if skip_average is None:
-            skip_average = (self.resolution == RESOLUTION_CHUNK) or \
-                           (return_intermediate is not None)
+            skip_average = (self.resolution == RESOLUTION_CHUNK) or (
+                return_intermediate is not None
+            )
 
         try:
             dimension = self.dimension
@@ -328,26 +331,30 @@ class Model(Module):
             progress_hook(n_done, n_chunks)
 
         batches = pescador.maps.buffer_stream(
-            iter({'X': features.crop(window, mode='center', fixed=fixed)}
-                 for window in chunks),
-            batch_size, partial=True)
+            iter(
+                {"X": features.crop(window, mode="center", fixed=fixed)}
+                for window in chunks
+            ),
+            batch_size,
+            partial=True,
+        )
 
         fX = []
         for batch in batches:
 
-            tX = torch.tensor(batch['X'], dtype=torch.float32, device=device)
+            tX = torch.tensor(batch["X"], dtype=torch.float32, device=device)
 
             # FIXME: fix support for return_intermediate
             tfX = self(tX, return_intermediate=return_intermediate)
 
-            tfX_npy = tfX.detach().to('cpu').numpy()
+            tfX_npy = tfX.detach().to("cpu").numpy()
             if postprocess is not None:
                 tfX_npy = postprocess(tfX_npy)
 
             fX.append(tfX_npy)
 
             if progress_hook is not None:
-                n_done += len(batch['X'])
+                n_done += len(batch["X"])
                 progress_hook(n_done, n_chunks)
 
         fX = np.vstack(fX)
@@ -356,7 +363,7 @@ class Model(Module):
             return SlidingWindowFeature(fX, sliding_window)
 
         # get total number of frames (based on last window end time)
-        n_frames = resolution.samples(chunks[-1].end, mode='center')
+        n_frames = resolution.samples(chunks[-1].end, mode="center")
 
         # data[i] is the sum of all predictions for frame #i
         data = np.zeros((n_frames, dimension), dtype=np.float32)

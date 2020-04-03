@@ -81,16 +81,27 @@ class SincConv1d(nn.Module):
     def to_hz(mel):
         return 700 * (10 ** (mel / 2595) - 1)
 
-    def __init__(self, in_channels, out_channels, kernel_size,
-                 sample_rate=16000, min_low_hz=50, min_band_hz=50,
-                 stride=1, padding=0, dilation=1, bias=False, groups=1):
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        kernel_size,
+        sample_rate=16000,
+        min_low_hz=50,
+        min_band_hz=50,
+        stride=1,
+        padding=0,
+        dilation=1,
+        bias=False,
+        groups=1,
+    ):
 
         super().__init__()
 
         if in_channels != 1:
             msg = (
-                f'SincConv1d only supports one input channel. '
-                f'Here, in_channels = {in_channels}.'
+                f"SincConv1d only supports one input channel. "
+                f"Here, in_channels = {in_channels}."
             )
             raise ValueError(msg)
         self.in_channels = in_channels
@@ -99,8 +110,8 @@ class SincConv1d(nn.Module):
 
         if kernel_size % 2 == 0:
             msg = (
-                f'SincConv1d only support odd kernel size. '
-                f'Here, kernel_size = {kernel_size}.'
+                f"SincConv1d only support odd kernel size. "
+                f"Here, kernel_size = {kernel_size}."
             )
             raise ValueError(msg)
         self.kernel_size = kernel_size
@@ -110,9 +121,9 @@ class SincConv1d(nn.Module):
         self.dilation = dilation
 
         if bias:
-            raise ValueError('SincConv1d does not support bias.')
+            raise ValueError("SincConv1d does not support bias.")
         if groups > 1:
-            raise ValueError('SincConv1d does not support groups.')
+            raise ValueError("SincConv1d does not support groups.")
 
         self.sample_rate = sample_rate
         self.min_low_hz = min_low_hz
@@ -122,9 +133,9 @@ class SincConv1d(nn.Module):
         low_hz = 30
         high_hz = self.sample_rate / 2 - (self.min_low_hz + self.min_band_hz)
 
-        mel = np.linspace(self.to_mel(low_hz),
-                          self.to_mel(high_hz),
-                          self.out_channels + 1)
+        mel = np.linspace(
+            self.to_mel(low_hz), self.to_mel(high_hz), self.out_channels + 1
+        )
         hz = self.to_hz(mel)
 
         # filter lower frequency (out_channels, 1)
@@ -134,15 +145,15 @@ class SincConv1d(nn.Module):
         self.band_hz_ = nn.Parameter(torch.Tensor(np.diff(hz)).view(-1, 1))
 
         # Half Hamming half window
-        n_lin=torch.linspace(0, self.kernel_size / 2 - 1,
-                             steps=int((self.kernel_size / 2)))
-        self.window_= 0.54 - 0.46 * torch.cos(2 * math.pi * n_lin / self.kernel_size)
+        n_lin = torch.linspace(
+            0, self.kernel_size / 2 - 1, steps=int((self.kernel_size / 2))
+        )
+        self.window_ = 0.54 - 0.46 * torch.cos(2 * math.pi * n_lin / self.kernel_size)
 
         # (kernel_size, 1)
         # Due to symmetry, I only need half of the time axes
         n = (self.kernel_size - 1) / 2.0
         self.n_ = 2 * math.pi * torch.arange(-n, 0).view(1, -1) / self.sample_rate
-
 
     def forward(self, waveforms):
         """Get sinc filters activations
@@ -161,11 +172,14 @@ class SincConv1d(nn.Module):
         self.n_ = self.n_.to(waveforms.device)
         self.window_ = self.window_.to(waveforms.device)
 
-        low = self.min_low_hz  + torch.abs(self.low_hz_)
+        low = self.min_low_hz + torch.abs(self.low_hz_)
 
-        high = torch.clamp(low + self.min_band_hz + torch.abs(self.band_hz_),
-                           self.min_low_hz, self.sample_rate / 2)
-        band = (high - low)[:,0]
+        high = torch.clamp(
+            low + self.min_band_hz + torch.abs(self.band_hz_),
+            self.min_low_hz,
+            self.sample_rate / 2,
+        )
+        band = (high - low)[:, 0]
 
         f_times_t_low = torch.matmul(low, self.n_)
         f_times_t_high = torch.matmul(high, self.n_)
@@ -174,21 +188,28 @@ class SincConv1d(nn.Module):
         # I just have expanded the sinc and simplified the terms.
         # This way I avoid several useless computations.
         band_pass_left = (
-            (torch.sin(f_times_t_high) - torch.sin(f_times_t_low)) / (self.n_ / 2)) * self.window_
+            (torch.sin(f_times_t_high) - torch.sin(f_times_t_low)) / (self.n_ / 2)
+        ) * self.window_
         band_pass_center = 2 * band.view(-1, 1)
         band_pass_right = torch.flip(band_pass_left, dims=[1])
 
         band_pass = torch.cat(
-            [band_pass_left, band_pass_center, band_pass_right], dim=1)
+            [band_pass_left, band_pass_center, band_pass_right], dim=1
+        )
 
         band_pass = band_pass / (2 * band[:, None])
 
-        self.filters = (band_pass).view(
-            self.out_channels, 1, self.kernel_size)
+        self.filters = (band_pass).view(self.out_channels, 1, self.kernel_size)
 
-        return F.conv1d(waveforms, self.filters, stride=self.stride,
-                        padding=self.padding, dilation=self.dilation,
-                        bias=None, groups=1)
+        return F.conv1d(
+            waveforms,
+            self.filters,
+            stride=self.stride,
+            padding=self.padding,
+            dilation=self.dilation,
+            bias=None,
+            groups=1,
+        )
 
 
 class SincNet(nn.Module):
@@ -213,13 +234,16 @@ class SincNet(nn.Module):
 
     @staticmethod
     def get_alignment(**kwargs):
-        return 'strict'
+        return "strict"
 
     @staticmethod
-    def get_resolution(sample_rate=16000,
-                       kernel_size=[251, 5, 5],
-                       stride=[1, 1, 1],
-                       max_pool=[3, 3, 3], **kwargs):
+    def get_resolution(
+        sample_rate=16000,
+        kernel_size=[251, 5, 5],
+        stride=[1, 1, 1],
+        max_pool=[3, 3, 3],
+        **kwargs,
+    ):
         """
         """
 
@@ -236,38 +260,45 @@ class SincNet(nn.Module):
             start += ((mp - 1) / 2 - padding) * jump
             jump *= mp
 
-        return SlidingWindow(duration=receptive_field / sample_rate,
-                             step=jump / sample_rate,
-                             start=0.)
+        return SlidingWindow(
+            duration=receptive_field / sample_rate, step=jump / sample_rate, start=0.0
+        )
 
-
-    def __init__(self,
-                 waveform_normalize=True,
-                 sample_rate=16000,
-                 min_low_hz=50,
-                 min_band_hz=50,
-                 out_channels=[80, 60, 60],
-                 kernel_size: List[int] = [251, 5, 5],
-                 stride=[1, 1, 1],
-                 max_pool=[3, 3, 3],
-                 instance_normalize=True,
-                 activation='leaky_relu',
-                 dropout=0.):
+    def __init__(
+        self,
+        waveform_normalize=True,
+        sample_rate=16000,
+        min_low_hz=50,
+        min_band_hz=50,
+        out_channels=[80, 60, 60],
+        kernel_size: List[int] = [251, 5, 5],
+        stride=[1, 1, 1],
+        max_pool=[3, 3, 3],
+        instance_normalize=True,
+        activation="leaky_relu",
+        dropout=0.0,
+    ):
         super().__init__()
 
         # check parameters values
         n_layers = len(out_channels)
         if len(kernel_size) != n_layers:
-            msg = (f'out_channels ({len(out_channels):d}) and kernel_size '
-                   f'({len(kernel_size):d}) should have the same length.')
+            msg = (
+                f"out_channels ({len(out_channels):d}) and kernel_size "
+                f"({len(kernel_size):d}) should have the same length."
+            )
             raise ValueError(msg)
         if len(stride) != n_layers:
-            msg = (f'out_channels ({len(out_channels):d}) and stride '
-                   f'({len(stride):d}) should have the same length.')
+            msg = (
+                f"out_channels ({len(out_channels):d}) and stride "
+                f"({len(stride):d}) should have the same length."
+            )
             raise ValueError(msg)
         if len(max_pool) != n_layers:
-            msg = (f'out_channels ({len(out_channels):d}) and max_pool '
-                   f'({len(max_pool):d}) should have the same length.')
+            msg = (
+                f"out_channels ({len(out_channels):d}) and max_pool "
+                f"({len(max_pool):d}) should have the same length."
+            )
             raise ValueError(msg)
 
         # Waveform normalization
@@ -295,41 +326,41 @@ class SincNet(nn.Module):
         if self.instance_normalize:
             self.instance_norm1d_ = nn.ModuleList([])
 
-        config = zip(self.out_channels,
-                     self.kernel_size,
-                     self.stride,
-                     self.max_pool)
+        config = zip(self.out_channels, self.kernel_size, self.stride, self.max_pool)
 
         in_channels = None
         for i, (out_channels, kernel_size, stride, max_pool) in enumerate(config):
 
             # 1D convolution
             if i > 0:
-                conv1d = nn.Conv1d(in_channels,
-                                   out_channels,
-                                   kernel_size,
-                                   stride=stride,
-                                   padding=0,
-                                   dilation=1,
-                                   groups=1,
-                                   bias=True)
+                conv1d = nn.Conv1d(
+                    in_channels,
+                    out_channels,
+                    kernel_size,
+                    stride=stride,
+                    padding=0,
+                    dilation=1,
+                    groups=1,
+                    bias=True,
+                )
             else:
-                conv1d = SincConv1d(1,
-                                    out_channels,
-                                    kernel_size,
-                                    sample_rate=self.sample_rate,
-                                    min_low_hz=self.min_low_hz,
-                                    min_band_hz=self.min_band_hz,
-                                    stride=stride,
-                                    padding=0,
-                                    dilation=1,
-                                    bias=False,
-                                    groups=1)
+                conv1d = SincConv1d(
+                    1,
+                    out_channels,
+                    kernel_size,
+                    sample_rate=self.sample_rate,
+                    min_low_hz=self.min_low_hz,
+                    min_band_hz=self.min_band_hz,
+                    stride=stride,
+                    padding=0,
+                    dilation=1,
+                    bias=False,
+                    groups=1,
+                )
             self.conv1d_.append(conv1d)
 
             # 1D max-pooling
-            max_pool1d = nn.MaxPool1d(max_pool, stride=max_pool,
-                                      padding=0, dilation=1)
+            max_pool1d = nn.MaxPool1d(max_pool, stride=max_pool, padding=0, dilation=1)
             self.max_pool1d_.append(max_pool1d)
 
             # 1D instance normalization
@@ -341,12 +372,10 @@ class SincNet(nn.Module):
 
         # Activation function
         self.activation = activation
-        if self.activation == 'leaky_relu':
+        if self.activation == "leaky_relu":
             self.activation_ = nn.LeakyReLU(negative_slope=0.2)
         else:
-            msg = (
-                f'Only "leaky_relu" activation is supported.'
-            )
+            msg = f'Only "leaky_relu" activation is supported.'
             raise ValueError(msg)
 
         # Dropout
@@ -394,7 +423,10 @@ class SincNet(nn.Module):
 
     def dimension():
         doc = "Output features dimension."
+
         def fget(self):
             return self.out_channels[-1]
+
         return locals()
+
     dimension = property(**dimension())

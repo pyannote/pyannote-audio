@@ -90,43 +90,48 @@ class TripletLoss(RepresentationLearning):
     TODO
     """
 
-    def __init__(self, duration: float = 1.0,
-                       min_duration: float = None,
-                       per_turn: int = 1,
-                       per_label: int = 1,
-                       per_fold: int = 32,
-                       per_epoch: Optional[float] = None,
-                       label_min_duration: float = 0.,
-                       # FIXME create a Literal type for metric
-                       # FIXME maybe in pyannote.core.utils.distance
-                       metric: str = 'cosine',
-                       # FIXME homogeneize the meaning of margin parameter
-                       # FIXME it has a different meaning in ArcFace, right?
-                       margin: float = 0.2,
-                       # FIXME create a Literal type for clamp
-                       clamp='positive',
-                       # FIXME create a Literal type for sampling
-                       sampling='all'):
+    def __init__(
+        self,
+        duration: float = 1.0,
+        min_duration: float = None,
+        per_turn: int = 1,
+        per_label: int = 1,
+        per_fold: int = 32,
+        per_epoch: Optional[float] = None,
+        label_min_duration: float = 0.0,
+        # FIXME create a Literal type for metric
+        # FIXME maybe in pyannote.core.utils.distance
+        metric: str = "cosine",
+        # FIXME homogeneize the meaning of margin parameter
+        # FIXME it has a different meaning in ArcFace, right?
+        margin: float = 0.2,
+        # FIXME create a Literal type for clamp
+        clamp="positive",
+        # FIXME create a Literal type for sampling
+        sampling="all",
+    ):
 
-        super().__init__(duration=duration,
-                         min_duration=min_duration,
-                         per_turn=per_turn,
-                         per_label=per_label,
-                         per_fold=per_fold,
-                         per_epoch=per_epoch,
-                         label_min_duration=label_min_duration)
+        super().__init__(
+            duration=duration,
+            min_duration=min_duration,
+            per_turn=per_turn,
+            per_label=per_label,
+            per_fold=per_fold,
+            per_epoch=per_epoch,
+            label_min_duration=label_min_duration,
+        )
 
         self.metric = metric
         self.margin = margin
         # FIXME see above
         self.margin_ = self.margin * self.max_distance
 
-        if clamp not in {'positive', 'sigmoid', 'softmargin'}:
+        if clamp not in {"positive", "sigmoid", "softmargin"}:
             msg = "'clamp' must be one of {'positive', 'sigmoid', 'softmargin'}."
             raise ValueError(msg)
         self.clamp = clamp
 
-        if sampling not in {'all', 'hard', 'negative', 'easy'}:
+        if sampling not in {"all", "hard", "negative", "easy"}:
             msg = "'sampling' must be one of {'all', 'hard', 'negative', 'easy'}."
             raise ValueError(msg)
         self.sampling = sampling
@@ -160,7 +165,6 @@ class TripletLoss(RepresentationLearning):
                     negatives.append(negative)
 
         return anchors, positives, negatives
-
 
     def batch_hard(self, y, distances):
         """Build triplet with both hardest positive and hardest negative
@@ -276,10 +280,7 @@ class TripletLoss(RepresentationLearning):
 
         return anchors, positives, negatives
 
-    def triplet_loss(self, distances,
-                           anchors,
-                           positives,
-                           negatives):
+    def triplet_loss(self, distances, anchors, positives, negatives):
         """Compute triplet loss
 
         Parameters
@@ -296,7 +297,7 @@ class TripletLoss(RepresentationLearning):
         """
 
         # estimate total number of embeddings from pdist shape
-        n = int(.5 * (1 + np.sqrt(1 + 8 * len(distances))))
+        n = int(0.5 * (1 + np.sqrt(1 + 8 * len(distances))))
 
         # convert indices from squared matrix
         # to condensed matrix referential
@@ -308,13 +309,13 @@ class TripletLoss(RepresentationLearning):
         delta = distances[pos] - distances[neg]
 
         # clamp triplet loss
-        if self.clamp == 'positive':
+        if self.clamp == "positive":
             loss = torch.clamp(delta + self.margin_, min=0)
 
-        elif self.clamp == 'softmargin':
+        elif self.clamp == "softmargin":
             loss = torch.log1p(torch.exp(delta))
 
-        elif self.clamp == 'sigmoid':
+        elif self.clamp == "sigmoid":
             # TODO. tune this "10" hyperparameter
             # TODO. log-sigmoid
             loss = torch.sigmoid(10 * (delta + self.margin_))
@@ -340,17 +341,13 @@ class TripletLoss(RepresentationLearning):
         distances = self.pdist(fX)
 
         # sample triplets
-        triplets = getattr(self, 'batch_{0}'.format(self.sampling))
+        triplets = getattr(self, "batch_{0}".format(self.sampling))
         anchors, positives, negatives = triplets(y, distances)
 
         # compute loss for each triplet
-        losses = self.triplet_loss(distances,
-                                   anchors,
-                                   positives,
-                                   negatives)
+        losses = self.triplet_loss(distances, anchors, positives, negatives)
 
         loss = torch.mean(losses)
 
         # average over all triplets
-        return {'loss': loss,
-                'loss_triplet': loss}
+        return {"loss": loss, "loss_triplet": loss}

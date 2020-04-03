@@ -64,7 +64,7 @@ class AddNoise(Augmentation):
         super().__init__()
 
         if collection is None:
-            collection = 'MUSAN.Collection.BackgroundNoise'
+            collection = "MUSAN.Collection.BackgroundNoise"
         if not isinstance(collection, (list, tuple)):
             collection = [collection]
         self.collection = collection
@@ -74,11 +74,9 @@ class AddNoise(Augmentation):
 
         # load noise database
         self.files_ = []
-        preprocessors = {'audio': FileFinder(),
-                         'duration': get_audio_duration}
+        preprocessors = {"audio": FileFinder(), "duration": get_audio_duration}
         for collection in self.collection:
-            protocol = get_protocol(collection,
-                                    preprocessors=preprocessors)
+            protocol = get_protocol(collection, preprocessors=preprocessors)
             self.files_.extend(protocol.files())
 
     def __call__(self, original, sample_rate):
@@ -108,13 +106,12 @@ class AddNoise(Augmentation):
 
             # select noise file at random
             file = random.choice(self.files_)
-            duration = file['duration']
+            duration = file["duration"]
 
             # if noise file is longer than what is needed, crop it
             if duration > left:
                 segment = next(random_subsegment(Segment(0, duration), left))
-                noise = raw_audio.crop(file, segment,
-                                       mode='center', fixed=left)
+                noise = raw_audio.crop(file, segment, mode="center", fixed=left)
                 left = 0
 
             # otherwise, take the whole file
@@ -157,8 +154,7 @@ class AddNoiseFromGaps(Augmentation):
     `AddNoise`
     """
 
-    def __init__(self, protocol=None, subset='train',
-                 snr_min=5, snr_max=20):
+    def __init__(self, protocol=None, subset="train", snr_min=5, snr_max=20):
         super().__init__()
 
         self.protocol = protocol
@@ -167,18 +163,19 @@ class AddNoiseFromGaps(Augmentation):
         self.snr_max = snr_max
 
         # returns gaps in annotation as pyannote.core.Timeline instance
-        get_gaps = lambda f: f['annotation'].get_timeline().gaps(
-            support=get_annotated(f))
+        get_gaps = (
+            lambda f: f["annotation"].get_timeline().gaps(support=get_annotated(f))
+        )
 
         if isinstance(protocol, str):
             preprocessors = {
-                'audio': FileFinder(),
-                'duration': get_audio_duration,
-                'gaps': get_gaps}
-            protocol = get_protocol(self.protocol,
-                                    preprocessors=preprocessors)
+                "audio": FileFinder(),
+                "duration": get_audio_duration,
+                "gaps": get_gaps,
+            }
+            protocol = get_protocol(self.protocol, preprocessors=preprocessors)
         else:
-            protocol.preprocessors['gaps'] = get_gaps
+            protocol.preprocessors["gaps"] = get_gaps
 
         self.files_ = list(getattr(protocol, self.subset)())
 
@@ -209,7 +206,7 @@ class AddNoiseFromGaps(Augmentation):
             file = random.choice(self.files_)
 
             # select noise segment at random
-            segment = next(random_segment(file['gaps'], weighted=False))
+            segment = next(random_segment(file["gaps"], weighted=False))
             duration = segment.duration
             segment_len = duration * sample_rate
 
@@ -218,8 +215,7 @@ class AddNoiseFromGaps(Augmentation):
                 duration = len_left / sample_rate
                 segment = next(random_subsegment(segment, duration))
 
-            noise = raw_audio.crop(file, segment,
-                                   mode='center', fixed=duration)
+            noise = raw_audio.crop(file, segment, mode="center", fixed=duration)
 
             # decrease the `len_left` value by the size of the returned noise
             len_left -= len(noise)

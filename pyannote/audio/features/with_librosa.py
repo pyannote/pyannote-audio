@@ -52,17 +52,15 @@ class LibrosaFeatureExtraction(FeatureExtraction):
         Defaults to 0.010 (10ms).
     """
 
-    def __init__(self, sample_rate=16000, augmentation=None,
-                 duration=0.025, step=0.01):
+    def __init__(self, sample_rate=16000, augmentation=None, duration=0.025, step=0.01):
 
-        super().__init__(sample_rate=sample_rate,
-                         augmentation=augmentation)
+        super().__init__(sample_rate=sample_rate, augmentation=augmentation)
         self.duration = duration
         self.step = step
 
-        self.sliding_window_ = SlidingWindow(start=-.5*self.duration,
-                                             duration=self.duration,
-                                             step=self.step)
+        self.sliding_window_ = SlidingWindow(
+            start=-0.5 * self.duration, duration=self.duration, step=self.step
+        )
 
     def get_resolution(self):
         return self.sliding_window_
@@ -83,11 +81,16 @@ class LibrosaSpectrogram(LibrosaFeatureExtraction):
         Defaults to 0.010.
     """
 
-    def __init__(self, sample_rate=16000, augmentation=None,
-                 duration=0.025, step=0.010):
+    def __init__(
+        self, sample_rate=16000, augmentation=None, duration=0.025, step=0.010
+    ):
 
-        super().__init__(sample_rate=sample_rate, augmentation=augmentation,
-                         duration=duration, step=step)
+        super().__init__(
+            sample_rate=sample_rate,
+            augmentation=augmentation,
+            duration=duration,
+            step=step,
+        )
 
         self.n_fft_ = int(self.duration * self.sample_rate)
         self.hop_length_ = int(self.step * self.sample_rate)
@@ -111,9 +114,13 @@ class LibrosaSpectrogram(LibrosaFeatureExtraction):
             Features
         """
 
-        fft = librosa.core.stft(y=y.squeeze(), n_fft=self.n_fft_,
-                                hop_length=self.hop_length_,
-                                center=True, window='hamming')
+        fft = librosa.core.stft(
+            y=y.squeeze(),
+            n_fft=self.n_fft_,
+            hop_length=self.hop_length_,
+            center=True,
+            window="hamming",
+        )
         return np.abs(fft).T
 
 
@@ -134,11 +141,21 @@ class LibrosaMelSpectrogram(LibrosaFeatureExtraction):
         Defaults to 96.
     """
 
-    def __init__(self, sample_rate=16000, augmentation=None,
-                 duration=0.025, step=0.010, n_mels=96):
+    def __init__(
+        self,
+        sample_rate=16000,
+        augmentation=None,
+        duration=0.025,
+        step=0.010,
+        n_mels=96,
+    ):
 
-        super().__init__(sample_rate=sample_rate, augmentation=augmentation,
-                         duration=duration, step=step)
+        super().__init__(
+            sample_rate=sample_rate,
+            augmentation=augmentation,
+            duration=duration,
+            step=step,
+        )
 
         self.n_mels = n_mels
         self.n_fft_ = int(self.duration * self.sample_rate)
@@ -164,9 +181,13 @@ class LibrosaMelSpectrogram(LibrosaFeatureExtraction):
         """
 
         X = librosa.feature.melspectrogram(
-            y.squeeze(), sr=sample_rate, n_mels=self.n_mels,
-            n_fft=self.n_fft_, hop_length=self.hop_length_,
-            power=2.0)
+            y.squeeze(),
+            sr=sample_rate,
+            n_mels=self.n_mels,
+            n_fft=self.n_fft_,
+            hop_length=self.hop_length_,
+            power=2.0,
+        )
 
         return librosa.amplitude_to_db(X, ref=1.0, amin=1e-5, top_db=80.0).T
 
@@ -226,14 +247,29 @@ class LibrosaMFCC(LibrosaFeatureExtraction):
 
     """
 
-    def __init__(self, sample_rate=16000, augmentation=None,
-                 duration=0.025, step=0.01,
-                 e=False, De=True, DDe=True,
-                 coefs=19, D=True, DD=True,
-                 fmin=0.0, fmax=None, n_mels=40):
+    def __init__(
+        self,
+        sample_rate=16000,
+        augmentation=None,
+        duration=0.025,
+        step=0.01,
+        e=False,
+        De=True,
+        DDe=True,
+        coefs=19,
+        D=True,
+        DD=True,
+        fmin=0.0,
+        fmax=None,
+        n_mels=40,
+    ):
 
-        super().__init__(sample_rate=sample_rate, augmentation=augmentation,
-                         duration=duration, step=step)
+        super().__init__(
+            sample_rate=sample_rate,
+            augmentation=augmentation,
+            duration=duration,
+            step=step,
+        )
 
         self.e = e
         self.coefs = coefs
@@ -243,11 +279,11 @@ class LibrosaMFCC(LibrosaFeatureExtraction):
         self.DD = DD
 
         self.n_mels = n_mels  # yaafe / 40
-        self.fmin = fmin      # yaafe / 130.0
-        self.fmax = fmax      # yaafe / 6854.0
+        self.fmin = fmin  # yaafe / 130.0
+        self.fmax = fmax  # yaafe / 6854.0
 
     def get_context_duration(self):
-        return 0.
+        return 0.0
 
     def get_features(self, y, sample_rate):
         """Feature extraction
@@ -272,18 +308,22 @@ class LibrosaMFCC(LibrosaFeatureExtraction):
         hop_length = int(self.step * sample_rate)
 
         mfcc = librosa.feature.mfcc(
-            y=y.squeeze(), sr=sample_rate, n_mfcc=n_mfcc,
-            n_fft=n_fft, hop_length=hop_length,
-            n_mels=self.n_mels, htk=True,
-            fmin=self.fmin, fmax=self.fmax)
+            y=y.squeeze(),
+            sr=sample_rate,
+            n_mfcc=n_mfcc,
+            n_fft=n_fft,
+            hop_length=hop_length,
+            n_mels=self.n_mels,
+            htk=True,
+            fmin=self.fmin,
+            fmax=self.fmax,
+        )
 
         if self.De or self.D:
-            mfcc_d = librosa.feature.delta(
-                mfcc, width=9, order=1, axis=-1)
+            mfcc_d = librosa.feature.delta(mfcc, width=9, order=1, axis=-1)
 
         if self.DDe or self.DD:
-            mfcc_dd = librosa.feature.delta(
-                mfcc, width=9, order=2, axis=-1)
+            mfcc_dd = librosa.feature.delta(mfcc, width=9, order=2, axis=-1)
 
         stack = []
 

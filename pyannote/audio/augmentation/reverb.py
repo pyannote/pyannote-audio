@@ -67,14 +67,15 @@ class Reverb(Augmentation):
 
     """
 
-    def __init__(self,
-                 depth: Tuple[float, float] = (2.0, 10.0),
-                 width: Tuple[float, float] = (1.0, 10.0),
-                 height: Tuple[float, float] = (2.0, 5.0),
-                 absorption: Tuple[float, float] = (0.2, 0.9),
-                 noise: Optional[NoiseCollection] = None,
-                 snr: Tuple[float, float] = (5.0, 15.0),
-                 ):
+    def __init__(
+        self,
+        depth: Tuple[float, float] = (2.0, 10.0),
+        width: Tuple[float, float] = (1.0, 10.0),
+        height: Tuple[float, float] = (2.0, 5.0),
+        absorption: Tuple[float, float] = (0.2, 0.9),
+        noise: Optional[NoiseCollection] = None,
+        snr: Tuple[float, float] = (5.0, 15.0),
+    ):
 
         super().__init__()
         self.depth = depth
@@ -104,37 +105,40 @@ class Reverb(Augmentation):
         width = self.random(*self.width)
         height = self.random(*self.height)
         absorption = self.random(*self.absorption)
-        room = pra.ShoeBox([depth, width, height],
-                           fs=sample_rate,
-                           absorption=absorption,
-                           max_order=self.max_order_)
+        room = pra.ShoeBox(
+            [depth, width, height],
+            fs=sample_rate,
+            absorption=absorption,
+            max_order=self.max_order_,
+        )
 
         # play the original audio chunk at a random location
-        original = [self.random(0, depth),
-                    self.random(0, width),
-                    self.random(0, height)]
+        original = [
+            self.random(0, depth),
+            self.random(0, width),
+            self.random(0, height),
+        ]
         room.add_source(original)
 
         # play the noise audio chunk at a random location
-        noise = [self.random(0, depth),
-                 self.random(0, width),
-                 self.random(0, height)]
+        noise = [self.random(0, depth), self.random(0, width), self.random(0, height)]
         room.add_source(noise)
 
         # place the microphone at a random location
-        microphone = [self.random(0, depth),
-                      self.random(0, width),
-                      self.random(0, height)]
+        microphone = [
+            self.random(0, depth),
+            self.random(0, width),
+            self.random(0, height),
+        ]
         room.add_microphone_array(
-            pra.MicrophoneArray(np.c_[microphone, microphone], sample_rate))
+            pra.MicrophoneArray(np.c_[microphone, microphone], sample_rate)
+        )
 
         room.compute_rir()
 
         return room
 
-    def __call__(self,
-                 original: np.ndarray,
-                 sample_rate: int) -> np.ndarray:
+    def __call__(self, original: np.ndarray, sample_rate: int) -> np.ndarray:
 
         with self.main_lock_:
 
@@ -144,7 +148,7 @@ class Reverb(Augmentation):
                 self.rooms_.append(room)
 
             # create new room with probability new_rooms_prob_
-            if np.random.rand() > 1. - self.new_rooms_prob_:
+            if np.random.rand() > 1.0 - self.new_rooms_prob_:
                 room = self.new_room(sample_rate)
                 self.rooms_.append(room)
 
@@ -172,4 +176,4 @@ class Reverb(Augmentation):
 
             # simulate room and return microphone signal
             room.simulate()
-            return room.mic_array.signals[0,:n_samples, np.newaxis]
+            return room.mic_array.signals[0, :n_samples, np.newaxis]

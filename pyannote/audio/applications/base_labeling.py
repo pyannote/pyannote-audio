@@ -41,13 +41,11 @@ from pyannote.audio.features.utils import get_audio_duration
 
 
 class BaseLabeling(Application):
-
     @property
     def config_default_module(self):
-        return 'pyannote.audio.labeling.tasks'
+        return "pyannote.audio.labeling.tasks"
 
-    def validate_init(self, protocol_name,
-                            subset='development'):
+    def validate_init(self, protocol_name, subset="development"):
         """Initialize validation data
 
         Parameters
@@ -66,11 +64,11 @@ class BaseLabeling(Application):
         preprocessors = self.preprocessors_
         if "audio" not in preprocessors:
             preprocessors["audio"] = FileFinder()
-        if 'duration' not in preprocessors:
-            preprocessors['duration'] = get_audio_duration
-        protocol = get_protocol(protocol_name,
-                                progress=False,
-                                preprocessors=preprocessors)
+        if "duration" not in preprocessors:
+            preprocessors["duration"] = get_audio_duration
+        protocol = get_protocol(
+            protocol_name, progress=False, preprocessors=preprocessors
+        )
         files = getattr(protocol, subset)()
 
         # convert lazy ProtocolFile to regular dict for multiprocessing
@@ -80,8 +78,8 @@ class BaseLabeling(Application):
             return files
 
         validation_data = []
-        for current_file in tqdm(files, desc='Feature extraction'):
-            current_file['features'] = self.feature_extraction_(current_file)
+        for current_file in tqdm(files, desc="Feature extraction"):
+            current_file["features"] = self.feature_extraction_(current_file)
             validation_data.append(current_file)
 
         return validation_data

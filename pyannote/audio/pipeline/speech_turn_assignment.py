@@ -54,8 +54,7 @@ class SpeechTurnClosestAssignment(Pipeline):
         Metric used for comparing embeddings. Defaults to 'cosine'.
     """
 
-    def __init__(self, embedding: Wrappable = None,
-                       metric: Optional[str] = 'cosine'):
+    def __init__(self, embedding: Wrappable = None, metric: Optional[str] = "cosine"):
         super().__init__()
 
         if embedding is None:
@@ -67,9 +66,9 @@ class SpeechTurnClosestAssignment(Pipeline):
 
         self.closest_assignment = ClosestAssignment(metric=self.metric)
 
-    def __call__(self, current_file: dict,
-                       speech_turns: Annotation,
-                       targets: Annotation) -> Annotation:
+    def __call__(
+        self, current_file: dict, speech_turns: Annotation, targets: Annotation
+    ) -> Annotation:
         """Assign each speech turn to closest target (if close enough)
 
         Parameters
@@ -87,8 +86,8 @@ class SpeechTurnClosestAssignment(Pipeline):
             Assigned speech turns.
         """
 
-        assert_string_labels(targets, 'targets')
-        assert_int_labels(speech_turns, 'speech_turns')
+        assert_string_labels(targets, "targets")
+        assert_int_labels(speech_turns, "speech_turns")
 
         embedding = self._embedding(current_file)
 
@@ -101,7 +100,7 @@ class SpeechTurnClosestAssignment(Pipeline):
 
             # be more and more permissive until we have
             # at least one embedding for current speech turn
-            for mode in ['strict', 'center', 'loose']:
+            for mode in ["strict", "center", "loose"]:
                 x = embedding.crop(timeline, mode=mode)
                 if len(x) > 0:
                     break
@@ -122,7 +121,7 @@ class SpeechTurnClosestAssignment(Pipeline):
 
             # be more and more permissive until we have
             # at least one embedding for current speech turn
-            for mode in ['strict', 'center', 'loose']:
+            for mode in ["strict", "center", "loose"]:
                 x = embedding.crop(timeline, mode=mode)
                 if len(x) > 0:
                     break
@@ -136,9 +135,10 @@ class SpeechTurnClosestAssignment(Pipeline):
             X.append(np.mean(x, axis=0))
 
         # assign speech turns to closest class
-        assignments = self.closest_assignment(np.vstack(X_targets),
-                                              np.vstack(X))
-        mapping = {label: targets_labels[k]
-                   for label, k in zip(assigned_labels, assignments)
-                   if not k < 0}
+        assignments = self.closest_assignment(np.vstack(X_targets), np.vstack(X))
+        mapping = {
+            label: targets_labels[k]
+            for label, k in zip(assigned_labels, assignments)
+            if not k < 0
+        }
         return speech_turns.rename_labels(mapping=mapping)

@@ -75,9 +75,9 @@ class OverlapDetection(Pipeline):
         Padding duration.
     """
 
-    def __init__(self, scores: Wrappable = None,
-                       precision: float = 0.9,
-                       fscore: bool = False):
+    def __init__(
+        self, scores: Wrappable = None, precision: float = 0.9, fscore: bool = False
+    ):
         super().__init__()
 
         if scores is None:
@@ -89,12 +89,12 @@ class OverlapDetection(Pipeline):
         self.fscore = fscore
 
         # hyper-parameters
-        self.onset = Uniform(0., 1.)
-        self.offset = Uniform(0., 1.)
-        self.min_duration_on = Uniform(0., 2.)
-        self.min_duration_off = Uniform(0., 2.)
-        self.pad_onset = Uniform(-1., 1.)
-        self.pad_offset = Uniform(-1., 1.)
+        self.onset = Uniform(0.0, 1.0)
+        self.offset = Uniform(0.0, 1.0)
+        self.min_duration_on = Uniform(0.0, 2.0)
+        self.min_duration_off = Uniform(0.0, 2.0)
+        self.pad_onset = Uniform(-1.0, 1.0)
+        self.pad_offset = Uniform(-1.0, 1.0)
 
     def initialize(self):
         """Initialize pipeline with current set of parameters"""
@@ -105,7 +105,8 @@ class OverlapDetection(Pipeline):
             min_duration_on=self.min_duration_on,
             min_duration_off=self.min_duration_off,
             pad_onset=self.pad_onset,
-            pad_offset=self.pad_offset)
+            pad_offset=self.pad_offset,
+        )
 
     def __call__(self, current_file: dict) -> Annotation:
         """Apply overlap detection
@@ -132,21 +133,20 @@ class OverlapDetection(Pipeline):
             else:
                 self.log_scale_ = False
 
-        data = np.exp(ovl_scores.data) if self.log_scale_ \
-               else ovl_scores.data
+        data = np.exp(ovl_scores.data) if self.log_scale_ else ovl_scores.data
 
         # overlap vs. non-overlap
         if data.shape[1] > 1:
-            overlap_prob = SlidingWindowFeature(1. - data[:, 0],
-                                                ovl_scores.sliding_window)
+            overlap_prob = SlidingWindowFeature(
+                1.0 - data[:, 0], ovl_scores.sliding_window
+            )
         else:
-            overlap_prob = SlidingWindowFeature(data,
-                                                ovl_scores.sliding_window)
+            overlap_prob = SlidingWindowFeature(data, ovl_scores.sliding_window)
 
         overlap = self._binarize.apply(overlap_prob)
 
-        overlap.uri = current_file.get('uri', None)
-        return overlap.to_annotation(generator='string', modality='overlap')
+        overlap.uri = current_file.get("uri", None)
+        return overlap.to_annotation(generator="string", modality="overlap")
 
     @staticmethod
     def to_overlap(reference: Annotation) -> Annotation:
@@ -185,14 +185,17 @@ class OverlapDetection(Pipeline):
             raise NotImplementedError()
 
         class _Metric(DetectionPrecisionRecallFMeasure):
-            def compute_components(_self, reference: Annotation,
-                                          hypothesis: Annotation,
-                                          uem: Timeline = None,
-                                          **kwargs) -> dict:
+            def compute_components(
+                _self,
+                reference: Annotation,
+                hypothesis: Annotation,
+                uem: Timeline = None,
+                **kwargs
+            ) -> dict:
                 return super().compute_components(
-                    self.to_overlap(reference),
-                    hypothesis,
-                    uem=uem, **kwargs)
+                    self.to_overlap(reference), hypothesis, uem=uem, **kwargs
+                )
+
         return _Metric()
 
     def loss(self, current_file: dict, hypothesis: Annotation) -> float:
@@ -216,18 +219,18 @@ class OverlapDetection(Pipeline):
         precision = DetectionPrecision()
         recall = DetectionRecall()
 
-        if 'overlap_reference' in current_file:
-            overlap_reference = current_file['overlap_reference']
+        if "overlap_reference" in current_file:
+            overlap_reference = current_file["overlap_reference"]
 
         else:
-            reference = current_file['annotation']
+            reference = current_file["annotation"]
             overlap_reference = self.to_overlap(reference)
-            current_file['overlap_reference'] = overlap_reference
+            current_file["overlap_reference"] = overlap_reference
 
         uem = get_annotated(current_file)
         p = precision(overlap_reference, hypothesis, uem=uem)
         r = recall(overlap_reference, hypothesis, uem=uem)
 
         if p > self.precision:
-            return 1. - r
-        return 1. + (1. - p)
+            return 1.0 - r
+        return 1.0 + (1.0 - p)

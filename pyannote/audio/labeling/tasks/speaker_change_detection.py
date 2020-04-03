@@ -42,7 +42,6 @@ from pyannote.audio.train.model import Resolution
 from pyannote.audio.train.model import Alignment
 
 
-
 class SpeakerChangeDetectionGenerator(LabelingTaskGenerator):
     """Batch generator for training speaker change detection
 
@@ -88,19 +87,21 @@ class SpeakerChangeDetectionGenerator(LabelingTaskGenerator):
         speaker/speaker changes are marked as such).
     """
 
-    def __init__(self,
-                 feature_extraction: Wrappable,
-                 protocol: Protocol,
-                 subset: Text = 'train',
-                 resolution: Optional[Resolution] = None,
-                 alignment: Optional[Alignment] = None,
-                 duration: float = 2.0,
-                 batch_size: int = 32,
-                 per_epoch: float = None,
-                 mask: Text = None,
-                 collar: float = 0.1,
-                 regression: bool = False,
-                 non_speech: bool = False):
+    def __init__(
+        self,
+        feature_extraction: Wrappable,
+        protocol: Protocol,
+        subset: Text = "train",
+        resolution: Optional[Resolution] = None,
+        alignment: Optional[Alignment] = None,
+        duration: float = 2.0,
+        batch_size: int = 32,
+        per_epoch: float = None,
+        mask: Text = None,
+        collar: float = 0.1,
+        regression: bool = False,
+        non_speech: bool = False,
+    ):
 
         self.collar = collar
         self.regression = regression
@@ -114,17 +115,19 @@ class SpeakerChangeDetectionGenerator(LabelingTaskGenerator):
         # window
         self.window_ = scipy.signal.triang(self.collar_)[:, np.newaxis]
 
-        super().__init__(feature_extraction,
-                         protocol,
-                         subset=subset,
-                         resolution=resolution,
-                         alignment=alignment,
-                         duration=duration,
-                         batch_size=batch_size,
-                         per_epoch=per_epoch,
-                         exhaustive=False,
-                         mask=mask,
-                         local_labels=True)
+        super().__init__(
+            feature_extraction,
+            protocol,
+            subset=subset,
+            resolution=resolution,
+            alignment=alignment,
+            duration=duration,
+            batch_size=batch_size,
+            per_epoch=per_epoch,
+            exhaustive=False,
+            mask=mask,
+            local_labels=True,
+        )
 
     def postprocess_y(self, Y: np.ndarray) -> np.ndarray:
         """Generate labels for speaker change detection
@@ -152,7 +155,7 @@ class SpeakerChangeDetectionGenerator(LabelingTaskGenerator):
         y = np.vstack(([[0]], y > 0))
 
         # mark change points neighborhood as positive
-        y = np.minimum(1, scipy.signal.convolve(y, self.window_, mode='same'))
+        y = np.minimum(1, scipy.signal.convolve(y, self.window_, mode="same"))
 
         # HACK for some reason, y rarely equals zero
         if not self.regression:
@@ -165,16 +168,21 @@ class SpeakerChangeDetectionGenerator(LabelingTaskGenerator):
         if not self.non_speech:
 
             # append (half collar) empty samples at the beginning/end
-            expanded_Y = np.vstack([
-                np.zeros(((self.collar_ + 1) // 2 , n_speakers), dtype=Y.dtype),
-                Y,
-                np.zeros(((self.collar_ + 1) // 2 , n_speakers), dtype=Y.dtype)])
+            expanded_Y = np.vstack(
+                [
+                    np.zeros(((self.collar_ + 1) // 2, n_speakers), dtype=Y.dtype),
+                    Y,
+                    np.zeros(((self.collar_ + 1) // 2, n_speakers), dtype=Y.dtype),
+                ]
+            )
 
             # stride trick. data[i] is now a sliding window of collar length
             # centered at time step i.
-            data = np.lib.stride_tricks.as_strided(expanded_Y,
+            data = np.lib.stride_tricks.as_strided(
+                expanded_Y,
                 shape=(n_samples, n_speakers, self.collar_),
-                strides=(Y.strides[0], Y.strides[1], Y.strides[0]))
+                strides=(Y.strides[0], Y.strides[1], Y.strides[0]),
+            )
 
             # y[i] = 1 if more than one speaker are speaking in the
             # corresponding window. 0 otherwise
@@ -189,18 +197,18 @@ class SpeakerChangeDetectionGenerator(LabelingTaskGenerator):
     def specifications(self):
         if self.regression:
             return {
-                'task': Task(type=TaskType.REGRESSION,
-                             output=TaskOutput.SEQUENCE),
-                'X': {'dimension': self.feature_extraction.dimension},
-                'y': {'classes': ['change', ]},
+                "task": Task(type=TaskType.REGRESSION, output=TaskOutput.SEQUENCE),
+                "X": {"dimension": self.feature_extraction.dimension},
+                "y": {"classes": ["change",]},
             }
 
         else:
             return {
-                'task': Task(type=TaskType.MULTI_CLASS_CLASSIFICATION,
-                             output=TaskOutput.SEQUENCE),
-                'X': {'dimension': self.feature_extraction.dimension},
-                'y': {'classes': ['non_change', 'change']},
+                "task": Task(
+                    type=TaskType.MULTI_CLASS_CLASSIFICATION, output=TaskOutput.SEQUENCE
+                ),
+                "X": {"dimension": self.feature_extraction.dimension},
+                "y": {"classes": ["non_change", "change"]},
             }
 
 
@@ -228,15 +236,20 @@ class SpeakerChangeDetection(LabelingTask):
         Defaults to one day (1).
     """
 
-    def __init__(self, collar=0.100, regression=False, non_speech=False,
-                 **kwargs):
+    def __init__(self, collar=0.100, regression=False, non_speech=False, **kwargs):
         super().__init__(**kwargs)
         self.collar = collar
         self.regression = regression
         self.non_speech = non_speech
 
-    def get_batch_generator(self, feature_extraction, protocol, subset='train',
-                            resolution=None, alignment=None):
+    def get_batch_generator(
+        self,
+        feature_extraction,
+        protocol,
+        subset="train",
+        resolution=None,
+        alignment=None,
+    ):
         """
         resolution : `pyannote.core.SlidingWindow`, optional
             Override `feature_extraction.sliding_window`. This is useful for
@@ -252,10 +265,11 @@ class SpeakerChangeDetection(LabelingTask):
             protocol,
             resolution=resolution,
             alignment=alignment,
-            subset='train',
+            subset="train",
             collar=self.collar,
             regression=self.regression,
             non_speech=self.non_speech,
             duration=self.duration,
             batch_size=self.batch_size,
-            per_epoch=self.per_epoch)
+            per_epoch=self.per_epoch,
+        )

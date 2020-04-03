@@ -69,22 +69,25 @@ class Pretrained(FeatureExtraction):
 
     # TODO: add progress bar (at least for demo purposes)
 
-    def __init__(self, validate_dir: Path = None,
-                       epoch: int = None,
-                       augmentation: Optional[Augmentation] = None,
-                       duration: float = None,
-                       step: float = None,
-                       batch_size: int = 32,
-                       device: Optional[Union[Text, torch.device]] = None,
-                       return_intermediate = None,
-                       progress_hook=None):
+    def __init__(
+        self,
+        validate_dir: Path = None,
+        epoch: int = None,
+        augmentation: Optional[Augmentation] = None,
+        duration: float = None,
+        step: float = None,
+        batch_size: int = 32,
+        device: Optional[Union[Text, torch.device]] = None,
+        return_intermediate=None,
+        progress_hook=None,
+    ):
 
         try:
             validate_dir = Path(validate_dir)
         except TypeError as e:
             msg = (
                 f'"validate_dir" must be str, bytes or os.PathLike object, '
-                f'not {type(validate_dir).__name__}.'
+                f"not {type(validate_dir).__name__}."
             )
             raise TypeError(msg)
 
@@ -94,57 +97,58 @@ class Pretrained(FeatureExtraction):
         train_dir = self.validate_dir.parents[1]
         root_dir = train_dir.parents[1]
 
-        config_yml = root_dir / 'config.yml'
+        config_yml = root_dir / "config.yml"
         config = load_config(config_yml, training=False)
 
         # use feature extraction from config.yml configuration file
-        self.feature_extraction_ = config['feature_extraction']
+        self.feature_extraction_ = config["feature_extraction"]
 
-        super().__init__(augmentation=augmentation,
-                         sample_rate=self.feature_extraction_.sample_rate)
+        super().__init__(
+            augmentation=augmentation, sample_rate=self.feature_extraction_.sample_rate
+        )
 
         self.feature_extraction_.augmentation = self.augmentation
 
-        specs_yml = train_dir / 'specs.yml'
+        specs_yml = train_dir / "specs.yml"
         specifications = load_specs(specs_yml)
 
         if epoch is None:
-            params_yml = self.validate_dir / 'params.yml'
+            params_yml = self.validate_dir / "params.yml"
             params = load_params(params_yml)
-            self.epoch_ = params['epoch']
+            self.epoch_ = params["epoch"]
             # keep track of pipeline parameters
-            self.pipeline_params_ = params.get('params', {})
+            self.pipeline_params_ = params.get("params", {})
         else:
             self.epoch_ = epoch
 
-        self.preprocessors_ = config['preprocessors']
+        self.preprocessors_ = config["preprocessors"]
 
-        self.weights_pt_ = train_dir / 'weights' / f'{self.epoch_:04d}.pt'
+        self.weights_pt_ = train_dir / "weights" / f"{self.epoch_:04d}.pt"
 
-        model = config['get_model_from_specs'](specifications)
+        model = config["get_model_from_specs"](specifications)
         model.load_state_dict(
-            torch.load(self.weights_pt_,
-                       map_location=lambda storage, loc: storage))
+            torch.load(self.weights_pt_, map_location=lambda storage, loc: storage)
+        )
 
         # defaults to using GPU when available
         if device is None:
-            device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            device = "cuda" if torch.cuda.is_available() else "cpu"
         self.device = torch.device(device)
 
         # send model to device
         self.model_ = model.eval().to(self.device)
 
         # initialize chunks duration with that used during training
-        self.duration = getattr(config['task'], 'duration', None)
+        self.duration = getattr(config["task"], "duration", None)
 
         # override chunks duration by user-provided value
         if duration is not None:
             # warn that this might be sub-optimal
             if self.duration is not None and duration != self.duration:
                 msg = (
-                    f'Model was trained with {self.duration:g}s chunks and '
-                    f'is applied on {duration:g}s chunks. This might lead '
-                    f'to sub-optimal results.'
+                    f"Model was trained with {self.duration:g}s chunks and "
+                    f"is applied on {duration:g}s chunks. This might lead "
+                    f"to sub-optimal results."
                 )
                 warnings.warn(msg)
             # do it anyway
@@ -153,8 +157,9 @@ class Pretrained(FeatureExtraction):
         if step is None:
             step = 0.25
         self.step = step
-        self.chunks_ = SlidingWindow(duration=self.duration,
-                                     step=self.step * self.duration)
+        self.chunks_ = SlidingWindow(
+            duration=self.duration, step=self.step * self.duration
+        )
 
         self.batch_size = batch_size
 
@@ -190,14 +195,17 @@ class Pretrained(FeatureExtraction):
 
         features = SlidingWindowFeature(
             self.feature_extraction_.get_features(y, sample_rate),
-            self.feature_extraction_.sliding_window)
+            self.feature_extraction_.sliding_window,
+        )
 
-        return self.model_.slide(features,
-                                 self.chunks_,
-                                 batch_size=self.batch_size,
-                                 device=self.device,
-                                 return_intermediate=self.return_intermediate,
-                                 progress_hook=self.progress_hook).data
+        return self.model_.slide(
+            features,
+            self.chunks_,
+            batch_size=self.batch_size,
+            device=self.device,
+            return_intermediate=self.return_intermediate,
+            progress_hook=self.progress_hook,
+        ).data
 
     def get_context_duration(self) -> float:
         # FIXME: add half window duration to context?

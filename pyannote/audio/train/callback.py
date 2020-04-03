@@ -28,7 +28,6 @@
 
 
 class Callback:
-
     def on_train_start(self, trainer):
         pass
 
@@ -56,52 +55,51 @@ class Callback:
 
 
 class Debug(Callback):
-
     def on_train_start(self, trainer):
-        print('')
-        print('-- Debug callback -----------------')
-        print('on_train_start')
-        print('-----------------------------------')
-        print('')
+        print("")
+        print("-- Debug callback -----------------")
+        print("on_train_start")
+        print("-----------------------------------")
+        print("")
 
     def on_epoch_start(self, trainer):
-        print('')
-        print('-- Debug callback -----------------')
-        print('on_epoch_start')
-        print('-----------------------------------')
-        print('')
+        print("")
+        print("-- Debug callback -----------------")
+        print("on_epoch_start")
+        print("-----------------------------------")
+        print("")
 
     def on_batch_start(self, trainer, batch):
-        print('')
-        print('-- Debug callback -----------------')
-        print('on_batch_start')
-        print('-----------------------------------')
-        print('')
+        print("")
+        print("-- Debug callback -----------------")
+        print("on_batch_start")
+        print("-----------------------------------")
+        print("")
         return batch
 
     def on_batch_end(self, trainer, loss):
-        print('')
-        print('-- Debug callback -----------------')
-        print('on_batch_end')
-        print('-----------------------------------')
-        print('')
+        print("")
+        print("-- Debug callback -----------------")
+        print("on_batch_end")
+        print("-----------------------------------")
+        print("")
 
     def on_epoch_end(self, trainer):
-        print('')
-        print('-- Debug callback -----------------')
-        print('on_epoch_end')
-        print('-----------------------------------')
-        print('')
+        print("")
+        print("-- Debug callback -----------------")
+        print("on_epoch_end")
+        print("-----------------------------------")
+        print("")
 
     def on_train_end(self, trainer):
-        print('')
-        print('-- Debug callback -----------------')
-        print('on_train_end')
-        print('-----------------------------------')
-        print('')
+        print("")
+        print("-- Debug callback -----------------")
+        print("on_train_end")
+        print("-----------------------------------")
+        print("")
+
 
 class Callbacks:
-
     def __init__(self, callbacks):
         super().__init__()
         self.callbacks = callbacks

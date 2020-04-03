@@ -27,7 +27,6 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 
-
 from .speech_activity_detection import SpeechActivityDetection
 from .speech_activity_detection import DomainAwareSpeechActivityDetection
 from .speech_activity_detection import DomainAdversarialSpeechActivityDetection
@@ -39,7 +38,9 @@ from .domain_classification import DomainClassification
 from .resegmentation import Resegmentation
 
 
-__all__ = ['SpeechActivityDetection',
-           'OverlapDetection',
-           'SpeakerChangeDetection',
-           'Resegmentation']
+__all__ = [
+    "SpeechActivityDetection",
+    "OverlapDetection",
+    "SpeakerChangeDetection",
+    "Resegmentation",
+]

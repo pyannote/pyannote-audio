@@ -26,4 +26,4 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
-__import__('pkg_resources').declare_namespace(__name__)
+__import__("pkg_resources").declare_namespace(__name__)

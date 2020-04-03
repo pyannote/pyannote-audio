@@ -27,6 +27,7 @@
 import torch.nn as nn
 from torch.autograd import Function
 
+
 class RevGrad(Function):
     @staticmethod
     def forward(ctx, input_):
@@ -40,6 +41,7 @@ class RevGrad(Function):
         if ctx.needs_input_grad[0]:
             grad_input = -grad_output
         return grad_input
+
 
 revgrad = RevGrad.apply
 

@@ -84,33 +84,36 @@ class OverlapDetectionGenerator(LabelingTaskGenerator):
         Defines Signal-to-Overlap Ratio range in dB. Defaults to [0, 10].
     """
 
-    def __init__(self,
-                 feature_extraction: Wrappable,
-                 protocol: Protocol,
-                 subset: Text = 'train',
-                 resolution: Optional[Resolution] = None,
-                 alignment: Optional[Alignment] = None,
-                 duration: float = 2.0,
-                 batch_size: int = 32,
-                 per_epoch: float = None,
-                 snr_min: float = 0,
-                 snr_max: float = 10):
-
+    def __init__(
+        self,
+        feature_extraction: Wrappable,
+        protocol: Protocol,
+        subset: Text = "train",
+        resolution: Optional[Resolution] = None,
+        alignment: Optional[Alignment] = None,
+        duration: float = 2.0,
+        batch_size: int = 32,
+        per_epoch: float = None,
+        snr_min: float = 0,
+        snr_max: float = 10,
+    ):
 
         self.snr_min = snr_min
         self.snr_max = snr_max
         self.raw_audio_ = RawAudio(sample_rate=feature_extraction.sample_rate)
 
-        super().__init__(feature_extraction,
-                         protocol,
-                         subset=subset,
-                         resolution=resolution,
-                         alignment=alignment,
-                         duration=duration,
-                         batch_size=batch_size,
-                         per_epoch=per_epoch,
-                         # TODO. be smart and find a way to use "local_labels"
-                         local_labels=False)
+        super().__init__(
+            feature_extraction,
+            protocol,
+            subset=subset,
+            resolution=resolution,
+            alignment=alignment,
+            duration=duration,
+            batch_size=batch_size,
+            per_epoch=per_epoch,
+            # TODO. be smart and find a way to use "local_labels"
+            local_labels=False,
+        )
 
     def overlap_samples(self):
         """Random overlap samples
@@ -123,7 +126,7 @@ class OverlapDetectionGenerator(LabelingTaskGenerator):
         """
 
         uris = list(self.data_)
-        durations = np.array([self.data_[uri]['duration'] for uri in uris])
+        durations = np.array([self.data_[uri]["duration"] for uri in uris])
         probabilities = durations / np.sum(durations)
 
         while True:
@@ -133,29 +136,25 @@ class OverlapDetectionGenerator(LabelingTaskGenerator):
             uri = uris[np.random.choice(len(uris), p=probabilities)]
 
             datum = self.data_[uri]
-            current_file = datum['current_file']
+            current_file = datum["current_file"]
 
             # choose one segment at random with probability
             # proportional to its duration
-            segment = next(random_segment(datum['segments'], weighted=True))
+            segment = next(random_segment(datum["segments"], weighted=True))
 
             # choose random subsegment
             # duration = np.random.rand() * self.duration
             sequence = next(random_subsegment(segment, self.duration))
 
             # get corresponding waveform
-            X = self.raw_audio_.crop(current_file,
-                                     sequence,
-                                     mode='center',
-                                     fixed=self.duration)
+            X = self.raw_audio_.crop(
+                current_file, sequence, mode="center", fixed=self.duration
+            )
 
             # get corresponding labels
-            y = datum['y'].crop(sequence,
-                                mode=self.alignment,
-                                fixed=self.duration)
+            y = datum["y"].crop(sequence, mode=self.alignment, fixed=self.duration)
 
-            yield {'waveform': normalize(X),
-                   'y': y}
+            yield {"waveform": normalize(X), "y": y}
 
     def sliding_samples(self):
         """Sliding window
@@ -168,11 +167,10 @@ class OverlapDetectionGenerator(LabelingTaskGenerator):
         """
 
         uris = list(self.data_)
-        durations = np.array([self.data_[uri]['duration'] for uri in uris])
+        durations = np.array([self.data_[uri]["duration"] for uri in uris])
         probabilities = durations / np.sum(durations)
 
-        sliding_segments = SlidingWindow(duration=self.duration,
-                                         step=self.duration)
+        sliding_segments = SlidingWindow(duration=self.duration, step=self.duration)
 
         while True:
 
@@ -185,7 +183,7 @@ class OverlapDetectionGenerator(LabelingTaskGenerator):
                 datum = self.data_[uri]
 
                 # make a copy of current file
-                current_file = dict(datum['current_file'])
+                current_file = dict(datum["current_file"])
 
                 # read waveform for the whole file
                 waveform = self.raw_audio_(current_file)
@@ -194,7 +192,8 @@ class OverlapDetectionGenerator(LabelingTaskGenerator):
                 # we avoid generating exactly the same subsequence twice
                 shifted_segments = [
                     Segment(s.start + np.random.random() * self.duration, s.end)
-                    for s in get_annotated(current_file)]
+                    for s in get_annotated(current_file)
+                ]
                 # deal with corner case where a shifted segment would be empty
                 shifted_segments = [s for s in shifted_segments if s]
                 annotated = Timeline(segments=shifted_segments)
@@ -202,19 +201,20 @@ class OverlapDetectionGenerator(LabelingTaskGenerator):
                 samples = []
                 for sequence in sliding_segments(annotated):
 
-                    X = waveform.crop(sequence, mode='center',
-                                      fixed=self.duration)
+                    X = waveform.crop(sequence, mode="center", fixed=self.duration)
 
-                    y = datum['y'].crop(sequence, mode=self.alignment,
-                                        fixed=self.duration)
+                    y = datum["y"].crop(
+                        sequence, mode=self.alignment, fixed=self.duration
+                    )
 
                     # FIXME -- this is ugly
-                    sample = {'waveform': normalize(X),
-                              'y': y,
-                              'database': current_file['database'],
-                              'uri': current_file['uri'],
-                              'audio': current_file['audio'],
-                              'duration': current_file['duration'],
+                    sample = {
+                        "waveform": normalize(X),
+                        "y": y,
+                        "database": current_file["database"],
+                        "uri": current_file["uri"],
+                        "audio": current_file["audio"],
+                        "duration": current_file["duration"],
                     }
 
                     samples.append(sample)
@@ -242,29 +242,32 @@ class OverlapDetectionGenerator(LabelingTaskGenerator):
                 overlap = next(overlap_samples)
 
                 # select SNR at random
-                snr = (self.snr_max - self.snr_min) * np.random.random_sample() + self.snr_min
+                snr = (
+                    self.snr_max - self.snr_min
+                ) * np.random.random_sample() + self.snr_min
                 alpha = np.exp(-np.log(10) * snr / 20)
 
-                original['waveform'] += alpha * overlap['waveform']
-                original['y'] += overlap['y']
+                original["waveform"] += alpha * overlap["waveform"]
+                original["y"] += overlap["y"]
 
-            speaker_count = np.sum(original['y'], axis=1, keepdims=True)
-            original['y'] = np.int64(speaker_count > 1)
+            speaker_count = np.sum(original["y"], axis=1, keepdims=True)
+            original["y"] = np.int64(speaker_count > 1)
 
             # run feature extraction
-            original['X'] = self.feature_extraction.crop(
-                original, Segment(0, self.duration), mode='center',
-                fixed=self.duration)
+            original["X"] = self.feature_extraction.crop(
+                original, Segment(0, self.duration), mode="center", fixed=self.duration
+            )
 
-            yield {'X': original['X'], 'y': original['y']}
+            yield {"X": original["X"], "y": original["y"]}
 
     @property
     def specifications(self):
         return {
-            'task': Task(type=TaskType.MULTI_CLASS_CLASSIFICATION,
-                         output=TaskOutput.SEQUENCE),
-            'X': {'dimension': self.feature_extraction.dimension},
-            'y': {'classes': ['non_overlap', 'overlap']},
+            "task": Task(
+                type=TaskType.MULTI_CLASS_CLASSIFICATION, output=TaskOutput.SEQUENCE
+            ),
+            "X": {"dimension": self.feature_extraction.dimension},
+            "y": {"classes": ["non_overlap", "overlap"]},
         }
 
 
@@ -282,8 +285,14 @@ class OverlapDetection(LabelingTask):
         Defaults to one day (1).
     """
 
-    def get_batch_generator(self, feature_extraction, protocol, subset='train',
-                            resolution=None, alignment=None):
+    def get_batch_generator(
+        self,
+        feature_extraction,
+        protocol,
+        subset="train",
+        resolution=None,
+        alignment=None,
+    ):
         """
         resolution : `pyannote.core.SlidingWindow`, optional
             Override `feature_extraction.sliding_window`. This is useful for
@@ -296,9 +305,11 @@ class OverlapDetection(LabelingTask):
         """
         return OverlapDetectionGenerator(
             feature_extraction,
-            protocol, subset=subset,
+            protocol,
+            subset=subset,
             resolution=resolution,
             alignment=alignment,
             duration=self.duration,
             per_epoch=self.per_epoch,
-            batch_size=self.batch_size)
+            batch_size=self.batch_size,
+        )

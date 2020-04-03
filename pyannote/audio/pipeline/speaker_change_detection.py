@@ -74,10 +74,13 @@ class SpeakerChangeDetection(Pipeline):
         Segment minimum duration.
     """
 
-    def __init__(self, scores: Wrappable = None,
-                       purity: Optional[float] = 0.95,
-                       fscore: bool = False,
-                       diarization: bool = False):
+    def __init__(
+        self,
+        scores: Wrappable = None,
+        purity: Optional[float] = 0.95,
+        fscore: bool = False,
+        diarization: bool = False,
+    ):
         super().__init__()
 
         if scores is None:
@@ -90,14 +93,13 @@ class SpeakerChangeDetection(Pipeline):
         self.diarization = diarization
 
         # hyper-parameters
-        self.alpha = Uniform(0., 1.)
-        self.min_duration = Uniform(0., 10.)
+        self.alpha = Uniform(0.0, 1.0)
+        self.min_duration = Uniform(0.0, 10.0)
 
     def initialize(self):
         """Initialize pipeline with current set of parameters"""
 
-        self._peak = Peak(alpha=self.alpha,
-                          min_duration=self.min_duration)
+        self._peak = Peak(alpha=self.alpha, min_duration=self.min_duration)
 
     def __call__(self, current_file: dict) -> Annotation:
         """Apply change detection
@@ -124,24 +126,22 @@ class SpeakerChangeDetection(Pipeline):
             else:
                 self.log_scale_ = False
 
-        data = np.exp(scd_scores.data) if self.log_scale_ \
-               else scd_scores.data
+        data = np.exp(scd_scores.data) if self.log_scale_ else scd_scores.data
 
         # take the final dimension
         # (in order to support both classification, multi-class classification,
         # and regression scores)
-        change_prob = SlidingWindowFeature(
-            data[:, -1],
-            scd_scores.sliding_window)
+        change_prob = SlidingWindowFeature(data[:, -1], scd_scores.sliding_window)
 
         # peak detection
         change = self._peak.apply(change_prob)
-        change.uri = current_file.get('uri', None)
+        change.uri = current_file.get("uri", None)
 
-        return change.to_annotation(generator='string', modality='audio')
+        return change.to_annotation(generator="string", modality="audio")
 
-    def get_metric(self, parallel=False) -> Union[DiarizationPurityCoverageFMeasure,
-                                                  SegmentationPurityCoverageFMeasure]:
+    def get_metric(
+        self, parallel=False
+    ) -> Union[DiarizationPurityCoverageFMeasure, SegmentationPurityCoverageFMeasure]:
         """Return new instance of f-score metric"""
 
         if not self.fscore:
@@ -150,8 +150,7 @@ class SpeakerChangeDetection(Pipeline):
         if self.diarization:
             return DiarizationPurityCoverageFMeasure(parallel=parallel)
 
-        return SegmentationPurityCoverageFMeasure(tolerance=0.5,
-                                                  parallel=parallel)
+        return SegmentationPurityCoverageFMeasure(tolerance=0.5, parallel=parallel)
 
     def loss(self, current_file: dict, hypothesis: Annotation) -> float:
         """Compute (1 - coverage) at target purity
@@ -172,11 +171,11 @@ class SpeakerChangeDetection(Pipeline):
         """
 
         metric = SegmentationPurityCoverageFMeasure(tolerance=0.500, beta=1)
-        reference  = current_file['annotation']
+        reference = current_file["annotation"]
         uem = get_annotated(current_file)
         f_measure = metric(reference, hypothesis, uem=uem)
         purity, coverage, _ = metric.compute_metrics()
         if purity > self.purity:
-            return 1. - coverage
+            return 1.0 - coverage
         else:
-            return 1. + (1. - purity)
+            return 1.0 + (1.0 - purity)

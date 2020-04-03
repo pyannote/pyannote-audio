@@ -57,8 +57,8 @@ class Peak(object):
         Defaults to False.
 
     """
-    def __init__(self, alpha=0.5, min_duration=1.0, scale='absolute',
-                 log_scale=False):
+
+    def __init__(self, alpha=0.5, min_duration=1.0, scale="absolute", log_scale=False):
         super(Peak, self).__init__()
         self.alpha = alpha
         self.scale = scale
@@ -95,15 +95,15 @@ class Peak(object):
         order = max(1, int(np.rint(self.min_duration / precision)))
         indices = scipy.signal.argrelmax(y, order=order)[0]
 
-        if self.scale == 'absolute':
+        if self.scale == "absolute":
             mini = 0
             maxi = 1
 
-        elif self.scale == 'relative':
+        elif self.scale == "relative":
             mini = np.nanmin(y)
             maxi = np.nanmax(y)
 
-        elif self.scale == 'percentile':
+        elif self.scale == "percentile":
             mini = np.nanpercentile(y, 1)
             maxi = np.nanpercentile(y, 99)
 
@@ -147,9 +147,17 @@ class Binarize(object):
     RNN-based Voice Activity Detection", InterSpeech 2015.
     """
 
-    def __init__(self, onset=0.5, offset=0.5, scale='absolute', log_scale=False,
-                 pad_onset=0., pad_offset=0., min_duration_on=0.,
-                 min_duration_off=0.):
+    def __init__(
+        self,
+        onset=0.5,
+        offset=0.5,
+        scale="absolute",
+        log_scale=False,
+        pad_onset=0.0,
+        pad_offset=0.0,
+        min_duration_on=0.0,
+        min_duration_off=0.0,
+    ):
 
         super(Binarize, self).__init__()
 
@@ -192,15 +200,15 @@ class Binarize(object):
         start = timestamps[0]
         label = data[0] > self.onset
 
-        if self.scale == 'absolute':
+        if self.scale == "absolute":
             mini = 0
             maxi = 1
 
-        elif self.scale == 'relative':
+        elif self.scale == "relative":
             mini = np.nanmin(data)
             maxi = np.nanmax(data)
 
-        elif self.scale == 'percentile':
+        elif self.scale == "percentile":
             mini = np.nanpercentile(data, 1)
             maxi = np.nanpercentile(data, 99)
 
@@ -216,8 +224,7 @@ class Binarize(object):
             if label:
                 # switching from active to inactive
                 if y < offset:
-                    segment = Segment(start - self.pad_onset,
-                                      t + self.pad_offset)
+                    segment = Segment(start - self.pad_onset, t + self.pad_offset)
                     active.add(segment)
                     start = t
                     label = False
@@ -239,8 +246,7 @@ class Binarize(object):
         active = active.support()
 
         # remove short 'active' segments
-        active = Timeline(
-            [s for s in active if s.duration > self.min_duration_on])
+        active = Timeline([s for s in active if s.duration > self.min_duration_on])
 
         # fill short 'inactive' segments
         inactive = active.gaps()
@@ -275,12 +281,12 @@ class GMMResegmentation(object):
     TODO: add option to also resegment speech/non-speech
 
     """
-    def __init__(self, n_components=128, n_iter=10, window=1.):
+
+    def __init__(self, n_components=128, n_iter=10, window=1.0):
         super().__init__()
         self.n_components = n_components
         self.n_iter = n_iter
         self.window = window
-
 
     def apply(self, annotation, features):
         """
@@ -310,29 +316,32 @@ class GMMResegmentation(object):
 
             # gather all features for current label
             span = annotation.label_timeline(label)
-            data = features.crop(span, mode='center')
+            data = features.crop(span, mode="center")
 
             # train a GMM
-            gmm = GaussianMixture(n_components=self.n_components,
-                                  covariance_type='diag',
-                                  tol=0.001, reg_covar=1e-06,
-                                  max_iter=self.n_iter, n_init=1,
-                                  init_params='kmeans',
-                                  weights_init=None,
-                                  means_init=None,
-                                  precisions_init=None,
-                                  random_state=None,
-                                  warm_start=False,
-                                  verbose=0,
-                                  verbose_interval=10).fit(data)
+            gmm = GaussianMixture(
+                n_components=self.n_components,
+                covariance_type="diag",
+                tol=0.001,
+                reg_covar=1e-06,
+                max_iter=self.n_iter,
+                n_init=1,
+                init_params="kmeans",
+                weights_init=None,
+                means_init=None,
+                precisions_init=None,
+                random_state=None,
+                warm_start=False,
+                verbose=0,
+                verbose_interval=10,
+            ).fit(data)
 
             # compute log-probability across the whole file
             log_prob = gmm.score_samples(features.data)
             log_probs.append(log_prob)
 
         # smooth log-probability using a sliding window
-        log_probs = scipy.signal.convolve(np.vstack(log_probs),
-                                          window, mode='same')
+        log_probs = scipy.signal.convolve(np.vstack(log_probs), window, mode="same")
 
         # assign each frame to the most likely label
         y = np.argmax(log_probs, axis=0)

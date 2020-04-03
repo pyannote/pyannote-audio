@@ -133,23 +133,28 @@ class AdditiveAngularMarginLoss(Classification):
 
     """
 
-    def __init__(self, duration: float = 1.0,
-                       min_duration: float = None,
-                       per_turn: int = 1,
-                       per_label: int = 1,
-                       per_fold: int = 32,
-                       per_epoch: float = None,
-                       label_min_duration: float = 0.,
-                       margin: float = 0.1,
-                       s: float = 7.0):
+    def __init__(
+        self,
+        duration: float = 1.0,
+        min_duration: float = None,
+        per_turn: int = 1,
+        per_label: int = 1,
+        per_fold: int = 32,
+        per_epoch: float = None,
+        label_min_duration: float = 0.0,
+        margin: float = 0.1,
+        s: float = 7.0,
+    ):
 
-        super().__init__(duration=duration,
-                         min_duration=min_duration,
-                         per_turn=per_turn,
-                         per_label=per_label,
-                         per_fold=per_fold,
-                         per_epoch=per_epoch,
-                         label_min_duration=label_min_duration)
+        super().__init__(
+            duration=duration,
+            min_duration=min_duration,
+            per_turn=per_turn,
+            per_label=per_label,
+            per_fold=per_fold,
+            per_epoch=per_epoch,
+            label_min_duration=label_min_duration,
+        )
         self.margin = margin
         self.s = s
 
@@ -164,8 +169,9 @@ class AdditiveAngularMarginLoss(Classification):
 
         self.classifier_ = ArcLinear(
             self.model.dimension,
-            len(self.specifications['y']['classes']),
+            len(self.specifications["y"]["classes"]),
             self.margin,
-            self.s).to(self.device)
+            self.s,
+        ).to(self.device)
 
         return self.classifier_.parameters()

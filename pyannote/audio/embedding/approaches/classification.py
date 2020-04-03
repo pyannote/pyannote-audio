@@ -36,6 +36,7 @@ class Linear(nn.Linear):
     def forward(self, x, target=None):
         return super().forward(x)
 
+
 class Classification(RepresentationLearning):
     """Classification
 
@@ -71,24 +72,29 @@ class Classification(RepresentationLearning):
     # TODO. add option to see this classification step
     #       as cosine similarity to centroids (ie center loss?)
 
-    CLASSIFIER_PT = '{train_dir}/weights/{epoch:04d}.classifier.pt'
+    CLASSIFIER_PT = "{train_dir}/weights/{epoch:04d}.classifier.pt"
 
-    def __init__(self, duration: float = 1.0,
-                       min_duration: float = None,
-                       per_turn: int = 1,
-                       per_label: int = 1,
-                       per_fold: int = 32,
-                       per_epoch: float = None,
-                       label_min_duration: float = 0.,
-                       bias: bool = False):
+    def __init__(
+        self,
+        duration: float = 1.0,
+        min_duration: float = None,
+        per_turn: int = 1,
+        per_label: int = 1,
+        per_fold: int = 32,
+        per_epoch: float = None,
+        label_min_duration: float = 0.0,
+        bias: bool = False,
+    ):
 
-        super().__init__(duration=duration,
-                         min_duration=min_duration,
-                         per_turn=per_turn,
-                         per_label=per_label,
-                         per_fold=per_fold,
-                         per_epoch=per_epoch,
-                         label_min_duration=label_min_duration)
+        super().__init__(
+            duration=duration,
+            min_duration=min_duration,
+            per_turn=per_turn,
+            per_label=per_label,
+            per_fold=per_fold,
+            per_epoch=per_epoch,
+            label_min_duration=label_min_duration,
+        )
 
         self.bias = bias
         self.logsoftmax_ = nn.LogSoftmax(dim=1)
@@ -105,8 +111,9 @@ class Classification(RepresentationLearning):
 
         self.classifier_ = Linear(
             self.model.dimension,
-            len(self.specifications['y']['classes']),
-            bias=self.bias).to(self.device)
+            len(self.specifications["y"]["classes"]),
+            bias=self.bias,
+        ).to(self.device)
 
         return self.classifier_.parameters()
 
@@ -121,20 +128,23 @@ class Classification(RepresentationLearning):
 
         if model_pt is None:
             classifier_pt = self.CLASSIFIER_PT.format(
-                train_dir=self.train_dir_, epoch=self.epoch_)
+                train_dir=self.train_dir_, epoch=self.epoch_
+            )
         else:
-            classifier_pt = model_pt.with_suffix('.classifier.pt')
+            classifier_pt = model_pt.with_suffix(".classifier.pt")
 
         try:
             classifier_state = torch.load(
-                classifier_pt, map_location=lambda storage, loc: storage)
+                classifier_pt, map_location=lambda storage, loc: storage
+            )
             self.classifier_.load_state_dict(classifier_state)
             success = True
         except Exception as e:
             msg = (
-                f'Did not load classifier state (most likely because current '
-                f'training session uses a different training set than the one '
-                f'used for pre-training).')
+                f"Did not load classifier state (most likely because current "
+                f"training session uses a different training set than the one "
+                f"used for pre-training)."
+            )
             warnings.warn(msg)
             success = False
 
@@ -144,12 +154,13 @@ class Classification(RepresentationLearning):
         """Save classifier weights to disk"""
 
         classifier_pt = self.CLASSIFIER_PT.format(
-            train_dir=self.train_dir_, epoch=self.epoch_)
+            train_dir=self.train_dir_, epoch=self.epoch_
+        )
         torch.save(self.classifier_.state_dict(), classifier_pt)
 
     @property
     def metric(self):
-        return 'cosine'
+        return "cosine"
 
     def batch_loss(self, batch):
         """Compute loss for current `batch`
@@ -177,6 +188,7 @@ class Classification(RepresentationLearning):
         loss_classification = self.loss_(logits, target)
 
         return {
-            'loss': loss_classification,
+            "loss": loss_classification,
             # add this for Tensorboard comparison with other compound losses
-            'loss_classification': loss_classification}
+            "loss_classification": loss_classification,
+        }

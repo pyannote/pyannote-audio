@@ -70,9 +70,18 @@ class RNN(nn.Module):
         Temporal pooling strategy. Defaults to no pooling.
     """
 
-    def __init__(self, n_features, unit='LSTM', hidden_size=16, num_layers=1,
-                 bias=True, dropout=0, bidirectional=False, concatenate=False,
-                 pool=None):
+    def __init__(
+        self,
+        n_features,
+        unit="LSTM",
+        hidden_size=16,
+        num_layers=1,
+        bias=True,
+        dropout=0,
+        bidirectional=False,
+        concatenate=False,
+        pool=None,
+    ):
         super().__init__()
 
         self.n_features = n_features
@@ -90,10 +99,10 @@ class RNN(nn.Module):
         self.pool_ = TemporalPooling.create(pool) if pool is not None else None
 
         if num_layers < 1:
-            msg = ('"bidirectional" must be set to False when num_layers < 1')
+            msg = '"bidirectional" must be set to False when num_layers < 1'
             if bidirectional:
                 raise ValueError(msg)
-            msg = ('"concatenate" must be set to False when num_layers < 1')
+            msg = '"concatenate" must be set to False when num_layers < 1'
             if concatenate:
                 raise ValueError(msg)
             return
@@ -115,18 +124,28 @@ class RNN(nn.Module):
                 else:
                     dropout = self.dropout
 
-                rnn = Klass(input_dim, self.hidden_size,
-                            num_layers=1, bias=self.bias,
-                            batch_first=True, dropout=dropout,
-                            bidirectional=self.bidirectional)
+                rnn = Klass(
+                    input_dim,
+                    self.hidden_size,
+                    num_layers=1,
+                    bias=self.bias,
+                    batch_first=True,
+                    dropout=dropout,
+                    bidirectional=self.bidirectional,
+                )
 
                 self.rnn_.append(rnn)
 
         else:
-            self.rnn_ = Klass(self.n_features, self.hidden_size,
-                              num_layers=self.num_layers, bias=self.bias,
-                              batch_first=True, dropout=self.dropout,
-                              bidirectional=self.bidirectional)
+            self.rnn_ = Klass(
+                self.n_features,
+                self.hidden_size,
+                num_layers=self.num_layers,
+                bias=self.bias,
+                batch_first=True,
+                dropout=self.dropout,
+                bidirectional=self.bidirectional,
+            )
 
     def forward(self, features, return_intermediate=False):
         """Apply recurrent layer (and optional temporal pooling)
@@ -149,8 +168,9 @@ class RNN(nn.Module):
         if self.num_layers < 1:
 
             if return_intermediate:
-                msg = ('"return_intermediate" must be set to False '
-                       'when num_layers < 1')
+                msg = (
+                    '"return_intermediate" must be set to False ' "when num_layers < 1"
+                )
                 raise ValueError(msg)
 
             output = features
@@ -188,16 +208,18 @@ class RNN(nn.Module):
                 output, hidden = self.rnn_(features)
 
                 if return_intermediate:
-                    if self.unit == 'LSTM':
+                    if self.unit == "LSTM":
                         h = hidden[0]
-                    elif self.unit == 'GRU':
+                    elif self.unit == "GRU":
                         h = hidden
 
                     # to (num_layers, batch_size, num_directions * hidden_size)
-                    h = h.view(
-                        self.num_layers, num_directions, -1, self.hidden_size)
-                    intermediate = h.transpose(2, 1).contiguous().view(
-                        self.num_layers, -1, num_directions * self.hidden_size)
+                    h = h.view(self.num_layers, num_directions, -1, self.hidden_size)
+                    intermediate = (
+                        h.transpose(2, 1)
+                        .contiguous()
+                        .view(self.num_layers, -1, num_directions * self.hidden_size)
+                    )
 
         if self.pool_ is not None:
             output = self.pool_(output)
@@ -209,6 +231,7 @@ class RNN(nn.Module):
 
     def dimension():
         doc = "Output features dimension."
+
         def fget(self):
             if self.num_layers < 1:
                 dimension = self.n_features
@@ -221,11 +244,13 @@ class RNN(nn.Module):
             if self.concatenate:
                 dimension *= self.num_layers
 
-            if self.pool == 'x-vector':
+            if self.pool == "x-vector":
                 dimension *= 2
 
             return dimension
+
         return locals()
+
     dimension = property(**dimension())
 
     def intermediate_dimension(self, layer):
@@ -251,7 +276,7 @@ class FF(nn.Module):
         Linear layers hidden dimensions. Defaults to [16, ].
     """
 
-    def __init__(self, n_features, hidden_size=[16, ]):
+    def __init__(self, n_features, hidden_size=[16,]):
         super().__init__()
 
         self.n_features = n_features
@@ -285,11 +310,14 @@ class FF(nn.Module):
 
     def dimension():
         doc = "Output dimension."
+
         def fget(self):
             if self.hidden_size:
                 return self.hidden_size[-1]
             return self.n_features
+
         return locals()
+
     dimension = property(**dimension())
 
 
@@ -316,7 +344,8 @@ class Embedding(nn.Module):
         self.batch_normalize = batch_normalize
         if self.batch_normalize:
             self.batch_normalize_ = nn.BatchNorm1d(
-                n_features, eps=1e-5, momentum=0.1, affine=False)
+                n_features, eps=1e-5, momentum=0.1, affine=False
+            )
 
         self.unit_normalize = unit_normalize
 
@@ -333,9 +362,12 @@ class Embedding(nn.Module):
 
     def dimension():
         doc = "Output dimension."
+
         def fget(self):
             return self.n_features
+
         return locals()
+
     dimension = property(**dimension())
 
 
@@ -366,17 +398,17 @@ class PyanNet(Model):
         if sincnet is None:
             sincnet = dict()
 
-        if sincnet.get('skip', False):
-            return 'center'
+        if sincnet.get("skip", False):
+            return "center"
 
         return SincNet.get_alignment(**sincnet)
 
     supports_packed = False
 
     @staticmethod
-    def get_resolution(sincnet : Optional[dict] = None,
-                       rnn : Optional[dict] = None,
-                       **kwargs) -> Resolution:
+    def get_resolution(
+        sincnet: Optional[dict] = None, rnn: Optional[dict] = None, **kwargs
+    ) -> Resolution:
         """Get sliding window used for feature extraction
 
         Parameters
@@ -393,24 +425,26 @@ class PyanNet(Model):
         """
 
         if rnn is None:
-            rnn = {'pool': None}
+            rnn = {"pool": None}
 
-        if rnn.get('pool', None) is not None:
+        if rnn.get("pool", None) is not None:
             return RESOLUTION_CHUNK
 
         if sincnet is None:
-            sincnet = {'skip': False}
+            sincnet = {"skip": False}
 
-        if sincnet.get('skip', False):
+        if sincnet.get("skip", False):
             return RESOLUTION_FRAME
 
         return SincNet.get_resolution(**sincnet)
 
-    def init(self,
-             sincnet : Optional[dict] = None,
-             rnn : Optional[dict] = None,
-             ff : Optional[dict] = None,
-             embedding : Optional[dict] = None):
+    def init(
+        self,
+        sincnet: Optional[dict] = None,
+        rnn: Optional[dict] = None,
+        ff: Optional[dict] = None,
+        embedding: Optional[dict] = None,
+    ):
         """waveform -> SincNet -> RNN [-> merge] [-> time_pool] -> FC -> output
 
         Parameters
@@ -435,11 +469,11 @@ class PyanNet(Model):
             sincnet = dict()
         self.sincnet = sincnet
 
-        if not sincnet.get('skip', False):
+        if not sincnet.get("skip", False):
             if n_features != 1:
                 msg = (
-                    f'SincNet only supports mono waveforms. '
-                    f'Here, waveform has {n_features} channels.'
+                    f"SincNet only supports mono waveforms. "
+                    f"Here, waveform has {n_features} channels."
                 )
                 raise ValueError(msg)
             self.sincnet_ = SincNet(**sincnet)
@@ -488,7 +522,7 @@ class PyanNet(Model):
             is provided).
         """
 
-        if self.sincnet.get('skip', False):
+        if self.sincnet.get("skip", False):
             output = waveforms
         else:
             output = self.sincnet_(waveforms)
@@ -528,7 +562,7 @@ class PyanNet(Model):
     def intermediate_dimension(self, layer):
         if layer == 0:
             return self.sincnet_.dimension
-        return self.rnn_.intermediate_dimension(layer-1)
+        return self.rnn_.intermediate_dimension(layer - 1)
 
 
 class SincTDNN(Model):
@@ -560,7 +594,7 @@ class SincTDNN(Model):
     supports_packed = False
 
     @staticmethod
-    def get_resolution(sincnet : Optional[dict] = None, **kwargs) -> Resolution:
+    def get_resolution(sincnet: Optional[dict] = None, **kwargs) -> Resolution:
         """Get sliding window used for feature extraction
 
         Parameters
@@ -576,10 +610,12 @@ class SincTDNN(Model):
         # TODO https://github.com/pyannote/pyannote-audio/issues/290
         return RESOLUTION_CHUNK
 
-    def init(self,
-             sincnet : Optional[dict] = None,
-             tdnn : Optional[dict] = None,
-             embedding : Optional[dict] = None):
+    def init(
+        self,
+        sincnet: Optional[dict] = None,
+        tdnn: Optional[dict] = None,
+        embedding: Optional[dict] = None,
+    ):
         """waveform -> SincNet -> XVectorNet (TDNN -> FC) -> output
 
         Parameters
@@ -602,8 +638,10 @@ class SincTDNN(Model):
         self.sincnet = sincnet
 
         if n_features != 1:
-            raise ValueError('SincNet only supports mono waveforms. '
-                             f'Here, waveform has {n_features} channels.')
+            raise ValueError(
+                "SincNet only supports mono waveforms. "
+                f"Here, waveform has {n_features} channels."
+            )
         self.sincnet_ = SincNet(**sincnet)
         n_features = self.sincnet_.dimension
 
@@ -639,14 +677,15 @@ class SincTDNN(Model):
 
         output = self.sincnet_(waveforms)
 
-        return_intermediate = 'segment6' if self.task.is_representation_learning else None
+        return_intermediate = (
+            "segment6" if self.task.is_representation_learning else None
+        )
         output = self.tdnn_(output, return_intermediate=return_intermediate)
 
         if self.task.is_representation_learning:
             return self.embedding_(output)
 
         return self.activation_(self.linear_(output))
-
 
     @property
     def dimension(self):

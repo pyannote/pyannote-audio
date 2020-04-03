@@ -30,6 +30,7 @@
 from typing import Union
 from typing import List
 from typing import Optional
+
 NoiseCollection = Union[str, List[str]]
 
 import random
@@ -58,8 +59,7 @@ class Noise:
         Defaults to "MUSAN.Collection.BackgroundNoise"
     """
 
-    def __init__(self,
-                 collection: Optional[NoiseCollection] = None):
+    def __init__(self, collection: Optional[NoiseCollection] = None):
 
         if collection is None:
             collection = "MUSAN.Collection.BackgroundNoise"
@@ -70,15 +70,12 @@ class Noise:
         self.collection = collection
 
         self.files_ = []
-        preprocessors = {'audio': FileFinder(),
-                         'duration': get_audio_duration}
+        preprocessors = {"audio": FileFinder(), "duration": get_audio_duration}
         for collection in self.collection:
             protocol = get_protocol(collection, preprocessors=preprocessors)
             self.files_.extend(protocol.files())
 
-    def __call__(self,
-                 n_samples: int,
-                 sample_rate: int) -> np.ndarray:
+    def __call__(self, n_samples: int, sample_rate: int) -> np.ndarray:
         """Generate noise
 
         Parameters
@@ -102,13 +99,12 @@ class Noise:
 
             # select noise file at random
             file = random.choice(self.files_)
-            duration = file['duration']
+            duration = file["duration"]
 
             # if noise file is longer than what is needed, crop it
             if duration > left:
                 segment = next(random_subsegment(Segment(0, duration), left))
-                noise = raw_audio.crop(file, segment,
-                                       mode='center', fixed=left)
+                noise = raw_audio.crop(file, segment, mode="center", fixed=left)
                 left = 0
 
             # otherwise, take the whole file

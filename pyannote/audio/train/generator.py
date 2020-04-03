@@ -35,7 +35,8 @@ from typing import Iterator
 
 # TODO: move this to pyannote.database
 from typing_extensions import Literal
-Subset = Literal['train', 'development', 'test']
+
+Subset = Literal["train", "development", "test"]
 
 from pyannote.audio.features.base import FeatureExtraction
 from pyannote.database.protocol.protocol import Protocol
@@ -58,11 +59,13 @@ class BatchGenerator(metaclass=ABCMeta):
     """
 
     @abstractmethod
-    def __init__(self,
-                 feature_extraction : FeatureExtraction,
-                 protocol : Protocol,
-                 subset : Subset = 'train',
-                 **kwargs):
+    def __init__(
+        self,
+        feature_extraction: FeatureExtraction,
+        protocol: Protocol,
+        subset: Subset = "train",
+        **kwargs,
+    ):
         pass
 
     @property
@@ -94,10 +97,9 @@ class BatchGenerator(metaclass=ABCMeta):
         pass
 
     def __call__(self) -> Iterator:
-        batches = pescador.maps.buffer_stream(self.samples(),
-                                              self.batch_size,
-                                              partial=False,
-                                              axis=None)
+        batches = pescador.maps.buffer_stream(
+            self.samples(), self.batch_size, partial=False, axis=None
+        )
 
         while True:
             next_batch = next(batches)
@@ -107,7 +109,7 @@ class BatchGenerator(metaclass=ABCMeta):
             # HACK buggy batches.
             # TODO fix the problem upstream in .samples()
             if any(batch.dtype == np.object_ for batch in next_batch.values()):
-                msg = f'Skipping malformed batch.'
+                msg = f"Skipping malformed batch."
                 warnings.warn(msg)
                 continue
             yield next_batch

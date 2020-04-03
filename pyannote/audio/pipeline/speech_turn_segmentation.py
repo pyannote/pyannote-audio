@@ -58,7 +58,7 @@ class OracleSpeechTurnSegmentation(Pipeline):
             Speech turns
         """
 
-        return current_file['annotation'].relabel_tracks(generator='string')
+        return current_file["annotation"].relabel_tracks(generator="string")
 
 
 class SpeechTurnSegmentation(Pipeline):
@@ -82,26 +82,28 @@ class SpeechTurnSegmentation(Pipeline):
         Target purity. Defaults to 0.95
     """
 
-    def __init__(self, sad_scores: Union[Text, Path] = None,
-                       scd_scores: Union[Text, Path] = None,
-                       non_speech: Optional[bool] = True,
-                       purity: Optional[float] = 0.95):
+    def __init__(
+        self,
+        sad_scores: Union[Text, Path] = None,
+        scd_scores: Union[Text, Path] = None,
+        non_speech: Optional[bool] = True,
+        purity: Optional[float] = 0.95,
+    ):
         super().__init__()
 
         self.sad_scores = sad_scores
-        if self.sad_scores == 'oracle':
+        if self.sad_scores == "oracle":
             self.speech_activity_detection = OracleSpeechActivityDetection()
         else:
             self.speech_activity_detection = SpeechActivityDetection(
-                scores=self.sad_scores)
+                scores=self.sad_scores
+            )
 
         self.scd_scores = scd_scores
-        self.speaker_change_detection = SpeakerChangeDetection(
-            scores=self.scd_scores)
+        self.speaker_change_detection = SpeakerChangeDetection(scores=self.scd_scores)
 
         self.non_speech = non_speech
         self.purity = purity
-
 
     def __call__(self, current_file: dict) -> Annotation:
         """Apply speech turn segmentation
@@ -121,7 +123,7 @@ class SpeechTurnSegmentation(Pipeline):
         sad = self.speech_activity_detection(current_file).get_timeline()
 
         scd = self.speaker_change_detection(current_file)
-        speech_turns = scd.crop(sad, mode='intersection')
+        speech_turns = scd.crop(sad, mode="intersection")
 
         # at this point, consecutive speech turns separated by non-speech
         # might be assigned the same label (because scd might have missed
@@ -129,9 +131,9 @@ class SpeechTurnSegmentation(Pipeline):
 
         # assign one unique label per speech turn
         if self.non_speech:
-            speech_turns = speech_turns.relabel_tracks(generator='string')
+            speech_turns = speech_turns.relabel_tracks(generator="string")
 
-        speech_turns.modality = 'speaker'
+        speech_turns.modality = "speaker"
         return speech_turns
 
     def loss(self, current_file: dict, hypothesis: Annotation) -> float:
@@ -153,11 +155,11 @@ class SpeechTurnSegmentation(Pipeline):
         """
 
         metric = DiarizationPurityCoverageFMeasure()
-        reference  = current_file['annotation']
+        reference = current_file["annotation"]
         uem = get_annotated(current_file)
         f_measure = metric(reference, hypothesis, uem=uem)
         purity, coverage, _ = metric.compute_metrics()
         if purity > self.purity:
-            return 1. - coverage
+            return 1.0 - coverage
         else:
-            return 1. + (1. - purity)
+            return 1.0 + (1.0 - purity)

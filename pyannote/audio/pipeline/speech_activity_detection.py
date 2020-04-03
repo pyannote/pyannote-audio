@@ -63,8 +63,8 @@ class OracleSpeechActivityDetection(Pipeline):
             Speech regions
         """
 
-        speech = current_file['annotation'].get_timeline().support()
-        return speech.to_annotation(generator='string', modality='speech')
+        speech = current_file["annotation"].get_timeline().support()
+        return speech.to_annotation(generator="string", modality="speech")
 
 
 class SpeechActivityDetection(Pipeline):
@@ -91,8 +91,7 @@ class SpeechActivityDetection(Pipeline):
         Padding duration.
     """
 
-    def __init__(self, scores: Wrappable = None,
-                       fscore: bool = False):
+    def __init__(self, scores: Wrappable = None, fscore: bool = False):
         super().__init__()
 
         if scores is None:
@@ -103,12 +102,12 @@ class SpeechActivityDetection(Pipeline):
         self.fscore = fscore
 
         # hyper-parameters
-        self.onset = Uniform(0., 1.)
-        self.offset = Uniform(0., 1.)
-        self.min_duration_on = Uniform(0., 2.)
-        self.min_duration_off = Uniform(0., 2.)
-        self.pad_onset = Uniform(-1., 1.)
-        self.pad_offset = Uniform(-1., 1.)
+        self.onset = Uniform(0.0, 1.0)
+        self.offset = Uniform(0.0, 1.0)
+        self.min_duration_on = Uniform(0.0, 2.0)
+        self.min_duration_off = Uniform(0.0, 2.0)
+        self.pad_onset = Uniform(-1.0, 1.0)
+        self.pad_offset = Uniform(-1.0, 1.0)
 
     def initialize(self):
         """Initialize pipeline with current set of parameters"""
@@ -119,7 +118,8 @@ class SpeechActivityDetection(Pipeline):
             min_duration_on=self.min_duration_on,
             min_duration_off=self.min_duration_off,
             pad_onset=self.pad_onset,
-            pad_offset=self.pad_offset)
+            pad_offset=self.pad_offset,
+        )
 
     def __call__(self, current_file: dict) -> Annotation:
         """Apply speech activity detection
@@ -146,29 +146,29 @@ class SpeechActivityDetection(Pipeline):
             else:
                 self.log_scale_ = False
 
-        data = np.exp(sad_scores.data) if self.log_scale_ \
-               else sad_scores.data
+        data = np.exp(sad_scores.data) if self.log_scale_ else sad_scores.data
 
         # speech vs. non-speech
         if data.shape[1] > 1:
-            speech_prob = SlidingWindowFeature(1. - data[:, 0], sad_scores.sliding_window)
+            speech_prob = SlidingWindowFeature(
+                1.0 - data[:, 0], sad_scores.sliding_window
+            )
         else:
             speech_prob = SlidingWindowFeature(data, sad_scores.sliding_window)
 
         speech = self._binarize.apply(speech_prob)
 
-        speech.uri = current_file.get('uri', None)
-        return speech.to_annotation(generator='string', modality='speech')
+        speech.uri = current_file.get("uri", None)
+        return speech.to_annotation(generator="string", modality="speech")
 
-
-    def get_metric(self, parallel=False) -> Union[DetectionErrorRate, DetectionPrecisionRecallFMeasure]:
+    def get_metric(
+        self, parallel=False
+    ) -> Union[DetectionErrorRate, DetectionPrecisionRecallFMeasure]:
         """Return new instance of detection metric"""
 
         if self.fscore:
-            return DetectionPrecisionRecallFMeasure(collar=0.0,
-                                                    skip_overlap=False,
-                                                    parallel=parallel)
+            return DetectionPrecisionRecallFMeasure(
+                collar=0.0, skip_overlap=False, parallel=parallel
+            )
         else:
-            return  DetectionErrorRate(collar=0.0,
-                                       skip_overlap=False,
-                                       parallel=parallel)
+            return DetectionErrorRate(collar=0.0, skip_overlap=False, parallel=parallel)

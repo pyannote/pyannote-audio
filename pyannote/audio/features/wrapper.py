@@ -37,8 +37,10 @@ from pyannote.core import Segment
 from pyannote.core import SlidingWindowFeature
 import numpy as np
 
-Wrappable = Union['Precomputed', 'Pretrained', 'RawAudio', 'FeatureExtraction',
-                  Dict, Text, Path]
+Wrappable = Union[
+    "Precomputed", "Pretrained", "RawAudio", "FeatureExtraction", Dict, Text, Path
+]
+
 
 class Wrapper:
     """FeatureExtraction-compliant wrapper
@@ -116,7 +118,7 @@ class Wrapper:
         from pyannote.audio.features import RawAudio
 
         scorer = None
-        msg = ''
+        msg = ""
 
         # corner
         if isinstance(wrappable, dict):
@@ -127,7 +129,9 @@ class Wrapper:
         # is kept unchanged. This includes instances of any `FeatureExtraction`
         # subclass,`RawAudio` instances, `Precomputed` instances, and
         # `Pretrained` instances.
-        if isinstance(wrappable, (FeatureExtraction, RawAudio, Pretrained, Precomputed)):
+        if isinstance(
+            wrappable, (FeatureExtraction, RawAudio, Pretrained, Precomputed)
+        ):
             scorer = wrappable
 
         elif Path(wrappable).is_dir():
@@ -151,8 +155,8 @@ class Wrapper:
             if scorer is None:
                 msg = (
                     f'"{wrappable}" directory does not seem to be the path '
-                    f'to precomputed features nor the path to a model '
-                    f'validation step.'
+                    f"to precomputed features nor the path to a model "
+                    f"validation step."
                 )
 
         # If `wrappable` is a `Path` to a pretrined model checkpoint,
@@ -161,14 +165,13 @@ class Wrapper:
             checkpoint = Path(wrappable)
 
             try:
-                validate_dir = checkpoint.parents[1] / 'validate' / 'fake'
+                validate_dir = checkpoint.parents[1] / "validate" / "fake"
                 epoch = int(checkpoint.stem)
-                scorer = Pretrained(validate_dir=validate_dir, epoch=epoch,
-                                    **params)
+                scorer = Pretrained(validate_dir=validate_dir, epoch=epoch, **params)
             except Exception as e:
                 msg = (
                     f'"{wrappable}" directory does not seem to be the path '
-                    f'to a pretrained model checkpoint.'
+                    f"to a pretrained model checkpoint."
                 )
                 scorer = None
 
@@ -176,7 +179,7 @@ class Wrapper:
 
             # If `wrappable` is a `Text` starting with '@' such as '@key',
             # it means that one should read the "key" key of protocol files
-            if wrappable.startswith('@'):
+            if wrappable.startswith("@"):
                 key = wrappable[1:]
                 scorer = lambda current_file: current_file[key]
 
@@ -185,19 +188,22 @@ class Wrapper:
             else:
                 try:
                     import torch
-                    scorer = torch.hub.load('pyannote/pyannote-audio',
-                                            wrappable, **params)
+
+                    scorer = torch.hub.load(
+                        "pyannote/pyannote-audio", wrappable, **params
+                    )
                     if not isinstance(scorer, Pretrained):
                         msg = (
                             f'"{wrappable}" exists on torch.hub but does not '
-                            f'return a `Pretrained` model instance.'
+                            f"return a `Pretrained` model instance."
                         )
                         scorer = None
 
                 except Exception as e:
                     msg = (
-                        f'Could not load {wrappable} model from torch.hub. '
-                        f'The following exception was raised:\n{e}')
+                        f"Could not load {wrappable} model from torch.hub. "
+                        f"The following exception was raised:\n{e}"
+                    )
                     scorer = None
 
         # warn the user the something went wrong
@@ -206,10 +212,13 @@ class Wrapper:
 
         self.scorer_ = scorer
 
-    def crop(self, current_file: ProtocolFile,
-                   segment: Segment,
-                   mode: Text = 'center',
-                   fixed: float = None) -> np.ndarray:
+    def crop(
+        self,
+        current_file: ProtocolFile,
+        segment: Segment,
+        mode: Text = "center",
+        fixed: float = None,
+    ) -> np.ndarray:
         """Extract frames from a specific region
 
         Parameters
@@ -240,17 +249,14 @@ class Wrapper:
         from pyannote.audio.features import RawAudio
         from pyannote.audio.features import FeatureExtraction
 
+        if isinstance(
+            self.scorer_, (FeatureExtraction, RawAudio, Pretrained, Precomputed)
+        ):
+            return self.scorer_.crop(current_file, segment, mode=mode, fixed=fixed)
 
-        if isinstance(self.scorer_, (FeatureExtraction, RawAudio, Pretrained, Precomputed)):
-            return self.scorer_.crop(current_file,
-                                     segment,
-                                     mode=mode,
-                                     fixed=fixed)
-
-        return self.scorer_(current_file).crop(segment,
-                                               mode=mode,
-                                               fixed=fixed,
-                                               return_data=True)
+        return self.scorer_(current_file).crop(
+            segment, mode=mode, fixed=fixed, return_data=True
+        )
 
     def __call__(self, current_file) -> SlidingWindowFeature:
         """Extract frames from the whole file

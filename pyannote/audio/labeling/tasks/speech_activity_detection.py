@@ -81,28 +81,32 @@ class SpeechActivityDetectionGenerator(LabelingTaskGenerator):
 
     """
 
-    def __init__(self,
-                 feature_extraction: Wrappable,
-                 protocol: Protocol,
-                 subset: Text = 'train',
-                 resolution: Optional[Resolution] = None,
-                 alignment: Optional[Alignment] = None,
-                 duration: float = 2.0,
-                 batch_size: int = 32,
-                 per_epoch: float = None,
-                 mask: Text = None):
+    def __init__(
+        self,
+        feature_extraction: Wrappable,
+        protocol: Protocol,
+        subset: Text = "train",
+        resolution: Optional[Resolution] = None,
+        alignment: Optional[Alignment] = None,
+        duration: float = 2.0,
+        batch_size: int = 32,
+        per_epoch: float = None,
+        mask: Text = None,
+    ):
 
-        super().__init__(feature_extraction,
-                         protocol,
-                         subset=subset,
-                         resolution=resolution,
-                         alignment=alignment,
-                         duration=duration,
-                         batch_size=batch_size,
-                         per_epoch=per_epoch,
-                         exhaustive=False,
-                         mask=mask,
-                         local_labels=True)
+        super().__init__(
+            feature_extraction,
+            protocol,
+            subset=subset,
+            resolution=resolution,
+            alignment=alignment,
+            duration=duration,
+            batch_size=batch_size,
+            per_epoch=per_epoch,
+            exhaustive=False,
+            mask=mask,
+            local_labels=True,
+        )
 
     def postprocess_y(self, Y: np.ndarray) -> np.ndarray:
         """Generate labels for speech activity detection
@@ -131,19 +135,20 @@ class SpeechActivityDetectionGenerator(LabelingTaskGenerator):
     @property
     def specifications(self):
         specs = {
-            'task': Task(type=TaskType.MULTI_CLASS_CLASSIFICATION,
-                         output=TaskOutput.SEQUENCE),
-            'X': {'dimension': self.feature_extraction.dimension},
-            'y': {'classes': ['non_speech', 'speech']},
+            "task": Task(
+                type=TaskType.MULTI_CLASS_CLASSIFICATION, output=TaskOutput.SEQUENCE
+            ),
+            "X": {"dimension": self.feature_extraction.dimension},
+            "y": {"classes": ["non_speech", "speech"]},
         }
 
         for key, classes in self.file_labels_.items():
 
             # TODO. add an option to handle this list
             # TODO. especially useful for domain-adversarial stuff
-            if key in ['duration', 'audio', 'uri']:
+            if key in ["duration", "audio", "uri"]:
                 continue
-            specs[key] = {'classes': classes}
+            specs[key] = {"classes": classes}
 
         return specs
 
@@ -162,8 +167,14 @@ class SpeechActivityDetection(LabelingTask):
         Defaults to one day (1).
     """
 
-    def get_batch_generator(self, feature_extraction, protocol, subset='train',
-                            resolution=None, alignment=None):
+    def get_batch_generator(
+        self,
+        feature_extraction,
+        protocol,
+        subset="train",
+        resolution=None,
+        alignment=None,
+    ):
         """
         resolution : `pyannote.core.SlidingWindow`, optional
             Override `feature_extraction.sliding_window`. This is useful for
@@ -176,12 +187,14 @@ class SpeechActivityDetection(LabelingTask):
         """
         return SpeechActivityDetectionGenerator(
             feature_extraction,
-            protocol, subset=subset,
+            protocol,
+            subset=subset,
             resolution=resolution,
             alignment=alignment,
             duration=self.duration,
             per_epoch=self.per_epoch,
-            batch_size=self.batch_size)
+            batch_size=self.batch_size,
+        )
 
 
 class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
@@ -204,12 +217,11 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
         Loss function to use. Defaults to 'NLLLoss'.
     """
 
-    DOMAIN_PT = '{train_dir}/weights/{epoch:04d}.domain.pt'
+    DOMAIN_PT = "{train_dir}/weights/{epoch:04d}.domain.pt"
 
-    def __init__(self,
-                 domain='domain', attachment=-1,
-                 rnn=None, domain_loss="NLLLoss",
-                 **kwargs):
+    def __init__(
+        self, domain="domain", attachment=-1, rnn=None, domain_loss="NLLLoss", **kwargs
+    ):
         super().__init__(**kwargs)
         self.domain = domain
         self.attachment = attachment
@@ -229,9 +241,7 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
             self.activation_ = nn.Sigmoid()
 
         else:
-            msg = (
-                f'{domain_loss} has not been implemented yet.'
-            )
+            msg = f"{domain_loss} has not been implemented yet."
             raise NotImplementedError(msg)
 
     def more_parameters(self):
@@ -244,17 +254,17 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
         """
 
         domain_classifier_rnn = RNN(
-            n_features=self.model.intermediate_dimension(self.attachment),
-            **self.rnn)
+            n_features=self.model.intermediate_dimension(self.attachment), **self.rnn
+        )
 
-        n_classes = len(self.specifications[self.domain]['classes'])
+        n_classes = len(self.specifications[self.domain]["classes"])
         domain_classifier_linear = nn.Linear(
-            domain_classifier_rnn.dimension,
-            n_classes,
-            bias=True).to(self.device)
+            domain_classifier_rnn.dimension, n_classes, bias=True
+        ).to(self.device)
 
         self.domain_classifier_ = nn.Sequential(
-            domain_classifier_rnn, domain_classifier_linear).to(self.device)
+            domain_classifier_rnn, domain_classifier_linear
+        ).to(self.device)
 
         # TODO: check if we really need to do this .to(self.device) twice
 
@@ -265,12 +275,14 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
 
         if model_pt is None:
             domain_pt = self.DOMAIN_PT.format(
-                train_dir=self.train_dir_, epoch=self.epoch_)
+                train_dir=self.train_dir_, epoch=self.epoch_
+            )
         else:
-            domain_pt = model_pt.with_suffix('.domain.pt')
+            domain_pt = model_pt.with_suffix(".domain.pt")
 
         domain_classifier_state = torch.load(
-            domain_pt, map_location=lambda storage, loc: storage)
+            domain_pt, map_location=lambda storage, loc: storage
+        )
         self.domain_classifier_.load_state_dict(domain_classifier_state)
 
         # FIXME add support for different domains
@@ -279,8 +291,7 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
     def save_more(self):
         """Save domain classifier to disk"""
 
-        domain_pt = self.DOMAIN_PT.format(
-            train_dir=self.train_dir_, epoch=self.epoch_)
+        domain_pt = self.DOMAIN_PT.format(train_dir=self.train_dir_, epoch=self.epoch_)
         torch.save(self.domain_classifier_.state_dict(), domain_pt)
 
     def batch_loss(self, batch):
@@ -299,17 +310,16 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
         """
 
         # forward pass
-        X = torch.tensor(batch['X'],
-                         dtype=torch.float32,
-                         device=self.device_)
+        X = torch.tensor(batch["X"], dtype=torch.float32, device=self.device_)
         fX, intermediate = self.model_(X, return_intermediate=self.attachment)
 
         # speech activity detection
         fX = fX.view((-1, self.n_classes_))
-        target = torch.tensor(
-            batch['y'],
-            dtype=torch.int64,
-            device=self.device_).contiguous().view((-1, ))
+        target = (
+            torch.tensor(batch["y"], dtype=torch.int64, device=self.device_)
+            .contiguous()
+            .view((-1,))
+        )
 
         weight = self.weight
         if weight is not None:
@@ -318,17 +328,18 @@ class DomainAwareSpeechActivityDetection(SpeechActivityDetection):
 
         # domain classification
         domain_target = torch.tensor(
-            batch[self.domain],
-            dtype=torch.int64,
-            device=self.device_)
+            batch[self.domain], dtype=torch.int64, device=self.device_
+        )
 
         domain_scores = self.activation_(self.domain_classifier_(intermediate))
 
         domain_loss = self.domain_loss_(domain_scores, domain_target)
 
-        return {'loss': loss + domain_loss,
-                'loss_domain': domain_loss,
-                'loss_task': loss}
+        return {
+            "loss": loss + domain_loss,
+            "loss_domain": domain_loss,
+            "loss_task": loss,
+        }
 
 
 class DomainAdversarialSpeechActivityDetection(DomainAwareSpeechActivityDetection):
@@ -346,7 +357,7 @@ class DomainAdversarialSpeechActivityDetection(DomainAwareSpeechActivityDetectio
         Coefficient multiplied with the domain loss
     """
 
-    def __init__(self, domain='domain', attachment=-1, alpha=1., **kwargs):
+    def __init__(self, domain="domain", attachment=-1, alpha=1.0, **kwargs):
         super().__init__(domain=domain, attachment=attachment, **kwargs)
         self.alpha = alpha
         self.gradient_reversal_ = GradientReversal()
@@ -366,19 +377,18 @@ class DomainAdversarialSpeechActivityDetection(DomainAwareSpeechActivityDetectio
             ['loss'] (`torch.Tensor`) : Loss
         """
         # forward pass
-        X = torch.tensor(batch['X'],
-                         dtype=torch.float32,
-                         device=self.device_)
+        X = torch.tensor(batch["X"], dtype=torch.float32, device=self.device_)
 
         fX, intermediate = self.model_(X, return_intermediate=self.attachment)
 
         # speech activity detection
         fX = fX.view((-1, self.n_classes_))
 
-        target = torch.tensor(
-            batch['y'],
-            dtype=torch.int64,
-            device=self.device_).contiguous().view((-1, ))
+        target = (
+            torch.tensor(batch["y"], dtype=torch.int64, device=self.device_)
+            .contiguous()
+            .view((-1,))
+        )
 
         weight = self.weight
         if weight is not None:
@@ -388,12 +398,12 @@ class DomainAdversarialSpeechActivityDetection(DomainAwareSpeechActivityDetectio
 
         # domain classification
         domain_target = torch.tensor(
-            batch[self.domain],
-            dtype=torch.int64,
-            device=self.device_)
+            batch[self.domain], dtype=torch.int64, device=self.device_
+        )
 
-        domain_scores = self.activation_(self.domain_classifier_(
-            self.gradient_reversal_(intermediate)))
+        domain_scores = self.activation_(
+            self.domain_classifier_(self.gradient_reversal_(intermediate))
+        )
 
         if self.domain_loss == "MSELoss":
             # One hot encode domain_target for Mean Squared Error Loss
@@ -403,6 +413,8 @@ class DomainAdversarialSpeechActivityDetection(DomainAwareSpeechActivityDetectio
 
         domain_loss = self.domain_loss_(domain_scores, domain_target)
 
-        return {'loss': loss + self.alpha * domain_loss,
-                'loss_domain': domain_loss,
-                'loss_task': loss}
+        return {
+            "loss": loss + self.alpha * domain_loss,
+            "loss_domain": domain_loss,
+            "loss_task": loss,
+        }

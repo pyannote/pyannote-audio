@@ -86,23 +86,31 @@ from multiprocessing import cpu_count, Pool
 def init_feature_extraction(experiment_dir):
 
     # load configuration file
-    config_yml = experiment_dir + '/config.yml'
-    with open(config_yml, 'r') as fp:
+    config_yml = experiment_dir + "/config.yml"
+    with open(config_yml, "r") as fp:
         config = yaml.load(fp, Loader=yaml.SafeLoader)
 
     FeatureExtraction = get_class_by_name(
-        config['feature_extraction']['name'],
-        default_module_name='pyannote.audio.features')
+        config["feature_extraction"]["name"],
+        default_module_name="pyannote.audio.features",
+    )
     feature_extraction = FeatureExtraction(
-        **config['feature_extraction'].get('params', {}))
+        **config["feature_extraction"].get("params", {})
+    )
 
     return feature_extraction
 
-def process_current_file(current_file, file_finder=None, precomputed=None,
-                         feature_extraction=None, robust=False):
+
+def process_current_file(
+    current_file,
+    file_finder=None,
+    precomputed=None,
+    feature_extraction=None,
+    robust=False,
+):
 
     try:
-        current_file['audio'] = file_finder(current_file)
+        current_file["audio"] = file_finder(current_file)
     except ValueError as e:
         if not robust:
             raise PyannoteFeatureExtractionError(*e.args)
@@ -133,34 +141,44 @@ def process_current_file(current_file, file_finder=None, precomputed=None,
     return
 
 
-def helper_extract(current_file, file_finder=None, experiment_dir=None,
-                   config_yml=None, feature_extraction=None,
-                   robust=False):
+def helper_extract(
+    current_file,
+    file_finder=None,
+    experiment_dir=None,
+    config_yml=None,
+    feature_extraction=None,
+    robust=False,
+):
 
     if feature_extraction is None:
         feature_extraction = init_feature_extraction(experiment_dir)
 
     precomputed = Precomputed(root_dir=experiment_dir)
-    return process_current_file(current_file, file_finder=file_finder,
-                                precomputed=precomputed,
-                                feature_extraction=feature_extraction,
-                                robust=robust)
+    return process_current_file(
+        current_file,
+        file_finder=file_finder,
+        precomputed=precomputed,
+        feature_extraction=feature_extraction,
+        robust=robust,
+    )
 
-def extract(protocol_name, file_finder, experiment_dir,
-            robust=False, parallel=False):
+
+def extract(protocol_name, file_finder, experiment_dir, robust=False, parallel=False):
 
     protocol = get_protocol(protocol_name, progress=False)
 
     # load configuration file
-    config_yml = experiment_dir + '/config.yml'
-    with open(config_yml, 'r') as fp:
+    config_yml = experiment_dir + "/config.yml"
+    with open(config_yml, "r") as fp:
         config = yaml.load(fp, Loader=yaml.SafeLoader)
 
     FeatureExtraction = get_class_by_name(
-        config['feature_extraction']['name'],
-        default_module_name='pyannote.audio.features')
+        config["feature_extraction"]["name"],
+        default_module_name="pyannote.audio.features",
+    )
     feature_extraction = FeatureExtraction(
-        **config['feature_extraction'].get('params', {}))
+        **config["feature_extraction"].get("params", {})
+    )
 
     sliding_window = feature_extraction.sliding_window
     dimension = feature_extraction.dimension
@@ -168,17 +186,19 @@ def extract(protocol_name, file_finder, experiment_dir,
     # create metadata file at root that contains
     # sliding window and dimension information
 
-    precomputed = Precomputed(root_dir=experiment_dir,
-                              sliding_window=sliding_window,
-                              dimension=dimension)
+    precomputed = Precomputed(
+        root_dir=experiment_dir, sliding_window=sliding_window, dimension=dimension
+    )
 
     if parallel:
 
-        extract_one = functools.partial(helper_extract,
-                                        file_finder=file_finder,
-                                        experiment_dir=experiment_dir,
-                                        config_yml=config_yml,
-                                        robust=robust)
+        extract_one = functools.partial(
+            helper_extract,
+            file_finder=file_finder,
+            experiment_dir=experiment_dir,
+            config_yml=config_yml,
+            robust=robust,
+        )
 
         n_jobs = cpu_count()
         pool = Pool(n_jobs)
@@ -187,25 +207,27 @@ def extract(protocol_name, file_finder, experiment_dir,
     else:
 
         feature_extraction = init_feature_extraction(experiment_dir)
-        extract_one = functools.partial(helper_extract,
-                                        file_finder=file_finder,
-                                        experiment_dir=experiment_dir,
-                                        feature_extraction=feature_extraction,
-                                        robust=robust)
+        extract_one = functools.partial(
+            helper_extract,
+            file_finder=file_finder,
+            experiment_dir=experiment_dir,
+            feature_extraction=feature_extraction,
+            robust=robust,
+        )
         imap = map
-
 
     for result in imap(extract_one, protocol.files()):
         if result is None:
             continue
         print(result)
 
+
 def check(protocol_name, file_finder, experiment_dir):
 
     protocol = get_protocol(protocol_name)
     precomputed = Precomputed(experiment_dir)
 
-    for subset in ['development', 'test', 'train']:
+    for subset in ["development", "test", "train"]:
 
         try:
             file_generator = getattr(protocol, subset)()
@@ -217,7 +239,7 @@ def check(protocol_name, file_finder, experiment_dir):
 
             try:
                 audio = file_finder(current_file)
-                current_file['audio'] = audio
+                current_file["audio"] = audio
             except ValueError as e:
                 print(e)
                 continue
@@ -230,9 +252,7 @@ def check(protocol_name, file_finder, experiment_dir):
                 print(e)
                 continue
 
-            if not np.isclose(duration,
-                              features.getExtent().duration,
-                              atol=1.):
+            if not np.isclose(duration, features.getExtent().duration, atol=1.0):
                 uri = get_unique_identifier(current_file)
                 print('Duration mismatch for "{uri}"'.format(uri=uri))
 
@@ -243,17 +263,18 @@ def check(protocol_name, file_finder, experiment_dir):
 
 def main():
 
-    arguments = docopt(__doc__, version='Feature extraction')
+    arguments = docopt(__doc__, version="Feature extraction")
 
     file_finder = FileFinder()
 
-    protocol_name = arguments['<database.task.protocol>']
-    experiment_dir = arguments['<experiment_dir>']
+    protocol_name = arguments["<database.task.protocol>"]
+    experiment_dir = arguments["<experiment_dir>"]
 
-    if arguments['check']:
+    if arguments["check"]:
         check(protocol_name, file_finder, experiment_dir)
     else:
-        robust = arguments['--robust']
-        parallel = arguments['--parallel']
-        extract(protocol_name, file_finder, experiment_dir,
-                robust=robust, parallel=parallel)
+        robust = arguments["--robust"]
+        parallel = arguments["--parallel"]
+        extract(
+            protocol_name, file_finder, experiment_dir, robust=robust, parallel=parallel
+        )

@@ -62,16 +62,20 @@ class FeatureExtraction:
 
         # used in FeatureExtraction.crop
         self.raw_audio_ = RawAudio(
-            sample_rate=self.sample_rate, mono=True,
-            augmentation=augmentation)
+            sample_rate=self.sample_rate, mono=True, augmentation=augmentation
+        )
 
     def augmentation():
         doc = "Data augmentation."
+
         def fget(self):
             return self.raw_audio_.augmentation
+
         def fset(self, augmentation):
             self.raw_audio_.augmentation = augmentation
+
         return locals()
+
     augmentation = property(**augmentation())
 
     def get_dimension(self):
@@ -82,8 +86,7 @@ class FeatureExtraction:
         dimension : int
             Dimension of feature vectors
         """
-        msg = ('`FeatureExtraction subclasses must implement '
-               '`get_dimension` method.')
+        msg = "`FeatureExtraction subclasses must implement " "`get_dimension` method."
         raise NotImplementedError(msg)
 
     @property
@@ -100,8 +103,9 @@ class FeatureExtraction:
             Sliding window used for feature extraction.
         """
 
-        msg = ('`FeatureExtraction` subclasses must implement '
-               '`get_resolution` method.')
+        msg = (
+            "`FeatureExtraction` subclasses must implement " "`get_resolution` method."
+        )
         raise NotImplementedError(msg)
 
     @property
@@ -124,8 +128,7 @@ class FeatureExtraction:
         features : (n_frames, dimension) numpy array
             Extracted features
         """
-        msg = ('`FeatureExtractions subclasses must implement '
-               '`get_features` method.')
+        msg = "`FeatureExtractions subclasses must implement " "`get_features` method."
         raise NotImplementedError(msg)
 
     def __call__(self, current_file) -> SlidingWindowFeature:
@@ -167,9 +170,9 @@ class FeatureExtraction:
         context : float
             Context duration, in seconds.
         """
-        return 0.
+        return 0.0
 
-    def crop(self, current_file, segment, mode='center', fixed=None) -> np.ndarray:
+    def crop(self, current_file, segment, mode="center", fixed=None) -> np.ndarray:
         """Fast version of self(current_file).crop(segment, mode='center',
 +                                                  fixed=segment.duration)
 
@@ -196,21 +199,26 @@ class FeatureExtraction:
         # extend segment on both sides with requested context
         xsegment = Segment(
             max(0, segment.start - context),
-            min(current_file['duration'], segment.end + context))
+            min(current_file["duration"], segment.end + context),
+        )
 
         # obtain (augmented) waveform on this extended segment
-        y = self.raw_audio_.crop(current_file, xsegment, mode='center',
-                                 fixed=xsegment.duration)
+        y = self.raw_audio_.crop(
+            current_file, xsegment, mode="center", fixed=xsegment.duration
+        )
 
         features = self.get_features(y, self.sample_rate)
 
         # get rid of additional context before returning
         frames = self.sliding_window
-        shifted_frames = SlidingWindow(start=xsegment.start - frames.step,
-                                       step=frames.step,
-                                       duration=frames.duration)
-        (start, end), = shifted_frames.crop(segment, mode=mode, fixed=fixed,
-                                            return_ranges=True)
+        shifted_frames = SlidingWindow(
+            start=xsegment.start - frames.step,
+            step=frames.step,
+            duration=frames.duration,
+        )
+        ((start, end),) = shifted_frames.crop(
+            segment, mode=mode, fixed=fixed, return_ranges=True
+        )
 
         # HACK for when start (returned by shifted_frames.crop) is negative
         # due to floating point precision.

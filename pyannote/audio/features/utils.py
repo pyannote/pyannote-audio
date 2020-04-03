@@ -38,6 +38,7 @@ from pyannote.core import SlidingWindow, SlidingWindowFeature
 from soundfile import SoundFile
 import soundfile as sf
 
+
 def get_audio_duration(current_file):
     """Return audio file duration
 
@@ -52,7 +53,7 @@ def get_audio_duration(current_file):
         Audio file duration.
     """
 
-    with SoundFile(current_file['audio'], 'r') as f:
+    with SoundFile(current_file["audio"], "r") as f:
         duration = float(f.frames) / f.samplerate
 
     return duration
@@ -71,7 +72,7 @@ def get_audio_sample_rate(current_file):
     sample_rate : int
         Sampling rate
     """
-    with SoundFile(current_file['audio'], 'r') as f:
+    with SoundFile(current_file["audio"], "r") as f:
         sample_rate = f.samplerate
 
     return sample_rate
@@ -103,14 +104,14 @@ def read_audio(current_file, sample_rate=None, mono=True):
 
     """
 
-    y, file_sample_rate = sf.read(current_file['audio'],
-                                  dtype='float32',
-                                  always_2d=True)
+    y, file_sample_rate = sf.read(
+        current_file["audio"], dtype="float32", always_2d=True
+    )
 
     # extract specific channel if requested
-    channel = current_file.get('channel', None)
+    channel = current_file.get("channel", None)
     if channel is not None:
-        y = y[:, channel-1:channel]
+        y = y[:, channel - 1 : channel]
 
     # convert to mono
     if mono and y.shape[1] > 1:
@@ -138,8 +139,7 @@ class RawAudio:
         Data augmentation.
     """
 
-    def __init__(self, sample_rate=None, mono=True,
-                 augmentation=None):
+    def __init__(self, sample_rate=None, mono=True, augmentation=None):
 
         super().__init__()
         self.sample_rate = sample_rate
@@ -148,9 +148,11 @@ class RawAudio:
         self.augmentation = augmentation
 
         if sample_rate is not None:
-            self.sliding_window_ = SlidingWindow(start=-.5/sample_rate,
-                                                 duration=1./sample_rate,
-                                                 step=1./sample_rate)
+            self.sliding_window_ = SlidingWindow(
+                start=-0.5 / sample_rate,
+                duration=1.0 / sample_rate,
+                step=1.0 / sample_rate,
+            )
 
     @property
     def dimension(self):
@@ -179,7 +181,7 @@ class RawAudio:
         try:
             valid = valid_audio(y[:, 0], mono=True)
         except ParameterError as e:
-            msg = (f"Something went wrong when augmenting waveform.")
+            msg = f"Something went wrong when augmenting waveform."
             raise ValueError(msg)
 
         return y
@@ -202,52 +204,54 @@ class RawAudio:
             Only when `return_sr` is set to True
         """
 
-        if 'waveform' in current_file:
+        if "waveform" in current_file:
 
             if self.sample_rate is None:
-                msg = ('`RawAudio` needs to be instantiated with an actual '
-                       '`sample_rate` if one wants to use precomputed '
-                       'waveform.')
+                msg = (
+                    "`RawAudio` needs to be instantiated with an actual "
+                    "`sample_rate` if one wants to use precomputed "
+                    "waveform."
+                )
                 raise ValueError(msg)
             sample_rate = self.sample_rate
 
-            y = current_file['waveform']
+            y = current_file["waveform"]
 
             if len(y.shape) != 2:
                 msg = (
-                    f'Precomputed waveform should be provided as a '
-                    f'(n_samples, n_channels) `np.ndarray`.'
+                    f"Precomputed waveform should be provided as a "
+                    f"(n_samples, n_channels) `np.ndarray`."
                 )
                 raise ValueError(msg)
 
         else:
-            y, sample_rate = sf.read(current_file['audio'],
-                                     dtype='float32',
-                                     always_2d=True)
+            y, sample_rate = sf.read(
+                current_file["audio"], dtype="float32", always_2d=True
+            )
 
         # extract specific channel if requested
-        channel = current_file.get('channel', None)
+        channel = current_file.get("channel", None)
         if channel is not None:
-            y = y[:, channel-1:channel]
+            y = y[:, channel - 1 : channel]
 
         y = self.get_features(y, sample_rate)
 
         sliding_window = SlidingWindow(
-            start=-.5/sample_rate,
-            duration=1./sample_rate,
-            step=1./sample_rate)
+            start=-0.5 / sample_rate, duration=1.0 / sample_rate, step=1.0 / sample_rate
+        )
 
         if return_sr:
             return (
                 SlidingWindowFeature(y, sliding_window),
-                sample_rate if self.sample_rate is None else self.sample_rate)
+                sample_rate if self.sample_rate is None else self.sample_rate,
+            )
 
         return SlidingWindowFeature(y, sliding_window)
 
     def get_context_duration(self):
-        return 0.
+        return 0.0
 
-    def crop(self, current_file, segment, mode='center', fixed=None):
+    def crop(self, current_file, segment, mode="center", fixed=None):
         """Fast version of self(current_file).crop(segment, **kwargs)
 
         Parameters
@@ -279,26 +283,29 @@ class RawAudio:
         """
 
         if self.sample_rate is None:
-            msg = ('`RawAudio` needs to be instantiated with an actual '
-                   '`sample_rate` if one wants to use `crop`.')
+            msg = (
+                "`RawAudio` needs to be instantiated with an actual "
+                "`sample_rate` if one wants to use `crop`."
+            )
             raise ValueError(msg)
 
         # find the start and end positions of the required segment
-        (start, end), = self.sliding_window_.crop(
-            segment, mode=mode, fixed=fixed, return_ranges=True)
+        ((start, end),) = self.sliding_window_.crop(
+            segment, mode=mode, fixed=fixed, return_ranges=True
+        )
 
         # this is expected number of samples.
         # this will be useful later in case of on-the-fly resampling
         n_samples = end - start
 
-        if 'waveform' in current_file:
+        if "waveform" in current_file:
 
-            y = current_file['waveform']
+            y = current_file["waveform"]
 
             if len(y.shape) != 2:
                 msg = (
-                    f'Precomputed waveform should be provided as a '
-                    f'(n_samples, n_channels) `np.ndarray`.'
+                    f"Precomputed waveform should be provided as a "
+                    f"(n_samples, n_channels) `np.ndarray`."
                 )
                 raise ValueError(msg)
 
@@ -308,7 +315,7 @@ class RawAudio:
         else:
             # read file with SoundFile, which supports various fomats
             # including NIST sphere
-            with SoundFile(current_file['audio'], 'r') as audio_file:
+            with SoundFile(current_file["audio"], "r") as audio_file:
 
                 sample_rate = audio_file.samplerate
 
@@ -316,34 +323,33 @@ class RawAudio:
                 # recompute the start and end
                 if sample_rate != self.sample_rate:
 
-                    sliding_window = SlidingWindow(start=-.5/sample_rate,
-                                                   duration=1./sample_rate,
-                                                   step=1./sample_rate)
-                    (start, end), = sliding_window.crop(
-                        segment, mode=mode, fixed=fixed,
-                        return_ranges=True)
+                    sliding_window = SlidingWindow(
+                        start=-0.5 / sample_rate,
+                        duration=1.0 / sample_rate,
+                        step=1.0 / sample_rate,
+                    )
+                    ((start, end),) = sliding_window.crop(
+                        segment, mode=mode, fixed=fixed, return_ranges=True
+                    )
 
                 try:
                     audio_file.seek(start)
-                    data = audio_file.read(end - start,
-                                           dtype='float32',
-                                           always_2d=True)
+                    data = audio_file.read(end - start, dtype="float32", always_2d=True)
                 except RuntimeError as e:
                     msg = (
                         f"SoundFile failed to seek-and-read in "
                         f"{current_file['audio']}: loading the whole file..."
                     )
                     warnings.warn(msg)
-                    return self(current_file).crop(segment,
-                                                   mode=mode,
-                                                   fixed=fixed)
+                    return self(current_file).crop(segment, mode=mode, fixed=fixed)
 
         # extract specific channel if requested
-        channel = current_file.get('channel', None)
+        channel = current_file.get("channel", None)
         if channel is not None:
-            data = data[:, channel-1:channel]
+            data = data[:, channel - 1 : channel]
 
         return self.get_features(data, sample_rate)
+
 
 # # THIS SCRIPT CAN BE USED TO CRASH-TEST THE ON-THE-FLY RESAMPLING
 
