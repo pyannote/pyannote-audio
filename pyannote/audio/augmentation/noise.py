@@ -77,7 +77,8 @@ class AddNoise(Augmentation):
         preprocessors = {'audio': FileFinder(),
                          'duration': get_audio_duration}
         for collection in self.collection:
-            protocol = get_protocol(collection, preprocessors=preprocessors)
+            protocol = get_protocol(collection,
+                                    preprocessors=preprocessors)
             self.files_.extend(protocol.files())
 
     def __call__(self, original, sample_rate):

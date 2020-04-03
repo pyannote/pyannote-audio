@@ -150,8 +150,7 @@ class Application:
         config = load_config(Path(config_yml),
                              training=training,
                              config_default_module=config_default_module,
-                             pretrained_config_yml=pretrained_config_yml,
-                             add_audio_preprocessors=True)
+                             pretrained_config_yml=pretrained_config_yml)
 
         for key, value in config.items():
             setattr(self, f'{key}_', value)
@@ -182,8 +181,14 @@ class Application:
         """
 
         # initialize batch generator
-        protocol = get_protocol(protocol_name, progress=True,
-                                preprocessors=self.preprocessors_)
+        preprocessors = self.preprocessors_
+        if "audio" not in preprocessors:
+            preprocessors["audio"] = FileFinder()
+        if 'duration' not in preprocessors:
+            preprocessors['duration'] = get_audio_duration
+        protocol = get_protocol(protocol_name,
+                                progress=True,
+                                preprocessors=preprocessors)
 
         batch_generator = self.task_.get_batch_generator(
             self.feature_extraction_,
@@ -540,9 +545,14 @@ def apply_pretrained(validate_dir: Path,
         **params)
 
     # file generator
-    protocol = get_protocol(
-        protocol_name, progress=True,
-        preprocessors=getattr(pretrained, "preprocessors_", None))
+    preprocessors = getattr(pretrained, "preprocessors_", dict())
+    if "audio" not in preprocessors:
+        preprocessors["audio"] = FileFinder()
+    if 'duration' not in preprocessors:
+        preprocessors['duration'] = get_audio_duration
+    protocol = get_protocol(protocol_name,
+                            progress=True,
+                            preprocessors=preprocessors)
 
     for current_file in getattr(protocol, subset)():
         fX = pretrained(current_file)

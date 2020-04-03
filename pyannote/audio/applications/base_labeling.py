@@ -34,8 +34,10 @@ import torch
 from .base import Application
 from pyannote.database import get_protocol
 from pyannote.database import get_annotated
+from pyannote.database import FileFinder
 from pyannote.audio.features import Precomputed
 from pyannote.audio.features import RawAudio
+from pyannote.audio.features.utils import get_audio_duration
 
 
 class BaseLabeling(Application):
@@ -61,8 +63,14 @@ class BaseLabeling(Application):
 
         """
 
-        protocol = get_protocol(protocol_name, progress=False,
-                                preprocessors=self.preprocessors_)
+        preprocessors = self.preprocessors_
+        if "audio" not in preprocessors:
+            preprocessors["audio"] = FileFinder()
+        if 'duration' not in preprocessors:
+            preprocessors['duration'] = get_audio_duration
+        protocol = get_protocol(protocol_name,
+                                progress=False,
+                                preprocessors=preprocessors)
         files = getattr(protocol, subset)()
 
         # convert lazy ProtocolFile to regular dict for multiprocessing

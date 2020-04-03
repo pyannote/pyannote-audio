@@ -53,6 +53,7 @@ from pyannote.metrics.binary_classification import det_curve
 from pyannote.metrics.diarization import DiarizationPurityCoverageFMeasure
 
 from pyannote.audio.features import Pretrained
+from pyannote.audio.features.utils import get_audio_duration
 
 
 class SpeakerEmbedding(Application):
@@ -143,8 +144,14 @@ class SpeakerEmbedding(Application):
                                 batch_size=batch_size,
                                 device=device)
 
-        _protocol = get_protocol(protocol, progress=False,
-                                preprocessors=self.preprocessors_)
+        preprocessors = self.preprocessors_
+        if "audio" not in preprocessors:
+            preprocessors["audio"] = FileFinder()
+        if 'duration' not in preprocessors:
+            preprocessors['duration'] = get_audio_duration
+        _protocol = get_protocol(protocol,
+                                 progress=False,
+                                 preprocessors=preprocessors)
 
         y_true, y_pred, cache = [], [], {}
 
@@ -203,8 +210,14 @@ class SpeakerEmbedding(Application):
                                 batch_size=batch_size,
                                 device=device)
 
-        _protocol = get_protocol(protocol, progress=False,
-                                preprocessors=self.preprocessors_)
+        preprocessors = self.preprocessors_
+        if "audio" not in preprocessors:
+            preprocessors["audio"] = FileFinder()
+        if 'duration' not in preprocessors:
+            preprocessors['duration'] = get_audio_duration
+        _protocol = get_protocol(protocol,
+                                 progress=False,
+                                 preprocessors=preprocessors)
 
         Z, t = dict(), dict()
         min_d, max_d = np.inf, -np.inf
