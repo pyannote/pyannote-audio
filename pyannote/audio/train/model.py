@@ -26,10 +26,25 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
-"""This is the content of pyannote.audio.train.model"""
+"""Models
+
+## Probes
+
+>>> model.probes = ["ff.1", "ff.2"]
+>>> output, probes = model(input)
+>>> ff1 = probes["ff.1"]
+>>> ff2 = probes["ff.2"]
+
+>>> del model.probes
+>>> output = model(input)
+
+"""
 
 from typing import Union
 from typing import List
+from typing import Text
+from typing import Tuple
+from typing import Dict
 
 try:
     from typing import Literal
@@ -53,6 +68,7 @@ import numpy as np
 import pescador
 import torch
 from torch.nn import Module
+from functools import partial
 
 
 class Model(Module):
@@ -95,7 +111,61 @@ class Model(Module):
         msg = 'Method "init" must be overriden.'
         raise NotImplementedError(msg)
 
-    def forward(self, sequences, **kwargs):
+    @property
+    def probes(self):
+        """Get list of probes"""
+        return list(getattr(self, "_probes", []))
+
+    @probes.setter
+    def probes(self, probes: List[Text]):
+        """Set list of probes
+
+        Parameters
+        ----------
+        probes : list of string
+            Names of modules to probe.
+        """
+
+        for handle in getattr(self, "handles_", []):
+            handle.remove()
+
+        self._probes = []
+
+        if not probes:
+            return
+
+        handles = []
+
+        def _init(module, input):
+            self.probed_ = dict()
+
+        handles.append(self.register_forward_pre_hook(_init))
+
+        def _append(name, module, input, output):
+            self.probed_[name] = output
+
+        for name, module in self.named_modules():
+            if name in probes:
+                handles.append(module.register_forward_hook(partial(_append, name)))
+                self._probes.append(name)
+
+        def _return(module, input, output):
+            return output, self.probed_
+
+        handles.append(self.register_forward_hook(_return))
+
+        self.handles_ = handles
+
+    @probes.deleter
+    def probes(self):
+        """Remove all probes"""
+        for handle in getattr(self, "handles_", []):
+            handle.remove()
+        self._probes = []
+
+    def forward(
+        self, sequences, **kwargs
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, Dict[Text, torch.Tensor]]]:
         """TODO
 
         Parameters
@@ -106,6 +176,7 @@ class Model(Module):
         Returns
         -------
         output : (batch_size, ...) `torch.Tensor`
+        probes : dict, optional
         """
 
         # TODO
