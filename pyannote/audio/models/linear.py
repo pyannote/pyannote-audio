@@ -40,13 +40,13 @@ class Linear(nn.Module):
     n_features : int
         Input feature shape.
     hidden_size : list of int, optional
-        Number of features in hidden
+        Number of features in hidden. Defaults to [256, 128].
     bias : bool, optional
         If set to False, the layer will not learn an additive bias.
     """
 
     def __init__(
-        self, n_features: int, hidden_size: List[int] = [512, 512], bias: bool = True,
+        self, n_features: int, hidden_size: List[int] = [256, 128], bias: bool = True,
     ):
         super().__init__()
 

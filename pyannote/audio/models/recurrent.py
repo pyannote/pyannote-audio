@@ -41,7 +41,7 @@ class Recurrent(nn.Module):
     unit : {"LSTM", "GRU"}, optional
         Defaults to "LSTM".
     hidden_size : int, optional
-        Number of features in the hidden state h. Defaults to 16.
+        Number of features in the hidden state h. Defaults to 512.
     num_layers : int, optional
         Number of recurrent layers. Defaults to 1.
     bias : bool, optional
@@ -51,7 +51,7 @@ class Recurrent(nn.Module):
         except the last layer, with dropout probability equal to dropout.
         Defaults to 0.
     bidirectional : bool, optional
-        If True, becomes a bidirectional RNN. Defaults to False.
+        Use bidirectional RNN. Defaults to True.
     probes : bool, optional
         Split multi-layer RNN into multiple one-layer RNNs to expose
         corresponding probes (see pyannote.audio.train.model.Model.probes).
@@ -63,11 +63,11 @@ class Recurrent(nn.Module):
         self,
         n_features: int,
         unit: Text = "LSTM",
-        hidden_size: int = 16,
+        hidden_size: int = 512,
         num_layers: int = 1,
         bias: int = True,
         dropout: float = 0.0,
-        bidirectional: bool = False,
+        bidirectional: bool = True,
         probes: bool = False,
     ):
         super().__init__()
