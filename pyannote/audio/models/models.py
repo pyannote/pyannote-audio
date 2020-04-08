@@ -28,7 +28,7 @@
 # Juan Manuel Coria
 
 from typing import Optional
-
+from typing import Text
 
 import torch
 import torch.nn as nn
