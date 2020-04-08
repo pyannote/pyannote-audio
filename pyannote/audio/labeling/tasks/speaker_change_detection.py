@@ -89,6 +89,7 @@ class SpeakerChangeDetectionGenerator(LabelingTaskGenerator):
 
     def __init__(
         self,
+        task: Task,
         feature_extraction: Wrappable,
         protocol: Protocol,
         subset: Text = "train",
@@ -116,6 +117,7 @@ class SpeakerChangeDetectionGenerator(LabelingTaskGenerator):
         self.window_ = scipy.signal.triang(self.collar_)[:, np.newaxis]
 
         super().__init__(
+            task,
             feature_extraction,
             protocol,
             subset=subset,
@@ -195,21 +197,18 @@ class SpeakerChangeDetectionGenerator(LabelingTaskGenerator):
 
     @property
     def specifications(self):
-        if self.regression:
-            return {
-                "task": Task(type=TaskType.REGRESSION, output=TaskOutput.SEQUENCE),
-                "X": {"dimension": self.feature_extraction.dimension},
-                "y": {"classes": ["change",]},
-            }
 
+        specs = {
+            "task": self.task,
+            "X": {"dimension": self.feature_extraction.dimension},
+        }
+
+        if self.regression:
+            specs["y"] = {"classes": ["change",]}
         else:
-            return {
-                "task": Task(
-                    type=TaskType.MULTI_CLASS_CLASSIFICATION, output=TaskOutput.SEQUENCE
-                ),
-                "X": {"dimension": self.feature_extraction.dimension},
-                "y": {"classes": ["non_change", "change"]},
-            }
+            specs["y"] = {"classes": ["non_change", "change"]}
+
+        return specs
 
 
 class SpeakerChangeDetection(LabelingTask):
@@ -261,6 +260,7 @@ class SpeakerChangeDetection(LabelingTask):
             therefore use a different cropping mode. Defaults to 'center'.
         """
         return SpeakerChangeDetectionGenerator(
+            self.task,
             feature_extraction,
             protocol,
             resolution=resolution,
@@ -273,3 +273,13 @@ class SpeakerChangeDetection(LabelingTask):
             batch_size=self.batch_size,
             per_epoch=self.per_epoch,
         )
+
+    @property
+    def task(self):
+
+        if self.regression:
+            return Task(type=TaskType.REGRESSION, output=TaskOutput.SEQUENCE)
+        else:
+            return Task(
+                type=TaskType.MULTI_CLASS_CLASSIFICATION, output=TaskOutput.SEQUENCE
+            )

@@ -27,14 +27,17 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 from typing import Optional
+from typing import Text
+from pyannote.database.protocol.protocol import Protocol
 import itertools
 import numpy as np
 from pyannote.core import Segment
 from pyannote.core.utils.random import random_segment
 from pyannote.core.utils.random import random_subsegment
 from pyannote.audio.train.task import Task, TaskType, TaskOutput
-from pyannote.audio.features import RawAudio
 from ..train.generator import BatchGenerator
+from pyannote.audio.features.wrapper import Wrapper, Wrappable
+from pyannote.audio.train.task import Task
 
 
 class SpeechSegmentGenerator(BatchGenerator):
@@ -70,9 +73,9 @@ class SpeechSegmentGenerator(BatchGenerator):
 
     def __init__(
         self,
-        feature_extraction,
-        protocol,
-        subset="train",
+        feature_extraction: Wrappable,
+        protocol: Protocol,
+        subset: Text = "train",
         duration: float = 1.0,
         min_duration: float = None,
         per_turn: int = 1,
@@ -82,7 +85,7 @@ class SpeechSegmentGenerator(BatchGenerator):
         label_min_duration: float = 0.0,
     ):
 
-        self.feature_extraction = feature_extraction
+        self.feature_extraction = Wrapper(feature_extraction)
         self.per_turn = per_turn
         self.per_label = per_label
         self.per_fold = per_fold
@@ -96,7 +99,7 @@ class SpeechSegmentGenerator(BatchGenerator):
             per_epoch = total_duration / (24 * 60 * 60)
         self.per_epoch = per_epoch
 
-    def _load_metadata(self, protocol, subset="train") -> float:
+    def _load_metadata(self, protocol: Protocol, subset: Text = "train") -> float:
         """Load training set metadata
 
         This function is called once at instantiation time, returns the total
@@ -250,13 +253,13 @@ class SpeechSegmentGenerator(BatchGenerator):
                             )
 
     @property
-    def batch_size(self):
+    def batch_size(self) -> int:
         if self.per_fold is not None:
             return self.per_turn * self.per_label * self.per_fold
         return self.per_turn * self.per_label * len(self.data_)
 
     @property
-    def batches_per_epoch(self):
+    def batches_per_epoch(self) -> int:
 
         # duration per epoch
         duration_per_epoch = self.per_epoch * 24 * 60 * 60

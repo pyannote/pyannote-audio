@@ -1,7 +1,7 @@
 # The MIT License (MIT)
 #
 # Copyright (c) 2019 Mirco Ravanelli
-# Copyright (c) 2019 CNRS
+# Copyright (c) 2019-2020 CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -41,6 +41,7 @@ import torch.nn.functional as F
 import torch.nn as nn
 import math
 from pyannote.core import SlidingWindow
+from pyannote.audio.train.task import Task
 
 
 class SincConv1d(nn.Module):
@@ -233,18 +234,33 @@ class SincNet(nn.Module):
     """
 
     @staticmethod
-    def get_alignment(**kwargs):
+    def get_alignment(task: Task, **kwargs):
+        """Get frame alignment"""
         return "strict"
 
     @staticmethod
     def get_resolution(
-        sample_rate=16000,
-        kernel_size=[251, 5, 5],
-        stride=[1, 1, 1],
-        max_pool=[3, 3, 3],
+        task: Task,
+        sample_rate: int = 16000,
+        kernel_size: List[int] = [251, 5, 5],
+        stride: List[int] = [1, 1, 1],
+        max_pool: List[int] = [3, 3, 3],
         **kwargs,
-    ):
-        """
+    ) -> SlidingWindow:
+        """Get frame resolution
+
+        Parameters
+        ----------
+        task : Task
+        sample_rate : int, optional
+        kerne_size : list of int, optional
+        stride : list of int, optional
+        max_pool : list of int, optional
+
+        Returns
+        -------
+        resolution : SlidingWindow
+            Frame resolution.
         """
 
         # https://medium.com/mlreview/a-guide-to-receptive-field-arithmetic-for-convolutional-neural-networks-e0f514068807

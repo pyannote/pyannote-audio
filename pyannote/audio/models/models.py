@@ -40,6 +40,7 @@ from pyannote.audio.train.model import Model
 from pyannote.audio.train.model import Resolution
 from pyannote.audio.train.model import RESOLUTION_CHUNK
 from pyannote.audio.train.model import RESOLUTION_FRAME
+from pyannote.audio.train.task import Task
 
 
 class RNN(nn.Module):
@@ -391,9 +392,8 @@ class PyanNet(Model):
     """
 
     @staticmethod
-    def get_alignment(sincnet=None, **kwargs):
-        """
-        """
+    def get_alignment(task: Task, sincnet=None, **kwargs):
+        """Get frame alignment"""
 
         if sincnet is None:
             sincnet = dict()
@@ -401,18 +401,20 @@ class PyanNet(Model):
         if sincnet.get("skip", False):
             return "center"
 
-        return SincNet.get_alignment(**sincnet)
-
-    supports_packed = False
+        return SincNet.get_alignment(task, **sincnet)
 
     @staticmethod
     def get_resolution(
-        sincnet: Optional[dict] = None, rnn: Optional[dict] = None, **kwargs
+        task: Task,
+        sincnet: Optional[dict] = None,
+        rnn: Optional[dict] = None,
+        **kwargs,
     ) -> Resolution:
         """Get sliding window used for feature extraction
 
         Parameters
         ----------
+        task : Task
         sincnet : dict, optional
         rnn : dict, optional
 
@@ -436,7 +438,7 @@ class PyanNet(Model):
         if sincnet.get("skip", False):
             return RESOLUTION_FRAME
 
-        return SincNet.get_resolution(**sincnet)
+        return SincNet.get_resolution(task, **sincnet)
 
     def init(
         self,
@@ -582,23 +584,25 @@ class SincTDNN(Model):
     """
 
     @staticmethod
-    def get_alignment(sincnet=None, **kwargs):
-        """
-        """
+    def get_alignment(task: Task, sincnet=None, **kwargs):
+        """Get frame alignment"""
 
         if sincnet is None:
             sincnet = dict()
 
-        return SincNet.get_alignment(**sincnet)
+        return SincNet.get_alignment(task, **sincnet)
 
     supports_packed = False
 
     @staticmethod
-    def get_resolution(sincnet: Optional[dict] = None, **kwargs) -> Resolution:
+    def get_resolution(
+        task: Task, sincnet: Optional[dict] = None, **kwargs
+    ) -> Resolution:
         """Get sliding window used for feature extraction
 
         Parameters
         ----------
+        task : Task
         sincnet : dict, optional
 
         Returns

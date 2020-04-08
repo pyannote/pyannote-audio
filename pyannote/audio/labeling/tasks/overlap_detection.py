@@ -58,6 +58,8 @@ class OverlapDetectionGenerator(LabelingTaskGenerator):
 
     Parameters
     ----------
+    task : Task
+        Task
     feature_extraction : Wrappable
         Describes how features should be obtained.
         See pyannote.audio.features.wrapper.Wrapper documentation for details.
@@ -86,6 +88,7 @@ class OverlapDetectionGenerator(LabelingTaskGenerator):
 
     def __init__(
         self,
+        task: Task,
         feature_extraction: Wrappable,
         protocol: Protocol,
         subset: Text = "train",
@@ -103,6 +106,7 @@ class OverlapDetectionGenerator(LabelingTaskGenerator):
         self.raw_audio_ = RawAudio(sample_rate=feature_extraction.sample_rate)
 
         super().__init__(
+            task,
             feature_extraction,
             protocol,
             subset=subset,
@@ -263,9 +267,7 @@ class OverlapDetectionGenerator(LabelingTaskGenerator):
     @property
     def specifications(self):
         return {
-            "task": Task(
-                type=TaskType.MULTI_CLASS_CLASSIFICATION, output=TaskOutput.SEQUENCE
-            ),
+            "task": self.task,
             "X": {"dimension": self.feature_extraction.dimension},
             "y": {"classes": ["non_overlap", "overlap"]},
         }
@@ -287,13 +289,22 @@ class OverlapDetection(LabelingTask):
 
     def get_batch_generator(
         self,
-        feature_extraction,
-        protocol,
-        subset="train",
-        resolution=None,
-        alignment=None,
-    ):
-        """
+        feature_extraction: Wrappable,
+        protocol: Protocol,
+        subset: Text = "train",
+        resolution: Optional[Resolution] = None,
+        alignment: Optional[Resolution] = None,
+    ) -> OverlapDetectionGenerator:
+        """Get batch generator
+
+        Parameters
+        ----------
+        feature_extraction : Wrappable
+            Describes how features should be obtained.
+            See pyannote.audio.features.wrapper.Wrapper documentation for details.
+        protocol : Protocol
+        subset : {'train', 'development', 'test'}, optional
+            Protocol and subset.
         resolution : `pyannote.core.SlidingWindow`, optional
             Override `feature_extraction.sliding_window`. This is useful for
             models that include the feature extraction step (e.g. SincNet) and
@@ -304,6 +315,7 @@ class OverlapDetection(LabelingTask):
             therefore use a different cropping mode. Defaults to 'center'.
         """
         return OverlapDetectionGenerator(
+            self.task,
             feature_extraction,
             protocol,
             subset=subset,

@@ -46,6 +46,8 @@ class DomainClassificationGenerator(LabelingTaskGenerator):
 
     Parameters
     ----------
+    task : Task
+        Task
     feature_extraction : Wrappable
         Describes how features should be obtained.
         See pyannote.audio.features.wrapper.Wrapper documentation for details.
@@ -74,6 +76,7 @@ class DomainClassificationGenerator(LabelingTaskGenerator):
 
     def __init__(
         self,
+        task: Task,
         feature_extraction: Wrappable,
         protocol: Protocol,
         subset: Text = "train",
@@ -88,6 +91,7 @@ class DomainClassificationGenerator(LabelingTaskGenerator):
         self.domain = domain
 
         super().__init__(
+            task,
             feature_extraction,
             protocol,
             subset=subset,
@@ -108,9 +112,7 @@ class DomainClassificationGenerator(LabelingTaskGenerator):
     @property
     def specifications(self):
         return {
-            "task": Task(
-                type=TaskType.MULTI_CLASS_CLASSIFICATION, output=TaskOutput.VECTOR
-            ),
+            "task": self.task,
             "X": {"dimension": self.feature_extraction.dimension},
             "y": {"classes": self.file_labels_[self.domain]},
         }
@@ -137,15 +139,19 @@ class DomainClassification(LabelingTask):
         self.domain = domain
 
     def get_batch_generator(
-        self, feature_extraction, protocol, subset="train", **kwargs
-    ):
+        self,
+        feature_extraction: Wrappable,
+        protocol: Protocol,
+        subset: Text = "train",
+        **kwargs
+    ) -> DomainClassificationGenerator:
         """Get batch generator for domain classification
 
         Parameters
         ----------
-        feature_extraction : `pyannote.audio.features.FeatureExtraction`
+        feature_extraction : Wrappable
             Feature extraction.
-        protocol : `pyannote.database.Protocol`
+        protocol : Protocol
         subset : {'train', 'development', 'test'}, optional
             Protocol and subset used for batch generation.
 
@@ -155,6 +161,7 @@ class DomainClassification(LabelingTask):
             Batch generator
         """
         return DomainClassificationGenerator(
+            self.task,
             feature_extraction,
             protocol,
             subset=subset,
@@ -163,3 +170,7 @@ class DomainClassification(LabelingTask):
             per_epoch=self.per_epoch,
             batch_size=self.batch_size,
         )
+
+    @property
+    def task(self):
+        return Task(type=TaskType.MULTI_CLASS_CLASSIFICATION, output=TaskOutput.VECTOR)

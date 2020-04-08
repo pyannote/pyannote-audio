@@ -228,8 +228,9 @@ def load_config(
     params = cfg["architecture"].get("params", {})
 
     cfg["get_model_from_specs"] = partial(Architecture, **params)
-    cfg["model_resolution"] = Architecture.get_resolution(**params)
-    cfg["model_alignment"] = Architecture.get_alignment(**params)
+    task = cfg["task"].task
+    cfg["model_resolution"] = Architecture.get_resolution(task, **params)
+    cfg["model_alignment"] = Architecture.get_alignment(task, **params)
 
     return cfg
 

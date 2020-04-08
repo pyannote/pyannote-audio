@@ -59,6 +59,7 @@ from pyannote.database.protocol.protocol import ProtocolFile
 from pyannote.audio.train.model import Model
 from pyannote.audio.train.model import Resolution
 from pyannote.audio.train.model import Alignment
+from pyannote.audio.train.task import Task
 
 
 class ResegmentationGenerator(LabelingTaskGenerator):
@@ -66,6 +67,7 @@ class ResegmentationGenerator(LabelingTaskGenerator):
 
     Parameters
     ----------
+    tasl : Task
     current_file : `ProtocolFile`
     resolution : `pyannote.core.SlidingWindow`, optional
         Override `feature_extraction.sliding_window`. This is useful for
@@ -89,6 +91,7 @@ class ResegmentationGenerator(LabelingTaskGenerator):
 
     def __init__(
         self,
+        task: Task,
         current_file: ProtocolFile,
         resolution: Optional[Resolution] = None,
         alignment: Optional[Alignment] = None,
@@ -104,6 +107,7 @@ class ResegmentationGenerator(LabelingTaskGenerator):
         self.lock_speech = lock_speech
 
         super().__init__(
+            task,
             "@features",
             self.get_dummy_protocol(current_file),
             subset="train",
@@ -208,23 +212,15 @@ class ResegmentationGenerator(LabelingTaskGenerator):
             ['y']['classes'] (`list`) : list of classes
         """
 
-        specs = {"X": {"dimension": self.current_file["features"].dimension}}
+        specs = {
+            "X": {"dimension": self.current_file["features"].dimension},
+            "task": self.task,
+        }
 
         if self.allow_overlap:
-            # when allowing overlap, multiple speakers can be active at the
-            # same time (hence multi-label classification task)
-            specs["task"] = Task(
-                type=TaskType.MULTI_LABEL_CLASSIFICATION, output=TaskOutput.SEQUENCE
-            )
             specs["y"] = {"classes": self.segment_labels_}
 
         else:
-            # when overlap is not allowed, only one speaker can be active at
-            # a particular time (hence: multi-class classification)
-            specs["task"] = Task(
-                type=TaskType.MULTI_CLASS_CLASSIFICATION, output=TaskOutput.SEQUENCE
-            )
-
             if self.lock_speech:
                 # when locking speech / non-speech status,
                 # there is no non-speech class
@@ -233,9 +229,6 @@ class ResegmentationGenerator(LabelingTaskGenerator):
                 # when speech / non-speech status can be updated,
                 # one must add a non-speech class
                 specs["y"] = {"classes": ["non_speech"] + self.segment_labels_}
-
-        # for key, classes in self.file_labels_.items():
-        #     specs[key] = {'classes': classes}
 
         return specs
 
@@ -312,6 +305,22 @@ class Resegmentation(LabelingTask):
             duration=duration, batch_size=batch_size, per_epoch=None, step=step
         )
 
+    @property
+    def task(self):
+        if self.allow_overlap:
+            # when allowing overlap, multiple speakers can be active at the
+            # same time (hence multi-label classification task)
+            return Task(
+                type=TaskType.MULTI_LABEL_CLASSIFICATION, output=TaskOutput.SEQUENCE
+            )
+
+        else:
+            # when overlap is not allowed, only one speaker can be active at
+            # a particular time (hence: multi-class classification)
+            return Task(
+                type=TaskType.MULTI_CLASS_CLASSIFICATION, output=TaskOutput.SEQUENCE
+            )
+
     def get_batch_generator(
         self, current_file: ProtocolFile
     ) -> ResegmentationGenerator:
@@ -328,10 +337,15 @@ class Resegmentation(LabelingTask):
         batch_generator : `ResegmentationGenerator`
         """
 
-        resolution = self.Architecture.get_resolution(**self.architecture_params)
-        alignment = self.Architecture.get_alignment(**self.architecture_params)
+        resolution = self.Architecture.get_resolution(
+            self.task, **self.architecture_params
+        )
+        alignment = self.Architecture.get_alignment(
+            self.task, **self.architecture_params
+        )
 
         return ResegmentationGenerator(
+            self.task,
             current_file,
             resolution=resolution,
             alignment=alignment,

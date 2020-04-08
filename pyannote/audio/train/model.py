@@ -92,8 +92,8 @@ class Model(Module):
     def __init__(self, specifications: dict, **architecture_params):
         super().__init__()
         self.specifications = specifications
-        self.resolution_ = self.get_resolution(**architecture_params)
-        self.alignment_ = self.get_alignment(**architecture_params)
+        self.resolution_ = self.get_resolution(self.task, **architecture_params)
+        self.alignment_ = self.get_alignment(self.task, **architecture_params)
         self.init(**architecture_params)
 
     def init(self, **architecture_params):
@@ -191,8 +191,8 @@ class Model(Module):
         """
         return self.specifications["task"]
 
-    def get_resolution(self, **architecture_params) -> Resolution:
-        """Get target resolution
+    def get_resolution(self, task: Task, **architecture_params) -> Resolution:
+        """Get frame resolution
 
         This method is called by `BatchGenerator` instances to determine how
         target tensors should be built.
@@ -209,6 +209,7 @@ class Model(Module):
 
         Parameters
         ----------
+        task : Task
         **architecture_params
             Parameters used for instantiating the model architecture.
 
@@ -221,23 +222,23 @@ class Model(Module):
                of the input sequence.
         """
 
-        if self.task.returns_sequence:
+        if task.returns_sequence:
             return RESOLUTION_FRAME
 
-        elif self.task.returns_vector:
+        elif task.returns_vector:
             return RESOLUTION_CHUNK
 
         else:
             # this should never happened
-            msg = f"{self.task} tasks are not supported."
+            msg = f"{task} tasks are not supported."
             raise NotImplementedError(msg)
 
     @property
     def resolution(self) -> Resolution:
         return self.resolution_
 
-    def get_alignment(self, **architecture_params) -> Alignment:
-        """Get target alignment
+    def get_alignment(self, task: Task, **architecture_params) -> Alignment:
+        """Get frame alignment
 
         This method is called by `BatchGenerator` instances to dermine how
         target tensors should be aligned with the output of the model.
@@ -245,6 +246,12 @@ class Model(Module):
         Default behavior is to return 'center'. In most cases, you should not
         need to worry about this but if you do, this method can be overriden to
         return 'strict' or 'loose'.
+
+        Parameters
+        ----------
+        task : Task
+        architecture_params : dict
+            Architecture hyper-parameters.
 
         Returns
         -------

@@ -50,6 +50,8 @@ class SpeechActivityDetectionGenerator(LabelingTaskGenerator):
 
     Parameters
     ----------
+    task : Task
+        Task
     feature_extraction : Wrappable
         Describes how features should be obtained.
         See pyannote.audio.features.wrapper.Wrapper documentation for details.
@@ -83,6 +85,7 @@ class SpeechActivityDetectionGenerator(LabelingTaskGenerator):
 
     def __init__(
         self,
+        task: Task,
         feature_extraction: Wrappable,
         protocol: Protocol,
         subset: Text = "train",
@@ -95,6 +98,7 @@ class SpeechActivityDetectionGenerator(LabelingTaskGenerator):
     ):
 
         super().__init__(
+            task,
             feature_extraction,
             protocol,
             subset=subset,
@@ -135,9 +139,7 @@ class SpeechActivityDetectionGenerator(LabelingTaskGenerator):
     @property
     def specifications(self):
         specs = {
-            "task": Task(
-                type=TaskType.MULTI_CLASS_CLASSIFICATION, output=TaskOutput.SEQUENCE
-            ),
+            "task": self.task,
             "X": {"dimension": self.feature_extraction.dimension},
             "y": {"classes": ["non_speech", "speech"]},
         }
@@ -186,6 +188,7 @@ class SpeechActivityDetection(LabelingTask):
             therefore use a different cropping mode. Defaults to 'center'.
         """
         return SpeechActivityDetectionGenerator(
+            self.task,
             feature_extraction,
             protocol,
             subset=subset,

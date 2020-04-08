@@ -73,6 +73,8 @@ class LabelingTaskGenerator(BatchGenerator):
 
     Parameters
     ----------
+    task : Task
+        Task
     feature_extraction : Wrappable
         Describes how features should be obtained.
         See pyannote.audio.features.wrapper.Wrapper documentation for details.
@@ -114,6 +116,7 @@ class LabelingTaskGenerator(BatchGenerator):
 
     def __init__(
         self,
+        task: Task,
         feature_extraction: Wrappable,
         protocol: Protocol,
         subset: Text = "train",
@@ -128,6 +131,7 @@ class LabelingTaskGenerator(BatchGenerator):
         local_labels: bool = False,
     ):
 
+        self.task = task
         self.feature_extraction = Wrapper(feature_extraction)
         self.duration = duration
         self.exhaustive = exhaustive
@@ -348,9 +352,7 @@ class LabelingTaskGenerator(BatchGenerator):
         """
 
         specs = {
-            "task": Task(
-                type=TaskType.MULTI_CLASS_CLASSIFICATION, output=TaskOutput.SEQUENCE
-            ),
+            "task": self.task,
             "X": {"dimension": self.feature_extraction.dimension},
         }
 
@@ -552,6 +554,7 @@ class LabelingTask(Trainer):
         """
 
         return LabelingTaskGenerator(
+            self.task,
             feature_extraction,
             protocol,
             subset=subset,
@@ -678,3 +681,9 @@ class LabelingTask(Trainer):
         return {
             "loss": self.loss_func_(fX, target, weight=weight, mask=mask),
         }
+
+    @property
+    def task(self):
+        return Task(
+            type=TaskType.MULTI_CLASS_CLASSIFICATION, output=TaskOutput.SEQUENCE
+        )

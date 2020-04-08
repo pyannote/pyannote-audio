@@ -31,10 +31,13 @@ import torch.nn.functional as F
 from pyannote.audio.train.trainer import Trainer
 import numpy as np
 
+from typing import Text
 from typing import Optional
 from pyannote.audio.embedding.generators import SpeechSegmentGenerator
 from pyannote.audio.features import FeatureExtraction
 from pyannote.database.protocol.protocol import Protocol
+from pyannote.audio.features.wrapper import Wrappable
+from pyannote.audio.train.task import Task, TaskType, TaskOutput
 
 
 class RepresentationLearning(Trainer):
@@ -86,11 +89,11 @@ class RepresentationLearning(Trainer):
 
     def get_batch_generator(
         self,
-        feature_extraction: FeatureExtraction,
+        feature_extraction: Wrappable,
         protocol: Protocol,
-        subset: str = "train",
+        subset: Text = "train",
         **kwargs
-    ):
+    ) -> SpeechSegmentGenerator:
         """Get batch generator
 
         Parameters
@@ -192,3 +195,7 @@ class RepresentationLearning(Trainer):
         """Convert torch.Tensor to numpy array"""
         cpu = torch.device("cpu")
         return tensor.detach().to(cpu).numpy()
+
+    @property
+    def task(self):
+        return Task(type=TaskType.REPRESENTATION_LEARNING, output=TaskOutput.VECTOR)
