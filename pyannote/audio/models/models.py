@@ -36,6 +36,13 @@ import torch.nn as nn
 from .sincnet import SincNet
 from .tdnn import XVectorNet
 from .pooling import TemporalPooling
+
+
+from .convolutional import Convolutional
+from .recurrent import Recurrent
+from .linear import Linear
+from .pooling import Pooling
+
 from pyannote.audio.train.model import Model
 from pyannote.audio.train.model import Resolution
 from pyannote.audio.train.model import RESOLUTION_CHUNK
@@ -697,3 +704,135 @@ class SincTDNN(Model):
             return self.embedding_.dimension
 
         return Model.dimension.fget(self)
+
+
+class ACRoPoLiS(Model):
+    """Audio -> Convolutional -> Recurrent (-> optional Pooling) -> Linear -> Scores
+
+    Parameters
+    ----------
+    specifications : dict
+        Task specifications.
+    convolutional : dict, optional
+        Definition of convolutional layers.
+        Defaults to convolutional.Convolutional default hyper-parameters.
+    recurrent : dict, optional
+        Definition of recurrent layers.
+        Defaults to recurrent.Recurrent default hyper-parameters.
+    pooling : {"last", ""}, optional
+        Definition of pooling layer. Only used when self.task.returns_vector is
+        True, in which case it defaults to "last" pooling.
+    linear : dict, optional
+        Definition of linear layers.
+        Defaults to linear.Linear default hyper-parameters.
+    """
+
+    def init(
+        self,
+        convolutional: dict = None,
+        recurrent: dict = None,
+        linear: dict = None,
+        pooling: Text = None,
+    ):
+
+        self.normalize = nn.InstanceNorm1d(self.n_features)
+
+        if convolutional is None:
+            convolutional = dict()
+        self.convolutional = convolutional
+        self.cnn = Convolutional(self.n_features, **convolutional)
+
+        if recurrent is None:
+            recurrent = dict()
+        self.recurrent = recurrent
+        self.rnn = Recurrent(self.cnn.dimension, **recurrent)
+
+        if pooling is None and self.task.returns_vector:
+            pooling = "last"
+        if pooling is not None and self.task.returns_sequence:
+            msg = f"'pooling' should not be used for labeling tasks (is: {pooling})."
+            raise ValueError(msg)
+
+        self.pooling = pooling
+        self.pool = Pooling(
+            self.rnn.dimension,
+            method=self.pooling,
+            bidirectional=self.rnn.bidirectional,
+        )
+
+        if linear is None:
+            linear = dict()
+        self.linear = linear
+        self.ff = Linear(self.pool.dimension, **linear)
+
+        if not self.task.is_representation_learning:
+            self.final_linear = nn.Linear(
+                self.ff.dimension, len(self.classes), bias=True
+            )
+            self.final_activation = self.task.default_activation
+
+    def forward(self, waveforms: torch.Tensor, **kwargs) -> torch.Tensor:
+        """Forward pass
+
+        Parameters
+        ----------
+        waveforms : (batch_size, n_samples, 1) `torch.Tensor`
+            Batch of waveforms
+
+        Returns
+        -------
+        output : `torch.Tensor`
+            Final network output or intermediate network output
+            (only when `return_intermediate` is provided).
+        """
+
+        output = self.normalize(waveforms.transpose(1, 2)).transpose(1, 2)
+        output = self.cnn(output)
+        output = self.rnn(output)
+        output = self.pool(output)
+        output = self.ff(output)
+
+        if not self.task.is_representation_learning:
+            output = self.final_linear(output)
+            output = self.final_activation(output)
+        return output
+
+    @property
+    def dimension(self):
+        if self.task.is_representation_learning:
+            return self.ff.dimension
+        else:
+            return len(self.classes)
+
+    @staticmethod
+    def get_alignment(task: Task, convolutional: Optional[dict] = None, **kwargs):
+        """Get frame alignment"""
+
+        if convolutional is None:
+            convolutional = dict()
+
+        return Convolutional.get_alignment(task, **convolutional)
+
+    @staticmethod
+    def get_resolution(
+        task: Task, convolutional: Optional[dict] = None, **kwargs
+    ) -> Resolution:
+        """Get frame resolution
+
+        Parameters
+        ----------
+        task : Task
+        convolutional : dict, optional
+
+        Returns
+        -------
+        sliding_window : `pyannote.core.SlidingWindow` or {`window`, `frame`}
+        """
+
+        if task.returns_vector:
+            return RESOLUTION_CHUNK
+
+        if convolutional is None:
+            convolutional = dict()
+
+        return Convolutional.get_resolution(task, **convolutional)

@@ -25,6 +25,7 @@
 
 # AUTHORS
 # Juan Manuel Coria
+# Hervé Bredin - http://herve.niderb.fr
 
 from typing_extensions import Literal
 from warnings import warn
@@ -139,3 +140,71 @@ class StatsPool(TemporalPooling):
         """
         mean, std = torch.mean(x, dim=1), torch.std(x, dim=1)
         return torch.cat((mean, std), dim=1)
+
+
+class Pooling(nn.Module):
+    """Pooling over the time dimension
+
+    Parameters
+    ----------
+    method : {"last", "max", "average"}, optional
+        Use "max" for max pooling, "average" for average pooling.
+        Use "average" for average pooling.
+        Use "last" for returning the last element of the sequence.
+    bidirectional : bool, optional
+        When using "last" pooling, indicate whether the input sequence should
+        be considered as the output of a bidirectional recurrent layer, in which
+        case the last element in both directions are concatenated.
+    """
+
+    def __init__(
+        self,
+        n_features,
+        method: Literal["last", "max", "average"] = None,
+        bidirectional: bool = None,
+    ):
+        super().__init__()
+
+        if method is "last" and bidirectional is None:
+            msg = "'last' pooling expects an additional 'bidirectional' parameter."
+            raise ValueError(msg)
+
+        self.n_features = n_features
+        self.method = method
+        self.bidirectional = bidirectional
+
+    def forward(self, sequences: torch.Tensor) -> torch.Tensor:
+        """Temporal pooling
+
+        Parameters
+        ----------
+        sequences : torch.Tensor
+            Input sequences with shape (batch_size, n_frames, n_features)
+
+        Returns
+        -------
+        pooled : torch.Tensor
+            Pooled sequences with shape (batch_size, n_features)
+        """
+
+        if self.method is None:
+            return sequences
+
+        if self.method == "last":
+            if self.bidirectional:
+                batch_size, n_frames, _ = sequences.shape
+                reshaped = sequences.view(batch_size, n_frames, 2, -1)
+                return torch.cat([reshaped[:, -1, 0], reshaped[:, 0, 1]], dim=1)
+            else:
+                return sequences[:, -1]
+
+        if self.method == "max":
+            return torch.max(sequences, dim=1, keepdim=False, out=None)[0]
+
+        if self.method == "average":
+            return torch.mean(sequences, dim=1, keepdim=False, out=None)
+
+    @property
+    def dimension(self):
+        "Dimension of output features"
+        return self.n_features
