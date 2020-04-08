@@ -165,7 +165,7 @@ class Pooling(nn.Module):
     ):
         super().__init__()
 
-        if method is "last" and bidirectional is None:
+        if method == "last" and bidirectional is None:
             msg = "'last' pooling expects an additional 'bidirectional' parameter."
             raise ValueError(msg)
 
