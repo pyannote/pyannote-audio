@@ -340,15 +340,21 @@ class Embedding(nn.Module):
     batch_normalize : `boolean`, optional
         Apply batch normalization. This is more or less equivalent to
         embedding whitening.
-    unit_normalize : `boolean`, optional
-        Normalize embeddings. Defaults to False.
+    scale : {"fixed", "logistic"}, optional
+        Scaling method. Defaults to no scaling.
+    unit_normalize : deprecated in favor of 'scale'
     """
 
-    def __init__(self, n_features, batch_normalize=False, unit_normalize=False):
+    def __init__(
+        self,
+        n_features: int,
+        batch_normalize: bool = False,
+        scale: Text = None,
+        unit_normalize: bool = False,
+    ):
         super().__init__()
 
         self.n_features = n_features
-        # batch normalization ~= embeddings whitening.
 
         self.batch_normalize = batch_normalize
         if self.batch_normalize:
@@ -356,28 +362,24 @@ class Embedding(nn.Module):
                 n_features, eps=1e-5, momentum=0.1, affine=False
             )
 
-        self.unit_normalize = unit_normalize
+        self.scale = scale
+        self.scaling = Scaling(n_features, method=scale)
+
+        if unit_normalize is True:
+            msg = f"'unit_normalize' has been deprecated in favor of 'scale'."
+            raise ValueError(msg)
 
     def forward(self, embedding):
 
         if self.batch_normalize:
             embedding = self.batch_normalize_(embedding)
 
-        if self.unit_normalize:
-            norm = torch.norm(embedding, p=2, dim=1, keepdim=True)
-            embedding = embedding / norm
+        return self.scaling(embedding)
 
-        return embedding
-
-    def dimension():
-        doc = "Output dimension."
-
-        def fget(self):
-            return self.n_features
-
-        return locals()
-
-    dimension = property(**dimension())
+    @property
+    def dimension(self):
+        """Output dimension."""
+        return self.n_features
 
 
 class PyanNet(Model):
