@@ -279,7 +279,7 @@ class BaseSchedulerCallback(Callback):
         trainer.load_state()
 
         # choose learning rate based on loss = f(learning_rate) curve
-        auto_lr = self._choose_lr(lrs, losses_smoothened)
+        auto_lr = self._choose_lr(np.array(lrs), np.array(losses_smoothened))
 
         # log curve and auto_lr to tensorboard as an image
         try:
