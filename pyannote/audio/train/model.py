@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2019 CNRS
+# Copyright (c) 2019-2020 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -37,6 +37,11 @@
 
 >>> del model.probes
 >>> output = model(input)
+
+## Freeze/unfreeze layers
+
+>>> model.freeze(["ff.1", "ff.2"])
+>>> model.unfreeze(["ff.2"])
 
 """
 
@@ -117,12 +122,12 @@ class Model(Module):
         return list(getattr(self, "_probes", []))
 
     @probes.setter
-    def probes(self, probes: List[Text]):
+    def probes(self, names: List[Text]):
         """Set list of probes
 
         Parameters
         ----------
-        probes : list of string
+        names : list of string
             Names of modules to probe.
         """
 
@@ -131,7 +136,7 @@ class Model(Module):
 
         self._probes = []
 
-        if not probes:
+        if not names:
             return
 
         handles = []
@@ -145,7 +150,7 @@ class Model(Module):
             self.probed_[name] = output
 
         for name, module in self.named_modules():
-            if name in probes:
+            if name in names:
                 handles.append(module.register_forward_hook(partial(_append, name)))
                 self._probes.append(name)
 
@@ -162,6 +167,38 @@ class Model(Module):
         for handle in getattr(self, "handles_", []):
             handle.remove()
         self._probes = []
+
+    @property
+    def parts(self):
+        """Names of (freezable / probable) modules"""
+        return [n for n, _ in self.named_modules()]
+
+    def freeze(self, names: List[Text]):
+        """Freeze parts of the model
+
+        Parameters
+        ----------
+        names : list of string
+            Names of modules to freeze.
+        """
+        for name, module in self.named_modules():
+            if name in names:
+                for parameter in module.parameters(recurse=True):
+                    parameter.requires_grad = False
+
+    def unfreeze(self, names: List[Text]):
+        """Unfreeze parts of the model
+
+        Parameters
+        ----------
+        names : list of string
+            Names of modules to unfreeze.
+        """
+
+        for name, module in self.named_modules():
+            if name in names:
+                for parameter in module.parameters(recurse=True):
+                    parameter.requires_grad = True
 
     def forward(
         self, sequences: torch.Tensor, **kwargs

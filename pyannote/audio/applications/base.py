@@ -209,6 +209,9 @@ class Application:
         # initialize model architecture based on specifications
         model = self.get_model_from_specs_(batch_generator.specifications)
 
+        # freeze (when requested)
+        model.freeze(getattr(self, "freeze_", []))
+
         train_dir = Path(
             self.TRAIN_DIR.format(
                 experiment_dir=self.experiment_dir,
