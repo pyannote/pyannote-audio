@@ -28,6 +28,11 @@
 
 """Models
 
+## Parts
+
+>>> model.parts
+["ff.1", "ff.2", "ff.3"]
+
 ## Probes
 
 >>> model.probes = ["ff.1", "ff.2"]
