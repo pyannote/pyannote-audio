@@ -3,7 +3,7 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2018-2019 CNRS
+# Copyright (c) 2018-2020 CNRS
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -149,6 +149,9 @@ class BaseSchedulerCallback(Callback):
     def _choose_lr(lrs: np.ndarray, losses: np.ndarray) -> float:
         """Choose learning rate upper bound
 
+        This is done by selecting the [0.1 x lr, lr] range that leads to the
+        largest decrease in terms of loss value.
+
         Parameters
         ----------
         lrs : np.ndarray
@@ -172,28 +175,11 @@ class BaseSchedulerCallback(Callback):
         # `K` batches to increase the learning rate by one order of magnitude
         K = int(np.log(10) / np.log(factor))
 
-        losses = convolve(losses, 3 * np.ones(K // 3) / K, mode="same", method="auto")
+        # loss improvement on each [0.1 x lr, lr] range
+        improvement = losses[:-K] - losses[K:]
 
-        # probability that loss has decreased in the last `K` steps.
-        probability = [
-            1.0 - decreasing_probability(-losses[i - K : i]) if i > K else np.NAN
-            for i in range(len(losses))
-        ]
-        probability = np.array(probability)
-
-        # find longest decreasing region
-        decreasing = 1 * (probability > 0.999)
-        starts_decreasing = np.where(np.diff(decreasing) == 1)[0]
-        stops_decreasing = np.where(np.diff(decreasing) == -1)[0]
-        i = np.argmax(
-            [stop - start for start, stop in zip(starts_decreasing, stops_decreasing)]
-        )
-        stop = stops_decreasing[i]
-
-        # upper bound
-        # heuristic: loss ceased to decrease between stop-K and stop
-        # so we'd rather bound the learning rate slighgly before stop - K
-        return lrs[int(stop - 1.1 * K)]
+        # return lr such that [0.1 x lr, lr] leads to the best improvement
+        return lrs[K + np.argmax(improvement)]
 
     def auto_lr(self, trainer: "Trainer") -> float:
         """Find optimal learning rate automatically
@@ -293,7 +279,7 @@ class BaseSchedulerCallback(Callback):
         trainer.load_state()
 
         # choose learning rate based on loss = f(learning_rate) curve
-        auto_lr = self._choose_lr(lrs, losses_smoothened)
+        auto_lr = self._choose_lr(np.array(lrs), np.array(losses_smoothened))
 
         # log curve and auto_lr to tensorboard as an image
         try:
