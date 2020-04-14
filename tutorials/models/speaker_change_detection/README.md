@@ -177,7 +177,7 @@ See `pyannote.audio.pipeline.speaker_change_detection.SpeakerChangeDetection` fo
 Now that we know how the model is doing, we can apply it on test files of the AMI database: 
 
 ```bash
-$ pyannote-audio sad apply --subset=test ${VAL_DIR} AMI.SpeakerDiarization.MixHeadset 
+$ pyannote-audio scd apply --subset=test ${VAL_DIR} AMI.SpeakerDiarization.MixHeadset 
 ```
 
 Raw model output and speaker change detection results will be dumped into the following directory: `${VAL_DIR}/apply/{BEST_EPOCH}`.
