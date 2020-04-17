@@ -83,8 +83,8 @@ notebook.plot_annotation(test_file['annotation'], ax=ax[0], time=False)
 ax[0].text(notebook.crop.start + 0.5, 0.1, 'reference', fontsize=14)
 
 # 2nd row: pipeline output
-notebook.plot_annotation(diarization, ax=ax[0], time=False)
-ax[0].text(notebook.crop.start + 0.5, 0.1, 'hypothesis', fontsize=14)
+notebook.plot_annotation(diarization, ax=ax[1], time=False)
+ax[1].text(notebook.crop.start + 0.5, 0.1, 'hypothesis', fontsize=14)
 ```
 
 ![diarization](diarization.png)

@@ -138,7 +138,7 @@ notebook.crop = Segment(120, 180)
 from pyannote.core import SlidingWindowFeature
 plot_ready = lambda scores: SlidingWindowFeature(np.exp(scores.data[:, 1:]), scores.sliding_window)
 
-# create a figure with 6 rows with matplotlib
+# create a figure with 8 rows with matplotlib
 nrows = 8
 fig, ax = plt.subplots(nrows=nrows, ncols=1)
 fig.set_figwidth(20)
@@ -150,7 +150,7 @@ ax[0].text(notebook.crop.start + 0.5, 0.1, 'reference', fontsize=14)
 
 # 2nd row: SAD raw scores
 notebook.plot_feature(plot_ready(sad_scores), ax=ax[1], time=False)
-ax[1].text(notebook.crop.start + 2., 0.1, 'speech\nactivity\ndetection\nscores', fontsize=14)
+ax[1].text(notebook.crop.start + 0.5, 0.1, 'speech activity\ndetection scores', fontsize=14)
 ax[1].set_ylim(-0.1, 1.1)
 
 # 3rd row: SAD result
@@ -159,7 +159,7 @@ ax[2].text(notebook.crop.start + 0.5, 0.1, 'speech activity detection', fontsize
 
 # 4th row: SCD raw scores
 notebook.plot_feature(plot_ready(scd_scores), ax=ax[3], time=False)
-ax[3].text(notebook.crop.start + 0.5, 0.1, 'speaker\nchange\ndetection\nscores', fontsize=14)
+ax[3].text(notebook.crop.start + 0.5, 0.1, 'speaker change\ndetection scores', fontsize=14)
 ax[3].set_ylim(-0.1, 0.6)
 
 # 5th row: SCD result
@@ -168,7 +168,7 @@ ax[4].text(notebook.crop.start + 0.5, 0.1, 'speaker change detection', fontsize=
 
 # 6th row: OVL raw scores
 notebook.plot_feature(plot_ready(ovl_scores), ax=ax[5], time=False)
-ax[5].text(notebook.crop.start + 0.5, 0.2, 'overlapped\nspeech\ndetection\nscores', fontsize=14)
+ax[5].text(notebook.crop.start + 0.5, 0.2, 'overlapped speech\ndetection scores', fontsize=14)
 ax[5].set_ylim(-0.1, 1.1)
 
 # 7th row: OVL result

@@ -66,7 +66,7 @@ We start by extracting raw scores/embeddings using the following pretrained mode
 * `emb_ami` for speaker embedding 
 
 ```bash
-$ export EXP_DIR=tutorials/pipelines/speech_activity_detection
+$ export EXP_DIR=tutorials/pipelines/speaker_diarization
 
 $ for SUBSET in developement test
  > do
