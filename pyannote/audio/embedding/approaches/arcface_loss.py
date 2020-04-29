@@ -25,8 +25,9 @@
 
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
-# Juan Manuel CORIA
+# Juan Manuel CORIA - https://juanmc2005.github.io
 
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -34,7 +35,7 @@ from .classification import Classification
 
 
 class ArcLinear(nn.Module):
-    """Additive Angular Margin linear module (ArcFace)
+    """Additive Angular Margin classification module
 
     Parameters
     ----------
@@ -98,7 +99,10 @@ class ArcLinear(nn.Module):
 class AdditiveAngularMarginLoss(Classification):
     """Additive angular margin loss
 
-    TODO explain
+    Penalize the distance between an example and its class center
+    with an angular margin, applying a scaling parameter to all logits.
+    The intuition is to bring examples from a single class closer together
+    in the embedding space by means of the angular margin.
 
     Parameters
     ----------
@@ -125,12 +129,12 @@ class AdditiveAngularMarginLoss(Classification):
     margin : float, optional
         Angular margin value. Defaults to 0.1.
     s : float, optional
-        Scaling parameter value for the logits. Defaults to 7.
+        Scaling parameter value for the logits. Defaults to sqrt(2) * log(n_classes - 1).
 
     Reference
     ---------
-    TODO
-
+    ArcFace: Additive Angular Margin Loss for Deep Face Recognition
+    http://openaccess.thecvf.com/content_CVPR_2019/html/Deng_ArcFace_Additive_Angular_Margin_Loss_for_Deep_Face_Recognition_CVPR_2019_paper.html
     """
 
     def __init__(
@@ -143,7 +147,7 @@ class AdditiveAngularMarginLoss(Classification):
         per_epoch: float = None,
         label_min_duration: float = 0.0,
         margin: float = 0.1,
-        s: float = 7.0,
+        s: float = None,
     ):
 
         super().__init__(
@@ -155,6 +159,7 @@ class AdditiveAngularMarginLoss(Classification):
             per_epoch=per_epoch,
             label_min_duration=label_min_duration,
         )
+
         self.margin = margin
         self.s = s
 
@@ -167,11 +172,15 @@ class AdditiveAngularMarginLoss(Classification):
             Parameters
         """
 
+        nclass = len(self.specifications["y"]["classes"])
+        # Use scaling initialization trick from AdaCos
+        # Reference: https://arxiv.org/abs/1905.00292
+        scale = math.sqrt(2) * math.log(nclass - 1) if self.s is None else self.s
         self.classifier_ = ArcLinear(
             self.model.dimension,
-            len(self.specifications["y"]["classes"]),
+            nclass,
             self.margin,
-            self.s,
+            scale,
         ).to(self.device)
 
         return self.classifier_.parameters()

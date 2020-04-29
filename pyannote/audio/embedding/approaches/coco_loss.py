@@ -25,8 +25,9 @@
 
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
-# Juan Manuel CORIA
+# Juan Manuel CORIA - https://juanmc2005.github.io
 
+import math
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -36,15 +37,15 @@ from .classification import Classification
 class CocoLinear(nn.Module):
     """Congenerous Cosine linear module (for CoCo loss)
 
-        Parameters
-        ----------
-        nfeat : int
-            Embedding dimension
-        nclass : int
-            Number of classes
-        alpha : float
-            Scaling factor used in embedding L2-normalization
-        """
+    Parameters
+    ----------
+    nfeat : int
+        Embedding dimension
+    nclass : int
+        Number of classes
+    alpha : float
+        Scaling factor used in embedding L2-normalization
+    """
 
     def __init__(self, nfeat, nclass, alpha):
         super(CocoLinear, self).__init__()
@@ -74,7 +75,12 @@ class CocoLinear(nn.Module):
 
 
 class CongenerousCosineLoss(Classification):
-    """Train embeddings as last hidden layer of an additive angular margin loss classifier
+    """Congenerous cosine loss
+
+    Train embeddings by maximizing the cosine similarity between
+    an embedding and its class center.
+    A hyper-parameter `alpha` is used to scale logits before
+    applying softmax.
 
     Parameters
     ----------
@@ -99,7 +105,12 @@ class CongenerousCosineLoss(Classification):
         Remove speakers with less than that many seconds of speech.
         Defaults to 0 (i.e. keep them all).
     alpha : float
-        Scaling factor used in embedding L2-normalization. Defaults to 6.25.
+        Scaling factor used in embedding L2-normalization. Defaults to sqrt(2) * log(n_classes - 1).
+
+    Reference
+    ---------
+    Rethinking Feature Discrimination and Polymerization for Large-scale Recognition
+    https://arxiv.org/abs/1710.00870
     """
 
     def __init__(
@@ -111,7 +122,7 @@ class CongenerousCosineLoss(Classification):
         per_fold: int = 32,
         per_epoch: float = None,
         label_min_duration: float = 0.0,
-        alpha: float = 6.25,
+        alpha: float = None,
     ):
 
         super().__init__(
@@ -135,8 +146,13 @@ class CongenerousCosineLoss(Classification):
             Trainable trainer parameters
         """
 
+        nclass = len(self.specifications["y"]["classes"])
+        # Use scaling initialization trick from AdaCos
+        # Reference: https://arxiv.org/abs/1905.00292
+        scale = math.sqrt(2) * math.log(nclass - 1) if self.alpha is None else self.alpha
+
         self.classifier_ = CocoLinear(
-            self.model.dimension, len(self.specifications["y"]["classes"]), self.alpha
+            self.model.dimension, nclass, scale
         ).to(self.device)
 
         return self.classifier_.parameters()
