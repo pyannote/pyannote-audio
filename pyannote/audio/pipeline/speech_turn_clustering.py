@@ -159,7 +159,8 @@ class SpeechTurnClustering(Pipeline):
         # reconstruct hypothesis
         return one_hot_decoding(y, window)
 
-    def _turn_level(self, current_file: dict, speech_turns: Annotation) -> Annotation:
+    def _turn_level(self, current_file: dict, speech_turns: Annotation,
+                    cannot_link: Optional[dict] = None) -> Annotation:
         """Apply clustering at speech turn level
 
         Parameters
@@ -167,7 +168,11 @@ class SpeechTurnClustering(Pipeline):
         current_file : `dict`
             File as provided by a pyannote.database protocol.
         speech_turns : `Annotation`
-            Speech turns. Should only contain `str` labels.
+            Speech turns.
+        cannot_link : `dict`, optional
+            Clustering constraints, a dict like:
+            {Segment : List[Segment]}, where segments should not be clustered together
+            Defaults to no constraints (i.e. None)
 
         Returns
         -------
@@ -181,9 +186,13 @@ class SpeechTurnClustering(Pipeline):
 
         labels = speech_turns.labels()
         X, clustered_labels, skipped_labels = [], [], []
+        # map segments to their index in X
+        indices = {}
         for l, label in enumerate(labels):
 
             timeline = speech_turns.label_timeline(label, copy=False)
+            for segment in timeline:
+                indices[segment] = l
 
             # be more and more permissive until we have
             # at least one embedding for current speech turn
@@ -200,8 +209,14 @@ class SpeechTurnClustering(Pipeline):
             clustered_labels.append(label)
             X.append(np.mean(x, axis=0))
 
+        # convert cannot_link dict to list using indices
+        cl = []
+        for segment, segments in cannot_link.items():
+            for cl_to in segments:
+                cl.append((indices[segment], indices[cl_to]))
+
         # apply clustering of label embeddings
-        clusters = self.clustering(np.vstack(X))
+        clusters = self.clustering(np.vstack(X), cannot_link = cl)
 
         # map each clustered label to its cluster (between 1 and N_CLUSTERS)
         mapping = {label: k for label, k in zip(clustered_labels, clusters)}
@@ -212,10 +227,14 @@ class SpeechTurnClustering(Pipeline):
             mapping[label] = -(l + 1)
 
         # do the actual mapping
-        return speech_turns.rename_labels(mapping=mapping)
+        speech_turns.rename_labels(mapping=mapping, copy=False)
+        # keep original labels for identified speakers
+        speech_turns.rename_labels(mapping=identities, copy=False)
+        return speech_turns
 
     def __call__(
-        self, current_file: dict, speech_turns: Optional[Annotation] = None
+        self, current_file: dict, speech_turns: Optional[Annotation] = None,
+        cannot_link: Optional[dict] = None
     ) -> Annotation:
         """Apply speech turn clustering
 
@@ -226,7 +245,11 @@ class SpeechTurnClustering(Pipeline):
         speech_turns : `Annotation`, optional
             Speech turns. Should only contain `str` labels.
             Defaults to `current_file['speech_turns']`.
-
+        cannot_link : `dict`, optional
+            Clustering constraints, a dict like:
+            {Segment : List[Segment]}, where segments should not be clustered together.
+            Only implemented for turn-level clustering, will raise an error if self.window_wise
+            Defaults to no constraints (i.e. None)
         Returns
         -------
         speech_turns : `pyannote.core.Annotation`
@@ -236,9 +259,10 @@ class SpeechTurnClustering(Pipeline):
         if speech_turns is None:
             speech_turns = current_file["speech_turns"]
 
-        if self.window_wise:
-            return self._window_level(
-                current_file, speech_turns.get_timeline().support()
-            )
+        if not self.window_wise:
+            self._turn_level(current_file, speech_turns, cannot_link=cannot_link)
+        elif cannot_link is not None:
+            msg = 'cannot_link constraints are not implemented for window-level clustering'
+            raise NotImplementedError(msg)
 
-        return self._turn_level(current_file, speech_turns)
+        return self._window_level(current_file, speech_turns.get_timeline().support())
