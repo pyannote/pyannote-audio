@@ -227,10 +227,7 @@ class SpeechTurnClustering(Pipeline):
             mapping[label] = -(l + 1)
 
         # do the actual mapping
-        speech_turns.rename_labels(mapping=mapping, copy=False)
-        # keep original labels for identified speakers
-        speech_turns.rename_labels(mapping=identities, copy=False)
-        return speech_turns
+        return speech_turns.rename_labels(mapping=mapping)
 
     def __call__(
         self, current_file: dict, speech_turns: Optional[Annotation] = None,
