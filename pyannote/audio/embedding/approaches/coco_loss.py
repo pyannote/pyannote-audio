@@ -28,6 +28,7 @@
 # Juan Manuel CORIA - https://juanmc2005.github.io
 
 import math
+import warnings
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -43,13 +44,13 @@ class CocoLinear(nn.Module):
         Embedding dimension
     nclass : int
         Number of classes
-    alpha : float
+    scale : float
         Scaling factor used in embedding L2-normalization
     """
 
-    def __init__(self, nfeat, nclass, alpha):
+    def __init__(self, nfeat, nclass, scale):
         super(CocoLinear, self).__init__()
-        self.alpha = alpha
+        self.scale = scale
         self.centers = nn.Parameter(torch.randn(nclass, nfeat))
 
     def forward(self, x, target=None):
@@ -68,7 +69,7 @@ class CocoLinear(nn.Module):
         # normalize centers
         cnorm = F.normalize(self.centers)
         # normalize scaled embeddings
-        xnorm = self.alpha * F.normalize(x)
+        xnorm = self.scale * F.normalize(x)
         # calculate logits like in `nn.Linear`
         logits = torch.matmul(xnorm, torch.transpose(cnorm, 0, 1))
         return logits
@@ -104,7 +105,7 @@ class CongenerousCosineLoss(Classification):
     label_min_duration : `float`, optional
         Remove speakers with less than that many seconds of speech.
         Defaults to 0 (i.e. keep them all).
-    alpha : float
+    scale : float
         Scaling factor used in embedding L2-normalization. Defaults to sqrt(2) * log(n_classes - 1).
 
     Reference
@@ -122,7 +123,9 @@ class CongenerousCosineLoss(Classification):
         per_fold: int = 32,
         per_epoch: float = None,
         label_min_duration: float = 0.0,
+        # `alpha` is deprecated in favor of `scale`
         alpha: float = None,
+        scale: float = None
     ):
 
         super().__init__(
@@ -135,7 +138,13 @@ class CongenerousCosineLoss(Classification):
             label_min_duration=label_min_duration,
         )
 
-        self.alpha = alpha
+        if alpha is not None:
+            msg = "The 'alpha' parameter is deprecated in favor of 'scale', " \
+                  "and will be removed in a future release"
+            warnings.warn(msg, FutureWarning)
+            self.scale = alpha
+        else:
+            self.scale = scale
 
     def more_parameters(self):
         """Initialize trainable trainer parameters
@@ -149,7 +158,7 @@ class CongenerousCosineLoss(Classification):
         nclass = len(self.specifications["y"]["classes"])
         # Use scaling initialization trick from AdaCos
         # Reference: https://arxiv.org/abs/1905.00292
-        scale = math.sqrt(2) * math.log(nclass - 1) if self.alpha is None else self.alpha
+        scale = math.sqrt(2) * math.log(nclass - 1) if self.scale is None else self.scale
 
         self.classifier_ = CocoLinear(
             self.model.dimension, nclass, scale
