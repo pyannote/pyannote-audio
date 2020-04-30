@@ -171,7 +171,7 @@ class SpeechTurnClustering(Pipeline):
             Speech turns.
         cannot_link : `dict`, optional
             Clustering constraints, a dict like:
-            {Segment : List[Segment]}, where segments should not be clustered together
+            {Segment : Set[Segment]}, where segments should not be clustered together
             Defaults to no constraints (i.e. None)
 
         Returns
