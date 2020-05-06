@@ -178,7 +178,7 @@ Common options
                           good practices.
 
   --gpu                   Run on GPU. When multiple GPUs are available, use
-                          CUDA_AVAILABLE_DEVICES environment variable to force
+                          CUDA_VISIBLE_DEVICES environment variable to force
                           using a specific one. Defaults to using CPU if no GPU
                           is available.
 
