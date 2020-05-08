@@ -145,6 +145,7 @@ class Pretrained(FeatureExtraction):
         if duration is not None:
             # warn that this might be sub-optimal
             if self.duration is not None and duration != self.duration:
+                # TODO: do not show this message if min_duration < new_duration < duration
                 msg = (
                     f"Model was trained with {self.duration:g}s chunks and "
                     f"is applied on {duration:g}s chunks. This might lead "
@@ -165,6 +166,28 @@ class Pretrained(FeatureExtraction):
 
         self.return_intermediate = return_intermediate
         self.progress_hook = progress_hook
+
+    @property
+    def duration(self):
+        return self.duration_
+
+    @duration.setter
+    def duration(self, duration: float):
+        self.duration_ = duration
+        self.chunk_ = SlidingWindow(
+            duration=self.duration, step=self.step * self.duration
+        )
+
+    @property
+    def step(self):
+        return getattr(self, "step_", 0.25)
+
+    @step.setter
+    def step(self, step: float):
+        self.step_ = step
+        self.chunk_ = SlidingWindow(
+            duration=self.duration, step=self.step * self.duration
+        )
 
     @property
     def classes(self):
