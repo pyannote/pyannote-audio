@@ -141,6 +141,8 @@ class Pretrained(FeatureExtraction):
         # initialize chunks duration with that used during training
         self.duration = getattr(config["task"], "duration", None)
 
+        self.min_duration = getattr(config["task"], "min_duration", None)
+
         # override chunks duration by user-provided value
         if duration is not None:
             # warn that this might be sub-optimal
