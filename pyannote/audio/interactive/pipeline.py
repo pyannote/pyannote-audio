@@ -36,6 +36,7 @@ from pyannote.pipeline.parameter import Uniform
 
 from pyannote.audio.features.wrapper import Wrapper
 from pyannote.audio.features import RawAudio
+from pyannote.audio.features.utils import get_audio_duration
 
 from pyannote.database.protocol.protocol import ProtocolFile
 from pyannote.metrics.diarization import DiarizationErrorRate
