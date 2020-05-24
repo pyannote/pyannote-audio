@@ -288,3 +288,10 @@ class Wrapper:
             raise AttributeError
 
         return getattr(self.scorer_, name)
+
+    def __setattr__(self, name, value):
+        if name == "scorer_":
+            object.__setattr__(self, name, value)
+
+        else:
+            setattr(self.scorer_, name, value)
