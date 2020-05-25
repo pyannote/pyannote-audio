@@ -311,7 +311,7 @@ class InteractiveDiarization(Pipeline):
                 k = new_k
             hypothesis[Segment(start, segment.end)] = k
 
-        return hypothesis
+        return hypothesis.support()
 
     def get_metric(self) -> DiarizationErrorRate:
         return DiarizationErrorRate(collar=0.0, skip_overlap=False)
