@@ -29,6 +29,7 @@
 
 from typing import Text, Union, Tuple, List, Iterator, Dict
 from pathlib import Path
+from itertools import filterfalse
 
 import numpy as np
 from pyannote.pipeline import Pipeline
@@ -709,22 +710,19 @@ class InteractiveDiarization(Pipeline):
                     must_link=must_link if must_link else None,
                 )
 
-                # iterate from dendrogram top to bottom
-                iterations = iter(range(len(dendrogram) - 1, 0, -1))
+                # # iterate from dendrogram top to bottom
+                # iterations = iter(range(len(dendrogram) - 1, 0, -1))
 
-                # IDEA instead of iterating from top to bottom,
-                # we could start by the iteration whose merging distance
-                # is the most similar to an "optimal" distance and then
-                # progressively wander away from it
-                # FIXME make sure iteration is not < 1
-                # iterations = iter(np.argsort(
-                #     np.abs(pipeline.emb_threshold - dendrogram[:, 2])
-                # ))
+                # iterate from merging step whose distance is the most similar
+                # to the "optimal" threshold and progressively wander away from it
+                iterations = filterfalse(
+                    lambda i: i < 1,
+                    iter(np.argsort(np.abs(self.emb_threshold - dendrogram[:, 2]))),
+                )
 
-                # IDEA we could stop annotation early once the
-                # current distance is very very small (and we can be sure
-                # that all iterations up to this point are correct)
-                # TODO
+                # IDEA stop annotating early once the current distance is much
+                # smaller/greater than the "optimal" and we can be sure that all
+                # further iterations are easy to decide.
 
                 while True:
 
@@ -837,26 +835,6 @@ class InteractiveDiarization(Pipeline):
                     task_audio = self.prodigy_base64_audio(
                         np.vstack([waveform1, waveform2])
                     )
-                    # task_audio_spans = [
-                    #     {
-                    #         "start": segment1.middle
-                    #         - 0.5 * window.step
-                    #         - segment1.start,
-                    #         "end": segment1.middle + 0.5 * window.step - segment1.start,
-                    #         "label": "SPEAKER",
-                    #     },
-                    #     {
-                    #         "start": segment1.duration
-                    #         + segment2.middle
-                    #         - 0.5 * window.step
-                    #         - segment2.start,
-                    #         "end": segment1.duration
-                    #         + segment2.middle
-                    #         + 0.5 * window.step
-                    #         - segment2.start,
-                    #         "label": "SAME_SPEAKER",
-                    #     },
-                    # ]
 
                     task_audio_spans = [
                         {"start": 0.0, "end": segment1.duration, "label": "SPEAKER",},
