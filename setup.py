@@ -31,36 +31,35 @@ import versioneer
 
 from setuptools import setup, find_packages
 
-with open('README.md') as f:
+with open("README.md") as f:
     long_description = f.read()
 
-with open('requirements.txt') as f:
+with open("requirements.txt") as f:
     requirements = f.read().splitlines()
 
 setup(
-
-    name='pyannote.audio',
-    namespace_packages=['pyannote'],
+    name="pyannote.audio",
+    namespace_packages=["pyannote"],
     packages=find_packages(),
     install_requires=requirements,
-    entry_points = {
-        'console_scripts': [
-            'pyannote-audio=pyannote.audio.applications.pyannote_audio:main',
-            'pyannote-speech-feature=pyannote.audio.applications.feature_extraction:main',
+    entry_points={
+        "console_scripts": [
+            "pyannote-audio=pyannote.audio.applications.pyannote_audio:main",
+            "pyannote-speech-feature=pyannote.audio.applications.feature_extraction:main",
+        ],
+        "prodigy_recipes": [
+            "pyannote.sad.manual = pyannote.audio.interactive.recipe:sad_manual",
+            "pyannote.dia.binary = pyannote.audio.interactive.recipe:dia_binary",
         ],
     },
-
     version=versioneer.get_version(),
     cmdclass=versioneer.get_cmdclass(),
-
-    description='Neural building blocks for speaker diarization',
+    description="Neural building blocks for speaker diarization",
     long_description=long_description,
-    long_description_content_type='text/markdown',
-
-    author='Hervé Bredin',
-    author_email='bredin@limsi.fr',
-    url='https://github.com/pyannote/pyannote-audio',
-
+    long_description_content_type="text/markdown",
+    author="Hervé Bredin",
+    author_email="bredin@limsi.fr",
+    url="https://github.com/pyannote/pyannote-audio",
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Science/Research",
@@ -69,6 +68,6 @@ setup(
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.7",
         "Programming Language :: Python :: 3.8",
-        "Topic :: Scientific/Engineering"
+        "Topic :: Scientific/Engineering",
     ],
 )

@@ -53,6 +53,16 @@ from scipy.spatial.distance import pdist
 from scipy.spatial.distance import squareform
 
 
+import prodigy
+from prodigy.components.loaders import Audio
+from prodigy.components.db import connect
+import scipy.io.wavfile
+import base64
+import io
+import copy
+
+PRODIGY_SAMPLE_RATE = 16000
+
 
 class InteractiveDiarization(Pipeline):
     """Interactive diarization pipeline
@@ -296,7 +306,7 @@ class InteractiveDiarization(Pipeline):
 
             indices = np.where(segment_assignment == s + 1)[0]
             if len(indices) == 0:
-                indices = np.where(segment_assignment == - (s + 1))[0]
+                indices = np.where(segment_assignment == -(s + 1))[0]
                 if len(indices) == 0:
                     continue
 
@@ -315,3 +325,526 @@ class InteractiveDiarization(Pipeline):
 
     def get_metric(self) -> DiarizationErrorRate:
         return DiarizationErrorRate(collar=0.0, skip_overlap=False)
+
+    @staticmethod
+    def iter_chunks(duration: float, chunk: float = 30) -> Iterator[Segment]:
+        """Partition [0, duration] time range into smaller chunks
+
+        Parameters
+        ----------
+        duration : float
+            Total duration, in seconds.
+        chunk : float, optional
+            Chunk duration, in seconds. Defaults to 30.
+
+        Yields
+        ------
+        focus : Segment
+        """
+
+        sliding_window = SlidingWindow(start=0.0, step=chunk, duration=chunk)
+        whole = Segment(0, duration)
+        for window in sliding_window(whole):
+            yield window
+        if window.end < duration:
+            yield Segment(window.end, duration)
+
+    @staticmethod
+    def normalize_audio(waveform: np.ndarray) -> np.ndarray:
+        """Normalize waveform for better display in Prodigy UI"""
+        return waveform / (np.max(np.abs(waveform)) + 1e-8)
+
+    @staticmethod
+    def prodigy_base64_audio(waveform: np.ndarray) -> Text:
+        with io.BytesIO() as content:
+            scipy.io.wavfile.write(content, PRODIGY_SAMPLE_RATE, waveform)
+            content.seek(0)
+            b64 = base64.b64encode(content.read()).decode()
+            b64 = f"data:audio/x-wav;base64,{b64}"
+        return b64
+
+    @staticmethod
+    def prodigy_audio_spans(annotation: Annotation, focus: Segment = None) -> Dict:
+        """Convert pyannote.core.Annotation to Prodigy's audio_spans
+
+        Parameters
+        ----------
+        annotation : Annotation
+            Annotation with t=0s time origin.
+        focus : Segment, optional
+            When provided, use its start time as audio_spans time origin.
+
+        Returns
+        -------
+        audio_spans : list of dict
+        """
+        shift = 0.0 if focus is None else focus.start
+        return [
+            {"start": segment.start - shift, "end": segment.end - shift, "label": label}
+            for segment, _, label in annotation.itertracks(yield_label=True)
+        ]
+
+    def prodigy_sad_manual_stream(
+        self, source: Path, chunk: float = 30
+    ) -> Iterator[Dict]:
+        """Task stream for pyannote.sad.manual Prodigy recipe
+
+        Parameters
+        ----------
+        source : Path
+            Directory containing audio files to annotate.
+        chunk : float, optional
+            Split long audio files into shorter chunks of that many seconds each.
+            Default to 30s.
+
+        Yields
+        ------
+        task : dict
+            Prodigy task with the following keys:
+            "path" : path to audio file
+            "text" : name of audio file
+            "chunk" : chunk start and end times
+            "audio" : base64 encoding of audio chunk
+            "audio_spans" : speech spans detected by pretrained SAD model
+            "audio_spans_original" : copy of "audio_spans"
+            "meta" : additional meta-data displayed in Prodigy UI
+        """
+
+        raw_audio = RawAudio(sample_rate=PRODIGY_SAMPLE_RATE, mono=True)
+
+        for audio_source in Audio(source):
+
+            path = audio_source["path"]
+            text = audio_source["text"]
+            file = {"uri": text, "database": source, "audio": path}
+
+            duration = get_audio_duration(file)
+            file["duration"] = duration
+
+            prodigy.log(f"RECIPE: detecting speech regions in '{path}'")
+
+            speech: Annotation = self.compute_speech(file).to_annotation(
+                generator=iter(lambda: "SPEECH", None)
+            )
+
+            if duration <= chunk:
+                waveform = raw_audio.crop(file, Segment(0, duration))
+                task_audio = self.prodigy_base64_audio(self.normalize_audio(waveform))
+                task_audio_spans = self.prodigy_audio_spans(speech)
+
+                yield {
+                    "path": path,
+                    "text": text,
+                    "audio": task_audio,
+                    "audio_spans": task_audio_spans,
+                    "audio_spans_original": copy.deepcopy(task_audio_spans),
+                    "chunk": {"start": 0, "end": duration},
+                    "meta": {"file": text},
+                    "recipe": "pyannote.sad.manual",
+                }
+
+            else:
+                for focus in self.iter_chunks(duration, chunk=chunk):
+                    task_text = f"{text} [{focus.start:.1f}, {focus.end:.1f}]"
+                    waveform = raw_audio.crop(file, focus)
+                    task_audio = self.prodigy_base64_audio(
+                        self.normalize_audio(waveform)
+                    )
+                    task_audio_spans = self.prodigy_audio_spans(
+                        speech.crop(focus, mode="intersection"), focus=focus
+                    )
+
+                    yield {
+                        "path": path,
+                        "text": task_text,
+                        "audio": task_audio,
+                        "audio_spans": task_audio_spans,
+                        "audio_spans_original": copy.deepcopy(task_audio_spans),
+                        "chunk": {"start": focus.start, "end": focus.end},
+                        "meta": {
+                            "file": text,
+                            "start": f"{focus.start:.1f}",
+                            "end": f"{focus.end:.1f}",
+                        },
+                        "recipe": "pyannote.sad.manual",
+                    }
+
+    @staticmethod
+    def prodigy_sad_manual_before_db(examples: List[Dict]) -> List[Dict]:
+
+        for eg in examples:
+
+            # remove (heavy) base64 audio
+            if "audio" in eg:
+                del eg["audio"]
+
+            # shift audio spans back to the whole file referential
+            chunk = eg.get("chunk", None)
+            if chunk is not None:
+                start = chunk["start"]
+                for span in eg["audio_spans"]:
+                    span["start"] += start
+                    span["end"] += start
+                for span in eg["audio_spans_original"]:
+                    span["start"] += start
+                    span["end"] += start
+
+        return examples
+
+    @staticmethod
+    def prodigy_sad_manual_load(
+        dataset: Text, source: Path, text: Text, path: Text
+    ) -> ProtocolFile:
+
+        db = connect()
+
+        examples = [
+            eg
+            for eg in db.get_dataset(dataset)
+            if eg["recipe"] == "pyannote.sad.manual"
+            and eg["path"] == path
+            and eg["answer"] == "accept"
+        ]
+
+        speech = Timeline(
+            segments=[
+                Segment(span["start"], span["end"])
+                for eg in examples
+                for span in eg["audio_spans"]
+            ]
+        ).support()
+
+        prodigy.log(f"RECIPE: {path}: loaded speech regions")
+
+        return {
+            "uri": text,
+            "database": source,
+            "audio": path,
+            "speech": speech,
+        }
+
+    @staticmethod
+    def prodigy_dia_binary_before_db(examples: List[Dict]) -> List[Dict]:
+
+        for eg in examples:
+
+            # remove (heavy) base64 audio
+            if "audio" in eg:
+                del eg["audio"]
+
+        return examples
+
+    @staticmethod
+    def prodigy_dia_binary_load(
+        dataset: Text, path: Text
+    ) -> Tuple[List[Tuple[float, float]], List[Tuple[float, float]]]:
+        """Load existing 'cannot link' and 'must link' constraints
+
+        Parameters
+        ----------
+        dataset : str
+            Dataset.
+        path : str
+            Path to audio file.
+
+        Returns
+        -------
+        cannot_link : list
+            List of "cannot link" constraints. For instance, [(1., 3.5)] means
+            that t=1s and t=3.5s cannot end up in the same cluster.
+        must_link : list
+            List of "must link" constraints. For instance, [(1., 3.5)] means
+            that t=1s and t=3.5s must end up in the same cluster.
+        dont_know : list
+            List of "don't know" annotations.
+        """
+
+        db = connect()
+
+        examples = [
+            eg
+            for eg in db.get_dataset(dataset)
+            if eg["recipe"] == "pyannote.dia.binary" and eg["path"] == path
+        ]
+
+        cannot_link = [
+            (eg["t1"], eg["t2"]) for eg in examples if eg["answer"] == "reject"
+        ]
+        must_link = [
+            (eg["t1"], eg["t2"]) for eg in examples if eg["answer"] == "accept"
+        ]
+        dont_know = [
+            (eg["t1"], eg["t2"])
+            for eg in examples
+            if eg["answer"] not in ["accept", "reject"]
+        ]
+
+        if len(cannot_link) > 0:
+            prodigy.log(
+                f"RECIPE: {path}: init: {len(cannot_link)} cannot link constraints"
+            )
+        if len(must_link) > 0:
+            prodigy.log(f"RECIPE: {path}: init: {len(must_link)} must link constraints")
+
+        return cannot_link, must_link, dont_know
+
+    @staticmethod
+    def time2clean(
+        constraints_time: List[Tuple[float, float]],
+        window: SlidingWindow,
+        assignment: np.ndarray,
+        all2clean: np.ndarray,
+    ) -> List[Tuple[int, int]]:
+        """Convert time-based constraints to index in clean embedding
+
+        Parameters
+        ----------
+        constraints_time : list of time pairs
+            Time-based constraints
+        window : SlidingWindow
+            Window used for embedding extraction
+        assignment : np.ndarray
+
+        Returns
+        -------
+        constraints : list of index pairs
+            Index-based constraints in clean embeddings array.
+
+        """
+
+        constraints = []
+        for t1, t2 in constraints_time:
+            i1 = window.closest_frame(t1)
+            if assignment[i1] <= 0:
+                continue
+            i2 = window.closest_frame(t2)
+            if assignment[i2] <= 0:
+                continue
+            constraints.append((all2clean[i1], all2clean[i2]))
+        return constraints
+
+    def prodigy_dia_binary_update(self, examples):
+
+        for eg in examples:
+
+            t1, t2 = eg["t1"], eg["t2"]
+
+            if eg["answer"] == "accept":
+                self.must_link_time.append((t1, t2))
+                prodigy.log(f"RECIPE: {self.path}: new constraint: must link")
+
+            elif eg["answer"] == "reject":
+                self.cannot_link_time.append((t1, t2))
+                prodigy.log(f"RECIPE: {self.path}: new constraint: cannot link")
+
+            else:
+                self.dont_know_time.append((t1, t2))
+                prodigy.log(f"RECIPE: {self.path}: new constraint: skip")
+
+    def prodigy_dia_binary_stream(self, dataset: Text, source: Path) -> Iterator[Dict]:
+
+        raw_audio = RawAudio(sample_rate=PRODIGY_SAMPLE_RATE, mono=True)
+
+        for audio_source in Audio(source):
+
+            path = audio_source["path"]
+            self.path = path
+            text = audio_source["text"]
+
+            # load human-validated speech activity detection
+            file = self.prodigy_sad_manual_load(dataset, source, text, path)
+
+            if not file["speech"]:
+                prodigy.log(f"RECIPE: {path}: skip: no annotated speech")
+                continue
+            speech = file["speech"]
+
+            # load human-validated (time-based) clustering constraints
+            (
+                self.cannot_link_time,
+                self.must_link_time,
+                self.dont_know_time,
+            ) = self.prodigy_dia_binary_load(dataset, path)
+
+            # compute embeddings for current file
+            prodigy.log(f"RECIPE: {path}: extracting speaker embeddings")
+            embedding = self.compute_embedding(file)
+            window = embedding.sliding_window
+
+            # extract embeddings fully included in speech regions
+            assignment = self.get_segment_assignment(embedding, speech)
+            clean_embedding = embedding[assignment > 0]
+
+            if len(clean_embedding) < 2:
+                prodigy.log(f"RECIPE: {path}: skip: not enough speech")
+                continue
+
+            # convert
+            all2clean = np.cumsum(assignment > 0) - 1
+            clean2all = np.arange(len(embedding))[assignment > 0]
+
+            done_with_current_file = False
+            while not done_with_current_file:
+
+                # IMPROVE do not recompute if no new constraint since last time
+
+                # filter and convert time-based constraints in whole file referential
+                # to index-based constraints in clean-only embeddings referential
+                cannot_link = self.time2clean(
+                    self.cannot_link_time, window, assignment, all2clean
+                )
+                must_link = self.time2clean(
+                    self.must_link_time, window, assignment, all2clean
+                )
+
+                prodigy.log(f"RECIPE: {path}: applying constrained clustering")
+
+                dendrogram = pool(
+                    clean_embedding,
+                    metric="cosine",
+                    cannot_link=cannot_link if cannot_link else None,
+                    must_link=must_link if must_link else None,
+                )
+
+                # iterate from dendrogram top to bottom
+                iterations = iter(range(len(dendrogram) - 1, 0, -1))
+
+                # IDEA instead of iterating from top to bottom,
+                # we could start by the iteration whose merging distance
+                # is the most similar to an "optimal" distance and then
+                # progressively wander away from it
+                # FIXME make sure iteration is not < 1
+                # iterations = iter(np.argsort(
+                #     np.abs(pipeline.emb_threshold - dendrogram[:, 2])
+                # ))
+
+                # IDEA we could stop annotation early once the
+                # current distance is very very small (and we can be sure
+                # that all iterations up to this point are correct)
+                # TODO
+
+                while True:
+
+                    try:
+                        i = next(iterations)
+                    except StopIteration as e:
+                        done_with_current_file = True
+                        break
+
+                    distance = dendrogram[i, 2]
+
+                    # if distance is infinite, this is a fake clustering step
+                    # prevented by a "cannot link" constraint.
+                    # see pyannote.core.hierarchy.pool for details
+                    if distance == np.infty:
+                        prodigy.log(f"RECIPE: {path}: depth {i}: skip: cannot link")
+                        continue
+
+                    # find clusters k1 and k2 that were merged at iteration i
+                    current = fcluster(
+                        dendrogram, dendrogram[i, 2], criterion="distance"
+                    )
+                    previous = fcluster(
+                        dendrogram, dendrogram[i - 1, 2], criterion="distance",
+                    )
+                    n_current, n_previous = max(current), max(previous)
+
+                    # TODO handle these corner cases better
+                    if n_current >= n_previous or n_previous - n_current > 1:
+                        prodigy.log(f"RECIPE: {path}: depth {i}: skip: corner case")
+                        continue
+                    C = np.zeros((n_current, n_previous))
+                    for k_current, k_previous in zip(current, previous):
+                        C[k_current - 1, k_previous - 1] += 1
+                    k1, k2 = (
+                        np.where(C[int(np.where(np.sum(C > 0, axis=1) == 2)[0])] > 0)[0]
+                        + 1
+                    )
+
+                    # find centroids of clusters k1 and k2
+                    indices1 = np.where(previous == k1)[0]
+                    i1 = indices1[
+                        np.argmin(
+                            np.mean(
+                                squareform(
+                                    pdist(clean_embedding[indices1], metric="cosine")
+                                ),
+                                axis=1,
+                            )
+                        )
+                    ]
+
+                    indices2 = np.where(previous == k2)[0]
+                    i2 = indices2[
+                        np.argmin(
+                            np.mean(
+                                squareform(
+                                    pdist(clean_embedding[indices2], metric="cosine")
+                                ),
+                                axis=1,
+                            )
+                        )
+                    ]
+
+                    i1, i2 = sorted([i1, i2])
+                    segment1 = window[clean2all[i1]]
+                    t1 = segment1.middle
+                    segment2 = window[clean2all[i2]]
+                    t2 = segment2.middle
+
+                    # did the human in the loop already provide feedback on this pair of segments?
+                    pair = (t1, t2)
+
+                    if (
+                        pair in self.cannot_link_time
+                        or pair in self.must_link_time
+                        or pair in self.dont_know_time
+                    ):
+                        # do not annotate the same pair twice
+                        prodigy.log(f"RECIPE: {path}: depth {i}: skip: exists")
+                        continue
+
+                    prodigy.log(f"RECIPE: {path}: depth {i}: annotate")
+
+                    task_text = f"{text} t={t1:.1f}s vs. t={t2:.1f}s"
+
+                    waveform1 = self.normalize_audio(raw_audio.crop(file, segment1))
+                    waveform2 = self.normalize_audio(raw_audio.crop(file, segment2))
+                    task_audio = self.prodigy_base64_audio(
+                        np.vstack([waveform1, waveform2])
+                    )
+                    task_audio_spans = [
+                        {
+                            "start": segment1.middle
+                            - 0.5 * window.step
+                            - segment1.start,
+                            "end": segment1.middle + 0.5 * window.step - segment1.start,
+                            "label": "SPEAKER",
+                        },
+                        {
+                            "start": segment1.duration
+                            + segment2.middle
+                            - 0.5 * window.step
+                            - segment2.start,
+                            "end": segment1.duration
+                            + segment2.middle
+                            + 0.5 * window.step
+                            - segment2.start,
+                            "label": "SAME_SPEAKER",
+                        },
+                    ]
+
+                    yield {
+                        "path": path,
+                        "text": task_text,
+                        "audio": task_audio,
+                        "audio_spans": task_audio_spans,
+                        "t1": t1,
+                        "t2": t2,
+                        "meta": {"t1": f"{t1:.1f}s", "t2": f"{t2:.1f}s", "file": text,},
+                        "recipe": "pyannote.dia.binary",
+                    }
+
+                    # at that point, "prodigy_dia_binary_update" is called. hence,
+                    # we exit the loop because the dendrogram needs to be updated
+                    break
