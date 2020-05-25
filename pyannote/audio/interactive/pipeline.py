@@ -671,6 +671,9 @@ class InteractiveDiarization(Pipeline):
             embedding = self.compute_embedding(file)
             window = embedding.sliding_window
 
+            # number of consecutive steps with overlap
+            n_steps = int(np.ceil(window.duration / window.step))
+
             # extract embeddings fully included in speech regions
             assignment = self.get_segment_assignment(embedding, speech)
             clean_embedding = embedding[assignment > 0]
@@ -761,8 +764,24 @@ class InteractiveDiarization(Pipeline):
                         + 1
                     )
 
+                    # find indices of embeddings fully included in clusters k1 and k2
+                    neighbors1 = np.convolve(previous == k1, [1] * n_steps, mode="same")
+                    indices1 = np.where(neighbors1 == n_steps)[0]
+                    # if indices1.size == 0:
+                    #     indices1 = np.where(neighbors1 == np.max(neighbors1))[0]
+
+                    neighbors2 = np.convolve(previous == k2, [1] * n_steps, mode="same")
+                    indices2 = np.where(neighbors2 == n_steps)[0]
+                    # if indices2.size == 0:
+                    #     indices2 = np.where(neighbors2 == np.max(neighbors2))[0]
+
+                    if indices1.size == 0 or indices2.size == 0:
+                        prodigy.log(
+                            f"RECIPE: {path}: depth {i}: skip: too short segments"
+                        )
+                        continue
+
                     # find centroids of clusters k1 and k2
-                    indices1 = np.where(previous == k1)[0]
                     i1 = indices1[
                         np.argmin(
                             np.mean(
@@ -774,7 +793,6 @@ class InteractiveDiarization(Pipeline):
                         )
                     ]
 
-                    indices2 = np.where(previous == k2)[0]
                     i2 = indices2[
                         np.argmin(
                             np.mean(
@@ -787,6 +805,12 @@ class InteractiveDiarization(Pipeline):
                     ]
 
                     i1, i2 = sorted([i1, i2])
+                    distance = cdist(
+                        clean_embedding[np.newaxis, i1],
+                        clean_embedding[np.newaxis, i2],
+                        metric="cosine",
+                    )[0, 0]
+
                     segment1 = window[clean2all[i1]]
                     t1 = segment1.middle
                     segment2 = window[clean2all[i2]]
@@ -813,23 +837,32 @@ class InteractiveDiarization(Pipeline):
                     task_audio = self.prodigy_base64_audio(
                         np.vstack([waveform1, waveform2])
                     )
+                    # task_audio_spans = [
+                    #     {
+                    #         "start": segment1.middle
+                    #         - 0.5 * window.step
+                    #         - segment1.start,
+                    #         "end": segment1.middle + 0.5 * window.step - segment1.start,
+                    #         "label": "SPEAKER",
+                    #     },
+                    #     {
+                    #         "start": segment1.duration
+                    #         + segment2.middle
+                    #         - 0.5 * window.step
+                    #         - segment2.start,
+                    #         "end": segment1.duration
+                    #         + segment2.middle
+                    #         + 0.5 * window.step
+                    #         - segment2.start,
+                    #         "label": "SAME_SPEAKER",
+                    #     },
+                    # ]
+
                     task_audio_spans = [
+                        {"start": 0.0, "end": segment1.duration, "label": "SPEAKER",},
                         {
-                            "start": segment1.middle
-                            - 0.5 * window.step
-                            - segment1.start,
-                            "end": segment1.middle + 0.5 * window.step - segment1.start,
-                            "label": "SPEAKER",
-                        },
-                        {
-                            "start": segment1.duration
-                            + segment2.middle
-                            - 0.5 * window.step
-                            - segment2.start,
-                            "end": segment1.duration
-                            + segment2.middle
-                            + 0.5 * window.step
-                            - segment2.start,
+                            "start": segment1.duration,
+                            "end": segment1.duration + segment2.duration,
                             "label": "SAME_SPEAKER",
                         },
                     ]
@@ -841,7 +874,12 @@ class InteractiveDiarization(Pipeline):
                         "audio_spans": task_audio_spans,
                         "t1": t1,
                         "t2": t2,
-                        "meta": {"t1": f"{t1:.1f}s", "t2": f"{t2:.1f}s", "file": text,},
+                        "meta": {
+                            "t1": f"{t1:.1f}s",
+                            "t2": f"{t2:.1f}s",
+                            "file": text,
+                            "distance": f"{distance:.2f}",
+                        },
                         "recipe": "pyannote.dia.binary",
                     }
 
