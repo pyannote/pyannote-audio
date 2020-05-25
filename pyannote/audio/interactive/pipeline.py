@@ -168,6 +168,43 @@ class InteractiveDiarization(Pipeline):
 
         return self.emb(current_file)
 
+    def get_segment_assignment(
+        self, embedding: SlidingWindowFeature, speech: Timeline
+    ) -> np.ndarray:
+        """Get segment assignment
+
+        Parameters
+        ----------
+        embedding : SlidingWindowFeature
+            Embeddings.
+        speech : Timeline
+            Speech regions.
+
+        Returns
+        -------
+        assignment : (num_embedding, ) np.ndarray
+            * assignment[i] = s with s > 0 means that ith embedding is strictly
+            contained in (1-based) sth segment.
+            * assignment[i] = s with s < 0 means that more than half of ith
+            embedding is part of (1-based) sth segment.
+            * assignment[i] = 0 means that none of the above is true.
+        """
+
+        assignment: np.ndarray = np.zeros((len(embedding),), dtype=np.int32)
+
+        for s, segment in enumerate(speech):
+            indices = embedding.sliding_window.crop(segment, mode="strict")
+            if len(indices) > 0:
+                strict = 1
+            else:
+                strict = -1
+                indices = embedding.sliding_window.crop(segment, mode="center")
+            for i in indices:
+                if i < 0 or i >= len(embedding):
+                    continue
+                assignment[i] = strict * (s + 1)
+
+        return assignment
 
     def __call__(self, current_file: ProtocolFile) -> Annotation:
         """Apply speaker diarization
@@ -208,37 +245,19 @@ class InteractiveDiarization(Pipeline):
         else:
             speech: Timeline = self.compute_speech(current_file)
 
-        # strict_segment_assignment[i] = s (s > 0) means that the ith embedding belongs
-        #                           to sth speech segment.
-        # strict_segment_assignment[i] = 0 means that the ith embedding either contains
-        #                           some non-speech region or overlaps with two
-        #                           adjacent speech segments
-        strict_segment_assignment: np.ndarray = np.zeros(
-            (len(embedding),), dtype=np.int32
-        )
-        loose_segment_assignment: np.ndarray = np.zeros(
-            (len(embedding),), dtype=np.int32
-        )
-        for s, segment in enumerate(speech):
-            indices = embedding.sliding_window.crop(segment, mode="strict")
-            if len(indices) > 0:
-                assignment = strict_segment_assignment
-            else:
-                indices = embedding.sliding_window.crop(segment, mode="center")
-                assignment = loose_segment_assignment
-            for i in indices:
-                if i < 0:
-                    continue
-                if i >= len(embedding):
-                    break
-                assignment[i] = s + 1
+        # segment_assignment[i] = s with s > 0 means that ith embedding is
+        #       strictly contained in (1-based) sth segment.
+        # segment_assignment[i] = s with s < 0 means that more than half of ith
+        #       embedding is part of (1-based) sth segment.
+        # segment_assignment[i] = 0 means that none of the above is true.
+        segment_assignment: np.ndarray = self.get_segment_assignment(embedding, speech)
 
         # cluster_assignment[i] = k (k > 0) means that the ith embedding belongs
         #                           to kth cluster
-        # cluster_assignment[i] = 0 when strict_segment_assignment[i] = 0
+        # cluster_assignment[i] = 0 when segment_assignment[i] = 0
         cluster_assignment: np.ndarray = np.zeros((len(embedding),), dtype=np.int32)
 
-        strict_indices = np.where(strict_segment_assignment > 0)[0]
+        strict_indices = np.where(segment_assignment > 0)[0]
         if len(strict_indices) < 2:
             cluster_assignment[strict_indices] = 1
 
@@ -248,7 +267,7 @@ class InteractiveDiarization(Pipeline):
             for i, k in zip(strict_indices, clusters):
                 cluster_assignment[i] = k
 
-        loose_indices = np.where(loose_segment_assignment > 0)[0]
+        loose_indices = np.where(segment_assignment < 0)[0]
         if len(strict_indices) == 0:
             if len(loose_indices) < 2:
                 clusters = [1] * len(loose_indices)
@@ -275,9 +294,9 @@ class InteractiveDiarization(Pipeline):
         hypothesis = Annotation(uri=current_file.get("uri", None))
         for s, segment in enumerate(speech):
 
-            indices = np.where(strict_segment_assignment == s + 1)[0]
+            indices = np.where(segment_assignment == s + 1)[0]
             if len(indices) == 0:
-                indices = np.where(loose_segment_assignment == s + 1)[0]
+                indices = np.where(segment_assignment == - (s + 1))[0]
                 if len(indices) == 0:
                     continue
 
