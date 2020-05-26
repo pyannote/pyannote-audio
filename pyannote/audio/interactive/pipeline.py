@@ -48,6 +48,7 @@ from pyannote.core import SlidingWindow
 from pyannote.core import SlidingWindowFeature
 from pyannote.audio.utils.signal import Binarize
 from pyannote.core.utils.hierarchy import pool
+from pyannote.core.utils.hierarchy import propagate_constraints
 from scipy.cluster.hierarchy import fcluster
 from scipy.spatial.distance import cdist
 from scipy.spatial.distance import pdist
@@ -63,6 +64,10 @@ import io
 import copy
 
 PRODIGY_SAMPLE_RATE = 16000
+Time = float
+
+from .utils import time2index
+from .utils import index2index
 
 
 class InteractiveDiarization(Pipeline):
@@ -217,13 +222,22 @@ class InteractiveDiarization(Pipeline):
 
         return assignment
 
-    def __call__(self, current_file: ProtocolFile) -> Annotation:
+    def __call__(
+        self,
+        current_file: ProtocolFile,
+        cannot_link: List[Tuple[Time, Time]] = None,
+        must_link: List[Tuple[Time, Time]] = None,
+    ) -> Annotation:
         """Apply speaker diarization
 
         Parameters
         ----------
         current_file : ProtocolFile
             Protocol file.
+        cannot_link :
+            List of time-based "cannot link" constraints.
+        must_link :
+            List of time-based "must link" constraints.
 
         Returns
         -------
@@ -244,6 +258,8 @@ class InteractiveDiarization(Pipeline):
         # every time a file is processed: embeddings must be recomputed
         else:
             embedding: SlidingWindowFeature = self.compute_embedding(current_file)
+
+        window: SlidingWindow = embedding.sliding_window
 
         # in "interactive annotation" mode, there is no need to recompute speech
         # regions every time a file is processed: they can be passed with the
@@ -268,18 +284,31 @@ class InteractiveDiarization(Pipeline):
         # cluster_assignment[i] = 0 when segment_assignment[i] = 0
         cluster_assignment: np.ndarray = np.zeros((len(embedding),), dtype=np.int32)
 
-        strict_indices = np.where(segment_assignment > 0)[0]
-        if len(strict_indices) < 2:
-            cluster_assignment[strict_indices] = 1
+        clean = segment_assignment > 0
+        noisy = segment_assignment < 0
+        clean_indices = np.where(clean)[0]
+        if len(clean_indices) < 2:
+            cluster_assignment[clean_indices] = 1
 
         else:
-            dendrogram = pool(embedding[strict_indices], metric="cosine")
+
+            # convert time-based constraints to index-based constraints
+            cannot_link = index2index(time2index(cannot_link, window), clean)
+            must_link = index2index(time2index(must_link, window), clean)
+
+            dendrogram = pool(
+                embedding[clean_indices],
+                metric="cosine",
+                cannot_link=cannot_link,
+                must_link=must_link,
+                must_link_method="propagate",
+            )
             clusters = fcluster(dendrogram, self.emb_threshold, criterion="distance")
-            for i, k in zip(strict_indices, clusters):
+            for i, k in zip(clean_indices, clusters):
                 cluster_assignment[i] = k
 
-        loose_indices = np.where(segment_assignment < 0)[0]
-        if len(strict_indices) == 0:
+        loose_indices = np.where(noisy)[0]
+        if len(clean_indices) == 0:
             if len(loose_indices) < 2:
                 clusters = [1] * len(loose_indices)
             else:
@@ -293,11 +322,11 @@ class InteractiveDiarization(Pipeline):
         else:
             # TODO. try distance to average instead
             distance = cdist(
-                embedding[strict_indices], embedding[loose_indices], metric="cosine"
+                embedding[clean_indices], embedding[loose_indices], metric="cosine"
             )
             nearest_neighbor = np.argmin(distance, axis=0)
             for loose_index, nn in zip(loose_indices, nearest_neighbor):
-                strict_index = strict_indices[nn]
+                strict_index = clean_indices[nn]
                 cluster_assignment[loose_index] = cluster_assignment[strict_index]
 
         # convert cluster assignment to pyannote.core.Annotation
@@ -316,6 +345,7 @@ class InteractiveDiarization(Pipeline):
             start, k = segment.start, clusters[0]
             change_point = np.diff(clusters) != 0
             for i, new_k in zip(indices[1:][change_point], clusters[1:][change_point]):
+                # FIXME. this should be + 0.5 x step
                 end = embedding.sliding_window[i].middle
                 hypothesis[Segment(start, end)] = k
                 start = end
@@ -587,44 +617,16 @@ class InteractiveDiarization(Pipeline):
         if len(must_link) > 0:
             prodigy.log(f"RECIPE: {path}: init: {len(must_link)} must link constraints")
 
+        # expand list of "cannot link" constraints thanks to the following rule
+        # (u != v) & (v == w) ==> u != w
+        cannot_link = propagate_constraints(cannot_link, must_link)
+
         return cannot_link, must_link, dont_know
 
-    @staticmethod
-    def time2clean(
-        constraints_time: List[Tuple[float, float]],
-        window: SlidingWindow,
-        assignment: np.ndarray,
-        all2clean: np.ndarray,
-    ) -> List[Tuple[int, int]]:
-        """Convert time-based constraints to index in clean embedding
-
-        Parameters
-        ----------
-        constraints_time : list of time pairs
-            Time-based constraints
-        window : SlidingWindow
-            Window used for embedding extraction
-        assignment : np.ndarray
-
-        Returns
-        -------
-        constraints : list of index pairs
-            Index-based constraints in clean embeddings array.
-
-        """
-
-        constraints = []
-        for t1, t2 in constraints_time:
-            i1 = window.closest_frame(t1)
-            if assignment[i1] <= 0:
-                continue
-            i2 = window.closest_frame(t2)
-            if assignment[i2] <= 0:
-                continue
-            constraints.append((all2clean[i1], all2clean[i2]))
-        return constraints
-
     def prodigy_dia_binary_update(self, examples):
+        """"""
+
+        needs_update = False
 
         for eg in examples:
 
@@ -632,15 +634,30 @@ class InteractiveDiarization(Pipeline):
 
             if eg["answer"] == "accept":
                 self.must_link_time.append((t1, t2))
-                prodigy.log(f"RECIPE: {self.path}: new constraint: must link")
+                needs_update = True
+                prodigy.log(f"RECIPE: {self.path}: new constraint: +1 must link")
 
             elif eg["answer"] == "reject":
                 self.cannot_link_time.append((t1, t2))
-                prodigy.log(f"RECIPE: {self.path}: new constraint: cannot link")
+                needs_update = True
+                prodigy.log(f"RECIPE: {self.path}: new constraint: +1 cannot link")
 
             else:
                 self.dont_know_time.append((t1, t2))
                 prodigy.log(f"RECIPE: {self.path}: new constraint: skip")
+
+        # expand list of "cannot link" constraints thanks to the following rule
+        # (u != v) & (v == w) ==> u != w
+        if needs_update:
+            num_cannot = len(self.cannot_link_time)
+            self.cannot_link_time = propagate_constraints(
+                self.cannot_link_time, self.must_link_time
+            )
+            new_num_cannot = len(self.cannot_link_time)
+            if new_num_cannot > num_cannot:
+                prodigy.log(
+                    f"RECIPE: {self.path}: propagate constraint: +{new_num_cannot - num_cannot} cannot link"
+                )
 
     def prodigy_dia_binary_stream(self, dataset: Text, source: Path) -> Iterator[Dict]:
 
@@ -684,8 +701,8 @@ class InteractiveDiarization(Pipeline):
                 continue
 
             # convert
-            all2clean = np.cumsum(assignment > 0) - 1
-            clean2all = np.arange(len(embedding))[assignment > 0]
+            clean = assignment > 0
+            clean2all = index2index(None, clean, reverse=True, return_mapping=True)
 
             done_with_current_file = False
             while not done_with_current_file:
@@ -694,12 +711,10 @@ class InteractiveDiarization(Pipeline):
 
                 # filter and convert time-based constraints in whole file referential
                 # to index-based constraints in clean-only embeddings referential
-                cannot_link = self.time2clean(
-                    self.cannot_link_time, window, assignment, all2clean
+                cannot_link = index2index(
+                    time2index(self.cannot_link_time, window), clean
                 )
-                must_link = self.time2clean(
-                    self.must_link_time, window, assignment, all2clean
-                )
+                must_link = index2index(time2index(self.must_link_time, window), clean)
 
                 prodigy.log(f"RECIPE: {path}: applying constrained clustering")
 
@@ -708,6 +723,7 @@ class InteractiveDiarization(Pipeline):
                     metric="cosine",
                     cannot_link=cannot_link if cannot_link else None,
                     must_link=must_link if must_link else None,
+                    must_link_method="propagate",
                 )
 
                 # # iterate from dendrogram top to bottom
