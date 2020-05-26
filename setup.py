@@ -50,6 +50,7 @@ setup(
         "prodigy_recipes": [
             "pyannote.sad.manual = pyannote.audio.interactive.recipe:sad_manual",
             "pyannote.dia.binary = pyannote.audio.interactive.recipe:dia_binary",
+            "pyannote.dia.manual = pyannote.audio.interactive.recipe:dia_manual",
         ],
     },
     version=versioneer.get_version(),

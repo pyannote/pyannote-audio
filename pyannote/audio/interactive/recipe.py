@@ -28,6 +28,8 @@ from typing import Text, Dict
 import prodigy
 from .pipeline import InteractiveDiarization
 
+# Hyper-parameters tuned to minimize diarization error rate
+# on one third of DIHARD II training set
 PRETRAINED_PARAMS = {
     "emb_duration": 1.7657045140297274,
     "emb_step_ratio": 0.20414598809353782,
@@ -94,5 +96,31 @@ def dia_binary(dataset: Text, source: Path) -> Dict:
             "labels": ["SPEAKER", "SAME_SPEAKER"],
             "batch_size": 1,
             "instant_submit": True,
+        },
+    }
+
+
+@prodigy.recipe(
+    "pyannote.dia.manual",
+    dataset=("Dataset to save annotations to", "positional", None, str),
+    source=("Directory containing audio files to annotate", "positional", None, Path),
+)
+def dia_manual(dataset: Text, source: Path) -> Dict:
+
+    pipeline = InteractiveDiarization().instantiate(PRETRAINED_PARAMS)
+
+    return {
+        "dataset": dataset,
+        "view_id": "audio_manual",
+        "stream": pipeline.prodigy_dia_manual_stream(dataset, source),
+        "before_db": pipeline.prodigy_dia_manual_before_db,
+        "config": {
+            "audio_autoplay": True,
+            "audio_loop": True,
+            "show_audio_minimap": True,
+            "audio_bar_width": 3,
+            "audio_bar_height": 1,
+            "labels": [f"SPEAKER_{i+1}" for i in range(10)] + ["OTHER"],
+            "batch_size": 1,
         },
     }

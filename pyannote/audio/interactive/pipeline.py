@@ -542,7 +542,12 @@ class InteractiveDiarization(Pipeline):
                 Segment(span["start"], span["end"])
                 for eg in examples
                 for span in eg["audio_spans"]
-            ]
+            ],
+            uri=text,
+        ).support()
+
+        annotated = Timeline(
+            segments=[Segment(**eg["chunk"]) for eg in examples], uri=text,
         ).support()
 
         prodigy.log(f"RECIPE: {path}: loaded speech regions")
@@ -552,6 +557,7 @@ class InteractiveDiarization(Pipeline):
             "database": source,
             "audio": path,
             "speech": speech,
+            "annotated": annotated,
         }
 
     @staticmethod
@@ -568,7 +574,9 @@ class InteractiveDiarization(Pipeline):
     @staticmethod
     def prodigy_dia_binary_load(
         dataset: Text, path: Text
-    ) -> Tuple[List[Tuple[float, float]], List[Tuple[float, float]]]:
+    ) -> Tuple[
+        List[Tuple[float, float]], List[Tuple[float, float]], List[Tuple[float, float]]
+    ]:
         """Load existing 'cannot link' and 'must link' constraints
 
         Parameters
@@ -880,3 +888,61 @@ class InteractiveDiarization(Pipeline):
                     # at that point, "prodigy_dia_binary_update" is called. hence,
                     # we exit the loop because the dendrogram needs to be updated
                     break
+
+    def prodigy_dia_manual_stream(self, dataset: Text, source: Path) -> Iterator[Dict]:
+
+        for audio_source in Audio(source):
+
+            path = audio_source["path"]
+            self.path = path
+            text = audio_source["text"]
+
+            # load manual annotation for speech activity detection
+            file = self.prodigy_sad_manual_load(dataset, source, text, path)
+
+            # use manual speech/non-speech annotation where available,
+            # and automatic speech/non-speech else where
+            duration = get_audio_duration(file)
+            file_extent = Segment(0, duration)
+            annotated = file["annotated"]
+            non_annotated = annotated.gaps(file_extent)
+            if non_annotated:
+                manual_speech = file["speech"]
+                automatic_speech = self.compute_speech(file)
+                file["speech"] = automatic_speech.crop(non_annotated).update(
+                    manual_speech
+                )
+
+            # load manual annotation for same/different speaker
+            cannot_link, must_link, dont_know = self.prodigy_dia_binary_load(
+                dataset, path
+            )
+
+            # apply speaker diarization pipeline using same/different speaker
+            # manual annotation as must link/cannot link constraints
+            hypothesis = self(file, cannot_link=cannot_link, must_link=must_link)
+
+            # rename 9 most talkative speakers to {SPEAKER_1, ..., SPEAKER_9}
+            # and remaining speakers as OTHER
+            mapping = {
+                label: f"SPEAKER_{s+1}" if s < 9 else "OTHER"
+                for s, (label, duration) in enumerate(hypothesis.chart())
+            }
+            hypothesis = hypothesis.rename_labels(mapping=mapping)
+
+            audio_spans = self.prodigy_audio_spans(hypothesis)
+            audio_source["audio_spans"] = audio_spans
+            audio_source["orig_audio_spans"] = copy.deepcopy(audio_spans)
+
+            yield audio_source
+
+    @staticmethod
+    def prodigy_dia_manual_before_db(examples: List[Dict]) -> List[Dict]:
+
+        for eg in examples:
+
+            # remove (heavy) base64 audio
+            if "audio" in eg:
+                del eg["audio"]
+
+        return examples
