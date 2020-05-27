@@ -48,9 +48,9 @@ setup(
             "pyannote-speech-feature=pyannote.audio.applications.feature_extraction:main",
         ],
         "prodigy_recipes": [
-            "pyannote.sad.manual = pyannote.audio.interactive.recipe:sad_manual",
-            "pyannote.dia.binary = pyannote.audio.interactive.recipe:dia_binary",
-            "pyannote.dia.manual = pyannote.audio.interactive.recipe:dia_manual",
+            "pyannote.sad.manual = pyannote.audio.interactive.recipes.sad:sad_manual",
+            "pyannote.dia.binary = pyannote.audio.interactive.recipes.dia:dia_binary",
+            "pyannote.dia.manual = pyannote.audio.interactive.recipes.dia:dia_manual",
         ],
     },
     version=versioneer.get_version(),
