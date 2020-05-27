@@ -1,7 +1,7 @@
 cachetools >= 2.0.0
 librosa >= 0.7.0
 pandas >= 0.18.0
-pyannote.core >= 4.0
+pyannote.core >= 4.1
 pyannote.database >= 3.0
 pyannote.metrics >= 2.3
 pyannote.pipeline >= 1.5
