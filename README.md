@@ -32,16 +32,19 @@ $ pip install .
 * Use [pretrained](https://github.com/pyannote/pyannote-audio-hub) models and pipelines
   * [Apply pretrained pipelines on your own data](tutorials/pretrained/pipeline)
   * [Apply pretrained models on your own data](tutorials/pretrained/model)
-* [Prepare your own dataset for training or fine-tuning](tutorials/data_preparation)
-* [Fine-tune pretrained models to your own data](tutorials/finetune)
+* Prepare your own data
+  * [Annotate your own data semi-automatically with Prodigy](tutorials/prodigy)
+  * [Prepare your own dataset for training](tutorials/data_preparation)
 * Train models on your own data
   * [Speech activity detection](tutorials/models/speech_activity_detection)
   * [Speaker change detection](tutorials/models/speaker_change_detection)
   * [Overlapped speech detection](tutorials/models/overlap_detection)
   * [Speaker embedding](tutorials/models/speaker_embedding)
+  * [Fine-tune pretrained models to your own data](tutorials/finetune)
 * Tune pipelines on your own data
   * [Speech activity detection pipeline](tutorials/pipelines/speech_activity_detection)
   * [Speaker diarization pipeline](tutorials/pipelines/speaker_diarization)
+
 
 Until a proper documentation is released, note that part of the API is described in [this](tutorials/pretrained/model) tutorial.  
 
