@@ -48,6 +48,7 @@ from pyannote.audio.features.wrapper import Wrapper
 from pyannote.audio.features.utils import get_audio_duration
 
 from pyannote.metrics.diarization import DiarizationErrorRate
+from pyannote.metrics.detection import DetectionErroRate
 
 from pyannote.audio.utils.signal import Binarize
 
@@ -83,6 +84,8 @@ class InteractiveDiarization(Pipeline):
         Pretrained speaker embedding model. Defaults to "emb".
     batch_size : int, optional
         Batch size.
+    only_sad : bool, optional
+        Set to True if you only care about speech activity detection.
 
     Hyper-parameters
     ----------------
@@ -102,6 +105,7 @@ class InteractiveDiarization(Pipeline):
         sad: Union[Text, Path] = {"sad": {"duration": 2.0, "step": 0.1}},
         emb: Union[Text, Path] = "emb",
         batch_size: int = None,
+        only_sad: bool = False,
     ):
 
         super().__init__()
@@ -115,6 +119,9 @@ class InteractiveDiarization(Pipeline):
         self.sad_threshold_off = Uniform(0.0, 1.0)
         self.sad_min_duration_on = Uniform(0.0, 0.5)
         self.sad_min_duration_off = Uniform(0.0, 0.5)
+
+        if self.only_sad:
+            return
 
         self.emb = Wrapper(emb)
         if batch_size is not None:
@@ -136,10 +143,11 @@ class InteractiveDiarization(Pipeline):
             min_duration_off=self.sad_min_duration_off,
         )
 
-        # embeddings will be extracted with a sliding window
-        # of "emb_duration" duration and "emb_step_ratio x emb_duration" step.
-        self.emb.duration = self.emb_duration
-        self.emb.step = self.emb_step_ratio
+        if not self.only_sad:
+            # embeddings will be extracted with a sliding window
+            # of "emb_duration" duration and "emb_step_ratio x emb_duration" step.
+            self.emb.duration = self.emb_duration
+            self.emb.step = self.emb_step_ratio
 
     def compute_speech(self, current_file: ProtocolFile) -> Timeline:
         """Apply speech activity detection
@@ -255,6 +263,20 @@ class InteractiveDiarization(Pipeline):
         if "duration" not in current_file:
             current_file["duration"] = get_audio_duration(current_file)
 
+        # in "interactive annotation" mode, there is no need to recompute speech
+        # regions every time a file is processed: they can be passed with the
+        # file directly
+        if "speech" in current_file:
+            speech: Timeline = current_file["speech"]
+
+        # in "pipeline optimization" mode, pipeline hyper-parameters are different
+        # every time a file is processed: speech regions must be recomputed
+        else:
+            speech = self.compute_speech(current_file)
+
+        if self.only_sad:
+            return speech.to_annotation(generator=iter(lambda: "SPEECH", None))
+
         # in "interactive annotation" mode, pipeline hyper-parameters are fixed.
         # therefore, there is no need to recompute embeddings every time a file
         # is processed: they can be passed with the file directly.
@@ -267,17 +289,6 @@ class InteractiveDiarization(Pipeline):
             embedding = self.compute_embedding(current_file)
 
         window: SlidingWindow = embedding.sliding_window
-
-        # in "interactive annotation" mode, there is no need to recompute speech
-        # regions every time a file is processed: they can be passed with the
-        # file directly
-        if "speech" in current_file:
-            speech: Timeline = current_file["speech"]
-
-        # in "pipeline optimization" mode, pipeline hyper-parameters are different
-        # every time a file is processed: speech regions must be recomputed
-        else:
-            speech = self.compute_speech(current_file)
 
         # segment_assignment[i] = s with s > 0 means that ith embedding is
         #       strictly contained in (1-based) sth segment.
@@ -360,5 +371,8 @@ class InteractiveDiarization(Pipeline):
 
         return hypothesis.support()
 
-    def get_metric(self) -> DiarizationErrorRate:
-        return DiarizationErrorRate(collar=0.0, skip_overlap=False)
+    def get_metric(self) -> Union[DetectionErroRate, DiarizationErrorRate]:
+        if self.only_sad:
+            return DetectionErroRate(collar=0.0)
+        else:
+            return DiarizationErrorRate(collar=0.0, skip_overlap=False)
