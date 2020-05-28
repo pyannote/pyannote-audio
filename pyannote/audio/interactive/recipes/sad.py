@@ -118,8 +118,7 @@ def sad_manual_stream(
             }
 
         else:
-            # TODO: shuffle chunks (for more representativeness)
-            for focus in chunks(duration, chunk=chunk):
+            for focus in chunks(duration, chunk=chunk, shuffle=True):
                 task_text = f"{text} [{focus.start:.1f}, {focus.end:.1f}]"
                 waveform = raw_audio.crop(file, focus)
                 task_audio = to_base64(normalize(waveform), sample_rate=SAMPLE_RATE)

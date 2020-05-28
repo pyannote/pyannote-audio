@@ -30,6 +30,7 @@ from typing import Text, List, Dict, Iterator
 from pyannote.core import Segment, SlidingWindow, Annotation
 
 import numpy as np
+import random
 
 import io
 import base64
@@ -94,7 +95,9 @@ def remove_audio_before_db(examples: List[Dict]) -> List[Dict]:
     return examples
 
 
-def chunks(duration: float, chunk: float = 30) -> Iterator[Segment]:
+def chunks(
+    duration: float, chunk: float = 30, shuffle: bool = False
+) -> Iterator[Segment]:
     """Partition [0, duration] time range into smaller chunks
 
     Parameters
@@ -103,6 +106,8 @@ def chunks(duration: float, chunk: float = 30) -> Iterator[Segment]:
         Total duration, in seconds.
     chunk : float, optional
         Chunk duration, in seconds. Defaults to 30.
+    shuffle : bool, optional
+        Yield chunks in random order. Defaults to chronological order.
 
     Yields
     ------
@@ -111,7 +116,15 @@ def chunks(duration: float, chunk: float = 30) -> Iterator[Segment]:
 
     sliding_window = SlidingWindow(start=0.0, step=chunk, duration=chunk)
     whole = Segment(0, duration)
-    for window in sliding_window(whole):
-        yield window
-    if window.end < duration:
-        yield Segment(window.end, duration)
+
+    if shuffle:
+        chunks_ = list(chunks(duration, chunk=chunk, shuffle=False))
+        random.shuffle(chunks_)
+        for chunk in chunks_:
+            yield chunk
+
+    else:
+        for window in sliding_window(whole):
+            yield window
+        if window.end < duration:
+            yield Segment(window.end, duration)
