@@ -159,7 +159,7 @@ class InteractiveDiarization(Pipeline):
         if "sad_scores" in current_file:
             sad_scores: SlidingWindowFeature = current_file["sad_scores"]
         else:
-            sad_scores: SlidingWindowFeature = self.sad(current_file)
+            sad_scores = self.sad(current_file)
             if np.nanmean(sad_scores) < 0:
                 sad_scores = np.exp(sad_scores)
             current_file["sad_scores"] = sad_scores
@@ -264,7 +264,7 @@ class InteractiveDiarization(Pipeline):
         # in "pipeline optimization" mode, pipeline hyper-parameters are different
         # every time a file is processed: embeddings must be recomputed
         else:
-            embedding: SlidingWindowFeature = self.compute_embedding(current_file)
+            embedding = self.compute_embedding(current_file)
 
         window: SlidingWindow = embedding.sliding_window
 
@@ -277,7 +277,7 @@ class InteractiveDiarization(Pipeline):
         # in "pipeline optimization" mode, pipeline hyper-parameters are different
         # every time a file is processed: speech regions must be recomputed
         else:
-            speech: Timeline = self.compute_speech(current_file)
+            speech = self.compute_speech(current_file)
 
         # segment_assignment[i] = s with s > 0 means that ith embedding is
         #       strictly contained in (1-based) sth segment.
