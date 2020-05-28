@@ -48,7 +48,7 @@ from pyannote.audio.features.wrapper import Wrapper
 from pyannote.audio.features.utils import get_audio_duration
 
 from pyannote.metrics.diarization import DiarizationErrorRate
-from pyannote.metrics.detection import DetectionErroRate
+from pyannote.metrics.detection import DetectionErrorRate
 
 from pyannote.audio.utils.signal import Binarize
 
@@ -371,8 +371,8 @@ class InteractiveDiarization(Pipeline):
 
         return hypothesis.support()
 
-    def get_metric(self) -> Union[DetectionErroRate, DiarizationErrorRate]:
+    def get_metric(self) -> Union[DetectionErrorRate, DiarizationErrorRate]:
         if self.only_sad:
-            return DetectionErroRate(collar=0.0)
+            return DetectionErrorRate(collar=0.0)
         else:
             return DiarizationErrorRate(collar=0.0, skip_overlap=False)
