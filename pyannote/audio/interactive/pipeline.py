@@ -120,6 +120,7 @@ class InteractiveDiarization(Pipeline):
         self.sad_min_duration_on = Uniform(0.0, 0.5)
         self.sad_min_duration_off = Uniform(0.0, 0.5)
 
+        self.only_sad = only_sad
         if self.only_sad:
             return
 
