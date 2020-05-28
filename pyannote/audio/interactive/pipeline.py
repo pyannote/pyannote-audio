@@ -352,8 +352,7 @@ class InteractiveDiarization(Pipeline):
             start, k = segment.start, clusters[0]
             change_point = np.diff(clusters) != 0
             for i, new_k in zip(indices[1:][change_point], clusters[1:][change_point]):
-                # FIXME. this should be + 0.5 x step
-                end = embedding.sliding_window[i].middle
+                end = window[i].middle + 0.5 * window.step
                 hypothesis[Segment(start, end)] = k
                 start = end
                 k = new_k
