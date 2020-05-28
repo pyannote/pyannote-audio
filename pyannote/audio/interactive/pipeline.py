@@ -247,6 +247,11 @@ class InteractiveDiarization(Pipeline):
             Speaker diarization result.
         """
 
+        if cannot_link is None:
+            cannot_link = []
+        if must_link is None:
+            must_link = []
+
         if "duration" not in current_file:
             current_file["duration"] = get_audio_duration(current_file)
 
