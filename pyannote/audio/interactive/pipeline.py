@@ -339,23 +339,23 @@ class InteractiveDiarization(Pipeline):
 
         else:
             # NEAREST NEIGHBOR
-            # distance = cdist(
-            #     embedding[clean_indices], embedding[loose_indices], metric="cosine"
-            # )
-            # nearest_neighbor = np.argmin(distance, axis=0)
-            # for loose_index, nn in zip(loose_indices, nearest_neighbor):
-            #     strict_index = clean_indices[nn]
-            #     cluster_assignment[loose_index] = cluster_assignment[strict_index]
-
-            # NEAREST CLUSTER
-            centroid = np.vstack(
-                [
-                    np.mean(embedding[cluster_assignment == k], axis=0)
-                    for k in np.unique(clusters)
-                ]
+            distance = cdist(
+                embedding[clean_indices], embedding[loose_indices], metric="cosine"
             )
-            distance = cdist(centroid, embedding[loose_indices], metric="cosine")
-            cluster_assignment[loose_indices] = np.argmin(distance, axis=0) + 1
+            nearest_neighbor = np.argmin(distance, axis=0)
+            for loose_index, nn in zip(loose_indices, nearest_neighbor):
+                strict_index = clean_indices[nn]
+                cluster_assignment[loose_index] = cluster_assignment[strict_index]
+
+            # # NEAREST CLUSTER
+            # centroid = np.vstack(
+            #     [
+            #         np.mean(embedding[cluster_assignment == k], axis=0)
+            #         for k in np.unique(clusters)
+            #     ]
+            # )
+            # distance = cdist(centroid, embedding[loose_indices], metric="cosine")
+            # cluster_assignment[loose_indices] = np.argmin(distance, axis=0) + 1
 
         # convert cluster assignment to pyannote.core.Annotation
         # (make sure to keep speech regions unchanged)
