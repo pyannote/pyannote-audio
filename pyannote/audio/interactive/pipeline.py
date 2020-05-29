@@ -355,7 +355,7 @@ class InteractiveDiarization(Pipeline):
                 ]
             )
             distance = cdist(centroid, embedding[loose_indices], metric="cosine")
-            cluster_assignment[loose_indices] = np.argmin(distance, axis=1) + 1
+            cluster_assignment[loose_indices] = np.argmin(distance, axis=0) + 1
 
         # convert cluster assignment to pyannote.core.Annotation
         # (make sure to keep speech regions unchanged)
