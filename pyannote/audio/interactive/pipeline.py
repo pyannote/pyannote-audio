@@ -38,7 +38,6 @@ from pyannote.core import (
 )
 from pyannote.database.protocol.protocol import ProtocolFile
 
-
 import numpy as np
 
 from pyannote.pipeline import Pipeline
@@ -339,14 +338,24 @@ class InteractiveDiarization(Pipeline):
                 cluster_assignment[i] = k
 
         else:
-            # TODO. try distance to average instead
-            distance = cdist(
-                embedding[clean_indices], embedding[loose_indices], metric="cosine"
+            # NEAREST NEIGHBOR
+            # distance = cdist(
+            #     embedding[clean_indices], embedding[loose_indices], metric="cosine"
+            # )
+            # nearest_neighbor = np.argmin(distance, axis=0)
+            # for loose_index, nn in zip(loose_indices, nearest_neighbor):
+            #     strict_index = clean_indices[nn]
+            #     cluster_assignment[loose_index] = cluster_assignment[strict_index]
+
+            # NEAREST CLUSTER
+            centroid = np.vstack(
+                [
+                    np.mean(embedding[cluster_assignment == k], axis=0)
+                    for k in np.unique(clusters)
+                ]
             )
-            nearest_neighbor = np.argmin(distance, axis=0)
-            for loose_index, nn in zip(loose_indices, nearest_neighbor):
-                strict_index = clean_indices[nn]
-                cluster_assignment[loose_index] = cluster_assignment[strict_index]
+            distance = cdist(centroid, embedding[loose_indices], metric="cosine")
+            cluster_assignment[loose_indices] = np.argmin(distance, axis=1) + 1
 
         # convert cluster assignment to pyannote.core.Annotation
         # (make sure to keep speech regions unchanged)
