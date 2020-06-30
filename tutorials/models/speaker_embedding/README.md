@@ -135,7 +135,7 @@ To get a quick idea of how the network is doing on the development set, one can 
 
 ```bash
 $ export TRN_DIR=${EXP_DIR}/train/VoxCeleb.SpeakerVerification.VoxCeleb1.train
-$ pyannote-audio emb validate --subset=test --to=250 --every=5 ${TRN_DIR} VoxCeleb.SpeakerDiarization.VoxCeleb1
+$ pyannote-audio emb validate --subset=development --to=250 --every=5 ${TRN_DIR} VoxCeleb.SpeakerDiarization.VoxCeleb1
 ```
 It can be run while the model is still training and evaluates the model every 5 epochs. This will create a bunch of files in `VAL_DIR` (defined below). 
 
