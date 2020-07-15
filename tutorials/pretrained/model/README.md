@@ -41,6 +41,11 @@ ovl = torch.hub.load('pyannote/pyannote-audio', 'ovl_ami')
 emb = torch.hub.load('pyannote/pyannote-audio', 'emb_ami')
 ```
 
+The pulled models will be on GPU by default if one is available. We can also have more control by specifying other kwargs provided by `torch.hub.load`, e.g.:
+```python
+sad = torch.hub.load('pyannote/pyannote-audio', 'sad_ami', device='cpu', batch_size=128)
+```
+
 We will apply those pretrained models on the first file of the `AMI` test subset.
 
 ```python
