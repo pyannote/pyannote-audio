@@ -185,9 +185,9 @@ Common options
                           This option can also be used to apply a pretrained
                           model. See description of <validate> for more details.
 
-  --to=<epoch>            End training (resp. validating) at (zero-based) epoch 
-                          <epoch>. Use --to=last to validate until last available
-                          epoch at launch time. [default: 99]
+  --to=<epoch>            End training (resp. validating) at (zero-based) <epoch>.
+                          Use --to=last to validate until last available epoch at 
+                          launch time [default: 99]
 
   --every=<epoch>         Validate model every <epoch> epochs [default: 1].
 
