@@ -136,8 +136,7 @@ class Pretrained(FeatureExtraction):
         self.device = torch.device(device)
 
         # send model to device
-        with torch.no_grad():
-            self.model_ = model.eval().to(self.device)
+        self.model_ = model.eval().to(self.device)
 
         # initialize chunks duration with that used during training
         self.duration = getattr(config["task"], "duration", None)
