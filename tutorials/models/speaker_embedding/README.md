@@ -142,7 +142,7 @@ It can be run while the model is still training and evaluates the model every 5 
 In practice, it is tuning a simple speaker verification experiment and stores the best hyper-parameter configuration on disk:
 
 ```bash
-$ export VAL_DIR = ${TRN_DIR}/validate_equal_error_rate/VoxCeleb.SpeakerVerification.VoxCeleb1.test
+$ export VAL_DIR=${TRN_DIR}/validate_equal_error_rate/VoxCeleb.SpeakerVerification.VoxCeleb1.test
 $ cat ${VAL_DIR}/params.yml
 ```
 ```yaml

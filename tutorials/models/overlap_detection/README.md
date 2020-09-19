@@ -154,7 +154,7 @@ It can be run while the model is still training and evaluates the model every 10
 In practice, it is tuning a simple overlapped speech detection pipeline and stores the best hyper-parameter configuration on disk (i.e. the one that maximizes detection f-score):
 
 ```bash
-$ export VAL_DIR = ${TRN_DIR}/validate/AMI.SpeakerDiarization.MixHeadset.development
+$ export VAL_DIR=${TRN_DIR}/validate/AMI.SpeakerDiarization.MixHeadset.development
 $ cat ${VAL_DIR}/params.yml
 ```
 ```yaml
