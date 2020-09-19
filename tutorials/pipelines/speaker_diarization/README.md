@@ -78,6 +78,7 @@ $ for SUBSET in developement test
 ```
 
 This tutorial relies on pretrained models available on `torch.hub` but you could (should?) obviously use a locally [trained](../../models/speech_activity_detection) or [fine-tuned](../../finetune) model.
+In the case that you created, validated and applied your own models by following the above tutorials you do not need to extract scores/embeddings again.
 
 ## Configuration
 ([↑up to table of contents](#table-of-contents))
@@ -94,6 +95,39 @@ pipeline:
     # replace {{EXP_DIR}} by its actual value
     sad_scores: {{EXP_DIR}}/sad_ami
     scd_scores: {{EXP_DIR}}/scd_ami
+    embedding: {{EXP_DIR}}/emb_ami
+    method: affinity_propagation
+
+# one can freeze some of the hyper-parameters
+# for instance, in this example, we are using
+# hyper-parameters obtained in the speech 
+# actitivy detection pipeline tutorial
+freeze:
+  speech_turn_segmentation:
+    speech_activity_detection:
+      min_duration_off: 0.6315121069334447
+      min_duration_on: 0.0007366523493967721
+      offset: 0.5727193137037349
+      onset: 0.5842225805454029
+      pad_offset: 0.0
+      pad_onset: 0.0
+```
+
+If you are using any models that you tained, validated and applied locally [trained](../../models/speech_activity_detection) or [fine-tuned](../../finetune) models please reference their paths instead.
+
+For example if we want to include the sad scores and scd scores of locally trained models our config.yml file would look like the following:
+
+
+```bash
+$ cat ${EXP_DIR}/config.yml
+```
+```yaml
+pipeline:
+  name: pyannote.audio.pipeline.speaker_diarization.SpeakerDiarization
+  params:
+    # replace {{EXP_DIR}} by its actual value
+    sad_scores: /path/to/sad/experiment/dir/validate_detection_fscore/val_set/apply/best_score
+    scd_scores: /path/to/scd/experiment/dir/validate_detection_fscore/val_set/apply/best_score
     embedding: {{EXP_DIR}}/emb_ami
     method: affinity_propagation
 
