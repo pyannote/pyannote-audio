@@ -78,7 +78,7 @@ $ for SUBSET in developement test
 ```
 
 This tutorial relies on pretrained models available on `torch.hub` but you could (should?) obviously use a locally [trained](../../models/speech_activity_detection) or [fine-tuned](../../finetune) model.
-In the case that you created, validated and applied your own models by following the above tutorials you do not need to extract scores/embeddings again.
+In case you trained, validated and applied your own models by following the above tutorials, you may safely skip the corresponding `pyannote-audio ... apply` steps because you do not need to extract scores and/or embeddings again.
 
 ## Configuration
 ([↑up to table of contents](#table-of-contents))
@@ -113,10 +113,10 @@ freeze:
       pad_onset: 0.0
 ```
 
-If you are using any models that you tained, validated and applied locally [trained](../../models/speech_activity_detection) or [fine-tuned](../../finetune) models please reference their paths instead.
 
-For example if we want to include the sad scores and scd scores of locally trained models our config.yml file would look like the following:
+If you are using any models that you trained, validated and applied locally [trained](../../models/speech_activity_detection) or [fine-tuned](../../finetune) models please reference their paths instead.
 
+In case you want to use your own set of scores, use their own paths instead. The example below uses pretrained embeddings but locally trained `sad` and `scd` scores:
 
 ```bash
 $ cat ${EXP_DIR}/config.yml
@@ -125,9 +125,9 @@ $ cat ${EXP_DIR}/config.yml
 pipeline:
   name: pyannote.audio.pipeline.speaker_diarization.SpeakerDiarization
   params:
+    sad_scores: /path/to/sad/experiment/train/{{TRAINING_SET}}/validate_detection_fscore/{{VALIDATION_SET}}/apply/{{BEST_EPOCH}}
+    scd_scores: /path/to/scd/experiment/train/{{TRAINING_SET}}/validate_detection_fscore/{{VALIDATION_SET}}/apply/{{BEST_EPOCH}}
     # replace {{EXP_DIR}} by its actual value
-    sad_scores: /path/to/sad/experiment/dir/validate_detection_fscore/val_set/apply/best_score
-    scd_scores: /path/to/scd/experiment/dir/validate_detection_fscore/val_set/apply/best_score
     embedding: {{EXP_DIR}}/emb_ami
     method: affinity_propagation
 
