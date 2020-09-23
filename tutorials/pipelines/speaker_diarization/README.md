@@ -114,9 +114,7 @@ freeze:
 ```
 
 
-If you are using any models that you trained, validated and applied locally [trained](../../models/speech_activity_detection) or [fine-tuned](../../finetune) models please reference their paths instead.
-
-In case you want to use your own set of scores, use their own paths instead. The example below uses pretrained embeddings but locally trained `sad` and `scd` scores:
+If you are using any models that you trained, validated and applied locally [trained](../../models/speech_activity_detection) or [fine-tuned](../../finetune) models, and want to use your own set of scores, use their own paths instead. The example below uses pretrained embeddings but locally trained `sad` and `scd` scores:
 
 ```bash
 $ cat ${EXP_DIR}/config.yml
