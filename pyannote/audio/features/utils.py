@@ -119,7 +119,11 @@ def read_audio(current_file, sample_rate=None, mono=True):
 
     # resample if sample rates mismatch
     if (sample_rate is not None) and (file_sample_rate != sample_rate):
-        y = librosa.core.resample(y.T, file_sample_rate, sample_rate).T
+        if y.shape[1] == 1:
+            # librosa expects mono audio to be of shape (n,), but we have (n, 1).
+            y = librosa.core.resample(y[:, 0], file_sample_rate, sample_rate)[:, None]
+        else:
+            y = librosa.core.resample(y.T, file_sample_rate, sample_rate).T
     else:
         sample_rate = file_sample_rate
 
@@ -170,7 +174,11 @@ class RawAudio:
 
         # resample if sample rates mismatch
         if (self.sample_rate is not None) and (self.sample_rate != sample_rate):
-            y = librosa.core.resample(y.T, sample_rate, self.sample_rate).T
+            if y.shape[1] == 1:
+                # librosa expects mono audio to be of shape (n,), but we have (n, 1).
+                y = librosa.core.resample(y[:, 0], sample_rate, self.sample_rate)[:, None]
+            else:
+                y = librosa.core.resample(y.T, sample_rate, self.sample_rate).T
             sample_rate = self.sample_rate
 
         # augment data
