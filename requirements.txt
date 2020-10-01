@@ -1,6 +1,5 @@
 cachetools >= 2.0.0
-librosa == 0.7.2
-numba==0.48.0  # TODO: remove once librosa 0.8 is out
+librosa >= 0.8.0
 pandas >= 0.18.0
 pyannote.core >= 4.1
 pyannote.database >= 4.0
