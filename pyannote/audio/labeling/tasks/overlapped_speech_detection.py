@@ -29,7 +29,7 @@
 import numpy as np
 import random
 import math
-from typing import List, Dict, Union
+from typing import List, Dict, Union, Text
 from tqdm import trange, tqdm
 
 from torch.utils.data import IterableDataset
@@ -58,16 +58,27 @@ class Dataset(IterableDataset):
     def __init__(self, task: BaseTask):
         super().__init__()
         self.task = task
-
         self.raw_audio_ = RawAudio(sample_rate=self.task.feature_extraction.sample_rate)
 
     def __iter__(self):
         random.seed()
-        chunks = self.chunks()
+
+        if self.task.hparams.domain is None:
+            chunks = self.chunks()
+        else:
+            chunks_by_domain = {
+                domain: self.chunks(domain=domain)
+                for domain in self.task.train_metadata["domains"]
+            }
 
         while True:
-            chunk = next(chunks)
 
+            if self.task.hparams.domain:
+                #  draw domain at random
+                domain = random.choice(self.task.train_metadata["domains"])
+                chunks = chunks_by_domain[domain]
+
+            chunk = next(chunks)
             if random.random() > 0.5:
                 waveform = chunk["X"]
                 y = chunk["y"]
@@ -110,9 +121,12 @@ class Dataset(IterableDataset):
 
             yield {"X": X, "y": y}
 
-    def chunks(self):
+    def chunks(self, domain: Text = None):
 
         files = self.task.train_metadata["files"]
+
+        if domain is not None:
+            files = [f for f in files if f[self.task.hparams.domain] == domain]
 
         while True:
 
@@ -173,6 +187,8 @@ class OverlappedSpeechDetection(BaseTask):
             self.hparams.snr_min = 0.0
         if "snr_max" not in self.hparams:
             self.hparams.snr_max = 10.0
+        if "domain" not in self.hparams:
+            self.hparams.domain = None
 
     def prepare_metadata(self, files: List[ProtocolFile]) -> Dict:
 
@@ -194,11 +210,16 @@ class OverlappedSpeechDetection(BaseTask):
             f["__target"] = y
             del f["annotation"]
 
-        return {
+        metadata = {
             "classes": ["non_overlap", "overlap"],
             "epoch_duration": sum(f["__duration"] for f in files),
             "files": [dict(f) for f in files],
         }
+
+        if self.hparams.domain is not None:
+            metadata["domains"] = set(f[self.hparams.domain] for f in files)
+
+        return metadata
 
     def train_dataset(self) -> IterableDataset:
         return Dataset(self)
