@@ -217,7 +217,7 @@ class OverlappedSpeechDetection(BaseTask):
         }
 
         if self.hparams.domain is not None:
-            metadata["domains"] = set(f[self.hparams.domain] for f in files)
+            metadata["domains"] = list(set(f[self.hparams.domain] for f in files))
 
         return metadata
 
