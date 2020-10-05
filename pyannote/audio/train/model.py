@@ -407,7 +407,8 @@ class Model(nn.Module):
             tX = torch.tensor(batch["X"], dtype=torch.float32, device=device)
 
             # FIXME: fix support for return_intermediate
-            tfX = self(tX)
+            with torch.no_grad():
+                tfX = self(tX)
 
             tfX_npy = tfX.detach().to("cpu").numpy()
             if postprocess is not None:
