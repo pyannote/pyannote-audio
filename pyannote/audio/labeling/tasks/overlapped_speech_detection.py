@@ -137,7 +137,9 @@ class Dataset(IterableDataset):
 
             # select one annotated region at random (with probability proportional to its duration)
             segment, *_ = random.choices(
-                file["annotated"], weights=[s.duration for s in file["annotated"]], k=1,
+                file["__annotated"],
+                weights=[s.duration for s in file["__annotated"]],
+                k=1,
             )
 
             # select one chunk at random (with uniform distribution)
@@ -196,9 +198,10 @@ class OverlappedSpeechDetection(BaseTask):
 
         for f in tqdm(iterable=files, desc="Loading training metadata", unit="file"):
 
-            f["__duration"] = sum(
-                s.duration for s in f["annotated"] if s.duration > self.hparams.duration
-            )
+            f["__annotated"] = [
+                s for s in f["annotated"] if s.duration > self.hparams.duration
+            ]
+            f["__duration"] = sum(s.duration for s in f["__annotated"])
 
             y = one_hot_encoding(
                 f["annotation"],
