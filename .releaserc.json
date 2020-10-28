@@ -1,0 +1,20 @@
+{
+    "branches":[
+       "main"
+    ],
+    "plugins": [
+        "@semantic-release/commit-analyzer",
+        ["@semantic-release/exec",
+          {
+            "verifyReleaseCmd": "echo ${nextRelease.version} > version.txt"
+          }
+        ],
+        "@semantic-release/release-notes-generator",
+        ["@semantic-release/git", {
+          "assets": ["version.txt"],
+          "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
+        }],
+        "@semantic-release/github"
+    ]
+
+}
