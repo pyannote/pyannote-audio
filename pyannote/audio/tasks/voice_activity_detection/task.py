@@ -60,12 +60,12 @@ class VoiceActivityDetection(Task):
     ):
 
         super().__init__(
-            protocol, duration=duration, batch_size=batch_size, num_workers=num_workers
+            protocol,
+            duration=duration,
+            batch_size=batch_size,
+            num_workers=num_workers,
         )
 
-        # for voice activity detection, task specification
-        # does not depend on the data: we can define it in
-        # __init__
         self.specifications = TaskSpecification(
             problem=Problem.MONO_LABEL_CLASSIFICATION,
             scale=Scale.FRAME,

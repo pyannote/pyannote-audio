@@ -46,7 +46,10 @@ class SpeakerEmbeddingArcFace(Task):
     ):
 
         super().__init__(
-            protocol, duration=duration, batch_size=batch_size, num_workers=num_workers
+            protocol,
+            duration=duration,
+            batch_size=batch_size,
+            num_workers=num_workers,
         )
 
         # there is no such thing as a "class" in representation

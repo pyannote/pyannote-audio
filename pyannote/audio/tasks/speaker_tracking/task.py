@@ -59,7 +59,10 @@ class SpeakerTracking(Task):
     ):
 
         super().__init__(
-            protocol, duration=duration, batch_size=batch_size, num_workers=num_workers
+            protocol,
+            duration=duration,
+            batch_size=batch_size,
+            num_workers=num_workers,
         )
 
         # for speaker tracking, task specification depends

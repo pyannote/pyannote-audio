@@ -68,12 +68,16 @@ class SpeakerChangeDetection(Task):
     ):
 
         super().__init__(
-            protocol, duration=duration, batch_size=batch_size, num_workers=num_workers
+            protocol,
+            duration=duration,
+            batch_size=batch_size,
+            num_workers=num_workers,
         )
 
         self.specifications = TaskSpecification(
             problem=Problem.MONO_LABEL_CLASSIFICATION,
             scale=Scale.FRAME,
+            duration=self.duration,
             classes=["non_change", "change"],
         )
 

@@ -20,8 +20,9 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+# from functools import cached_property
 import warnings
-from typing import List, Optional, Text, Tuple, Union
+from typing import Dict, List, Optional, Text, Tuple, Union
 
 import numpy as np
 import torch
@@ -29,9 +30,11 @@ from einops import rearrange
 from pytorch_lightning.utilities.memory import is_oom_error
 
 from pyannote.audio.core.io import AudioFile
-from pyannote.audio.core.model import Model
-from pyannote.audio.core.task import Scale
-from pyannote.core import Segment, SlidingWindow
+from pyannote.audio.core.model import Model, ModelIntrospection
+from pyannote.audio.core.task import Scale, TaskSpecification
+from pyannote.core import Segment, SlidingWindow, SlidingWindowFeature
+
+TaskName = Union[Text, None]
 
 
 class Inference:
@@ -73,12 +76,13 @@ class Inference:
         if window not in ["sliding", "whole"]:
             raise ValueError('`window` must be "sliding" or "whole".')
 
-        scale = self.model.hparams.task_specifications.scale
-        if scale == Scale.FRAME and window == "whole":
-            warnings.warn(
-                'Using "whole" `window` inference with a frame-based model might lead to bad results '
-                'and huge memory consumption: it is recommended to set `window` to "sliding".'
-            )
+        for task_name, task_specifications in self.task_specifications:
+            scale = task_specifications.scale
+            if scale == Scale.FRAME and window == "whole":
+                warnings.warn(
+                    'Using "whole" `window` inference with a frame-based model might lead to bad results '
+                    'and huge memory consumption: it is recommended to set `window` to "sliding".'
+                )
 
         self.window = window
 
@@ -89,8 +93,10 @@ class Inference:
         self.model.eval()
         self.model.to(self.device)
 
-        # chunk duration used during training
-        training_duration = self.model.hparams.task_specifications.duration
+        # chunk duration used during training. for multi-task,
+        #  we assume that the same duration was used for each task.
+        training_duration = self.task_specifications[0][1].duration
+
         if duration is None:
             duration = training_duration
         elif training_duration != duration:
@@ -113,9 +119,61 @@ class Inference:
 
         self.batch_size = batch_size
 
+    # @cached_property
+    @property
+    def is_multi_task(self) -> bool:
+        return self.model.is_multi_task
+
+    # @cached_property
+    @property
+    def task_specifications(self) -> List[Tuple[TaskName, TaskSpecification]]:
+        return list(self.model.hparams.task_specifications.items())
+
+    # @cached_property
+    @property
+    def model_introspection(self) -> List[Tuple[TaskName, ModelIntrospection]]:
+        return list(self.model.hparams.model_introspection.items())
+
+    def infer(self, chunks: torch.Tensor) -> Dict[TaskName, np.ndarray]:
+        """Forward pass
+
+        Parameters
+        ----------
+        chunks : torch.Tensor
+            Batch of audio chunks.
+
+        Returns
+        -------
+        outputs : {task_name: torch.Tensor} dict
+            Model outputs.
+
+        Notes
+        -----
+        If model is mono-task, `task_name` is set to None.
+        """
+
+        with torch.no_grad():
+            try:
+                outputs = self.model(chunks.to(self.device))
+            except RuntimeError as exception:
+                if is_oom_error(exception):
+                    raise MemoryError(
+                        f"batch_size ({self.batch_size: d}) is probably too large. "
+                        f"Try with a smaller value until memory error disappears."
+                    )
+                else:
+                    raise exception
+
+        if self.is_multi_task:
+            return {
+                task_name: output.cpu().numpy() for task_name, output in outputs.items()
+            }
+
+        return {None: outputs.cpu().numpy()}
+
     def slide(
         self, waveform: torch.Tensor, sample_rate: int
-    ) -> Tuple[np.ndarray, SlidingWindow]:
+    ) -> Union[SlidingWindowFeature, Dict[Text, SlidingWindowFeature]]:
         """Slide model on a waveform
 
         Parameters
@@ -139,6 +197,8 @@ class Inference:
         num_samples, num_channels = waveform.shape
         window_size: int = round(self.duration * sample_rate)
 
+        results: Dict[Text, SlidingWindowFeature] = dict()
+
         # corner case: waveform is shorter than chunk duration
         if num_samples <= window_size:
 
@@ -147,24 +207,31 @@ class Inference:
                 f"this might lead to inconsistant results."
             )
 
-            with torch.no_grad():
-                one_output: np.ndarray = (
-                    self.model(waveform[None, :].to(self.device)).cpu().numpy()
-                )
+            one_output = self.infer(waveform[None, :])
 
-            if self.model.hparams.task_specifications.scale == Scale.CHUNK:
-                frames = SlidingWindow(
-                    start=0.0, duration=self.duration, step=self.step
-                )
-                return one_output, frames
+            for task_name, task_specifications in self.task_specifications:
+                if task_specifications.scale == Scale.CHUNK:
+                    frames = SlidingWindow(
+                        start=0.0, duration=self.duration, step=self.step
+                    )
+                    results[task_name] = SlidingWindowFeature(
+                        one_output[task_name], frames
+                    )
 
-            _, num_frames, dimension = one_output.shape
-            frames = SlidingWindow(
-                start=0,
-                duration=file_duration / num_frames,
-                step=file_duration / num_frames,
-            )
-            return one_output[0], frames
+                else:
+                    _, num_frames, dimension = one_output[task_name].shape
+                    frames = SlidingWindow(
+                        start=0,
+                        duration=file_duration / num_frames,
+                        step=file_duration / num_frames,
+                    )
+                    results[task_name] = SlidingWindowFeature(
+                        one_output[task_name][0], frames
+                    )
+
+            if self.is_multi_task:
+                return results
+            return results[None]
 
         # prepare (and count) sliding audio chunks
         step_size: int = round(self.step * sample_rate)
@@ -182,82 +249,87 @@ class Inference:
         else:
             has_last_chunk = False
 
-        outputs: Union[List[np.ndarray], np.ndarray] = list()
+        outputs: Dict[TaskName, Union[List[np.ndarray], np.ndarray]] = {
+            task_name: list() for task_name, _ in self.task_specifications
+        }
 
         # slide over audio chunks in batch
         for c in np.arange(0, num_chunks, self.batch_size):
             batch: torch.Tensor = chunks[c : c + self.batch_size]
 
-            with torch.no_grad():
-                try:
-                    output: torch.Tensor = self.model(batch.to(self.device))
-                # catch "out of memory" errors
-                except RuntimeError as exception:
-                    if is_oom_error(exception):
-                        raise MemoryError(
-                            f"batch_size ({self.batch_size: d}) is probably too large. "
-                            f"Try with a smaller value until memory error disappears."
-                        )
-                    else:
-                        raise exception
+            output = self.infer(batch)
+            for task_name, task_output in output.items():
+                outputs[task_name].append(task_output)
 
-            outputs.append(output.cpu().numpy())
+        outputs = {
+            task_name: np.vstack(task_outputs)
+            for task_name, task_outputs in outputs.items()
+        }
 
-        outputs = np.vstack(outputs)
+        for t, (task_name, task_specifications) in enumerate(self.task_specifications):
 
-        # if model outputs just one vector per chunk, return the outputs as they are
-        if self.model.hparams.task_specifications.scale == Scale.CHUNK:
-            frames = SlidingWindow(start=0.0, duration=self.duration, step=self.step)
-            return outputs, frames
-
-        # process orphan last chunk
-        if has_last_chunk:
-            with torch.no_grad():
-                last_output: np.ndarray = (
-                    self.model(last_chunk[None, :].to(self.device))[0].cpu().numpy()
+            # if model outputs just one vector per chunk, return the outputs as they are
+            if task_specifications.scale == Scale.CHUNK:
+                frames = SlidingWindow(
+                    start=0.0, duration=self.duration, step=self.step
                 )
+                results[task_name] = SlidingWindowFeature(outputs[task_name], frames)
+                continue
 
-        #  use model introspection to estimate the total number of frames
-        num_frames, dimension = self.model.hparams.model_introspection(num_samples)
-        num_frames_per_chunk, _ = self.model.hparams.model_introspection(window_size)
+            # process orphan last chunk
+            if has_last_chunk:
+                last_output = {
+                    task_name: output[0]
+                    for task_name, output in self.infer(last_chunk[None, :]).items()
+                }
 
-        # aggregated_output[i] will be used to store the sum of all predictions for frame #i
-        aggregated_output: np.ndarray = np.zeros(
-            (num_frames, dimension), dtype=np.float32
-        )
+            #  use model introspection to estimate the total number of frames
+            _, model_introspection = self.model_introspection[t]
+            num_frames, dimension = model_introspection(num_samples)
+            num_frames_per_chunk, _ = model_introspection(window_size)
 
-        # overlapping_chunk_count[i] will be used to store the number of chunks that
-        # overlap with frame #i
-        overlapping_chunk_count: np.ndarray = np.zeros((num_frames, 1), dtype=np.int32)
+            # aggregated_output[i] will be used to store the sum of all predictions for frame #i
+            aggregated_output: np.ndarray = np.zeros(
+                (num_frames, dimension), dtype=np.float32
+            )
 
-        # loop on the outputs of sliding chunks
-        for c, output in enumerate(outputs):
-            start_sample = c * step_size
-            start_frame, _ = self.model.hparams.model_introspection(start_sample)
-            aggregated_output[
-                start_frame : start_frame + num_frames_per_chunk
-            ] += output
-            overlapping_chunk_count[
-                start_frame : start_frame + num_frames_per_chunk
-            ] += 1
+            # overlapping_chunk_count[i] will be used to store the number of chunks that
+            # overlap with frame #i
+            overlapping_chunk_count: np.ndarray = np.zeros(
+                (num_frames, 1), dtype=np.int32
+            )
 
-        # process last (right-aligned) chunk separately
-        if last_chunk is not None:
-            aggregated_output[-num_frames_per_chunk:] += last_output
-            overlapping_chunk_count[-num_frames_per_chunk:] += 1
+            # loop on the outputs of sliding chunks
+            for c, output in enumerate(outputs[task_name]):
+                start_sample = c * step_size
+                start_frame, _ = model_introspection(start_sample)
+                aggregated_output[
+                    start_frame : start_frame + num_frames_per_chunk
+                ] += output
+                overlapping_chunk_count[
+                    start_frame : start_frame + num_frames_per_chunk
+                ] += 1
 
-        aggregated_output /= np.maximum(overlapping_chunk_count, 1)
+            # process last (right-aligned) chunk separately
+            if has_last_chunk:
+                aggregated_output[-num_frames_per_chunk:] += last_output[task_name]
+                overlapping_chunk_count[-num_frames_per_chunk:] += 1
 
-        frames = SlidingWindow(
-            start=0,
-            duration=file_duration / num_frames,
-            step=file_duration / num_frames,
-        )
-        return aggregated_output, frames
+            aggregated_output /= np.maximum(overlapping_chunk_count, 1)
 
-    def __call__(
-        self, file: AudioFile
-    ) -> Union[np.ndarray, Tuple[np.ndarray, SlidingWindow]]:
+            frames = SlidingWindow(
+                start=0,
+                duration=file_duration / num_frames,
+                step=file_duration / num_frames,
+            )
+
+            results[task_name] = SlidingWindowFeature(aggregated_output, frames)
+
+        if self.is_multi_task:
+            return results
+        return results[None]
+
+    def __call__(self, file: AudioFile) -> Union[np.ndarray, SlidingWindowFeature]:
         """Run inference on a whole file
 
         Parameters
@@ -280,8 +352,13 @@ class Inference:
         if self.window == "sliding":
             return self.slide(waveform, sample_rate)
 
-        with torch.no_grad():
-            return self.model(waveform[None, :].to(self.device))[0].cpu().numpy()
+        outputs = {
+            task_name: task_output[0]
+            for task_name, task_output in self.infer(waveform[None, :]).items()
+        }
+        if self.is_multi_task:
+            return outputs
+        return outputs[None]
 
     def crop(
         self,
@@ -317,13 +394,32 @@ class Inference:
         waveform = torch.tensor(waveform, requires_grad=False)
 
         if self.window == "sliding":
-            output, frames = self.slide(waveform, sample_rate)
-            shifted_frames = SlidingWindow(
-                start=chunk.start, duration=frames.duration, step=frames.step
-            )
-            return output, shifted_frames
+            output = self.slide(waveform, sample_rate)
 
-        with torch.no_grad():
-            return self.model(waveform[None, :].to(self.device))[0].cpu().numpy()
+            if self.is_multi_task:
+                shifted_output = dict()
+                for task_name, task_output in output.items():
+                    frames = task_output.sliding_window
+                    shifted_frames = SlidingWindow(
+                        start=chunk.start, duration=frames.duration, step=frames.step
+                    )
+                    shifted_output[task_name] = SlidingWindowFeature(
+                        task_output.data, shifted_frames
+                    )
+                return shifted_output
+            else:
+                frames = output.sliding_window
+                shifted_frames = SlidingWindow(
+                    start=chunk.start, duration=frames.duration, step=frames.step
+                )
+                return SlidingWindowFeature(output.data, shifted_frames)
+
+        outputs = {
+            task_name: task_output[0]
+            for task_name, task_output in self.infer(waveform[None, :]).items()
+        }
+        if self.is_multi_task:
+            return outputs
+        return outputs[None]
 
     # TODO: add a way to process a stream (to allow for online processing)

@@ -23,6 +23,8 @@
 
 from dataclasses import dataclass
 from enum import Enum
+
+# from functools import cached_property
 from typing import TYPE_CHECKING, List, Optional, Text, Tuple, Union
 
 import numpy as np
@@ -69,6 +71,15 @@ class TaskSpecification:
     # (for classification tasks only) list of classes
     classes: Optional[List[Text]] = None
 
+    def __len__(self):
+        # makes it possible to do something like:
+        # multi_task = len(task_specifications) > 1
+        # because multi-task specifications are stored as {task_name: specifications} dict
+        return 1
+
+    def items(self):
+        yield None, self
+
 
 class Task(pl.LightningDataModule):
     """Base task class
@@ -94,6 +105,13 @@ class Task(pl.LightningDataModule):
         Number of training samples per batch.
     num_workers : int, optional
         Number of workers used for generating training samples.
+
+    Attributes
+    ----------
+    specifications : TaskSpecification or dict of TaskSpecification
+        Task specifications (available after `Task.setup` has been called.)
+        For multi-task learning, this should be a dictionary where keys are
+        task names and values are corresponding TaskSpecification instances.
     """
 
     def __init__(
@@ -114,11 +132,42 @@ class Task(pl.LightningDataModule):
         self.num_workers = num_workers
 
     def prepare_data(self):
-        # this is where we might end up downloading datasets
-        # and transform them so that they are ready to be used
-        # with pyannote.database. but for now, the API assume
-        # that we directly provide a pyannote.database.Protocol.
+        """Use this to download and prepare data
+
+        This is where we might end up downloading datasets
+        and transform them so that they are ready to be used
+        with pyannote.database. but for now, the API assume
+        that we directly provide a pyannote.database.Protocol.
+
+        Notes
+        -----
+        Called only once.
+        """
         pass
+
+    def setup(self, stage=None):
+        """Called at the beginning of fit and test just before Model.setup()
+
+        Parameters
+        ----------
+        stage : "fit" or "test"
+            Whether model is being trained ("fit") or used for inference ("test").
+
+        Notes
+        -----
+        This hook is called on every process when using DDP.
+
+        If `specifications` attribute has not been set in `__init__`,
+        `setup` is your last chance to set it.
+
+        """
+        pass
+
+    # @cached_property
+    @property
+    def is_multi_task(self) -> bool:
+        """"Check whether multiple tasks are addressed at once"""
+        return len(self.specifications) > 1
 
     def prepare_chunk(
         self,
@@ -163,7 +212,14 @@ class Task(pl.LightningDataModule):
         if not return_y:
             return X
 
-        num_frames, _ = self.model_introspection(X.shape[0])
+        if self.is_multi_task:
+            # this assumes that all tasks share the same model introspection.
+            # this is a reasonable assumption for now.
+            any_task = next(iter(self.model_introspection.keys()))
+            num_frames, _ = self.model_introspection[any_task](X.shape[0])
+        else:
+            num_frames, _ = self.model_introspection(X.shape[0])
+
         annotation = file["annotation"].crop(chunk)
         labels = annotation.labels() if labels is None else labels
 
@@ -215,10 +271,12 @@ class Task(pl.LightningDataModule):
             drop_last=True,
         )
 
+    # @cached_property
     @property
     def example_input_duration(self) -> float:
         return 2.0 if self.duration is None else self.duration
 
+    #  TODO: make it a cached_property
     def example_input_array(self):
         # this method is called in Model.introspect where it is used
         # to automagically infer the temporal resolution of the
@@ -243,24 +301,64 @@ class Task(pl.LightningDataModule):
             )
         )
 
-    # default training_step provided for convenience
-    # can obviously be overriden for each task
-    def training_step(self, model: "Model", batch, batch_idx: int):
-        X, y = batch["X"], batch["y"]
-        if self.specifications.problem == Problem.MONO_LABEL_CLASSIFICATION:
-            loss = F.nll_loss(
-                model(X).view(-1, len(self.specifications.classes)), y.view(-1)
-            )
+    def helper_training_step(self, specifications: TaskSpecification, y, y_pred):
+        """Helper function for training_step"""
+
+        if specifications.problem == Problem.MONO_LABEL_CLASSIFICATION:
+            loss = F.nll_loss(y_pred.view(-1, len(specifications.classes)), y.view(-1))
 
         elif self.specifications.problem == Problem.MULTI_LABEL_CLASSIFICATION:
-            loss = F.binary_cross_entropy(model(X), y.float())
+            loss = F.binary_cross_entropy(y_pred, y.float())
 
         else:
             msg = "TODO: implement for other types of problems"
             raise NotImplementedError(msg)
 
-        model.log("train_loss", loss)
         return loss
+
+    # default training_step provided for convenience
+    # can obviously be overriden for each task
+    def training_step(self, model: "Model", batch, batch_idx: int):
+        """Guess default training_step according to task specification
+
+            * NLLLoss for regular classification
+            * binary cross-entropy for multi-label classification
+
+        In case of multi-tasking, it will default to summing loss of each task.
+
+        Parameters
+        ----------
+        model : Model
+            Model currently being trained.
+        batch : (usually) dict of torch.Tensor
+            Current batch.
+        batch_idx: int
+            Batch index.
+
+        Returns
+        -------
+        loss : {str: torch.tensor}
+            {"loss": loss} with additional "loss_{task_name}" keys for multi-task models.
+        """
+
+        X, y = batch["X"], batch["y"]
+        y_pred = model(X)
+
+        if self.is_multi_task:
+            loss = dict()
+            for task_name, specifications in self.specifications.items():
+                loss[task_name] = self.helper_training_step(
+                    specifications, y[task_name], y_pred[task_name]
+                )
+                model.log(f"{task_name}_train_loss", loss[task_name])
+
+            loss["loss"] = sum(loss.values())
+            model.log("train_loss", loss["loss"])
+            return loss
+
+        loss = self.helper_training_step(self.specifications, y, y_pred)
+        model.log("train_loss", loss)
+        return {"loss": loss}
 
     # default configure_optimizers provided for convenience
     # can obviously be overriden for each task

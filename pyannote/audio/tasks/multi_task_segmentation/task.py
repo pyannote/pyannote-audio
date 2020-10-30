@@ -23,29 +23,33 @@
 
 import math
 import random
+from typing import Mapping
 
 import numpy as np
 
 from pyannote.audio.core.io import Audio
-from pyannote.audio.core.task import Problem, Scale, Task, TaskSpecification
+from pyannote.audio.core.task import Task
+from pyannote.audio.tasks import (
+    OverlappedSpeechDetection,
+    SpeakerChangeDetection,
+    VoiceActivityDetection,
+)
 from pyannote.audio.utils.random import create_rng_for_worker
 from pyannote.core import Segment
 from pyannote.database import Protocol
 
 
-class OverlappedSpeechDetection(Task):
-    """Overlapped speech detection
+class MultiTaskSegmentation(Task):
+    """Multi-task segmentation
 
-    Overlapped speech detection is the task of detecting regions where at least
-    two speakers are speaking at the same time.
+    Multi-task training of segmentation tasks, including:
+        - vad: voice activity detection
+        - scd: speaker change detection
+        - osd: overlapped speech detection
 
-    Here, it is addressed with the same approach as voice activity detection,
-    except {"non-speech", "speech"} classes are replaced by {"non-overlap", "overlap"}
-    where a frame is marked as "overlap" if two speakers or more are active.
-
-    Note that data augmentation is used to increase the proporition of "overlap".
-    This is achieved by generating chunks made out of the (weighted) sum of two
-    random chunks.
+    Note that, when "osd" is one of the tasks considered, data augmentation is used
+    to artificially increase the proportion of "overlap". This is achieved by
+    generating chunks made out of the (weighted) sum of two random chunks.
 
     Parameters
     ----------
@@ -53,17 +57,24 @@ class OverlappedSpeechDetection(Task):
         pyannote.database protocol
     duration : float, optional
         Chunks duration. Defaults to 2s.
-    augmentation_probability : float, optional
-        Probability of artificial overlapping chunks. A probability of 0.6 means that,
-        on average, 40% of training chunks are "real" chunks, while 60% are artifical
-        chunks made out of the (weighted) sum of two chunks. Defaults to 0.5.
-    snr_min, snr_max : float, optional
-        Minimum and maximum signal-to-noise ratio between summed chunks, in dB.
-        Defaults to 0.0 and 10.
-    domain : str, optional
-        Indicate that data augmentation will only overlap chunks from the same domain
-        (i.e. share the same file[domain] value). Default behavior is to not contrain
-        data augmentation with regards to domain.
+    vad : bool, optional
+        Add voice activity detection in the pool of tasks.
+        Defaults to False.
+    vad_params : dict, optional
+        Additional vad-specific parameters. Has no effect when `vad` is False.
+        See VoiceActivityDetection docstring for details and default value.
+    scd : bool, optional
+        Add speaker change detection to the pool of tasks.
+        Defaults to False.
+    scd_params : dict, optional
+        Additional scd-specific parameters. Has no effect when `scd` is False.
+        See SpeakerChangeDetection docstring for details and default value.
+    osd : bool, optional
+        Add overlapped speech detection to the pool of tasks.
+        Defaults to False.
+    osd_params : dict, optional
+        Additional osd-specific parameters. Has no effect when `osd` is False.
+        See OverlappedSpeechDetection docstring for details and default value.
     batch_size : int, optional
         Number of training samples per batch.
     num_workers : int, optional
@@ -74,40 +85,66 @@ class OverlappedSpeechDetection(Task):
         self,
         protocol: Protocol,
         duration: float = 2.0,
-        augmentation_probability: float = 0.5,
-        snr_min: float = 0.0,
-        snr_max: float = 10.0,
-        domain: str = None,
+        vad: bool = False,
+        vad_params: Mapping = None,
+        scd: bool = False,
+        scd_params: Mapping = None,
+        osd: bool = False,
+        osd_params: Mapping = None,
         batch_size: int = None,
         num_workers: int = 1,
     ):
 
         super().__init__(
-            protocol,
-            duration=duration,
-            batch_size=batch_size,
-            num_workers=num_workers,
+            protocol, duration=duration, batch_size=batch_size, num_workers=num_workers
         )
 
-        self.specifications = TaskSpecification(
-            problem=Problem.MONO_LABEL_CLASSIFICATION,
-            scale=Scale.FRAME,
-            duration=self.duration,
-            classes=["non_overlap", "overlap"],
-        )
+        self.vad = vad
+        self.vad_params = dict() if vad_params is None else vad_params
 
-        self.augmentation_probability = augmentation_probability
-        self.snr_min = snr_min
-        self.snr_max = snr_max
-        self.domain = domain
+        self.scd = scd
+        self.scd_params = dict() if scd_params is None else scd_params
+
+        self.osd = osd
+        self.osd_params = dict() if osd_params is None else osd_params
+
+        if sum([vad, scd, osd]) < 2:
+            raise ValueError(
+                "You must activate at least two tasks among 'vad', 'scd', and 'osd'."
+            )
+
+        self.tasks = dict()
+        if self.vad:
+            self.tasks["vad"] = VoiceActivityDetection(
+                protocol,
+                duration=duration,
+                batch_size=batch_size,
+                num_workers=num_workers,
+                **self.vad_params,
+            )
+        if self.scd:
+            self.tasks["scd"] = SpeakerChangeDetection(
+                protocol,
+                duration=duration,
+                batch_size=batch_size,
+                num_workers=num_workers,
+                **self.scd_params,
+            )
+        if self.osd:
+            self.tasks["osd"] = OverlappedSpeechDetection(
+                protocol,
+                duration=duration,
+                batch_size=batch_size,
+                num_workers=num_workers,
+                **self.osd_params,
+            )
 
     def setup(self, stage=None):
+
         if stage == "fit":
 
             # loop over the training set, remove annotated regions shorter than
             # chunk duration, and keep track of the reference annotations.
-
-            # also build the list of domains when needed
 
             self.train = []
             for f in self.protocol.train():
@@ -125,11 +162,16 @@ class OverlappedSpeechDetection(Task):
                         "audio": f["audio"],
                     }
                 )
-                if self.domain is not None:
-                    self.train[-1]["domain"] = f[self.domain]
 
-            if self.domain:
+                if self.osd and self.tasks["osd"].domain is not None:
+                    self.train[-1]["domain"] = f[self.tasks["osd"].domain]
+
+            if self.osd and self.tasks["osd"].domain is not None:
                 self.domains = list(set(f["domain"] for f in self.train))
+
+        self.specifications = {
+            name: task.specifications for name, task in self.tasks.items()
+        }
 
     def train__iter__helper(self, rng: random.Random, domain: str = None):
 
@@ -166,7 +208,7 @@ class OverlappedSpeechDetection(Task):
             )
 
     def prepare_y(self, one_hot_y: np.ndarray):
-        """Get overlapped speech detection targets
+        """Get multi-task targets
 
         Parameters
         ----------
@@ -181,7 +223,7 @@ class OverlappedSpeechDetection(Task):
             y[t] = 1 if there is two or more active speakers at tth frame, 0 otherwise.
         """
 
-        return np.int64(np.sum(one_hot_y, axis=1, keepdims=True) > 1)
+        return {name: task.prepare_y(one_hot_y) for name, task in self.tasks.items()}
 
     def train__iter__(self):
         """Iterate over training samples
@@ -199,17 +241,17 @@ class OverlappedSpeechDetection(Task):
         # create worker-specific random number generator
         rng = create_rng_for_worker()
 
-        if self.domain is None:
-            chunks = self.train__iter__helper(rng)
-        else:
+        if self.osd and self.tasks["osd"].domain is not None:
             chunks_by_domain = {
                 domain: self.train__iter__helper(rng, domain=domain)
                 for domain in self.domains
             }
+        else:
+            chunks = self.train__iter__helper(rng)
 
         while True:
 
-            if self.domain is not None:
+            if self.osd and self.tasks["osd"].domain is not None:
                 #  draw domain at random
                 domain = rng.choice(self.domains)
                 chunks = chunks_by_domain[domain]
@@ -217,7 +259,10 @@ class OverlappedSpeechDetection(Task):
             # generate random chunk
             X, one_hot_y, labels = next(chunks)
 
-            if rng.random() > self.augmentation_probability:
+            if (
+                not self.osd
+                or rng.random() > self.tasks["osd"].augmentation_probability
+            ):
                 # yield it as it is
                 yield {"X": X, "y": self.prepare_y(one_hot_y)}
                 continue
@@ -226,7 +271,9 @@ class OverlappedSpeechDetection(Task):
             other_X, other_one_hot_y, other_labels = next(chunks)
 
             #  sum both chunks with random SNR
-            random_snr = (self.snr_max - self.snr_min) * rng.random() + self.snr_min
+            random_snr = (
+                self.tasks["osd"].snr_max - self.tasks["osd"].snr_min
+            ) * rng.random() + self.tasks["osd"].snr_min
             alpha = np.exp(-np.log(10) * random_snr / 20)
             X = Audio.normalize(X) + alpha * Audio.normalize(other_X)
 

@@ -22,6 +22,8 @@
 
 import warnings
 from dataclasses import dataclass
+
+# from functools import cached_property
 from importlib import import_module
 from typing import Any, Dict, List, Optional, Text, Tuple, Union
 
@@ -33,7 +35,7 @@ from semver import VersionInfo
 
 from pyannote.audio import __version__
 from pyannote.audio.core.io import Audio
-from pyannote.audio.core.task import Problem, Scale, Task
+from pyannote.audio.core.task import Problem, Scale, Task, TaskSpecification
 
 
 @dataclass
@@ -76,6 +78,15 @@ class ModelIntrospection:
             self.dimension,
         )
 
+    def __len__(self):
+        # makes it possible to do something like:
+        # multi_task = len(model_introspection) > 1
+        # because multi-task introspections are stored as {task_name: introspection} dict
+        return 1
+
+    def items(self):
+        yield None, self
+
 
 class Model(pl.LightningModule):
     """Base model
@@ -115,20 +126,35 @@ class Model(pl.LightningModule):
             self.task = task
             self.task.audio = self.audio
 
+    # @cached_property
+    @property
+    def is_multi_task(self) -> bool:
+        if hasattr(self, "task"):
+            return self.task.is_multi_task
+        return len(self.hparams.task_specifications) > 1
+
     def build(self):
         # use this method to add task-dependent layers to the model
         # (e.g. the final classification and activation layers)
         pass
 
-    def introspect(self) -> Union[ModelIntrospection, Dict[Text, ModelIntrospection]]:
-        """Perform model introspection
+    def helper_introspect(
+        self,
+        specifications: TaskSpecification,
+        task: str = None,
+    ) -> ModelIntrospection:
+        """Helper function for model introspection
+
+        Parameters
+        ----------
+        specifications : TaskSpecification
+        task : str, optional
+            Task name.
 
         Returns
         -------
-        specifications: ModelIntrospection
-            Model specifications.
-
-        FIXME: add support for multi-output models (dict of specs)
+        introspection : ModelIntrospection
+            Model introspection.
         """
 
         example_input_array = self.task.example_input_array()
@@ -148,13 +174,15 @@ class Model(pl.LightningModule):
             try:
                 with torch.no_grad():
                     frames = self(example_input_array[:, :num_samples])
+                if task is not None:
+                    frames = frames[task]
             except Exception:
                 lower = num_samples
             else:
                 min_num_samples = num_samples
-                if self.task.specifications.scale == Scale.FRAME:
+                if specifications.scale == Scale.FRAME:
                     _, min_num_frames, dimension = frames.shape
-                elif self.task.specifications.scale == Scale.CHUNK:
+                elif specifications.scale == Scale.CHUNK:
                     min_num_frames, dimension = frames.shape
                 else:
                     # should never happen
@@ -165,7 +193,7 @@ class Model(pl.LightningModule):
                 break
 
         # corner case for chunk-scale tasks
-        if self.task.specifications.scale == Scale.CHUNK:
+        if specifications.scale == Scale.CHUNK:
             return ModelIntrospection(
                 min_num_samples=min_num_samples,
                 min_num_frames=1,
@@ -186,6 +214,8 @@ class Model(pl.LightningModule):
             )
             with torch.no_grad():
                 frames = self(example_input_array)
+            if task is not None:
+                frames = frames[task]
             _, num_frames, _ = frames.shape
             if num_frames > min_num_frames:
                 break
@@ -203,6 +233,8 @@ class Model(pl.LightningModule):
             )
             with torch.no_grad():
                 frames = self(example_input_array)
+            if task is not None:
+                frames = frames[task]
             _, num_frames, _ = frames.shape
             if num_frames > min_num_frames:
                 inc_num_frames = num_frames - min_num_frames
@@ -222,6 +254,26 @@ class Model(pl.LightningModule):
             dimension=dimension,
         )
 
+    def introspect(self) -> Union[ModelIntrospection, Dict[Text, ModelIntrospection]]:
+        """Perform model introspection
+
+        Returns
+        -------
+        introspection: ModelIntrospection or {str: ModelIntrospection} dict
+            Model introspection or {task_name: introspection} dictionary for
+            multi-task models.
+        """
+
+        task_specifications = self.hparams.task_specifications
+
+        if self.is_multi_task:
+            return {
+                name: self.helper_introspect(specs, task=name)
+                for name, specs in task_specifications.items()
+            }
+
+        return self.helper_introspect(task_specifications)
+
     def setup(self, stage=None):
 
         if stage == "fit":
@@ -235,6 +287,8 @@ class Model(pl.LightningModule):
         if stage == "fit":
             # model introspection
             self.hparams.model_introspection = self.introspect()
+
+            # TODO: raises an error in case of multiple tasks with different introspections
 
             # let task know about model introspection
             # so that its dataloader knows how to generate targets
@@ -303,20 +357,52 @@ class Model(pl.LightningModule):
         msg = "Class {self.__class__.__name__} should define a `forward` method."
         raise NotImplementedError(msg)
 
-    # convenience function to automate the choice of the final activation function
-    def default_activation(self) -> nn.Module:
+    def helper_default_activation(self, specifications: TaskSpecification) -> nn.Module:
+        """Helper function for default_activation
 
-        problem = self.hparams.task_specifications.problem
+        Parameters
+        ----------
+        specifications: TaskSpecification
+            Task specification.
 
-        if problem == Problem.MONO_LABEL_CLASSIFICATION:
+        Returns
+        -------
+        activation : nn.Module
+            Default activation function.
+        """
+
+        if specifications.problem == Problem.MONO_LABEL_CLASSIFICATION:
             return nn.LogSoftmax(dim=-1)
 
-        elif problem == Problem.MULTI_LABEL_CLASSIFICATION:
+        elif specifications.problem == Problem.MULTI_LABEL_CLASSIFICATION:
             return nn.Sigmoid()
 
         else:
             msg = "TODO: implement default activation for other types of problems"
             raise NotImplementedError(msg)
+
+    # convenience function to automate the choice of the final activation function
+    def default_activation(self) -> Union[nn.Module, Dict[str, nn.Module]]:
+        """Guess default activation function according to task specification
+
+            * log-softmax for regular classification
+            * sigmoid for multi-label classification
+
+        Returns
+        -------
+        activation : nn.Module or {str: nn.Module}
+            Activation or {task_name: activation} dictionary for multi-task models.
+        """
+
+        task_specifications = self.hparams.task_specifications
+
+        if self.is_multi_task:
+            return {
+                name: self.helper_default_activation(specs)
+                for name, specs in task_specifications.items()
+            }
+
+        return self.helper_default_activation(task_specifications)
 
     # training step logic is delegated to the task because the
     # model does not really need to know how it is being used.
