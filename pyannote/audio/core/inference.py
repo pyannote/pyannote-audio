@@ -20,8 +20,8 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# from functools import cached_property
 import warnings
+from functools import cached_property
 from typing import Dict, List, Optional, Text, Tuple, Union
 
 import numpy as np
@@ -119,18 +119,15 @@ class Inference:
 
         self.batch_size = batch_size
 
-    # @cached_property
-    @property
+    @cached_property
     def is_multi_task(self) -> bool:
         return self.model.is_multi_task
 
-    # @cached_property
-    @property
+    @cached_property
     def task_specifications(self) -> List[Tuple[TaskName, TaskSpecification]]:
         return list(self.model.hparams.task_specifications.items())
 
-    # @cached_property
-    @property
+    @cached_property
     def model_introspection(self) -> List[Tuple[TaskName, ModelIntrospection]]:
         return list(self.model.hparams.model_introspection.items())
 

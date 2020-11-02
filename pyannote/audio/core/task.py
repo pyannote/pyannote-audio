@@ -21,10 +21,11 @@
 # SOFTWARE.
 
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import Enum
-
-# from functools import cached_property
+from functools import cached_property
 from typing import TYPE_CHECKING, List, Optional, Text, Tuple, Union
 
 import numpy as np
@@ -163,8 +164,7 @@ class Task(pl.LightningDataModule):
         """
         pass
 
-    # @cached_property
-    @property
+    @cached_property
     def is_multi_task(self) -> bool:
         """"Check whether multiple tasks are addressed at once"""
         return len(self.specifications) > 1
@@ -271,12 +271,11 @@ class Task(pl.LightningDataModule):
             drop_last=True,
         )
 
-    # @cached_property
-    @property
+    @cached_property
     def example_input_duration(self) -> float:
         return 2.0 if self.duration is None else self.duration
 
-    #  TODO: make it a cached_property
+    @cached_property
     def example_input_array(self):
         # this method is called in Model.introspect where it is used
         # to automagically infer the temporal resolution of the
@@ -318,7 +317,7 @@ class Task(pl.LightningDataModule):
 
     # default training_step provided for convenience
     # can obviously be overriden for each task
-    def training_step(self, model: "Model", batch, batch_idx: int):
+    def training_step(self, model: Model, batch, batch_idx: int):
         """Guess default training_step according to task specification
 
             * NLLLoss for regular classification
@@ -327,7 +326,7 @@ class Task(pl.LightningDataModule):
         In case of multi-tasking, it will default to summing loss of each task.
 
         Parameters
-        ----------
+        ---------- 
         model : Model
             Model currently being trained.
         batch : (usually) dict of torch.Tensor
@@ -362,7 +361,7 @@ class Task(pl.LightningDataModule):
 
     # default configure_optimizers provided for convenience
     # can obviously be overriden for each task
-    def configure_optimizers(self, model: "Model"):
+    def configure_optimizers(self, model: Model):
         # for tasks such as SpeakerEmbedding,
         # other parameters should be added here
         return torch.optim.Adam(model.parameters(), lr=1e-3)
