@@ -19,32 +19,3 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-
-
-import os
-import random
-
-import torch
-
-
-def create_rng_for_worker():
-    """Create worker-specific random number generator
-
-    This makes sure that
-    1. training samples generation is reproducible
-    2. all workers use a different seed (e.g. to avoid training samples duplication)
-    """
-
-    # create random number generator
-    rng = random.Random()
-
-    #  create seed as a combination of PL_GLOBAL_SEED (set by pl.seed_everything())
-    #  and current worker id.
-    global_seed = int(os.environ.get("PL_GLOBAL_SEED", 1))
-    worker_info = torch.utils.data.get_worker_info()
-    if worker_info is None:
-        rng.seed(global_seed)
-    else:
-        rng.seed(global_seed + worker_info.id)
-
-    return rng

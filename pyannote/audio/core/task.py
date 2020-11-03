@@ -21,10 +21,13 @@
 # SOFTWARE.
 
 
+from __future__ import annotations
+
+import sys
+import warnings
 from dataclasses import dataclass
 from enum import Enum
-
-# from functools import cached_property
+from functools import cached_property
 from typing import TYPE_CHECKING, List, Optional, Text, Tuple, Union
 
 import numpy as np
@@ -129,6 +132,20 @@ class Task(pl.LightningDataModule):
         # batching
         self.duration = duration
         self.batch_size = batch_size
+
+        # multi-processing
+        if (
+            num_workers > 0
+            and sys.platform == "darwin"
+            and sys.version_info[0] >= 3
+            and sys.version_info[1] >= 8
+        ):
+            warnings.warn(
+                "num_workers > 0 is not supported with macOS and Python 3.8+: "
+                "setting num_workers = 0."
+            )
+            num_workers = 0
+
         self.num_workers = num_workers
 
     def prepare_data(self):
@@ -163,8 +180,7 @@ class Task(pl.LightningDataModule):
         """
         pass
 
-    # @cached_property
-    @property
+    @cached_property
     def is_multi_task(self) -> bool:
         """"Check whether multiple tasks are addressed at once"""
         return len(self.specifications) > 1
@@ -271,12 +287,11 @@ class Task(pl.LightningDataModule):
             drop_last=True,
         )
 
-    # @cached_property
-    @property
+    @cached_property
     def example_input_duration(self) -> float:
         return 2.0 if self.duration is None else self.duration
 
-    #  TODO: make it a cached_property
+    @cached_property
     def example_input_array(self):
         # this method is called in Model.introspect where it is used
         # to automagically infer the temporal resolution of the
@@ -318,7 +333,7 @@ class Task(pl.LightningDataModule):
 
     # default training_step provided for convenience
     # can obviously be overriden for each task
-    def training_step(self, model: "Model", batch, batch_idx: int):
+    def training_step(self, model: Model, batch, batch_idx: int):
         """Guess default training_step according to task specification
 
             * NLLLoss for regular classification
@@ -362,7 +377,7 @@ class Task(pl.LightningDataModule):
 
     # default configure_optimizers provided for convenience
     # can obviously be overriden for each task
-    def configure_optimizers(self, model: "Model"):
+    def configure_optimizers(self, model: Model):
         # for tasks such as SpeakerEmbedding,
         # other parameters should be added here
         return torch.optim.Adam(model.parameters(), lr=1e-3)

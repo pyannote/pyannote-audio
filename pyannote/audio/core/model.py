@@ -22,8 +22,7 @@
 
 import warnings
 from dataclasses import dataclass
-
-# from functools import cached_property
+from functools import cached_property
 from importlib import import_module
 from typing import Any, Dict, List, Optional, Text, Tuple, Union
 
@@ -126,8 +125,7 @@ class Model(pl.LightningModule):
             self.task = task
             self.task.audio = self.audio
 
-    # @cached_property
-    @property
+    @cached_property
     def is_multi_task(self) -> bool:
         if hasattr(self, "task"):
             return self.task.is_multi_task
@@ -157,7 +155,7 @@ class Model(pl.LightningModule):
             Model introspection.
         """
 
-        example_input_array = self.task.example_input_array()
+        example_input_array = self.task.example_input_array
         batch_size, num_samples, num_channels = example_input_array.shape
         example_input_array = torch.randn(
             (1, num_samples, num_channels),

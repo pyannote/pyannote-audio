@@ -176,9 +176,7 @@ class SimpleEmbeddingModel(Model):
         # end user does not forget to call it. note that this must
         # be called at the end of __init__
         if self.task is not None:
-            self.task.example_output_array = self.forward(
-                self.task.example_input_array()
-            )
+            self.task.example_output_array = self.forward(self.task.example_input_array)
 
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
         """
