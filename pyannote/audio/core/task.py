@@ -295,8 +295,8 @@ class Task(pl.LightningDataModule):
         return torch.randn(
             (
                 self.batch_size,
-                int(self.audio.sample_rate * self.example_input_duration),
                 num_channels,
+                int(self.audio.sample_rate * self.example_input_duration),
             )
         )
 
@@ -326,7 +326,7 @@ class Task(pl.LightningDataModule):
         In case of multi-tasking, it will default to summing loss of each task.
 
         Parameters
-        ---------- 
+        ----------
         model : Model
             Model currently being trained.
         batch : (usually) dict of torch.Tensor
