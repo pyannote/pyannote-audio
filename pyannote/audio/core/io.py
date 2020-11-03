@@ -315,16 +315,17 @@ class Audio:
 
         # infer which samples to load from sample rate and requested chunk
         start_frame = int(segment.start * sample_rate)
-        num_frames = int(segment.end * sample_rate) - start_frame
+        num_frames = int(segment.end * sample_rate - start_frame)
+        end_frame = start_frame + num_frames
 
-        if start_frame < 0 or start_frame + num_frames > frames:
+        if start_frame < 0 or end_frame > frames:
             raise ValueError(
                 f"requested chunk [{segment.start:.6f}, {segment.end:.6f}] "
                 f"lies outside of file bounds [0., {frames / sample_rate:.6f}]."
             )
 
         if waveform is not None:
-            data = waveform[start_frame : start_frame + num_frames]
+            data = waveform[:, start_frame:end_frame]
         else:
             try:
                 data, _ = torchaudio.load(

@@ -1,9 +1,11 @@
+import random
+
 import torch
 import torchaudio
 from torch import Tensor
 
 from pyannote.audio.core.io import Audio
-from pyannote.core import Segment
+from pyannote.core import Segment, SlidingWindow
 
 
 def test_audio_resample():
@@ -59,3 +61,19 @@ def test_can_crop_waveform():
     wav, sr = loader.crop({"waveform": waveform, "sample_rate": 16000}, segment)
     assert isinstance(wav, Tensor)
     assert sr == 16000
+
+
+def test_crops_are_correct_shape():
+    sr = 160001
+    secs = random.randint(5, 11)
+    waveform = torch.randn(1, secs * sr)
+    loader = Audio()
+    shape = None
+    for segment in SlidingWindow(end=secs):
+        print(segment)
+        wav, sr = loader.crop({"waveform": waveform, "sample_rate": sr}, segment)
+        print(wav.shape)
+        if shape is None:
+            shape = wav.shape
+        else:
+            assert shape == wav.shape
