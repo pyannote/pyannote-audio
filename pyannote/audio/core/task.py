@@ -23,6 +23,8 @@
 
 from __future__ import annotations
 
+import sys
+import warnings
 from dataclasses import dataclass
 from enum import Enum
 from functools import cached_property
@@ -130,6 +132,20 @@ class Task(pl.LightningDataModule):
         # batching
         self.duration = duration
         self.batch_size = batch_size
+
+        # multi-processing
+        if (
+            num_workers > 0
+            and sys.platform == "darwin"
+            and sys.version_info[0] >= 3
+            and sys.version_info[1] >= 8
+        ):
+            warnings.warn(
+                "num_workers > 0 is not supported with macOS and Python 3.8+: "
+                "setting num_workers = 0."
+            )
+            num_workers = 0
+
         self.num_workers = num_workers
 
     def prepare_data(self):
@@ -326,7 +342,7 @@ class Task(pl.LightningDataModule):
         In case of multi-tasking, it will default to summing loss of each task.
 
         Parameters
-        ---------- 
+        ----------
         model : Model
             Model currently being trained.
         batch : (usually) dict of torch.Tensor
