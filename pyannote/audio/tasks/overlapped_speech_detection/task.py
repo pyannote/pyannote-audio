@@ -40,8 +40,8 @@ class OverlappedSpeechDetection(Task):
     two speakers are speaking at the same time.
 
     Here, it is addressed with the same approach as voice activity detection,
-    except {"non-speech", "speech"} classes are replaced by {"non-overlap", "overlap"}
-    where a frame is marked as "overlap" if two speakers or more are active.
+    except "speech" class is replaced by "overlap", where a frame is marked as
+    "overlap" if two speakers or more are active.
 
     Note that data augmentation is used to increase the proporition of "overlap".
     This is achieved by generating chunks made out of the (weighted) sum of two
@@ -90,10 +90,12 @@ class OverlappedSpeechDetection(Task):
         )
 
         self.specifications = TaskSpecification(
-            problem=Problem.MONO_LABEL_CLASSIFICATION,
+            problem=Problem.BINARY_CLASSIFICATION,
             scale=Scale.FRAME,
             duration=self.duration,
-            classes=["non_overlap", "overlap"],
+            classes=[
+                "overlap",
+            ],
         )
 
         self.augmentation_probability = augmentation_probability
@@ -181,7 +183,7 @@ class OverlappedSpeechDetection(Task):
             y[t] = 1 if there is two or more active speakers at tth frame, 0 otherwise.
         """
 
-        return np.int64(np.sum(one_hot_y, axis=1, keepdims=True) > 1)
+        return np.int64(np.sum(one_hot_y, axis=1, keepdims=False) > 1)
 
     def train__iter__(self):
         """Iterate over training samples

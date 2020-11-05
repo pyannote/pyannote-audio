@@ -369,7 +369,10 @@ class Model(pl.LightningModule):
             Default activation function.
         """
 
-        if specifications.problem == Problem.MONO_LABEL_CLASSIFICATION:
+        if specifications.problem == Problem.BINARY_CLASSIFICATION:
+            return nn.Sigmoid()
+
+        elif specifications.problem == Problem.MONO_LABEL_CLASSIFICATION:
             return nn.LogSoftmax(dim=-1)
 
         elif specifications.problem == Problem.MULTI_LABEL_CLASSIFICATION:
