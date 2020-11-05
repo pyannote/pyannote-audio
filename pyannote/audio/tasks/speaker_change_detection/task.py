@@ -38,10 +38,10 @@ class SpeakerChangeDetection(Task):
     in a given audio recording.
 
     Here, it is addressed with the same approach as voice activity detection,
-    except {"non-speech", "speech"} classes are replaced by {"non-change", "change"}
-    where a frame is marked as "change" if a speaker change happens less than
-    `collar` frames away. Note that non-speech/speech changes are not marked as
-    speaker change.
+    except "speech" class is replaced by "change" where a frame is marked as
+    "change" if a speaker change happens less than `collar` frames away.
+
+    Note that non-speech/speech changes are not marked as speaker change.
 
     Parameters
     ----------
@@ -75,10 +75,12 @@ class SpeakerChangeDetection(Task):
         )
 
         self.specifications = TaskSpecification(
-            problem=Problem.MONO_LABEL_CLASSIFICATION,
+            problem=Problem.BINARY_CLASSIFICATION,
             scale=Scale.FRAME,
             duration=self.duration,
-            classes=["non_change", "change"],
+            classes=[
+                "change",
+            ],
         )
 
         self.collar = collar
@@ -163,7 +165,7 @@ class SpeakerChangeDetection(Task):
 
         y *= x_speakers
 
-        return y
+        return np.squeeze(y)
 
     def train__iter__(self):
         """Iterate over training samples

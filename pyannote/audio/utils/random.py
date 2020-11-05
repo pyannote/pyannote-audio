@@ -42,9 +42,9 @@ def create_rng_for_worker():
     #  and current worker id.
     global_seed = int(os.environ.get("PL_GLOBAL_SEED", 1))
     worker_info = torch.utils.data.get_worker_info()
-    seed = global_seed + worker_info.id
-
-    # seed
-    rng.seed(seed)
+    if worker_info is None:
+        rng.seed(global_seed)
+    else:
+        rng.seed(global_seed + worker_info.id)
 
     return rng

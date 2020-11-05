@@ -23,6 +23,8 @@
 
 from __future__ import annotations
 
+import sys
+import warnings
 from dataclasses import dataclass
 from enum import Enum
 from functools import cached_property
@@ -45,6 +47,7 @@ if TYPE_CHECKING:
 
 # Type of machine learning problem
 class Problem(Enum):
+    BINARY_CLASSIFICATION = 0
     MONO_LABEL_CLASSIFICATION = 1
     MULTI_LABEL_CLASSIFICATION = 2
     REPRESENTATION = 3
@@ -130,6 +133,20 @@ class Task(pl.LightningDataModule):
         # batching
         self.duration = duration
         self.batch_size = batch_size
+
+        # multi-processing
+        if (
+            num_workers > 0
+            and sys.platform == "darwin"
+            and sys.version_info[0] >= 3
+            and sys.version_info[1] >= 8
+        ):
+            warnings.warn(
+                "num_workers > 0 is not supported with macOS and Python 3.8+: "
+                "setting num_workers = 0."
+            )
+            num_workers = 0
+
         self.num_workers = num_workers
 
     def prepare_data(self):
@@ -303,10 +320,13 @@ class Task(pl.LightningDataModule):
     def helper_training_step(self, specifications: TaskSpecification, y, y_pred):
         """Helper function for training_step"""
 
-        if specifications.problem == Problem.MONO_LABEL_CLASSIFICATION:
+        if specifications.problem == Problem.BINARY_CLASSIFICATION:
+            loss = F.binary_cross_entropy(y_pred.squeeze(dim=-1), y.float())
+
+        elif specifications.problem == Problem.MONO_LABEL_CLASSIFICATION:
             loss = F.nll_loss(y_pred.view(-1, len(specifications.classes)), y.view(-1))
 
-        elif self.specifications.problem == Problem.MULTI_LABEL_CLASSIFICATION:
+        elif specifications.problem == Problem.MULTI_LABEL_CLASSIFICATION:
             loss = F.binary_cross_entropy(y_pred, y.float())
 
         else:
@@ -320,8 +340,8 @@ class Task(pl.LightningDataModule):
     def training_step(self, model: Model, batch, batch_idx: int):
         """Guess default training_step according to task specification
 
-            * NLLLoss for regular classification
-            * binary cross-entropy for multi-label classification
+            * binary cross-entropy loss for binary or multi-label classification
+            * negative log-likelihood loss for regular classification
 
         In case of multi-tasking, it will default to summing loss of each task.
 
