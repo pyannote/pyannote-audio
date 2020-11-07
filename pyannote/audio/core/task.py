@@ -47,6 +47,7 @@ if TYPE_CHECKING:
 
 # Type of machine learning problem
 class Problem(Enum):
+    BINARY_CLASSIFICATION = 0
     MONO_LABEL_CLASSIFICATION = 1
     MULTI_LABEL_CLASSIFICATION = 2
     REPRESENTATION = 3
@@ -319,10 +320,13 @@ class Task(pl.LightningDataModule):
     def helper_training_step(self, specifications: TaskSpecification, y, y_pred):
         """Helper function for training_step"""
 
-        if specifications.problem == Problem.MONO_LABEL_CLASSIFICATION:
+        if specifications.problem == Problem.BINARY_CLASSIFICATION:
+            loss = F.binary_cross_entropy(y_pred.squeeze(dim=-1), y.float())
+
+        elif specifications.problem == Problem.MONO_LABEL_CLASSIFICATION:
             loss = F.nll_loss(y_pred.view(-1, len(specifications.classes)), y.view(-1))
 
-        elif self.specifications.problem == Problem.MULTI_LABEL_CLASSIFICATION:
+        elif specifications.problem == Problem.MULTI_LABEL_CLASSIFICATION:
             loss = F.binary_cross_entropy(y_pred, y.float())
 
         else:
@@ -336,8 +340,8 @@ class Task(pl.LightningDataModule):
     def training_step(self, model: Model, batch, batch_idx: int):
         """Guess default training_step according to task specification
 
-            * NLLLoss for regular classification
-            * binary cross-entropy for multi-label classification
+            * binary cross-entropy loss for binary or multi-label classification
+            * negative log-likelihood loss for regular classification
 
         In case of multi-tasking, it will default to summing loss of each task.
 

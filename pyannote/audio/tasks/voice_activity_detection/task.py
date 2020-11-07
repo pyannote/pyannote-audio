@@ -36,8 +36,8 @@ class VoiceActivityDetection(Task):
     Voice activity detection (or VAD) is the task of detecting speech regions
     in a given audio recording.
 
-    It is addressed as a binary {"non-speech", "speech"} sequence labeling task.
-    A frame is marked as "speech" as soon as at least one speaker is active.
+    It is addressed as a binary (0 or 1) sequence labeling task. A frame is 
+    marked as "speech" (1) as soon as at least one speaker is active.
 
     Parameters
     ----------
@@ -67,10 +67,12 @@ class VoiceActivityDetection(Task):
         )
 
         self.specifications = TaskSpecification(
-            problem=Problem.MONO_LABEL_CLASSIFICATION,
+            problem=Problem.BINARY_CLASSIFICATION,
             scale=Scale.FRAME,
             duration=self.duration,
-            classes=["non_speech", "speech"],
+            classes=[
+                "speech",
+            ],
         )
 
     def setup(self, stage=None):
