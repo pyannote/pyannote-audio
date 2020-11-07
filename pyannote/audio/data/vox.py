@@ -23,9 +23,9 @@ def cat(file, dest):
 
 class VoxDataset(DownloadableProtocol):
     def setup_authentication(self):
-        if self.user is None:
+        if not hasattr(self, "user"):
             self.user = os.environ["VOX_USER"]
-        if self.password is None:
+        if not hasattr(self, "password"):
             self.password = os.environ["VOX_PASSWORD"]
         if None in [self.user, self.password]:
             msg = """You must set the VOX_USER AND VOX_PASSWORD to download the {self.__class__.__name} datset
@@ -37,6 +37,9 @@ class VoxDataset(DownloadableProtocol):
 
 
 class VoxCeleb1(VoxDataset):
+    def __init__(self, *args, **kwargs):
+        super().__init__("SpeakerIdentification", *args, **kwargs)
+
     def prepare(self):
         dev_url = "http://www.robots.ox.ac.uk/~vgg/data/voxceleb/vox1a/vox1_dev_wav_parta{part}"
         parts = [dev_url.format(part=p) for p in ["a", "b", "c", "d"]]
@@ -45,8 +48,10 @@ class VoxCeleb1(VoxDataset):
         zip_uri = self.data_dir / "vox_aac.zip"
         cat(self.dl(parts), dest=zip_uri)
         extract(zip_uri)
-        download(
-            "http://www.robots.ox.ac.uk/~vgg/data/voxceleb/vox1a/vox1_test_wav.zip"
+        extract(
+            self.dl(
+                "http://www.robots.ox.ac.uk/~vgg/data/voxceleb/vox1a/vox1_test_wav.zip"
+            )
         )
 
         list_url = (
@@ -62,20 +67,26 @@ class VoxCeleb1(VoxDataset):
 
 
 class VoxCeleb2(VoxDataset):
+    def __init__(self, *args, **kwargs):
+        super().__init__("SpeakerIdentification", *args, **kwargs)
+
     def prepare(self):
+        self.setup_authentication()
+
         # Dev
         dev_url = "http://www.robots.ox.ac.uk/~vgg/data/voxceleb/vox1a/vox2_dev_aac_part{part}"
         parts = [
             dev_url.format(part=p) for p in ["a", "b", "c", "d", "e", "f", "g", "h"]
         ]
-        download(
-            "http://www.robots.ox.ac.uk/~vgg/data/voxceleb/vox1a/vox2_test_aac.zip"
-        )
-
-        self.setup_authentication()
         zip_uri = self.data_dir / "vox2_aac.zip"
         cat(self.dl(parts), dest=zip_uri)
         extract(zip_uri)
+
+        extract(
+            self.dl(
+                "http://www.robots.ox.ac.uk/~vgg/data/voxceleb/vox1a/vox2_test_aac.zip"
+            )
+        )
 
         # Test
         list_url = (
@@ -90,4 +101,13 @@ class VoxCeleb2(VoxDataset):
 
 
 class VoxConverse(VoxDataset):
-    pass
+    def prepare(self):
+        # Dev
+
+        urls = [
+            "http://www.robots.ox.ac.uk/~vgg/data/voxconverse/data/voxconverse_dev_wav.zip",
+            "http://www.robots.ox.ac.uk/~vgg/data/voxconverse/data/voxconverse_challengetest_wav.zip",
+            "https://github.com/joonson/voxconverse/archive/master.zip",
+        ]
+
+        extract(self.dl(urls))
