@@ -1,7 +1,14 @@
-from pyannote.audio.core.data import DownloadableProtocol, chain, download, extract
+from pyannote.audio.data.data import DownloadableProtocol
+from pyannote.audio.data.util import download, extract
+from pyannote.audio.utils.functional import chain
 
 
 class MUSAN(DownloadableProtocol):
+    """
+    A collection of sounds from real life to help
+    with sound classification
+    """
+
     def __init__(self, *args, **kwargs):
         protocol_name = "MUSAN"
         task = "Collection"

@@ -38,6 +38,7 @@ import torch.optim
 from torch.utils.data import DataLoader, IterableDataset
 
 from pyannote.audio.core.io import AudioFile
+from pyannote.audio.data.data import DownloadableProtocol
 from pyannote.core import Segment, SlidingWindow
 from pyannote.database import Protocol
 
@@ -120,7 +121,7 @@ class Task(pl.LightningDataModule):
 
     def __init__(
         self,
-        protocol: Protocol,
+        protocol: [DownloadableProtocol, Protocol],
         duration: float = None,
         batch_size: int = None,
         num_workers: int = 1,
