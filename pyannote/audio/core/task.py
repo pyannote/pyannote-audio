@@ -121,7 +121,7 @@ class Task(pl.LightningDataModule):
 
     def __init__(
         self,
-        protocol: [DownloadableProtocol, Protocol],
+        protocol: Union[DownloadableProtocol, Protocol],
         duration: float = None,
         batch_size: int = None,
         num_workers: int = 1,
