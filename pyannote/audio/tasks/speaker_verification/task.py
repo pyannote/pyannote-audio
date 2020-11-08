@@ -37,12 +37,24 @@ if TYPE_CHECKING:
 
 
 class SpeakerEmbeddingArcFace(Task):
+    """
+
+
+    pin_memory : bool, optional
+        If True, data loaders will copy tensors into CUDA pinned
+        memory before returning them. See pytorch documentation
+        for more details. Defaults to False.
+
+
+    """
+
     def __init__(
         self,
         protocol: Protocol,
         duration: float = 2.0,
         batch_size: int = None,
         num_workers: int = 1,
+        pin_memory: bool = False,
     ):
 
         super().__init__(
@@ -50,6 +62,7 @@ class SpeakerEmbeddingArcFace(Task):
             duration=duration,
             batch_size=batch_size,
             num_workers=num_workers,
+            pin_memory=pin_memory,
         )
 
         # there is no such thing as a "class" in representation
