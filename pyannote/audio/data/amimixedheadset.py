@@ -1,6 +1,8 @@
 from functools import partial
 
-from pyannote.audio.core.data import DownloadableProtocol, chain, download
+from pyannote.audio.data.data import DownloadableProtocol
+from pyannote.audio.data.util import download
+from pyannote.audio.utils.functional import chain
 
 from .validate import normalize_wav
 

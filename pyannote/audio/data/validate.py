@@ -1,11 +1,13 @@
 import io
 import wave
+from pathlib import Path
+from typing import Union
 
-from pyannote.audio.core.data import apply_to_array
+from pyannote.audio.utils.functional import apply_to_array
 
 
 @apply_to_array
-def normalize_wav(input_file):
+def normalize_wav(input_file: Union[str, Path]):
     """
     Better name for this?
     Can we just use torchaudio?

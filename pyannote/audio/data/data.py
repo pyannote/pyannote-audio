@@ -4,7 +4,8 @@ from typing import Union
 
 import yaml
 
-from pyannote.database import DATABASES, Database, FileFinder, create_protocol, get_init
+from pyannote.database import DATABASES, Database, FileFinder
+from pyannote.database.custom import create_protocol, get_init
 
 from .util import _get_yaml
 
