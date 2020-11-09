@@ -1,43 +1,44 @@
-name: Test API
+name: Tests
 
 on:
-  pull_request:
-    branches:
-      - develop
   push:
-    branches:
-      - develop
-      - master
-      - release/*
+    branches: [ develop ]
+  pull_request:
+    branches: [ develop ]
 
 jobs:
   build:
-
-    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    runs-on: ${{ matrix.os }}
     strategy:
-      max-parallel: 4
       matrix:
-        python-version: [3.7, 3.8]
-
+        os: [ubuntu-latest, macos-latest]
+        python-version: [3.8]
     steps:
-    - uses: actions/checkout@v1
+    - uses: actions/checkout@v2
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v1
+      uses: actions/setup-python@v2
       with:
         python-version: ${{ matrix.python-version }}
-    - name: Install from source
+    - name: Install libsndfile
+      if: matrix.os == 'ubuntu-latest'
       run: |
-        python -m pip install --upgrade pip
-        pip install numpy scipy torch
-        pip install .
-    - name: Lint with flake8
+        sudo apt-get install libsndfile1
+    - name: Install pyannote.audio
       run: |
-        pip install flake8==3.7.9
-        # stop the build if there are Python syntax errors or undefined names
-        flake8 ./pyannote --count --select=E9,F63,F7,F82 --show-source --statistics
-        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-        flake8 ./pyannote --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+          pip install -e .[dev,testing]  
     - name: Test with pytest
       run: |
-        pip install pytest
-        pytest
+          export PYANNOTE_DATABASE_CONFIG=$GITHUB_WORKSPACE/tests/data/database.yml
+          pytest
+    # Turn back on when the repository is public again
+    # - name: Generate coverage report
+    #   run: |
+    #     pytest --cov-report=xml
+    # - name: Upload coverage to Codecov
+    #   uses: codecov/codecov-action@v1
+    #   with:
+    #     file: ./coverage.xml
+    #     env_vars: PYTHON
+    #     name: codecov-fastaudio
+    #     fail_ci_if_error: true
