@@ -110,6 +110,10 @@ class Task(pl.LightningDataModule):
         Number of training samples per batch.
     num_workers : int, optional
         Number of workers used for generating training samples.
+    pin_memory : bool, optional
+        If True, data loaders will copy tensors into CUDA pinned
+        memory before returning them. See pytorch documentation
+        for more details. Defaults to False.
 
     Attributes
     ----------
@@ -125,6 +129,7 @@ class Task(pl.LightningDataModule):
         duration: float = None,
         batch_size: int = None,
         num_workers: int = 1,
+        pin_memory: bool = False,
     ):
         super().__init__()
 
@@ -149,6 +154,8 @@ class Task(pl.LightningDataModule):
             num_workers = 0
 
         self.num_workers = num_workers
+
+        self.pin_memory = pin_memory
 
     def prepare_data(self):
         """Use this to download and prepare data
@@ -286,6 +293,7 @@ class Task(pl.LightningDataModule):
             dataset(),
             batch_size=self.batch_size,
             num_workers=self.num_workers,
+            pin_memory=self.pin_memory,
             drop_last=True,
         )
 

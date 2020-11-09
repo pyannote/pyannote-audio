@@ -48,6 +48,10 @@ class SpeakerTracking(Task):
         Number of training samples per batch.
     num_workers : int, optional
         Number of workers used for generating training samples.
+    pin_memory : bool, optional
+        If True, data loaders will copy tensors into CUDA pinned
+        memory before returning them. See pytorch documentation
+        for more details. Defaults to False.
     """
 
     def __init__(
@@ -56,6 +60,7 @@ class SpeakerTracking(Task):
         duration: float = 2.0,
         batch_size: int = None,
         num_workers: int = 1,
+        pin_memory: bool = False,
     ):
 
         super().__init__(
@@ -63,6 +68,7 @@ class SpeakerTracking(Task):
             duration=duration,
             batch_size=batch_size,
             num_workers=num_workers,
+            pin_memory=pin_memory,
         )
 
         # for speaker tracking, task specification depends
