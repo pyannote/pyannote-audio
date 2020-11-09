@@ -1,0 +1,4 @@
+pyannote/audio/_version.py export-subst
+notebooks/* linguist-documentation
+tutorials/* linguist-documentation
+versioneer.py linguist-vendored
