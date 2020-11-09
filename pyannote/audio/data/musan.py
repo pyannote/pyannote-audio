@@ -7,6 +7,8 @@ class MUSAN(DownloadableProtocol):
     """
     A collection of sounds from real life to help
     with sound classification
+
+    http://www.openslr.org/17/
     """
 
     def __init__(self, *args, **kwargs):
