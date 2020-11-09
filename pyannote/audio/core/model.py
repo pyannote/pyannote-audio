@@ -180,7 +180,7 @@ class Model(pl.LightningModule):
                 if specifications.scale == Scale.FRAME:
                     _, min_num_frames, dimension = frames.shape
                 elif specifications.scale == Scale.CHUNK:
-                    min_num_frames, dimension, _ = frames.shape
+                    min_num_frames, dimension = frames.shape
                 else:
                     # should never happen
                     pass
