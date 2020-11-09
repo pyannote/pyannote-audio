@@ -91,7 +91,20 @@ class Audio:
 
     @staticmethod
     def normalize(waveform: Tensor) -> Tensor:
-        return waveform / (torch.sqrt(torch.mean(waveform ** 2)) + 1e-8)
+        """
+
+        Parameters
+        ----------
+        waveform : (channel, time) Tensor
+            Single or multichannel waveform
+
+
+        Returns
+        -------
+        waveform: (channel, time) Tensor
+        """
+        stds = waveform.pow(2).mean(1).sqrt().add(1e-8)
+        return (waveform.permute(1, 0) / stds).permute(1, 0)
 
     @staticmethod
     def get_duration(file: AudioFile) -> float:
