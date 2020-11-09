@@ -154,7 +154,6 @@ class Model(pl.LightningModule):
         introspection : ModelIntrospection
             Model introspection.
         """
-        breakpoint()
         example_input_array = self.task.example_input_array
         batch_size, num_channels, num_samples = example_input_array.shape
         example_input_array = torch.randn(
@@ -179,9 +178,9 @@ class Model(pl.LightningModule):
             else:
                 min_num_samples = num_samples
                 if specifications.scale == Scale.FRAME:
-                    _, dimension, min_num_frames= frames.shape
+                    _, min_num_frames, dimension = frames.shape
                 elif specifications.scale == Scale.CHUNK:
-                    dimension, min_num_frames = frames.shape
+                    min_num_frames, dimension, _ = frames.shape
                 else:
                     # should never happen
                     pass
@@ -199,8 +198,7 @@ class Model(pl.LightningModule):
                 inc_num_frames=0,
                 dimension=dimension,
             )
-       
-        breakpoint()
+
         # search reasonable upper bound for "inc_num_samples"
         while True:
             num_samples = 2 * min_num_samples
@@ -215,11 +213,10 @@ class Model(pl.LightningModule):
                 frames = self(example_input_array)
             if task is not None:
                 frames = frames[task]
-            num_frames= frames.shape[2]
+            num_frames = frames.shape[1]
             if num_frames > min_num_frames:
                 break
-        
-        breakpoint()
+
         # dichotomic search of "inc_num_samples"
         lower, upper = min_num_samples, num_samples
         while True:
@@ -235,7 +232,7 @@ class Model(pl.LightningModule):
                 frames = self(example_input_array)
             if task is not None:
                 frames = frames[task]
-            num_frames = frames.shape[2]
+            num_frames = frames.shape[1]
             if num_frames > min_num_frames:
                 inc_num_frames = num_frames - min_num_frames
                 inc_num_samples = num_samples - min_num_samples

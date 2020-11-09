@@ -228,14 +228,13 @@ class Task(pl.LightningDataModule):
         )
         if not return_y:
             return X
-
         if self.is_multi_task:
             # this assumes that all tasks share the same model introspection.
             # this is a reasonable assumption for now.
             any_task = next(iter(self.model_introspection.keys()))
-            num_frames, _ = self.model_introspection[any_task](X.shape[0])
+            num_frames, _ = self.model_introspection[any_task](X.shape[1])
         else:
-            num_frames, _ = self.model_introspection(X.shape[0])
+            num_frames, _ = self.model_introspection(X.shape[1])
 
         annotation = file["annotation"].crop(chunk)
         labels = annotation.labels() if labels is None else labels
