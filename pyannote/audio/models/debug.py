@@ -83,7 +83,7 @@ class SimpleSegmentationModel(Model):
         -------
         scores : (batch, time, classes)
         """
-
+        # breakpoint()
         # extract MFCC
         mfcc = self.mfcc(waveforms)
         # pass MFCC sequeence into the recurrent layer
@@ -131,6 +131,7 @@ class MultiTaskSegmentationModel(Model):
 
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
         # extract MFCC
+        breakpoint()
         mfcc = self.mfcc(waveforms)
         # pass MFCC sequence into the recurrent layer
         output, hidden = self.lstm(rearrange(mfcc, "b c f t -> b t (c f)"))

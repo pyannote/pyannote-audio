@@ -154,11 +154,11 @@ class Model(pl.LightningModule):
         introspection : ModelIntrospection
             Model introspection.
         """
-
+        breakpoint()
         example_input_array = self.task.example_input_array
-        batch_size, num_samples, num_channels = example_input_array.shape
+        batch_size, num_channels, num_samples = example_input_array.shape
         example_input_array = torch.randn(
-            (1, num_samples, num_channels),
+            (1, num_channels, num_samples),
             dtype=example_input_array.dtype,
             layout=example_input_array.layout,
             device=example_input_array.device,
@@ -171,7 +171,7 @@ class Model(pl.LightningModule):
             num_samples = (lower + upper) // 2
             try:
                 with torch.no_grad():
-                    frames = self(example_input_array[:, :num_samples])
+                    frames = self(example_input_array[:, :, :num_samples])
                 if task is not None:
                     frames = frames[task]
             except Exception:
@@ -179,9 +179,9 @@ class Model(pl.LightningModule):
             else:
                 min_num_samples = num_samples
                 if specifications.scale == Scale.FRAME:
-                    _, min_num_frames, dimension = frames.shape
+                    _, dimension, min_num_frames= frames.shape
                 elif specifications.scale == Scale.CHUNK:
-                    min_num_frames, dimension = frames.shape
+                    dimension, min_num_frames = frames.shape
                 else:
                     # should never happen
                     pass
@@ -199,12 +199,13 @@ class Model(pl.LightningModule):
                 inc_num_frames=0,
                 dimension=dimension,
             )
-
+       
+        breakpoint()
         # search reasonable upper bound for "inc_num_samples"
         while True:
             num_samples = 2 * min_num_samples
             example_input_array = torch.randn(
-                (1, num_samples, num_channels),
+                (1, num_channels, num_samples),
                 dtype=example_input_array.dtype,
                 layout=example_input_array.layout,
                 device=example_input_array.device,
@@ -214,16 +215,17 @@ class Model(pl.LightningModule):
                 frames = self(example_input_array)
             if task is not None:
                 frames = frames[task]
-            _, num_frames, _ = frames.shape
+            num_frames= frames.shape[2]
             if num_frames > min_num_frames:
                 break
-
+        
+        breakpoint()
         # dichotomic search of "inc_num_samples"
         lower, upper = min_num_samples, num_samples
         while True:
             num_samples = (lower + upper) // 2
             example_input_array = torch.randn(
-                (1, num_samples, num_channels),
+                (1, num_channels, num_samples),
                 dtype=example_input_array.dtype,
                 layout=example_input_array.layout,
                 device=example_input_array.device,
@@ -233,7 +235,7 @@ class Model(pl.LightningModule):
                 frames = self(example_input_array)
             if task is not None:
                 frames = frames[task]
-            _, num_frames, _ = frames.shape
+            num_frames = frames.shape[2]
             if num_frames > min_num_frames:
                 inc_num_frames = num_frames - min_num_frames
                 inc_num_samples = num_samples - min_num_samples
