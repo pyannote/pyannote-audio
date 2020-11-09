@@ -21,7 +21,6 @@
 # SOFTWARE.
 
 
-import math
 import random
 from typing import Mapping
 
@@ -34,12 +33,13 @@ from pyannote.audio.tasks import (
     SpeakerChangeDetection,
     VoiceActivityDetection,
 )
+from pyannote.audio.tasks.mixins import SegmentationTaskMixin
 from pyannote.audio.utils.random import create_rng_for_worker
 from pyannote.core import Segment
 from pyannote.database import Protocol
 
 
-class MultiTaskSegmentation(Task):
+class MultiTaskSegmentation(SegmentationTaskMixin, Task):
     """Multi-task segmentation
 
     Multi-task training of segmentation tasks, including:
@@ -153,37 +153,36 @@ class MultiTaskSegmentation(Task):
 
     def setup(self, stage=None):
 
+        super().setup(stage=stage)
+
         if stage == "fit":
 
-            # loop over the training set, remove annotated regions shorter than
-            # chunk duration, and keep track of the reference annotations.
-
-            self.train = []
-            for f in self.protocol.train():
-                segments = [
-                    segment
-                    for segment in f["annotated"]
-                    if segment.duration > self.duration
-                ]
-                duration = sum(segment.duration for segment in segments)
-                self.train.append(
-                    {
-                        "annotated": segments,
-                        "annotation": f["annotation"],
-                        "duration": duration,
-                        "audio": f["audio"],
-                    }
-                )
-
-                if self.osd and self.tasks["osd"].domain is not None:
-                    self.train[-1]["domain"] = f[self.tasks["osd"].domain]
-
             if self.osd and self.tasks["osd"].domain is not None:
+                for f in self.train:
+                    f["domain"] = f[self.tasks["osd"].domain]
                 self.domains = list(set(f["domain"] for f in self.train))
 
-        self.specifications = {
-            name: task.specifications for name, task in self.tasks.items()
-        }
+            self.specifications = {
+                name: task.specifications for name, task in self.tasks.items()
+            }
+
+    def prepare_y(self, one_hot_y: np.ndarray):
+        """Get multi-task targets
+
+        Parameters
+        ----------
+        one_hot_y : (num_frames, num_speakers) np.ndarray
+            One-hot-encoding of current chunk speaker activity:
+                * one_hot_y[t, k] = 1 if kth speaker is active at tth frame
+                * one_hot_y[t, k] = 0 otherwise.
+
+        Returns
+        -------
+        y : (num_frames, ) np.ndarray
+            y[t] = 1 if there is two or more active speakers at tth frame, 0 otherwise.
+        """
+
+        return {name: task.prepare_y(one_hot_y) for name, task in self.tasks.items()}
 
     def train__iter__helper(self, rng: random.Random, domain: str = None):
 
@@ -212,30 +211,7 @@ class MultiTaskSegmentation(Task):
             start_time = rng.uniform(segment.start, segment.end - self.duration)
             chunk = Segment(start_time, start_time + self.duration)
 
-            yield self.prepare_chunk(
-                file,
-                chunk,
-                duration=self.duration,
-                return_y=True,
-            )
-
-    def prepare_y(self, one_hot_y: np.ndarray):
-        """Get multi-task targets
-
-        Parameters
-        ----------
-        one_hot_y : (num_frames, num_speakers) np.ndarray
-            One-hot-encoding of current chunk speaker activity:
-                * one_hot_y[t, k] = 1 if kth speaker is active at tth frame
-                * one_hot_y[t, k] = 0 otherwise.
-
-        Returns
-        -------
-        y : (num_frames, ) np.ndarray
-            y[t] = 1 if there is two or more active speakers at tth frame, 0 otherwise.
-        """
-
-        return {name: task.prepare_y(one_hot_y) for name, task in self.tasks.items()}
+            yield self.prepare_chunk(file, chunk, duration=self.duration)
 
     def train__iter__(self):
         """Iterate over training samples
@@ -308,8 +284,3 @@ class MultiTaskSegmentation(Task):
             combined_y = np.minimum(combined_y, 1, out=combined_y)
 
             yield {"X": X, "y": self.prepare_y(combined_y)}
-
-    def train__len__(self):
-        # Number of training samples in one epoch
-        duration = sum(file["duration"] for file in self.train)
-        return math.ceil(duration / self.duration)

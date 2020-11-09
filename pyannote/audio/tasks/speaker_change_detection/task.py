@@ -20,18 +20,15 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import math
-
 import numpy as np
 import scipy.signal
 
 from pyannote.audio.core.task import Problem, Scale, Task, TaskSpecification
-from pyannote.audio.utils.random import create_rng_for_worker
-from pyannote.core import Segment
+from pyannote.audio.tasks.mixins import SegmentationTaskMixin
 from pyannote.database import Protocol
 
 
-class SpeakerChangeDetection(Task):
+class SpeakerChangeDetection(SegmentationTaskMixin, Task):
     """Speaker change detection
 
     Speaker change detection is the task of detecting speaker change points
@@ -90,27 +87,6 @@ class SpeakerChangeDetection(Task):
         )
 
         self.collar = collar
-
-    def setup(self, stage=None):
-        if stage == "fit":
-            # loop over the training set, remove annotated regions shorter than
-            # chunk duration, and keep track of the reference annotations.
-            self.train = []
-            for f in self.protocol.train():
-                segments = [
-                    segment
-                    for segment in f["annotated"]
-                    if segment.duration > self.duration
-                ]
-                duration = sum(segment.duration for segment in segments)
-                self.train.append(
-                    {
-                        "annotated": segments,
-                        "annotation": f["annotation"],
-                        "duration": duration,
-                        "audio": f["audio"],
-                    }
-                )
 
     def prepare_y(self, one_hot_y: np.ndarray, collar: int = None):
         """Get speaker change detection targets
@@ -172,55 +148,3 @@ class SpeakerChangeDetection(Task):
         y *= x_speakers
 
         return np.squeeze(y)
-
-    def train__iter__(self):
-        """Iterate over training samples
-
-        Yields
-        ------
-        X: (time, channel)
-            Audio chunks.
-        y: (frame, )
-            Frame-level targets. Note that frame < time.
-            `frame` is infered automagically from the
-            example model output.
-        """
-
-        # create worker-specific random number generator
-        rng = create_rng_for_worker()
-
-        while True:
-
-            # select one file at random (with probability proportional to its annotated duration)
-            file, *_ = rng.choices(
-                self.train,
-                weights=[f["duration"] for f in self.train],
-                k=1,
-            )
-
-            # select one annotated region at random (with probability proportional to its duration)
-            segment, *_ = rng.choices(
-                file["annotated"],
-                weights=[s.duration for s in file["annotated"]],
-                k=1,
-            )
-
-            # select one chunk at random (with uniform distribution)
-            start_time = rng.uniform(segment.start, segment.end - self.duration)
-            chunk = Segment(start_time, start_time + self.duration)
-
-            X, one_hot_y, _ = self.prepare_chunk(
-                file,
-                chunk,
-                duration=self.duration,
-                return_y=True,
-            )
-
-            y = self.prepare_y(one_hot_y, collar=self.collar)
-
-            yield {"X": X, "y": y}
-
-    def train__len__(self):
-        # Number of training samples in one epoch
-        duration = sum(file["duration"] for file in self.train)
-        return math.ceil(duration / self.duration)

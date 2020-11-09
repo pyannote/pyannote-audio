@@ -171,7 +171,12 @@ class SpeakerEmbeddingArcFace(Task):
                     )
                     chunk = Segment(start_time, start_time + self.duration)
 
-                    X = self.prepare_chunk(file, chunk, duration=self.duration)
+                    X, _ = self.audio.crop(
+                        file,
+                        chunk,
+                        mode="center",
+                        fixed=self.duration,
+                    )
 
                     yield {"X": X, "y": y}
 
@@ -186,6 +191,9 @@ class SpeakerEmbeddingArcFace(Task):
         loss = self.loss_func(model(X), y)
         model.log("train_loss", loss)
         return loss
+
+    def val_dataloader(self):
+        return None
 
     def configure_optimizers(self, model: "Model"):
         parameters = chain(model.parameters(), self.loss_func.parameters())
