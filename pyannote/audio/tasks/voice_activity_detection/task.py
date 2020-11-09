@@ -36,7 +36,7 @@ class VoiceActivityDetection(Task):
     Voice activity detection (or VAD) is the task of detecting speech regions
     in a given audio recording.
 
-    It is addressed as a binary (0 or 1) sequence labeling task. A frame is 
+    It is addressed as a binary (0 or 1) sequence labeling task. A frame is
     marked as "speech" (1) as soon as at least one speaker is active.
 
     Parameters
@@ -49,6 +49,11 @@ class VoiceActivityDetection(Task):
         Number of training samples per batch.
     num_workers : int, optional
         Number of workers used for generating training samples.
+    pin_memory : bool, optional
+        If True, data loaders will copy tensors into CUDA pinned
+        memory before returning them. See pytorch documentation
+        for more details. Defaults to False.
+
     """
 
     def __init__(
@@ -57,6 +62,7 @@ class VoiceActivityDetection(Task):
         duration: float = 2.0,
         batch_size: int = None,
         num_workers: int = 1,
+        pin_memory: bool = False,
     ):
 
         super().__init__(
@@ -64,6 +70,7 @@ class VoiceActivityDetection(Task):
             duration=duration,
             batch_size=batch_size,
             num_workers=num_workers,
+            pin_memory=pin_memory,
         )
 
         self.specifications = TaskSpecification(
