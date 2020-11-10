@@ -72,7 +72,6 @@ def test_crops_are_correct_shape():
     for segment in SlidingWindow(end=secs):
         print(segment)
         wav, sr = loader.crop({"waveform": waveform, "sample_rate": sr}, segment)
-        print(wav.shape)
         if shape is None:
             shape = wav.shape
         else:
