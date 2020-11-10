@@ -166,7 +166,7 @@ class Model(pl.LightningModule):
         )
 
         # dichotomic search of "min_num_samples"
-        lower, upper = 1, num_samples
+        lower, upper, min_num_samples = 1, num_samples, None
         while True:
             num_samples = (lower + upper) // 2
             try:
