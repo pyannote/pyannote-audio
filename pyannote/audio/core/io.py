@@ -82,7 +82,7 @@ class Audio:
     >>> audio = Audio(sample_rate=16000, mono=True)
     >>> waveform, sample_rate = audio({"audio": "/path/to/audio.wav"})
     >>> assert sample_rate == 16000
-    >>> sample_rate = 41000
+    >>> sample_rate = 44100
     >>> two_seconds_stereo = torch.rand(2, 2 * sample_rate)
     >>> waveform, sample_rate = audio({"waveform": two_seconds_stereo, "sample_rate": sample_rate})
     >>> assert sample_rate == 16000
