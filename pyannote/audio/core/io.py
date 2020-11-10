@@ -201,7 +201,7 @@ class Audio:
         if (self.sample_rate is not None) and (self.sample_rate != sample_rate):
             waveform = waveform.numpy()
             if self.mono:
-                # librosa expects mono audio to be of shape (n,), but we have (n, 1).
+                # librosa expects mono audio to be of shape (n,), but we have (1, n).
                 waveform = librosa.core.resample(
                     waveform[0], sample_rate, self.sample_rate
                 )[None]
