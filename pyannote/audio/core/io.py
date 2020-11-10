@@ -92,7 +92,7 @@ class Audio:
 
     @staticmethod
     def normalize(waveform: Tensor) -> Tensor:
-        """
+        """Power-normalize waveform
 
         Parameters
         ----------
@@ -103,11 +103,10 @@ class Audio:
         Returns
         -------
         waveform: (channel, time) Tensor
+            Power-normalized waveform
         """
-
-        means = waveform.mean(dim=1)[:, None]
-        stds = waveform.std(dim=1)[:, None]
-        return (waveform - means) / (stds + 1e-8)
+        rms = waveform.square().mean(dim=1).sqrt()
+        return (waveform.t() / (rms + 1e-8)).t()
 
     @staticmethod
     def get_duration(file: AudioFile) -> float:
