@@ -86,7 +86,7 @@ class Audio:
     >>> two_seconds_stereo = torch.rand(2, 2 * sample_rate)
     >>> waveform, sample_rate = audio({"waveform": two_seconds_stereo, "sample_rate": sample_rate})
     >>> assert sample_rate == 16000
-    >>> assert waveform.shape[1] == 1
+    >>> assert waveform.shape[0] == 1
     """
 
     @staticmethod
