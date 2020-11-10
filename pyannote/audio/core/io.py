@@ -103,8 +103,10 @@ class Audio:
         -------
         waveform: (channel, time) Tensor
         """
-        stds = waveform.pow(2).mean(1).sqrt().add(1e-8)
-        return (waveform.permute(1, 0) / stds).permute(1, 0)
+
+        means = waveform.mean(dim=1)[:, None]
+        stds = waveform.std(dim=1)[:, None]
+        return (waveform - means) / (stds + 1e-8)
 
     @staticmethod
     def get_duration(file: AudioFile) -> float:
