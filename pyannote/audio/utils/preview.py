@@ -34,11 +34,13 @@ def listen(
         warnings.warn("You need IPython installed to use this method")
         return
 
-    if not isinstance(audio_file, Tensor):
-        if segment is None:
-            waveform, sr = Audio()(audio_file)
-        else:
-            waveform, sr = Audio().crop(audio_file, segment)
+    if isinstance(audio_file, Tensor):
+        audio_file = {
+            "waveform": audio_file,
+            "sample_rate": sr,
+        }
+    if segment is None:
+        waveform, sr = Audio()(audio_file)
     else:
-        waveform = audio_file
+        waveform, sr = Audio().crop(audio_file, segment)
     return IPythonAudio(waveform.flatten(), rate=sr)
