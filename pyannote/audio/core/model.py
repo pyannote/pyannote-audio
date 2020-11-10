@@ -154,11 +154,10 @@ class Model(pl.LightningModule):
         introspection : ModelIntrospection
             Model introspection.
         """
-
         example_input_array = self.task.example_input_array
-        batch_size, num_samples, num_channels = example_input_array.shape
+        batch_size, num_channels, num_samples = example_input_array.shape
         example_input_array = torch.randn(
-            (1, num_samples, num_channels),
+            (1, num_channels, num_samples),
             dtype=example_input_array.dtype,
             layout=example_input_array.layout,
             device=example_input_array.device,
@@ -171,7 +170,7 @@ class Model(pl.LightningModule):
             num_samples = (lower + upper) // 2
             try:
                 with torch.no_grad():
-                    frames = self(example_input_array[:, :num_samples])
+                    frames = self(example_input_array[:, :, :num_samples])
                 if task is not None:
                     frames = frames[task]
             except Exception:
@@ -212,7 +211,7 @@ class Model(pl.LightningModule):
         while True:
             num_samples = 2 * min_num_samples
             example_input_array = torch.randn(
-                (1, num_samples, num_channels),
+                (1, num_channels, num_samples),
                 dtype=example_input_array.dtype,
                 layout=example_input_array.layout,
                 device=example_input_array.device,
@@ -222,7 +221,7 @@ class Model(pl.LightningModule):
                 frames = self(example_input_array)
             if task is not None:
                 frames = frames[task]
-            _, num_frames, _ = frames.shape
+            num_frames = frames.shape[1]
             if num_frames > min_num_frames:
                 break
 
@@ -231,7 +230,7 @@ class Model(pl.LightningModule):
         while True:
             num_samples = (lower + upper) // 2
             example_input_array = torch.randn(
-                (1, num_samples, num_channels),
+                (1, num_channels, num_samples),
                 dtype=example_input_array.dtype,
                 layout=example_input_array.layout,
                 device=example_input_array.device,
@@ -241,7 +240,7 @@ class Model(pl.LightningModule):
                 frames = self(example_input_array)
             if task is not None:
                 frames = frames[task]
-            _, num_frames, _ = frames.shape
+            num_frames = frames.shape[1]
             if num_frames > min_num_frames:
                 inc_num_frames = num_frames - min_num_frames
                 inc_num_samples = num_samples - min_num_samples

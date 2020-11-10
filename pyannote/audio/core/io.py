@@ -33,18 +33,22 @@ Those benchmarks (and implementation choices) are meant to be updated when
 better options become available: we welcome PRs!
 """
 
+import math
 import warnings
 from pathlib import Path
 from typing import Optional, Text, Tuple, Union
 
 import librosa
-import numpy as np
-import soundfile as sf
-from pyannote.core import Segment, SlidingWindow
+import torch
+import torchaudio
+from torch import Tensor
+
+from pyannote.core import Segment
 from pyannote.core.utils.types import Alignment
 from pyannote.database import ProtocolFile
 
 AudioFile = Union[Path, Text, ProtocolFile, dict]
+
 """
 Audio files can be provided to the Audio class using different types:
     - a "str" instance: "/path/to/audio.wav"
@@ -58,6 +62,10 @@ For last two options, an additional "channel" key can be provided as a zero-inde
 integer to load a specific channel:
         {"audio": Path("/path/to/stereo.wav"), "channel": 0}
 """
+
+# TODO: Remove this when it is the default
+torchaudio.USE_SOUNDFILE_LEGACY_INTERFACE = False
+torchaudio.set_audio_backend("soundfile")
 
 
 class Audio:
@@ -75,20 +83,34 @@ class Audio:
     >>> audio = Audio(sample_rate=16000, mono=True)
     >>> waveform, sample_rate = audio({"audio": "/path/to/audio.wav"})
     >>> assert sample_rate == 16000
-
-    >>> two_seconds_stereo = np.random.rand(44100 * 2, 2, dtype=np.float32)
-    >>> waveform, sample_rate = audio({"waveform": two_seconds_stereo, "sample_rate": 44100})
+    >>> sample_rate = 44100
+    >>> two_seconds_stereo = torch.rand(2, 2 * sample_rate)
+    >>> waveform, sample_rate = audio({"waveform": two_seconds_stereo, "sample_rate": sample_rate})
     >>> assert sample_rate == 16000
-    >>> assert waveform.shape[1] == 1
+    >>> assert waveform.shape[0] == 1
     """
 
     @staticmethod
-    def normalize(waveform: np.ndarray) -> np.ndarray:
-        return waveform / (np.sqrt(np.mean(waveform ** 2)) + 1e-8)
+    def power_normalize(waveform: Tensor) -> Tensor:
+        """Power-normalize waveform
+
+        Parameters
+        ----------
+        waveform : (channel, time) Tensor
+            Single or multichannel waveform
+
+
+        Returns
+        -------
+        waveform: (channel, time) Tensor
+            Power-normalized waveform
+        """
+        rms = waveform.square().mean(dim=1).sqrt()
+        return (waveform.t() / (rms + 1e-8)).t()
 
     @staticmethod
     def get_duration(file: AudioFile) -> float:
-        """Get audio file duration
+        """Get audio file duration in seconds
 
         Parameters
         ----------
@@ -109,8 +131,8 @@ class Audio:
         if isinstance(audio, Path):
             audio = str(audio)
 
-        with sf.SoundFile(audio, "r") as f:
-            return float(f.frames) / f.samplerate
+        info = torchaudio.info(audio)
+        return info.num_frames / info.sample_rate
 
     @staticmethod
     def is_valid(file: AudioFile) -> bool:
@@ -120,9 +142,9 @@ class Audio:
             if "waveform" in file:
 
                 waveform = file["waveform"]
-                if len(waveform.shape) != 2 or waveform.shape[0] < waveform.shape[1]:
+                if len(waveform.shape) != 2 or waveform.shape[0] > waveform.shape[1]:
                     raise ValueError(
-                        "'waveform' must be provided as a (time, channel) numpy array."
+                        "'waveform' must be provided as a (channel, time) torch Tensor."
                     )
 
                 sample_rate = file.get("sample_rate", None)
@@ -130,21 +152,14 @@ class Audio:
                     raise ValueError(
                         "'waveform' must be provided with their 'sample_rate'."
                     )
-
                 return True
 
             elif "audio" in file:
-                # audio = file["audio"]
-                pass
+                return True
+
             else:
                 # TODO improve error message
                 raise ValueError("either 'audio' or 'waveform' key must be provided.")
-
-        else:
-            # audio = file
-            pass
-        #  should we check here that "audio" file exists?
-        #  this will slow things down and will fail later anyway.
 
         return True
 
@@ -153,46 +168,45 @@ class Audio:
         self.sample_rate = sample_rate
         self.mono = mono
 
-    def downmix_and_resample(
-        self, waveform: np.ndarray, sample_rate: int
-    ) -> np.ndarray:
+    def downmix_and_resample(self, waveform: Tensor, sample_rate: int) -> Tensor:
         """Downmix and resample
 
         Parameters
         ----------
-        waveform : (time, channel) np.ndarray
+        waveform : (channel, time) Tensor
             Waveform.
         sample_rate : int
             Sample rate.
 
         Returns
         -------
-        waveform : (time, channel) np.ndarray
+        waveform : (channel, time) Tensor
             Remixed and resampled waveform
         sample_rate : int
             New sample rate
         """
 
         # downmix to mono
-        if self.mono and waveform.shape[1] > 1:
-            waveform = np.mean(waveform, axis=1, keepdims=True)
+        if self.mono and waveform.shape[0] > 1:
+            waveform = waveform.mean(dim=0, keepdim=True)
 
         # resample
         if (self.sample_rate is not None) and (self.sample_rate != sample_rate):
+            waveform = waveform.numpy()
             if self.mono:
-                # librosa expects mono audio to be of shape (n,), but we have (n, 1).
+                # librosa expects mono audio to be of shape (n,), but we have (1, n).
                 waveform = librosa.core.resample(
-                    waveform[:, 0], sample_rate, self.sample_rate
-                )[:, None]
+                    waveform[0], sample_rate, self.sample_rate
+                )[None]
             else:
                 waveform = librosa.core.resample(
                     waveform.T, sample_rate, self.sample_rate
                 ).T
             sample_rate = self.sample_rate
-
+            waveform = torch.tensor(waveform)
         return waveform, sample_rate
 
-    def __call__(self, file: AudioFile) -> Tuple[np.ndarray, int]:
+    def __call__(self, file: AudioFile) -> Tuple[Tensor, int]:
         """Obtain waveform
 
         Parameters
@@ -212,6 +226,10 @@ class Audio:
         """
 
         self.is_valid(file)
+        audio = file
+        waveform = None
+        sample_rate = None
+        channel = None
 
         if isinstance(file, (ProtocolFile, dict)):
 
@@ -222,28 +240,20 @@ class Audio:
 
             elif "audio" in file:
                 audio = file["audio"]
-                waveform = None
-                sample_rate = None
 
             else:
                 pass
 
             channel = file.get("channel", None)
 
-        else:
-            audio = file
-            waveform = None
-            sample_rate = None
-            channel = None
-
         if isinstance(audio, Path):
             audio = str(audio)
 
         if waveform is None:
-            waveform, sample_rate = sf.read(audio, dtype="float32", always_2d=True)
+            waveform, sample_rate = torchaudio.load(audio)
 
         if channel is not None:
-            waveform = waveform[:, channel - 1 : channel]
+            waveform = waveform[channel - 1 : channel]
 
         return self.downmix_and_resample(waveform, sample_rate)
 
@@ -253,7 +263,7 @@ class Audio:
         segment: Segment,
         mode: Alignment = "center",
         fixed: Optional[float] = None,
-    ) -> Tuple[np.ndarray, int]:
+    ) -> Tuple[Tensor, int]:
         """Fast version of self(file).crop(segment, **kwargs)
 
         Parameters
@@ -285,77 +295,63 @@ class Audio:
         """
 
         self.is_valid(file)
+        audio = file
+        waveform = None
+        channel = None
 
         if isinstance(file, (ProtocolFile, dict)):
-
             if "waveform" in file:
                 audio = None
                 waveform = file["waveform"]
                 sample_rate = file.get("sample_rate", None)
-                frames = len(waveform)
+                frames = waveform.shape[1]
 
             elif "audio" in file:
                 audio = file["audio"]
-                waveform = None
-
-            else:
-                pass
 
             channel = file.get("channel", None)
-
-        else:
-            audio = file
-            waveform = None
-            channel = None
 
         if isinstance(audio, Path):
             audio = str(audio)
 
         # read sample rate and number of frames
         if waveform is None:
-            with sf.SoundFile(audio, "r") as f:
-                sample_rate = f.samplerate
-                frames = f.frames
+            info = torchaudio.info(audio)
+            sample_rate = info.sample_rate
+            frames = info.num_frames
 
         # infer which samples to load from sample rate and requested chunk
-        #  TODO: compute start directly instead of using a sliding window
-        samples = SlidingWindow(
-            start=-0.5 / sample_rate, duration=1.0 / sample_rate, step=1.0 / sample_rate
-        )
-        ((start, stop),) = samples.crop(
-            segment, mode=mode, fixed=fixed, return_ranges=True
-        )
+        start_frame = int(segment.start * sample_rate)
 
-        if start < 0 or stop > frames:
+        if fixed:
+            num_frames = math.floor(fixed * sample_rate)
+        else:
+            num_frames = math.floor(segment.end * sample_rate - start_frame)
+
+        end_frame = start_frame + num_frames
+
+        if start_frame < 0 or end_frame > frames:
             raise ValueError(
                 f"requested chunk [{segment.start:.6f}, {segment.end:.6f}] "
                 f"lies outside of file bounds [0., {frames / sample_rate:.6f}]."
             )
 
         if waveform is not None:
-            data = waveform[start:stop]
-
+            data = waveform[:, start_frame:end_frame]
         else:
-
-            with sf.SoundFile(audio, "r") as f:
-
-                try:
-                    f.seek(start)
-                    data = f.read(stop - start, dtype="float32", always_2d=True)
-                except RuntimeError:
-                    msg = (
-                        f"SoundFile failed to seek-and-read in "
-                        f"{audio}: loading the whole file..."
-                    )
-                    warnings.warn(msg)
-                    return self(audio).crop(segment, mode=mode, fixed=fixed)
+            try:
+                data, _ = torchaudio.load(
+                    audio, frame_offset=start_frame, num_frames=num_frames
+                )
+            except RuntimeError:
+                msg = (
+                    f"torchaudio failed to seek-and-read in "
+                    f"{audio}: loading the whole file..."
+                )
+                warnings.warn(msg)
+                return self(audio).crop(segment, mode=mode, fixed=fixed)
 
         if channel is not None:
-            data = data[:, channel - 1 : channel]
+            data = data[channel - 1 : channel, :]
 
         return self.downmix_and_resample(data, sample_rate)
-
-
-def normalize(wav):
-    """Normalize waveform"""
-    return wav / (np.sqrt(np.mean(wav ** 2)) + 1e-8)

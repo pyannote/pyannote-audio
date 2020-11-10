@@ -263,7 +263,7 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
                 self.tasks["osd"].snr_max - self.tasks["osd"].snr_min
             ) * rng.random() + self.tasks["osd"].snr_min
             alpha = np.exp(-np.log(10) * random_snr / 20)
-            X = Audio.normalize(X) + alpha * Audio.normalize(other_X)
+            X = Audio.power_normalize(X) + alpha * Audio.power_normalize(other_X)
 
             # combine speaker-to-index mapping
             y_mapping = {label: i for i, label in enumerate(labels)}

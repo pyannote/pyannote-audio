@@ -240,8 +240,8 @@ class Task(pl.LightningDataModule):
         return torch.randn(
             (
                 self.batch_size,
-                int(self.audio.sample_rate * self.example_input_duration),
                 num_channels,
+                int(self.audio.sample_rate * self.example_input_duration),
             )
         )
 
