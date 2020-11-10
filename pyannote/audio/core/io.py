@@ -329,7 +329,7 @@ class Audio:
             frames = info.num_frames
 
         # infer which samples to load from sample rate and requested chunk
-        start_frame = int(segment.start * sample_rate)
+        start_frame = round(segment.start * sample_rate)
         num_frames = int(segment.end * sample_rate - start_frame)
         end_frame = start_frame + num_frames
 
