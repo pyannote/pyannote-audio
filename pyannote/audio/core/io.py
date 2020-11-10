@@ -33,6 +33,7 @@ Those benchmarks (and implementation choices) are meant to be updated when
 better options become available: we welcome PRs!
 """
 
+import math
 import warnings
 from pathlib import Path
 from typing import Optional, Text, Tuple, Union
@@ -152,21 +153,14 @@ class Audio:
                     raise ValueError(
                         "'waveform' must be provided with their 'sample_rate'."
                     )
-
                 return True
 
             elif "audio" in file:
-                # audio = file["audio"]
-                pass
+                return True
+
             else:
                 # TODO improve error message
                 raise ValueError("either 'audio' or 'waveform' key must be provided.")
-
-        else:
-            # audio = file
-            pass
-        #  should we check here that "audio" file exists?
-        #  this will slow things down and will fail later anyway.
 
         return True
 
@@ -330,7 +324,12 @@ class Audio:
 
         # infer which samples to load from sample rate and requested chunk
         start_frame = int(segment.start * sample_rate)
-        num_frames = int(segment.end * sample_rate - start_frame)
+
+        if fixed:
+            num_frames = math.floor(fixed * sample_rate)
+        else:
+            num_frames = math.floor(segment.end * sample_rate - start_frame)
+
         end_frame = start_frame + num_frames
 
         if start_frame < 0 or end_frame > frames:
