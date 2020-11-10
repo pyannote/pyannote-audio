@@ -165,7 +165,7 @@ class Model(pl.LightningModule):
         )
 
         # dichotomic search of "min_num_samples"
-        lower, upper = 1, num_samples
+        lower, upper, min_num_samples = 1, num_samples, None
         while True:
             num_samples = (lower + upper) // 2
             try:
@@ -188,6 +188,14 @@ class Model(pl.LightningModule):
 
             if lower + 1 == upper:
                 break
+
+        # if "min_num_samples" is still None at this point, it means that
+        # the forward pass always failed and raised an exception. most likely,
+        # it means that there is a problem with the model definition.
+        # we try again without catching the exception to help the end user debug
+        # their model
+        if min_num_samples is None:
+            frames = self(example_input_array)
 
         # corner case for chunk-scale tasks
         if specifications.scale == Scale.CHUNK:
