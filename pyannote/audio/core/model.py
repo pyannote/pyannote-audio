@@ -409,6 +409,11 @@ class Model(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         return self.task.training_step(self, batch, batch_idx)
 
+    # validation step logic is delegated to the task because the
+    # model does not really need to know how it is being used.
+    def validation_step(self, batch, batch_idx):
+        return self.task.validation_step(self, batch, batch_idx)
+
     # optimizer is delegated to the task for the same reason as above
     def configure_optimizers(self):
         return self.task.configure_optimizers(self)
