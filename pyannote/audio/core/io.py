@@ -91,7 +91,7 @@ class Audio:
     """
 
     @staticmethod
-    def normalize(waveform: Tensor) -> Tensor:
+    def power_normalize(waveform: Tensor) -> Tensor:
         """Power-normalize waveform
 
         Parameters
