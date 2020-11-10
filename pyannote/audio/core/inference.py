@@ -385,7 +385,7 @@ class Inference:
         """
 
         waveform, sample_rate = self.model.audio.crop(file, chunk, fixed=fixed)
-        waveform = torch.tensor(waveform, requires_grad=False)
+        waveform = waveform.requires_grad_(False)
 
         if self.window == "sliding":
             output = self.slide(waveform, sample_rate)

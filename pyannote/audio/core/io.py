@@ -306,9 +306,10 @@ class Audio:
                 waveform = file["waveform"]
                 sample_rate = file.get("sample_rate", None)
                 frames = waveform.shape[1]
+
             elif "audio" in file:
                 audio = file["audio"]
-                waveform = None
+
             channel = file.get("channel", None)
 
         if isinstance(audio, Path):
