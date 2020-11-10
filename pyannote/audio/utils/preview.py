@@ -6,12 +6,17 @@ except ImportError:
     IPYTHON_INSTALLED = False
 
 import warnings
+from typing import Union
+
+from torch import Tensor
 
 from pyannote.audio.core.io import Audio, AudioFile
 from pyannote.core import Segment
 
 
-def listen(audio_file: AudioFile, segment: Segment = None) -> None:
+def listen(
+    audio_file: Union[Tensor, AudioFile], segment: Segment = None, sr=16000
+) -> None:
     """listen to audio
 
     Allows playing of audio files. It will play the whole thing unless
@@ -29,8 +34,11 @@ def listen(audio_file: AudioFile, segment: Segment = None) -> None:
         warnings.warn("You need IPython installed to use this method")
         return
 
-    if segment is None:
-        waveform, sr = Audio()(audio_file)
+    if not isinstance(audio_file, Tensor):
+        if segment is None:
+            waveform, sr = Audio()(audio_file)
+        else:
+            waveform, sr = Audio().crop(audio_file, segment)
     else:
-        waveform, sr = Audio().crop(audio_file, segment)
+        waveform = audio_file
     return IPythonAudio(waveform.flatten(), rate=sr)
