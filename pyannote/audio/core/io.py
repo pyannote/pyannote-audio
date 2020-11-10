@@ -241,8 +241,6 @@ class Audio:
 
             elif "audio" in file:
                 audio = file["audio"]
-                waveform = None
-                sample_rate = None
 
             else:
                 pass
