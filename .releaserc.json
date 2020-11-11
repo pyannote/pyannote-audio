@@ -1,6 +1,6 @@
 {
     "branches":[
-       "main"
+       "develop"
     ],
     "plugins": [
         "@semantic-release/commit-analyzer",
@@ -13,8 +13,7 @@
         ["@semantic-release/git", {
           "assets": ["version.txt"],
           "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
-        }],
-        "@semantic-release/github"
+        }]
     ]
 
 }
