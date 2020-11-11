@@ -82,6 +82,25 @@ class TaskSpecification:
         yield None, self
 
 
+class TrainDataset(IterableDataset):
+    def __init__(self, task: Task):
+        super().__init__()
+        self.task = task
+    def __iter__(self):
+        return self.task.train__iter__()
+    def __len__(self):
+        return self.task.train__len__()
+        
+class ValDataset(IterableDataset):
+    def __init__(self, task: Task):
+        super().__init__()
+        self.task = task
+    def __iter__(self):
+        return self.task.val__iter__()
+    def __len__(self):
+        return self.task.val__len__()
+
+        
 class Task(pl.LightningDataModule):
     """Base task class
 
@@ -201,15 +220,8 @@ class Task(pl.LightningDataModule):
         raise NotImplementedError(msg)
 
     def train_dataloader(self) -> DataLoader:
-        # build train IterableDataset subclass programmatically
-        dataset = type(
-            "TrainDataset",
-            (IterableDataset,),
-            {"__iter__": self.train__iter__, "__len__": self.train__len__},
-        )
-
         return DataLoader(
-            dataset(),
+            TrainDataset(self),
             batch_size=self.batch_size,
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
@@ -320,15 +332,8 @@ class Task(pl.LightningDataModule):
         raise NotImplementedError(msg)
 
     def val_dataloader(self) -> DataLoader:
-        #  build validation IterableDataset subclass programmatically
-        dataset = type(
-            "ValDataset",
-            (IterableDataset,),
-            {"__iter__": self.val__iter__, "__len__": self.val__len__},
-        )
-
         return DataLoader(
-            dataset(),
+            ValDataset(self),
             batch_size=self.batch_size,
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
