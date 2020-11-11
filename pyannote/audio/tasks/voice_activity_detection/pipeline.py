@@ -37,10 +37,10 @@ from pyannote.pipeline.parameter import Uniform
 
 
 class OracleVoiceActivityDetection(Pipeline):
-    """Oracle voice activity detection"""
+    """Oracle voice activity detection pipeline"""
 
     def __call__(self, file: AudioFile) -> Annotation:
-        """Return groundtruth speech activity detection
+        """Return groundtruth voice activity detection
 
         Parameter
         ---------
@@ -65,7 +65,7 @@ class VoiceActivityDetection(Pipeline):
     scores : Inference or str
         `Inference` instance used to extract raw speech activity detection scores.
         When `str`, assumes that file already contains a corresponding key with
-        precomputed scores. Defaults to "vad_scores".
+        precomputed scores. Defaults to "vad".
     fscore : bool, optional
         Optimize (precision/recall) fscore. Defaults to optimizing detection
         error rate.
@@ -79,9 +79,7 @@ class VoiceActivityDetection(Pipeline):
 
     """
 
-    def __init__(
-        self, scores: Union[Inference, Text] = "vad_scores", fscore: bool = False
-    ):
+    def __init__(self, scores: Union[Inference, Text] = "vad", fscore: bool = False):
         super().__init__()
 
         self.scores = scores
@@ -107,7 +105,7 @@ class VoiceActivityDetection(Pipeline):
         )
 
     def __call__(self, file: AudioFile) -> Annotation:
-        """Apply speech activity detection
+        """Apply voice activity detection
 
         Parameters
         ----------
