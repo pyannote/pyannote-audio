@@ -100,7 +100,7 @@ class SpeechTurnClosestAssignment(Pipeline):
 
             # be more and more permissive until we have
             # at least one embedding for current speech turn
-            for mode in ["strict", "center", "loose"]:
+            for mode in ["center", "loose"]:
                 x = embedding.crop(timeline, mode=mode)
                 if len(x) > 0:
                     break
@@ -121,7 +121,7 @@ class SpeechTurnClosestAssignment(Pipeline):
 
             # be more and more permissive until we have
             # at least one embedding for current speech turn
-            for mode in ["strict", "center", "loose"]:
+            for mode in ["center", "loose"]:
                 x = embedding.crop(timeline, mode=mode)
                 if len(x) > 0:
                     break

@@ -121,7 +121,13 @@ class SpeakerEmbedding(Application):
             else:
                 segments = f["try_with"]
             for segment in segments:
-                emb.append(pretrained.crop(f, segment, mode="center"))
+                # Crop preferentially with "center", but use "loose"
+                # if "center" produces empty clip
+                for mode in ["center", "loose"]:
+                    x = pretrained.crop(f, segment, mode=mode)
+                    if len(x) > 0:
+                        break
+                emb.append(x)
 
         return np.mean(np.vstack(emb), axis=0, keepdims=True)
 
@@ -184,7 +190,6 @@ class SpeakerEmbedding(Application):
             y_pred.append(distance)
 
             y_true.append(trial["reference"])
-
         _, _, _, eer = det_curve(np.array(y_true), np.array(y_pred), distances=True)
 
         return {"metric": "equal_error_rate", "minimize": True, "value": float(eer)}
