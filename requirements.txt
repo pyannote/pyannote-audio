@@ -1,7 +1,7 @@
 einops >= 0.3.0
 librosa >= 0.8
 pyannote.core >= 4.1
-pyannote.database >= 4.0.1
+pyannote.database >= 4.0.3
 pytorch_lightning >= 1.0.0
 pytorch_metric_learning >= 0.9.93
 semver >= 2.10.2
