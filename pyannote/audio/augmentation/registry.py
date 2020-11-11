@@ -24,7 +24,6 @@ from functools import singledispatch
 
 import torch
 import torch.nn as nn
-from einops import rearrange
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 
 from pyannote.audio.core.model import Model
@@ -182,12 +181,7 @@ class TorchAudiomentationsWaveformTransformWrapper(nn.Module):
         self.sample_rate_ = model.audio.sample_rate
 
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
-        return rearrange(
-            self.augmentation(
-                rearrange(waveforms, "b t c -> b c t"), self.sample_rate_
-            ),
-            "b c t -> b t c",
-        )
+        return self.augmentation(waveforms, self.sample_rate_)
 
 
 @wrap_augmentation.register

@@ -20,15 +20,14 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import math
+from typing import List, Text
 
 from pyannote.audio.core.task import Problem, Scale, Task, TaskSpecification
-from pyannote.audio.utils.random import create_rng_for_worker
-from pyannote.core import Segment
+from pyannote.audio.tasks.mixins import SegmentationTaskMixin
 from pyannote.database import Protocol
 
 
-class SpeakerTracking(Task):
+class SpeakerTracking(SegmentationTaskMixin, Task):
     """Speaker tracking
 
     Speaker tracking is the process of determining if and when a (previously
@@ -48,6 +47,10 @@ class SpeakerTracking(Task):
         Number of training samples per batch.
     num_workers : int, optional
         Number of workers used for generating training samples.
+    pin_memory : bool, optional
+        If True, data loaders will copy tensors into CUDA pinned
+        memory before returning them. See pytorch documentation
+        for more details. Defaults to False.
     """
 
     def __init__(
@@ -56,6 +59,7 @@ class SpeakerTracking(Task):
         duration: float = 2.0,
         batch_size: int = None,
         num_workers: int = 1,
+        pin_memory: bool = False,
     ):
 
         super().__init__(
@@ -63,6 +67,7 @@ class SpeakerTracking(Task):
             duration=duration,
             batch_size=batch_size,
             num_workers=num_workers,
+            pin_memory=pin_memory,
         )
 
         # for speaker tracking, task specification depends
@@ -72,89 +77,31 @@ class SpeakerTracking(Task):
 
     def setup(self, stage=None):
 
+        super().setup(stage=stage)
+
         if stage == "fit":
 
-            # loop over the training set, remove annotated regions shorter than
-            # chunk duration, and keep track of the reference annotations.
-
-            # also build the list of speakers to be tracked.
-
-            self.train, speakers = [], set()
-            for f in self.protocol.train():
-                segments = [
-                    segment
-                    for segment in f["annotated"]
-                    if segment.duration > self.duration
-                ]
-                duration = sum(segment.duration for segment in segments)
-                self.train.append(
-                    {
-                        "annotated": segments,
-                        "annotation": f["annotation"],
-                        "duration": duration,
-                        "audio": f["audio"],
-                    }
-                )
+            # build the list of speakers to be tracked.
+            speakers = set()
+            for f in self.train:
                 speakers.update(f["annotation"].labels())
 
-        # now that we now who the speakers are, we can
-        # define the task specifications.
+            # now that we now who the speakers are, we can
+            # define the task specifications.
 
-        # note that, since multiple speakers can be active
-        # at once, the problem is multi-label classification.
-        self.specifications = TaskSpecification(
-            problem=Problem.MULTI_LABEL_CLASSIFICATION,
-            scale=Scale.FRAME,
-            duration=self.duration,
-            classes=sorted(speakers),
-        )
-
-    def train__iter__(self):
-        """Iterate over training samples
-
-        Yields
-        ------
-        X: (time, channel)
-            Audio chunks.
-        y: (frame, num_speakers)
-            Frame-level targets. Note that frame < time.
-            `frame` is infered automagically from the
-            example model output.
-        """
-        # create worker-specific random number generator
-        rng = create_rng_for_worker()
-
-        while True:
-
-            # select one file at random (with probability proportional to its annotated duration)
-            file, *_ = rng.choices(
-                self.train,
-                weights=[f["duration"] for f in self.train],
-                k=1,
-            )
-
-            # select one annotated region at random (with probability proportional to its duration)
-            segment, *_ = rng.choices(
-                file["annotated"],
-                weights=[s.duration for s in file["annotated"]],
-                k=1,
-            )
-
-            # select one chunk at random (with uniform distribution)
-            start_time = rng.uniform(segment.start, segment.end - self.duration)
-            chunk = Segment(start_time, start_time + self.duration)
-
-            X, one_hot_y, _ = self.prepare_chunk(
-                file,
-                chunk,
+            # note that, since multiple speakers can be active
+            # at once, the problem is multi-label classification.
+            self.specifications = TaskSpecification(
+                problem=Problem.MULTI_LABEL_CLASSIFICATION,
+                scale=Scale.FRAME,
                 duration=self.duration,
-                return_y=True,
-                labels=self.specifications.classes,
+                classes=sorted(speakers),
             )
 
-            yield {"X": X, "y": one_hot_y}
+    @property
+    def chunk_labels(self) -> List[Text]:
+        """Ordered list of labels
 
-    def train__len__(self):
-        # Number of training samples in one epoch
-        duration = sum(file["duration"] for file in self.train)
-        return math.ceil(duration / self.duration)
+        Used by `prepare_chunk` so that y[:, k] corresponds to activity of kth speaker
+        """
+        return self.specifications.classes

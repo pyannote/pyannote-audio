@@ -20,23 +20,21 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import math
 
 import numpy as np
 
 from pyannote.audio.core.task import Problem, Scale, Task, TaskSpecification
-from pyannote.audio.utils.random import create_rng_for_worker
-from pyannote.core import Segment
+from pyannote.audio.tasks.mixins import SegmentationTaskMixin
 from pyannote.database import Protocol
 
 
-class VoiceActivityDetection(Task):
+class VoiceActivityDetection(SegmentationTaskMixin, Task):
     """Voice activity detection
 
     Voice activity detection (or VAD) is the task of detecting speech regions
     in a given audio recording.
 
-    It is addressed as a binary (0 or 1) sequence labeling task. A frame is 
+    It is addressed as a binary (0 or 1) sequence labeling task. A frame is
     marked as "speech" (1) as soon as at least one speaker is active.
 
     Parameters
@@ -49,6 +47,11 @@ class VoiceActivityDetection(Task):
         Number of training samples per batch.
     num_workers : int, optional
         Number of workers used for generating training samples.
+    pin_memory : bool, optional
+        If True, data loaders will copy tensors into CUDA pinned
+        memory before returning them. See pytorch documentation
+        for more details. Defaults to False.
+
     """
 
     def __init__(
@@ -57,6 +60,7 @@ class VoiceActivityDetection(Task):
         duration: float = 2.0,
         batch_size: int = None,
         num_workers: int = 1,
+        pin_memory: bool = False,
     ):
 
         super().__init__(
@@ -64,6 +68,7 @@ class VoiceActivityDetection(Task):
             duration=duration,
             batch_size=batch_size,
             num_workers=num_workers,
+            pin_memory=pin_memory,
         )
 
         self.specifications = TaskSpecification(
@@ -74,27 +79,6 @@ class VoiceActivityDetection(Task):
                 "speech",
             ],
         )
-
-    def setup(self, stage=None):
-        if stage == "fit":
-            # loop over the training set, remove annotated regions shorter than
-            # chunk duration, and keep track of the reference annotations.
-            self.train = []
-            for f in self.protocol.train():
-                segments = [
-                    segment
-                    for segment in f["annotated"]
-                    if segment.duration > self.duration
-                ]
-                duration = sum(segment.duration for segment in segments)
-                self.train.append(
-                    {
-                        "annotated": segments,
-                        "annotation": f["annotation"],
-                        "duration": duration,
-                        "audio": f["audio"],
-                    }
-                )
 
     def prepare_y(self, one_hot_y: np.ndarray):
         """Get voice activity detection targets
@@ -112,54 +96,3 @@ class VoiceActivityDetection(Task):
             y[t] = 1 if at least one speaker is active at tth frame, 0 otherwise.
         """
         return np.int64(np.sum(one_hot_y, axis=1) > 0)
-
-    def train__iter__(self):
-        """Iterate over training samples
-
-        Yields
-        ------
-        X: (time, channel)
-            Audio chunks.
-        y: (frame, )
-            Frame-level targets. Note that frame < time.
-            `frame` is infered automagically from the
-            example model output.
-        """
-        # create worker-specific random number generator
-        rng = create_rng_for_worker()
-
-        while True:
-
-            # select one file at random (with probability proportional to its annotated duration)
-            file, *_ = rng.choices(
-                self.train,
-                weights=[f["duration"] for f in self.train],
-                k=1,
-            )
-
-            # select one annotated region at random (with probability proportional to its duration)
-            segment, *_ = rng.choices(
-                file["annotated"],
-                weights=[s.duration for s in file["annotated"]],
-                k=1,
-            )
-
-            # select one chunk at random (with uniform distribution)
-            start_time = rng.uniform(segment.start, segment.end - self.duration)
-            chunk = Segment(start_time, start_time + self.duration)
-
-            X, one_hot_y, _ = self.prepare_chunk(
-                file,
-                chunk,
-                duration=self.duration,
-                return_y=True,
-            )
-
-            y = self.prepare_y(one_hot_y)
-
-            yield {"X": X, "y": y}
-
-    def train__len__(self):
-        # Number of training samples in one epoch
-        duration = sum(file["duration"] for file in self.train)
-        return math.ceil(duration / self.duration)

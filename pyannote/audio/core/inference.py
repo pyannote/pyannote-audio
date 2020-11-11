@@ -176,7 +176,7 @@ class Inference:
         Parameters
         ----------
         waveform: torch.Tensor
-            (num_samples, num_channels) waveform.
+            (num_channels, num_samples) waveform.
         sample_rate : int
             Sample rate.
 
@@ -188,10 +188,9 @@ class Inference:
         frames : pyannote.core.SlidingWindow
         """
 
-        file_duration = len(waveform) / sample_rate
-
         # prepare sliding audio chunks
-        num_samples, num_channels = waveform.shape
+        num_channels, num_samples = waveform.shape
+        file_duration = num_samples / sample_rate
         window_size: int = round(self.duration * sample_rate)
 
         results: Dict[Text, SlidingWindowFeature] = dict()
@@ -233,15 +232,15 @@ class Inference:
         # prepare (and count) sliding audio chunks
         step_size: int = round(self.step * sample_rate)
         chunks: torch.Tensor = rearrange(
-            waveform.unfold(0, window_size, step_size),
-            "chunk channel frame -> chunk frame channel",
+            waveform.unfold(1, window_size, step_size),
+            "channel chunk frame -> chunk channel frame",
         )
         num_chunks, _, _ = chunks.shape
 
         # prepare last (right-aligned) audio chunk
         if (num_samples - window_size) % step_size > 0:
             last_start = num_samples - window_size
-            last_chunk: torch.Tensor = waveform[last_start:]
+            last_chunk: torch.Tensor = waveform[:, last_start:]
             has_last_chunk = True
         else:
             has_last_chunk = False
@@ -264,7 +263,6 @@ class Inference:
         }
 
         for t, (task_name, task_specifications) in enumerate(self.task_specifications):
-
             # if model outputs just one vector per chunk, return the outputs as they are
             if task_specifications.scale == Scale.CHUNK:
                 frames = SlidingWindow(
@@ -277,7 +275,7 @@ class Inference:
             if has_last_chunk:
                 last_output = {
                     task_name: output[0]
-                    for task_name, output in self.infer(last_chunk[None, :]).items()
+                    for task_name, output in self.infer(last_chunk[None]).items()
                 }
 
             #  use model introspection to estimate the total number of frames
@@ -351,7 +349,7 @@ class Inference:
 
         outputs = {
             task_name: task_output[0]
-            for task_name, task_output in self.infer(waveform[None, :]).items()
+            for task_name, task_output in self.infer(waveform[None]).items()
         }
         if self.is_multi_task:
             return outputs
@@ -387,8 +385,7 @@ class Inference:
         """
 
         waveform, sample_rate = self.model.audio.crop(file, chunk, fixed=fixed)
-        # TODO remove this conversion if/when we switch to torchaudio IO
-        waveform = torch.tensor(waveform, requires_grad=False)
+        waveform = waveform.requires_grad_(False)
 
         if self.window == "sliding":
             output = self.slide(waveform, sample_rate)
@@ -413,7 +410,7 @@ class Inference:
 
         outputs = {
             task_name: task_output[0]
-            for task_name, task_output in self.infer(waveform[None, :]).items()
+            for task_name, task_output in self.infer(waveform[None]).items()
         }
         if self.is_multi_task:
             return outputs

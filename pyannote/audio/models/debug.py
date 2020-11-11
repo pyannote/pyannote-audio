@@ -83,9 +83,8 @@ class SimpleSegmentationModel(Model):
         -------
         scores : (batch, time, classes)
         """
-
         # extract MFCC
-        mfcc = self.mfcc(rearrange(waveforms, "b t c -> b c t"))
+        mfcc = self.mfcc(waveforms)
         # pass MFCC sequeence into the recurrent layer
         output, hidden = self.lstm(rearrange(mfcc, "b c f t -> b t (c f)"))
         # apply the final classifier to get logits
@@ -131,7 +130,7 @@ class MultiTaskSegmentationModel(Model):
 
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
         # extract MFCC
-        mfcc = self.mfcc(rearrange(waveforms, "b t c -> b c t"))
+        mfcc = self.mfcc(waveforms)
         # pass MFCC sequence into the recurrent layer
         output, hidden = self.lstm(rearrange(mfcc, "b c f t -> b t (c f)"))
 
@@ -190,7 +189,7 @@ class SimpleEmbeddingModel(Model):
         embedding : (batch, dimension)
         """
 
-        mfcc = self.mfcc(rearrange(waveforms, "b t c -> b c t"))
+        mfcc = self.mfcc(waveforms)
         output, hidden = self.lstm(rearrange(mfcc, "b c f t -> b t (c f)"))
         # mean temporal pooling
         return reduce(output, "b t f -> b f", "mean")
