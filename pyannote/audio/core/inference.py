@@ -285,13 +285,13 @@ class Inference:
 
             # aggregated_output[i] will be used to store the sum of all predictions for frame #i
             aggregated_output: np.ndarray = np.zeros(
-                (num_frames + 1, dimension), dtype=np.float32
+                (num_frames, dimension), dtype=np.float32
             )
 
             # overlapping_chunk_count[i] will be used to store the number of chunks that
             # overlap with frame #i
             overlapping_chunk_count: np.ndarray = np.zeros(
-                (num_frames + 1, 1), dtype=np.int32
+                (num_frames, 1), dtype=np.int32
             )
 
             # loop on the outputs of sliding chunks
