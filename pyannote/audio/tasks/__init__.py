@@ -25,12 +25,15 @@ from .segmentation.speaker_change_detection import SpeakerChangeDetection  # iso
 from .segmentation.overlapped_speech_detection import (  # isort:skip
     OverlappedSpeechDetection,
 )
-
 from .segmentation.multi_task_segmentation import MultiTaskSegmentation  # isort:skip
+
+from .segmentation.speaker_tracking import SpeakerTracking  # isort:skip
+
 
 __all__ = [
     "VoiceActivityDetection",
     "SpeakerChangeDetection",
     "OverlappedSpeechDetection",
     "MultiTaskSegmentation",
+    "SpeakerTracking",
 ]

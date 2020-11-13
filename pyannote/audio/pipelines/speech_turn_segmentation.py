@@ -24,11 +24,12 @@ from typing import Text, Union
 
 from pyannote.audio.core.inference import Inference
 from pyannote.audio.core.io import AudioFile
-from pyannote.audio.pipeline import VoiceActivityDetection
-from pyannote.audio.pipeline.speaker_change_detection import SpeakerChangeDetection
 from pyannote.core import Annotation
 from pyannote.pipeline import Pipeline
 from pyannote.pipeline.parameter import Uniform
+
+from .speaker_change_detection import SpeakerChangeDetection
+from .voice_activity_detection import VoiceActivityDetection
 
 
 class SpeechTurnSegmentation(Pipeline):
