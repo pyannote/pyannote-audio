@@ -62,8 +62,8 @@ class VoiceActivityDetection(Pipeline):
 
     Parameters
     ----------
-    scores : Inference or str
-        `Inference` instance used to extract raw speech activity detection scores.
+    scores : Inference or str, optional
+        `Inference` instance used to extract raw voice activity detection scores.
         When `str`, assumes that file already contains a corresponding key with
         precomputed scores. Defaults to "vad".
     fscore : bool, optional
@@ -72,9 +72,9 @@ class VoiceActivityDetection(Pipeline):
 
     Hyper-parameters
     ----------------
-    onset, offset : `float`
+    onset, offset : float
         Onset/offset detection thresholds
-    min_duration_on, min_duration_off : `float`
+    min_duration_on, min_duration_off : float
         Minimum duration in either state (speech or not)
 
     """

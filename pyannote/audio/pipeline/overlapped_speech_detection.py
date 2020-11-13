@@ -1,20 +1,17 @@
-#!/usr/bin/env python
-# encoding: utf-8
-
 # The MIT License (MIT)
-
+#
 # Copyright (c) 2018-2020 CNRS
-
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-
+#
 # The above copyright notice and this permission notice shall be included in
 # all copies or substantial portions of the Software.
-
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -23,23 +20,16 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# AUTHORS
-# Hervé BREDIN - http://herve.niderb.fr
-
 """Overlapped speech detection pipelines"""
 
-from typing import Text, Union
+from typing import Optional, Text, Union
 
 from pyannote.audio.core.inference import Inference
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.utils.signal import Binarize
 from pyannote.core import Annotation, Timeline
 from pyannote.database import get_annotated
-from pyannote.metrics.detection import (
-    DetectionPrecision,
-    DetectionPrecisionRecallFMeasure,
-    DetectionRecall,
-)
+from pyannote.metrics.detection import DetectionPrecisionRecallFMeasure
 from pyannote.pipeline import Pipeline
 from pyannote.pipeline.parameter import Uniform
 
@@ -99,6 +89,9 @@ class OverlappedSpeechDetection(Pipeline):
     precision : float, optional
         Optimize recall at target precision.
         Defaults to optimize precision/recall fscore.
+    recall : float, optional
+        Optimize precision at target recall
+        Defaults to optimize precision/recall fscore
 
     Hyper-parameters
     ----------------
@@ -111,12 +104,12 @@ class OverlappedSpeechDetection(Pipeline):
     def __init__(
         self,
         scores: Union[Inference, Text] = "vad",
-        precision: float = None,
+        precision: Optional[float] = None,
+        recall: Optional[float] = None,
     ):
         super().__init__()
 
         self.scores = scores
-        self.precision = precision
 
         #  hyper-parameters used for hysteresis thresholding
         self.onset = Uniform(0.0, 1.0)
@@ -126,6 +119,14 @@ class OverlappedSpeechDetection(Pipeline):
         # i.e. removing short overlap/non-overlap regions
         self.min_duration_on = Uniform(0.0, 2.0)
         self.min_duration_off = Uniform(0.0, 2.0)
+
+        if (precision is not None) and (recall is not None):
+            raise ValueError(
+                "One must choose between optimizing for target precision target recall."
+            )
+
+        self.precision = precision
+        self.recall = recall
 
     def initialize(self):
         """Initialize pipeline with current set of parameters"""
@@ -169,7 +170,7 @@ class OverlappedSpeechDetection(Pipeline):
             Detection metric.
         """
 
-        if self.precision is not None:
+        if (self.precision is not None) or (self.recall is not None):
             raise NotImplementedError(
                 "pyannote.pipeline should use `loss` method fallback."
             )
@@ -189,7 +190,7 @@ class OverlappedSpeechDetection(Pipeline):
         return _Metric()
 
     def loss(self, file: AudioFile, hypothesis: Annotation) -> float:
-        """Compute recall at target precision
+        """Compute recall at target precision (or vice versa)
 
         Parameters
         ----------
@@ -200,13 +201,16 @@ class OverlappedSpeechDetection(Pipeline):
 
         Returns
         -------
-        recall : float
-            If precision < target, returns (precision - target_precision).
-            If precision > target, returns recall.
+        recall (or purity) : float
+            When optimizing for target precision:
+                If precision < target_precision, returns (precision - target_precision).
+                If precision > target_precision, returns recall.
+            When optimizing for target recall:
+                If recall < target_recall, returns (recall - target_recall).
+                If recall > target_recall, returns precision.
         """
 
-        precision = DetectionPrecision()
-        recall = DetectionRecall()
+        fmeasure = DetectionPrecisionRecallFMeasure()
 
         if "overlap_reference" in file:
             overlap_reference = file["overlap_reference"]
@@ -216,14 +220,20 @@ class OverlappedSpeechDetection(Pipeline):
             overlap_reference = to_overlap(reference)
             file["overlap_reference"] = overlap_reference
 
-        uem = get_annotated(file)
-        p = precision(overlap_reference, hypothesis, uem=uem)
-        r = recall(overlap_reference, hypothesis, uem=uem)
+        _ = fmeasure(overlap_reference, hypothesis, uem=get_annotated(file))
+        precision, recall, _ = fmeasure.compute_metrics()
 
-        if p < self.precision:
-            return p - self.precision
-        else:
-            return r
+        if self.precision is not None:
+            if precision < self.precision:
+                return precision - self.precision
+            else:
+                return recall
+
+        elif self.recall is not None:
+            if recall < self.recall:
+                return recall - self.recall
+            else:
+                return precision
 
     def get_direction(self):
         return "maximize"

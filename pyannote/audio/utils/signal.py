@@ -30,11 +30,50 @@
 # Signal processing
 """
 
-from typing import Literal, Tuple
+from typing import List, Literal
 
 import numpy as np
+import scipy.signal
 
 from pyannote.core import Segment, SlidingWindowFeature, Timeline
+from pyannote.core.utils.generators import pairwise
+
+ThresholdScale = Literal["absolute", "relative", "percentile"]
+
+
+def scale_threshold(
+    thresholds: List[float],
+    scores: SlidingWindowFeature = None,
+    scale: ThresholdScale = "absolute",
+) -> List[float]:
+
+    """
+
+    Parameters
+    ----------
+    thresholds : list of float
+        Thresholds.
+    scores : SlidingWindowFeature, optional
+        One-dimensional scores.
+    scale : {"absolute", "relative", "percentile"}, optional
+        Set to "relative" to scale threshold relatively to min/max.
+        Set to "percentile" to make them relative to 1% and 99% percentiles.
+        Defaults to "absolute" (do not scale them)
+    """
+
+    if scale == "absolute":
+        mini = 0
+        maxi = 1
+
+    elif scale == "relative":
+        mini = np.nanmin(scores.data)
+        maxi = np.nanmax(scores.data)
+
+    elif scale == "percentile":
+        mini = np.nanpercentile(scores.data, 1)
+        maxi = np.nanpercentile(scores.data, 99)
+
+    return [mini + t * (maxi - mini) for t in thresholds]
 
 
 class Binarize:
@@ -61,7 +100,6 @@ class Binarize:
         Extend actiev regions by moving their end time by that many seconds.
         Defaults to 0s.
 
-
     Reference
     ---------
     Gregory Gelly and Jean-Luc Gauvain. "Minimum Word Error Training of
@@ -72,7 +110,7 @@ class Binarize:
         self,
         onset: float = 0.5,
         offset: float = 0.5,
-        scale: Literal["absolute", "relative", "percentile"] = "absolute",
+        scale: ThresholdScale = "absolute",
         min_duration_on: float = 0.0,
         min_duration_off: float = 0.0,
         pad_onset: float = 0.0,
@@ -91,25 +129,6 @@ class Binarize:
         self.min_duration_on = min_duration_on
         self.min_duration_off = min_duration_off
 
-    def relative_thresholds(self, scores: SlidingWindowFeature) -> Tuple[float, float]:
-
-        if self.scale == "absolute":
-            mini = 0
-            maxi = 1
-
-        elif self.scale == "relative":
-            mini = np.nanmin(scores.data)
-            maxi = np.nanmax(scores.data)
-
-        elif self.scale == "percentile":
-            mini = np.nanpercentile(scores.data, 1)
-            maxi = np.nanpercentile(scores.data, 99)
-
-        onset = mini + self.onset * (maxi - mini)
-        offset = mini + self.offset * (maxi - mini)
-
-        return onset, offset
-
     def __call__(self, scores: SlidingWindowFeature):
         """Binarize detection scores
 
@@ -125,9 +144,11 @@ class Binarize:
         """
 
         if scores.dimension != 1:
-            raise ValueError()
+            raise ValueError("Binarize expects one-dimensional scores.")
 
-        onset, offset = self.relative_thresholds(scores)
+        onset, offset = scale_threshold(
+            (self.onset, self.offset), scores=scores, scale=self.scale
+        )
 
         num_frames = len(scores)
         frames = scores.sliding_window
@@ -176,3 +197,66 @@ class Binarize:
                 active.add(s)
 
         return active.support()
+
+
+class Peak:
+    """Peak detection
+
+    Parameters
+    ----------
+    alpha : float, optional
+        Peak threshold. Defaults to 0.5
+    scale : {"absolute", "relative", "percentile"}, optional
+        Set to "relative" to make alpha relative to min/max.
+        Set to "percentile" to make it relative 1% and 99% percentiles.
+        Defaults to "absolute".
+    min_duration : float, optional
+        Minimum elapsed time between two consecutive peaks. Defaults to 1 second.
+    """
+
+    def __init__(
+        self,
+        alpha: float = 0.5,
+        min_duration: float = 1.0,
+        scale: ThresholdScale = "absolute",
+    ):
+        super(Peak, self).__init__()
+        self.alpha = alpha
+        self.scale = scale
+        self.min_duration = min_duration
+
+    def __call__(self, scores: SlidingWindowFeature):
+        """Peak detection
+
+        Parameter
+        ---------
+        scores : SlidingWindowFeature
+            Detection scores.
+
+        Returns
+        -------
+        segmentation : Timeline
+            Partition.
+        """
+
+        if scores.dimension != 1:
+            raise ValueError("Peak expects one-dimensional scores.")
+
+        num_frames = len(scores)
+        frames = scores.sliding_window
+
+        precision = frames.step
+        order = max(1, int(np.rint(self.min_duration / precision)))
+        indices = scipy.signal.argrelmax(scores[:], order=order)[0]
+
+        (alpha,) = scale_threshold((self.alpha,), scores=scores, scale=self.scale)
+
+        peak_time = np.array([frames[i].middle for i in indices if scores[i] > alpha])
+        boundaries = np.hstack([[frames[0].start], peak_time, [frames[num_frames].end]])
+
+        segmentation = Timeline()
+        for i, (start, end) in enumerate(pairwise(boundaries)):
+            segment = Segment(start, end)
+            segmentation.add(segment)
+
+        return segmentation
