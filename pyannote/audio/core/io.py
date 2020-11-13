@@ -38,8 +38,6 @@ import warnings
 from pathlib import Path
 from typing import Optional, Text, Tuple, Union
 
-import librosa
-import torch
 import torchaudio
 from torch import Tensor
 
@@ -168,44 +166,6 @@ class Audio:
         self.sample_rate = sample_rate
         self.mono = mono
 
-    def downmix_and_resample(self, waveform: Tensor, sample_rate: int) -> Tensor:
-        """Downmix and resample
-
-        Parameters
-        ----------
-        waveform : (channel, time) Tensor
-            Waveform.
-        sample_rate : int
-            Sample rate.
-
-        Returns
-        -------
-        waveform : (channel, time) Tensor
-            Remixed and resampled waveform
-        sample_rate : int
-            New sample rate
-        """
-
-        # downmix to mono
-        if self.mono and waveform.shape[0] > 1:
-            waveform = waveform.mean(dim=0, keepdim=True)
-
-        # resample
-        if (self.sample_rate is not None) and (self.sample_rate != sample_rate):
-            waveform = waveform.numpy()
-            if self.mono:
-                # librosa expects mono audio to be of shape (n,), but we have (1, n).
-                waveform = librosa.core.resample(
-                    waveform[0], sample_rate, self.sample_rate
-                )[None]
-            else:
-                waveform = librosa.core.resample(
-                    waveform.T, sample_rate, self.sample_rate
-                ).T
-            sample_rate = self.sample_rate
-            waveform = torch.tensor(waveform)
-        return waveform, sample_rate
-
     def __call__(self, file: AudioFile) -> Tuple[Tensor, int]:
         """Obtain waveform
 
@@ -255,7 +215,11 @@ class Audio:
         if channel is not None:
             waveform = waveform[channel - 1 : channel]
 
-        return self.downmix_and_resample(waveform, sample_rate)
+        # downmix to mono
+        if self.mono and waveform.shape[0] > 1:
+            waveform = waveform.mean(dim=0, keepdim=True)
+
+        return waveform, sample_rate
 
     def crop(
         self,
@@ -354,4 +318,8 @@ class Audio:
         if channel is not None:
             data = data[channel - 1 : channel, :]
 
-        return self.downmix_and_resample(data, sample_rate)
+        # downmix to mono
+        if self.mono and data.shape[0] > 1:
+            data = data.mean(dim=0, keepdim=True)
+
+        return data, sample_rate

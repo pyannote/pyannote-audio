@@ -34,8 +34,10 @@ import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
 import torch.optim
+from torch.nn import Module
 from torch.utils.data import DataLoader, IterableDataset
 
+from pyannote.audio.transforms.pipeline import TransformsPipe
 from pyannote.database import Protocol
 
 if TYPE_CHECKING:
@@ -86,21 +88,26 @@ class TrainDataset(IterableDataset):
     def __init__(self, task: Task):
         super().__init__()
         self.task = task
+
     def __iter__(self):
         return self.task.train__iter__()
+
     def __len__(self):
         return self.task.train__len__()
-        
+
+
 class ValDataset(IterableDataset):
     def __init__(self, task: Task):
         super().__init__()
         self.task = task
+
     def __iter__(self):
         return self.task.val__iter__()
+
     def __len__(self):
         return self.task.val__len__()
 
-        
+
 class Task(pl.LightningDataModule):
     """Base task class
 
@@ -145,6 +152,7 @@ class Task(pl.LightningDataModule):
         batch_size: int = None,
         num_workers: int = 1,
         pin_memory: bool = False,
+        transforms: List[Module] = [],
     ):
         super().__init__()
 
@@ -171,6 +179,8 @@ class Task(pl.LightningDataModule):
         self.num_workers = num_workers
 
         self.pin_memory = pin_memory
+
+        self.transforms = TransformsPipe(transforms)
 
     def prepare_data(self):
         """Use this to download and prepare data
@@ -303,6 +313,7 @@ class Task(pl.LightningDataModule):
         """
 
         X, y = batch["X"], batch["y"]
+        X = self.transforms(X)
         y_pred = model(X)
 
         if self.is_multi_task:
@@ -366,6 +377,7 @@ class Task(pl.LightningDataModule):
         """
 
         X, y = batch["X"], batch["y"]
+        X = self.transforms.validate_pipe(X)
         y_pred = model(X)
 
         if self.is_multi_task:
