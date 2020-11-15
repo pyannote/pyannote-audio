@@ -32,9 +32,7 @@ from pyannote.database import FileFinder, get_protocol
 @hydra.main(config_path="conf", config_name="config")
 def main(cfg: DictConfig) -> None:
 
-    protocol = get_protocol(
-        "Debug.SpeakerDiarization.Debug", preprocessors={"audio": FileFinder()}
-    )
+    protocol = get_protocol(cfg.protocol, preprocessors={"audio": FileFinder()})
 
     task = instantiate(cfg.task, protocol)
     model = instantiate(cfg.model, task=task)
