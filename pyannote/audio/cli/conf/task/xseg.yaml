@@ -1,0 +1,7 @@
+# @package _group_
+_target_: pyannote.audio.tasks.MultiTaskSegmentation
+vad: True
+scd: True
+osd: True
+osd_params:
+  augmentation_probability: 0.2

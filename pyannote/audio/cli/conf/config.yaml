@@ -1,0 +1,3 @@
+defaults:
+  - task: vad
+  - model: debug
