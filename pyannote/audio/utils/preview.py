@@ -6,9 +6,6 @@ except ImportError:
     IPYTHON_INSTALLED = False
 
 import warnings
-from typing import Union
-
-from torch import Tensor
 
 from pyannote.audio.core.io import Audio, AudioFile
 from pyannote.core import Segment
