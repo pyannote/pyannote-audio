@@ -122,7 +122,7 @@ class OverlappedSpeechDetection(Pipeline):
 
         if (precision is not None) and (recall is not None):
             raise ValueError(
-                "One must choose between optimizing for target precision target recall."
+                "One must choose between optimizing for target precision or target recall."
             )
 
         self.precision = precision
