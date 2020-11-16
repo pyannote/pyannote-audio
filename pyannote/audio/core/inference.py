@@ -375,6 +375,7 @@ class Inference:
             chunks of the same duration.
 
         # TODO: document "fixed" better in pyannote.audio.core.io.Audio
+        # TODO: add support for "Timeline" chunk
 
         Returns
         -------

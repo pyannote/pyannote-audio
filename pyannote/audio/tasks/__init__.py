@@ -20,14 +20,20 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from .voice_activity_detection.task import VoiceActivityDetection  # isort:skip
-from .speaker_change_detection.task import SpeakerChangeDetection  # isort:skip
-from .overlapped_speech_detection.task import OverlappedSpeechDetection  # isort:skip
-from .multi_task_segmentation.task import MultiTaskSegmentation  # isort:skip
+from .segmentation.voice_activity_detection import VoiceActivityDetection  # isort:skip
+from .segmentation.speaker_change_detection import SpeakerChangeDetection  # isort:skip
+from .segmentation.overlapped_speech_detection import (  # isort:skip
+    OverlappedSpeechDetection,
+)
+from .segmentation.multi_task_segmentation import MultiTaskSegmentation  # isort:skip
+
+from .segmentation.speaker_tracking import SpeakerTracking  # isort:skip
+
 
 __all__ = [
     "VoiceActivityDetection",
     "SpeakerChangeDetection",
     "OverlappedSpeechDetection",
     "MultiTaskSegmentation",
+    "SpeakerTracking",
 ]

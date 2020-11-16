@@ -24,7 +24,7 @@
 import numpy as np
 
 from pyannote.audio.core.task import Problem, Scale, Task, TaskSpecification
-from pyannote.audio.tasks.mixins import SegmentationTaskMixin
+from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
 from pyannote.database import Protocol
 
 
