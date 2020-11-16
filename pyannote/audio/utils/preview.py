@@ -31,11 +31,6 @@ def listen(
         warnings.warn("You need IPython installed to use this method")
         return
 
-    if isinstance(audio_file, Tensor):
-        audio_file = {
-            "waveform": audio_file,
-            "sample_rate": sr,
-        }
     if segment is None:
         waveform, sr = Audio()(audio_file)
     else:
