@@ -22,8 +22,11 @@
 
 
 import random
+from typing import Callable, Iterable
 
 import numpy as np
+from torch.nn import Parameter
+from torch.optim import Optimizer
 
 from pyannote.audio.core.io import Audio
 from pyannote.audio.core.task import Problem, Scale, Task, TaskSpecification
@@ -72,6 +75,9 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
         If True, data loaders will copy tensors into CUDA pinned
         memory before returning them. See pytorch documentation
         for more details. Defaults to False.
+    optimizer : callable, optional
+        Callable that takes model parameters as input and returns
+        an Optimizer instance. Defaults to `torch.optim.Adam`.
     """
 
     def __init__(
@@ -85,6 +91,7 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
         batch_size: int = None,
         num_workers: int = 1,
         pin_memory: bool = False,
+        optimizer: Callable[[Iterable[Parameter]], Optimizer] = None,
     ):
 
         super().__init__(
@@ -93,6 +100,7 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
             batch_size=batch_size,
             num_workers=num_workers,
             pin_memory=pin_memory,
+            optimizer=optimizer,
         )
 
         self.specifications = TaskSpecification(

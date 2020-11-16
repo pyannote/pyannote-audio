@@ -28,12 +28,13 @@ import warnings
 from dataclasses import dataclass
 from enum import Enum
 from functools import cached_property
-from typing import TYPE_CHECKING, List, Optional, Text
+from typing import TYPE_CHECKING, Callable, Iterable, List, Optional, Text
 
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
-import torch.optim
+from torch.nn import Parameter
+from torch.optim import Adam, Optimizer
 from torch.utils.data import DataLoader, IterableDataset
 
 from pyannote.database import Protocol
@@ -86,21 +87,26 @@ class TrainDataset(IterableDataset):
     def __init__(self, task: Task):
         super().__init__()
         self.task = task
+
     def __iter__(self):
         return self.task.train__iter__()
+
     def __len__(self):
         return self.task.train__len__()
-        
+
+
 class ValDataset(IterableDataset):
     def __init__(self, task: Task):
         super().__init__()
         self.task = task
+
     def __iter__(self):
         return self.task.val__iter__()
+
     def __len__(self):
         return self.task.val__len__()
 
-        
+
 class Task(pl.LightningDataModule):
     """Base task class
 
@@ -129,6 +135,9 @@ class Task(pl.LightningDataModule):
         If True, data loaders will copy tensors into CUDA pinned
         memory before returning them. See pytorch documentation
         for more details. Defaults to False.
+    optimizer : callable, optional
+        Callable that takes model parameters as input and returns
+        an Optimizer instance. Defaults to `torch.optim.Adam`.
 
     Attributes
     ----------
@@ -145,6 +154,7 @@ class Task(pl.LightningDataModule):
         batch_size: int = None,
         num_workers: int = 1,
         pin_memory: bool = False,
+        optimizer: Callable[[Iterable[Parameter]], Optimizer] = None,
     ):
         super().__init__()
 
@@ -171,6 +181,10 @@ class Task(pl.LightningDataModule):
         self.num_workers = num_workers
 
         self.pin_memory = pin_memory
+
+        if optimizer is None:
+            optimizer = Adam
+        self.optimizer = optimizer
 
     def prepare_data(self):
         """Use this to download and prepare data
@@ -384,9 +398,32 @@ class Task(pl.LightningDataModule):
         model.log("val_loss", loss)
         return {"loss": loss}
 
+    def parameters(self, model: Model) -> Iterable[Parameter]:
+        return model.parameters()
+
     # default configure_optimizers provided for convenience
     # can obviously be overriden for each task
     def configure_optimizers(self, model: Model):
         # for tasks such as SpeakerEmbedding,
         # other parameters should be added here
-        return torch.optim.Adam(model.parameters(), lr=1e-3)
+        return self.optimizer(self.parameters(model))
+
+    @property
+    def validation_monitor(self):
+        """Quantity (and direction) to monitor
+
+        Useful for model checkpointing or early stopping.
+
+        Returns
+        -------
+        monitor : str
+            Name of quantity to monitor.
+        mode : {'min', 'max}
+            Minimize
+
+        See also
+        --------
+        pytorch_lightning.callbacks.ModelCheckpoint
+        pytorch_lightning.callbacks.EarlyStopping
+        """
+        return "val_loss", "min"

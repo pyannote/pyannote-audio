@@ -38,10 +38,11 @@ def main(cfg: DictConfig) -> None:
     #  TODO: configure augmentation
     #  TODO: configure scheduler
 
-    # TODO: uncomment
-    # optimizer = lambda parameters: instantiate(cfg.optimizer, parameters)
-    # task = instantiate(cfg.task, protocol, optimizer=optimizer)
-    task = instantiate(cfg.task, protocol)
+    def optimizer(parameters):
+        return instantiate(cfg.optimizer, parameters)
+
+    task = instantiate(cfg.task, protocol, optimizer=optimizer)
+
     model = instantiate(cfg.model, task=task)
 
     save_dir = f"{protocol.name}"

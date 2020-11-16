@@ -20,12 +20,16 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+
+from __future__ import annotations
+
 import math
 from itertools import chain
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable, Iterable
 
 import pytorch_metric_learning.losses
-import torch.optim
+from torch.nn import Parameter
+from torch.optim import Optimizer
 
 from pyannote.audio.core.task import Problem, Scale, Task, TaskSpecification
 from pyannote.audio.utils.random import create_rng_for_worker
@@ -44,6 +48,9 @@ class SpeakerEmbeddingArcFace(Task):
         If True, data loaders will copy tensors into CUDA pinned
         memory before returning them. See pytorch documentation
         for more details. Defaults to False.
+    optimizer : callable, optional
+        Callable that takes model parameters as input and returns
+        an Optimizer instance. Defaults to `torch.optim.Adam`.
 
 
     """
@@ -59,6 +66,7 @@ class SpeakerEmbeddingArcFace(Task):
         batch_size: int = None,
         num_workers: int = 1,
         pin_memory: bool = False,
+        optimizer: Callable[[Iterable[Parameter]], Optimizer] = None,
     ):
 
         super().__init__(
@@ -67,6 +75,7 @@ class SpeakerEmbeddingArcFace(Task):
             batch_size=batch_size,
             num_workers=num_workers,
             pin_memory=pin_memory,
+            optimizer=optimizer,
         )
 
         # there is no such thing as a "class" in representation
@@ -199,6 +208,5 @@ class SpeakerEmbeddingArcFace(Task):
     def val_dataloader(self):
         return None
 
-    def configure_optimizers(self, model: "Model"):
-        parameters = chain(model.parameters(), self.loss_func.parameters())
-        return torch.optim.Adam(parameters, lr=1e-3)
+    def parameters(self, model: Model) -> Iterable[Parameter]:
+        return chain(model.parameters(), self.loss_func.parameters())

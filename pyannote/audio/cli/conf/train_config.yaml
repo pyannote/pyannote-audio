@@ -20,4 +20,5 @@ model:
 defaults:
   - task: vad
   - model: debug
+  - optimizer: adam
   - trainer: default
