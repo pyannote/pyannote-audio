@@ -1,0 +1,55 @@
+# @package _group_
+
+app_name: pyannote-audio-train
+
+# Help header, customize to describe your app to your users
+header: == ${hydra.help.app_name} ==
+
+footer: |-
+  Powered by Hydra (https://hydra.cc)
+  Use --hydra-help to view Hydra specific help
+
+# Basic Hydra flags:
+#   $FLAGS_HELP
+#
+# Config groups, choose one of:
+#   $APP_CONFIG_GROUPS: All config groups that does not start with hydra/.
+#   $HYDRA_CONFIG_GROUPS: All the Hydra config groups (starts with hydra/)
+#
+# Configuration generated with overrides:
+#   $CONFIG : Generated config
+#
+template: |-
+  ${hydra.help.header}
+
+  pyannote-audio-train task={task} model={model} trainer={trainer} optimizer={optimizer}
+
+  $APP_CONFIG_GROUPS
+
+  == task ==
+  * vad = voice activity detection
+  * scd = speaker change detection
+  * osd = overlapped speech detection
+  * xseg = multi-task segmentation
+
+  == model ==
+  * debug = simple segmentation model for debugging purposes
+
+  == optimizer ==
+  * adam = Adam optimizer
+
+  == trainer ==
+  * default
+  * fast_dev_run
+
+
+  == Config ==
+
+  This is the config generated for this run.
+  pyannote-audio-train task=scd batch.duration=3.0 batch.size=16 trainer.auto_lr_find=true trainer.max_epochs=100
+
+  -------
+  $CONFIG
+  -------
+
+  ${hydra.help.footer}

@@ -22,3 +22,4 @@ defaults:
   - model: debug
   - optimizer: adam
   - trainer: default
+  - hydra/help: train
