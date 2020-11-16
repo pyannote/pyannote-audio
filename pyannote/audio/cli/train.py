@@ -22,22 +22,74 @@
 
 
 import hydra
-import pytorch_lightning as pl
 from hydra.utils import instantiate
 from omegaconf import DictConfig
+from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
+from pytorch_lightning.loggers import TensorBoardLogger
 
 from pyannote.database import FileFinder, get_protocol
 
 
-@hydra.main(config_path="conf", config_name="config")
+@hydra.main(config_path="conf", config_name="train_config")
 def main(cfg: DictConfig) -> None:
 
     protocol = get_protocol(cfg.protocol, preprocessors={"audio": FileFinder()})
 
+    #  TODO: configure augmentation
+    #  TODO: configure scheduler
+
+    # TODO: uncomment
+    # optimizer = lambda parameters: instantiate(cfg.optimizer, parameters)
+    # task = instantiate(cfg.task, protocol, optimizer=optimizer)
     task = instantiate(cfg.task, protocol)
     model = instantiate(cfg.model, task=task)
 
-    trainer = pl.Trainer(fast_dev_run=True)
+    save_dir = f"{protocol.name}"
+
+    monitor, mode = task.validation_monitor
+    model_checkpoint = ModelCheckpoint(
+        monitor=monitor,
+        mode=mode,
+        save_top_k=10,
+        period=1,
+        save_last=True,
+        save_weights_only=False,
+        dirpath=save_dir,
+        filename=f"{{epoch}}-{{{monitor}:.3f}}",
+        verbose=True,
+    )
+
+    early_stopping = EarlyStopping(
+        monitor=monitor,
+        mode=mode,
+        min_delta=0.0,
+        patience=10,
+        strict=True,
+        verbose=True,
+    )
+
+    # summary_writer_params = {
+    #     "log_dir": None,
+    #     "comment": "",
+    #     "purge_step": None,
+    #     "max_queue": 10,
+    #     "flush_secs": 120,
+    #     "filename_suffix": "",
+    # }
+
+    logger = TensorBoardLogger(
+        save_dir,
+        name="",
+        version="",
+        log_graph=True,
+        # **summary_writer_params,
+    )
+
+    trainer = instantiate(
+        cfg.trainer,
+        callbacks=[model_checkpoint, early_stopping],
+        logger=logger,
+    )
     trainer.fit(model, task)
 
 
