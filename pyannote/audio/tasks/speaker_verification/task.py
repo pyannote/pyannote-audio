@@ -48,6 +48,10 @@ class SpeakerEmbeddingArcFace(Task):
 
     """
 
+    #  TODO: add a ".metric" property that tells how speaker embedding trained with this approach
+    #  should be compared. could be a string like "cosine" or "euclidean" or a pdist/cdist-like
+    #  callable. this ".metric" property should be propagated all the way to Inference (via the model).
+
     def __init__(
         self,
         protocol: Protocol,
