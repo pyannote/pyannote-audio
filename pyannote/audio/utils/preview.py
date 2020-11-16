@@ -11,9 +11,7 @@ from pyannote.audio.core.io import Audio, AudioFile
 from pyannote.core import Segment
 
 
-def listen(
-    audio_file: Union[Tensor, AudioFile], segment: Segment = None, sr=16000
-) -> None:
+def listen(audio_file: AudioFile, segment: Segment = None) -> None:
     """listen to audio
 
     Allows playing of audio files. It will play the whole thing unless
