@@ -136,6 +136,10 @@ class Model(pl.LightningModule):
         # (e.g. the final classification and activation layers)
         pass
 
+    @cached_property
+    def example_input_array(self) -> torch.Tensor:
+        return self.task.example_input_array
+
     def helper_introspect(
         self,
         specifications: TaskSpecification,
