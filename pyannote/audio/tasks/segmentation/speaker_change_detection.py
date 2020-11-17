@@ -54,7 +54,7 @@ class SpeakerChangeDetection(SegmentationTaskMixin, Task):
         Mark frames less than `collar` frames away from actual change point as positive.
         Defaults to 1.
     batch_size : int, optional
-        Number of training samples per batch.
+        Number of training samples per batch. Defaults to 32.
     num_workers : int, optional
         Number of workers used for generating training samples.
     pin_memory : bool, optional
@@ -73,7 +73,7 @@ class SpeakerChangeDetection(SegmentationTaskMixin, Task):
         protocol: Protocol,
         duration: float = 2.0,
         collar: int = 1,
-        batch_size: int = None,
+        batch_size: int = 32,
         num_workers: int = 1,
         pin_memory: bool = False,
         optimizer: Callable[[Iterable[Parameter]], Optimizer] = None,

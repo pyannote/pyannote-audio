@@ -68,7 +68,7 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
         (i.e. share the same file[domain] value). Default behavior is to not contrain
         data augmentation with regards to domain.
     batch_size : int, optional
-        Number of training samples per batch.
+        Number of training samples per batch. Defaults to 32.
     num_workers : int, optional
         Number of workers used for generating training samples.
     pin_memory : bool, optional
@@ -90,7 +90,7 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
         snr_min: float = 0.0,
         snr_max: float = 10.0,
         domain: str = None,
-        batch_size: int = None,
+        batch_size: int = 32,
         num_workers: int = 1,
         pin_memory: bool = False,
         optimizer: Callable[[Iterable[Parameter]], Optimizer] = None,

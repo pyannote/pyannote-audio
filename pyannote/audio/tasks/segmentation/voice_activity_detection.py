@@ -47,7 +47,7 @@ class VoiceActivityDetection(SegmentationTaskMixin, Task):
     duration : float, optional
         Chunks duration. Defaults to 2s.
     batch_size : int, optional
-        Number of training samples per batch.
+        Number of training samples per batch. Defaults to 32.
     num_workers : int, optional
         Number of workers used for generating training samples.
     pin_memory : bool, optional
@@ -65,7 +65,7 @@ class VoiceActivityDetection(SegmentationTaskMixin, Task):
         self,
         protocol: Protocol,
         duration: float = 2.0,
-        batch_size: int = None,
+        batch_size: int = 32,
         num_workers: int = 1,
         pin_memory: bool = False,
         optimizer: Callable[[Iterable[Parameter]], Optimizer] = None,

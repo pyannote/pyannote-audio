@@ -65,12 +65,18 @@ class SpeakerEmbeddingArcFace(Task):
         self,
         protocol: Protocol,
         duration: float = 2.0,
-        batch_size: int = None,
+        num_chunks_per_speaker: int = 1,
+        num_speakers_per_batch: int = 32,
         num_workers: int = 1,
         pin_memory: bool = False,
         optimizer: Callable[[Iterable[Parameter]], Optimizer] = None,
         learning_rate: float = 1e-3,
     ):
+
+        self.num_chunks_per_speaker = num_chunks_per_speaker
+        self.num_speakers_per_batch = num_speakers_per_batch
+
+        batch_size = self.num_chunks_per_speaker * self.num_speakers_per_batch
 
         super().__init__(
             protocol,
@@ -165,8 +171,8 @@ class SpeakerEmbeddingArcFace(Task):
                 # speaker index in original sorted order
                 y = self.specifications.classes.index(speaker)
 
-                # three chunks per speaker
-                for _ in range(3):
+                # multiple chunks per speaker
+                for _ in range(self.num_chunks_per_speaker):
 
                     # select one file at random (with probability proportional to its speaker duration)
                     file, *_ = rng.choices(
