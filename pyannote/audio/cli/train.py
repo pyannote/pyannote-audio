@@ -54,7 +54,7 @@ def main(cfg: DictConfig) -> None:
 
     model = instantiate(cfg.model, task=task)
 
-    save_dir = f"{protocol.name}"
+    save_dir = f"{task.__class__.__name__}/{protocol.name}"
 
     monitor, mode = task.validation_monitor
     model_checkpoint = ModelCheckpoint(
