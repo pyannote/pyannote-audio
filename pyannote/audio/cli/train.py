@@ -42,8 +42,8 @@ def main(cfg: DictConfig) -> None:
     #  TODO: configure augmentation
     #  TODO: configure scheduler
 
-    def optimizer(parameters: Iterable[Parameter]) -> Optimizer:
-        return instantiate(cfg.optimizer, parameters)
+    def optimizer(parameters: Iterable[Parameter], lr: float = 1e-3) -> Optimizer:
+        return instantiate(cfg.optimizer, parameters, lr=lr)
 
     task = instantiate(
         cfg.task,
