@@ -22,34 +22,45 @@ footer: |-
 template: |-
   ${hydra.help.header}
 
-  pyannote-audio-train task={task} model={model} trainer={trainer} optimizer={optimizer}
+  pyannote-audio-train protocol={protocol_name} task={task} model={model}
 
-  $APP_CONFIG_GROUPS
-
-  == task ==
-  * vad = voice activity detection
+  {task} can be any of the following:
+  * vad (default) = voice activity detection
   * scd = speaker change detection
   * osd = overlapped speech detection
   * xseg = multi-task segmentation
 
-  == model ==
-  * debug = simple segmentation model for debugging purposes
+  {model} can be any of the following:
+  * debug (default) = simple segmentation model for debugging purposes
 
-  == optimizer ==
-  * adam = Adam optimizer
+  {optimizer} can be any of the following
+  * adam (default) = Adam optimizer
 
-  == trainer ==
-  * default
-  * fast_dev_run
+  {trainer} can be any of the following
+  * fast_dev_run for debugging
+  * default (default) for training the model
 
+  Options
+  =======
 
-  == Config ==
+  Here, we describe the most common options: use "--cfg job" option to get a complete list.
 
-  This is the config generated for this run.
-  pyannote-audio-train task=scd batch.duration=3.0 batch.size=16 trainer.auto_lr_find=true trainer.max_epochs=100
+  * task.duration: audio chunk duration (in seconds)
+  * task.batch_size: number of audio chunks per batch
+  * task.num_workers: number of workers used for generating training chunks
 
-  -------
-  $CONFIG
-  -------
+  * optimizer.lr: learning rate
+  * trainer.auto_lr_find: use pytorch-lightning AutoLR
+
+  Grid search
+  ===========
+
+  Because it is powered by Hydra, one can run grid search using the --multirun option.
+
+  For instance, the following command will run the same job three times, with three different learning rates:
+    pyannote-audio-train --multirun protocol={protocol_name} task={task} optimizer.lr=1e-3,1e-2,1e-1
+
+  This one will train two models: one for voice activity detection and one for speaker change detection.
+    pyannote-audio-train --multirun protocol={protocol_name} task=vad,scd,osd
 
   ${hydra.help.footer}
