@@ -88,6 +88,8 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
     optimizer : callable, optional
         Callable that takes model parameters as input and returns
         an Optimizer instance. Defaults to `torch.optim.Adam`.
+    learning_rate : float, optional
+        Learning rate. Defaults to 1e-3.
     """
 
     def __init__(
@@ -104,6 +106,7 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
         num_workers: int = 1,
         pin_memory: bool = False,
         optimizer: Callable[[Iterable[Parameter]], Optimizer] = None,
+        learning_rate: float = 1e-3,
     ):
 
         super().__init__(
@@ -113,6 +116,7 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
             num_workers=num_workers,
             pin_memory=pin_memory,
             optimizer=optimizer,
+            learning_rate=learning_rate,
         )
 
         self.vad = vad

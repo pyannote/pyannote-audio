@@ -21,11 +21,15 @@
 # SOFTWARE.
 
 
+from typing import Iterable
+
 import hydra
 from hydra.utils import instantiate
 from omegaconf import DictConfig
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
+from torch.nn import Parameter
+from torch.optim import Optimizer
 
 from pyannote.database import FileFinder, get_protocol
 
@@ -38,10 +42,15 @@ def main(cfg: DictConfig) -> None:
     #  TODO: configure augmentation
     #  TODO: configure scheduler
 
-    def optimizer(parameters):
+    def optimizer(parameters: Iterable[Parameter]) -> Optimizer:
         return instantiate(cfg.optimizer, parameters)
 
-    task = instantiate(cfg.task, protocol, optimizer=optimizer)
+    task = instantiate(
+        cfg.task,
+        protocol,
+        optimizer=optimizer,
+        learning_rate=cfg.optimizer.lr,
+    )
 
     model = instantiate(cfg.model, task=task)
 
@@ -91,6 +100,15 @@ def main(cfg: DictConfig) -> None:
         callbacks=[model_checkpoint, early_stopping],
         logger=logger,
     )
+
+    if cfg.trainer.auto_lr_find == True:
+        #  HACK: these two lines below should be removed once
+        #  the corresponding bug is fixed in pytorch-lighting.
+        #  https://github.com/pyannote/pyannote-audio/issues/514
+        task.setup(stage="fit")
+        model.setup(stage="fit")
+        trainer.tune(model, task)
+
     trainer.fit(model, task)
 
 

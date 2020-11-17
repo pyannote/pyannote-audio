@@ -138,6 +138,8 @@ class Task(pl.LightningDataModule):
     optimizer : callable, optional
         Callable that takes model parameters as input and returns
         an Optimizer instance. Defaults to `torch.optim.Adam`.
+    learning_rate : float, optional
+        Learning rate. Defaults to 1e-3.
 
     Attributes
     ----------
@@ -155,6 +157,7 @@ class Task(pl.LightningDataModule):
         num_workers: int = 1,
         pin_memory: bool = False,
         optimizer: Callable[[Iterable[Parameter]], Optimizer] = None,
+        learning_rate: float = 1e-3,
     ):
         super().__init__()
 
@@ -185,6 +188,7 @@ class Task(pl.LightningDataModule):
         if optimizer is None:
             optimizer = Adam
         self.optimizer = optimizer
+        self.learning_rate = learning_rate
 
     def prepare_data(self):
         """Use this to download and prepare data
@@ -404,9 +408,12 @@ class Task(pl.LightningDataModule):
     # default configure_optimizers provided for convenience
     # can obviously be overriden for each task
     def configure_optimizers(self, model: Model):
-        # for tasks such as SpeakerEmbedding,
-        # other parameters should be added here
-        return self.optimizer(self.parameters(model))
+        # this is needed to support pytorch-lightning auto_lr_find feature
+        # as it modifies model.hparams.learning_rate and not task.learning_rate.
+        # in case one does not use auto_lr_find, Model.setup() takes care of
+        # setting model.hparams.learning_rate to task.learning_rate so we are safe.
+        lr = model.hparams.learning_rate
+        return self.optimizer(self.parameters(model), lr=lr)
 
     @property
     def validation_monitor(self):

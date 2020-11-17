@@ -1,22 +1,6 @@
 
 protocol: ???
 
-batch:
-  size: 32
-  duration: 2.0
-  sample_rate: 16000
-  num_channels: 1
-  num_workers: 4
-
-task:
-  duration: ${batch.duration}
-  batch_size: ${batch.size}
-  num_workers: ${batch.num_workers}
-
-model:
-  sample_rate: ${batch.sample_rate}
-  num_channels: ${batch.num_channels}
-
 defaults:
   - task: vad
   - model: debug
