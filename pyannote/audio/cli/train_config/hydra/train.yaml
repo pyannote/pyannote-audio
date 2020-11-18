@@ -63,16 +63,18 @@ help:
     * optimizer.lr: learning rate
     * trainer.auto_lr_find: use pytorch-lightning AutoLR
 
-    Grid search
-    ===========
+    Hyper-parameter optimization
+    ============================
 
-    Because it is powered by Hydra, one can run grid search using the --multirun option.
+    Because it is powered by Hydra (https://hydra.cc), one can run grid search using the --multirun option.
 
     For instance, the following command will run the same job three times, with three different learning rates:
       pyannote-audio-train --multirun protocol={protocol_name} task={task} optimizer.lr=1e-3,1e-2,1e-1
 
-    This one will train two models: one for voice activity detection and one for speaker change detection.
-      pyannote-audio-train --multirun protocol={protocol_name} task=vad,scd,osd
+    Even better, one can use Ax (https://ax.dev) sweeper to optimize learning rate directly:
+      pyannote-audio-train --multirun hydra/sweeper=ax protocol={protocol_name} task={task} optimizer.lr="interval(1e-3, 1e-1)"
+
+    See https://hydra.cc/docs/plugins/ax_sweeper for more details.
 
     User-defined task or model
     ==========================

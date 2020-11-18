@@ -99,6 +99,12 @@ def main(cfg: DictConfig) -> None:
 
     trainer.fit(model, task)
 
+    best_monitor = float(early_stopping.best_score)
+    if mode == "min":
+        return best_monitor
+    else:
+        return -best_monitor
+
 
 if __name__ == "__main__":
     main()
