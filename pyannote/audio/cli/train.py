@@ -39,8 +39,9 @@ def main(cfg: DictConfig) -> None:
 
     protocol = get_protocol(cfg.protocol, preprocessors={"audio": FileFinder()})
 
-    #  TODO: configure augmentation
-    #  TODO: configure scheduler
+    # TODO: configure augmentation
+    # TODO: configure scheduler
+    # TODO: configure layer freezing
 
     def optimizer(parameters: Iterable[Parameter], lr: float = 1e-3) -> Optimizer:
         return instantiate(cfg.optimizer, parameters, lr=lr)
