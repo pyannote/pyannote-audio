@@ -34,7 +34,7 @@ from torch.optim import Optimizer
 from pyannote.database import FileFinder, get_protocol
 
 
-@hydra.main(config_path="conf", config_name="train_config")
+@hydra.main(config_path="train_config", config_name="config")
 def main(cfg: DictConfig) -> None:
 
     protocol = get_protocol(cfg.protocol, preprocessors={"audio": FileFinder()})
@@ -54,8 +54,6 @@ def main(cfg: DictConfig) -> None:
 
     model = instantiate(cfg.model, task=task)
 
-    save_dir = f"{task.__class__.__name__}/{protocol.name}"
-
     monitor, mode = task.validation_monitor
     model_checkpoint = ModelCheckpoint(
         monitor=monitor,
@@ -64,7 +62,7 @@ def main(cfg: DictConfig) -> None:
         period=1,
         save_last=True,
         save_weights_only=False,
-        dirpath=save_dir,
+        dirpath=".",
         filename=f"{{epoch}}-{{{monitor}:.3f}}",
         verbose=True,
     )
@@ -88,7 +86,7 @@ def main(cfg: DictConfig) -> None:
     # }
 
     logger = TensorBoardLogger(
-        save_dir,
+        ".",
         name="",
         version="",
         log_graph=True,
