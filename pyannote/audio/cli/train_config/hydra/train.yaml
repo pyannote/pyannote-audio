@@ -20,16 +20,6 @@ help:
     Powered by Hydra (https://hydra.cc)
     Use --hydra-help to view Hydra specific help
 
-  # Basic Hydra flags:
-  #   $FLAGS_HELP
-  #
-  # Config groups, choose one of:
-  #   $APP_CONFIG_GROUPS: All config groups that does not start with hydra/.
-  #   $HYDRA_CONFIG_GROUPS: All the Hydra config groups (starts with hydra/)
-  #
-  # Configuration generated with overrides:
-  #   $CONFIG : Generated config
-  #
   template: |-
     ${hydra.help.header}
 
