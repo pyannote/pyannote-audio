@@ -76,21 +76,11 @@ def main(cfg: DictConfig) -> None:
         verbose=cfg.verbose,
     )
 
-    # summary_writer_params = {
-    #     "log_dir": None,
-    #     "comment": "",
-    #     "purge_step": None,
-    #     "max_queue": 10,
-    #     "flush_secs": 120,
-    #     "filename_suffix": "",
-    # }
-
     logger = TensorBoardLogger(
         ".",
         name="",
         version="",
         log_graph=True,
-        # **summary_writer_params,
     )
 
     trainer = instantiate(
