@@ -56,7 +56,7 @@ Audio files can be provided to the Audio class using different types:
     - a ProtocolFile (or regular dict) with an "audio" key:
         {"audio": Path("/path/to/audio.wav")}
     - a ProtocolFile (or regular dict) with both "waveform" and "sample_rate" key:
-        {"waveform": (time, channel) numpy array, "sample_rate": 44100}
+        {"waveform": (channel, time) numpy.ndarray or torch.Tensor, "sample_rate": 44100}
 
 For last two options, an additional "channel" key can be provided as a zero-indexed
 integer to load a specific channel:
