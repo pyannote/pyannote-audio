@@ -1,5 +1,6 @@
 
 protocol: ???
+verbose: False
 
 defaults:
   - task: vad

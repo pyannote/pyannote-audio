@@ -64,7 +64,7 @@ def main(cfg: DictConfig) -> None:
         save_weights_only=False,
         dirpath=".",
         filename=f"{{epoch}}-{{{monitor}:.3f}}",
-        verbose=True,
+        verbose=cfg.verbose,
     )
 
     early_stopping = EarlyStopping(
@@ -73,7 +73,7 @@ def main(cfg: DictConfig) -> None:
         min_delta=0.0,
         patience=10,
         strict=True,
-        verbose=True,
+        verbose=cfg.verbose,
     )
 
     # summary_writer_params = {
