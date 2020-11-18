@@ -136,6 +136,7 @@ class Model(pl.LightningModule):
         # (e.g. the final classification and activation layers)
         pass
 
+    #  used by Tensorboard logger to log model graph
     @cached_property
     def example_input_array(self) -> torch.Tensor:
         return self.task.example_input_array
