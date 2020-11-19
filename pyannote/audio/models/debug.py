@@ -33,30 +33,22 @@ from pyannote.audio.core.task import Task
 
 
 class SimpleSegmentationModel(Model):
-    def __init__(
-        self,
-        sample_rate: int = 16000,
-        num_channels: int = 1,
-        task: Optional[Task] = None,
-    ):
+    # def __init__(
+    #     self,
+    #     sample_rate: int = 16000,
+    #     num_channels: int = 1,
+    #     task: Optional[Task] = None,
+    # ):
 
-        super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
+    #     super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
 
-        self.mfcc = MFCC(
-            sample_rate=self.hparams.sample_rate,
-            n_mfcc=40,
-            dct_type=2,
-            norm="ortho",
-            log_mels=False,
-        )
-
-        self.lstm = nn.LSTM(
-            self.mfcc.n_mfcc * self.hparams.num_channels,
-            32,
-            num_layers=1,
-            batch_first=True,
-            bidirectional=True,
-        )
+    #     self.mfcc = MFCC(
+    #         sample_rate=self.hparams.sample_rate,
+    #         n_mfcc=40,
+    #         dct_type=2,
+    #         norm="ortho",
+    #         log_mels=False,
+    #     )
 
     def build(self):
         # define task-dependent layers
@@ -64,6 +56,16 @@ class SimpleSegmentationModel(Model):
             32 * 2, len(self.hparams.task_specifications.classes)
         )
         self.activation = self.default_activation()
+
+        # This will give us the first transform
+        spec = self.transforms.spectrogram_pipe()[0]
+        self.lstm = nn.LSTM(
+            spec.n_mfcc * self.hparams.num_channels,
+            32,
+            num_layers=1,
+            batch_first=True,
+            bidirectional=True,
+        )
 
         # why do we define those layers here and not in task.setup()?
         # because, at inference time, we need those layers.
@@ -83,8 +85,7 @@ class SimpleSegmentationModel(Model):
         -------
         scores : (batch, time, classes)
         """
-        # extract MFCC
-        mfcc = self.mfcc(waveforms)
+        mfcc = self.transforms(waveforms)
         # pass MFCC sequeence into the recurrent layer
         output, hidden = self.lstm(rearrange(mfcc, "b c f t -> b t (c f)"))
         # apply the final classifier to get logits

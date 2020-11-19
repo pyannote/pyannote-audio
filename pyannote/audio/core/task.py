@@ -23,25 +23,41 @@
 
 from __future__ import annotations
 
+import math
 import sys
 import warnings
 from dataclasses import dataclass
 from enum import Enum
 from functools import cached_property
-from typing import TYPE_CHECKING, List, Optional, Text
+from pathlib import Path
+from typing import TYPE_CHECKING, List, Optional, Text, Union
 
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
 import torch.optim
-from torch.nn import Module
 from torch.utils.data import DataLoader, IterableDataset
+from torch_audiomentations.augmentations.background_noise import ApplyBackgroundNoise
+from torchaudio.transforms import MFCC, FrequencyMasking, Resample, TimeMasking
 
 from pyannote.audio.transforms.pipeline import TransformsPipe
+from pyannote.audio.transforms.transforms import Reverb
 from pyannote.database import Protocol
 
 if TYPE_CHECKING:
     from pyannote.audio.core.model import Model
+
+
+def _override_bad_defaults(kwargs):
+    "Fix bad default for spectrograms"
+
+    if "n_fft" not in kwargs or kwargs["n_fft"] is None:
+        kwargs["n_fft"] = 1024
+    if "win_length" not in kwargs or kwargs["win_length"] is None:
+        kwargs["win_length"] = kwargs["n_fft"]
+    if "hop_length" not in kwargs or kwargs["hop_length"] is None:
+        kwargs["hop_length"] = int(kwargs["win_length"] / 2)
+    return kwargs
 
 
 # Type of machine learning problem
@@ -152,9 +168,12 @@ class Task(pl.LightningDataModule):
         batch_size: int = None,
         num_workers: int = 1,
         pin_memory: bool = False,
-        transforms: List[Module] = [],
+        gpu_transforms: bool = True,
+        bg_noise: Union[str, Path] = None,
     ):
         super().__init__()
+
+        self.gpu = gpu_transforms and torch.cuda.is_available()
 
         # dataset
         self.protocol = protocol
@@ -180,7 +199,85 @@ class Task(pl.LightningDataModule):
 
         self.pin_memory = pin_memory
 
-        self.transforms = TransformsPipe(transforms)
+        self.bg_noise = bg_noise
+
+        self._transforms = None
+
+    @property
+    def transforms(self) -> TransformsPipe:
+        """Basic Augmentations for waveform to spectrogram
+
+
+        Parameters
+        ---------
+        task : Task
+            The task that need transformations to be applied to
+        bg_noise: Path, str
+            Where to find background noise data
+
+        Returns
+        -------
+
+        TransformsPipe
+        """
+        if self._transforms is None:
+            sr = self.audio.sample_rate
+            augs = []
+            reverb = Reverb(sample_rate=sr)
+
+            # Test and validation augmentations will be applied without the
+            # random transformations
+            augs += [Resample(sr), reverb]
+
+            # Setup Background Noise
+            if self.bg_noise:
+                augs.append(ApplyBackgroundNoise(self.bg_noise))
+
+            kwargs = _override_bad_defaults({})
+            mfcc = MFCC(sr, melkwargs=kwargs)
+            spec = mfcc(self.example_input_array)
+            time, freq = spec.shape[-2:]
+            # These Spec Augments need to be replaced with the ones
+            # that stabalised training in the paper.
+            timemasking = TimeMasking(math.floor(time * 0.2), True)
+
+            freqmasking = FrequencyMasking(math.floor(freq * 0.2), True)
+            spec_augs = [MFCC(sr), timemasking, freqmasking]
+
+            # Used later to check that the
+            for a in spec_augs:
+                a._spectrogram = True
+
+            augs += spec_augs
+            self._transforms = TransformsPipe(*augs)
+        return self._transforms
+
+    @transforms.setter
+    def transforms(self, v: Union[List, TransformsPipe]):
+        if isinstance(v, list):
+            v = TransformsPipe(*v)
+        self._transforms = v
+
+    def _setup_transforms(self, model: Model, stage=None):
+        tfms = self.transforms if stage != "test" else self.transforms.validate_pipe()
+        if self.gpu:
+            model.transforms = tfms
+        else:
+            model.transforms = tfms.spectrogram_pipe()
+
+        # Support loading the waveforms from workers
+        # in the dataloader if we can't do on the GPU
+        if not self.gpu:
+            old_func = self.train__iter__
+
+            def _new_iter_with_tfms():
+                it = old_func()
+                while True:
+                    batch = next(it)
+                    batch["X"] = tfms.waveform_pipe()(batch["X"])
+                    yield batch
+
+            self.train__iter__ = _new_iter_with_tfms
 
     def prepare_data(self):
         """Use this to download and prepare data
@@ -313,7 +410,6 @@ class Task(pl.LightningDataModule):
         """
 
         X, y = batch["X"], batch["y"]
-        X = self.transforms(X)
         y_pred = model(X)
 
         if self.is_multi_task:
@@ -377,7 +473,6 @@ class Task(pl.LightningDataModule):
         """
 
         X, y = batch["X"], batch["y"]
-        X = self.transforms.validate_pipe(X)
         y_pred = model(X)
 
         if self.is_multi_task:

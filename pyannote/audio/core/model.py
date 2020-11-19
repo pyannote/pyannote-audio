@@ -31,10 +31,12 @@ import torch
 import torch.nn as nn
 from pytorch_lightning.utilities.cloud_io import load as pl_load
 from semver import VersionInfo
+from torchaudio.transforms import MFCC
 
 from pyannote.audio import __version__
 from pyannote.audio.core.io import Audio
 from pyannote.audio.core.task import Problem, Scale, Task, TaskSpecification
+from pyannote.audio.transforms.pipeline import TransformsPipe
 
 
 @dataclass
@@ -124,6 +126,8 @@ class Model(pl.LightningModule):
         if task is not None:
             self.task = task
             self.task.audio = self.audio
+
+        self.transforms = TransformsPipe(MFCC(self.hparams.sample_rate))
 
     @cached_property
     def is_multi_task(self) -> bool:
@@ -287,6 +291,7 @@ class Model(pl.LightningModule):
 
         # add task-dependent layers to the model
         # (e.g. the final classification and activation layers)
+        self.task._setup_transforms(self, stage)
         self.build()
 
         if stage == "fit":
@@ -384,7 +389,6 @@ class Model(pl.LightningModule):
 
         elif specifications.problem == Problem.MULTI_LABEL_CLASSIFICATION:
             return nn.Sigmoid()
-
         else:
             msg = "TODO: implement default activation for other types of problems"
             raise NotImplementedError(msg)
@@ -592,6 +596,10 @@ class Model(pl.LightningModule):
         """
 
         return self._helper_by_name(modules, recurse=recurse, requires_grad=True)
+
+
+class SpectrogramModel(Model):
+    """Takes a signal in the forward and applies spectrogram augments"""
 
 
 def load_from_checkpoint(checkpoint_path: str, map_location=None) -> Model:

@@ -19,14 +19,17 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
+from __future__ import annotations
 
+import typing
 from functools import singledispatch
 
 import torch
 import torch.nn as nn
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 
-from pyannote.audio.core.model import Model
+if typing.TYPE_CHECKING:
+    from pyannote.audio.core.model import Model
 
 
 def register_augmentation(
@@ -164,8 +167,8 @@ class TorchAudiomentationsWaveformTransformWrapper(nn.Module):
         self, augmentation: BaseWaveformTransform, model: Model, when: str = "input"
     ):
         super().__init__()
-
         self.augmentation = augmentation
+        from pyannote.audio.core.model import Model
 
         if not isinstance(model, Model):
             raise TypeError(
@@ -185,7 +188,7 @@ class TorchAudiomentationsWaveformTransformWrapper(nn.Module):
 
 
 @wrap_augmentation.register
-def _(augmentation: BaseWaveformTransform, model: Model, when: str = "input"):
+def _(augmentation: BaseWaveformTransform, model: "Model", when: str = "input"):
     return TorchAudiomentationsWaveformTransformWrapper(augmentation, model, when=when)
 
 

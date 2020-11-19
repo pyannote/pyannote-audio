@@ -25,7 +25,6 @@ import numpy as np
 
 from pyannote.audio.core.task import Problem, Scale, Task, TaskSpecification
 from pyannote.audio.tasks.mixins import SegmentationTaskMixin
-from pyannote.database import Protocol
 
 
 class VoiceActivityDetection(SegmentationTaskMixin, Task):
@@ -56,20 +55,10 @@ class VoiceActivityDetection(SegmentationTaskMixin, Task):
 
     def __init__(
         self,
-        protocol: Protocol,
-        duration: float = 2.0,
-        batch_size: int = None,
-        num_workers: int = 1,
-        pin_memory: bool = False,
+        *args,
+        **kwargs,
     ):
-
-        super().__init__(
-            protocol,
-            duration=duration,
-            batch_size=batch_size,
-            num_workers=num_workers,
-            pin_memory=pin_memory,
-        )
+        super().__init__(*args, **kwargs)
 
         self.specifications = TaskSpecification(
             problem=Problem.BINARY_CLASSIFICATION,
