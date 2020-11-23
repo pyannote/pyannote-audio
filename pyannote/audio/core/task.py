@@ -249,13 +249,10 @@ class Task(pl.LightningDataModule):
         self._waveform_transforms = v
 
     def _setup_transforms(self, model: Model, stage=None):
-        tfms = (
-            self.waveform_transforms
-            if stage != "test"
-            else self.waveform_transforms.validate_pipe()
-        )
+        tfms = self.waveform_transforms
+
         if self.gpu:
-            model.waveform_transforms = tfms
+            model.waveform_transforms = torch.nn.Sequential(*tfms)
 
         # Support loading the waveforms from workers
         # in the dataloader if we can't do on the GPU

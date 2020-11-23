@@ -31,12 +31,11 @@ import torch
 import torch.nn as nn
 from pytorch_lightning.utilities.cloud_io import load as pl_load
 from semver import VersionInfo
-from torchaudio.transforms import MFCC, Resample
+from torchaudio.transforms import MFCC
 
 from pyannote.audio import __version__
 from pyannote.audio.core.io import Audio
 from pyannote.audio.core.task import Problem, Scale, Task, TaskSpecification
-from pyannote.audio.transforms.pipeline import TransformsPipe
 
 
 @dataclass
@@ -119,7 +118,7 @@ class Model(pl.LightningModule):
         self.hparams.sample_rate = sample_rate
         self.hparams.num_channels = num_channels
         self.audio = Audio(sample_rate=sample_rate, mono=True)
-        self.waveform_transforms = TransformsPipe(Resample(sample_rate))
+        self._waveform_transforms = torch.nn.Identity()
 
         # set task attribute when available (i.e. at training time)
         # and also tell the task what kind of audio is expected from
@@ -137,6 +136,10 @@ class Model(pl.LightningModule):
             norm="ortho",
             log_mels=False,
         )
+
+    @property
+    def waveform_transforms(self):
+        return self._waveform_transforms
 
     @cached_property
     def is_multi_task(self) -> bool:
@@ -305,6 +308,9 @@ class Model(pl.LightningModule):
 
         # add task-dependent layers to the model
         # (e.g. the final classification and activation layers)
+        if hasattr(self, "task"):
+            self.task._setup_transforms(self)
+
         self.build()
 
         if stage == "fit":
