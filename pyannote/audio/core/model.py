@@ -149,6 +149,11 @@ class Model(pl.LightningModule):
         # (e.g. the final classification and activation layers)
         pass
 
+    #  used by Tensorboard logger to log model graph
+    @cached_property
+    def example_input_array(self) -> torch.Tensor:
+        return self.task.example_input_array
+
     def helper_introspect(
         self,
         specifications: TaskSpecification,
@@ -311,6 +316,10 @@ class Model(pl.LightningModule):
             # let task know about model introspection
             # so that its dataloader knows how to generate targets
             self.task.model_introspection = self.hparams.model_introspection
+
+            # this is needed to support pytorch-lightning auto_lr_find feature
+            # as it expects to find a "learning_rate" entry in model.hparams
+            self.hparams.learning_rate = self.task.learning_rate
 
     def on_save_checkpoint(self, checkpoint):
 

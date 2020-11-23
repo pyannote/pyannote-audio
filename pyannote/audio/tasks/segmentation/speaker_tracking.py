@@ -23,8 +23,7 @@
 from typing import List, Text
 
 from pyannote.audio.core.task import Problem, Scale, Task, TaskSpecification
-from pyannote.audio.tasks.mixins import SegmentationTaskMixin
-from pyannote.database import Protocol
+from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
 
 
 class SpeakerTracking(SegmentationTaskMixin, Task):
@@ -44,36 +43,27 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
     duration : float, optional
         Chunks duration. Defaults to 2s.
     batch_size : int, optional
-        Number of training samples per batch.
+        Number of training samples per batch. Defaults to 32.
     num_workers : int, optional
         Number of workers used for generating training samples.
     pin_memory : bool, optional
         If True, data loaders will copy tensors into CUDA pinned
         memory before returning them. See pytorch documentation
         for more details. Defaults to False.
+    optimizer : callable, optional
+        Callable that takes model parameters as input and returns
+        an Optimizer instance. Defaults to `torch.optim.Adam`.
+    learning_rate : float, optional
+        Learning rate. Defaults to 1e-3.
+    augmentation : BaseWaveformTransform, optional
+        torch_audiomentations waveform transform, used by dataloader
+        during training.
     """
 
-    def __init__(
-        self,
-        protocol: Protocol,
-        duration: float = 2.0,
-        batch_size: int = None,
-        num_workers: int = 1,
-        pin_memory: bool = False,
-    ):
-
-        super().__init__(
-            protocol,
-            duration=duration,
-            batch_size=batch_size,
-            num_workers=num_workers,
-            pin_memory=pin_memory,
-        )
-
-        # for speaker tracking, task specification depends
-        # on the data: we do not know in advance which
-        # speakers should be tracked. therefore, we postpone
-        # the definition of specifications.
+    # for speaker tracking, task specification depends
+    # on the data: we do not know in advance which
+    # speakers should be tracked. therefore, we postpone
+    # the definition of specifications in the __init__
 
     def setup(self, stage=None):
 

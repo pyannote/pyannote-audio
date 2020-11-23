@@ -196,7 +196,7 @@ class Inference:
         results: Dict[Text, SlidingWindowFeature] = dict()
 
         # corner case: waveform is shorter than chunk duration
-        if num_samples <= window_size:
+        if num_samples < window_size:
 
             warnings.warn(
                 f"Waveform is shorter than requested sliding window ({self.duration}s): "
@@ -375,6 +375,7 @@ class Inference:
             chunks of the same duration.
 
         # TODO: document "fixed" better in pyannote.audio.core.io.Audio
+        # TODO: add support for "Timeline" chunk
 
         Returns
         -------

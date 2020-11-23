@@ -1,5 +1,4 @@
-# MIT License
-#
+# MIT License #
 # Copyright (c) 2020 CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -20,11 +19,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-
 import numpy as np
 
 from pyannote.audio.core.task import Problem, Scale, Task, TaskSpecification
-from pyannote.audio.tasks.mixins import SegmentationTaskMixin
+from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
 
 
 class VoiceActivityDetection(SegmentationTaskMixin, Task):
@@ -43,14 +41,21 @@ class VoiceActivityDetection(SegmentationTaskMixin, Task):
     duration : float, optional
         Chunks duration. Defaults to 2s.
     batch_size : int, optional
-        Number of training samples per batch.
+        Number of training samples per batch. Defaults to 32.
     num_workers : int, optional
         Number of workers used for generating training samples.
     pin_memory : bool, optional
         If True, data loaders will copy tensors into CUDA pinned
         memory before returning them. See pytorch documentation
         for more details. Defaults to False.
-
+    optimizer : callable, optional
+        Callable that takes model parameters as input and returns
+        an Optimizer instance. Defaults to `torch.optim.Adam`.
+    learning_rate : float, optional
+        Learning rate. Defaults to 1e-3.
+    augmentation : BaseWaveformTransform, optional
+        torch_audiomentations waveform transform, used by dataloader
+        during training.
     """
 
     def __init__(
@@ -59,7 +64,6 @@ class VoiceActivityDetection(SegmentationTaskMixin, Task):
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
-
         self.specifications = TaskSpecification(
             problem=Problem.BINARY_CLASSIFICATION,
             scale=Scale.FRAME,

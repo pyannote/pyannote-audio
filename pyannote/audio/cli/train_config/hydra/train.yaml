@@ -1,0 +1,80 @@
+# @package _group_
+
+run:
+  # dir: train/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  dir: ${protocol}/${task._target_}/${now:%Y-%m-%d}/${now:%H-%M-%S}
+
+sweep:
+  dir: multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}/${protocol}/${task._target_}
+  subdir: ${hydra.job.num}
+
+output_subdir: ""
+
+help:
+  app_name: pyannote-audio-train
+
+  # Help header, customize to describe your app to your users
+  header: == ${hydra.help.app_name} ==
+
+  footer: |-
+    Powered by Hydra (https://hydra.cc)
+    Use --hydra-help to view Hydra specific help
+
+  template: |-
+    ${hydra.help.header}
+
+    pyannote-audio-train protocol={protocol_name} task={task} model={model}
+
+    {task} can be any of the following:
+    * vad (default) = voice activity detection
+    * scd = speaker change detection
+    * osd = overlapped speech detection
+    * xseg = multi-task segmentation
+
+    {model} can be any of the following:
+    * debug (default) = simple segmentation model for debugging purposes
+
+    {optimizer} can be any of the following
+    * adam (default) = Adam optimizer
+
+    {trainer} can be any of the following
+    * fast_dev_run for debugging
+    * default (default) for training the model
+
+    Options
+    =======
+
+    Here, we describe the most common options: use "--cfg job" option to get a complete list.
+
+    * task.duration: audio chunk duration (in seconds)
+    * task.batch_size: number of audio chunks per batch
+    * task.num_workers: number of workers used for generating training chunks
+
+    * optimizer.lr: learning rate
+    * trainer.auto_lr_find: use pytorch-lightning AutoLR
+
+    Hyper-parameter optimization
+    ============================
+
+    Because it is powered by Hydra (https://hydra.cc), one can run grid search using the --multirun option.
+
+    For instance, the following command will run the same job three times, with three different learning rates:
+      pyannote-audio-train --multirun protocol={protocol_name} task={task} optimizer.lr=1e-3,1e-2,1e-1
+
+    Even better, one can use Ax (https://ax.dev) sweeper to optimize learning rate directly:
+      pyannote-audio-train --multirun hydra/sweeper=ax protocol={protocol_name} task={task} optimizer.lr="interval(1e-3, 1e-1)"
+
+    See https://hydra.cc/docs/plugins/ax_sweeper for more details.
+
+    User-defined task or model
+    ==========================
+
+    1. define your_package.YourTask (or your_package.YourModel) class
+    2. create file /path/to/your_config/task/your_task.yaml  (or /path/to/your_config/model/your_model.yaml)
+       # @package _group_
+       _target_: your_package.YourTask  # or YourModel
+       param1: value1
+       param2: value2
+    3. call pyannote-audio-train --config-dir /path/to/your_config task=your_task task.param1=modified_value1 model=your_model ...
+
+    ${hydra.help.footer}

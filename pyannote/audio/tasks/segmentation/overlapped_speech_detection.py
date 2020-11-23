@@ -27,10 +27,9 @@ import numpy as np
 
 from pyannote.audio.core.io import Audio
 from pyannote.audio.core.task import Problem, Scale, Task, TaskSpecification
-from pyannote.audio.tasks.mixins import SegmentationTaskMixin
+from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
 from pyannote.audio.utils.random import create_rng_for_worker
 from pyannote.core import Segment
-from pyannote.database import Protocol
 
 
 class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
@@ -65,34 +64,35 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
         (i.e. share the same file[domain] value). Default behavior is to not contrain
         data augmentation with regards to domain.
     batch_size : int, optional
-        Number of training samples per batch.
+        Number of training samples per batch. Defaults to 32.
     num_workers : int, optional
         Number of workers used for generating training samples.
     pin_memory : bool, optional
         If True, data loaders will copy tensors into CUDA pinned
         memory before returning them. See pytorch documentation
         for more details. Defaults to False.
+    optimizer : callable, optional
+        Callable that takes model parameters as input and returns
+        an Optimizer instance. Defaults to `torch.optim.Adam`.
+    learning_rate : float, optional
+        Learning rate. Defaults to 1e-3.
+    augmentation : BaseWaveformTransform, optional
+        torch_audiomentations waveform transform, used by dataloader
+        during training.
     """
 
     def __init__(
         self,
-        protocol: Protocol,
-        duration: float = 2.0,
+        *args,
         augmentation_probability: float = 0.5,
         snr_min: float = 0.0,
         snr_max: float = 10.0,
         domain: str = None,
-        batch_size: int = None,
-        num_workers: int = 1,
-        pin_memory: bool = False,
+        **kwargs,
     ):
-
         super().__init__(
-            protocol,
-            duration=duration,
-            batch_size=batch_size,
-            num_workers=num_workers,
-            pin_memory=pin_memory,
+            *args,
+            **kwargs,
         )
 
         self.specifications = TaskSpecification(

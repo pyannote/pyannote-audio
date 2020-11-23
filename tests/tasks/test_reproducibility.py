@@ -2,8 +2,7 @@ import pytorch_lightning as pl
 import torch
 
 from pyannote.audio.models.debug import SimpleSegmentationModel
-from pyannote.audio.tasks.speaker_tracking.task import SpeakerTracking
-from pyannote.audio.tasks.voice_activity_detection.task import VoiceActivityDetection
+from pyannote.audio.tasks import SpeakerTracking, VoiceActivityDetection
 from pyannote.database import FileFinder, get_protocol
 
 
