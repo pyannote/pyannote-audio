@@ -1,3 +1,4 @@
+asteroid-filterbanks == 0.1.0
 einops >= 0.3.0
 hydra-core >= 1.0.4
 librosa >= 0.8
