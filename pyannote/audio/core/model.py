@@ -31,7 +31,7 @@ import torch
 import torch.nn as nn
 from pytorch_lightning.utilities.cloud_io import load as pl_load
 from semver import VersionInfo
-from torchaudio.transforms import MFCC
+from torchaudio.transforms import MFCC, Resample
 
 from pyannote.audio import __version__
 from pyannote.audio.core.io import Audio
@@ -118,7 +118,8 @@ class Model(pl.LightningModule):
         ), "Only mono audio is supported for now (num_channels = 1)"
         self.hparams.sample_rate = sample_rate
         self.hparams.num_channels = num_channels
-        self.audio = Audio(sample_rate=self.hparams.sample_rate, mono=True)
+        self.audio = Audio(sample_rate=sample_rate, mono=True)
+        self.waveform_transforms = TransformsPipe(Resample(sample_rate))
 
         # set task attribute when available (i.e. at training time)
         # and also tell the task what kind of audio is expected from
@@ -127,7 +128,15 @@ class Model(pl.LightningModule):
             self.task = task
             self.task.audio = self.audio
 
-        self.transforms = TransformsPipe(MFCC(self.hparams.sample_rate))
+        # Default setup for a mfcc, this can  be overriden or set to the
+        # nn.Identity if not required.
+        self.spec_transform = MFCC(
+            sample_rate=sample_rate,
+            n_mfcc=40,
+            dct_type=2,
+            norm="ortho",
+            log_mels=False,
+        )
 
     @cached_property
     def is_multi_task(self) -> bool:
@@ -291,7 +300,6 @@ class Model(pl.LightningModule):
 
         # add task-dependent layers to the model
         # (e.g. the final classification and activation layers)
-        self.task._setup_transforms(self, stage)
         self.build()
 
         if stage == "fit":
@@ -596,10 +604,6 @@ class Model(pl.LightningModule):
         """
 
         return self._helper_by_name(modules, recurse=recurse, requires_grad=True)
-
-
-class SpectrogramModel(Model):
-    """Takes a signal in the forward and applies spectrogram augments"""
 
 
 def load_from_checkpoint(checkpoint_path: str, map_location=None) -> Model:

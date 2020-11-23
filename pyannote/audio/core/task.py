@@ -23,13 +23,11 @@
 
 from __future__ import annotations
 
-import math
 import sys
 import warnings
 from dataclasses import dataclass
 from enum import Enum
 from functools import cached_property
-from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional, Text, Union
 
 import pytorch_lightning as pl
@@ -38,7 +36,7 @@ import torch.nn.functional as F
 import torch.optim
 from torch.utils.data import DataLoader, IterableDataset
 from torch_audiomentations.augmentations.background_noise import ApplyBackgroundNoise
-from torchaudio.transforms import MFCC, FrequencyMasking, Resample, TimeMasking
+from torchaudio.transforms import Resample
 
 from pyannote.audio.transforms.pipeline import TransformsPipe
 from pyannote.audio.transforms.transforms import Reverb
@@ -169,7 +167,7 @@ class Task(pl.LightningDataModule):
         num_workers: int = 1,
         pin_memory: bool = False,
         gpu_transforms: bool = True,
-        bg_noise: Union[str, Path] = None,
+        transforms: Union[List[torch.nn.Module], TransformsPipe] = [],
     ):
         super().__init__()
 
@@ -198,14 +196,11 @@ class Task(pl.LightningDataModule):
         self.num_workers = num_workers
 
         self.pin_memory = pin_memory
-
-        self.bg_noise = bg_noise
-
-        self._transforms = None
+        self._waveform_transforms = None
 
     @property
-    def transforms(self) -> TransformsPipe:
-        """Basic Augmentations for waveform to spectrogram
+    def waveform_transforms(self) -> TransformsPipe:
+        """Basic transforms for waveforms
 
 
         Parameters
@@ -220,7 +215,7 @@ class Task(pl.LightningDataModule):
 
         TransformsPipe
         """
-        if self._transforms is None:
+        if self._waveform_transforms is None:
             sr = self.audio.sample_rate
             augs = []
             reverb = Reverb(sample_rate=sr)
@@ -233,37 +228,23 @@ class Task(pl.LightningDataModule):
             if self.bg_noise:
                 augs.append(ApplyBackgroundNoise(self.bg_noise))
 
-            kwargs = _override_bad_defaults({})
-            mfcc = MFCC(sr, melkwargs=kwargs)
-            spec = mfcc(self.example_input_array)
-            time, freq = spec.shape[-2:]
-            # These Spec Augments need to be replaced with the ones
-            # that stabalised training in the paper.
-            timemasking = TimeMasking(math.floor(time * 0.2), True)
+            self._waveform_transforms = TransformsPipe(*augs)
+        return self._waveform_transforms
 
-            freqmasking = FrequencyMasking(math.floor(freq * 0.2), True)
-            spec_augs = [MFCC(sr), timemasking, freqmasking]
-
-            # Used later to check that the
-            for a in spec_augs:
-                a._spectrogram = True
-
-            augs += spec_augs
-            self._transforms = TransformsPipe(*augs)
-        return self._transforms
-
-    @transforms.setter
-    def transforms(self, v: Union[List, TransformsPipe]):
+    @waveform_transforms.setter
+    def waveform_transforms(self, v: Union[List, TransformsPipe]):
         if isinstance(v, list):
             v = TransformsPipe(*v)
-        self._transforms = v
+        self._waveform_transforms = v
 
     def _setup_transforms(self, model: Model, stage=None):
-        tfms = self.transforms if stage != "test" else self.transforms.validate_pipe()
+        tfms = (
+            self.waveform_transforms
+            if stage != "test"
+            else self.waveform_transforms.validate_pipe()
+        )
         if self.gpu:
-            model.transforms = tfms
-        else:
-            model.transforms = tfms.spectrogram_pipe()
+            model.waveform_transforms = tfms
 
         # Support loading the waveforms from workers
         # in the dataloader if we can't do on the GPU
@@ -274,7 +255,7 @@ class Task(pl.LightningDataModule):
                 it = old_func()
                 while True:
                     batch = next(it)
-                    batch["X"] = tfms.waveform_pipe()(batch["X"])
+                    batch["X"] = tfms(batch["X"])
                     yield batch
 
             self.train__iter__ = _new_iter_with_tfms

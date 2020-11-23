@@ -26,29 +26,27 @@ from typing import Optional
 import torch
 import torch.nn as nn
 from einops import rearrange, reduce
-from torchaudio.transforms import MFCC
 
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
 
 
 class SimpleSegmentationModel(Model):
-    # def __init__(
-    #     self,
-    #     sample_rate: int = 16000,
-    #     num_channels: int = 1,
-    #     task: Optional[Task] = None,
-    # ):
+    def __init__(
+        self,
+        sample_rate: int = 16000,
+        num_channels: int = 1,
+        task: Optional[Task] = None,
+    ):
+        super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
 
-    #     super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
-
-    #     self.mfcc = MFCC(
-    #         sample_rate=self.hparams.sample_rate,
-    #         n_mfcc=40,
-    #         dct_type=2,
-    #         norm="ortho",
-    #         log_mels=False,
-    #     )
+        self.lstm = nn.LSTM(
+            self.spec_transform.n_mfcc * self.hparams.num_channels,
+            32,
+            num_layers=1,
+            batch_first=True,
+            bidirectional=True,
+        )
 
     def build(self):
         # define task-dependent layers
@@ -56,16 +54,6 @@ class SimpleSegmentationModel(Model):
             32 * 2, len(self.hparams.task_specifications.classes)
         )
         self.activation = self.default_activation()
-
-        # This will give us the first transform
-        spec = self.transforms.spectrogram_pipe()[0]
-        self.lstm = nn.LSTM(
-            spec.n_mfcc * self.hparams.num_channels,
-            32,
-            num_layers=1,
-            batch_first=True,
-            bidirectional=True,
-        )
 
         # why do we define those layers here and not in task.setup()?
         # because, at inference time, we need those layers.
@@ -85,7 +73,9 @@ class SimpleSegmentationModel(Model):
         -------
         scores : (batch, time, classes)
         """
-        mfcc = self.transforms(waveforms)
+        waveforms = self.waveform_transforms(waveforms)
+        # extract MFCC
+        mfcc = self.spec_transform(waveforms)
         # pass MFCC sequeence into the recurrent layer
         output, hidden = self.lstm(rearrange(mfcc, "b c f t -> b t (c f)"))
         # apply the final classifier to get logits
@@ -99,19 +89,10 @@ class MultiTaskSegmentationModel(Model):
         num_channels: int = 1,
         task: Optional[Task] = None,
     ):
-
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
 
-        self.mfcc = MFCC(
-            sample_rate=self.hparams.sample_rate,
-            n_mfcc=40,
-            dct_type=2,
-            norm="ortho",
-            log_mels=False,
-        )
-
         self.lstm = nn.LSTM(
-            self.mfcc.n_mfcc * self.hparams.num_channels,
+            self.spec_transform.n_mfcc * self.hparams.num_channels,
             32,
             num_layers=1,
             batch_first=True,
@@ -119,7 +100,6 @@ class MultiTaskSegmentationModel(Model):
         )
 
     def build(self):
-
         self.classifier = nn.ModuleDict(
             {
                 name: nn.Linear(32 * 2, len(specifications.classes))
@@ -130,8 +110,9 @@ class MultiTaskSegmentationModel(Model):
         self.activation = self.default_activation()
 
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
+        waveforms = self.waveform_transforms(waveforms)
         # extract MFCC
-        mfcc = self.mfcc(waveforms)
+        mfcc = self.spec_transform(waveforms)
         # pass MFCC sequence into the recurrent layer
         output, hidden = self.lstm(rearrange(mfcc, "b c f t -> b t (c f)"))
 
@@ -148,19 +129,10 @@ class SimpleEmbeddingModel(Model):
         num_channels: int = 1,
         task: Optional[Task] = None,
     ):
-
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
 
-        self.mfcc = MFCC(
-            sample_rate=self.hparams.sample_rate,
-            n_mfcc=40,
-            dct_type=2,
-            norm="ortho",
-            log_mels=False,
-        )
-
         self.lstm = nn.LSTM(
-            self.mfcc.n_mfcc * self.hparams.num_channels,
+            self.spec_transform.n_mfcc * self.hparams.num_channels,
             32,
             num_layers=1,
             batch_first=True,
@@ -189,8 +161,8 @@ class SimpleEmbeddingModel(Model):
         -------
         embedding : (batch, dimension)
         """
-
-        mfcc = self.mfcc(waveforms)
+        waveforms = self.waveform_transforms(waveforms)
+        mfcc = self.spec_transform(waveforms)
         output, hidden = self.lstm(rearrange(mfcc, "b c f t -> b t (c f)"))
         # mean temporal pooling
         return reduce(output, "b t f -> b f", "mean")
