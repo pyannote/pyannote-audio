@@ -39,18 +39,20 @@ def main(cfg: DictConfig) -> None:
 
     protocol = get_protocol(cfg.protocol, preprocessors={"audio": FileFinder()})
 
-    # TODO: configure augmentation
     # TODO: configure scheduler
     # TODO: configure layer freezing
 
     def optimizer(parameters: Iterable[Parameter], lr: float = 1e-3) -> Optimizer:
         return instantiate(cfg.optimizer, parameters, lr=lr)
 
+    augmentation = instantiate(cfg.augmentation) if "augmentation" in cfg else None
+
     task = instantiate(
         cfg.task,
         protocol,
         optimizer=optimizer,
         learning_rate=cfg.optimizer.lr,
+        augmentation=augmentation,
     )
 
     model = instantiate(cfg.model, task=task)

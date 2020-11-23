@@ -24,6 +24,7 @@ from typing import Callable, Iterable, List, Text
 
 from torch.nn import Parameter
 from torch.optim import Optimizer
+from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 
 from pyannote.audio.core.task import Problem, Scale, Task, TaskSpecification
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
@@ -59,6 +60,9 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
         an Optimizer instance. Defaults to `torch.optim.Adam`.
     learning_rate : float, optional
         Learning rate. Defaults to 1e-3.
+    augmentation : BaseWaveformTransform, optional
+        torch_audiomentations waveform transform, used by dataloader
+        during training.
     """
 
     def __init__(
@@ -70,6 +74,7 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
         pin_memory: bool = False,
         optimizer: Callable[[Iterable[Parameter]], Optimizer] = None,
         learning_rate: float = 1e-3,
+        augmentation: BaseWaveformTransform = None,
     ):
 
         super().__init__(
@@ -80,6 +85,7 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
             pin_memory=pin_memory,
             optimizer=optimizer,
             learning_rate=learning_rate,
+            augmentation=augmentation,
         )
 
         # for speaker tracking, task specification depends

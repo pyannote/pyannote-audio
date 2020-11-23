@@ -39,6 +39,8 @@ from pyannote.database import Protocol
 if TYPE_CHECKING:
     from pyannote.audio.core.model import Model
 
+from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
+
 
 class SpeakerEmbeddingArcFace(Task):
     """
@@ -71,6 +73,7 @@ class SpeakerEmbeddingArcFace(Task):
         pin_memory: bool = False,
         optimizer: Callable[[Iterable[Parameter]], Optimizer] = None,
         learning_rate: float = 1e-3,
+        augmentation: BaseWaveformTransform = None,
     ):
 
         self.num_chunks_per_speaker = num_chunks_per_speaker
@@ -86,6 +89,7 @@ class SpeakerEmbeddingArcFace(Task):
             pin_memory=pin_memory,
             optimizer=optimizer,
             learning_rate=learning_rate,
+            augmentation=augmentation,
         )
 
         # there is no such thing as a "class" in representation

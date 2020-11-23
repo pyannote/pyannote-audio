@@ -42,6 +42,9 @@ from pyannote.database import Protocol
 if TYPE_CHECKING:
     from pyannote.audio.core.model import Model
 
+from torch.utils.data._utils.collate import default_collate
+from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
+
 
 # Type of machine learning problem
 class Problem(Enum):
@@ -140,6 +143,9 @@ class Task(pl.LightningDataModule):
         an Optimizer instance. Defaults to `torch.optim.Adam`.
     learning_rate : float, optional
         Learning rate. Defaults to 1e-3.
+    augmentation : BaseWaveformTransform, optional
+        torch_audiomentations waveform transform, used by dataloader
+        during training.
 
     Attributes
     ----------
@@ -158,6 +164,7 @@ class Task(pl.LightningDataModule):
         pin_memory: bool = False,
         optimizer: Callable[[Iterable[Parameter]], Optimizer] = None,
         learning_rate: float = 1e-3,
+        augmentation: BaseWaveformTransform = None,
     ):
         super().__init__()
 
@@ -189,6 +196,8 @@ class Task(pl.LightningDataModule):
             optimizer = Adam
         self.optimizer = optimizer
         self.learning_rate = learning_rate
+
+        self.augmentation = augmentation
 
     def prepare_data(self):
         """Use this to download and prepare data
@@ -237,6 +246,14 @@ class Task(pl.LightningDataModule):
         msg = f"Missing '{self.__class__.__name__}.train__len__' method."
         raise NotImplementedError(msg)
 
+    def collate_fn(self, batch):
+        collated_batch = default_collate(batch)
+        if self.augmentation is not None:
+            collated_batch["X"] = self.augmentation(
+                collated_batch["X"], sample_rate=self.audio.sample_rate
+            )
+        return collated_batch
+
     def train_dataloader(self) -> DataLoader:
         return DataLoader(
             TrainDataset(self),
@@ -244,6 +261,7 @@ class Task(pl.LightningDataModule):
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
             drop_last=True,
+            collate_fn=self.collate_fn,
         )
 
     @cached_property
