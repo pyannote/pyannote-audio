@@ -45,7 +45,7 @@ def main(cfg: DictConfig) -> None:
     def optimizer(parameters: Iterable[Parameter], lr: float = 1e-3) -> Optimizer:
         return instantiate(cfg.optimizer, parameters, lr=lr)
 
-    augmentation = instantiate(cfg.augmentation)
+    augmentation = instantiate(cfg.augmentation) if "augmentation" in cfg else None
 
     task = instantiate(
         cfg.task,
