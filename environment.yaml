@@ -1,8 +1,11 @@
-name: pyannote-audio
+name: pyannote-audio-v2
 channels:
+  - pytorch
   - defaults
 dependencies:
-  - python>=3.8
+  - python==3.8
+  - pytorch==1.7
+  - torchaudio==0.7
   - pip>=20.2
   - pip:
     - -r requirements.txt

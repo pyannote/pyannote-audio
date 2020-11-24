@@ -28,7 +28,7 @@ import hydra
 from hydra.utils import instantiate
 from omegaconf import DictConfig
 
-#  from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
+# from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
 from torch.nn import Parameter
@@ -89,7 +89,7 @@ def main(cfg: DictConfig) -> None:
         ".",
         name="",
         version="",
-        log_graph=True,
+        #log_graph=True,
     )
 
     # trainer = instantiate(
@@ -102,15 +102,21 @@ def main(cfg: DictConfig) -> None:
     )
 
     if cfg.trainer.get("auto_lr_find", False):
-        #  HACK: these two lines below should be removed once
-        #  the corresponding bug is fixed in pytorch-lighting.
-        #  https://github.com/pyannote/pyannote-audio/issues/514
+        # HACK: everything but trainer.tune(...) should be removed
+        # once the corresponding bug is fixed in pytorch-lighting.
+        # https://github.com/pyannote/pyannote-audio/issues/514
         task.setup(stage="fit")
         model.setup(stage="fit")
         trainer.tune(model, task)
-
-        #  TODO: log auto_lr curve and selected value to Tensorboard
-
+        lr = model.hparams.learning_rate
+        task = instantiate(
+            cfg.task,
+            protocol,
+            optimizer=optimizer,
+            learning_rate=lr,
+        )
+        model = instantiate(cfg.model, task=task)
+    
     trainer.fit(model, task)
 
     best_monitor = float(model_checkpoint.best_score)

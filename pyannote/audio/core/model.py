@@ -168,7 +168,7 @@ class Model(pl.LightningModule):
             layout=example_input_array.layout,
             device=example_input_array.device,
             requires_grad=False,
-        )
+        ).to(self.device)
 
         # dichotomic search of "min_num_samples"
         lower, upper, min_num_samples = 1, num_samples, None

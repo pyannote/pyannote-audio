@@ -16,4 +16,9 @@ Protocols:
                annotated: debug.test.uem
 
 Databases:
+<<<<<<< Updated upstream
    Debug: ./{uri}.wav
+=======
+   Debug: ./wav/{uri}.wav
+   MUSAN: /vol/corpora4/musan/{uri}.wav
+>>>>>>> Stashed changes
