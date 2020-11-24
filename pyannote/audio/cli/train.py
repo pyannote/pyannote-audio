@@ -21,6 +21,7 @@
 # SOFTWARE.
 
 
+import functools
 from typing import Iterable
 
 import hydra
@@ -34,6 +35,12 @@ from torch.optim import Optimizer
 from pyannote.database import FileFinder, get_protocol
 
 
+def get_optimizer(
+    parameters: Iterable[Parameter], lr: float = 1e-3, cfg: DictConfig = None
+) -> Optimizer:
+    return instantiate(cfg.optimizer, parameters, lr=lr)
+
+
 @hydra.main(config_path="train_config", config_name="config")
 def main(cfg: DictConfig) -> None:
 
@@ -42,15 +49,12 @@ def main(cfg: DictConfig) -> None:
     # TODO: configure scheduler
     # TODO: configure layer freezing
 
-    def optimizer(parameters: Iterable[Parameter], lr: float = 1e-3) -> Optimizer:
-        return instantiate(cfg.optimizer, parameters, lr=lr)
-
     augmentation = instantiate(cfg.augmentation) if "augmentation" in cfg else None
 
     task = instantiate(
         cfg.task,
         protocol,
-        optimizer=optimizer,
+        optimizer=functools.partial(get_optimizer, cfg=cfg),
         learning_rate=cfg.optimizer.lr,
         augmentation=augmentation,
     )
