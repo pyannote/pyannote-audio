@@ -1,6 +1,5 @@
 # The MIT License (MIT)
 #
-# Copyright (c) 2019 Mirco Ravanelli
 # Copyright (c) 2019-2020 CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -38,7 +37,7 @@ class SincNet(nn.Module):
         if sample_rate != 16000:
             raise NotImplementedError("PyanNet only supports 16kHz audio for now.")
             # TODO: add support for other sample rate. it should be enough to multiply
-            #  kernel_size by (sample_rate / 16000). but this needs to be double-checked.
+            # kernel_size by (sample_rate / 16000). but this needs to be double-checked.
 
         self.wav_norm1d = nn.InstanceNorm1d(1, affine=True)
 
