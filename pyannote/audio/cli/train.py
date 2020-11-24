@@ -27,7 +27,9 @@ from typing import Iterable
 import hydra
 from hydra.utils import instantiate
 from omegaconf import DictConfig
-from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
+
+#  from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
+from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
 from torch.nn import Parameter
 from torch.optim import Optimizer
@@ -74,14 +76,14 @@ def main(cfg: DictConfig) -> None:
         verbose=cfg.verbose,
     )
 
-    early_stopping = EarlyStopping(
-        monitor=monitor,
-        mode=mode,
-        min_delta=0.0,
-        patience=20,
-        strict=True,
-        verbose=cfg.verbose,
-    )
+    # early_stopping = EarlyStopping(
+    #     monitor=monitor,
+    #     mode=mode,
+    #     min_delta=0.0,
+    #     patience=20,
+    #     strict=True,
+    #     verbose=cfg.verbose,
+    # )
 
     logger = TensorBoardLogger(
         ".",
@@ -90,13 +92,16 @@ def main(cfg: DictConfig) -> None:
         log_graph=True,
     )
 
+    # trainer = instantiate(
+    #     cfg.trainer, callbacks=[model_checkpoint, early_stopping], logger=logger,
+    # )
     trainer = instantiate(
         cfg.trainer,
-        callbacks=[model_checkpoint, early_stopping],
+        callbacks=[model_checkpoint],
         logger=logger,
     )
 
-    if cfg.trainer.auto_lr_find == True:
+    if cfg.trainer.get("auto_lr_find", False):
         #  HACK: these two lines below should be removed once
         #  the corresponding bug is fixed in pytorch-lighting.
         #  https://github.com/pyannote/pyannote-audio/issues/514
@@ -104,9 +109,11 @@ def main(cfg: DictConfig) -> None:
         model.setup(stage="fit")
         trainer.tune(model, task)
 
+        #  TODO: log auto_lr curve and selected value to Tensorboard
+
     trainer.fit(model, task)
 
-    best_monitor = float(early_stopping.best_score)
+    best_monitor = float(model_checkpoint.best_score)
     if mode == "min":
         return best_monitor
     else:
