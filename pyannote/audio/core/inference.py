@@ -284,16 +284,16 @@ class Inference:
             num_frames, dimension = model_introspection(num_samples)
             num_frames_per_chunk, _ = model_introspection(window_size)
 
-            # hamming window used for overlap-add aggregation
-            hamming = np.hamming(num_frames_per_chunk).reshape(-1, 1)
+            # kaiser window used for overlap-add aggregation
+            kaiser = np.kaiser(num_frames_per_chunk, 14.0).reshape(-1, 1)
 
-            # aggregated_output[i] will be used to store the (hamming-weighted) sum
+            # aggregated_output[i] will be used to store the (kaiser-weighted) sum
             # of all predictions for frame #i
             aggregated_output: np.ndarray = np.zeros(
                 (num_frames, dimension), dtype=np.float32
             )
 
-            # overlapping_chunk_count[i] will be used to store the (hamming-weighted)
+            # overlapping_chunk_count[i] will be used to store the (kaiser-weighted)
             # number of chunks that overlap with frame #i
             overlapping_chunk_count: np.ndarray = np.zeros(
                 (num_frames, 1), dtype=np.float32
@@ -304,18 +304,18 @@ class Inference:
                 start_sample = c * step_size
                 start_frame, _ = model_introspection(start_sample)
                 aggregated_output[start_frame : start_frame + num_frames_per_chunk] += (
-                    output * hamming
+                    output * kaiser
                 )
                 overlapping_chunk_count[
                     start_frame : start_frame + num_frames_per_chunk
-                ] += hamming
+                ] += kaiser
 
             # process last (right-aligned) chunk separately
             if has_last_chunk:
                 aggregated_output[-num_frames_per_chunk:] += (
-                    last_output[task_name] * hamming
+                    last_output[task_name] * kaiser
                 )
-                overlapping_chunk_count[-num_frames_per_chunk:] += hamming
+                overlapping_chunk_count[-num_frames_per_chunk:] += kaiser
 
             aggregated_output /= overlapping_chunk_count
 
