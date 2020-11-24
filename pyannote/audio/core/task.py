@@ -413,11 +413,13 @@ class Task(pl.LightningDataModule):
                 model.log(f"{task_name}_val_loss", loss[task_name])
 
             loss["loss"] = sum(loss.values())
-            model.log("val_loss", loss["loss"])
+            model.log(
+                "val_loss", loss["loss"], on_step=False, on_epoch=True, prog_bar=True
+            )
             return loss
 
         loss = self.default_loss(self.specifications, y, y_pred)
-        model.log("val_loss", loss)
+        model.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
         return {"loss": loss}
 
     def parameters(self, model: Model) -> Iterable[Parameter]:
