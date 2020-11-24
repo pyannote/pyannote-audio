@@ -367,14 +367,18 @@ class Task(pl.LightningDataModule):
         msg = f"Missing '{self.__class__.__name__}.val__len__' method."
         raise NotImplementedError(msg)
 
-    def val_dataloader(self) -> DataLoader:
-        return DataLoader(
-            ValDataset(self),
-            batch_size=self.batch_size,
-            num_workers=self.num_workers,
-            pin_memory=self.pin_memory,
-            drop_last=False,
-        )
+    def val_dataloader(self) -> Optional[DataLoader]:
+        val_callback = self.val_callback()
+        if val_callback is None:
+            return DataLoader(
+                ValDataset(self),
+                batch_size=self.batch_size,
+                num_workers=self.num_workers,
+                pin_memory=self.pin_memory,
+                drop_last=False,
+            )
+        else:
+            return None
 
     # default validation_step provided for convenience
     # can obviously be overriden for each task
@@ -422,6 +426,9 @@ class Task(pl.LightningDataModule):
         model.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
         return {"loss": loss}
 
+    def val_callback(self):
+        return None
+
     def parameters(self, model: Model) -> Iterable[Parameter]:
         return model.parameters()
 
@@ -436,7 +443,7 @@ class Task(pl.LightningDataModule):
         return self.optimizer(self.parameters(model), lr=lr)
 
     @property
-    def validation_monitor(self):
+    def val_monitor(self):
         """Quantity (and direction) to monitor
 
         Useful for model checkpointing or early stopping.

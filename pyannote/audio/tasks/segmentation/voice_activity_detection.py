@@ -23,13 +23,20 @@
 from typing import Callable, Iterable
 
 import numpy as np
+import pytorch_lightning as pl
+import torch
 from torch.nn import Parameter
 from torch.optim import Optimizer
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 
+from pyannote.audio.core.inference import Inference
+from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Problem, Scale, Task, TaskSpecification
+from pyannote.audio.pipelines import (
+    VoiceActivityDetection as VoiceActivityDetectionPipeline,
+)
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
-from pyannote.database import Protocol
+from pyannote.database import Protocol, get_annotated
 
 
 class VoiceActivityDetection(SegmentationTaskMixin, Task):
@@ -113,3 +120,50 @@ class VoiceActivityDetection(SegmentationTaskMixin, Task):
             y[t] = 1 if at least one speaker is active at tth frame, 0 otherwise.
         """
         return np.int64(np.sum(one_hot_y, axis=1) > 0)
+
+    def val_callback(self):
+        return _ValidationCallback(self)
+
+
+class _ValidationCallback(pl.Callback):
+    def __init__(self, task: VoiceActivityDetection):
+        super().__init__()
+        self.task = task
+
+    def on_epoch_end(self, trainer: pl.Trainer, vad_model: Model):
+
+        # set model to "eval" mode
+        vad_model.eval()
+
+        vad_inference = Inference(vad_model)
+        vad_pipeline = VoiceActivityDetectionPipeline(scores=vad_inference, fscore=True)
+        vad_pipeline.instantiate(
+            {
+                "onset": 0.5,
+                "offset": 0.5,
+                "min_duration_on": 0.1,
+                "min_duration_off": 0.1,
+            }
+        )
+
+        metric = vad_pipeline.get_metric()
+        for file in self.task.protocol.development():
+            uem = get_annotated(file)
+            reference = file.pop("annotation")
+            hypothesis = vad_pipeline(file)
+            metric(reference, hypothesis, uem=uem)
+
+        vad_model.log(
+            "val_fscore",
+            torch.tensor(abs(metric)),
+            logger=True,
+            on_epoch=True,
+            prog_bar=True,
+        )
+
+        # set model back to "train" mode
+        vad_model.train()
+
+    @property
+    def val_monitor(self):
+        return "val_fscore", "max"

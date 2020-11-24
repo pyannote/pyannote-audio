@@ -27,9 +27,7 @@ from typing import Iterable
 import hydra
 from hydra.utils import instantiate
 from omegaconf import DictConfig
-
-# from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
-from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
 from torch.nn import Parameter
 from torch.optim import Optimizer
@@ -53,17 +51,27 @@ def main(cfg: DictConfig) -> None:
 
     augmentation = instantiate(cfg.augmentation) if "augmentation" in cfg else None
 
+    optimizer = functools.partial(get_optimizer, cfg=cfg)
+
     task = instantiate(
         cfg.task,
         protocol,
-        optimizer=functools.partial(get_optimizer, cfg=cfg),
+        optimizer=optimizer,
         learning_rate=cfg.optimizer.lr,
         augmentation=augmentation,
     )
 
+    callbacks = []
+
+    val_callback = task.val_callback()
+    if val_callback is None:
+        monitor, mode = task.val_monitor
+    else:
+        callbacks.append(val_callback)
+        monitor, mode = val_callback.val_monitor
+
     model = instantiate(cfg.model, task=task)
 
-    monitor, mode = task.validation_monitor
     model_checkpoint = ModelCheckpoint(
         monitor=monitor,
         mode=mode,
@@ -75,29 +83,28 @@ def main(cfg: DictConfig) -> None:
         filename=f"{{epoch}}-{{{monitor}:.3f}}",
         verbose=cfg.verbose,
     )
+    callbacks.append(model_checkpoint)
 
-    # early_stopping = EarlyStopping(
-    #     monitor=monitor,
-    #     mode=mode,
-    #     min_delta=0.0,
-    #     patience=20,
-    #     strict=True,
-    #     verbose=cfg.verbose,
-    # )
+    early_stopping = EarlyStopping(
+        monitor=monitor,
+        mode=mode,
+        min_delta=0.0,
+        patience=20,
+        strict=True,
+        verbose=cfg.verbose,
+    )
+    callbacks.append(early_stopping)
 
     logger = TensorBoardLogger(
         ".",
         name="",
         version="",
-        #log_graph=True,
+        # log_graph=True,
     )
 
-    # trainer = instantiate(
-    #     cfg.trainer, callbacks=[model_checkpoint, early_stopping], logger=logger,
-    # )
     trainer = instantiate(
         cfg.trainer,
-        callbacks=[model_checkpoint],
+        callbacks=callbacks,
         logger=logger,
     )
 
@@ -116,10 +123,10 @@ def main(cfg: DictConfig) -> None:
             learning_rate=lr,
         )
         model = instantiate(cfg.model, task=task)
-    
+
     trainer.fit(model, task)
 
-    best_monitor = float(model_checkpoint.best_score)
+    best_monitor = float(model_checkpoint.best_model_score)
     if mode == "min":
         return best_monitor
     else:
