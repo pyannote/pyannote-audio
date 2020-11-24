@@ -74,7 +74,7 @@ def main(cfg: DictConfig) -> None:
         monitor=monitor,
         mode=mode,
         min_delta=0.0,
-        patience=10,
+        patience=20,
         strict=True,
         verbose=cfg.verbose,
     )
