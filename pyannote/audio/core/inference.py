@@ -287,7 +287,7 @@ class Inference:
             num_frames_per_chunk, _ = model_introspection(window_size)
 
             # hamming window used for overlap-add aggregation
-            hamming = np.hamming(num_frames_per_chunk)
+            hamming = np.hamming(num_frames_per_chunk).reshape(-1, 1)
 
             # aggregated_output[i] will be used to store the (hamming-weighted) sum
             # of all predictions for frame #i
