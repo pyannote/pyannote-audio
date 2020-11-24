@@ -264,6 +264,7 @@ class Inference:
 
         for t, (task_name, task_specifications) in enumerate(self.task_specifications):
             # if model outputs just one vector per chunk, return the outputs as they are
+            #  (i.e. do not aggregate them)
             if task_specifications.scale == Scale.CHUNK:
                 frames = SlidingWindow(
                     start=0.0, duration=self.duration, step=self.step
@@ -283,34 +284,40 @@ class Inference:
             num_frames, dimension = model_introspection(num_samples)
             num_frames_per_chunk, _ = model_introspection(window_size)
 
-            # aggregated_output[i] will be used to store the sum of all predictions for frame #i
+            # hamming window used for overlap-add aggregation
+            hamming = np.hamming(num_frames_per_chunk)
+
+            # aggregated_output[i] will be used to store the (hamming-weighted) sum
+            # of all predictions for frame #i
             aggregated_output: np.ndarray = np.zeros(
                 (num_frames, dimension), dtype=np.float32
             )
 
-            # overlapping_chunk_count[i] will be used to store the number of chunks that
-            # overlap with frame #i
+            # overlapping_chunk_count[i] will be used to store the (hamming-weighted)
+            # number of chunks that overlap with frame #i
             overlapping_chunk_count: np.ndarray = np.zeros(
-                (num_frames, 1), dtype=np.int32
+                (num_frames, 1), dtype=np.float32
             )
 
             # loop on the outputs of sliding chunks
             for c, output in enumerate(outputs[task_name]):
                 start_sample = c * step_size
                 start_frame, _ = model_introspection(start_sample)
-                aggregated_output[
-                    start_frame : start_frame + num_frames_per_chunk
-                ] += output
+                aggregated_output[start_frame : start_frame + num_frames_per_chunk] += (
+                    output * hamming
+                )
                 overlapping_chunk_count[
                     start_frame : start_frame + num_frames_per_chunk
-                ] += 1
+                ] += hamming
 
             # process last (right-aligned) chunk separately
             if has_last_chunk:
-                aggregated_output[-num_frames_per_chunk:] += last_output[task_name]
-                overlapping_chunk_count[-num_frames_per_chunk:] += 1
+                aggregated_output[-num_frames_per_chunk:] += (
+                    last_output[task_name] * hamming
+                )
+                overlapping_chunk_count[-num_frames_per_chunk:] += hamming
 
-            aggregated_output /= np.maximum(overlapping_chunk_count, 1)
+            aggregated_output /= overlapping_chunk_count
 
             frames = SlidingWindow(
                 start=0,
