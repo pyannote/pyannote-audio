@@ -174,7 +174,7 @@ class SegmentationTaskMixin:
             example model output.
         """
         # create worker-specific random number generator
-        rng = create_rng_for_worker()
+        rng = create_rng_for_worker(global_rank=self.global_rank)
 
         while True:
 

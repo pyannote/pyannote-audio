@@ -27,12 +27,17 @@ import random
 import torch
 
 
-def create_rng_for_worker():
+def create_rng_for_worker(global_rank: int = 0):
     """Create worker-specific random number generator
 
     This makes sure that
     1. training samples generation is reproducible
     2. all workers use a different seed (e.g. to avoid training samples duplication)
+
+    Parameters
+    ----------
+    global_rank : int
+        GPU global rank
     """
 
     # create random number generator
@@ -42,9 +47,15 @@ def create_rng_for_worker():
     #  and current worker id.
     global_seed = int(os.environ.get("PL_GLOBAL_SEED", 1))
     worker_info = torch.utils.data.get_worker_info()
+
     if worker_info is None:
-        rng.seed(global_seed)
+        num_workers = 1
+        worker_id = 0
     else:
-        rng.seed(global_seed + worker_info.id)
+        num_workers = worker_info.num_workers
+        worker_id = worker_info.id
+
+    seed = global_seed + worker_id + num_workers * global_rank
+    rng.seed(seed)
 
     return rng
