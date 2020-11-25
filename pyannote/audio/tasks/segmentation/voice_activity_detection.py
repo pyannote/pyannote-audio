@@ -121,8 +121,8 @@ class VoiceActivityDetection(SegmentationTaskMixin, Task):
         """
         return np.int64(np.sum(one_hot_y, axis=1) > 0)
 
-    def val_callback(self):
-        return _ValidationCallback(self)
+    # def val_callback(self):
+    #     return _ValidationCallback(self)
 
 
 class _ValidationCallback(pl.Callback):
