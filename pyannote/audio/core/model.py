@@ -305,10 +305,6 @@ class Model(pl.LightningModule):
             # so that its dataloader knows how to generate targets
             self.task.model_introspection = self.hparams.model_introspection
 
-            # this is needed by create_rng_for_worker
-            # see https://github.com/pyannote/pyannote-audio/issues/526
-            self.task.global_rank = self.global_rank
-
             # this is needed to support pytorch-lightning auto_lr_find feature
             # as it expects to find a "learning_rate" entry in model.hparams
             self.hparams.learning_rate = self.task.learning_rate
