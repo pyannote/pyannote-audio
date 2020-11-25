@@ -158,7 +158,7 @@ class SpeakerEmbeddingArcFace(Task):
         """
 
         # create worker-specific random number generator
-        rng = create_rng_for_worker(global_rank=self.global_rank)
+        rng = create_rng_for_worker()
 
         speakers = list(self.speakers)
 
