@@ -341,7 +341,7 @@ class Inference:
         SlidingWindowFeature,
         Dict[Text, SlidingWindowFeature],
         np.ndarray,
-        Dict[Text, np.narray],
+        Dict[Text, np.ndarray],
     ]:
         """Run inference on a whole file
 
@@ -386,7 +386,7 @@ class Inference:
         SlidingWindowFeature,
         Dict[Text, SlidingWindowFeature],
         np.ndarray,
-        Dict[Text, np.narray],
+        Dict[Text, np.ndarray],
     ]:
         """Run inference on a chunk
 
