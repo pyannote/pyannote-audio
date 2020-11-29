@@ -140,6 +140,6 @@ class VoiceActivityDetection(SegmentationTaskMixin, Task):
         )
 
     @property
-    def validation_monitor(self):
+    def val_monitor(self):
         """Maximize validation area under ROC curve"""
         return "val_aucroc", "max"
