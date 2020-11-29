@@ -23,20 +23,15 @@
 from typing import Callable, Iterable
 
 import numpy as np
-import pytorch_lightning as pl
-import torch
+from pytorch_lightning.metrics.functional.classification import auroc
 from torch.nn import Parameter
 from torch.optim import Optimizer
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 
-from pyannote.audio.core.inference import Inference
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Problem, Scale, Task, TaskSpecification
-from pyannote.audio.pipelines import (
-    VoiceActivityDetection as VoiceActivityDetectionPipeline,
-)
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
-from pyannote.database import Protocol, get_annotated
+from pyannote.database import Protocol
 
 
 class VoiceActivityDetection(SegmentationTaskMixin, Task):
@@ -121,49 +116,28 @@ class VoiceActivityDetection(SegmentationTaskMixin, Task):
         """
         return np.int64(np.sum(one_hot_y, axis=1) > 0)
 
-    # def val_callback(self):
-    #     return _ValidationCallback(self)
+    def validation_step(self, model: Model, batch, batch_idx: int):
+        """Compute area under ROC curve
 
+        Parameters
+        ----------
+        model : Model
+            Model currently being validated.
+        batch : dict of torch.Tensor
+            Current batch.
+        batch_idx: int
+            Batch index.
+        """
 
-class _ValidationCallback(pl.Callback):
-    def __init__(self, task: VoiceActivityDetection):
-        super().__init__()
-        self.task = task
+        X, y = batch["X"], batch["y"]
+        y_pred = model(X)
 
-    def on_epoch_end(self, trainer: pl.Trainer, vad_model: Model):
-
-        # set model to "eval" mode
-        vad_model.eval()
-
-        vad_inference = Inference(vad_model)
-        vad_pipeline = VoiceActivityDetectionPipeline(scores=vad_inference, fscore=True)
-        vad_pipeline.instantiate(
-            {
-                "onset": 0.5,
-                "offset": 0.5,
-                "min_duration_on": 0.1,
-                "min_duration_off": 0.1,
-            }
+        auc = auroc(y_pred.view(-1), y.view(-1), sample_weight=None, pos_label=1.0)
+        model.log(
+            "val_aucroc", auc, on_step=False, on_epoch=True, prog_bar=True, logger=True
         )
-
-        metric = vad_pipeline.get_metric()
-        for file in self.task.protocol.development():
-            uem = get_annotated(file)
-            reference = file.pop("annotation")
-            hypothesis = vad_pipeline(file)
-            metric(reference, hypothesis, uem=uem)
-
-        vad_model.log(
-            "val_fscore",
-            torch.tensor(abs(metric)),
-            logger=True,
-            on_epoch=True,
-            prog_bar=True,
-        )
-
-        # set model back to "train" mode
-        vad_model.train()
 
     @property
-    def val_monitor(self):
-        return "val_fscore", "max"
+    def validation_monitor(self):
+        """Maximize validation area under ROC curve"""
+        return "val_aucroc", "max"
