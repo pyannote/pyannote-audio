@@ -363,8 +363,6 @@ class Inference:
         """
 
         waveform, sample_rate = self.model.audio(file)
-        # TODO remove this conversion if/when we switch to torchaudio IO
-        waveform = torch.tensor(waveform, requires_grad=False)
 
         if self.window == "sliding":
             return self.slide(waveform, sample_rate)
