@@ -132,12 +132,14 @@ class VoiceActivityDetection(SegmentationTaskMixin, Task):
         X, y = batch["X"], batch["y"]
         y_pred = model(X)
 
-        auc = auroc(y_pred.view(-1), y.view(-1), sample_weight=None, pos_label=1.0)
+        auc = auroc(
+            y_pred.view(-1)[::10], y.view(-1)[::10], sample_weight=None, pos_label=1.0
+        )
         model.log(
             "val_aucroc", auc, on_step=False, on_epoch=True, prog_bar=True, logger=True
         )
 
     @property
-    def validation_monitor(self):
+    def val_monitor(self):
         """Maximize validation area under ROC curve"""
         return "val_aucroc", "max"
