@@ -354,7 +354,9 @@ class Task(pl.LightningDataModule):
             return loss
 
         loss = self.default_loss(self.specifications, y, y_pred)
-        model.log("train_loss", loss)
+        model.log(
+            "train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True
+        )
         return {"loss": loss}
 
     def val__iter__(self):
