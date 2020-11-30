@@ -1,14 +1,17 @@
 import pytest
 import torch
 from torch.nn import Module
+from torch_audiomentations.augmentations.gain import Gain
+from torchaudio.transforms import Resample
 
 from pyannote.audio.augmentation.registry import (
     register_augmentation,
     unregister_augmentation,
 )
 from pyannote.audio.models.debug import SimpleSegmentationModel
-from pyannote.audio.tasks.voice_activity_detection.task import VoiceActivityDetection
-from pyannote.audio.transforms.pipeline import default_augmentations
+from pyannote.audio.tasks.segmentation.voice_activity_detection import (
+    VoiceActivityDetection,
+)
 from pyannote.database import FileFinder, get_protocol
 
 
@@ -47,7 +50,6 @@ def test_aug_pipeline():
         "Debug.SpeakerDiarization.Debug", preprocessors={"audio": FileFinder()}
     )
 
-    vad = VoiceActivityDetection(protocol, batch_size=2)
+    tfms = [Resample(), Gain()]
+    vad = VoiceActivityDetection(protocol, batch_size=2, transforms=tfms)
     SimpleSegmentationModel(task=vad)
-    augs = default_augmentations(vad)
-    augs(vad.example_input_array)
