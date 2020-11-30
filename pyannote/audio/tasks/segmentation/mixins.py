@@ -263,10 +263,10 @@ class SegmentationTaskMixin:
             y_pred.view(-1)[::10], y.view(-1)[::10], sample_weight=None, pos_label=1.0
         )
         model.log(
-            "val_aucroc", auc, on_step=False, on_epoch=True, prog_bar=True, logger=True
+            "val_auroc", auc, on_step=False, on_epoch=True, prog_bar=True, logger=True
         )
 
     @property
     def val_monitor(self):
         """Maximize validation area under ROC curve"""
-        return "val_aucroc", "max"
+        return "val_auroc", "max"
