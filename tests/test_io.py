@@ -1,22 +1,10 @@
 import random
 
 import torch
-import torchaudio
 from torch import Tensor
 
 from pyannote.audio.core.io import Audio
 from pyannote.core import Segment, SlidingWindow
-
-
-def test_audio_resample():
-    "Audio is correctly resampled when it isn't the correct sample rate"
-    test_file = "tests/data/dev00.wav"
-    info = torchaudio.info(test_file)
-    old_sr = info.sample_rate
-    loader = Audio(old_sr // 2)
-    wav, sr = loader(test_file)
-    assert isinstance(wav, Tensor)
-    assert sr == old_sr // 2
 
 
 def test_basic_load_with_defaults():
