@@ -1,5 +1,3 @@
-import random
-
 import torch
 from torch import Tensor
 
@@ -53,13 +51,13 @@ def test_can_crop_waveform():
 
 def test_crops_are_correct_shape():
     sr = 160001
-    secs = random.randint(5, 11)
-    waveform = torch.randn(1, secs * sr)
-    loader = Audio()
-    shape = None
-    for segment in SlidingWindow(end=secs):
-        wav, sr = loader.crop({"waveform": waveform, "sample_rate": sr}, segment)
-        if shape is None:
-            shape = wav.shape
-        else:
-            assert shape == wav.shape
+    for secs in range(5, 11):
+        waveform = torch.randn(1, secs * sr)
+        loader = Audio()
+        shape = None
+        for segment in SlidingWindow(end=secs):
+            wav, sr = loader.crop({"waveform": waveform, "sample_rate": sr}, segment)
+            if shape is None:
+                shape = wav.shape
+            else:
+                assert shape == wav.shape
