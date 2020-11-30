@@ -162,7 +162,7 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
                     1.0,
                     on_step=False,
                     on_epoch=True,
-                    prob_bar=False,
+                    prog_bar=False,
                     logger=True,
                 )
                 return
@@ -172,7 +172,7 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
             0.0,
             on_step=False,
             on_epoch=True,
-            prob_bar=False,
+            prog_bar=False,
             logger=True,
         )
 
