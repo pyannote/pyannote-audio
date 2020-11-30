@@ -205,7 +205,7 @@ class Task(pl.LightningDataModule):
 
         self.num_workers = num_workers
         self.pin_memory = pin_memory
-        self._waveform_transforms = transforms
+        self.waveform_transforms = transforms
         self.learning_rate = learning_rate
         self.optimizer = optimizer
 
