@@ -23,12 +23,10 @@
 from typing import Callable, Iterable
 
 import numpy as np
-from pytorch_lightning.metrics.functional.classification import auroc
 from torch.nn import Parameter
 from torch.optim import Optimizer
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 
-from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Problem, Scale, Task, TaskSpecification
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
 from pyannote.database import Protocol
@@ -115,31 +113,3 @@ class VoiceActivityDetection(SegmentationTaskMixin, Task):
             y[t] = 1 if at least one speaker is active at tth frame, 0 otherwise.
         """
         return np.int64(np.sum(one_hot_y, axis=1) > 0)
-
-    def validation_step(self, model: Model, batch, batch_idx: int):
-        """Compute area under ROC curve
-
-        Parameters
-        ----------
-        model : Model
-            Model currently being validated.
-        batch : dict of torch.Tensor
-            Current batch.
-        batch_idx: int
-            Batch index.
-        """
-
-        X, y = batch["X"], batch["y"]
-        y_pred = model(X)
-
-        auc = auroc(
-            y_pred.view(-1)[::10], y.view(-1)[::10], sample_weight=None, pos_label=1.0
-        )
-        model.log(
-            "val_aucroc", auc, on_step=False, on_epoch=True, prog_bar=True, logger=True
-        )
-
-    @property
-    def val_monitor(self):
-        """Maximize validation area under ROC curve"""
-        return "val_aucroc", "max"
