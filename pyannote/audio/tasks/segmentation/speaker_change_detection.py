@@ -72,6 +72,8 @@ class SpeakerChangeDetection(SegmentationTaskMixin, Task):
         during training.
     """
 
+    ACRONYM = "scd"
+
     def __init__(
         self,
         protocol: Protocol,

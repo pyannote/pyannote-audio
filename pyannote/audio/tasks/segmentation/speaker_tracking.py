@@ -67,6 +67,8 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
         during training.
     """
 
+    ACRONYM = "spk"
+
     def __init__(
         self,
         protocol: Protocol,
@@ -158,7 +160,7 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
                 # in case of all positive or all negative samples, auroc will raise a ValueError.
                 # we mark this batch as skipped and actually skip it.
                 model.log(
-                    "cannot_val",
+                    f"{self.ACRONYM}@val_skip",
                     1.0,
                     on_step=False,
                     on_epoch=True,
@@ -168,7 +170,7 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
                 return
 
         model.log(
-            "cannot_val",
+            f"{self.ACRONYM}@val_skip",
             0.0,
             on_step=False,
             on_epoch=True,
@@ -177,15 +179,10 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
         )
 
         model.log(
-            "avg_val_auroc",
+            f"{self.ACRONYM}@val_auroc",
             sum(auc.values()) / len(auc),
             on_step=False,
             on_epoch=True,
             prog_bar=True,
             logger=True,
         )
-
-    @property
-    def val_monitor(self):
-        """Maximize validation area under ROC curve"""
-        return "avg_val_auroc", "max"
