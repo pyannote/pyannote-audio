@@ -347,15 +347,20 @@ class Task(pl.LightningDataModule):
                 loss[task_name] = self.default_loss(
                     specifications, y[task_name], y_pred[task_name]
                 )
-                model.log(f"{task_name}_train_loss", loss[task_name])
+                model.log(f"{task_name}@train_loss", loss[task_name])
 
             loss["loss"] = sum(loss.values())
-            model.log("train_loss", loss["loss"])
+            model.log(f"{self.ACRONYM}@train_loss", loss["loss"])
             return loss
 
         loss = self.default_loss(self.specifications, y, y_pred)
         model.log(
-            "train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True
+            f"{self.ACRONYM}@train_loss",
+            loss,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
         )
         return {"loss": loss}
 
@@ -404,7 +409,7 @@ class Task(pl.LightningDataModule):
         Returns
         -------
         loss : {str: torch.tensor}
-            {"loss": loss} with additional "loss_{task_name}" keys for multi-task models.
+            {"loss": loss} with additional "{task_name}" keys for multi-task models.
         """
 
         X, y = batch["X"], batch["y"]
@@ -416,16 +421,26 @@ class Task(pl.LightningDataModule):
                 loss[task_name] = self.default_loss(
                     specifications, y[task_name], y_pred[task_name]
                 )
-                model.log(f"{task_name}_val_loss", loss[task_name])
+                model.log(f"{task_name}@val_loss", loss[task_name])
 
             loss["loss"] = sum(loss.values())
             model.log(
-                "val_loss", loss["loss"], on_step=False, on_epoch=True, prog_bar=True
+                f"{self.ACRONYM}@val_loss",
+                loss["loss"],
+                on_step=False,
+                on_epoch=True,
+                prog_bar=True,
             )
             return loss
 
         loss = self.default_loss(self.specifications, y, y_pred)
-        model.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
+        model.log(
+            f"{self.ACRONYM}@val_loss",
+            loss,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+        )
         return {"loss": loss}
 
     def val_callback(self):
@@ -462,4 +477,4 @@ class Task(pl.LightningDataModule):
         pytorch_lightning.callbacks.ModelCheckpoint
         pytorch_lightning.callbacks.EarlyStopping
         """
-        return "val_loss", "min"
+        return f"{self.ACRONYM}@val_loss", "min"

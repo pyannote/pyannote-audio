@@ -99,6 +99,8 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
 
     """
 
+    ACRONYM = "xseg"
+
     def __init__(
         self,
         protocol: Protocol,
@@ -334,9 +336,9 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
                 )
             except ValueError:
                 # in case of all positive or all negative samples, auroc will raise a ValueError.
-                # we mark this batch as skipped
+                # we mark this batch as skipped for current task
                 model.log(
-                    f"{task_name}_cannot_val",
+                    f"{task_name}@val_skip",
                     1.0,
                     on_step=False,
                     on_epoch=True,
@@ -344,9 +346,10 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
                     logger=True,
                 )
                 skipped = True
+                continue
 
             model.log(
-                f"{task_name}_cannot_val",
+                f"{task_name}@val_skip",
                 0.0,
                 on_step=False,
                 on_epoch=True,
@@ -355,7 +358,7 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
             )
 
             model.log(
-                f"{task_name}_val_auroc",
+                f"{task_name}@val_auroc",
                 auc[task_name],
                 on_step=False,
                 on_epoch=True,
@@ -367,15 +370,10 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
             return
 
         model.log(
-            "avg_val_auroc",
+            f"{self.ACRONYM}@val_auroc",
             sum(auc.values()) / len(auc),
             on_step=False,
             on_epoch=True,
             prog_bar=True,
             logger=True,
         )
-
-    @property
-    def val_monitor(self):
-        """Maximize validation area under ROC curve"""
-        return "avg_val_auroc", "max"
