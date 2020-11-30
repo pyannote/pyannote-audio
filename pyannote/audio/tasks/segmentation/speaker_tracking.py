@@ -147,12 +147,34 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
 
         auc = dict()
         for k, speaker in enumerate(self.specifications.classes):
-            auc[speaker] = auroc(
-                y_pred[::10, k],
-                y[::10, k],
-                sample_weight=None,
-                pos_label=1.0,
-            )
+            try:
+                auc[speaker] = auroc(
+                    y_pred[::10, k],
+                    y[::10, k],
+                    sample_weight=None,
+                    pos_label=1.0,
+                )
+            except ValueError:
+                # in case of all positive or all negative samples, auroc will raise a ValueError.
+                # we mark this batch as skipped and actually skip it.
+                model.log(
+                    "cannot_val",
+                    1.0,
+                    on_step=False,
+                    on_epoch=True,
+                    prob_bar=False,
+                    logger=True,
+                )
+                return
+
+        model.log(
+            "cannot_val",
+            0.0,
+            on_step=False,
+            on_epoch=True,
+            prob_bar=False,
+            logger=True,
+        )
 
         model.log(
             "avg_val_auroc",

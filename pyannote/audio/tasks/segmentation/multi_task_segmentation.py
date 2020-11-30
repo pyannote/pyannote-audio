@@ -322,13 +322,38 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
         y_pred = model(X)
 
         auc = dict()
+        skipped = False
+
         for task_name in self.specifications:
-            auc[task_name] = auroc(
-                y_pred[task_name].view(-1)[::10],
-                y[task_name].view(-1)[::10],
-                sample_weight=None,
-                pos_label=1.0,
+            try:
+                auc[task_name] = auroc(
+                    y_pred[task_name].view(-1)[::10],
+                    y[task_name].view(-1)[::10],
+                    sample_weight=None,
+                    pos_label=1.0,
+                )
+            except ValueError:
+                # in case of all positive or all negative samples, auroc will raise a ValueError.
+                # we mark this batch as skipped
+                model.log(
+                    f"{task_name}_cannot_val",
+                    1.0,
+                    on_step=False,
+                    on_epoch=True,
+                    prob_bar=False,
+                    logger=True,
+                )
+                skipped = True
+
+            model.log(
+                f"{task_name}_cannot_val",
+                0.0,
+                on_step=False,
+                on_epoch=True,
+                prob_bar=False,
+                logger=True,
             )
+
             model.log(
                 f"{task_name}_val_auroc",
                 auc[task_name],
@@ -337,6 +362,9 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
                 prog_bar=True,
                 logger=True,
             )
+
+        if skipped:
+            return
 
         model.log(
             "avg_val_auroc",

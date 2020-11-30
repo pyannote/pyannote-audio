@@ -259,9 +259,35 @@ class SegmentationTaskMixin:
         X, y = batch["X"], batch["y"]
         y_pred = model(X)
 
-        auc = auroc(
-            y_pred.view(-1)[::10], y.view(-1)[::10], sample_weight=None, pos_label=1.0
+        try:
+            auc = auroc(
+                y_pred.view(-1)[::10],
+                y.view(-1)[::10],
+                sample_weight=None,
+                pos_label=1.0,
+            )
+        except ValueError:
+            # in case of all positive or all negative samples, auroc will raise a ValueError.
+            # we mark this batch as skipped and actually skip it.
+            model.log(
+                "cannot_val",
+                1.0,
+                on_step=False,
+                on_epoch=True,
+                prob_bar=False,
+                logger=True,
+            )
+            return
+
+        model.log(
+            "cannot_val",
+            0.0,
+            on_step=False,
+            on_epoch=True,
+            prob_bar=False,
+            logger=True,
         )
+
         model.log(
             "val_auroc", auc, on_step=False, on_epoch=True, prog_bar=True, logger=True
         )
