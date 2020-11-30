@@ -25,11 +25,13 @@ import random
 from typing import Callable, Iterable, Mapping
 
 import numpy as np
+from pytorch_lightning.metrics.functional.classification import auroc
 from torch.nn import Parameter
 from torch.optim import Optimizer
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 
 from pyannote.audio.core.io import Audio
+from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
 from pyannote.audio.tasks import (
     OverlappedSpeechDetection,
@@ -302,3 +304,50 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
             combined_y = np.minimum(combined_y, 1, out=combined_y)
 
             yield {"X": X, "y": self.prepare_y(combined_y)}
+
+    def validation_step(self, model: Model, batch, batch_idx: int):
+        """Compute areas under ROC curve
+
+        Parameters
+        ----------
+        model : Model
+            Model currently being validated.
+        batch : dict of torch.Tensor
+            Current batch.
+        batch_idx: int
+            Batch index.
+        """
+
+        X, y = batch["X"], batch["y"]
+        y_pred = model(X)
+
+        auc = dict()
+        for task_name in self.specifications:
+            auc[task_name] = auroc(
+                y_pred[task_name].view(-1)[::10],
+                y[task_name].view(-1)[::10],
+                sample_weight=None,
+                pos_label=1.0,
+            )
+            model.log(
+                f"{task_name}_val_auroc",
+                auc[task_name],
+                on_step=False,
+                on_epoch=True,
+                prog_bar=True,
+                logger=True,
+            )
+
+        model.log(
+            "avg_val_auroc",
+            sum(auc.values()) / len(auc),
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+        )
+
+    @property
+    def val_monitor(self):
+        """Maximize validation area under ROC curve"""
+        return "avg_val_auroc", "max"
