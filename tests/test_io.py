@@ -56,6 +56,9 @@ def test_crops_are_correct_shape():
         loader = Audio()
         shape = None
         for segment in SlidingWindow(end=secs):
+            # Sliding windows will go out of bounds
+            if segment.end > secs:
+                break
             wav, sr = loader.crop({"waveform": waveform, "sample_rate": sr}, segment)
             if shape is None:
                 shape = wav.shape
