@@ -235,7 +235,7 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
 
             yield self.prepare_chunk(file, chunk, duration=self.duration)
 
-    def train__iter__(self):
+    def train__iter__(self, epoch: int):
         """Iterate over training samples
 
         Yields
@@ -249,7 +249,7 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
         """
 
         # create worker-specific random number generator
-        rng = create_rng_for_worker()
+        rng = create_rng_for_worker(epoch)
 
         if self.osd and self.tasks["osd"].domain is not None:
             chunks_by_domain = {

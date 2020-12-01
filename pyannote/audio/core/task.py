@@ -90,9 +90,11 @@ class TrainDataset(IterableDataset):
     def __init__(self, task: Task):
         super().__init__()
         self.task = task
+        self.epoch_ = -1
 
     def __iter__(self):
-        return self.task.train__iter__()
+        self.epoch_ += 1
+        return self.task.train__iter__(epoch=self.epoch_)
 
     def __len__(self):
         return self.task.train__len__()
@@ -236,7 +238,7 @@ class Task(pl.LightningDataModule):
         """"Check whether multiple tasks are addressed at once"""
         return len(self.specifications) > 1
 
-    def train__iter__(self):
+    def train__iter__(self, epoch: int = None):
         # will become train_dataset.__iter__ method
         msg = f"Missing '{self.__class__.__name__}.train__iter__' method."
         raise NotImplementedError(msg)

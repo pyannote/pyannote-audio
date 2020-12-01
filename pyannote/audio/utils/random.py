@@ -22,29 +22,34 @@
 
 
 import os
-import random
+from random import Random
 
 import torch
 
 
-def create_rng_for_worker():
+def create_rng_for_worker(epoch: int) -> Random:
     """Create worker-specific random number generator
 
     This makes sure that
     1. training samples generation is reproducible
-    2. all workers use a different seed (e.g. to avoid training samples duplication)
+    2. every (worker, epoch) uses a different seed
 
+    Parameters
+    ----------
+    epoch : int
+        Current epoch.
     """
 
     # create random number generator
-    rng = random.Random()
+    rng = Random()
 
     #  create seed as a combination of PL_GLOBAL_SEED (set by pl.seed_everything())
     #  and other PL multi-processing variables
-    global_seed = int(os.environ.get("PL_GLOBAL_SEED", 1))
+    global_seed = int(os.environ.get("PL_GLOBAL_SEED", "0"))
     local_rank = int(os.environ.get("LOCAL_RANK", "0"))
     node_rank = int(os.environ.get("NODE_RANK", "0"))
     num_gpus = len(os.environ.get("PL_TRAINER_GPUS", "0").split(","))
+    world_size = int(os.environ.get("WORLD_SIZE", "1"))
 
     worker_info = torch.utils.data.get_worker_info()
 
@@ -60,6 +65,7 @@ def create_rng_for_worker():
         + worker_id
         + local_rank * num_workers
         + node_rank * num_workers * num_gpus
+        + epoch * num_workers * world_size
     )
 
     rng.seed(seed)
