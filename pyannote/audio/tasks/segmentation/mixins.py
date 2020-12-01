@@ -163,7 +163,7 @@ class SegmentationTaskMixin:
 
         return X, y, labels
 
-    def train__iter__(self, epoch: int):
+    def train__iter__(self):
         """Iterate over training samples
 
         Yields
@@ -175,8 +175,9 @@ class SegmentationTaskMixin:
             `frame` is infered automagically from the
             example model output.
         """
+
         # create worker-specific random number generator
-        rng = create_rng_for_worker(epoch)
+        rng = create_rng_for_worker(self.current_epoch)
 
         while True:
 
