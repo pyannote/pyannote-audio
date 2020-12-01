@@ -347,10 +347,24 @@ class Task(pl.LightningDataModule):
                 loss[task_name] = self.default_loss(
                     specifications, y[task_name], y_pred[task_name]
                 )
-                model.log(f"{task_name}@train_loss", loss[task_name])
+                model.log(
+                    f"{task_name}@train_loss",
+                    loss[task_name],
+                    on_step=True,
+                    on_epoch=True,
+                    prog_bar=False,
+                    logger=False,
+                )
 
             loss["loss"] = sum(loss.values())
-            model.log(f"{self.ACRONYM}@train_loss", loss["loss"])
+            model.log(
+                f"{self.ACRONYM}@train_loss",
+                loss["loss"],
+                on_step=True,
+                on_epoch=True,
+                prog_bar=True,
+                logger=True,
+            )
             return loss
 
         loss = self.default_loss(self.specifications, y, y_pred)
