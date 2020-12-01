@@ -55,10 +55,8 @@ def test_crops_are_correct_shape():
         waveform = torch.randn(1, secs * sr)
         loader = Audio()
         shape = None
-        for segment in SlidingWindow(end=secs):
-            # Sliding windows will go out of bounds
-            if segment.end > secs:
-                break
+        print(secs - 0.01)
+        for segment in SlidingWindow(end=secs - 2 * 0.01):
             wav, sr = loader.crop({"waveform": waveform, "sample_rate": sr}, segment)
             if shape is None:
                 shape = wav.shape
