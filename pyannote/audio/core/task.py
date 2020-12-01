@@ -236,6 +236,14 @@ class Task(pl.LightningDataModule):
         """"Check whether multiple tasks are addressed at once"""
         return len(self.specifications) > 1
 
+    @property
+    def current_epoch(self) -> int:
+        return getattr(self, "current_epoch_", 0)
+
+    @current_epoch.setter
+    def current_epoch(self, current_epoch: int):
+        self.current_epoch_ = current_epoch
+
     def train__iter__(self):
         # will become train_dataset.__iter__ method
         msg = f"Missing '{self.__class__.__name__}.train__iter__' method."
