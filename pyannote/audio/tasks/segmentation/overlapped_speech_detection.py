@@ -186,7 +186,7 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
 
             yield self.prepare_chunk(file, chunk, duration=self.duration)
 
-    def train__iter__(self, epoch: int):
+    def train__iter__(self):
         """Iterate over training samples
 
         Yields
@@ -200,7 +200,7 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
         """
 
         # create worker-specific random number generator
-        rng = create_rng_for_worker(epoch)
+        rng = create_rng_for_worker(self.current_epoch)
 
         if self.domain is None:
             chunks = self.train__iter__helper(rng)
