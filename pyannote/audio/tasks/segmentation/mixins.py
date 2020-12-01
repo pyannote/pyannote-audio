@@ -161,7 +161,7 @@ class SegmentationTaskMixin:
 
         return X, y, labels
 
-    def train__iter__(self):
+    def train__iter__(self, epoch: int):
         """Iterate over training samples
 
         Yields
@@ -174,7 +174,7 @@ class SegmentationTaskMixin:
             example model output.
         """
         # create worker-specific random number generator
-        rng = create_rng_for_worker()
+        rng = create_rng_for_worker(epoch)
 
         while True:
 

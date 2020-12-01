@@ -146,7 +146,7 @@ class SpeakerEmbeddingArcFace(Task):
                 num_classes, embedding_size, margin=28.6, scale=64
             )
 
-    def train__iter__(self):
+    def train__iter__(self, epoch: int):
         """Iterate over training samples
 
         Yields
@@ -158,7 +158,7 @@ class SpeakerEmbeddingArcFace(Task):
         """
 
         # create worker-specific random number generator
-        rng = create_rng_for_worker()
+        rng = create_rng_for_worker(epoch)
 
         speakers = list(self.speakers)
 
