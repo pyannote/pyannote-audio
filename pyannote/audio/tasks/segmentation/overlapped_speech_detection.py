@@ -182,7 +182,7 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
         """
 
         # create worker-specific random number generator
-        rng = create_rng_for_worker()
+        rng = create_rng_for_worker(self.current_epoch)
 
         if self.domain is None:
             chunks = self.train__iter__helper(rng)

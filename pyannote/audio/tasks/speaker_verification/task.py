@@ -144,7 +144,7 @@ class SpeakerEmbeddingArcFace(Task):
         """
 
         # create worker-specific random number generator
-        rng = create_rng_for_worker()
+        rng = create_rng_for_worker(self.current_epoch)
 
         speakers = list(self.speakers)
 
