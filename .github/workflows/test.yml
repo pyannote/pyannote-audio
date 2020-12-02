@@ -26,19 +26,18 @@ jobs:
         sudo apt-get install libsndfile1
     - name: Install pyannote.audio
       run: |
-          pip install -e .[dev,testing]  
+          pip install -e .[dev,testing]
     - name: Test with pytest
       run: |
           export PYANNOTE_DATABASE_CONFIG=$GITHUB_WORKSPACE/tests/data/database.yml
           pytest
-    # Turn back on when the repository is public again
-    # - name: Generate coverage report
-    #   run: |
-    #     pytest --cov-report=xml
-    # - name: Upload coverage to Codecov
-    #   uses: codecov/codecov-action@v1
-    #   with:
-    #     file: ./coverage.xml
-    #     env_vars: PYTHON
-    #     name: codecov-fastaudio
-    #     fail_ci_if_error: true
+    - name: Generate coverage report
+      run: |
+        pytest --cov-report=xml
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v1
+      with:
+        file: ./coverage.xml
+        env_vars: PYTHON
+        name: codecov-pyannote-audio
+        fail_ci_if_error: true
