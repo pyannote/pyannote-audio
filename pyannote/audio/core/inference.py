@@ -184,10 +184,14 @@ class Inference:
 
         Returns
         -------
-        output : np.ndarray
-            Shape is (num_chunks, dimension) for chunk-scaled tasks,
+        output : SlidingWindowFeature
+            Model output. Shape is (num_chunks, dimension) for chunk-scaled tasks,
             and (num_frames, dimension) for frame-scaled tasks.
-        frames : pyannote.core.SlidingWindow
+
+        Notes
+        -----
+        If model has several outputs (multi-task), those will be returned as a
+        {task_name: output} dictionary.
         """
 
         # prepare sliding audio chunks
@@ -333,7 +337,14 @@ class Inference:
             return results
         return results[None]
 
-    def __call__(self, file: AudioFile) -> Union[np.ndarray, SlidingWindowFeature]:
+    def __call__(
+        self, file: AudioFile
+    ) -> Union[
+        SlidingWindowFeature,
+        Dict[Text, SlidingWindowFeature],
+        np.ndarray,
+        Dict[Text, np.ndarray],
+    ]:
         """Run inference on a whole file
 
         Parameters
@@ -343,15 +354,17 @@ class Inference:
 
         Returns
         -------
-        output : np.ndarray
-            Output.
-        frames : SlidingWindow, optional
-            Only returned for "sliding" window.
+        output : SlidingWindowFeature or np.ndarray
+            Model output, as `SlidingWindowFeature` if `window` is set to "sliding"
+            and `np.ndarray` if is set to "whole".
+
+        Notes
+        -----
+        If model has several outputs (multi-task), those will be returned as a
+        {task_name: output} dictionary.
         """
 
         waveform, sample_rate = self.model.audio(file)
-        # TODO remove this conversion if/when we switch to torchaudio IO
-        waveform = torch.tensor(waveform, requires_grad=False)
 
         if self.window == "sliding":
             return self.slide(waveform, sample_rate)
@@ -369,7 +382,12 @@ class Inference:
         file: AudioFile,
         chunk: Segment,
         fixed: Optional[float] = None,
-    ) -> Union[np.ndarray, Tuple[np.ndarray, SlidingWindow]]:
+    ) -> Union[
+        SlidingWindowFeature,
+        Dict[Text, SlidingWindowFeature],
+        np.ndarray,
+        Dict[Text, np.ndarray],
+    ]:
         """Run inference on a chunk
 
         Parameters
@@ -388,10 +406,14 @@ class Inference:
 
         Returns
         -------
-        output : np.ndarray
-            Output.
-        frames : SlidingWindow, optional
-            Only returned for "sliding" window.
+        output : SlidingWindowFeature or np.ndarray
+            Model output, as `SlidingWindowFeature` if `window` is set to "sliding"
+            and `np.ndarray` if is set to "whole".
+
+        Notes
+        -----
+        If model has several outputs (multi-task), those will be returned as a
+        {task_name: output} dictionary.
         """
 
         waveform, sample_rate = self.model.audio.crop(file, chunk, fixed=fixed)
