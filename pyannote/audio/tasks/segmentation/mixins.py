@@ -173,8 +173,9 @@ class SegmentationTaskMixin:
             `frame` is infered automagically from the
             example model output.
         """
+
         # create worker-specific random number generator
-        rng = create_rng_for_worker()
+        rng = create_rng_for_worker(self.current_epoch)
 
         while True:
 

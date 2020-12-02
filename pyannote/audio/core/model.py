@@ -421,6 +421,9 @@ class Model(pl.LightningModule):
 
         return self.helper_default_activation(task_specifications)
 
+    def on_epoch_start(self):
+        self.task.current_epoch = self.current_epoch
+
     # training step logic is delegated to the task because the
     # model does not really need to know how it is being used.
     def training_step(self, batch, batch_idx):
