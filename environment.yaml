@@ -1,4 +1,4 @@
-name: pyannote-audio-v2
+name: pyannote-audio
 channels:
   - pytorch
   - defaults
