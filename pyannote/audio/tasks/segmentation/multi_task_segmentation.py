@@ -245,7 +245,7 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
         """
 
         # create worker-specific random number generator
-        rng = create_rng_for_worker()
+        rng = create_rng_for_worker(self.current_epoch)
 
         if self.osd and self.tasks["osd"].domain is not None:
             chunks_by_domain = {
