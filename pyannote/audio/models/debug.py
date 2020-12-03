@@ -26,6 +26,7 @@ from typing import Optional
 import torch
 import torch.nn as nn
 from einops import rearrange, reduce
+from torchaudio.transforms import MFCC
 
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
@@ -39,6 +40,14 @@ class SimpleSegmentationModel(Model):
         task: Optional[Task] = None,
     ):
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
+
+        self.spec_transform = MFCC(
+            sample_rate=sample_rate,
+            n_mfcc=40,
+            dct_type=2,
+            norm="ortho",
+            log_mels=False,
+        )
 
         self.lstm = nn.LSTM(
             self.spec_transform.n_mfcc * self.hparams.num_channels,
@@ -73,7 +82,6 @@ class SimpleSegmentationModel(Model):
         -------
         scores : (batch, time, classes)
         """
-        waveforms = self.waveform_transforms(waveforms)
         # extract MFCC
         mfcc = self.spec_transform(waveforms)
         # pass MFCC sequeence into the recurrent layer
@@ -91,6 +99,15 @@ class MultiTaskSegmentationModel(Model):
     ):
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
 
+        self.spec_transform = MFCC(
+            sample_rate=sample_rate,
+            n_mfcc=40,
+            dct_type=2,
+            norm="ortho",
+            log_mels=False,
+        )
+
+    def build(self):
         self.lstm = nn.LSTM(
             self.spec_transform.n_mfcc * self.hparams.num_channels,
             32,
@@ -99,7 +116,6 @@ class MultiTaskSegmentationModel(Model):
             bidirectional=True,
         )
 
-    def build(self):
         self.classifier = nn.ModuleDict(
             {
                 name: nn.Linear(32 * 2, len(specifications.classes))
@@ -110,7 +126,6 @@ class MultiTaskSegmentationModel(Model):
         self.activation = self.default_activation()
 
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
-        waveforms = self.waveform_transforms(waveforms)
         # extract MFCC
         mfcc = self.spec_transform(waveforms)
         # pass MFCC sequence into the recurrent layer
@@ -131,6 +146,13 @@ class SimpleEmbeddingModel(Model):
     ):
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
 
+        self.spec_transform = MFCC(
+            sample_rate=sample_rate,
+            n_mfcc=40,
+            dct_type=2,
+            norm="ortho",
+            log_mels=False,
+        )
         self.lstm = nn.LSTM(
             self.spec_transform.n_mfcc * self.hparams.num_channels,
             32,
@@ -161,7 +183,6 @@ class SimpleEmbeddingModel(Model):
         -------
         embedding : (batch, dimension)
         """
-        waveforms = self.waveform_transforms(waveforms)
         mfcc = self.spec_transform(waveforms)
         output, hidden = self.lstm(rearrange(mfcc, "b c f t -> b t (c f)"))
         # mean temporal pooling

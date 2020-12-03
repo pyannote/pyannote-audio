@@ -28,7 +28,7 @@ import warnings
 from dataclasses import dataclass
 from enum import Enum
 from functools import cached_property
-from typing import TYPE_CHECKING, Callable, Iterable, List, Optional, Text, Union
+from typing import TYPE_CHECKING, Callable, Iterable, List, Optional, Text
 
 import pytorch_lightning as pl
 import torch
@@ -36,10 +36,10 @@ import torch.nn.functional as F
 from torch.nn import Parameter
 from torch.optim import Adam, Optimizer
 from torch.utils.data import DataLoader, IterableDataset
-from torch_audiomentations.augmentations.background_noise import ApplyBackgroundNoise
+from torch_audiomentations.augmentations.background_noise import AddBackgroundNoise
+from torch_audiomentations.core.composition import Compose
 from torchaudio.transforms import Resample
 
-from pyannote.audio.transforms.pipeline import TransformsPipe
 from pyannote.audio.transforms.transforms import Reverb
 from pyannote.database import Protocol
 
@@ -151,14 +151,13 @@ class Task(pl.LightningDataModule):
         If True, data loaders will copy tensors into CUDA pinned
         memory before returning them. See pytorch documentation
         for more details. Defaults to False.
+    transforms: List[torch.nn.Module], optional
+        A list of transforms to apply to the waveforms
     optimizer : callable, optional
         Callable that takes model parameters as input and returns
         an Optimizer instance. Defaults to `torch.optim.Adam`.
     learning_rate : float, optional
         Learning rate. Defaults to 1e-3.
-    augmentation : BaseWaveformTransform, optional
-        torch_audiomentations waveform transform, used by dataloader
-        during training.
 
     Attributes
     ----------
@@ -176,7 +175,7 @@ class Task(pl.LightningDataModule):
         num_workers: int = 1,
         pin_memory: bool = False,
         gpu_transforms: bool = True,
-        transforms: Union[List[torch.nn.Module], TransformsPipe] = [],
+        transforms: List[torch.nn.Module] = [],
         optimizer: Callable[[Iterable[Parameter]], Optimizer] = Adam,
         learning_rate: float = 1e-3,
     ):
@@ -205,27 +204,14 @@ class Task(pl.LightningDataModule):
 
         self.num_workers = num_workers
         self.pin_memory = pin_memory
-        self.waveform_transforms = transforms
+        self.waveform_transforms = Compose(transforms=transforms)
         self.learning_rate = learning_rate
         self.optimizer = optimizer
 
     @property
-    def waveform_transforms(self) -> TransformsPipe:
-        """Basic transforms for waveforms
+    def waveform_transforms(self) -> torch.nn.Module:
+        """Waveform transforms"""
 
-
-        Parameters
-        ---------
-        task : Task
-            The task that need transformations to be applied to
-        bg_noise: Path, str
-            Where to find background noise data
-
-        Returns
-        -------
-
-        TransformsPipe
-        """
         if self._waveform_transforms is None:
             sr = self.audio.sample_rate
             augs = []
@@ -237,36 +223,22 @@ class Task(pl.LightningDataModule):
 
             # Setup Background Noise
             if self.bg_noise:
-                augs.append(ApplyBackgroundNoise(self.bg_noise))
+                augs.append(AddBackgroundNoise(self.bg_noise))
 
-            self._waveform_transforms = TransformsPipe(*augs)
+            self._waveform_transforms = Compose(transforms=augs)
+
+        if self.gpu and not self._waveform_transforms.device.type == "gpu":
+            self._waveform_transforms = self._waveform_transforms.cuda()
+
         return self._waveform_transforms
 
     @waveform_transforms.setter
-    def waveform_transforms(self, v: Union[List, TransformsPipe]):
-        if isinstance(v, list):
-            v = TransformsPipe(*v)
+    def waveform_transforms(self, v: torch.nn.Module):
         self._waveform_transforms = v
 
-    def _setup_transforms(self, model: Model, stage=None):
-        tfms = self.waveform_transforms
-
+    def on_train_batch_start(self, model, batch, batch_idx, dataloader_idx):
         if self.gpu:
-            model.waveform_transforms = torch.nn.Sequential(*tfms)
-
-        # Support loading the waveforms from workers
-        # in the dataloader if we can't do on the GPU
-        if not self.gpu:
-            old_func = self.train__iter__
-
-            def _new_iter_with_tfms():
-                it = old_func()
-                while True:
-                    batch = next(it)
-                    batch["X"] = tfms(batch["X"])
-                    yield batch
-
-            self.train__iter__ = _new_iter_with_tfms
+            batch["X"] = self.waveform_transforms(batch["X"])
 
     def prepare_data(self):
         """Use this to download and prepare data
@@ -324,13 +296,17 @@ class Task(pl.LightningDataModule):
         raise NotImplementedError(msg)
 
     def train_dataloader(self) -> DataLoader:
-        return DataLoader(
+        dl = DataLoader(
             TrainDataset(self),
             batch_size=self.batch_size,
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
             drop_last=True,
         )
+
+        if not self.gpu:
+            dl.collate_fn = self.waveform_transforms
+        return dl
 
     @cached_property
     def example_input_duration(self) -> float:
@@ -436,13 +412,16 @@ class Task(pl.LightningDataModule):
         raise NotImplementedError(msg)
 
     def val_dataloader(self) -> DataLoader:
-        return DataLoader(
+        dl = DataLoader(
             ValDataset(self),
             batch_size=self.batch_size,
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
             drop_last=False,
         )
+        if not self.gpu:
+            dl.collate_fn = self.waveform_transforms
+        return dl
 
     # default validation_step provided for convenience
     # can obviously be overriden for each task

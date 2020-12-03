@@ -31,7 +31,6 @@ import torch
 import torch.nn as nn
 from pytorch_lightning.utilities.cloud_io import load as pl_load
 from semver import VersionInfo
-from torchaudio.transforms import MFCC
 
 from pyannote.audio import __version__
 from pyannote.audio.core.io import Audio
@@ -118,7 +117,6 @@ class Model(pl.LightningModule):
         self.hparams.sample_rate = sample_rate
         self.hparams.num_channels = num_channels
         self.audio = Audio(sample_rate=sample_rate, mono=True)
-        self._waveform_transforms = torch.nn.Identity()
 
         # set task attribute when available (i.e. at training time)
         # and also tell the task what kind of audio is expected from
@@ -126,20 +124,6 @@ class Model(pl.LightningModule):
         if task is not None:
             self.task = task
             self.task.audio = self.audio
-
-        # Default setup for a mfcc, this can  be overriden or set to the
-        # nn.Identity if not required.
-        self.spec_transform = MFCC(
-            sample_rate=sample_rate,
-            n_mfcc=40,
-            dct_type=2,
-            norm="ortho",
-            log_mels=False,
-        )
-
-    @property
-    def waveform_transforms(self):
-        return self._waveform_transforms
 
     @cached_property
     def is_multi_task(self) -> bool:
@@ -306,11 +290,6 @@ class Model(pl.LightningModule):
             #  keep track of task specifications
             self.hparams.task_specifications = self.task.specifications
 
-        # add task-dependent layers to the model
-        # (e.g. the final classification and activation layers)
-        if hasattr(self, "task"):
-            self.task._setup_transforms(self)
-
         self.build()
 
         if stage == "fit":
@@ -441,6 +420,9 @@ class Model(pl.LightningModule):
 
     def on_epoch_start(self):
         self.task.current_epoch = self.current_epoch
+
+    def on_train_batch_start(self, batch, batch_idx, dataloader_idx):
+        self.task.on_train_batch_start(self, batch, batch_idx, dataloader_idx)
 
     # training step logic is delegated to the task because the
     # model does not really need to know how it is being used.
