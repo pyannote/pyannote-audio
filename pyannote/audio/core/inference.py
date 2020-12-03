@@ -143,7 +143,7 @@ class Inference:
 
         Returns
         -------
-        outputs : {task_name: torch.Tensor} dict
+        outputs : {task_name: np.ndarray} dict
             Model outputs.
 
         Notes
@@ -380,7 +380,7 @@ class Inference:
     def crop(
         self,
         file: AudioFile,
-        chunk: Segment,
+        chunk: Union[Segment, List[Segment]],
         fixed: Optional[float] = None,
     ) -> Union[
         SlidingWindowFeature,
@@ -388,21 +388,24 @@ class Inference:
         np.ndarray,
         Dict[Text, np.ndarray],
     ]:
-        """Run inference on a chunk
+        """Run inference on a chunk or a list of chunks
 
         Parameters
         ----------
         file : AudioFile
             Audio file.
-        chunk : pyannote.core.Segment
-            Chunk.
+        chunk : Segment or list of Segment
+            Apply model on this chunk. When a list of chunks is provided and
+            window is set to "sliding", this is equivalent to calling crop on
+            the smallest chunk that contains all chunks. In case window is set
+            to "whole", this is equivalent to concatenating each chunk into one
+            (artifical) chunk before processing it.
         fixed : float, optional
             Enforce chunk duration (in seconds). This is a hack to avoid rounding
             errors that may result in a different number of audio samples for two
             chunks of the same duration.
 
         # TODO: document "fixed" better in pyannote.audio.core.io.Audio
-        # TODO: add support for "Timeline" chunk
 
         Returns
         -------
@@ -416,10 +419,14 @@ class Inference:
         {task_name: output} dictionary.
         """
 
-        waveform, sample_rate = self.model.audio.crop(file, chunk, fixed=fixed)
-        waveform = waveform.requires_grad_(False)
-
         if self.window == "sliding":
+
+            if not isinstance(chunk, Segment):
+                start = min(c.start for c in chunk)
+                end = max(c.end for c in chunk)
+                chunk = Segment(start=start, end=end)
+
+            waveform, sample_rate = self.model.audio.crop(file, chunk, fixed=fixed)
             output = self.slide(waveform, sample_rate)
 
             if self.is_multi_task:
@@ -440,12 +447,26 @@ class Inference:
                 )
                 return SlidingWindowFeature(output.data, shifted_frames)
 
-        outputs = {
-            task_name: task_output[0]
-            for task_name, task_output in self.infer(waveform[None]).items()
-        }
-        if self.is_multi_task:
-            return outputs
-        return outputs[None]
+        elif self.window == "whole":
+
+            if isinstance(chunk, Segment):
+                waveform, sample_rate = self.model.audio.crop(file, chunk, fixed=fixed)
+            else:
+                waveform = torch.cat(
+                    [self.model.audio.crop(file, c)[0] for c in chunk], dim=1
+                )
+
+            outputs = {
+                task_name: task_output[0]
+                for task_name, task_output in self.infer(waveform[None]).items()
+            }
+            if self.is_multi_task:
+                return outputs
+            return outputs[None]
+
+        else:
+            raise NotImplementedError(
+                f"Unsupported window type '{self.window}': should be 'sliding' or 'whole'."
+            )
 
     # TODO: add a way to process a stream (to allow for online processing)
