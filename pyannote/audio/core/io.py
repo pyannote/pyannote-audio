@@ -38,7 +38,6 @@ import warnings
 from pathlib import Path
 from typing import Optional, Text, Tuple, Union
 
-import torch
 import torchaudio
 from torch import Tensor
 
@@ -347,14 +346,5 @@ class Audio:
         # downmix to mono
         if self.mono and data.shape[0] > 1:
             data = data.mean(dim=0, keepdim=True)
-
-        desired_frames = math.floor(segment.duration * sample_rate)
-
-        # Pad frames if not long enough
-        if num_frames < desired_frames:
-            C = data.shape[0]
-            data = torch.cat(
-                (data, torch.zeros(C, desired_frames - num_frames)), dim=-1
-            )
 
         return data, sample_rate
