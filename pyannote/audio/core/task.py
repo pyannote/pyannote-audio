@@ -36,7 +36,7 @@ import torch.nn.functional as F
 from torch.nn import Parameter
 from torch.optim import Adam, Optimizer
 from torch.utils.data import DataLoader, IterableDataset
-from torch_audiomentations.augmentations.background_noise import AddBackgroundNoise
+from torch_audiomentations.augmentations.gain import Gain
 from torch_audiomentations.core.composition import Compose
 from torchaudio.transforms import Resample
 
@@ -204,7 +204,8 @@ class Task(pl.LightningDataModule):
 
         self.num_workers = num_workers
         self.pin_memory = pin_memory
-        self.waveform_transforms = Compose(transforms=transforms)
+        if len(transforms) > 0:
+            self.waveform_transforms = Compose(transforms=transforms)
         self.learning_rate = learning_rate
         self.optimizer = optimizer
 
@@ -212,33 +213,21 @@ class Task(pl.LightningDataModule):
     def waveform_transforms(self) -> torch.nn.Module:
         """Waveform transforms"""
 
-        if self._waveform_transforms is None:
+        if not hasattr(self, "_waveform_transforms"):
             sr = self.audio.sample_rate
             augs = []
             reverb = Reverb(sample_rate=sr)
-
+            gain = Gain()
             # Test and validation augmentations will be applied without the
             # random transformations
-            augs += [Resample(sr), reverb]
-
-            # Setup Background Noise
-            if self.bg_noise:
-                augs.append(AddBackgroundNoise(self.bg_noise))
-
+            augs += [Resample(sr), reverb, gain]
             self._waveform_transforms = Compose(transforms=augs)
-
-        if self.gpu and not self._waveform_transforms.device.type == "gpu":
-            self._waveform_transforms = self._waveform_transforms.cuda()
 
         return self._waveform_transforms
 
     @waveform_transforms.setter
     def waveform_transforms(self, v: torch.nn.Module):
         self._waveform_transforms = v
-
-    def on_train_batch_start(self, model, batch, batch_idx, dataloader_idx):
-        if self.gpu:
-            batch["X"] = self.waveform_transforms(batch["X"])
 
     def prepare_data(self):
         """Use this to download and prepare data

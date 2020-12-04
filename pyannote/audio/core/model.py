@@ -118,6 +118,7 @@ class Model(pl.LightningModule):
         self.hparams.num_channels = num_channels
         self.audio = Audio(sample_rate=sample_rate, mono=True)
 
+        self.waveform_transforms = nn.Identity()
         # set task attribute when available (i.e. at training time)
         # and also tell the task what kind of audio is expected from
         # the model
@@ -292,6 +293,9 @@ class Model(pl.LightningModule):
 
         self.build()
 
+        if hasattr(self, "task"):
+            self.waveform_transforms = self.task.waveform_transforms
+
         if stage == "fit":
             # model introspection
             self.hparams.model_introspection = self.introspect()
@@ -307,7 +311,6 @@ class Model(pl.LightningModule):
             self.hparams.learning_rate = self.task.learning_rate
 
     def on_save_checkpoint(self, checkpoint):
-
         #  put everything pyannote.audio-specific under pyannote.audio
         #  to avoid any future conflicts with pytorch-lightning updates
         checkpoint["pyannote.audio"] = {
@@ -420,9 +423,6 @@ class Model(pl.LightningModule):
 
     def on_epoch_start(self):
         self.task.current_epoch = self.current_epoch
-
-    def on_train_batch_start(self, batch, batch_idx, dataloader_idx):
-        self.task.on_train_batch_start(self, batch, batch_idx, dataloader_idx)
 
     # training step logic is delegated to the task because the
     # model does not really need to know how it is being used.

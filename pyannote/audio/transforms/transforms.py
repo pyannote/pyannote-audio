@@ -15,8 +15,6 @@ class Reverb(BaseWaveformTransform):
         self.effects = [["reverb"] + params]
 
     def apply_transform(self, samples: Tensor, sample_rate: int):
-        if samples.dim() == 2:
-            samples = samples[None]
         return torch.stack([self.reverb(x) for x in samples])
 
     def reverb(self, waveform: Tensor):

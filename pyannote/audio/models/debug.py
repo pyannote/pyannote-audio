@@ -82,6 +82,7 @@ class SimpleSegmentationModel(Model):
         -------
         scores : (batch, time, classes)
         """
+        waveforms = self.waveform_transforms(waveforms)
         # extract MFCC
         mfcc = self.spec_transform(waveforms)
         # pass MFCC sequeence into the recurrent layer
@@ -126,6 +127,7 @@ class MultiTaskSegmentationModel(Model):
         self.activation = self.default_activation()
 
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
+        waveforms = self.waveform_transforms(waveforms)
         # extract MFCC
         mfcc = self.spec_transform(waveforms)
         # pass MFCC sequence into the recurrent layer
@@ -183,6 +185,7 @@ class SimpleEmbeddingModel(Model):
         -------
         embedding : (batch, dimension)
         """
+        waveforms = self.waveform_transforms(waveforms)
         mfcc = self.spec_transform(waveforms)
         output, hidden = self.lstm(rearrange(mfcc, "b c f t -> b t (c f)"))
         # mean temporal pooling
