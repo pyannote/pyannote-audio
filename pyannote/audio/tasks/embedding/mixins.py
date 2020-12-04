@@ -25,6 +25,7 @@ from itertools import chain
 from typing import Iterable
 
 from torch.nn import Parameter
+from tqdm import tqdm
 
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Problem, Scale, TaskSpecification
@@ -75,7 +76,9 @@ class SupervisedRepresentationLearningTaskMixin:
             # chunk duration, and keep track of the reference annotations, per class.
 
             self.train = dict()
-            for f in self.protocol.train():
+
+            desc = f"Loading {self.protocol.name} training labels"
+            for f in tqdm(iterable=self.protocol.train(), desc=desc, unit="file"):
 
                 for klass in f["annotation"].labels():
 
