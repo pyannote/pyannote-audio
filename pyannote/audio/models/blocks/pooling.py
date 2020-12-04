@@ -8,10 +8,10 @@
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-#
+
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-#
+
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -21,6 +21,25 @@
 # SOFTWARE.
 
 
-from .xvector import XVector
+import torch
+import torch.nn as nn
 
-__all__ = ["XVector"]
+
+class StatsPool(nn.Module):
+    """Statistics pooling
+
+    Returns the concatenated mean and standard deviation (over time)
+    """
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+
+        Parameters
+        ----------
+        x : (batch, channel, time) torch.Tensor
+
+        Returns
+        -------
+        output : (batch, 2 * channel) torch.Tensor
+        """
+        return torch.cat([x.mean(dim=2), x.std(dim=2)], dim=1)
