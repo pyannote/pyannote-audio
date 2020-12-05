@@ -24,13 +24,22 @@ import math
 from itertools import chain
 from typing import Iterable
 
+import numpy as np
+from pytorch_lightning import Callback, Trainer
 from torch.nn import Parameter
 from tqdm import tqdm
 
+from pyannote.audio.core.inference import Inference
 from pyannote.audio.core.model import Model
-from pyannote.audio.core.task import Problem, Scale, TaskSpecification
+from pyannote.audio.core.task import Problem, Scale, Task, TaskSpecification
 from pyannote.audio.utils.random import create_rng_for_worker
 from pyannote.core import Segment
+from pyannote.core.utils.distance import cdist, pdist
+from pyannote.database.protocol import (
+    SpeakerDiarizationProtocol,
+    SpeakerVerificationProtocol,
+)
+from pyannote.metrics.binary_classification import det_curve
 
 
 class SupervisedRepresentationLearningTaskMixin:
@@ -118,7 +127,6 @@ class SupervisedRepresentationLearningTaskMixin:
                 classes=sorted(self.train),
             )
 
-            #
             self.setup_loss_func()
 
     def train__iter__(self):
@@ -203,6 +211,9 @@ class SupervisedRepresentationLearningTaskMixin:
         )
         return {"loss": loss}
 
+    def parameters(self, model: Model) -> Iterable[Parameter]:
+        return chain(model.parameters(), self.loss_func.parameters())
+
     def val_dataloader(self):
         return None
 
@@ -210,5 +221,103 @@ class SupervisedRepresentationLearningTaskMixin:
     def val_monitor(self):
         return f"{self.ACRONYM}@train_loss_epoch", "min"
 
-    def parameters(self, model: Model) -> Iterable[Parameter]:
-        return chain(model.parameters(), self.loss_func.parameters())
+    def val_callback(self):
+        if isinstance(self.protocol, SpeakerVerificationProtocol):
+            return _SpeakerVerificationValidationCallback(self)
+
+        elif isinstance(self.protocol, SpeakerDiarizationProtocol):
+            return _SpeakerDiarizationValidationCallback(self)
+
+        return None
+
+
+class _SpeakerVerificationValidationCallback(Callback):
+    def __init__(self, task: Task):
+        super().__init__()
+        self.task = task
+
+    def on_epoch_end(self, trainer: Trainer, model: Model):
+
+        inference = Inference(model, window="whole")
+
+        y_true, y_pred = [], []
+        emb = dict()
+        # TODO: update tqdm desc
+        for trial in tqdm(self.task.protocol.development_trial()):
+            file1 = trial["file1"]
+            uri1 = file1["uri"]
+            file2 = trial["file2"]
+            uri2 = file2["uri"]
+            if uri1 not in emb:
+                emb[uri1] = inference(file1).reshape(1, -1)
+            if uri2 not in emb:
+                emb[uri2] = inference(file2).reshape(1, -1)
+            # TODO: make this "metric" thing an attribute
+            y_pred.append(cdist(emb[uri1], emb[uri2], metric="cosine").item())
+            y_true.append(trial["reference"])
+
+        y_true, y_pred = np.array(y_true), np.array(y_pred)
+
+        fpr, fnr, thresholds, eer = det_curve(y_true, y_pred, distances=True)
+
+        model.log(
+            f"{self.task.ACRONYM}@val_eer",
+            eer,
+            logger=True,
+            on_epoch=True,
+            prog_bar=True,
+        )
+
+        # TODO: log det curve
+
+        # set model back to "train" mode
+        model.train()
+
+    @property
+    def val_monitor(self):
+        return f"{self.task.ACRONYM}@val_eer", "min"
+
+
+class _SpeakerDiarizationValidationCallback(Callback):
+    def __init__(self, task: Task):
+        super().__init__()
+        self.task = task
+
+    def on_epoch_end(self, trainer: Trainer, model: Model):
+
+        inference = Inference(model, window="whole")
+
+        y_true, y_pred = [], []
+        for file in tqdm(self.task.protocol.development()):
+            X, y = zip(
+                *[
+                    (inference.crop(file, chunk), label)
+                    for chunk, _, label in file["annotation"].itertracks(
+                        yield_label=True
+                    )
+                ]
+            )
+
+            y_true.append(pdist(np.array(y), metric="equal"))
+            y_pred.append(pdist(np.stack(X), metric="cosine"))
+        y_true = np.concatenate(y_true)
+        y_pred = np.concatenate(y_pred)
+
+        fpr, fnr, thresholds, eer = det_curve(y_true, y_pred, distances=True)
+
+        model.log(
+            f"{self.task.ACRONYM}@val_eer",
+            eer,
+            logger=True,
+            on_epoch=True,
+            prog_bar=True,
+        )
+
+        # TODO: log det curve
+
+        # set model back to "train" mode
+        model.train()
+
+    @property
+    def val_monitor(self):
+        return f"{self.task.ACRONYM}@val_eer", "min"
