@@ -219,7 +219,7 @@ class SupervisedRepresentationLearningTaskMixin:
 
     @property
     def val_monitor(self):
-        return f"{self.ACRONYM}@train_loss_epoch", "min"
+        return f"{self.ACRONYM}@train_loss", "min"
 
     def val_callback(self):
         if isinstance(self.protocol, SpeakerVerificationProtocol):
