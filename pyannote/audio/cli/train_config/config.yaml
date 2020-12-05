@@ -1,0 +1,10 @@
+
+protocol: ???
+verbose: False
+
+defaults:
+  - task: vad
+  - model: debug
+  - optimizer: adam
+  - trainer: default
+  - hydra: train

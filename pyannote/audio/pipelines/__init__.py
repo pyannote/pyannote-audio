@@ -19,3 +19,14 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
+
+from .overlapped_speech_detection import OverlappedSpeechDetection
+from .speaker_diarization import SpeakerDiarization
+from .voice_activity_detection import VoiceActivityDetection
+
+# from .speaker_change_detection import SpeakerChangeDetection  #  not optimizable
+# from .speech_turn_assignment import SpeechTurnClosestAssignment  # not optimizable
+# from .speech_turn_clustering import SpeechTurnClustering  #  not optimizable
+# from .speech_turn_segmentation import SpeechTurnSegmentation  # not optimizable
+
+__all__ = ["VoiceActivityDetection", "OverlappedSpeechDetection", "SpeakerDiarization"]

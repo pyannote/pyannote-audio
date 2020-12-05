@@ -28,22 +28,23 @@ import warnings
 from dataclasses import dataclass
 from enum import Enum
 from functools import cached_property
-from typing import TYPE_CHECKING, List, Optional, Text, Tuple, Union
+from typing import TYPE_CHECKING, Callable, Iterable, List, Optional, Text, Union
 
-import numpy as np
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
-import torch.optim
+from torch.nn import Parameter
+from torch.optim import Adam, Optimizer
 from torch.utils.data import DataLoader, IterableDataset
 
-from pyannote.audio.core.io import AudioFile
 from pyannote.audio.data.data import DownloadableProtocol
-from pyannote.core import Segment, SlidingWindow
 from pyannote.database import Protocol
 
 if TYPE_CHECKING:
     from pyannote.audio.core.model import Model
+
+from torch.utils.data._utils.collate import default_collate
+from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 
 
 # Type of machine learning problem
@@ -86,6 +87,30 @@ class TaskSpecification:
         yield None, self
 
 
+class TrainDataset(IterableDataset):
+    def __init__(self, task: Task):
+        super().__init__()
+        self.task = task
+
+    def __iter__(self):
+        return self.task.train__iter__()
+
+    def __len__(self):
+        return self.task.train__len__()
+
+
+class ValDataset(IterableDataset):
+    def __init__(self, task: Task):
+        super().__init__()
+        self.task = task
+
+    def __iter__(self):
+        return self.task.val__iter__()
+
+    def __len__(self):
+        return self.task.val__len__()
+
+
 class Task(pl.LightningDataModule):
     """Base task class
 
@@ -107,13 +132,21 @@ class Task(pl.LightningDataModule):
     duration : float, optional
         Chunks duration. Defaults to variable duration (None).
     batch_size : int, optional
-        Number of training samples per batch.
+        Number of training samples per batch. Defaults to 32.
     num_workers : int, optional
         Number of workers used for generating training samples.
     pin_memory : bool, optional
         If True, data loaders will copy tensors into CUDA pinned
         memory before returning them. See pytorch documentation
         for more details. Defaults to False.
+    optimizer : callable, optional
+        Callable that takes model parameters as input and returns
+        an Optimizer instance. Defaults to `torch.optim.Adam`.
+    learning_rate : float, optional
+        Learning rate. Defaults to 1e-3.
+    augmentation : BaseWaveformTransform, optional
+        torch_audiomentations waveform transform, used by dataloader
+        during training.
 
     Attributes
     ----------
@@ -127,9 +160,12 @@ class Task(pl.LightningDataModule):
         self,
         protocol: Union[DownloadableProtocol, Protocol],
         duration: float = None,
-        batch_size: int = None,
+        batch_size: int = 32,
         num_workers: int = 1,
         pin_memory: bool = False,
+        optimizer: Callable[[Iterable[Parameter]], Optimizer] = None,
+        learning_rate: float = 1e-3,
+        augmentation: BaseWaveformTransform = None,
     ):
         super().__init__()
 
@@ -156,6 +192,13 @@ class Task(pl.LightningDataModule):
         self.num_workers = num_workers
 
         self.pin_memory = pin_memory
+
+        if optimizer is None:
+            optimizer = Adam
+        self.optimizer = optimizer
+        self.learning_rate = learning_rate
+
+        self.augmentation = augmentation
 
     def prepare_data(self):
         """Use this to download and prepare data
@@ -194,82 +237,13 @@ class Task(pl.LightningDataModule):
         """"Check whether multiple tasks are addressed at once"""
         return len(self.specifications) > 1
 
-    def prepare_chunk(
-        self,
-        file: AudioFile,
-        chunk: Segment,
-        duration: float = None,
-        return_y: bool = False,
-        labels: List[Text] = None,
-    ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray, List[Text]]]:
-        """Extract audio chunk and corresponding frame-wise labels
+    @property
+    def current_epoch(self) -> int:
+        return getattr(self, "current_epoch_", 0)
 
-        Parameters
-        ----------
-        file : AudioFile
-            Audio file.
-        chunk : Segment
-            Audio chunk.
-        duration : float, optional
-            Fix chunk duration to avoid rounding errors. Defaults to self.duration
-        return_y : bool, optional
-            Set to True to return frame-wise labels.
-        labels : list of str, optional
-            Ordered labels such that y[:, k] corresponds to activity of labels[k].
-            Defaults to file['annotation'].crop(chunk).labels()
-
-        Returns
-        -------
-        X : np.ndarray
-            Audio chunk as (num_samples, num_channels) array.
-        y : np.ndarray, optional
-            Frame-wise labels (if return_y is True) as (num_frames, num_labels) array.
-        labels : list of str, optional
-            Labels (if return_y is True), index-aligned with y.
-        """
-
-        X, _ = self.audio.crop(
-            file,
-            chunk,
-            mode="center",
-            fixed=self.duration if duration is None else duration,
-        )
-        if not return_y:
-            return X
-
-        if self.is_multi_task:
-            # this assumes that all tasks share the same model introspection.
-            # this is a reasonable assumption for now.
-            any_task = next(iter(self.model_introspection.keys()))
-            num_frames, _ = self.model_introspection[any_task](X.shape[0])
-        else:
-            num_frames, _ = self.model_introspection(X.shape[0])
-
-        annotation = file["annotation"].crop(chunk)
-        labels = annotation.labels() if labels is None else labels
-
-        y = np.zeros((num_frames, len(labels)), dtype=np.int8)
-        frames = SlidingWindow(
-            start=chunk.start,
-            duration=self.duration / num_frames,
-            step=self.duration / num_frames,
-        )
-        for label in annotation.labels():
-            try:
-                k = labels.index(label)
-            except ValueError:
-                raise ValueError(
-                    f"File {file['uri']} contains unexpected label '{label}'."
-                )
-
-            segments = annotation.label_timeline(label)
-            for start, stop in frames.crop(segments, mode="center", return_ranges=True):
-                y[start:stop, k] += 1
-
-        # handle corner case when the same label is active more than once
-        y = np.minimum(y, 1, out=y)
-
-        return X, y, labels
+    @current_epoch.setter
+    def current_epoch(self, current_epoch: int):
+        self.current_epoch_ = current_epoch
 
     def train__iter__(self):
         # will become train_dataset.__iter__ method
@@ -281,20 +255,22 @@ class Task(pl.LightningDataModule):
         msg = f"Missing '{self.__class__.__name__}.train__len__' method."
         raise NotImplementedError(msg)
 
-    def train_dataloader(self) -> DataLoader:
-        # build train IterableDataset subclass programmatically
-        dataset = type(
-            "TrainDataset",
-            (IterableDataset,),
-            {"__iter__": self.train__iter__, "__len__": self.train__len__},
-        )
+    def collate_fn(self, batch):
+        collated_batch = default_collate(batch)
+        if self.augmentation is not None:
+            collated_batch["X"] = self.augmentation(
+                collated_batch["X"], sample_rate=self.audio.sample_rate
+            )
+        return collated_batch
 
+    def train_dataloader(self) -> DataLoader:
         return DataLoader(
-            dataset(),
+            TrainDataset(self),
             batch_size=self.batch_size,
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
             drop_last=True,
+            collate_fn=self.collate_fn,
         )
 
     @cached_property
@@ -321,13 +297,15 @@ class Task(pl.LightningDataModule):
         return torch.randn(
             (
                 self.batch_size,
-                int(self.audio.sample_rate * self.example_input_duration),
                 num_channels,
+                int(self.audio.sample_rate * self.example_input_duration),
             )
         )
 
-    def helper_training_step(self, specifications: TaskSpecification, y, y_pred):
-        """Helper function for training_step"""
+    def default_loss(
+        self, specifications: TaskSpecification, y, y_pred
+    ) -> torch.Tensor:
+        """Guess and compute default loss according to task specification"""
 
         if specifications.problem == Problem.BINARY_CLASSIFICATION:
             loss = F.binary_cross_entropy(y_pred.squeeze(dim=-1), y.float())
@@ -347,7 +325,7 @@ class Task(pl.LightningDataModule):
     # default training_step provided for convenience
     # can obviously be overriden for each task
     def training_step(self, model: Model, batch, batch_idx: int):
-        """Guess default training_step according to task specification
+        """Default training_step according to task specification
 
             * binary cross-entropy loss for binary or multi-label classification
             * negative log-likelihood loss for regular classification
@@ -375,7 +353,7 @@ class Task(pl.LightningDataModule):
         if self.is_multi_task:
             loss = dict()
             for task_name, specifications in self.specifications.items():
-                loss[task_name] = self.helper_training_step(
+                loss[task_name] = self.default_loss(
                     specifications, y[task_name], y_pred[task_name]
                 )
                 model.log(f"{task_name}_train_loss", loss[task_name])
@@ -384,13 +362,102 @@ class Task(pl.LightningDataModule):
             model.log("train_loss", loss["loss"])
             return loss
 
-        loss = self.helper_training_step(self.specifications, y, y_pred)
+        loss = self.default_loss(self.specifications, y, y_pred)
         model.log("train_loss", loss)
         return {"loss": loss}
+
+    def val__iter__(self):
+        # will become val_dataset.__iter__ method
+        msg = f"Missing '{self.__class__.__name__}.val__iter__' method."
+        raise NotImplementedError(msg)
+
+    def val__len__(self):
+        # will become val_dataset.__len__ method
+        msg = f"Missing '{self.__class__.__name__}.val__len__' method."
+        raise NotImplementedError(msg)
+
+    def val_dataloader(self) -> DataLoader:
+        return DataLoader(
+            ValDataset(self),
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            pin_memory=self.pin_memory,
+            drop_last=False,
+        )
+
+    # default validation_step provided for convenience
+    # can obviously be overriden for each task
+    def validation_step(self, model: Model, batch, batch_idx: int):
+        """Guess default validation_step according to task specification
+
+            * binary cross-entropy loss for binary or multi-label classification
+            * negative log-likelihood loss for regular classification
+
+        In case of multi-tasking, it will default to summing loss of each task.
+
+        Parameters
+        ----------
+        model : Model
+            Model currently being validated.
+        batch : (usually) dict of torch.Tensor
+            Current batch.
+        batch_idx: int
+            Batch index.
+
+        Returns
+        -------
+        loss : {str: torch.tensor}
+            {"loss": loss} with additional "loss_{task_name}" keys for multi-task models.
+        """
+
+        X, y = batch["X"], batch["y"]
+        y_pred = model(X)
+
+        if self.is_multi_task:
+            loss = dict()
+            for task_name, specifications in self.specifications.items():
+                loss[task_name] = self.default_loss(
+                    specifications, y[task_name], y_pred[task_name]
+                )
+                model.log(f"{task_name}_val_loss", loss[task_name])
+
+            loss["loss"] = sum(loss.values())
+            model.log("val_loss", loss["loss"])
+            return loss
+
+        loss = self.default_loss(self.specifications, y, y_pred)
+        model.log("val_loss", loss)
+        return {"loss": loss}
+
+    def parameters(self, model: Model) -> Iterable[Parameter]:
+        return model.parameters()
 
     # default configure_optimizers provided for convenience
     # can obviously be overriden for each task
     def configure_optimizers(self, model: Model):
-        # for tasks such as SpeakerEmbedding,
-        # other parameters should be added here
-        return torch.optim.Adam(model.parameters(), lr=1e-3)
+        # this is needed to support pytorch-lightning auto_lr_find feature
+        # as it modifies model.hparams.learning_rate and not task.learning_rate.
+        # in case one does not use auto_lr_find, Model.setup() takes care of
+        # setting model.hparams.learning_rate to task.learning_rate so we are safe.
+        lr = model.hparams.learning_rate
+        return self.optimizer(self.parameters(model), lr=lr)
+
+    @property
+    def validation_monitor(self):
+        """Quantity (and direction) to monitor
+
+        Useful for model checkpointing or early stopping.
+
+        Returns
+        -------
+        monitor : str
+            Name of quantity to monitor.
+        mode : {'min', 'max}
+            Minimize
+
+        See also
+        --------
+        pytorch_lightning.callbacks.ModelCheckpoint
+        pytorch_lightning.callbacks.EarlyStopping
+        """
+        return "val_loss", "min"

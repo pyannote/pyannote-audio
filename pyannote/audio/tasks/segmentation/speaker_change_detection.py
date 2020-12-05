@@ -20,18 +20,20 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import math
+from typing import Callable, Iterable
 
 import numpy as np
 import scipy.signal
+from torch.nn import Parameter
+from torch.optim import Optimizer
+from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 
 from pyannote.audio.core.task import Problem, Scale, Task, TaskSpecification
-from pyannote.audio.utils.random import create_rng_for_worker
-from pyannote.core import Segment
+from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
 from pyannote.database import Protocol
 
 
-class SpeakerChangeDetection(Task):
+class SpeakerChangeDetection(SegmentationTaskMixin, Task):
     """Speaker change detection
 
     Speaker change detection is the task of detecting speaker change points
@@ -53,13 +55,21 @@ class SpeakerChangeDetection(Task):
         Mark frames less than `collar` frames away from actual change point as positive.
         Defaults to 1.
     batch_size : int, optional
-        Number of training samples per batch.
+        Number of training samples per batch. Defaults to 32.
     num_workers : int, optional
         Number of workers used for generating training samples.
     pin_memory : bool, optional
         If True, data loaders will copy tensors into CUDA pinned
         memory before returning them. See pytorch documentation
         for more details. Defaults to False.
+    optimizer : callable, optional
+        Callable that takes model parameters as input and returns
+        an Optimizer instance. Defaults to `torch.optim.Adam`.
+    learning_rate : float, optional
+        Learning rate. Defaults to 1e-3.
+    augmentation : BaseWaveformTransform, optional
+        torch_audiomentations waveform transform, used by dataloader
+        during training.
     """
 
     def __init__(
@@ -67,9 +77,12 @@ class SpeakerChangeDetection(Task):
         protocol: Protocol,
         duration: float = 2.0,
         collar: int = 1,
-        batch_size: int = None,
+        batch_size: int = 32,
         num_workers: int = 1,
         pin_memory: bool = False,
+        optimizer: Callable[[Iterable[Parameter]], Optimizer] = None,
+        learning_rate: float = 1e-3,
+        augmentation: BaseWaveformTransform = None,
     ):
 
         super().__init__(
@@ -78,6 +91,9 @@ class SpeakerChangeDetection(Task):
             batch_size=batch_size,
             num_workers=num_workers,
             pin_memory=pin_memory,
+            optimizer=optimizer,
+            learning_rate=learning_rate,
+            augmentation=augmentation,
         )
 
         self.specifications = TaskSpecification(
@@ -90,27 +106,6 @@ class SpeakerChangeDetection(Task):
         )
 
         self.collar = collar
-
-    def setup(self, stage=None):
-        if stage == "fit":
-            # loop over the training set, remove annotated regions shorter than
-            # chunk duration, and keep track of the reference annotations.
-            self.train = []
-            for f in self.protocol.train():
-                segments = [
-                    segment
-                    for segment in f["annotated"]
-                    if segment.duration > self.duration
-                ]
-                duration = sum(segment.duration for segment in segments)
-                self.train.append(
-                    {
-                        "annotated": segments,
-                        "annotation": f["annotation"],
-                        "duration": duration,
-                        "audio": f["audio"],
-                    }
-                )
 
     def prepare_y(self, one_hot_y: np.ndarray, collar: int = None):
         """Get speaker change detection targets
@@ -172,55 +167,3 @@ class SpeakerChangeDetection(Task):
         y *= x_speakers
 
         return np.squeeze(y)
-
-    def train__iter__(self):
-        """Iterate over training samples
-
-        Yields
-        ------
-        X: (time, channel)
-            Audio chunks.
-        y: (frame, )
-            Frame-level targets. Note that frame < time.
-            `frame` is infered automagically from the
-            example model output.
-        """
-
-        # create worker-specific random number generator
-        rng = create_rng_for_worker()
-
-        while True:
-
-            # select one file at random (with probability proportional to its annotated duration)
-            file, *_ = rng.choices(
-                self.train,
-                weights=[f["duration"] for f in self.train],
-                k=1,
-            )
-
-            # select one annotated region at random (with probability proportional to its duration)
-            segment, *_ = rng.choices(
-                file["annotated"],
-                weights=[s.duration for s in file["annotated"]],
-                k=1,
-            )
-
-            # select one chunk at random (with uniform distribution)
-            start_time = rng.uniform(segment.start, segment.end - self.duration)
-            chunk = Segment(start_time, start_time + self.duration)
-
-            X, one_hot_y, _ = self.prepare_chunk(
-                file,
-                chunk,
-                duration=self.duration,
-                return_y=True,
-            )
-
-            y = self.prepare_y(one_hot_y, collar=self.collar)
-
-            yield {"X": X, "y": y}
-
-    def train__len__(self):
-        # Number of training samples in one epoch
-        duration = sum(file["duration"] for file in self.train)
-        return math.ceil(duration / self.duration)

@@ -136,6 +136,11 @@ class Model(pl.LightningModule):
         # (e.g. the final classification and activation layers)
         pass
 
+    #  used by Tensorboard logger to log model graph
+    @cached_property
+    def example_input_array(self) -> torch.Tensor:
+        return self.task.example_input_array
+
     def helper_introspect(
         self,
         specifications: TaskSpecification,
@@ -154,11 +159,10 @@ class Model(pl.LightningModule):
         introspection : ModelIntrospection
             Model introspection.
         """
-
         example_input_array = self.task.example_input_array
-        batch_size, num_samples, num_channels = example_input_array.shape
+        batch_size, num_channels, num_samples = example_input_array.shape
         example_input_array = torch.randn(
-            (1, num_samples, num_channels),
+            (1, num_channels, num_samples),
             dtype=example_input_array.dtype,
             layout=example_input_array.layout,
             device=example_input_array.device,
@@ -166,12 +170,12 @@ class Model(pl.LightningModule):
         )
 
         # dichotomic search of "min_num_samples"
-        lower, upper = 1, num_samples
+        lower, upper, min_num_samples = 1, num_samples, None
         while True:
             num_samples = (lower + upper) // 2
             try:
                 with torch.no_grad():
-                    frames = self(example_input_array[:, :num_samples])
+                    frames = self(example_input_array[:, :, :num_samples])
                 if task is not None:
                     frames = frames[task]
             except Exception:
@@ -190,6 +194,14 @@ class Model(pl.LightningModule):
             if lower + 1 == upper:
                 break
 
+        # if "min_num_samples" is still None at this point, it means that
+        # the forward pass always failed and raised an exception. most likely,
+        # it means that there is a problem with the model definition.
+        # we try again without catching the exception to help the end user debug
+        # their model
+        if min_num_samples is None:
+            frames = self(example_input_array)
+
         # corner case for chunk-scale tasks
         if specifications.scale == Scale.CHUNK:
             return ModelIntrospection(
@@ -204,7 +216,7 @@ class Model(pl.LightningModule):
         while True:
             num_samples = 2 * min_num_samples
             example_input_array = torch.randn(
-                (1, num_samples, num_channels),
+                (1, num_channels, num_samples),
                 dtype=example_input_array.dtype,
                 layout=example_input_array.layout,
                 device=example_input_array.device,
@@ -214,7 +226,7 @@ class Model(pl.LightningModule):
                 frames = self(example_input_array)
             if task is not None:
                 frames = frames[task]
-            _, num_frames, _ = frames.shape
+            num_frames = frames.shape[1]
             if num_frames > min_num_frames:
                 break
 
@@ -223,7 +235,7 @@ class Model(pl.LightningModule):
         while True:
             num_samples = (lower + upper) // 2
             example_input_array = torch.randn(
-                (1, num_samples, num_channels),
+                (1, num_channels, num_samples),
                 dtype=example_input_array.dtype,
                 layout=example_input_array.layout,
                 device=example_input_array.device,
@@ -233,7 +245,7 @@ class Model(pl.LightningModule):
                 frames = self(example_input_array)
             if task is not None:
                 frames = frames[task]
-            _, num_frames, _ = frames.shape
+            num_frames = frames.shape[1]
             if num_frames > min_num_frames:
                 inc_num_frames = num_frames - min_num_frames
                 inc_num_samples = num_samples - min_num_samples
@@ -291,6 +303,10 @@ class Model(pl.LightningModule):
             # let task know about model introspection
             # so that its dataloader knows how to generate targets
             self.task.model_introspection = self.hparams.model_introspection
+
+            # this is needed to support pytorch-lightning auto_lr_find feature
+            # as it expects to find a "learning_rate" entry in model.hparams
+            self.hparams.learning_rate = self.task.learning_rate
 
     def on_save_checkpoint(self, checkpoint):
 
@@ -405,10 +421,18 @@ class Model(pl.LightningModule):
 
         return self.helper_default_activation(task_specifications)
 
+    def on_epoch_start(self):
+        self.task.current_epoch = self.current_epoch
+
     # training step logic is delegated to the task because the
     # model does not really need to know how it is being used.
     def training_step(self, batch, batch_idx):
         return self.task.training_step(self, batch, batch_idx)
+
+    # validation step logic is delegated to the task because the
+    # model does not really need to know how it is being used.
+    def validation_step(self, batch, batch_idx):
+        return self.task.validation_step(self, batch, batch_idx)
 
     # optimizer is delegated to the task for the same reason as above
     def configure_optimizers(self):

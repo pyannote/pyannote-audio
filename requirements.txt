@@ -1,11 +1,14 @@
 einops >= 0.3.0
+hydra-core >= 1.0.4
 librosa >= 0.8
 pyannote.core >= 4.1
-pyannote.database >= 4.0.1
+pyannote.database >= 4.0.3
+pyannote.metrics >= 3.0.1
+pyannote.pipeline >= 1.5.2
 pytorch_lightning >= 1.0.0
 pytorch_metric_learning >= 0.9.93
 semver >= 2.10.2
 soundfile >= 0.10.2
 torch >= 1.6
-torch-audiomentations >= 0.2
+torch-audiomentations >= 0.4
 torchaudio >= 0.6
