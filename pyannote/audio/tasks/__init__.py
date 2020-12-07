@@ -28,6 +28,7 @@ from .segmentation.overlapped_speech_detection import (  # isort:skip
 from .segmentation.multi_task_segmentation import MultiTaskSegmentation  # isort:skip
 
 from .segmentation.speaker_tracking import SpeakerTracking  # isort:skip
+from .segmentation.diarization import Diarization  # isort:skip
 
 from .embedding.arcface import SupervisedRepresentationLearningWithArcFace  # isort:skip
 
@@ -40,4 +41,5 @@ __all__ = [
     "MultiTaskSegmentation",
     "SpeakerTracking",
     "SpeakerEmbedding",
+    "Diarization",
 ]
