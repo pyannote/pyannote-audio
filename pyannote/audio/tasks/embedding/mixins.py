@@ -145,6 +145,9 @@ class SupervisedRepresentationLearningTaskMixin:
 
         classes = list(self.specifications.classes)
 
+        batch_duration = rng.uniform(self.min_duration, self.duration)
+        num_samples = 0
+
         while True:
 
             # shuffle classes so that we don't always have the same
@@ -177,24 +180,30 @@ class SupervisedRepresentationLearningTaskMixin:
 
                     # select one chunk at random (with uniform distribution)
                     start_time = rng.uniform(
-                        speech_turn.start, speech_turn.end - self.duration
+                        speech_turn.start, speech_turn.end - batch_duration
                     )
-                    chunk = Segment(start_time, start_time + self.duration)
+                    chunk = Segment(start_time, start_time + batch_duration)
 
                     X, _ = self.audio.crop(
                         file,
                         chunk,
                         mode="center",
-                        fixed=self.duration,
+                        fixed=batch_duration,
                     )
 
                     yield {"X": X, "y": y}
+
+                    num_samples += 1
+                    if num_samples == self.batch_size:
+                        batch_duration = rng.uniform(self.min_duration, self.duration)
+                        num_samples = 0
 
     def train__len__(self):
         duration = sum(
             datum["duration"] for data in self.train.values() for datum in data
         )
-        return math.ceil(duration / self.duration)
+        avg_chunk_duration = 0.5 * (self.min_duration + self.duration)
+        return math.ceil(duration / avg_chunk_duration)
 
     def training_step(self, model: "Model", batch, batch_idx: int):
 

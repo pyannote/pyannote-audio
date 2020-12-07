@@ -49,7 +49,10 @@ class SupervisedRepresentationLearningWithArcFace(
     protocol : Protocol
         pyannote.database protocol
     duration : float, optional
-        Chunks duration. Defaults to 2s.
+        Chunks duration in seconds. Defaults to two seconds (2.).
+    min_duration : float, optional
+        Sample training chunks duration uniformely between `min_duration`
+        and `duration`. Defaults to `duration` (i.e. fixed length chunks).
     num_classes_per_batch : int, optional
         Number of classes per batch. Defaults to 32.
     num_chunks_per_class : int, optional
@@ -83,6 +86,7 @@ class SupervisedRepresentationLearningWithArcFace(
     def __init__(
         self,
         protocol: Protocol,
+        min_duration: float = None,
         duration: float = 2.0,
         num_classes_per_batch: int = 32,
         num_chunks_per_class: int = 1,
@@ -104,6 +108,7 @@ class SupervisedRepresentationLearningWithArcFace(
         super().__init__(
             protocol,
             duration=duration,
+            min_duration=min_duration,
             batch_size=self.batch_size,
             num_workers=num_workers,
             pin_memory=pin_memory,
@@ -113,6 +118,9 @@ class SupervisedRepresentationLearningWithArcFace(
         )
 
     def setup_loss_func(self):
+
+        # TODO: add it to the model
+        # TODO: check that ArcFaceLoss parameters are duplicated in DDP
 
         # use example_output_array to guess embedding size
         _, embedding_size = self.example_output_array.shape
