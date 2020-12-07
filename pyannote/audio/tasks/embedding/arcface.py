@@ -30,6 +30,7 @@ from torch.nn import Parameter
 from torch.optim import Optimizer
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 
+from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
 from pyannote.database import Protocol
 
@@ -117,15 +118,11 @@ class SupervisedRepresentationLearningWithArcFace(
             augmentation=augmentation,
         )
 
-    def setup_loss_func(self):
+    def setup_loss_func(self, model: Model):
 
-        # TODO: add it to the model
-        # TODO: check that ArcFaceLoss parameters are duplicated in DDP
+        _, embedding_size = model(self.example_input_array).shape
 
-        # use example_output_array to guess embedding size
-        _, embedding_size = self.example_output_array.shape
-
-        self.loss_func = pytorch_metric_learning.losses.ArcFaceLoss(
+        model.loss_func = pytorch_metric_learning.losses.ArcFaceLoss(
             len(self.specifications.classes),
             embedding_size,
             margin=self.margin,

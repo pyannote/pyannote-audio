@@ -21,12 +21,9 @@
 # SOFTWARE.
 
 import math
-from itertools import chain
-from typing import Iterable
 
 import numpy as np
 from pytorch_lightning import Callback, Trainer
-from torch.nn import Parameter
 from tqdm import tqdm
 
 from pyannote.audio.core.inference import Inference
@@ -127,8 +124,6 @@ class SupervisedRepresentationLearningTaskMixin:
                 classes=sorted(self.train),
             )
 
-            self.setup_loss_func()
-
     def train__iter__(self):
         """Iterate over training samples
 
@@ -208,7 +203,7 @@ class SupervisedRepresentationLearningTaskMixin:
     def training_step(self, model: "Model", batch, batch_idx: int):
 
         X, y = batch["X"], batch["y"]
-        loss = self.loss_func(model(X), y)
+        loss = model.loss_func(model(X), y)
 
         model.log(
             f"{self.ACRONYM}@train_loss",
@@ -219,9 +214,6 @@ class SupervisedRepresentationLearningTaskMixin:
             logger=True,
         )
         return {"loss": loss}
-
-    def parameters(self, model: Model) -> Iterable[Parameter]:
-        return chain(model.parameters(), self.loss_func.parameters())
 
     def val_dataloader(self):
         return None

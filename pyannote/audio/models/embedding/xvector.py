@@ -74,18 +74,6 @@ class XVector(Model):
         self.segment6 = nn.Linear(3000, 512)
         self.segment7 = nn.Linear(512, 512)
 
-        # this is needed because example_output_array is needed in SpeakerEmbedding.setup
-        # to automagically infer the embedding size. but example_output_array is computed
-        # in Model.setup (which is called **after** Task.setup).
-
-        # note that this is only a problem for embedding tasks.
-        # we should find a way to automate this call so that the
-        # end user does not forget to call it. note that this must
-        # be called at the end of __init__
-
-        if self.task is not None:
-            self.task.example_output_array = self.forward(self.task.example_input_array)
-
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
         """
 

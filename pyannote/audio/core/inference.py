@@ -41,6 +41,8 @@ TaskName = Union[Text, None]
 class Inference:
     """Inference
 
+    TODO: add support for model averaging (either at output or weight level)
+
     Parameters
     ----------
     model : Model
@@ -72,7 +74,9 @@ class Inference:
     ):
 
         self.model = (
-            model if isinstance(model, Model) else load_from_checkpoint(Path(model))
+            model
+            if isinstance(model, Model)
+            else load_from_checkpoint(Path(model), strict=False)
         )
 
         if window not in ["sliding", "whole"]:

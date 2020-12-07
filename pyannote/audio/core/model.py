@@ -309,6 +309,10 @@ class Model(pl.LightningModule):
             # as it expects to find a "learning_rate" entry in model.hparams
             self.hparams.learning_rate = self.task.learning_rate
 
+            # some tasks use loss functions with learnable parameters
+            # setup_loss_func will take care of adding them to the model
+            self.task.setup_loss_func(self)
+
     def on_save_checkpoint(self, checkpoint):
 
         #  put everything pyannote.audio-specific under pyannote.audio
