@@ -28,6 +28,7 @@ from .segmentation.overlapped_speech_detection import (  # isort:skip
 from .segmentation.multi_task_segmentation import MultiTaskSegmentation  # isort:skip
 
 from .segmentation.speaker_tracking import SpeakerTracking  # isort:skip
+from .segmentation.diarization import Diarization  # isort:skip
 
 
 __all__ = [
@@ -36,4 +37,5 @@ __all__ = [
     "OverlappedSpeechDetection",
     "MultiTaskSegmentation",
     "SpeakerTracking",
+    "Diarization",
 ]
