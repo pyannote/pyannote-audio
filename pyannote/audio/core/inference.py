@@ -29,6 +29,7 @@ import numpy as np
 import torch
 from einops import rearrange
 from pytorch_lightning.utilities.memory import is_oom_error
+from scipy.optimize import linear_sum_assignment
 
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import Model, ModelIntrospection, load_from_checkpoint
@@ -248,7 +249,8 @@ class Inference:
         num_chunks, _, _ = chunks.shape
 
         # prepare last (right-aligned) audio chunk
-        if (num_samples - window_size) % step_size > 0:
+        last_step_size = (num_samples - window_size) % step_size
+        if last_step_size > 0:
             last_start = num_samples - window_size
             last_chunk: torch.Tensor = waveform[:, last_start:]
             has_last_chunk = True
@@ -310,18 +312,37 @@ class Inference:
             )
 
             # loop on the outputs of sliding chunks
+            if task_specifications.permutation_invariant:
+                previous_output = None
+
             for c, output in enumerate(outputs[task_name]):
                 start_sample = c * step_size
                 start_frame, _ = model_introspection(start_sample)
+
+                if task_specifications.permutation_invariant:
+                    if c > 0:
+                        output = self.permutate(previous_output, output, step_size)
+                    previous_output = output
+
                 aggregated_output[start_frame : start_frame + num_frames_per_chunk] += (
                     output * kaiser
                 )
+
                 overlapping_chunk_count[
                     start_frame : start_frame + num_frames_per_chunk
                 ] += kaiser
 
             # process last (right-aligned) chunk separately
             if has_last_chunk:
+
+                if (
+                    previous_output is not None
+                    and task_specifications.permutation_invariant
+                ):
+                    last_output[task_name] = self.permutate(
+                        previous_output, last_output[task_name], last_step_size
+                    )
+
                 aggregated_output[-num_frames_per_chunk:] += (
                     last_output[task_name] * kaiser
                 )
@@ -340,6 +361,38 @@ class Inference:
         if self.is_multi_task:
             return results
         return results[None]
+
+    def permutate(
+        self, output: np.ndarray, next_output: np.ndarray, step_size: int
+    ) -> np.ndarray:
+        """Find correlation-maximizing permutation between two consecutive outputs
+
+        Parameters
+        ----------
+        output : (num_frames, num_classes) np.ndarray
+            Output
+        next_output : (num_frames, num_classes) np.ndarray
+            Next output
+        step_size : int
+            Step between output and next_output. Should be smaller than num_frames.
+
+        Returns
+        -------
+        perm_output : (num_frames, num_classes) np.ndarray
+            Permutated next_output.
+        """
+
+        # focus on intersection only
+        _output = output[step_size:]
+        _next_output = next_output[:-step_size]
+
+        # TODO / consider other correlation metrics
+        _output = _output - _output.mean(axis=0, keepdims=True)
+        _next_output = _next_output - _next_output.mean(axis=0, keepdims=True)
+        correlation = _output.T @ _next_output
+
+        mapping = linear_sum_assignment(correlation, maximize=True)[1]
+        return next_output[:, mapping]
 
     def __call__(
         self, file: AudioFile
