@@ -10,5 +10,5 @@ pytorch_metric_learning >= 0.9.93
 semver >= 2.10.2
 soundfile >= 0.10.2
 torch >= 1.6
-torch_audiomentations @ git+http://github.com/asteroid-team/torch-audiomentations.git@master#egg=torch_audiomentations
+torch_audiomentations >= 0.5.0
 torchaudio >= 0.6
