@@ -336,8 +336,8 @@ class Inference:
             if has_last_chunk:
 
                 if (
-                    previous_output is not None
-                    and task_specifications.permutation_invariant
+                    task_specifications.permutation_invariant
+                    and previous_output is not None
                 ):
                     last_output[task_name] = self.permutate(
                         previous_output, last_output[task_name], last_step_size
