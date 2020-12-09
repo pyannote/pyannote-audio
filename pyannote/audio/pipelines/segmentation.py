@@ -72,7 +72,7 @@ class Segmentation(Pipeline):
 
     """
 
-    def __init__(self, scores: Union[Inference, Text] = "seg", fscore: bool = False):
+    def __init__(self, scores: Union[Inference, Text] = "seg"):
         super().__init__()
 
         self.scores = scores
@@ -125,7 +125,7 @@ class Segmentation(Pipeline):
             speaker_probability = SlidingWindowFeature(
                 data.reshape(-1, 1), sliding_window
             )
-            for speaker_turn in self._binary(speaker_probability):
+            for speaker_turn in self._binarize(speaker_probability):
                 segmentation[speaker_turn, i] = i
 
         return segmentation.relabel_tracks(generator="string")
