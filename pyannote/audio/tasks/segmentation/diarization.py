@@ -130,6 +130,7 @@ class Diarization(SegmentationTaskMixin, Task):
             scale=Scale.FRAME,
             duration=self.duration,
             classes=[f"speaker#{i+1}" for i in range(self.num_speakers)],
+            permutation_invariant=True,
         )
 
     def setup(self, stage=None):

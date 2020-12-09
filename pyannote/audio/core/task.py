@@ -76,6 +76,9 @@ class TaskSpecification:
     # (for classification tasks only) list of classes
     classes: Optional[List[Text]] = None
 
+    # whether classes are permutation-invariant (e.g. diarization)
+    permutation_invariant: bool = False
+
     def __len__(self):
         # makes it possible to do something like:
         # multi_task = len(task_specifications) > 1
