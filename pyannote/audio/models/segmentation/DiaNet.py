@@ -146,12 +146,14 @@ class DiaNet(Model):
 
         outputs = self.sincnet(waveforms)
 
-        outputs = F.leaky_relu(self.to_transformer(outputs))
+        outputs = F.leaky_relu(
+            self.to_transformer(
+                rearrange(outputs, "batch feature frame -> frame batch feature")
+            )
+        )
 
         outputs = rearrange(
-            self.transformer_encoder(
-                rearrange(outputs, "batch feature frame -> frame batch feature")
-            ),
+            self.transformer_encoder(outputs),
             "frame batch feature -> batch frame feature",
         )
 
