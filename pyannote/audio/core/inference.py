@@ -295,6 +295,9 @@ class Inference:
             _, model_introspection = self.model_introspection[t]
             num_frames, dimension = model_introspection(num_samples)
             num_frames_per_chunk, _ = model_introspection(window_size)
+            num_frames_per_step, _ = model_introspection(step_size)
+            if has_last_chunk:
+                num_frames_last_step, _ = model_introspection(last_step_size)
 
             # kaiser window used for overlap-add aggregation
             kaiser = np.kaiser(num_frames_per_chunk, 14.0).reshape(-1, 1)
@@ -321,7 +324,9 @@ class Inference:
 
                 if task_specifications.permutation_invariant:
                     if c > 0:
-                        output = self.permutate(previous_output, output, step_size)
+                        output = self.permutate(
+                            previous_output, output, num_frames_per_step
+                        )
                     previous_output = output
 
                 aggregated_output[start_frame : start_frame + num_frames_per_chunk] += (
@@ -340,7 +345,7 @@ class Inference:
                     and previous_output is not None
                 ):
                     last_output[task_name] = self.permutate(
-                        previous_output, last_output[task_name], last_step_size
+                        previous_output, last_output[task_name], num_frames_last_step
                     )
 
                 aggregated_output[-num_frames_per_chunk:] += (
