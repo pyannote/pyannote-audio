@@ -119,7 +119,8 @@ class Segmentation(Pipeline):
 
         sliding_window = speakers_probability.sliding_window
 
-        segmentation = Annotation(modality="speech")
+        uri = file.get("uri", None)
+        segmentation = Annotation(uri=uri, modality="speech")
 
         for i, data in enumerate(speakers_probability.data.T):
             speaker_probability = SlidingWindowFeature(
