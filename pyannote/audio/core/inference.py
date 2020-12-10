@@ -381,13 +381,32 @@ class Inference:
         -------
         perm_output : (num_frames, num_classes) np.ndarray
             Permutated next_output.
+
+
+         output (and its middle)
+        [----------------------------------|----------------------------------]
+                                           |
+        num_frames/2 frames used
+        for comparing output and [ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ]
+        next_output
+                                                           |
+                                                           |
+        ~ ~ ~ ~ ~ ~ ~ > [----------------------------------|----------------------------------]
+        step_size        next_output (and its middle)
+
         """
 
         num_frames, _ = output.shape
 
-        # focus on intersection only
-        _output = output[step_size:]
-        _next_output = next_output[: num_frames - step_size]
+        # # focus on intersection only
+        # _output = output[step_size:]
+        # _next_output = next_output[: num_frames - step_size]
+
+        # focus on half-intersection
+        start = step_size // 2 + num_frames // 4
+        _output = output[start : start + num_frames // 2]
+        start -= step_size
+        _next_output = next_output[start : start + num_frames // 2]
 
         # TODO / consider other correlation metrics
         _output = _output - _output.mean(axis=0, keepdims=True)
