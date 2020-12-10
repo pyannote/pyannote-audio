@@ -387,9 +387,11 @@ class Inference:
             Permutated next_output.
         """
 
+        num_frames, _ = output.shape
+
         # focus on intersection only
         _output = output[step_size:]
-        _next_output = next_output[:-step_size]
+        _next_output = next_output[: num_frames - step_size]
 
         # TODO / consider other correlation metrics
         _output = _output - _output.mean(axis=0, keepdims=True)
