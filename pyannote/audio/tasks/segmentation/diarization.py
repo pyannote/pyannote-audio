@@ -279,20 +279,25 @@ class Diarization(SegmentationTaskMixin, Task):
             yield {"X": X, "y": self.prepare_y(combined_y)}
 
     def permutate(self, y: torch.Tensor, y_pred: torch.Tensor) -> torch.Tensor:
+        """Find permutation that minimizes average pairwise mean squared error"""
+
+        # TODO use Asteroid's PIT wrapper
 
         batch_size, num_samples, num_speakers = y_pred.shape
 
-        cooccurrence = torch.einsum("bts,btz->bsz", y.float(), y_pred) / num_samples
+        cost = np.zeros((num_speakers, num_speakers))
+        mapping = []
+        for b in range(batch_size):
+            for r in range(num_speakers):
+                for h in range(num_speakers):
+                    cost[r, h] = (
+                        F.mse_loss(y[b, :, r], y_pred[b, :, h], reduction="mean")
+                        .detach()
+                        .cpu()
+                    )
+            mapping.append(linear_sum_assignment(cost, maximize=False)[1])
 
-        mapping = torch.tensor(
-            [
-                linear_sum_assignment(c, maximize=True)[1]
-                for c in cooccurrence.detach().cpu()
-            ]
-        )
-
-        # TODO: use torch.gather instead
-        return torch.stack([y_pred[i, :, mapping[i]] for i in range(batch_size)])
+        return torch.stack([y_pred[b, :, mapping[b]] for b in range(batch_size)])
 
     def training_step(self, model: Model, batch, batch_idx: int):
         """Compute permutation-invariant binary cross-entropy
@@ -315,6 +320,7 @@ class Diarization(SegmentationTaskMixin, Task):
         X, y = batch["X"], batch["y"]
         y_pred = self.permutate(y, model(X))
 
+        # TODO: try mean squared error
         loss = F.binary_cross_entropy(y_pred, y.float())
 
         model.log(
