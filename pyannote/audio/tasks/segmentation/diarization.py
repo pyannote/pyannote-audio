@@ -59,6 +59,9 @@ class Diarization(SegmentationTaskMixin, Task):
         pyannote.database protocol
     duration : float, optional
         Chunks duration. Defaults to 2s.
+    num_speakers : int, optional
+        Maximum number of speakers per chunk. Defaults to 4. Note that one should account
+        for artificial chunks (see below) when setting this number.
     augmentation_probability : float, optional
         Probability of artificial overlapping chunks. A probability of 0.6 means that,
         on average, 40% of training chunks are "real" chunks, while 60% are artifical
