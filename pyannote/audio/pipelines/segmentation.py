@@ -27,7 +27,7 @@ from typing import Text, Union
 from pyannote.audio.core.inference import Inference
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.utils.signal import Binarize
-from pyannote.core import Annotation, SlidingWindowFeature, Timeline
+from pyannote.core import Annotation, Segment, SlidingWindowFeature, Timeline
 from pyannote.metrics.diarization import GreedyDiarizationErrorRate
 from pyannote.pipeline import Pipeline
 from pyannote.pipeline.parameter import Uniform
@@ -67,9 +67,14 @@ class Segmentation(Pipeline):
     ----------------
     onset, offset : float
         Onset/offset detection thresholds
-    min_duration_on, min_duration_off : float
-        Minimum duration in either state (speech or not)
-
+    min_duration_on : float
+        Remove speaker turn shorter than that many seconds.
+    min_duration_off : float
+        Fill same-speaker gaps shorter than that many seconds.
+    last_active_patience : float
+        Stop tracking a speaker if it has not been active for that many seconds.
+        This hyper-parameter has no effect when optimizing the segmentation pipeline,
+        but should be optimized when part of a larger (diarization) pipeline.
     """
 
     def __init__(self, scores: Union[Inference, Text] = "seg"):
@@ -87,6 +92,10 @@ class Segmentation(Pipeline):
         # or filling short gaps between speech turns of one speaker
         self.min_duration_on = Uniform(0.0, 2.0)
         self.min_duration_off = Uniform(0.0, 2.0)
+
+        # hyper-parameters that controls when to stop tracking a speaker.
+        # this hyper-parameter has no effect when optimizing the Segmentation pipeline directly
+        self.last_active_patience = Uniform(0.0, 2.0)
 
     def initialize(self):
         """Initialize pipeline with current set of parameters"""
@@ -122,12 +131,19 @@ class Segmentation(Pipeline):
         uri = file.get("uri", None)
         segmentation = Annotation(uri=uri, modality="speech")
 
+        previous_speaker_turn: Segment = None
         for i, data in enumerate(speakers_probability.data.T):
             speaker_probability = SlidingWindowFeature(
                 data.reshape(-1, 1), sliding_window
             )
-            for speaker_turn in self._binarize(speaker_probability):
-                segmentation[speaker_turn, i] = i
+            for s, speaker_turn in enumerate(self._binarize(speaker_probability)):
+                if (s == 0) or (
+                    speaker_turn.start - previous_speaker_turn.end
+                    > self.last_active_patience
+                ):
+                    label = f"{i}-{s}"
+                segmentation[speaker_turn, i] = label
+                previous_speaker_turn = speaker_turn
 
         return segmentation.rename_labels(generator="string")
 
@@ -142,13 +158,13 @@ class Segmentation(Pipeline):
                 reference: Annotation,
                 hypothesis: Annotation,
                 uem: Timeline = None,
-                **kwargs
+                **kwargs,
             ) -> dict:
                 return super().compute_components(
                     reference.relabel_tracks(generator="string"),
                     hypothesis.relabel_tracks(generator="string"),
                     uem=uem,
-                    **kwargs
+                    **kwargs,
                 )
 
         return _Metric()
