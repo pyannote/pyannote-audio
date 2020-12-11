@@ -129,10 +129,12 @@ class Segmentation(Pipeline):
             for speaker_turn in self._binarize(speaker_probability):
                 segmentation[speaker_turn, i] = i
 
-        return segmentation.relabel_tracks(generator="string")
+        return segmentation.rename_labels(generator="string")
 
     def get_metric(self) -> GreedyDiarizationErrorRate:
         """Return new instance of segmentation metric"""
+
+        # TODO: give each segment the same weight
 
         class _Metric(GreedyDiarizationErrorRate):
             def compute_components(
@@ -144,7 +146,7 @@ class Segmentation(Pipeline):
             ) -> dict:
                 return super().compute_components(
                     reference.relabel_tracks(generator="string"),
-                    hypothesis,
+                    hypothesis.relabel_tracks(generator="string"),
                     uem=uem,
                     **kwargs
                 )
