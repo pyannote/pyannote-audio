@@ -22,7 +22,7 @@
 
 
 import random
-from typing import Callable, Iterable
+from typing import Callable, Iterable, Literal
 
 import numpy as np
 import torch
@@ -105,6 +105,7 @@ class Diarization(SegmentationTaskMixin, Task):
         optimizer: Callable[[Iterable[Parameter]], Optimizer] = None,
         learning_rate: float = 1e-3,
         augmentation: BaseWaveformTransform = None,
+        loss: Literal["bce", "mse"] = "bce",
     ):
 
         super().__init__(
@@ -125,6 +126,10 @@ class Diarization(SegmentationTaskMixin, Task):
         self.snr_max = snr_max
         self.domain = domain
 
+        if loss not in ["bce", "mse"]:
+            raise ValueError("'loss' must be one of {'bce', 'mse'}.")
+        self.loss = loss
+
         self.specifications = TaskSpecification(
             problem=Problem.MULTI_LABEL_CLASSIFICATION,
             scale=Scale.FRAME,
@@ -144,6 +149,20 @@ class Diarization(SegmentationTaskMixin, Task):
                 for f in self.train:
                     f["domain"] = f[self.domain]
                 self.domains = list(set(f["domain"] for f in self.train))
+
+    def setup_loss_func(self, model: Model):
+
+        batch_size, num_frames, num_speakers = model(self.example_input_array).shape
+        kaiser_window = torch.kaiser_window(
+            num_frames, periodic=False, beta=12.0
+        ).reshape(-1, 1)
+        model.register_buffer("kaiser_window", kaiser_window)
+
+        val_sample_weight = kaiser_window.expand(
+            batch_size, num_frames, num_speakers
+        ).flatten()
+
+        model.register_buffer("val_sample_weight", val_sample_weight)
 
     def prepare_y(self, one_hot_y: np.ndarray):
         """Get overlapped speech detection targets
@@ -320,8 +339,16 @@ class Diarization(SegmentationTaskMixin, Task):
         X, y = batch["X"], batch["y"]
         y_pred = self.permutate(y, model(X))
 
-        # TODO: try mean squared error
-        loss = F.binary_cross_entropy(y_pred, y.float())
+        batch_size, num_frames, num_speakers = y_pred.shape
+
+        if self.loss == "bce":
+            losses = F.binary_cross_entropy(y_pred, y.float(), reduction="none")
+        elif self.loss == "mse":
+            losses = F.mse_loss(y_pred, y.float(), reduction="none")
+
+        # give less importance to start and end of chunks
+        # using the same (Kaiser) window as inference.
+        loss = torch.mean(losses * model.kaiser_window)
 
         model.log(
             f"{self.ACRONYM}@train_loss",
@@ -351,9 +378,11 @@ class Diarization(SegmentationTaskMixin, Task):
 
         try:
             auc = auroc(
-                y_pred.flatten()[::10],
-                y.flatten()[::10],
-                sample_weight=None,
+                y_pred.flatten(),
+                y.flatten(),
+                # give less importance to start and end of chunks
+                # using the same (Kaiser) window as inference.
+                sample_weight=model.val_sample_weight,
                 pos_label=1.0,
             )
         except ValueError:
