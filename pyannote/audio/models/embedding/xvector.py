@@ -20,57 +20,75 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-
 from typing import Optional
 
 import torch
 import torch.nn as nn
-from einops import rearrange, reduce
-from torchaudio.transforms import MFCC
+import torch.nn.functional as F
 
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
+from pyannote.audio.models.blocks.pooling import StatsPool
+from pyannote.audio.models.blocks.sincnet import SincNet
+from pyannote.audio.models.blocks.tdnn import TDNN
 
 
-class SimpleEmbeddingModel(Model):
+class XVector(Model):
     def __init__(
         self,
         sample_rate: int = 16000,
         num_channels: int = 1,
         task: Optional[Task] = None,
     ):
-
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
 
-        self.mfcc = MFCC(
-            sample_rate=self.hparams.sample_rate,
-            n_mfcc=40,
-            dct_type=2,
-            norm="ortho",
-            log_mels=False,
+        self.sincnet = SincNet(sample_rate=sample_rate)
+
+        self.frame1 = TDNN(
+            context=[-2, 2],
+            input_channels=60,
+            output_channels=512,
+            full_context=True,
+        )
+        self.frame2 = TDNN(
+            context=[-2, 0, 2],
+            input_channels=512,
+            output_channels=512,
+            full_context=False,
+        )
+        self.frame3 = TDNN(
+            context=[-3, 0, 3],
+            input_channels=512,
+            output_channels=512,
+            full_context=False,
+        )
+        self.frame4 = TDNN(
+            context=[0], input_channels=512, output_channels=512, full_context=True
+        )
+        self.frame5 = TDNN(
+            context=[0], input_channels=512, output_channels=1500, full_context=True
         )
 
-        self.lstm = nn.LSTM(
-            self.mfcc.n_mfcc * self.hparams.num_channels,
-            32,
-            num_layers=1,
-            batch_first=True,
-            bidirectional=True,
-        )
+        self.stats_pool = StatsPool()
+
+        self.segment6 = nn.Linear(3000, 512)
+        self.segment7 = nn.Linear(512, 512)
 
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
         """
 
         Parameters
         ----------
-        waveforms : (batch, time, channel)
+        waveforms : (batch, channel, sample)
 
-        Returns
-        -------
-        embedding : (batch, dimension)
         """
 
-        mfcc = self.mfcc(waveforms)
-        output, hidden = self.lstm(rearrange(mfcc, "b c f t -> b t (c f)"))
-        # mean temporal pooling
-        return reduce(output, "b t f -> b f", "mean")
+        outputs = self.sincnet(waveforms)
+        outputs = self.frame1(outputs)
+        outputs = self.frame2(outputs)
+        outputs = self.frame3(outputs)
+        outputs = self.frame4(outputs)
+        outputs = self.frame5(outputs)
+        outputs = self.stats_pool(outputs)
+        outputs = self.segment6(F.relu(outputs))
+        return self.segment7(F.relu(outputs))

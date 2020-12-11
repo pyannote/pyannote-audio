@@ -132,7 +132,10 @@ class Task(pl.LightningDataModule):
     protocol : Protocol
         pyannote.database protocol
     duration : float, optional
-        Chunks duration. Defaults to variable duration (None).
+        Chunks duration in seconds. Defaults to two seconds (2.).
+    min_duration : float, optional
+        Sample training chunks duration uniformely between `min_duration`
+        and `duration`. Defaults to `duration` (i.e. fixed length chunks).
     batch_size : int, optional
         Number of training samples per batch. Defaults to 32.
     num_workers : int, optional
@@ -161,7 +164,8 @@ class Task(pl.LightningDataModule):
     def __init__(
         self,
         protocol: Protocol,
-        duration: float = None,
+        duration: float = 2.0,
+        min_duration: float = None,
         batch_size: int = 32,
         num_workers: int = 1,
         pin_memory: bool = False,
@@ -176,6 +180,7 @@ class Task(pl.LightningDataModule):
 
         # batching
         self.duration = duration
+        self.min_duration = duration if min_duration is None else min_duration
         self.batch_size = batch_size
 
         # multi-processing
@@ -234,6 +239,9 @@ class Task(pl.LightningDataModule):
         """
         pass
 
+    def setup_loss_func(self, model: Model):
+        pass
+
     @cached_property
     def is_multi_task(self) -> bool:
         """"Check whether multiple tasks are addressed at once"""
@@ -276,10 +284,6 @@ class Task(pl.LightningDataModule):
         )
 
     @cached_property
-    def example_input_duration(self) -> float:
-        return 2.0 if self.duration is None else self.duration
-
-    @cached_property
     def example_input_array(self):
         # this method is called in Model.introspect where it is used
         # to automagically infer the temporal resolution of the
@@ -300,7 +304,7 @@ class Task(pl.LightningDataModule):
             (
                 self.batch_size,
                 num_channels,
-                int(self.audio.sample_rate * self.example_input_duration),
+                int(self.audio.sample_rate * self.duration),
             )
         )
 
