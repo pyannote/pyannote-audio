@@ -388,10 +388,7 @@ class Inference:
         """
 
         num_frames, num_classes = output.shape
-
-        # # focus on intersection only
-        # _output = output[step_size:]
-        # _next_output = next_output[: num_frames - step_size]
+        kaiser = np.kaiser(num_frames, 14.0)
 
         # focus on half-intersection
         #  output (and its middle)
@@ -406,19 +403,20 @@ class Inference:
         # step_size        next_output (and its middle)
         start = step_size // 2 + num_frames // 4
         _output = output[start : start + num_frames // 2]
+        _output_kaiser = kaiser[start : start + num_frames // 2]
+
         start -= step_size
         _next_output = next_output[start : start + num_frames // 2]
+        _next_output_kaiser = kaiser[start : start + num_frames // 2]
 
-        # # TODO / consider other correlation metrics
-        # _output = _output - _output.mean(axis=0, keepdims=True)
-        # _next_output = _next_output - _next_output.mean(axis=0, keepdims=True)
-        # correlation = _output.T @ _next_output
-        # mapping = linear_sum_assignment(correlation, maximize=True)[1]
+        _kaiser = np.sqrt(_output_kaiser * _next_output_kaiser)
 
         cost = np.zeros((num_classes, num_classes))
         for o in range(num_classes):
             for n in range(num_classes):
-                cost[o, n] = np.mean((_output[:, o] - _next_output[:, n]) ** 2)
+                cost[o, n] = np.average(
+                    (_output[:, o] - _next_output[:, n]) ** 2, weights=_kaiser
+                )
 
         mapping = linear_sum_assignment(cost, maximize=False)[1]
 
