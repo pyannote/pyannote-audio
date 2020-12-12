@@ -389,33 +389,15 @@ class Inference:
 
         num_frames, num_classes = output.shape
         kaiser = np.kaiser(num_frames, 14.0)
-
-        # focus on half-intersection
-        #  output (and its middle)
-        # [----------------------------------|----------------------------------]
-        #                                    |
-        # num_frames/2 frames used
-        # for comparing output and [ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ]
-        # next_output
-        #                                                    |
-        #                                                    |
-        # ~ ~ ~ ~ ~ ~ ~ > [----------------------------------|----------------------------------]
-        # step_size        next_output (and its middle)
-        start = step_size // 2 + num_frames // 4
-        _output = output[start : start + num_frames // 2]
-        _output_kaiser = kaiser[start : start + num_frames // 2]
-
-        start -= step_size
-        _next_output = next_output[start : start + num_frames // 2]
-        _next_output_kaiser = kaiser[start : start + num_frames // 2]
-
-        _kaiser = np.sqrt(_output_kaiser * _next_output_kaiser)
+        weights = np.sqrt(kaiser[step_size:] * kaiser[: num_frames - step_size])
 
         cost = np.zeros((num_classes, num_classes))
         for o in range(num_classes):
             for n in range(num_classes):
                 cost[o, n] = np.average(
-                    (_output[:, o] - _next_output[:, n]) ** 2, weights=_kaiser
+                    (output[step_size:, o] - next_output[: num_frames - step_size, n])
+                    ** 2,
+                    weights=weights,
                 )
 
         mapping = linear_sum_assignment(cost, maximize=False)[1]
