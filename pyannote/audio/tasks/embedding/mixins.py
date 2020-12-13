@@ -130,7 +130,7 @@ class SupervisedRepresentationLearningTaskMixin:
                 sessions = dict()
                 for trial in self.protocol.development_trial():
                     for session in ["file1", "file2"]:
-                        session_hash = hash(tuple(trial[session]))
+                        session_hash = hash(tuple(trial[session].items()))
                         if session_hash not in sessions:
                             sessions[session_hash] = trial[session]
                 self.validation = sessions
@@ -259,21 +259,24 @@ class SupervisedRepresentationLearningTaskMixin:
             y_true, y_pred = [], []
             for trial in self.protocol.development_trial():
 
-                session1_hash = hash(tuple(trial["file1"]))
-                session2_hash = hash(tuple(trial["file2"]))
+                session1_hash = hash(tuple(trial["file1"].items()))
+                session2_hash = hash(tuple(trial["file2"].items()))
 
                 try:
                     emb1 = embeddings[session1_hash]
                     emb2 = embeddings[session2_hash]
                 except KeyError:
-                    return
+                    continue
 
                 y_pred.append(cdist(emb1, emb2, metric="cosine").item())
                 y_true.append(trial["reference"])
 
-            fpr, fnr, thresholds, eer = det_curve(
-                np.array(y_true), np.array(y_pred), distances=True
-            )
+            try:
+                fpr, fnr, thresholds, eer = det_curve(
+                    np.array(y_true), np.array(y_pred), distances=True
+                )
+            except Exception:
+                eer = 1.0
 
             model.log(
                 f"{self.task.ACRONYM}@val_eer",
