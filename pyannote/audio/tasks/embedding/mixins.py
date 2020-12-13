@@ -245,7 +245,7 @@ class SupervisedRepresentationLearningTaskMixin:
     def validation_step(self, model: "Model", batch, batch_idx: int):
 
         if isinstance(self.protocol, SpeakerVerificationProtocol):
-            return batch["session_hash"][0], model(batch["X"]).detach.cpu().numpy()
+            return batch["session_hash"][0], model(batch["X"]).detach().cpu().numpy()
 
         else:
             raise NotImplementedError("")
@@ -259,15 +259,17 @@ class SupervisedRepresentationLearningTaskMixin:
             y_true, y_pred = [], []
             for trial in self.protocol.development_trial():
 
-                y_true.append(trial["reference"])
-
                 session1_hash = hash(tuple(trial["file1"]))
-                emb1 = embeddings[session1_hash]
-
                 session2_hash = hash(tuple(trial["file2"]))
-                emb2 = embeddings[session2_hash]
+
+                try:
+                    emb1 = embeddings[session1_hash]
+                    emb2 = embeddings[session2_hash]
+                except KeyError:
+                    return
 
                 y_pred.append(cdist(emb1, emb2, metric="cosine").item())
+                y_true.append(trial["reference"])
 
             fpr, fnr, thresholds, eer = det_curve(
                 np.array(y_true), np.array(y_pred), distances=True
