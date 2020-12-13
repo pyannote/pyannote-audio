@@ -21,14 +21,16 @@
 # SOFTWARE.
 
 import math
+from typing import Optional
 
 import numpy as np
 from pytorch_lightning import Callback, Trainer
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from pyannote.audio.core.inference import Inference
 from pyannote.audio.core.model import Model
-from pyannote.audio.core.task import Problem, Scale, Task, TaskSpecification
+from pyannote.audio.core.task import Problem, Scale, Task, TaskSpecification, ValDataset
 from pyannote.audio.utils.random import create_rng_for_worker
 from pyannote.core import Segment
 from pyannote.core.utils.distance import cdist, pdist
@@ -124,6 +126,15 @@ class SupervisedRepresentationLearningTaskMixin:
                 classes=sorted(self.train),
             )
 
+            if isinstance(self.protocol, SpeakerVerificationProtocol):
+                sessions = dict()
+                for trial in self.protocol.development_trial():
+                    for session in ["file1", "file2"]:
+                        session_hash = hash(tuple(trial[session]))
+                        if session_hash not in sessions:
+                            sessions[session_hash] = trial[session]
+                self.validation = sessions
+
     def train__iter__(self):
         """Iterate over training samples
 
@@ -215,64 +226,85 @@ class SupervisedRepresentationLearningTaskMixin:
         )
         return {"loss": loss}
 
-    def val_dataloader(self):
+    def val__iter__(self):
+        if isinstance(self.protocol, SpeakerVerificationProtocol):
+            for session_hash, session in self.validation.items():
+                X = np.concatenate(
+                    [
+                        self.audio.crop(session, segment, mode="center")[0]
+                        for segment in session["try_with"]
+                    ],
+                    axis=0,
+                )
+                yield {"session_hash": session_hash, "X": X}
+
+    def val__len__(self):
+        if isinstance(self.protocol, SpeakerVerificationProtocol):
+            return len(self.validation)
+
+    def validation_step(self, model: "Model", batch, batch_idx: int):
+
+        if isinstance(self.protocol, SpeakerVerificationProtocol):
+            return batch["session_hash"][0], model(batch["X"]).detach.cpu().numpy()
+
+        else:
+            raise NotImplementedError("")
+
+    def validation_epoch_end(self, model: "Model", outputs):
+
+        if isinstance(self.protocol, SpeakerVerificationProtocol):
+
+            embeddings = dict(outputs)
+
+            y_true, y_pred = [], []
+            for trial in self.protocol.development_trial():
+
+                y_true.append(trial["reference"])
+
+                session1_hash = hash(tuple(trial["file1"]))
+                emb1 = embeddings[session1_hash]
+
+                session2_hash = hash(tuple(trial["file2"]))
+                emb2 = embeddings[session2_hash]
+
+                y_pred.append(cdist(emb1, emb2, metric="cosine").item())
+
+            fpr, fnr, thresholds, eer = det_curve(
+                np.array(y_true), np.array(y_pred), distances=True
+            )
+
+            model.log(
+                f"{self.task.ACRONYM}@val_eer",
+                eer,
+                logger=True,
+                on_epoch=True,
+                prog_bar=True,
+            )
+
+    def val_dataloader(self) -> Optional[DataLoader]:
+
+        if isinstance(self.protocol, SpeakerVerificationProtocol):
+            return DataLoader(
+                ValDataset(self),
+                batch_size=1,
+                # num_workers=self.num_workers,
+                pin_memory=self.pin_memory,
+                drop_last=False,
+            )
+
         return None
 
-    @property
-    def val_monitor(self):
-        return f"{self.ACRONYM}@train_loss", "min"
+    def val_callback(self) -> Optional[Callback]:
 
-    def val_callback(self):
-        if isinstance(self.protocol, SpeakerVerificationProtocol):
-            return _SpeakerVerificationValidationCallback(self)
-
-        elif isinstance(self.protocol, SpeakerDiarizationProtocol):
+        if isinstance(self.protocol, SpeakerDiarizationProtocol):
             return _SpeakerDiarizationValidationCallback(self)
 
         return None
 
-
-class _SpeakerVerificationValidationCallback(Callback):
-    def __init__(self, task: Task):
-        super().__init__()
-        self.task = task
-
-    def on_epoch_end(self, trainer: Trainer, model: Model):
-
-        inference = Inference(model, window="whole")
-
-        y_true, y_pred = [], []
-        emb = dict()
-        # TODO: update tqdm desc
-        for trial in tqdm(self.task.protocol.development_trial()):
-            file1 = trial["file1"]
-            uri1 = file1["uri"]
-            file2 = trial["file2"]
-            uri2 = file2["uri"]
-            if uri1 not in emb:
-                emb[uri1] = inference(file1).reshape(1, -1)
-            if uri2 not in emb:
-                emb[uri2] = inference(file2).reshape(1, -1)
-            # TODO: make this "metric" thing an attribute
-            y_pred.append(cdist(emb[uri1], emb[uri2], metric="cosine").item())
-            y_true.append(trial["reference"])
-
-        y_true, y_pred = np.array(y_true), np.array(y_pred)
-
-        fpr, fnr, thresholds, eer = det_curve(y_true, y_pred, distances=True)
-
-        model.log(
-            f"{self.task.ACRONYM}@val_eer",
-            eer,
-            logger=True,
-            on_epoch=True,
-            prog_bar=True,
-        )
-
-        # TODO: log det curve
-
-        # set model back to "train" mode
-        model.train()
+    @property
+    def val_monitor(self):
+        if isinstance(self.protocol, SpeakerVerificationProtocol):
+            return f"{self.ACRONYM}@val_eer", "min"
 
     @property
     def val_monitor(self):

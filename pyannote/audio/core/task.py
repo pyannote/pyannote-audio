@@ -472,6 +472,9 @@ class Task(pl.LightningDataModule):
         )
         return {"loss": loss}
 
+    def validation_epoch_end(self, model: Model, outputs):
+        pass
+
     def val_callback(self):
         return None
 
