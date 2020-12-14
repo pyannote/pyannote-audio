@@ -283,7 +283,7 @@ class SupervisedRepresentationLearningTaskMixin:
                 eer = 1.0
 
             model.log(
-                f"{self.task.ACRONYM}@val_eer",
+                f"{self.ACRONYM}@val_eer",
                 eer,
                 logger=True,
                 on_epoch=True,
@@ -314,10 +314,6 @@ class SupervisedRepresentationLearningTaskMixin:
     def val_monitor(self):
         if isinstance(self.protocol, SpeakerVerificationProtocol):
             return f"{self.ACRONYM}@val_eer", "min"
-
-    @property
-    def val_monitor(self):
-        return f"{self.task.ACRONYM}@val_eer", "min"
 
 
 class _SpeakerDiarizationValidationCallback(Callback):
