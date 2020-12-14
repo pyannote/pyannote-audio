@@ -247,12 +247,8 @@ class SupervisedRepresentationLearningTaskMixin:
             return len(self.validation)
 
     def validation_step(self, model: "Model", batch, batch_idx: int):
-
         if isinstance(self.protocol, SpeakerVerificationProtocol):
-            return batch["session_hash"][0], model(batch["X"]).detach().cpu().numpy()
-
-        else:
-            raise NotImplementedError("")
+            return batch["session_hash"][0].detach().cpu().numpy().item(), model(batch["X"]).detach().cpu().numpy()
 
     def validation_epoch_end(self, model: "Model", outputs):
 
@@ -270,7 +266,7 @@ class SupervisedRepresentationLearningTaskMixin:
                     emb1 = embeddings[session1_hash]
                     emb2 = embeddings[session2_hash]
                 except KeyError:
-                    continue
+                    return
 
                 y_pred.append(cdist(emb1, emb2, metric="cosine").item())
                 y_true.append(trial["reference"])
@@ -280,7 +276,6 @@ class SupervisedRepresentationLearningTaskMixin:
 
             num_target_trials = np.sum(y_true)
             num_non_target_trials = np.sum(1.0 - y_true)
-
             if num_target_trials > 2 and num_non_target_trials > 2:
                 fpr, fnr, thresholds, eer = det_curve(y_true, y_pred, distances=True)
 
@@ -298,7 +293,6 @@ class SupervisedRepresentationLearningTaskMixin:
             return DataLoader(
                 ValDataset(self),
                 batch_size=1,
-                # num_workers=self.num_workers,
                 pin_memory=self.pin_memory,
                 drop_last=False,
             )
