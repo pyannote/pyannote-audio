@@ -231,6 +231,7 @@ class SupervisedRepresentationLearningTaskMixin:
         return hash((file["database"], file["uri"], tuple(file["try_with"])))
 
     def val__iter__(self):
+
         if isinstance(self.protocol, SpeakerVerificationProtocol):
             for session_hash, session in self.validation.items():
                 X = np.concatenate(
@@ -242,13 +243,27 @@ class SupervisedRepresentationLearningTaskMixin:
                 )
                 yield {"session_hash": session_hash, "X": X}
 
+        elif isinstance(self.protocol, SpeakerVerificationProtocol):
+            pass
+
     def val__len__(self):
+
         if isinstance(self.protocol, SpeakerVerificationProtocol):
             return len(self.validation)
 
+        elif isinstance(self.protocol, SpeakerDiarizationProtocol):
+            return 0
+
     def validation_step(self, model: "Model", batch, batch_idx: int):
+
         if isinstance(self.protocol, SpeakerVerificationProtocol):
-            return batch["session_hash"][0].detach().cpu().numpy().item(), model(batch["X"]).detach().cpu().numpy()
+            return (
+                batch["session_hash"][0].detach().cpu().numpy().item(),
+                model(batch["X"]).detach().cpu().numpy(),
+            )
+
+        elif isinstance(self.protocol, SpeakerDiarizationProtocol):
+            pass
 
     def validation_epoch_end(self, model: "Model", outputs):
 
@@ -287,6 +302,9 @@ class SupervisedRepresentationLearningTaskMixin:
                     prog_bar=True,
                 )
 
+        elif isinstance(self.protocol, SpeakerDiarizationProtocol):
+            pass
+
     def val_dataloader(self) -> Optional[DataLoader]:
 
         if isinstance(self.protocol, SpeakerVerificationProtocol):
@@ -297,19 +315,29 @@ class SupervisedRepresentationLearningTaskMixin:
                 drop_last=False,
             )
 
+        elif isinstance(self.protocol, SpeakerDiarizationProtocol):
+            return None
+
         return None
 
     def val_callback(self) -> Optional[Callback]:
 
-        if isinstance(self.protocol, SpeakerDiarizationProtocol):
+        if isinstance(self.protocol, SpeakerVerificationProtocol):
+            return None
+
+        elif isinstance(self.protocol, SpeakerDiarizationProtocol):
             return _SpeakerDiarizationValidationCallback(self)
 
         return None
 
     @property
     def val_monitor(self):
+
         if isinstance(self.protocol, SpeakerVerificationProtocol):
             return f"{self.ACRONYM}@val_eer", "min"
+
+        elif isinstance(self.protocol, SpeakerDiarizationProtocol):
+            pass
 
 
 class _SpeakerDiarizationValidationCallback(Callback):
