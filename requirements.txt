@@ -10,5 +10,5 @@ pytorch_metric_learning >= 0.9.93
 semver >= 2.10.2
 soundfile >= 0.10.2
 torch >= 1.6
-torch_audiomentations >= 0.5.0
+torch-audiomentations >= 0.5.0
 torchaudio >= 0.6
