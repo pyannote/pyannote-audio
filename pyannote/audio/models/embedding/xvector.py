@@ -34,15 +34,24 @@ from pyannote.audio.models.blocks.tdnn import TDNN
 
 
 class XVector(Model):
+
+    SINCNET_DEFAULTS = {"stride": 1}
+
     def __init__(
         self,
         sample_rate: int = 16000,
         num_channels: int = 1,
+        sincnet: dict = None,
         task: Optional[Task] = None,
     ):
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
 
-        self.sincnet = SincNet(sample_rate=sample_rate)
+        sincnet_hparams = dict(**self.SINCNET_DEFAULTS)
+        if sincnet is not None:
+            sincnet_hparams.update(**sincnet)
+        sincnet_hparams["sample_rate"] = sample_rate
+        self.hparams.sincnet = sincnet_hparams
+        self.sincnet = SincNet(**self.hparams.sincnet)
 
         self.frame1 = TDNN(
             context=[-2, 2],
