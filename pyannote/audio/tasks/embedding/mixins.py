@@ -275,20 +275,22 @@ class SupervisedRepresentationLearningTaskMixin:
                 y_pred.append(cdist(emb1, emb2, metric="cosine").item())
                 y_true.append(trial["reference"])
 
-            try:
-                fpr, fnr, thresholds, eer = det_curve(
-                    np.array(y_true), np.array(y_pred), distances=True
-                )
-            except Exception:
-                eer = 1.0
+            y_pred = np.array(y_pred)
+            y_true = np.array(y_true)
 
-            model.log(
-                f"{self.ACRONYM}@val_eer",
-                eer,
-                logger=True,
-                on_epoch=True,
-                prog_bar=True,
-            )
+            num_target_trials = np.sum(y_true)
+            num_non_target_trials = np.sum(1.0 - y_true)
+
+            if num_target_trials > 2 and num_non_target_trials > 2:
+                fpr, fnr, thresholds, eer = det_curve(y_true, y_pred, distances=True)
+
+                model.log(
+                    f"{self.ACRONYM}@val_eer",
+                    eer,
+                    logger=True,
+                    on_epoch=True,
+                    prog_bar=True,
+                )
 
     def val_dataloader(self) -> Optional[DataLoader]:
 
