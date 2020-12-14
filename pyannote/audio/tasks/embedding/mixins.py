@@ -130,7 +130,7 @@ class SupervisedRepresentationLearningTaskMixin:
                 sessions = dict()
                 for trial in self.protocol.development_trial():
                     for session in ["file1", "file2"]:
-                        session_hash = hash(tuple(trial[session].items()))
+                        session_hash = self.helper_trial_hash(trial[session])
                         if session_hash not in sessions:
                             sessions[session_hash] = trial[session]
                 self.validation = sessions
@@ -226,6 +226,10 @@ class SupervisedRepresentationLearningTaskMixin:
         )
         return {"loss": loss}
 
+    @staticmethod
+    def helper_trial_hash(file) -> int:
+        return hash((file["database"], file["uri"], tuple(file["try_with"])))
+
     def val__iter__(self):
         if isinstance(self.protocol, SpeakerVerificationProtocol):
             for session_hash, session in self.validation.items():
@@ -259,8 +263,8 @@ class SupervisedRepresentationLearningTaskMixin:
             y_true, y_pred = [], []
             for trial in self.protocol.development_trial():
 
-                session1_hash = hash(tuple(trial["file1"].items()))
-                session2_hash = hash(tuple(trial["file2"].items()))
+                session1_hash = self.helper_trial_hash(trial["file1"])
+                session2_hash = self.helper_trial_hash(trial["file2"])
 
                 try:
                     emb1 = embeddings[session1_hash]
