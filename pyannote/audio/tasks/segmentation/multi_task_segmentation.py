@@ -25,6 +25,7 @@ import random
 from typing import Callable, Iterable, Mapping
 
 import numpy as np
+import torch
 from pytorch_lightning.metrics.functional.classification import auroc
 from torch.nn import Parameter
 from torch.optim import Optimizer
@@ -329,8 +330,8 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
         for task_name in self.specifications:
             try:
                 auc[task_name] = auroc(
-                    y_pred[task_name].view(-1)[::10],
-                    y[task_name].view(-1)[::10],
+                    y_pred[task_name].view(-1),
+                    y[task_name].view(-1),
                     sample_weight=None,
                     pos_label=1.0,
                 )
@@ -339,7 +340,7 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
                 # we mark this batch as skipped for current task
                 model.log(
                     f"{task_name}@val_skip",
-                    1.0,
+                    torch.tensor(1.0),
                     on_step=False,
                     on_epoch=True,
                     prog_bar=False,
@@ -361,7 +362,7 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
 
             model.log(
                 f"{task_name}@val_auroc",
-                auc[task_name],
+                torch.tensor(auc[task_name]),
                 on_step=False,
                 on_epoch=True,
                 prog_bar=True,
@@ -374,7 +375,7 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
 
         model.log(
             f"{self.ACRONYM}@val_auroc",
-            sum(auc.values()) / len(auc),
+            torch.tensor(sum(auc.values()) / len(auc)),
             on_step=False,
             on_epoch=True,
             prog_bar=True,

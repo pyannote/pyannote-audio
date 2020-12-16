@@ -25,6 +25,7 @@ import warnings
 from typing import List, Optional, Text, Tuple
 
 import numpy as np
+import torch
 from pytorch_lightning.metrics.functional.classification import auroc
 
 from pyannote.audio.core.io import AudioFile
@@ -272,7 +273,7 @@ class SegmentationTaskMixin:
             # we mark this batch as skipped and actually skip it.
             model.log(
                 f"{self.ACRONYM}@val_skip",
-                1.0,
+                torch.tensor(1.0),
                 on_step=False,
                 on_epoch=True,
                 prog_bar=False,
@@ -283,7 +284,7 @@ class SegmentationTaskMixin:
 
         model.log(
             f"{self.ACRONYM}@val_skip",
-            0.0,
+            torch.tensor(0.0),
             on_step=False,
             on_epoch=True,
             prog_bar=False,
@@ -293,7 +294,7 @@ class SegmentationTaskMixin:
 
         model.log(
             f"{self.ACRONYM}@val_auroc",
-            auc,
+            torch.tensor(auc),
             on_step=False,
             on_epoch=True,
             prog_bar=True,

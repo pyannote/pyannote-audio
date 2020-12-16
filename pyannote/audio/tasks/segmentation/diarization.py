@@ -393,7 +393,7 @@ class Diarization(SegmentationTaskMixin, Task):
             # we mark this batch as skipped and actually skip it.
             model.log(
                 f"{self.ACRONYM}@val_skip",
-                1.0,
+                torch.tensor(1.0),
                 on_step=False,
                 on_epoch=True,
                 prog_bar=False,
@@ -404,7 +404,7 @@ class Diarization(SegmentationTaskMixin, Task):
 
         model.log(
             f"{self.ACRONYM}@val_skip",
-            0.0,
+            torch.tensor(0.0),
             on_step=False,
             on_epoch=True,
             prog_bar=False,
@@ -414,7 +414,7 @@ class Diarization(SegmentationTaskMixin, Task):
 
         model.log(
             f"{self.ACRONYM}@val_auroc",
-            auc,
+            torch.tensor(auc),
             on_step=False,
             on_epoch=True,
             prog_bar=True,

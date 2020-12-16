@@ -22,6 +22,7 @@
 
 from typing import Callable, Iterable, List, Text
 
+import torch
 from pytorch_lightning.metrics.functional.classification import auroc
 from torch.nn import Parameter
 from torch.optim import Optimizer
@@ -161,7 +162,7 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
                 # we mark this batch as skipped and actually skip it.
                 model.log(
                     f"{self.ACRONYM}@val_skip",
-                    1.0,
+                    torch.tensor(1.0),
                     on_step=False,
                     on_epoch=True,
                     prog_bar=False,
@@ -172,7 +173,7 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
 
         model.log(
             f"{self.ACRONYM}@val_skip",
-            0.0,
+            torch.tensor(0.0),
             on_step=False,
             on_epoch=True,
             prog_bar=False,
@@ -182,7 +183,7 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
 
         model.log(
             f"{self.ACRONYM}@val_auroc",
-            sum(auc.values()) / len(auc),
+            torch.tensor(sum(auc.values()) / len(auc)),
             on_step=False,
             on_epoch=True,
             prog_bar=True,
