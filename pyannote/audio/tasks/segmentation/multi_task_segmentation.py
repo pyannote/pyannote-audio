@@ -25,7 +25,6 @@ import random
 from typing import Callable, Iterable, Mapping
 
 import numpy as np
-import torch
 from pytorch_lightning.metrics.functional.classification import auroc
 from torch.nn import Parameter
 from torch.optim import Optimizer
@@ -337,32 +336,12 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
                 )
             except ValueError:
                 # in case of all positive or all negative samples, auroc will raise a ValueError.
-                # we mark this batch as skipped for current task
-                model.log(
-                    f"{task_name}@val_skip",
-                    torch.tensor(1.0),
-                    on_step=False,
-                    on_epoch=True,
-                    prog_bar=False,
-                    logger=True,
-                    sync_dist=True,
-                )
                 skipped = True
                 continue
 
             model.log(
-                f"{task_name}@val_skip",
-                0.0,
-                on_step=False,
-                on_epoch=True,
-                prog_bar=False,
-                logger=True,
-                sync_dist=True,
-            )
-
-            model.log(
                 f"{task_name}@val_auroc",
-                torch.tensor(auc[task_name]),
+                auc[task_name],
                 on_step=False,
                 on_epoch=True,
                 prog_bar=True,
@@ -375,7 +354,7 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
 
         model.log(
             f"{self.ACRONYM}@val_auroc",
-            torch.tensor(sum(auc.values()) / len(auc)),
+            sum(auc.values()) / len(auc),
             on_step=False,
             on_epoch=True,
             prog_bar=True,

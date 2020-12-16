@@ -390,31 +390,11 @@ class Diarization(SegmentationTaskMixin, Task):
             )
         except ValueError:
             # in case of all positive or all negative samples, auroc will raise a ValueError.
-            # we mark this batch as skipped and actually skip it.
-            model.log(
-                f"{self.ACRONYM}@val_skip",
-                torch.tensor(1.0),
-                on_step=False,
-                on_epoch=True,
-                prog_bar=False,
-                logger=True,
-                sync_dist=True,
-            )
             return
 
         model.log(
-            f"{self.ACRONYM}@val_skip",
-            torch.tensor(0.0),
-            on_step=False,
-            on_epoch=True,
-            prog_bar=False,
-            logger=True,
-            sync_dist=True,
-        )
-
-        model.log(
             f"{self.ACRONYM}@val_auroc",
-            torch.tensor(auc),
+            auc,
             on_step=False,
             on_epoch=True,
             prog_bar=True,
