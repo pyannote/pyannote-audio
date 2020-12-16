@@ -277,6 +277,7 @@ class SegmentationTaskMixin:
                 on_epoch=True,
                 prog_bar=False,
                 logger=True,
+                sync_dist=True,
             )
             return
 
@@ -287,6 +288,7 @@ class SegmentationTaskMixin:
             on_epoch=True,
             prog_bar=False,
             logger=True,
+            sync_dist=True,
         )
 
         model.log(
@@ -296,6 +298,7 @@ class SegmentationTaskMixin:
             on_epoch=True,
             prog_bar=True,
             logger=True,
+            sync_dist=True,
         )
 
     @property

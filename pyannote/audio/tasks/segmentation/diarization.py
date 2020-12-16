@@ -398,6 +398,7 @@ class Diarization(SegmentationTaskMixin, Task):
                 on_epoch=True,
                 prog_bar=False,
                 logger=True,
+                sync_dist=True,
             )
             return
 
@@ -408,6 +409,7 @@ class Diarization(SegmentationTaskMixin, Task):
             on_epoch=True,
             prog_bar=False,
             logger=True,
+            sync_dist=True,
         )
 
         model.log(
@@ -417,4 +419,5 @@ class Diarization(SegmentationTaskMixin, Task):
             on_epoch=True,
             prog_bar=True,
             logger=True,
+            sync_dist=True,
         )

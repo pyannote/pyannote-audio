@@ -344,6 +344,7 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
                     on_epoch=True,
                     prog_bar=False,
                     logger=True,
+                    sync_dist=True,
                 )
                 skipped = True
                 continue
@@ -355,6 +356,7 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
                 on_epoch=True,
                 prog_bar=False,
                 logger=True,
+                sync_dist=True,
             )
 
             model.log(
@@ -364,6 +366,7 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
                 on_epoch=True,
                 prog_bar=True,
                 logger=True,
+                sync_dist=True,
             )
 
         if skipped:
@@ -376,4 +379,5 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
             on_epoch=True,
             prog_bar=True,
             logger=True,
+            sync_dist=True,
         )

@@ -166,6 +166,7 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
                     on_epoch=True,
                     prog_bar=False,
                     logger=True,
+                    sync_dist=True,
                 )
                 return
 
@@ -176,6 +177,7 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
             on_epoch=True,
             prog_bar=False,
             logger=True,
+            sync_dist=True,
         )
 
         model.log(
@@ -185,4 +187,5 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
             on_epoch=True,
             prog_bar=True,
             logger=True,
+            sync_dist=True,
         )
