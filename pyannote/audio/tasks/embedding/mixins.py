@@ -24,6 +24,7 @@ import math
 from typing import Optional
 
 import numpy as np
+import torch
 from pytorch_lightning import Callback, Trainer
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -296,10 +297,11 @@ class SupervisedRepresentationLearningTaskMixin:
 
                 model.log(
                     f"{self.ACRONYM}@val_eer",
-                    eer,
+                    torch.tensor(eer, device=model.device),
                     logger=True,
                     on_epoch=True,
                     prog_bar=True,
+                    sync_dist=True,
                 )
 
         elif isinstance(self.protocol, SpeakerDiarizationProtocol):
@@ -369,10 +371,11 @@ class _SpeakerDiarizationValidationCallback(Callback):
 
         model.log(
             f"{self.task.ACRONYM}@val_eer",
-            eer,
+            torch.tensor(eer, device=model.device),
             logger=True,
             on_epoch=True,
             prog_bar=True,
+            sync_dist=True,
         )
 
         # TODO: log det curve
