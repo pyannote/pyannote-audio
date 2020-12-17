@@ -151,8 +151,8 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
         for k, speaker in enumerate(self.specifications.classes):
             try:
                 auc[speaker] = auroc(
-                    y_pred[::10, k],
-                    y[::10, k],
+                    y_pred[:, k],
+                    y[:, k],
                     sample_weight=None,
                     pos_label=1.0,
                 )
