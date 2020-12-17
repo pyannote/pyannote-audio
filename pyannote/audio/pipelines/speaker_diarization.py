@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import Optional, Text, Union
+from typing import Mapping, Optional, Text, Union
 
 from pyannote.audio.core.inference import Inference
 from pyannote.audio.core.io import AudioFile
@@ -83,6 +83,12 @@ class SpeakerDiarization(Pipeline):
     ):
 
         super().__init__()
+
+        # temporary hack -- need to bring back old Wrapper/Wrappable logic
+        if isinstance(segmentation, Mapping):
+            segmentation = Inference(**segmentation)
+        if isinstance(embeddings, Mapping):
+            embeddings = Inference(**embeddings)
 
         self.segmentation = Segmentation(scores=segmentation)
 
