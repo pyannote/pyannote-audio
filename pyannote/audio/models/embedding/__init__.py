@@ -21,6 +21,6 @@
 # SOFTWARE.
 
 
-from .xvector import XVector
+from .xvector import XVector, XVectorMFCC
 
-__all__ = ["XVector"]
+__all__ = ["XVector", "XVectorMFCC"]
