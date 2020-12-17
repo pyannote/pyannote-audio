@@ -93,7 +93,7 @@ class XVectorMFCC(Model):
 
         """
 
-        outputs = self.mfcc(waveforms)
+        outputs = self.mfcc(waveforms).squeeze(dim=1)
         outputs = self.frame1(outputs)
         outputs = self.frame2(outputs)
         outputs = self.frame3(outputs)
