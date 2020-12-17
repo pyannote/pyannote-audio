@@ -42,12 +42,8 @@ from pyannote.core import Segment
 from pyannote.database import Protocol
 
 
-class Diarization(SegmentationTaskMixin, Task):
-    """Local diarization
-
-    Local diarization is the task of ...
-
-    Here, it is addressed ...
+class Segmentation(SegmentationTaskMixin, Task):
+    """Segmentation
 
     Note that data augmentation is used to increase the proportion of "overlap".
     This is achieved by generating chunks made out of the (weighted) sum of two
@@ -91,7 +87,7 @@ class Diarization(SegmentationTaskMixin, Task):
         during training.
     """
 
-    ACRONYM = "dia"
+    ACRONYM = "seg"
 
     def __init__(
         self,
@@ -168,7 +164,7 @@ class Diarization(SegmentationTaskMixin, Task):
         model.register_buffer("val_sample_weight", val_sample_weight)
 
     def prepare_y(self, one_hot_y: np.ndarray):
-        """Get overlapped speech detection targets
+        """Get segmentation targets
 
         Parameters
         ----------
