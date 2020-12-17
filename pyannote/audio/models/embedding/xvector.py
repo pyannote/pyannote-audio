@@ -56,7 +56,7 @@ class XVectorMFCC(Model):
 
         self.frame1 = TDNN(
             context=[-2, 2],
-            input_channels=60,
+            input_channels=self.hparams.mfcc["n_mfcc"],
             output_channels=512,
             full_context=True,
         )
