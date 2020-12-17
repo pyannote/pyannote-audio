@@ -65,13 +65,6 @@ class SimpleSegmentationModel(Model):
         )
         self.activation = self.default_activation()
 
-        # why do we define those layers here and not in task.setup()?
-        # because, at inference time, we need those layers.
-
-        # this is in contrast of SpeakerEmbedding.loss_func layers below
-        # that are only needed during training -- we don't want them to
-        # be applied at inference.
-
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
         """
 
