@@ -33,9 +33,9 @@ from pyannote.metrics.diarization import (
 from pyannote.pipeline import Pipeline
 from pyannote.pipeline.parameter import Uniform
 
+from .segmentation import Segmentation
 from .speech_turn_assignment import SpeechTurnClosestAssignment
 from .speech_turn_clustering import SpeechTurnClustering
-from .speech_turn_segmentation import SpeechTurnSegmentation
 
 
 class SpeakerDiarization(Pipeline):
@@ -43,14 +43,10 @@ class SpeakerDiarization(Pipeline):
 
     Parameters
     ----------
-    vad_scores : Inference or str, optional
-        `Inference` instance used to extract raw voice activity detection scores.
+    segmentation : Inference or str, optional
+        `Inference` instance used to extract raw segmentation scores.
         When `str`, assumes that file already contains a corresponding key with
-        precomputed scores. Defaults to "vad".
-    scd_scores : Inference or str, optional
-        `Inference` instance used to extract raw speaker change detection scores.
-        When `str`, assumes that file already contains a corresponding key with
-        precomputed scores. Defaults to "scd".
+        precomputed scores. Defaults to "seg".
     embeddings : Inference or str, optional
         `Inference` instance used to extract speaker embeddings. When `str`,
         assumes that file already contains a corresponding key with precomputed
@@ -78,8 +74,7 @@ class SpeakerDiarization(Pipeline):
 
     def __init__(
         self,
-        vad_scores: Union[Inference, Text] = "vad",
-        scd_scores: Union[Inference, Text] = "scd",
+        segmentation: Union[Inference, Text] = "seg",
         embeddings: Union[Inference, Text] = "emb",
         metric: Optional[str] = "cosine",
         purity: Optional[float] = None,
@@ -89,19 +84,16 @@ class SpeakerDiarization(Pipeline):
 
         super().__init__()
 
-        self.vad_scores = vad_scores
-        self.scd_scores = scd_scores
-        self.speech_turn_segmentation = SpeechTurnSegmentation(
-            vad_scores=vad_scores, scd_scores=scd_scores
-        )
+        self.segmentation = Segmentation(scores=segmentation)
 
         self.embeddings = embeddings
         self.metric = metric
-        self.speech_turn_clustering = SpeechTurnClustering(
+
+        self.clustering = SpeechTurnClustering(
             embeddings=self.embeddings, metric=self.metric
         )
 
-        self.speech_turn_assignment = SpeechTurnClosestAssignment(
+        self.assignment = SpeechTurnClosestAssignment(
             embeddings=self.embeddings, metric=self.metric
         )
 
@@ -131,48 +123,96 @@ class SpeakerDiarization(Pipeline):
             Speaker diarization
         """
 
-        # segmentation into speech turns
-        speech_turns = self.speech_turn_segmentation(file)
+        # segmentation where speech turns are already clustered locally (with letters A/B/C/...)
+        segmentation = self.segmentation(file).rename_labels(generator="string")
 
-        # in case there is one speech turn or less, there is no need to apply
-        # any kind of clustering approach.
-        if len(speech_turns) < 2:
-            return speech_turns
+        # corner case where there is just one cluster already
+        if len(segmentation.labels()) < 2:
+            return segmentation
 
-        # split short/long speech turns. the idea is to first cluster long
-        # speech turns (i.e. those for which we can trust embeddings) and then
-        # assign each speech turn to the closest cluster.
-        long_speech_turns = speech_turns.empty()
-        shrt_speech_turns = speech_turns.empty()
-        for segment, track, label in speech_turns.itertracks(yield_label=True):
-            if segment.duration < self.cluster_min_duration:
-                shrt_speech_turns[segment, track] = label
-            else:
-                long_speech_turns[segment, track] = label
+        # split segmentation into two parts:
+        # - clean (i.e. non-overlapping) and long-enough clusters
+        # - the rest of it
 
-        # in case there are no long speech turn to cluster, we return the
-        # original speech turns (= shrt_speech_turns)
-        if len(long_speech_turns) < 1:
-            return speech_turns
+        clean = segmentation.copy()
+        rest = segmentation.empty()
 
-        # first: cluster long speech turns
-        long_speech_turns = self.speech_turn_clustering(file, long_speech_turns)
+        for (segment, track), (other_segment, other_track) in segmentation.co_iter(
+            segmentation
+        ):
+            if segment == other_segment and track == other_track:
+                continue
 
-        # then: assign short speech turns to clusters
-        long_speech_turns.rename_labels(generator="string", copy=False)
+            rest[segment, track] = segmentation[segment, track]
+            try:
+                del clean[segment, track]
+            except KeyError:
+                pass
 
-        if len(shrt_speech_turns) > 0:
-            shrt_speech_turns.rename_labels(generator="int", copy=False)
-            shrt_speech_turns = self.speech_turn_assignment(
-                file, shrt_speech_turns, long_speech_turns
-            )
-        # merge short/long speech turns
-        return long_speech_turns.update(shrt_speech_turns, copy=False).support(
-            collar=0.0
-        )
+            rest[other_segment, other_track] = segmentation[other_segment, other_track]
+            try:
+                del clean[other_segment, other_track]
+            except KeyError:
+                pass
 
-        # TODO. add overlap detection
-        # TODO. add overlap-aware resegmentation
+        long_enough_local_clusters = [
+            local_cluster
+            for local_cluster, duration in clean.chart()
+            if duration > self.cluster_min_duration
+        ]
+        # corner case where there is no clean, long enough local clusters
+        if not long_enough_local_clusters:
+            return segmentation
+
+        clean_long_enough = clean.subset(long_enough_local_clusters)
+
+        rest.update(clean.subset(long_enough_local_clusters, invert=True), copy=False)
+
+        # at this point, we have split "segmentation" into two parts:
+        # - "clean_long_enough" uses A/B/C labels
+        # - "rest" uses A/B/C labels as well
+
+        # we apply clustering on "clean_long_enough" and use A/B/C labels
+        clustered_clean_long_enough = self.clustering(
+            file, clean_long_enough
+        ).rename_labels(generator="string")
+
+        # this will contain the final result using a combination of
+        # - A/B/C labels coming from above "clean_long_enough" clusters)
+        # - 1/2/3 labels coming from un-assigned "rest" segments
+        global_hypothesis = clustered_clean_long_enough.copy()
+
+        rest_copy = rest.copy()
+        for local_cluster in rest_copy.labels():
+            try:
+                # for each local cluster remaining in "rest", we find which global cluster it has been assigned to
+                segment, track = next(
+                    clean_long_enough.subset([local_cluster]).itertracks()
+                )
+                global_cluster = clustered_clean_long_enough[segment, track]
+
+                # we move its left-aside segments back into the corresponding global cluster
+                # we also remove those segments from "rest" to remember they are now dealt with.
+                for segment, track in rest_copy.subset([local_cluster]).itertracks():
+                    global_hypothesis[segment, track] = global_cluster
+                    del rest[segment, track]
+
+            except StopIteration:
+                # this happens if the original local cluster was not present at all in clean_long_enough
+                # it will be passed over to the upcoming "assignment" step (see below).
+                continue
+
+        if len(rest) > 0:
+            rest.rename_labels(generator="int", copy=False)
+            assigned_rest = self.assignment(file, rest, global_hypothesis)
+
+            # assigned_rest uses a combination of
+            # - A/B/C labels for speech turns assigned to global_hypothesis clusters
+            # - 1/2/3 labels for those that could not be assigned because they were too dissimlar
+
+            global_hypothesis.update(assigned_rest, copy=False)
+
+        return global_hypothesis
 
     def loss(self, file: AudioFile, hypothesis: Annotation) -> float:
         """Compute coverage at target purity (or vice versa)

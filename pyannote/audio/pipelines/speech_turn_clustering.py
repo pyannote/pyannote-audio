@@ -77,22 +77,21 @@ class SpeechTurnClustering(Pipeline):
         assert_string_labels(speech_turns, "speech_turns")
 
         if isinstance(self.embeddings, Inference):
+
+            # we precompute embeddings using a sliding window
             if self.embeddings.window == "sliding":
-                # we precompute embeddings using a sliding window
                 embeddings = self.embeddings(file)
 
+            # we differ embeddings computation to gather_label_embeddings
             elif self.embeddings.window == "whole":
-                raise NotImplementedError(
-                    "Inference with 'whole' window is not supported yet."
-                )
-                # TODO: warning about speed issue when Inference is on CPU
+                embeddings = self.embeddings
 
         else:
-            # we load precomputed embeddings
+            # we use precomputed embeddings
             embeddings = file[self.embeddings]
 
         X, clustered_labels, skipped_labels = gather_label_embeddings(
-            speech_turns, embeddings
+            speech_turns, embeddings, file=file
         )
 
         # apply clustering of label embeddings
