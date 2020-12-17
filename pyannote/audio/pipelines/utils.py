@@ -104,7 +104,7 @@ def gather_label_embeddings(
                 if len(x) > 0:
                     break
 
-            # skip labels so small we don't have any embedding for it
+            # skip labels so small we do not have any embedding for it
             if len(x) < 1:
                 skipped_labels.append(label)
                 continue
@@ -114,9 +114,12 @@ def gather_label_embeddings(
 
         elif isinstance(embeddings, Inference):
 
-            x = embeddings.crop(file, label_support)
-
-            # TODO: catch when label is so small that we can't extract embeddings
+            try:
+                x = embeddings.crop(file, label_support)
+            except RuntimeError:
+                # skip labels so small that we cannot even extract embeddings
+                skipped_labels.append(label)
+                continue
 
             if embeddings.window == "sliding":
                 X.append(np.mean(x, axis=0))
