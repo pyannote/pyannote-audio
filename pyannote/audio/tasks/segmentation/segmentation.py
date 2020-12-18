@@ -85,6 +85,8 @@ class Segmentation(SegmentationTaskMixin, Task):
     augmentation : BaseWaveformTransform, optional
         torch_audiomentations waveform transform, used by dataloader
         during training.
+    consistency_step : float, optional
+        Add consistency loss.
     """
 
     ACRONYM = "seg"
@@ -105,6 +107,7 @@ class Segmentation(SegmentationTaskMixin, Task):
         learning_rate: float = 1e-3,
         augmentation: BaseWaveformTransform = None,
         loss: Literal["bce", "mse"] = "bce",
+        consistency_step: float = 0.0,
     ):
 
         super().__init__(
@@ -128,6 +131,7 @@ class Segmentation(SegmentationTaskMixin, Task):
         if loss not in ["bce", "mse"]:
             raise ValueError("'loss' must be one of {'bce', 'mse'}.")
         self.loss = loss
+        self.consistency_step = consistency_step
 
         self.specifications = TaskSpecification(
             problem=Problem.MULTI_LABEL_CLASSIFICATION,
@@ -138,10 +142,27 @@ class Segmentation(SegmentationTaskMixin, Task):
         )
 
     def setup(self, stage=None):
-
-        super().setup(stage=stage)
-
         if stage == "fit":
+
+            # loop over the training set, remove annotated regions shorter than
+            # chunk duration, and keep track of the reference annotations.
+            self.train = []
+            for f in self.protocol.train():
+                segments = [
+                    segment
+                    for segment in f["annotated"]
+                    if segment.duration > self.duration + self.consistency_step
+                ]
+                duration = sum(segment.duration for segment in segments)
+                self.train.append(
+                    {
+                        "uri": f["uri"],
+                        "annotated": segments,
+                        "annotation": f["annotation"],
+                        "duration": duration,
+                        "audio": f["audio"],
+                    }
+                )
 
             # build the list of domains
             if self.domain is not None:
@@ -149,9 +170,39 @@ class Segmentation(SegmentationTaskMixin, Task):
                     f["domain"] = f[self.domain]
                 self.domains = list(set(f["domain"] for f in self.train))
 
+            # loop over the validation set, remove annotated regions shorter than
+            # chunk duration, and keep track of the reference annotations.
+            self.validation = []
+
+            # TODO: support consistency_step in validation
+
+            for f in self.protocol.development():
+                segments = [
+                    segment
+                    for segment in f["annotated"]
+                    if segment.duration > self.duration
+                ]
+                num_chunks = sum(
+                    round(segment.duration // self.duration) for segment in segments
+                )
+                self.validation.append(
+                    {
+                        "uri": f["uri"],
+                        "annotated": segments,
+                        "annotation": f["annotation"],
+                        "num_chunks": num_chunks,
+                        "audio": f["audio"],
+                    }
+                )
+
     def setup_loss_func(self, model: Model):
 
-        batch_size, num_frames, num_speakers = model(self.example_input_array).shape
+        example_input_array = self.example_input_array
+        _, _, num_samples = example_input_array.shape
+        self.num_samples = num_samples
+
+        batch_size, num_frames, num_speakers = model(example_input_array).shape
+        self.num_frames = num_frames
         hamming_window = torch.hamming_window(num_frames, periodic=False).reshape(-1, 1)
         model.register_buffer("hamming_window", hamming_window)
 
@@ -200,6 +251,8 @@ class Segmentation(SegmentationTaskMixin, Task):
 
     def train__iter__helper(self, rng: random.Random, domain: str = None):
 
+        duration = self.duration + self.consistency_step
+
         train = self.train
 
         if domain is not None:
@@ -222,10 +275,10 @@ class Segmentation(SegmentationTaskMixin, Task):
             )
 
             # select one chunk at random (with uniform distribution)
-            start_time = rng.uniform(segment.start, segment.end - self.duration)
-            chunk = Segment(start_time, start_time + self.duration)
+            start_time = rng.uniform(segment.start, segment.end - duration)
+            chunk = Segment(start_time, start_time + duration)
 
-            yield self.prepare_chunk(file, chunk, duration=self.duration)
+            yield self.prepare_chunk(file, chunk, duration=duration)
 
     def train__iter__(self):
         """Iterate over training samples
@@ -315,6 +368,23 @@ class Segmentation(SegmentationTaskMixin, Task):
 
         return torch.stack([y_pred[b, :, mapping[b]] for b in range(batch_size)])
 
+    def pit_loss(self, model, y, y_pred):
+
+        permutated_y_pred = self.permutate(y, y_pred)
+
+        if self.loss == "bce":
+            losses = F.binary_cross_entropy(
+                permutated_y_pred, y.float(), reduction="none"
+            )
+        elif self.loss == "mse":
+            losses = F.mse_loss(permutated_y_pred, y.float(), reduction="none")
+
+        # give less importance to start and end of chunks
+        # using the same (Hamming) window as inference.
+        loss = torch.mean(losses * model.hamming_window)
+
+        return loss
+
     def training_step(self, model: Model, batch, batch_idx: int):
         """Compute permutation-invariant binary cross-entropy
 
@@ -334,18 +404,40 @@ class Segmentation(SegmentationTaskMixin, Task):
         """
 
         X, y = batch["X"], batch["y"]
-        y_pred = self.permutate(y, model(X))
 
-        batch_size, num_frames, num_speakers = y_pred.shape
+        if self.consistency_step > 0.0:
 
-        if self.loss == "bce":
-            losses = F.binary_cross_entropy(y_pred, y.float(), reduction="none")
-        elif self.loss == "mse":
-            losses = F.mse_loss(y_pred, y.float(), reduction="none")
+            _, num_frames, _ = y.shape
 
-        # give less importance to start and end of chunks
-        # using the same (Hamming) window as inference.
-        loss = torch.mean(losses * model.hamming_window)
+            y_pred_1 = model(X[:, :, : self.num_samples])
+            y_pred_2 = model(X[:, :, -self.num_samples :])
+
+            consistency_loss = F.mse_loss(
+                y_pred_1[:, num_frames - self.num_frames :],
+                y_pred_2[:, : self.num_frames - num_frames],
+            )
+
+            y1 = y[:, num_frames - self.num_frames :, :]
+            loss1 = self.pit_loss(model, y1, y_pred_1)
+
+            y2 = y[:, : -(num_frames - self.num_frames)]
+            loss2 = self.pit_loss(model, y2, y_pred_2)
+
+            loss = 0.5 * (0.5 * (loss1 + loss2) + consistency_loss)
+
+            model.log(
+                f"{self.ACRONYM}@train_consistency_loss",
+                consistency_loss,
+                on_step=True,
+                on_epoch=True,
+                prog_bar=False,
+                logger=True,
+            )
+
+        else:
+
+            y_pred = model(X)
+            loss = self.pit_loss(model, y, y_pred)
 
         model.log(
             f"{self.ACRONYM}@train_loss",
