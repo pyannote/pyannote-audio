@@ -25,12 +25,83 @@ from typing import Optional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torchaudio.transforms import MFCC
 
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
 from pyannote.audio.models.blocks.pooling import StatsPool
 from pyannote.audio.models.blocks.sincnet import SincNet
 from pyannote.audio.models.blocks.tdnn import TDNN
+
+
+class XVectorMFCC(Model):
+
+    MFCC_DEFAULTS = {"n_mfcc": 40, "dct_type": 2, "norm": "ortho", "log_mels": False}
+
+    def __init__(
+        self,
+        sample_rate: int = 16000,
+        num_channels: int = 1,
+        mfcc: dict = None,
+        task: Optional[Task] = None,
+    ):
+        super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
+
+        mfcc_params = dict(**self.MFCC_DEFAULTS)
+        if mfcc is not None:
+            mfcc_params.update(**mfcc)
+        mfcc_params["sample_rate"] = sample_rate
+        self.hparams.mfcc = mfcc_params
+        self.mfcc = MFCC(**self.hparams.mfcc)
+
+        self.frame1 = TDNN(
+            context=[-2, 2],
+            input_channels=self.hparams.mfcc["n_mfcc"],
+            output_channels=512,
+            full_context=True,
+        )
+        self.frame2 = TDNN(
+            context=[-2, 0, 2],
+            input_channels=512,
+            output_channels=512,
+            full_context=False,
+        )
+        self.frame3 = TDNN(
+            context=[-3, 0, 3],
+            input_channels=512,
+            output_channels=512,
+            full_context=False,
+        )
+        self.frame4 = TDNN(
+            context=[0], input_channels=512, output_channels=512, full_context=True
+        )
+        self.frame5 = TDNN(
+            context=[0], input_channels=512, output_channels=1500, full_context=True
+        )
+
+        self.stats_pool = StatsPool()
+
+        self.segment6 = nn.Linear(3000, 512)
+        self.segment7 = nn.Linear(512, 512)
+
+    def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
+        """
+
+        Parameters
+        ----------
+        waveforms : (batch, channel, sample)
+
+        """
+
+        outputs = self.mfcc(waveforms).squeeze(dim=1)
+        outputs = self.frame1(outputs)
+        outputs = self.frame2(outputs)
+        outputs = self.frame3(outputs)
+        outputs = self.frame4(outputs)
+        outputs = self.frame5(outputs)
+        outputs = self.stats_pool(outputs)
+        outputs = self.segment6(F.relu(outputs))
+        return self.segment7(F.relu(outputs))
 
 
 class XVector(Model):
