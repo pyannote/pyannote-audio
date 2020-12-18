@@ -161,6 +161,8 @@ class SpeakerDiarization(Pipeline):
             except KeyError:
                 pass
 
+        # TODO: consider removing all short segments instead of short clusters
+
         long_enough_local_clusters = [
             local_cluster
             for local_cluster, duration in clean.chart()
@@ -243,7 +245,7 @@ class SpeakerDiarization(Pipeline):
 
         fmeasure = DiarizationPurityCoverageFMeasure()
 
-        reference = file["annotation"]
+        reference: Annotation = file["annotation"]
         _ = fmeasure(reference, hypothesis, uem=get_annotated(file))
         purity, coverage, _ = fmeasure.compute_metrics()
 
