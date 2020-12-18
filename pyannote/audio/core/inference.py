@@ -299,16 +299,16 @@ class Inference:
             if has_last_chunk:
                 num_frames_last_step, _ = model_introspection(last_step_size)
 
-            # kaiser window used for overlap-add aggregation
-            kaiser = np.kaiser(num_frames_per_chunk, 14.0).reshape(-1, 1)
+            # Hamming window used for overlap-add aggregation
+            hamming = np.hamming(num_frames_per_chunk).reshape(-1, 1)
 
-            # aggregated_output[i] will be used to store the (kaiser-weighted) sum
+            # aggregated_output[i] will be used to store the (hamming-weighted) sum
             # of all predictions for frame #i
             aggregated_output: np.ndarray = np.zeros(
                 (num_frames, dimension), dtype=np.float32
             )
 
-            # overlapping_chunk_count[i] will be used to store the (kaiser-weighted)
+            # overlapping_chunk_count[i] will be used to store the (hamming-weighted)
             # number of chunks that overlap with frame #i
             overlapping_chunk_count: np.ndarray = np.zeros(
                 (num_frames, 1), dtype=np.float32
@@ -330,12 +330,12 @@ class Inference:
                     previous_output = output
 
                 aggregated_output[start_frame : start_frame + num_frames_per_chunk] += (
-                    output * kaiser
+                    output * hamming
                 )
 
                 overlapping_chunk_count[
                     start_frame : start_frame + num_frames_per_chunk
-                ] += kaiser
+                ] += hamming
 
             # process last (right-aligned) chunk separately
             if has_last_chunk:
@@ -349,9 +349,9 @@ class Inference:
                     )
 
                 aggregated_output[-num_frames_per_chunk:] += (
-                    last_output[task_name] * kaiser
+                    last_output[task_name] * hamming
                 )
-                overlapping_chunk_count[-num_frames_per_chunk:] += kaiser
+                overlapping_chunk_count[-num_frames_per_chunk:] += hamming
 
             aggregated_output /= overlapping_chunk_count
 
@@ -388,8 +388,8 @@ class Inference:
         """
 
         num_frames, num_classes = output.shape
-        kaiser = np.kaiser(num_frames, 14.0)
-        weights = np.sqrt(kaiser[step_size:] * kaiser[: num_frames - step_size])
+        hamming = np.hamming(num_frames)
+        weights = np.sqrt(hamming[step_size:] * hamming[: num_frames - step_size])
 
         cost = np.zeros((num_classes, num_classes))
         for o in range(num_classes):

@@ -152,12 +152,10 @@ class Segmentation(SegmentationTaskMixin, Task):
     def setup_loss_func(self, model: Model):
 
         batch_size, num_frames, num_speakers = model(self.example_input_array).shape
-        kaiser_window = torch.kaiser_window(
-            num_frames, periodic=False, beta=12.0
-        ).reshape(-1, 1)
-        model.register_buffer("kaiser_window", kaiser_window)
+        hamming_window = torch.hamming_window(num_frames, periodic=False).reshape(-1, 1)
+        model.register_buffer("hamming_window", hamming_window)
 
-        val_sample_weight = kaiser_window.expand(
+        val_sample_weight = hamming_window.expand(
             batch_size, num_frames, num_speakers
         ).flatten()
 
@@ -346,8 +344,8 @@ class Segmentation(SegmentationTaskMixin, Task):
             losses = F.mse_loss(y_pred, y.float(), reduction="none")
 
         # give less importance to start and end of chunks
-        # using the same (Kaiser) window as inference.
-        loss = torch.mean(losses * model.kaiser_window)
+        # using the same (Hamming) window as inference.
+        loss = torch.mean(losses * model.hamming_window)
 
         model.log(
             f"{self.ACRONYM}@train_loss",
@@ -380,7 +378,7 @@ class Segmentation(SegmentationTaskMixin, Task):
                 y_pred.flatten(),
                 y.flatten(),
                 # give less importance to start and end of chunks
-                # using the same (Kaiser) window as inference.
+                # using the same (Hamming) window as inference.
                 sample_weight=model.val_sample_weight,
                 pos_label=1.0,
             )
