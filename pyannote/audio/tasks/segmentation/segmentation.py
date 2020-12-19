@@ -368,7 +368,8 @@ class Segmentation(SegmentationTaskMixin, Task):
 
         return torch.stack([y_pred[b, :, mapping[b]] for b in range(batch_size)])
 
-    def pit_loss(self, model, y, y_pred):
+    # def pit_loss(self, model, y, y_pred):
+    def pit_loss(self, y, y_pred):
 
         permutated_y_pred = self.permutate(y, y_pred)
 
@@ -379,9 +380,10 @@ class Segmentation(SegmentationTaskMixin, Task):
         elif self.loss == "mse":
             losses = F.mse_loss(permutated_y_pred, y.float(), reduction="none")
 
-        # give less importance to start and end of chunks
-        # using the same (Hamming) window as inference.
-        loss = torch.mean(losses * model.hamming_window)
+        # # give less importance to start and end of chunks
+        # # using the same (Hamming) window as inference.
+        # loss = torch.mean(losses * model.hamming_window)
+        loss = torch.mean(losses)
 
         return loss
 
@@ -411,19 +413,17 @@ class Segmentation(SegmentationTaskMixin, Task):
 
             y_pred_1 = model(X[:, :, : self.num_samples])
             y_pred_2 = model(X[:, :, -self.num_samples :])
-
-            consistency_loss = F.mse_loss(
-                y_pred_1[:, num_frames - self.num_frames :],
-                y_pred_2[:, : self.num_frames - num_frames],
-            )
+            consistency_loss = self.pit_loss(y_pred_1, y_pred_2)
 
             y1 = y[:, num_frames - self.num_frames :, :]
-            loss1 = self.pit_loss(model, y1, y_pred_1)
+            # loss1 = self.pit_loss(model, y1, y_pred_1)
+            loss1 = self.pit_loss(y1, y_pred_1)
 
             y2 = y[:, : -(num_frames - self.num_frames)]
-            loss2 = self.pit_loss(model, y2, y_pred_2)
+            # loss2 = self.pit_loss(model, y2, y_pred_2)
+            loss2 = self.pit_loss(y2, y_pred_2)
 
-            loss = 0.5 * (0.5 * (loss1 + loss2) + consistency_loss)
+            loss = (loss1 + loss2 + consistency_loss) / 3.0
 
             model.log(
                 f"{self.ACRONYM}@train_consistency_loss",
@@ -437,7 +437,8 @@ class Segmentation(SegmentationTaskMixin, Task):
         else:
 
             y_pred = model(X)
-            loss = self.pit_loss(model, y, y_pred)
+            # loss = self.pit_loss(model, y, y_pred)
+            loss = self.pit_loss(y, y_pred)
 
         model.log(
             f"{self.ACRONYM}@train_loss",
