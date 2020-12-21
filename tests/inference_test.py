@@ -12,6 +12,8 @@ from pyannote.audio.tasks import MultiTaskSegmentation, VoiceActivityDetection
 from pyannote.core import SlidingWindowFeature
 from pyannote.database import FileFinder, get_protocol
 
+HF_SAMPLE_MODEL_ID = "julien-c/voice-activity-detection"
+
 
 @pytest.fixture()
 def trained():
@@ -93,3 +95,8 @@ def test_multi_seg_infer():
     for attr in ["vad", "scd", "osd"]:
         assert attr in scores
         assert isinstance(scores[attr], SlidingWindowFeature)
+
+
+def test_hf_download():
+    inference = Inference(HF_SAMPLE_MODEL_ID, device="cpu")
+    assert isinstance(inference, Inference)
