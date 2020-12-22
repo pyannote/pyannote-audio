@@ -31,13 +31,15 @@ from asteroid_filterbanks import Encoder, ParamSincFB
 
 
 class SincNet(nn.Module):
-    def __init__(self, sample_rate: int = 16000):
+    def __init__(self, sample_rate: int = 16000, stride: int = 1):
         super().__init__()
 
         if sample_rate != 16000:
             raise NotImplementedError("PyanNet only supports 16kHz audio for now.")
             # TODO: add support for other sample rate. it should be enough to multiply
             # kernel_size by (sample_rate / 16000). but this needs to be double-checked.
+
+        self.stride = stride
 
         self.wav_norm1d = nn.InstanceNorm1d(1, affine=True)
 
@@ -50,7 +52,7 @@ class SincNet(nn.Module):
                 ParamSincFB(
                     80,
                     251,
-                    stride=1,
+                    stride=self.stride,
                     sample_rate=sample_rate,
                     min_low_hz=50,
                     min_band_hz=50,

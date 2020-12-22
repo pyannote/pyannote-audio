@@ -43,7 +43,11 @@ class Branch(nn.Module):
     LINEAR_DEFAULTS = {"hidden_size": 128, "num_layers": 1}
 
     def __init__(
-        self, in_features, lstm: dict = None, linear: dict = None, head: int = None
+        self,
+        in_features,
+        lstm: dict = None,
+        linear: dict = None,
+        head: int = None,
     ):
 
         super().__init__()
@@ -130,9 +134,14 @@ class MultiPyanNet(Model):
         Audio sample rate. Defaults to 16kHz (16000).
     num_channels : int, optional
         Number of channels. Defaults to mono (1).
+    sincnet : dict, optional
+        Keyword arugments passed to the SincNet block.
+        Defaults to {"stride": 1}.
     trunk : dict, optional
     branches : dict, optional
     """
+
+    SINCNET_DEFAULTS = {"stride": 1}
 
     TRUNK_DEFAULTS = {
         "lstm": {"num_layers": 3, "hidden_size": 128, "bidirectional": True},
@@ -153,12 +162,20 @@ class MultiPyanNet(Model):
         self,
         sample_rate: int = 16000,
         num_channels: int = 1,
+        sincnet: dict = None,
         trunk: dict = None,
         branches: dict = None,
         task: Optional[Task] = None,
     ):
 
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
+
+        sincnet_hparams = dict(**self.SINCNET_DEFAULTS)
+        if sincnet is not None:
+            sincnet_hparams.update(**sincnet)
+        sincnet_hparams["sample_rate"] = sample_rate
+        self.hparams.sincnet = sincnet_hparams
+        self.sincnet = SincNet(**self.hparams.sincnet)
 
         if trunk is None:
             trunk = self.TRUNK_DEFAULTS
@@ -168,7 +185,6 @@ class MultiPyanNet(Model):
             branches = self.BRANCHES_DEFAULTS
         self.hparams.branches = branches
 
-        self.sincnet = SincNet(sample_rate=sample_rate)
         self.trunk = Trunk(60, **self.hparams.trunk)
 
     def build(self):

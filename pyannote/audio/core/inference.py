@@ -29,6 +29,7 @@ import numpy as np
 import torch
 from einops import rearrange
 from pytorch_lightning.utilities.memory import is_oom_error
+from scipy.optimize import linear_sum_assignment
 
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import Model, ModelIntrospection, load_from_checkpoint
@@ -40,6 +41,8 @@ TaskName = Union[Text, None]
 
 class Inference:
     """Inference
+
+    TODO: add support for model averaging (either at output or weight level)
 
     Parameters
     ----------
@@ -72,7 +75,9 @@ class Inference:
     ):
 
         self.model = (
-            model if isinstance(model, Model) else load_from_checkpoint(Path(model))
+            model
+            if isinstance(model, Model)
+            else load_from_checkpoint(Path(model), strict=False)
         )
 
         if window not in ["sliding", "whole"]:
@@ -244,7 +249,8 @@ class Inference:
         num_chunks, _, _ = chunks.shape
 
         # prepare last (right-aligned) audio chunk
-        if (num_samples - window_size) % step_size > 0:
+        last_step_size = (num_samples - window_size) % step_size
+        if last_step_size > 0:
             last_start = num_samples - window_size
             last_chunk: torch.Tensor = waveform[:, last_start:]
             has_last_chunk = True
@@ -289,39 +295,63 @@ class Inference:
             _, model_introspection = self.model_introspection[t]
             num_frames, dimension = model_introspection(num_samples)
             num_frames_per_chunk, _ = model_introspection(window_size)
+            num_frames_per_step, _ = model_introspection(step_size)
+            if has_last_chunk:
+                num_frames_last_step, _ = model_introspection(last_step_size)
 
-            # kaiser window used for overlap-add aggregation
-            kaiser = np.kaiser(num_frames_per_chunk, 14.0).reshape(-1, 1)
+            # Hamming window used for overlap-add aggregation
+            hamming = np.hamming(num_frames_per_chunk).reshape(-1, 1)
 
-            # aggregated_output[i] will be used to store the (kaiser-weighted) sum
+            # aggregated_output[i] will be used to store the (hamming-weighted) sum
             # of all predictions for frame #i
             aggregated_output: np.ndarray = np.zeros(
                 (num_frames, dimension), dtype=np.float32
             )
 
-            # overlapping_chunk_count[i] will be used to store the (kaiser-weighted)
+            # overlapping_chunk_count[i] will be used to store the (hamming-weighted)
             # number of chunks that overlap with frame #i
             overlapping_chunk_count: np.ndarray = np.zeros(
                 (num_frames, 1), dtype=np.float32
             )
 
             # loop on the outputs of sliding chunks
+            if task_specifications.permutation_invariant:
+                previous_output = None
+
             for c, output in enumerate(outputs[task_name]):
                 start_sample = c * step_size
                 start_frame, _ = model_introspection(start_sample)
+
+                if task_specifications.permutation_invariant:
+                    if c > 0:
+                        output = self.permutate(
+                            previous_output, output, num_frames_per_step
+                        )
+                    previous_output = output
+
                 aggregated_output[start_frame : start_frame + num_frames_per_chunk] += (
-                    output * kaiser
+                    output * hamming
                 )
+
                 overlapping_chunk_count[
                     start_frame : start_frame + num_frames_per_chunk
-                ] += kaiser
+                ] += hamming
 
             # process last (right-aligned) chunk separately
             if has_last_chunk:
+
+                if (
+                    task_specifications.permutation_invariant
+                    and previous_output is not None
+                ):
+                    last_output[task_name] = self.permutate(
+                        previous_output, last_output[task_name], num_frames_last_step
+                    )
+
                 aggregated_output[-num_frames_per_chunk:] += (
-                    last_output[task_name] * kaiser
+                    last_output[task_name] * hamming
                 )
-                overlapping_chunk_count[-num_frames_per_chunk:] += kaiser
+                overlapping_chunk_count[-num_frames_per_chunk:] += hamming
 
             aggregated_output /= overlapping_chunk_count
 
@@ -336,6 +366,43 @@ class Inference:
         if self.is_multi_task:
             return results
         return results[None]
+
+    def permutate(
+        self, output: np.ndarray, next_output: np.ndarray, step_size: int
+    ) -> np.ndarray:
+        """Find correlation-maximizing permutation between two consecutive outputs
+
+        Parameters
+        ----------
+        output : (num_frames, num_classes) np.ndarray
+            Output
+        next_output : (num_frames, num_classes) np.ndarray
+            Next output
+        step_size : int
+            Step between output and next_output. Should be smaller than num_frames.
+
+        Returns
+        -------
+        perm_output : (num_frames, num_classes) np.ndarray
+            Permutated next_output.
+        """
+
+        num_frames, num_classes = output.shape
+        hamming = np.hamming(num_frames)
+        weights = np.sqrt(hamming[step_size:] * hamming[: num_frames - step_size])
+
+        cost = np.zeros((num_classes, num_classes))
+        for o in range(num_classes):
+            for n in range(num_classes):
+                cost[o, n] = np.average(
+                    (output[step_size:, o] - next_output[: num_frames - step_size, n])
+                    ** 2,
+                    weights=weights,
+                )
+
+        mapping = linear_sum_assignment(cost, maximize=False)[1]
+
+        return next_output[:, mapping]
 
     def __call__(
         self, file: AudioFile

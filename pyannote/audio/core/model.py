@@ -311,6 +311,10 @@ class Model(pl.LightningModule):
             # as it expects to find a "learning_rate" entry in model.hparams
             self.hparams.learning_rate = self.task.learning_rate
 
+            # some tasks use loss functions with learnable parameters
+            # setup_loss_func will take care of adding them to the model
+            self.task.setup_loss_func(self)
+
     def on_save_checkpoint(self, checkpoint):
         #  put everything pyannote.audio-specific under pyannote.audio
         #  to avoid any future conflicts with pytorch-lightning updates
@@ -432,10 +436,13 @@ class Model(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         return self.task.training_step(self, batch, batch_idx)
 
-    # validation step logic is delegated to the task because the
+    # validation logic is delegated to the task because the
     # model does not really need to know how it is being used.
     def validation_step(self, batch, batch_idx):
         return self.task.validation_step(self, batch, batch_idx)
+
+    def validation_epoch_end(self, outputs):
+        return self.task.validation_epoch_end(self, outputs)
 
     # optimizer is delegated to the task for the same reason as above
     def configure_optimizers(self):

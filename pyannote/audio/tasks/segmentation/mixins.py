@@ -269,25 +269,7 @@ class SegmentationTaskMixin:
             )
         except ValueError:
             # in case of all positive or all negative samples, auroc will raise a ValueError.
-            # we mark this batch as skipped and actually skip it.
-            model.log(
-                f"{self.ACRONYM}@val_skip",
-                1.0,
-                on_step=False,
-                on_epoch=True,
-                prog_bar=False,
-                logger=True,
-            )
             return
-
-        model.log(
-            f"{self.ACRONYM}@val_skip",
-            0.0,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=False,
-            logger=True,
-        )
 
         model.log(
             f"{self.ACRONYM}@val_auroc",
@@ -296,6 +278,7 @@ class SegmentationTaskMixin:
             on_epoch=True,
             prog_bar=True,
             logger=True,
+            sync_dist=True,
         )
 
     @property

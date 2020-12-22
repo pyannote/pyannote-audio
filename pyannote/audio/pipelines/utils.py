@@ -25,6 +25,7 @@ from typing import Union
 import numpy as np
 
 from pyannote.audio.core.inference import Inference
+from pyannote.audio.core.io import AudioFile
 from pyannote.core import Annotation, SlidingWindowFeature
 
 
@@ -61,7 +62,9 @@ def assert_int_labels(annotation: Annotation, name: str):
 
 
 def gather_label_embeddings(
-    annotation: Annotation, embeddings: Union[SlidingWindowFeature, Inference]
+    annotation: Annotation,
+    embeddings: Union[SlidingWindowFeature, Inference],
+    file: AudioFile = None,
 ):
     """Extract one embedding per label
 
@@ -72,6 +75,8 @@ def gather_label_embeddings(
     embeddings : SlidingWindowFeature or Inference
         Embeddings, either precomputed on a sliding window (SlidingWindowFeature)
         or to be computed on the fly (Inference).
+    file : AudioFile, optional
+        Needed when `embeddings` is an `Inference` instance
 
     Returns
     -------
@@ -99,7 +104,7 @@ def gather_label_embeddings(
                 if len(x) > 0:
                     break
 
-            # skip labels so small we don't have any embedding for it
+            # skip labels so small we do not have any embedding for it
             if len(x) < 1:
                 skipped_labels.append(label)
                 continue
@@ -108,7 +113,20 @@ def gather_label_embeddings(
             X.append(np.mean(x, axis=0))
 
         elif isinstance(embeddings, Inference):
-            # TODO: add "Timeline" chunk support to Inference.crop
-            raise NotImplementedError()
+
+            try:
+                x = embeddings.crop(file, label_support)
+            except RuntimeError:
+                # skip labels so small that we cannot even extract embeddings
+                skipped_labels.append(label)
+                continue
+
+            if embeddings.window == "sliding":
+                X.append(np.mean(x, axis=0))
+
+            elif embeddings.window == "whole":
+                X.append(x)
+
+            embedded_labels.append(label)
 
     return np.vstack(X), embedded_labels, skipped_labels

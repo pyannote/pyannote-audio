@@ -81,26 +81,27 @@ class SpeechTurnClosestAssignment(Pipeline):
         assert_int_labels(speech_turns, "speech_turns")
 
         if isinstance(self.embeddings, Inference):
+
+            # we precompute embeddings using a sliding window
             if self.embeddings.window == "sliding":
-                # we precompute embeddings using a sliding window
                 embeddings = self.embeddings(file)
 
+            # we differ embeddings computation to gahter_label_embeddings
             elif self.embeddings.window == "whole":
-                raise NotImplementedError(
-                    "Inference with 'whole' window is not supported yet."
-                )
-                # TODO: warning about speed issue when Inference is on CPU
+                embeddings = self.embeddings
 
         else:
-            # we load precomputed embeddings
+            # we use precomputed embeddings
             embeddings = file[self.embeddings]
 
         # gather targets embedding
-        X_targets, targets_labels, _ = gather_label_embeddings(targets, embeddings)
+        X_targets, targets_labels, _ = gather_label_embeddings(
+            targets, embeddings, file=file
+        )
 
         # gather speech turns embedding
         X, assigned_labels, skipped_labels = gather_label_embeddings(
-            speech_turns, embeddings
+            speech_turns, embeddings, file=file
         )
 
         # assign speech turns to closest class
