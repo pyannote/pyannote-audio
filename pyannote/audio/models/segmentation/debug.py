@@ -25,7 +25,7 @@ from typing import Optional
 
 import torch
 import torch.nn as nn
-from einops import rearrange, reduce
+from einops import rearrange
 from torchaudio.transforms import MFCC
 
 from pyannote.audio.core.model import Model
@@ -137,56 +137,3 @@ class MultiTaskSegmentationModel(Model):
             name: self.activation[name](self.classifier[name](output))
             for name in self.hparams.task_specifications
         }
-
-
-class SimpleEmbeddingModel(Model):
-    def __init__(
-        self,
-        sample_rate: int = 16000,
-        num_channels: int = 1,
-        task: Optional[Task] = None,
-    ):
-        super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
-
-        self.spec_transform = MFCC(
-            sample_rate=sample_rate,
-            n_mfcc=40,
-            dct_type=2,
-            norm="ortho",
-            log_mels=False,
-        )
-        self.lstm = nn.LSTM(
-            self.spec_transform.n_mfcc * self.hparams.num_channels,
-            32,
-            num_layers=1,
-            batch_first=True,
-            bidirectional=True,
-        )
-
-        # this is needed because example_output_array is needed in SpeakerEmbedding.setup
-        # to automagically infer the embedding size. but example_output_array is computed
-        # in Model.setup (which is called **after** Task.setup).
-
-        # note that this is only a problem for embedding tasks.
-        # we should find a way to automate this call so that the
-        # end user does not forget to call it. note that this must
-        # be called at the end of __init__
-        if self.task is not None:
-            self.task.example_output_array = self.forward(self.task.example_input_array)
-
-    def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
-        """
-
-        Parameters
-        ----------
-        waveforms : (batch, time, channel)
-
-        Returns
-        -------
-        embedding : (batch, dimension)
-        """
-        waveforms = self.waveform_transforms(waveforms)
-        mfcc = self.spec_transform(waveforms)
-        output, hidden = self.lstm(rearrange(mfcc, "b c f t -> b t (c f)"))
-        # mean temporal pooling
-        return reduce(output, "b t f -> b f", "mean")

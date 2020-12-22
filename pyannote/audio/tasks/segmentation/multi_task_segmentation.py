@@ -25,8 +25,10 @@ import random
 from typing import Mapping
 
 import numpy as np
+from pytorch_lightning.metrics.functional.classification import auroc
 
 from pyannote.audio.core.io import Audio
+from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
 from pyannote.audio.tasks import (
     OverlappedSpeechDetection,
@@ -92,6 +94,8 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
         during training.
 
     """
+
+    ACRONYM = "xseg"
 
     def __init__(
         self,
@@ -277,3 +281,74 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
             combined_y = np.minimum(combined_y, 1, out=combined_y)
 
             yield {"X": X, "y": self.prepare_y(combined_y)}
+
+    def validation_step(self, model: Model, batch, batch_idx: int):
+        """Compute areas under ROC curve
+
+        Parameters
+        ----------
+        model : Model
+            Model currently being validated.
+        batch : dict of torch.Tensor
+            Current batch.
+        batch_idx: int
+            Batch index.
+        """
+
+        X, y = batch["X"], batch["y"]
+        y_pred = model(X)
+
+        auc = dict()
+        skipped = False
+
+        for task_name in self.specifications:
+            try:
+                auc[task_name] = auroc(
+                    y_pred[task_name].view(-1)[::10],
+                    y[task_name].view(-1)[::10],
+                    sample_weight=None,
+                    pos_label=1.0,
+                )
+            except ValueError:
+                # in case of all positive or all negative samples, auroc will raise a ValueError.
+                # we mark this batch as skipped for current task
+                model.log(
+                    f"{task_name}@val_skip",
+                    1.0,
+                    on_step=False,
+                    on_epoch=True,
+                    prog_bar=False,
+                    logger=True,
+                )
+                skipped = True
+                continue
+
+            model.log(
+                f"{task_name}@val_skip",
+                0.0,
+                on_step=False,
+                on_epoch=True,
+                prog_bar=False,
+                logger=True,
+            )
+
+            model.log(
+                f"{task_name}@val_auroc",
+                auc[task_name],
+                on_step=False,
+                on_epoch=True,
+                prog_bar=True,
+                logger=True,
+            )
+
+        if skipped:
+            return
+
+        model.log(
+            f"{self.ACRONYM}@val_auroc",
+            sum(auc.values()) / len(auc),
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+        )

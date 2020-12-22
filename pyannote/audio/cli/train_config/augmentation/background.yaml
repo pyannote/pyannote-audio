@@ -1,10 +1,8 @@
 # @package _group_
-_target_: torch_audiomentations.utils.config.from_dict
-config:
-    transform: ApplyBackgroundNoise
-    params:
-        background_paths: ???
-        min_snr_in_db: 5.
-        max_snr_in_db: 20.
-        mode: per_example
-        p: 1.0
+transform: ApplyBackgroundNoise
+params:
+  background_paths: ???
+  min_snr_in_db: 5.
+  max_snr_in_db: 20.
+  mode: per_example
+  p: 1.0

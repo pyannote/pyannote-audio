@@ -380,14 +380,35 @@ class Task(pl.LightningDataModule):
                 loss[task_name] = self.default_loss(
                     specifications, y[task_name], y_pred[task_name]
                 )
-                model.log(f"{task_name}_train_loss", loss[task_name])
+                model.log(
+                    f"{task_name}@train_loss",
+                    loss[task_name],
+                    on_step=True,
+                    on_epoch=True,
+                    prog_bar=False,
+                    logger=False,
+                )
 
             loss["loss"] = sum(loss.values())
-            model.log("train_loss", loss["loss"])
+            model.log(
+                f"{self.ACRONYM}@train_loss",
+                loss["loss"],
+                on_step=True,
+                on_epoch=True,
+                prog_bar=True,
+                logger=True,
+            )
             return loss
 
         loss = self.default_loss(self.specifications, y, y_pred)
-        model.log("train_loss", loss)
+        model.log(
+            f"{self.ACRONYM}@train_loss",
+            loss,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+        )
         return {"loss": loss}
 
     def val__iter__(self):
@@ -400,17 +421,18 @@ class Task(pl.LightningDataModule):
         msg = f"Missing '{self.__class__.__name__}.val__len__' method."
         raise NotImplementedError(msg)
 
-    def val_dataloader(self) -> DataLoader:
-        dl = DataLoader(
-            ValDataset(self),
-            batch_size=self.batch_size,
-            num_workers=self.num_workers,
-            pin_memory=self.pin_memory,
-            drop_last=False,
-        )
-        if not self.gpu:
-            dl.collate_fn = self.waveform_transforms
-        return dl
+    def val_dataloader(self) -> Optional[DataLoader]:
+        val_callback = self.val_callback()
+        if val_callback is None:
+            return DataLoader(
+                ValDataset(self),
+                batch_size=self.batch_size,
+                num_workers=self.num_workers,
+                pin_memory=self.pin_memory,
+                drop_last=False,
+            )
+        else:
+            return None
 
     # default validation_step provided for convenience
     # can obviously be overriden for each task
@@ -434,7 +456,7 @@ class Task(pl.LightningDataModule):
         Returns
         -------
         loss : {str: torch.tensor}
-            {"loss": loss} with additional "loss_{task_name}" keys for multi-task models.
+            {"loss": loss} with additional "{task_name}" keys for multi-task models.
         """
 
         X, y = batch["X"], batch["y"]
@@ -446,15 +468,30 @@ class Task(pl.LightningDataModule):
                 loss[task_name] = self.default_loss(
                     specifications, y[task_name], y_pred[task_name]
                 )
-                model.log(f"{task_name}_val_loss", loss[task_name])
+                model.log(f"{task_name}@val_loss", loss[task_name])
 
             loss["loss"] = sum(loss.values())
-            model.log("val_loss", loss["loss"])
+            model.log(
+                f"{self.ACRONYM}@val_loss",
+                loss["loss"],
+                on_step=False,
+                on_epoch=True,
+                prog_bar=True,
+            )
             return loss
 
         loss = self.default_loss(self.specifications, y, y_pred)
-        model.log("val_loss", loss)
+        model.log(
+            f"{self.ACRONYM}@val_loss",
+            loss,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+        )
         return {"loss": loss}
+
+    def val_callback(self):
+        return None
 
     def parameters(self, model: Model) -> Iterable[Parameter]:
         return model.parameters()
@@ -470,7 +507,7 @@ class Task(pl.LightningDataModule):
         return self.optimizer(self.parameters(model), lr=lr)
 
     @property
-    def validation_monitor(self):
+    def val_monitor(self):
         """Quantity (and direction) to monitor
 
         Useful for model checkpointing or early stopping.
@@ -487,4 +524,4 @@ class Task(pl.LightningDataModule):
         pytorch_lightning.callbacks.ModelCheckpoint
         pytorch_lightning.callbacks.EarlyStopping
         """
-        return "val_loss", "min"
+        return f"{self.ACRONYM}@val_loss", "min"

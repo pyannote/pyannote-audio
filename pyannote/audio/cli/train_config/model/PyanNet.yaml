@@ -1,2 +1,2 @@
 # @package _group_
-_target_: pyannote.audio.models.PyanNet
+_target_: pyannote.audio.models.segmentation.PyanNet

@@ -81,6 +81,8 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
         during training.
     """
 
+    ACRONYM = "osd"
+
     def __init__(
         self,
         *args,

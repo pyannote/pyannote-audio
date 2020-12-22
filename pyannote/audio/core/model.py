@@ -24,6 +24,7 @@ import warnings
 from dataclasses import dataclass
 from functools import cached_property
 from importlib import import_module
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Text, Tuple, Union
 
 import pytorch_lightning as pl
@@ -168,7 +169,7 @@ class Model(pl.LightningModule):
             layout=example_input_array.layout,
             device=example_input_array.device,
             requires_grad=False,
-        )
+        ).to(self.device)
 
         # dichotomic search of "min_num_samples"
         lower, upper, min_num_samples = 1, num_samples, None
@@ -414,10 +415,12 @@ class Model(pl.LightningModule):
         task_specifications = self.hparams.task_specifications
 
         if self.is_multi_task:
-            return {
-                name: self.helper_default_activation(specs)
-                for name, specs in task_specifications.items()
-            }
+            return nn.ModuleDict(
+                {
+                    name: self.helper_default_activation(specs)
+                    for name, specs in task_specifications.items()
+                }
+            )
 
         return self.helper_default_activation(task_specifications)
 
@@ -606,19 +609,50 @@ class Model(pl.LightningModule):
         return self._helper_by_name(modules, recurse=recurse, requires_grad=True)
 
 
-def load_from_checkpoint(checkpoint_path: str, map_location=None) -> Model:
+def load_from_checkpoint(
+    checkpoint_path: Union[Path, Text],
+    map_location=None,
+    hparams_file: Union[Path, Text] = None,
+    strict: bool = True,
+    **kwargs,
+) -> Model:
     """Load model from checkpoint
 
     Parameters
     ----------
-    checkpoint_path: str
+    checkpoint_path : Path or str
         Path to checkpoint. This can also be a URL.
+    map_location: optional
+        If your checkpoint saved a GPU model and you now load on CPUs
+        or a different number of GPUs, use this to map to the new setup.
+        The behaviour is the same as in torch.load().
+    hparams_file : Path or str, optional
+        Path to a .yaml file with hierarchical structure as in this example:
+            drop_prob: 0.2
+            dataloader:
+                batch_size: 32
+        You most likely won’t need this since Lightning will always save the
+        hyperparameters to the checkpoint. However, if your checkpoint weights
+        do not have the hyperparameters saved, use this method to pass in a .yaml
+        file with the hparams you would like to use. These will be converted
+        into a dict and passed into your Model for use.
+    strict : bool, optional
+        Whether to strictly enforce that the keys in checkpoint_path match
+        the keys returned by this module’s state dict. Defaults to True.
+    kwargs: optional
+        Any extra keyword args needed to init the model.
+        Can also be used to override saved hyperparameter values.
 
     Returns
     -------
     model : Model
         Model
     """
+
+    # pytorch-lightning expects str, not Path.
+    checkpoint_path = str(checkpoint_path)
+    if hparams_file is not None:
+        hparams_file = str(hparams_file)
 
     # obtain model class from the checkpoint
     checkpoint = pl_load(checkpoint_path, map_location=map_location)
@@ -629,4 +663,10 @@ def load_from_checkpoint(checkpoint_path: str, map_location=None) -> Model:
     class_name: str = checkpoint["pyannote.audio"]["model"]["class"]
     Klass: Model = getattr(module, class_name)
 
-    return Klass.load_from_checkpoint(checkpoint_path)
+    return Klass.load_from_checkpoint(
+        checkpoint_path,
+        map_location=map_location,
+        hparams_file=hparams_file,
+        strict=strict,
+        **kwargs,
+    )

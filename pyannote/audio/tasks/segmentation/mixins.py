@@ -25,8 +25,10 @@ import warnings
 from typing import List, Optional, Text, Tuple
 
 import numpy as np
+from pytorch_lightning.metrics.functional.classification import auroc
 
 from pyannote.audio.core.io import AudioFile
+from pyannote.audio.core.model import Model
 from pyannote.audio.utils.random import create_rng_for_worker
 from pyannote.core import Segment, SlidingWindow
 
@@ -241,3 +243,62 @@ class SegmentationTaskMixin:
         # Number of validation samples in one epoch
         num_chunks = sum(file["num_chunks"] for file in self.validation)
         return num_chunks
+
+    def validation_step(self, model: Model, batch, batch_idx: int):
+        """Compute area under ROC curve
+
+        Parameters
+        ----------
+        model : Model
+            Model currently being validated.
+        batch : dict of torch.Tensor
+            Current batch.
+        batch_idx: int
+            Batch index.
+        """
+
+        X, y = batch["X"], batch["y"]
+        y_pred = model(X)
+
+        try:
+            auc = auroc(
+                y_pred.view(-1)[::10],
+                y.view(-1)[::10],
+                sample_weight=None,
+                pos_label=1.0,
+            )
+        except ValueError:
+            # in case of all positive or all negative samples, auroc will raise a ValueError.
+            # we mark this batch as skipped and actually skip it.
+            model.log(
+                f"{self.ACRONYM}@val_skip",
+                1.0,
+                on_step=False,
+                on_epoch=True,
+                prog_bar=False,
+                logger=True,
+            )
+            return
+
+        model.log(
+            f"{self.ACRONYM}@val_skip",
+            0.0,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=False,
+            logger=True,
+        )
+
+        model.log(
+            f"{self.ACRONYM}@val_auroc",
+            auc,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+        )
+
+    @property
+    def val_monitor(self):
+        """Maximize validation area under ROC curve"""
+        return f"{self.ACRONYM}@val_auroc", "max"

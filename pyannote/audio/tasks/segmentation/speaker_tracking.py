@@ -20,10 +20,16 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import List, Text
+from typing import Callable, Iterable, List, Text
 
+from pytorch_lightning.metrics.functional.classification import auroc
+from torch.nn import Module, Parameter
+from torch.optim import Adam, Optimizer
+
+from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Problem, Scale, Task, TaskSpecification
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
+from pyannote.database import Protocol
 
 
 class SpeakerTracking(SegmentationTaskMixin, Task):
@@ -60,10 +66,35 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
         during training.
     """
 
-    # for speaker tracking, task specification depends
-    # on the data: we do not know in advance which
-    # speakers should be tracked. therefore, we postpone
-    # the definition of specifications in the __init__
+    ACRONYM = "spk"
+
+    def __init__(
+        self,
+        protocol: Protocol,
+        duration: float = 2.0,
+        batch_size: int = 32,
+        num_workers: int = 1,
+        pin_memory: bool = False,
+        optimizer: Callable[[Iterable[Parameter]], Optimizer] = Adam,
+        learning_rate: float = 1e-3,
+        transforms: List[Module] = [],
+    ):
+
+        super().__init__(
+            protocol,
+            duration=duration,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            pin_memory=pin_memory,
+            optimizer=optimizer,
+            learning_rate=learning_rate,
+            transforms=transforms,
+        )
+
+        # for speaker tracking, task specification depends
+        # on the data: we do not know in advance which
+        # speakers should be tracked. therefore, we postpone
+        # the definition of specifications.
 
     def setup(self, stage=None):
 
@@ -95,3 +126,62 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
         Used by `prepare_chunk` so that y[:, k] corresponds to activity of kth speaker
         """
         return self.specifications.classes
+
+    def validation_step(self, model: Model, batch, batch_idx: int):
+        """Compute area under ROC curve
+
+        Parameters
+        ----------
+        model : Model
+            Model currently being validated.
+        batch : dict of torch.Tensor
+            Current batch.
+        batch_idx: int
+            Batch index.
+        """
+
+        num_speakers = len(self.specifications.classes)
+
+        X = batch["X"]
+        y = batch["y"].view(-1, num_speakers)
+        y_pred = model(X).view(-1, num_speakers)
+
+        auc = dict()
+        for k, speaker in enumerate(self.specifications.classes):
+            try:
+                auc[speaker] = auroc(
+                    y_pred[::10, k],
+                    y[::10, k],
+                    sample_weight=None,
+                    pos_label=1.0,
+                )
+            except ValueError:
+                # in case of all positive or all negative samples, auroc will raise a ValueError.
+                # we mark this batch as skipped and actually skip it.
+                model.log(
+                    f"{self.ACRONYM}@val_skip",
+                    1.0,
+                    on_step=False,
+                    on_epoch=True,
+                    prog_bar=False,
+                    logger=True,
+                )
+                return
+
+        model.log(
+            f"{self.ACRONYM}@val_skip",
+            0.0,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=False,
+            logger=True,
+        )
+
+        model.log(
+            f"{self.ACRONYM}@val_auroc",
+            sum(auc.values()) / len(auc),
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+        )

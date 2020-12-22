@@ -20,7 +20,8 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-
+import functools
+import os
 from typing import Iterable
 
 import hydra
@@ -28,22 +29,35 @@ from hydra.utils import instantiate
 from omegaconf import DictConfig
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning.utilities.seed import seed_everything
 from torch.nn import Parameter
 from torch.optim import Optimizer
 
 from pyannote.database import FileFinder, get_protocol
 
 
+def get_optimizer(
+    parameters: Iterable[Parameter], lr: float = 1e-3, cfg: DictConfig = None
+) -> Optimizer:
+    return instantiate(cfg.optimizer, parameters, lr=lr)
+
+
 @hydra.main(config_path="train_config", config_name="config")
 def main(cfg: DictConfig) -> None:
+
+    # make sure to set the random seed before the instantiation of Trainer
+    # so that each model initializes with the same weights when using DDP.
+    seed = int(os.environ.get("PL_GLOBAL_SEED", "0"))
+    seed_everything(seed=seed)
 
     protocol = get_protocol(cfg.protocol, preprocessors={"audio": FileFinder()})
 
     # TODO: configure scheduler
     # TODO: configure layer freezing
 
-    def optimizer(parameters: Iterable[Parameter], lr: float = 1e-3) -> Optimizer:
-        return instantiate(cfg.optimizer, parameters, lr=lr)
+    # TODO: remove this OmegaConf.to_container hack once bug is solved:
+    # https://github.com/omry/omegaconf/pull/443
+    optimizer = functools.partial(get_optimizer, cfg=cfg)
 
     task = instantiate(
         cfg.task,
@@ -52,9 +66,17 @@ def main(cfg: DictConfig) -> None:
         learning_rate=cfg.optimizer.lr,
     )
 
+    callbacks = []
+
+    val_callback = task.val_callback()
+    if val_callback is None:
+        monitor, mode = task.val_monitor
+    else:
+        callbacks.append(val_callback)
+        monitor, mode = val_callback.val_monitor
+
     model = instantiate(cfg.model, task=task)
 
-    monitor, mode = task.validation_monitor
     model_checkpoint = ModelCheckpoint(
         monitor=monitor,
         mode=mode,
@@ -66,40 +88,52 @@ def main(cfg: DictConfig) -> None:
         filename=f"{{epoch}}-{{{monitor}:.3f}}",
         verbose=cfg.verbose,
     )
+    callbacks.append(model_checkpoint)
 
+    # TODO: add option to configure early stopping patience
     early_stopping = EarlyStopping(
         monitor=monitor,
         mode=mode,
         min_delta=0.0,
-        patience=10,
+        patience=50,
         strict=True,
         verbose=cfg.verbose,
     )
+    callbacks.append(early_stopping)
 
+    # TODO: fail safely when log_graph=True raises an onnx error
     logger = TensorBoardLogger(
         ".",
         name="",
         version="",
-        log_graph=True,
+        # log_graph=True,
     )
 
     trainer = instantiate(
         cfg.trainer,
-        callbacks=[model_checkpoint, early_stopping],
+        callbacks=callbacks,
         logger=logger,
     )
 
-    if cfg.trainer.auto_lr_find == True:
-        #  HACK: these two lines below should be removed once
-        #  the corresponding bug is fixed in pytorch-lighting.
-        #  https://github.com/pyannote/pyannote-audio/issues/514
+    if cfg.trainer.get("auto_lr_find", False):
+        # HACK: everything but trainer.tune(...) should be removed
+        # once the corresponding bug is fixed in pytorch-lighting.
+        # https://github.com/pyannote/pyannote-audio/issues/514
         task.setup(stage="fit")
         model.setup(stage="fit")
         trainer.tune(model, task)
+        lr = model.hparams.learning_rate
+        task = instantiate(
+            cfg.task,
+            protocol,
+            optimizer=optimizer,
+            learning_rate=lr,
+        )
+        model = instantiate(cfg.model, task=task)
 
     trainer.fit(model, task)
 
-    best_monitor = float(early_stopping.best_score)
+    best_monitor = float(model_checkpoint.best_model_score)
     if mode == "min":
         return best_monitor
     else:

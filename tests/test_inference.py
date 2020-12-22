@@ -4,7 +4,7 @@ import pytorch_lightning as pl
 
 from pyannote.audio.core.inference import Inference
 from pyannote.audio.core.task import Scale
-from pyannote.audio.models.debug import (
+from pyannote.audio.models.segmentation.debug import (
     MultiTaskSegmentationModel,
     SimpleSegmentationModel,
 )

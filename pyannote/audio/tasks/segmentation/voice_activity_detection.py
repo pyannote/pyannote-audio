@@ -58,6 +58,8 @@ class VoiceActivityDetection(SegmentationTaskMixin, Task):
         during training.
     """
 
+    ACRONYM = "vad"
+
     def __init__(
         self,
         *args,
