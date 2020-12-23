@@ -21,21 +21,20 @@
 # SOFTWARE.
 
 import functools
-from typing import Iterable
 import os
+from typing import Iterable
 
 import hydra
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
-
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.utilities.seed import seed_everything
 from torch.nn import Parameter
 from torch.optim import Optimizer
+from torch_audiomentations.utils.config import from_dict as get_augmentation
 
 from pyannote.database import FileFinder, get_protocol
-from torch_audiomentations.utils.config import from_dict as get_augmentation
 
 
 def get_optimizer(
@@ -51,7 +50,7 @@ def main(cfg: DictConfig) -> None:
     # so that each model initializes with the same weights when using DDP.
     seed = int(os.environ.get("PL_GLOBAL_SEED", "0"))
     seed_everything(seed=seed)
-    
+
     protocol = get_protocol(cfg.protocol, preprocessors={"audio": FileFinder()})
 
     # TODO: configure scheduler
@@ -59,8 +58,12 @@ def main(cfg: DictConfig) -> None:
 
     # TODO: remove this OmegaConf.to_container hack once bug is solved:
     # https://github.com/omry/omegaconf/pull/443
-    augmentation = get_augmentation(OmegaConf.to_container(cfg.augmentation)) if "augmentation" in cfg else None
-    
+    augmentation = (
+        get_augmentation(OmegaConf.to_container(cfg.augmentation))
+        if "augmentation" in cfg
+        else None
+    )
+
     optimizer = functools.partial(get_optimizer, cfg=cfg)
 
     task = instantiate(
@@ -90,12 +93,12 @@ def main(cfg: DictConfig) -> None:
         save_last=True,
         save_weights_only=False,
         dirpath=".",
-        filename=f"{{epoch}}-{{{monitor}:.3f}}",
+        filename=f"{{epoch}}-{{{monitor}:.6f}}",
         verbose=cfg.verbose,
     )
     callbacks.append(model_checkpoint)
 
-    # TODO: add option to configure early stopping patience    
+    # TODO: add option to configure early stopping patience
     early_stopping = EarlyStopping(
         monitor=monitor,
         mode=mode,
@@ -114,7 +117,6 @@ def main(cfg: DictConfig) -> None:
         # log_graph=True,
     )
 
-    
     trainer = instantiate(
         cfg.trainer,
         callbacks=callbacks,
