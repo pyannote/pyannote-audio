@@ -87,6 +87,8 @@ class Segmentation(SegmentationTaskMixin, Task):
         during training.
     consistency_step : float, optional
         Add consistency loss.
+    vad_loss : {"bce", "mse"}, optional
+        Add voice activity detection loss.
     """
 
     ACRONYM = "seg"
@@ -108,6 +110,7 @@ class Segmentation(SegmentationTaskMixin, Task):
         augmentation: BaseWaveformTransform = None,
         loss: Literal["bce", "mse"] = "bce",
         consistency_step: float = 0.0,
+        vad_loss: Literal["bce", "mse"] = None,
     ):
 
         super().__init__(
@@ -132,6 +135,7 @@ class Segmentation(SegmentationTaskMixin, Task):
             raise ValueError("'loss' must be one of {'bce', 'mse'}.")
         self.loss = loss
         self.consistency_step = consistency_step
+        self.vad_loss = vad_loss
 
         self.specifications = TaskSpecification(
             problem=Problem.MULTI_LABEL_CLASSIFICATION,
@@ -368,24 +372,54 @@ class Segmentation(SegmentationTaskMixin, Task):
 
         return torch.stack([y_pred[b, :, mapping[b]] for b in range(batch_size)])
 
-    # def pit_loss(self, model, y, y_pred):
-    def pit_loss(self, y, y_pred):
+    # def segmentation_loss(self, model, y, y_pred):
+    def segmentation_loss(self, y: torch.Tensor, y_pred: torch.Tensor) -> torch.Tensor:
+        """Permutation-invariant segmentation loss
+
+        Parameters
+        ----------
+        y : (batch_size, num_frames, num_speakers) torch.Tensor
+            Speaker activity.
+        y_pred : torch.Tensor
+            Speaker activations
+
+        Returns
+        -------
+        seg_loss : torch.Tensor
+            Permutation-invariant segmentation loss
+        """
 
         permutated_y_pred = self.permutate(y, y_pred)
 
         if self.loss == "bce":
-            losses = F.binary_cross_entropy(
+            seg_losses = F.binary_cross_entropy(
                 permutated_y_pred, y.float(), reduction="none"
             )
+
         elif self.loss == "mse":
-            losses = F.mse_loss(permutated_y_pred, y.float(), reduction="none")
+            seg_losses = F.mse_loss(permutated_y_pred, y.float(), reduction="none")
 
-        # # give less importance to start and end of chunks
-        # # using the same (Hamming) window as inference.
-        # loss = torch.mean(losses * model.hamming_window)
-        loss = torch.mean(losses)
+        # seg_loss = torch.mean(seg_losses * model.hamming_window)
+        seg_loss = torch.mean(seg_losses)
 
-        return loss
+        return seg_loss
+
+    def voice_activity_detection_loss(
+        self, y: torch.Tensor, y_pred: torch.Tensor
+    ) -> torch.Tensor:
+
+        vad_y_pred, _ = torch.max(y_pred, dim=2, keepdim=False)
+        vad_y, _ = torch.max(y.float(), dim=2, keepdim=False)
+
+        if self.vad_loss == "bce":
+            vad_losses = F.binary_cross_entropy(vad_y_pred, vad_y, reduction="none")
+
+        elif self.vad_loss == "mse":
+            vad_losses = F.mse_loss(vad_y_pred, vad_y, reduction="none")
+
+        vad_loss = torch.mean(vad_losses)
+
+        return vad_loss
 
     def training_step(self, model: Model, batch, batch_idx: int):
         """Compute permutation-invariant binary cross-entropy
@@ -413,17 +447,7 @@ class Segmentation(SegmentationTaskMixin, Task):
 
             y_pred_1 = model(X[:, :, : self.num_samples])
             y_pred_2 = model(X[:, :, -self.num_samples :])
-            consistency_loss = self.pit_loss(y_pred_1, y_pred_2)
-
-            y1 = y[:, num_frames - self.num_frames :, :]
-            # loss1 = self.pit_loss(model, y1, y_pred_1)
-            loss1 = self.pit_loss(y1, y_pred_1)
-
-            y2 = y[:, : -(num_frames - self.num_frames)]
-            # loss2 = self.pit_loss(model, y2, y_pred_2)
-            loss2 = self.pit_loss(y2, y_pred_2)
-
-            loss = (loss1 + loss2 + consistency_loss) / 3.0
+            consistency_loss = self.segmentation_loss(y_pred_1, y_pred_2)
 
             model.log(
                 f"{self.ACRONYM}@train_consistency_loss",
@@ -434,11 +458,58 @@ class Segmentation(SegmentationTaskMixin, Task):
                 logger=True,
             )
 
+            y1 = y[:, num_frames - self.num_frames :, :]
+            # seg_loss1 = self.segmentation_loss(model, y1, y_pred_1)
+            seg_loss1 = self.segmentation_loss(y1, y_pred_1)
+
+            y2 = y[:, : -(num_frames - self.num_frames)]
+            # seg_loss2 = self.segmentation_loss(model, y2, y_pred_2)
+            seg_loss2 = self.segmentation_loss(y2, y_pred_2)
+
+            model.log(
+                f"{self.ACRONYM}@train_seg_loss",
+                0.5 * (seg_loss1 + seg_loss2),
+                on_step=True,
+                on_epoch=True,
+                prog_bar=False,
+                logger=True,
+            )
+
+            loss = seg_loss1 + seg_loss2 + consistency_loss
+
+            # TODO: add support for VAD loss
+
         else:
 
             y_pred = model(X)
-            # loss = self.pit_loss(model, y, y_pred)
-            loss = self.pit_loss(y, y_pred)
+            # loss = self.segmentation_loss(model, y, y_pred)
+            seg_loss = self.segmentation_loss(y, y_pred)
+
+            model.log(
+                f"{self.ACRONYM}@train_seg_loss",
+                seg_loss,
+                on_step=True,
+                on_epoch=True,
+                prog_bar=False,
+                logger=True,
+            )
+
+            if self.vad_loss is None:
+                vad_loss = 0.0
+
+            else:
+                vad_loss = self.voice_activity_detection_loss(y, y_pred)
+
+                model.log(
+                    f"{self.ACRONYM}@train_vad_loss",
+                    vad_loss,
+                    on_step=True,
+                    on_epoch=True,
+                    prog_bar=False,
+                    logger=True,
+                )
+
+            loss = seg_loss + vad_loss
 
         model.log(
             f"{self.ACRONYM}@train_loss",
