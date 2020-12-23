@@ -32,15 +32,11 @@ from urllib.parse import urlparse
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
+from huggingface_hub import cached_download, hf_hub_url
 from pytorch_lightning.utilities.cloud_io import load as pl_load
 from semver import VersionInfo
 
 from pyannote.audio import __version__
-from pyannote.audio.core.hf_hub import (
-    HF_PYTORCH_WEIGHTS_NAME,
-    hf_cached_download,
-    hf_hub_url,
-)
 from pyannote.audio.core.io import Audio
 from pyannote.audio.core.task import Problem, Scale, Task, TaskSpecification
 
@@ -48,6 +44,7 @@ CACHE_DIR = os.getenv(
     "PYANNOTE_CACHE",
     os.path.expanduser("~/.cache/torch/pyannote"),
 )
+HF_PYTORCH_WEIGHTS_NAME = "pytorch_model.bin"
 
 
 @dataclass
@@ -693,11 +690,11 @@ def load_from_checkpoint(
         url = hf_hub_url(
             model_id=model_id, filename=HF_PYTORCH_WEIGHTS_NAME, revision=revision
         )
-        path_for_pl = hf_cached_download(
+        path_for_pl = cached_download(
             url=url,
-            cache_dir=CACHE_DIR,
             library_name="pyannote",
             library_version=__version__,
+            cache_dir=CACHE_DIR,
         )
 
     # obtain model class from the checkpoint

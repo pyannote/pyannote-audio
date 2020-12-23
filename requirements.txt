@@ -1,6 +1,6 @@
 asteroid-filterbanks == 0.1.0
 einops >= 0.3.0
-filelock
+huggingface_hub
 hydra-core >= 1.0.4
 librosa >= 0.8
 pyannote.core >= 4.1
@@ -9,7 +9,6 @@ pyannote.metrics >= 3.0.1
 pyannote.pipeline >= 2.0
 pytorch_lightning >= 1.0.0
 pytorch_metric_learning >= 0.9.93
-requests
 semver >= 2.10.2
 soundfile >= 0.10.2
 torch >= 1.6
