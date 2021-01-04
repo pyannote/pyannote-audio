@@ -28,7 +28,6 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from pytorch_lightning.metrics.functional.classification import auroc
-from scipy.optimize import linear_sum_assignment
 from torch.nn import Parameter
 from torch.optim import Optimizer
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
@@ -37,6 +36,7 @@ from pyannote.audio.core.io import Audio
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Problem, Scale, Task, TaskSpecification
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
+from pyannote.audio.utils.permutation import permutate
 from pyannote.audio.utils.random import create_rng_for_worker
 from pyannote.core import Segment
 from pyannote.database import Protocol
@@ -343,27 +343,6 @@ class Segmentation(SegmentationTaskMixin, Task):
 
             yield {"X": X, "y": self.prepare_y(combined_y)}
 
-    def permutate(self, y: torch.Tensor, y_pred: torch.Tensor) -> torch.Tensor:
-        """Find permutation that minimizes average pairwise mean squared error"""
-
-        # TODO use Asteroid's PIT wrapper
-
-        batch_size, num_samples, num_speakers = y_pred.shape
-
-        cost = np.zeros((num_speakers, num_speakers))
-        mapping = []
-        for b in range(batch_size):
-            for r in range(num_speakers):
-                for h in range(num_speakers):
-                    cost[r, h] = (
-                        F.mse_loss(y[b, :, r], y_pred[b, :, h], reduction="mean")
-                        .detach()
-                        .cpu()
-                    )
-            mapping.append(linear_sum_assignment(cost, maximize=False)[1])
-
-        return torch.stack([y_pred[b, :, mapping[b]] for b in range(batch_size)])
-
     # def segmentation_loss(self, model, y, y_pred):
     def segmentation_loss(self, y: torch.Tensor, y_pred: torch.Tensor) -> torch.Tensor:
         """Permutation-invariant segmentation loss
@@ -381,7 +360,7 @@ class Segmentation(SegmentationTaskMixin, Task):
             Permutation-invariant segmentation loss
         """
 
-        permutated_y_pred = self.permutate(y, y_pred)
+        permutated_y_pred, _ = permutate(y.float(), y_pred)
 
         if self.loss == "bce":
             seg_losses = F.binary_cross_entropy(
