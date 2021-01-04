@@ -28,7 +28,6 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from pytorch_lightning.metrics.functional.classification import auroc
-from scipy.optimize import linear_sum_assignment
 from torch.nn import Parameter
 from torch.optim import Optimizer
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
@@ -37,6 +36,7 @@ from pyannote.audio.core.io import Audio
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Problem, Scale, Task, TaskSpecification
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
+from pyannote.audio.utils.permutation import permutate
 from pyannote.audio.utils.random import create_rng_for_worker
 from pyannote.core import Segment
 from pyannote.database import Protocol
@@ -85,6 +85,8 @@ class Segmentation(SegmentationTaskMixin, Task):
     augmentation : BaseWaveformTransform, optional
         torch_audiomentations waveform transform, used by dataloader
         during training.
+    vad_loss : {"bce", "mse"}, optional
+        Add voice activity detection loss.
     """
 
     ACRONYM = "seg"
@@ -105,6 +107,7 @@ class Segmentation(SegmentationTaskMixin, Task):
         learning_rate: float = 1e-3,
         augmentation: BaseWaveformTransform = None,
         loss: Literal["bce", "mse"] = "bce",
+        vad_loss: Literal["bce", "mse"] = None,
     ):
 
         super().__init__(
@@ -128,6 +131,7 @@ class Segmentation(SegmentationTaskMixin, Task):
         if loss not in ["bce", "mse"]:
             raise ValueError("'loss' must be one of {'bce', 'mse'}.")
         self.loss = loss
+        self.vad_loss = vad_loss
 
         self.specifications = TaskSpecification(
             problem=Problem.MULTI_LABEL_CLASSIFICATION,
@@ -138,10 +142,27 @@ class Segmentation(SegmentationTaskMixin, Task):
         )
 
     def setup(self, stage=None):
-
-        super().setup(stage=stage)
-
         if stage == "fit":
+
+            # loop over the training set, remove annotated regions shorter than
+            # chunk duration, and keep track of the reference annotations.
+            self.train = []
+            for f in self.protocol.train():
+                segments = [
+                    segment
+                    for segment in f["annotated"]
+                    if segment.duration > self.duration
+                ]
+                duration = sum(segment.duration for segment in segments)
+                self.train.append(
+                    {
+                        "uri": f["uri"],
+                        "annotated": segments,
+                        "annotation": f["annotation"],
+                        "duration": duration,
+                        "audio": f["audio"],
+                    }
+                )
 
             # build the list of domains
             if self.domain is not None:
@@ -149,9 +170,37 @@ class Segmentation(SegmentationTaskMixin, Task):
                     f["domain"] = f[self.domain]
                 self.domains = list(set(f["domain"] for f in self.train))
 
+            # loop over the validation set, remove annotated regions shorter than
+            # chunk duration, and keep track of the reference annotations.
+            self.validation = []
+
+            for f in self.protocol.development():
+                segments = [
+                    segment
+                    for segment in f["annotated"]
+                    if segment.duration > self.duration
+                ]
+                num_chunks = sum(
+                    round(segment.duration // self.duration) for segment in segments
+                )
+                self.validation.append(
+                    {
+                        "uri": f["uri"],
+                        "annotated": segments,
+                        "annotation": f["annotation"],
+                        "num_chunks": num_chunks,
+                        "audio": f["audio"],
+                    }
+                )
+
     def setup_loss_func(self, model: Model):
 
-        batch_size, num_frames, num_speakers = model(self.example_input_array).shape
+        example_input_array = self.example_input_array
+        _, _, num_samples = example_input_array.shape
+        self.num_samples = num_samples
+
+        batch_size, num_frames, num_speakers = model(example_input_array).shape
+        self.num_frames = num_frames
         hamming_window = torch.hamming_window(num_frames, periodic=False).reshape(-1, 1)
         model.register_buffer("hamming_window", hamming_window)
 
@@ -294,26 +343,54 @@ class Segmentation(SegmentationTaskMixin, Task):
 
             yield {"X": X, "y": self.prepare_y(combined_y)}
 
-    def permutate(self, y: torch.Tensor, y_pred: torch.Tensor) -> torch.Tensor:
-        """Find permutation that minimizes average pairwise mean squared error"""
+    # def segmentation_loss(self, model, y, y_pred):
+    def segmentation_loss(self, y: torch.Tensor, y_pred: torch.Tensor) -> torch.Tensor:
+        """Permutation-invariant segmentation loss
 
-        # TODO use Asteroid's PIT wrapper
+        Parameters
+        ----------
+        y : (batch_size, num_frames, num_speakers) torch.Tensor
+            Speaker activity.
+        y_pred : torch.Tensor
+            Speaker activations
 
-        batch_size, num_samples, num_speakers = y_pred.shape
+        Returns
+        -------
+        seg_loss : torch.Tensor
+            Permutation-invariant segmentation loss
+        """
 
-        cost = np.zeros((num_speakers, num_speakers))
-        mapping = []
-        for b in range(batch_size):
-            for r in range(num_speakers):
-                for h in range(num_speakers):
-                    cost[r, h] = (
-                        F.mse_loss(y[b, :, r], y_pred[b, :, h], reduction="mean")
-                        .detach()
-                        .cpu()
-                    )
-            mapping.append(linear_sum_assignment(cost, maximize=False)[1])
+        permutated_y_pred, _ = permutate(y, y_pred)
 
-        return torch.stack([y_pred[b, :, mapping[b]] for b in range(batch_size)])
+        if self.loss == "bce":
+            seg_losses = F.binary_cross_entropy(
+                permutated_y_pred, y.float(), reduction="none"
+            )
+
+        elif self.loss == "mse":
+            seg_losses = F.mse_loss(permutated_y_pred, y.float(), reduction="none")
+
+        # seg_loss = torch.mean(seg_losses * model.hamming_window)
+        seg_loss = torch.mean(seg_losses)
+
+        return seg_loss
+
+    def voice_activity_detection_loss(
+        self, y: torch.Tensor, y_pred: torch.Tensor
+    ) -> torch.Tensor:
+
+        vad_y_pred, _ = torch.max(y_pred, dim=2, keepdim=False)
+        vad_y, _ = torch.max(y.float(), dim=2, keepdim=False)
+
+        if self.vad_loss == "bce":
+            vad_losses = F.binary_cross_entropy(vad_y_pred, vad_y, reduction="none")
+
+        elif self.vad_loss == "mse":
+            vad_losses = F.mse_loss(vad_y_pred, vad_y, reduction="none")
+
+        vad_loss = torch.mean(vad_losses)
+
+        return vad_loss
 
     def training_step(self, model: Model, batch, batch_idx: int):
         """Compute permutation-invariant binary cross-entropy
@@ -334,18 +411,36 @@ class Segmentation(SegmentationTaskMixin, Task):
         """
 
         X, y = batch["X"], batch["y"]
-        y_pred = self.permutate(y, model(X))
 
-        batch_size, num_frames, num_speakers = y_pred.shape
+        y_pred = model(X)
+        # loss = self.segmentation_loss(model, y, y_pred)
+        seg_loss = self.segmentation_loss(y, y_pred)
 
-        if self.loss == "bce":
-            losses = F.binary_cross_entropy(y_pred, y.float(), reduction="none")
-        elif self.loss == "mse":
-            losses = F.mse_loss(y_pred, y.float(), reduction="none")
+        model.log(
+            f"{self.ACRONYM}@train_seg_loss",
+            seg_loss,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=False,
+            logger=True,
+        )
 
-        # give less importance to start and end of chunks
-        # using the same (Hamming) window as inference.
-        loss = torch.mean(losses * model.hamming_window)
+        if self.vad_loss is None:
+            vad_loss = 0.0
+
+        else:
+            vad_loss = self.voice_activity_detection_loss(y, y_pred)
+
+            model.log(
+                f"{self.ACRONYM}@train_vad_loss",
+                vad_loss,
+                on_step=True,
+                on_epoch=True,
+                prog_bar=False,
+                logger=True,
+            )
+
+        loss = seg_loss + vad_loss
 
         model.log(
             f"{self.ACRONYM}@train_loss",
@@ -371,7 +466,7 @@ class Segmentation(SegmentationTaskMixin, Task):
         """
 
         X, y = batch["X"], batch["y"]
-        y_pred = self.permutate(y, model(X))
+        y_pred, _ = permutate(y, model(X))
 
         try:
             auc = auroc(
