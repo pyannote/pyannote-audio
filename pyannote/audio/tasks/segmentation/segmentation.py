@@ -360,7 +360,7 @@ class Segmentation(SegmentationTaskMixin, Task):
             Permutation-invariant segmentation loss
         """
 
-        permutated_y_pred, _ = permutate(y.float(), y_pred)
+        permutated_y_pred, _ = permutate(y, y_pred)
 
         if self.loss == "bce":
             seg_losses = F.binary_cross_entropy(
@@ -466,7 +466,7 @@ class Segmentation(SegmentationTaskMixin, Task):
         """
 
         X, y = batch["X"], batch["y"]
-        y_pred = self.permutate(y, model(X))
+        y_pred, _ = permutate(y, model(X))
 
         try:
             auc = auroc(
