@@ -63,13 +63,15 @@ def permutate_torch(
 
     permutations = []
     permutated_y2 = []
+
     for y1_, y2_ in zip(y1, y2):
-        cost = torch.stack(
-            [
-                cost_func(y2_, y1_[:, i : i + 1].expand(-1, num_speakers))
-                for i in range(num_speakers)
-            ],
-        )
+        with torch.no_grad():
+            cost = torch.stack(
+                [
+                    cost_func(y2_, y1_[:, i : i + 1].expand(-1, num_speakers))
+                    for i in range(num_speakers)
+                ],
+            )
         permutation = tuple(linear_sum_assignment(cost.cpu())[1])
         permutations.append(permutation)
 
