@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020 CNRS
+# Copyright (c) 2020-2021 CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -20,20 +20,22 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import math
 import warnings
+from collections import deque
 from functools import cached_property
 from pathlib import Path
-from typing import Dict, List, Optional, Text, Tuple, Union
+from typing import Deque, Dict, List, Optional, Text, Tuple, Union
 
 import numpy as np
 import torch
 from einops import rearrange
 from pytorch_lightning.utilities.memory import is_oom_error
-from scipy.optimize import linear_sum_assignment
 
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import Model, ModelIntrospection, load_from_checkpoint
 from pyannote.audio.core.task import Scale, TaskSpecification
+from pyannote.audio.utils.permutation import permutate
 from pyannote.core import Segment, SlidingWindow, SlidingWindowFeature
 
 TaskName = Union[Text, None]
@@ -314,10 +316,13 @@ class Inference:
                 (num_frames, 1), dtype=np.float32
             )
 
-            # loop on the outputs of sliding chunks
             if task_specifications.permutation_invariant:
-                previous_output = None
+                # previous outputs that overlap with current output by at least 50%
+                maxlen = max(1, math.floor(0.5 * self.duration / self.step))
+                maxlen = 1
+                previous_outputs: Deque[np.ndarray] = deque([], maxlen=maxlen)
 
+            # loop on the outputs of sliding chunks
             for c, output in enumerate(outputs[task_name]):
                 start_sample = c * step_size
                 start_frame, _ = model_introspection(start_sample)
@@ -325,9 +330,9 @@ class Inference:
                 if task_specifications.permutation_invariant:
                     if c > 0:
                         output = self.permutate(
-                            previous_output, output, num_frames_per_step
+                            np.stack(previous_outputs), output, num_frames_per_step
                         )
-                    previous_output = output
+                    previous_outputs.append(output)
 
                 aggregated_output[start_frame : start_frame + num_frames_per_chunk] += (
                     output * hamming
@@ -340,12 +345,12 @@ class Inference:
             # process last (right-aligned) chunk separately
             if has_last_chunk:
 
-                if (
-                    task_specifications.permutation_invariant
-                    and previous_output is not None
-                ):
+                if task_specifications.permutation_invariant and previous_outputs:
+                    # FIXME
                     last_output[task_name] = self.permutate(
-                        previous_output, last_output[task_name], num_frames_last_step
+                        previous_outputs[-1][np.newaxis],
+                        last_output[task_name],
+                        num_frames_last_step,
                     )
 
                 aggregated_output[-num_frames_per_chunk:] += (
@@ -368,41 +373,48 @@ class Inference:
         return results[None]
 
     def permutate(
-        self, output: np.ndarray, next_output: np.ndarray, step_size: int
+        self, past_outputs: Deque[np.ndarray], output: np.ndarray, step_size: int
     ) -> np.ndarray:
-        """Find correlation-maximizing permutation between two consecutive outputs
+        """Find optimal permutation between past outputs and current output
 
         Parameters
         ----------
+        past_outputs : deque of(num_frames, num_classes) np.ndarray
+            Previous output
         output : (num_frames, num_classes) np.ndarray
-            Output
-        next_output : (num_frames, num_classes) np.ndarray
-            Next output
+            Current output
         step_size : int
-            Step between output and next_output. Should be smaller than num_frames.
+            Step between previous and current outputs.
+            Should be smaller than num_frames.
 
         Returns
         -------
         perm_output : (num_frames, num_classes) np.ndarray
-            Permutated next_output.
+            Permutated current output.
         """
 
         num_frames, num_classes = output.shape
-        hamming = np.hamming(num_frames)
-        weights = np.sqrt(hamming[step_size:] * hamming[: num_frames - step_size])
+        num_past_outputs = len(past_outputs)
 
-        cost = np.zeros((num_classes, num_classes))
-        for o in range(num_classes):
-            for n in range(num_classes):
-                cost[o, n] = np.average(
-                    (output[step_size:, o] - next_output[: num_frames - step_size, n])
-                    ** 2,
-                    weights=weights,
-                )
+        past_outputs = np.stack(
+            [
+                previous_output[(o + 1) * step_size :]
+                for o, previous_output in enumerate(reversed(past_outputs))
+            ]
+        )
 
-        mapping = linear_sum_assignment(cost, maximize=False)[1]
+        outputs = np.stack(
+            [
+                output[: num_frames - (o + 1) * step_size]
+                for o in range(num_past_outputs)
+            ]
+        )
 
-        return next_output[:, mapping]
+        _, permutations = permutate(past_outputs, outputs)
+        # TODO: consider all permutations to decide which one is best
+        permutation = permutations[-1]
+
+        return output[:, permutation]
 
     def __call__(
         self, file: AudioFile
