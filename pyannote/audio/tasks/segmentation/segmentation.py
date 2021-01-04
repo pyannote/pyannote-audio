@@ -108,7 +108,6 @@ class Segmentation(SegmentationTaskMixin, Task):
         augmentation: BaseWaveformTransform = None,
         loss: Literal["bce", "mse"] = "bce",
         vad_loss: Literal["bce", "mse"] = None,
-        count_loss: bool = False,
     ):
 
         super().__init__(
@@ -133,7 +132,6 @@ class Segmentation(SegmentationTaskMixin, Task):
             raise ValueError("'loss' must be one of {'bce', 'mse'}.")
         self.loss = loss
         self.vad_loss = vad_loss
-        self.count_loss = count_loss
 
         self.specifications = TaskSpecification(
             problem=Problem.MULTI_LABEL_CLASSIFICATION,
@@ -415,17 +413,6 @@ class Segmentation(SegmentationTaskMixin, Task):
 
         return vad_loss
 
-    def speaker_count_loss(self, y: torch.Tensor, y_pred: torch.Tensor) -> torch.Tensor:
-
-        count_y_pred = torch.sum(y_pred, dim=2, keepdim=False)
-        count_y = torch.sum(y.float(), dim=2, keepdim=False)
-
-        count_losses = F.mse_loss(count_y_pred, count_y, reduction="none")
-
-        count_loss = torch.mean(count_losses)
-
-        return count_loss
-
     def training_step(self, model: Model, batch, batch_idx: int):
         """Compute permutation-invariant binary cross-entropy
 
@@ -474,22 +461,7 @@ class Segmentation(SegmentationTaskMixin, Task):
                 logger=True,
             )
 
-        if self.count_loss:
-            count_loss = self.speaker_count_loss(y, y_pred)
-
-            model.log(
-                f"{self.ACRONYM}@train_count_loss",
-                count_loss,
-                on_step=True,
-                on_epoch=True,
-                prog_bar=False,
-                logger=True,
-            )
-
-        else:
-            count_loss = 0.0
-
-        loss = seg_loss + vad_loss + count_loss
+        loss = seg_loss + vad_loss
 
         model.log(
             f"{self.ACRONYM}@train_loss",
