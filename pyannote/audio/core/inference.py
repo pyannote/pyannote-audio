@@ -22,7 +22,7 @@
 
 import math
 import warnings
-from collections import deque
+from collections import Counter, deque
 from functools import cached_property
 from pathlib import Path
 from typing import Deque, Dict, List, Optional, Text, Tuple, Union
@@ -89,8 +89,8 @@ class Inference:
             scale = task_specifications.scale
             if scale == Scale.FRAME and window == "whole":
                 warnings.warn(
-                    'Using "whole" `window` inference with a frame-based model might lead to bad results '
-                    'and huge memory consumption: it is recommended to set `window` to "sliding".'
+                    'Using "whole" `window` inference with a frame-based model might lead to bad results '
+                    'and huge memory consumption: it is recommended to set `window` to "sliding".'
                 )
 
         self.window = window
@@ -103,7 +103,7 @@ class Inference:
         self.model.to(self.device)
 
         # chunk duration used during training. for multi-task,
-        #  we assume that the same duration was used for each task.
+        # we assume that the same duration was used for each task.
         training_duration = self.task_specifications[0][1].duration
 
         if duration is None:
@@ -115,7 +115,7 @@ class Inference:
             )
         self.duration = duration
 
-        #  step between consecutive chunks
+        # step between consecutive chunks
         if step is None:
             step = 0.1 * self.duration
         if step > self.duration:
@@ -155,7 +155,7 @@ class Inference:
 
         Notes
         -----
-        If model is mono-task, `task_name` is set to None.
+        If model is mono-task, `task_name` is set to None.
         """
 
         with torch.no_grad():
@@ -278,7 +278,7 @@ class Inference:
 
         for t, (task_name, task_specifications) in enumerate(self.task_specifications):
             # if model outputs just one vector per chunk, return the outputs as they are
-            #  (i.e. do not aggregate them)
+            # (i.e. do not aggregate them)
             if task_specifications.scale == Scale.CHUNK:
                 frames = SlidingWindow(
                     start=0.0, duration=self.duration, step=self.step
@@ -293,7 +293,7 @@ class Inference:
                     for task_name, output in self.infer(last_chunk[None]).items()
                 }
 
-            #  use model introspection to estimate the total number of frames
+            # use model introspection to estimate the total number of frames
             _, model_introspection = self.model_introspection[t]
             num_frames, dimension = model_introspection(num_samples)
             num_frames_per_chunk, _ = model_introspection(window_size)
@@ -319,7 +319,6 @@ class Inference:
             if task_specifications.permutation_invariant:
                 # previous outputs that overlap with current output by at least 50%
                 maxlen = max(1, math.floor(0.5 * self.duration / self.step))
-                maxlen = 1
                 previous_outputs: Deque[np.ndarray] = deque([], maxlen=maxlen)
 
             # loop on the outputs of sliding chunks
@@ -392,28 +391,23 @@ class Inference:
         perm_output : (num_frames, num_classes) np.ndarray
             Permutated current output.
         """
-
+        
         num_frames, num_classes = output.shape
         num_past_outputs = len(past_outputs)
 
-        past_outputs = np.stack(
-            [
-                previous_output[(o + 1) * step_size :]
-                for o, previous_output in enumerate(reversed(past_outputs))
-            ]
-        )
+        permutations = []
+        for o, past_output in enumerate(reversed(past_outputs)):
+            permutation = permutate(
+                past_output[np.newaxis, (o + 1) * step_size :],
+                output[: num_frames - (o + 1) * step_size])[1][0]
+            permutations.append(permutation)
+            
+        # TODO: track regions where more than one permutation is selected
+        # as those regions should probably not be trusted too much
+        # TODO: be even smarter and re-initialize tracking at those regions
 
-        outputs = np.stack(
-            [
-                output[: num_frames - (o + 1) * step_size]
-                for o in range(num_past_outputs)
-            ]
-        )
-
-        _, permutations = permutate(past_outputs, outputs)
-        # TODO: consider all permutations to decide which one is best
-        permutation = permutations[-1]
-
+        # choose most frequent permutation
+        (permutation, _),  = Counter(permutations).most_common(1)
         return output[:, permutation]
 
     def __call__(
@@ -484,7 +478,7 @@ class Inference:
             errors that may result in a different number of audio samples for two
             chunks of the same duration.
 
-        # TODO: document "fixed" better in pyannote.audio.core.io.Audio
+        # TODO: document "fixed" better in pyannote.audio.core.io.Audio
 
         Returns
         -------
