@@ -391,23 +391,23 @@ class Inference:
         perm_output : (num_frames, num_classes) np.ndarray
             Permutated current output.
         """
-        
+
         num_frames, num_classes = output.shape
-        num_past_outputs = len(past_outputs)
 
         permutations = []
         for o, past_output in enumerate(reversed(past_outputs)):
             permutation = permutate(
                 past_output[np.newaxis, (o + 1) * step_size :],
-                output[: num_frames - (o + 1) * step_size])[1][0]
+                output[: num_frames - (o + 1) * step_size],
+            )[1][0]
             permutations.append(permutation)
-            
+
         # TODO: track regions where more than one permutation is selected
         # as those regions should probably not be trusted too much
         # TODO: be even smarter and re-initialize tracking at those regions
 
         # choose most frequent permutation
-        (permutation, _),  = Counter(permutations).most_common(1)
+        ((permutation, _),) = Counter(permutations).most_common(1)
         return output[:, permutation]
 
     def __call__(
