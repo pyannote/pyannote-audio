@@ -85,8 +85,6 @@ class Segmentation(SegmentationTaskMixin, Task):
     augmentation : BaseWaveformTransform, optional
         torch_audiomentations waveform transform, used by dataloader
         during training.
-    consistency_step : float, optional
-        Add consistency loss.
     vad_loss : {"bce", "mse"}, optional
         Add voice activity detection loss.
     """
@@ -109,7 +107,6 @@ class Segmentation(SegmentationTaskMixin, Task):
         learning_rate: float = 1e-3,
         augmentation: BaseWaveformTransform = None,
         loss: Literal["bce", "mse"] = "bce",
-        consistency_step: float = 0.0,
         vad_loss: Literal["bce", "mse"] = None,
         count_loss: bool = False,
     ):
@@ -135,7 +132,6 @@ class Segmentation(SegmentationTaskMixin, Task):
         if loss not in ["bce", "mse"]:
             raise ValueError("'loss' must be one of {'bce', 'mse'}.")
         self.loss = loss
-        self.consistency_step = consistency_step
         self.vad_loss = vad_loss
         self.count_loss = count_loss
 
@@ -157,7 +153,7 @@ class Segmentation(SegmentationTaskMixin, Task):
                 segments = [
                     segment
                     for segment in f["annotated"]
-                    if segment.duration > self.duration + self.consistency_step
+                    if segment.duration > self.duration
                 ]
                 duration = sum(segment.duration for segment in segments)
                 self.train.append(
@@ -179,8 +175,6 @@ class Segmentation(SegmentationTaskMixin, Task):
             # loop over the validation set, remove annotated regions shorter than
             # chunk duration, and keep track of the reference annotations.
             self.validation = []
-
-            # TODO: support consistency_step in validation
 
             for f in self.protocol.development():
                 segments = [
@@ -257,8 +251,6 @@ class Segmentation(SegmentationTaskMixin, Task):
 
     def train__iter__helper(self, rng: random.Random, domain: str = None):
 
-        duration = self.duration + self.consistency_step
-
         train = self.train
 
         if domain is not None:
@@ -281,10 +273,10 @@ class Segmentation(SegmentationTaskMixin, Task):
             )
 
             # select one chunk at random (with uniform distribution)
-            start_time = rng.uniform(segment.start, segment.end - duration)
-            chunk = Segment(start_time, start_time + duration)
+            start_time = rng.uniform(segment.start, segment.end - self.duration)
+            chunk = Segment(start_time, start_time + self.duration)
 
-            yield self.prepare_chunk(file, chunk, duration=duration)
+            yield self.prepare_chunk(file, chunk, duration=self.duration)
 
     def train__iter__(self):
         """Iterate over training samples
@@ -454,91 +446,50 @@ class Segmentation(SegmentationTaskMixin, Task):
 
         X, y = batch["X"], batch["y"]
 
-        if self.consistency_step > 0.0:
+        y_pred = model(X)
+        # loss = self.segmentation_loss(model, y, y_pred)
+        seg_loss = self.segmentation_loss(y, y_pred)
 
-            _, num_frames, _ = y.shape
+        model.log(
+            f"{self.ACRONYM}@train_seg_loss",
+            seg_loss,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=False,
+            logger=True,
+        )
 
-            y_pred_1 = model(X[:, :, : self.num_samples])
-            y_pred_2 = model(X[:, :, -self.num_samples :])
-            consistency_loss = self.segmentation_loss(y_pred_1, y_pred_2)
-
-            model.log(
-                f"{self.ACRONYM}@train_consistency_loss",
-                consistency_loss,
-                on_step=True,
-                on_epoch=True,
-                prog_bar=False,
-                logger=True,
-            )
-
-            y1 = y[:, num_frames - self.num_frames :, :]
-            # seg_loss1 = self.segmentation_loss(model, y1, y_pred_1)
-            seg_loss1 = self.segmentation_loss(y1, y_pred_1)
-
-            y2 = y[:, : -(num_frames - self.num_frames)]
-            # seg_loss2 = self.segmentation_loss(model, y2, y_pred_2)
-            seg_loss2 = self.segmentation_loss(y2, y_pred_2)
-
-            model.log(
-                f"{self.ACRONYM}@train_seg_loss",
-                0.5 * (seg_loss1 + seg_loss2),
-                on_step=True,
-                on_epoch=True,
-                prog_bar=False,
-                logger=True,
-            )
-
-            loss = seg_loss1 + seg_loss2 + consistency_loss
-
-            # TODO: add support for VAD loss
-            # TODO: add support for count loss
+        if self.vad_loss is None:
+            vad_loss = 0.0
 
         else:
-
-            y_pred = model(X)
-            # loss = self.segmentation_loss(model, y, y_pred)
-            seg_loss = self.segmentation_loss(y, y_pred)
+            vad_loss = self.voice_activity_detection_loss(y, y_pred)
 
             model.log(
-                f"{self.ACRONYM}@train_seg_loss",
-                seg_loss,
+                f"{self.ACRONYM}@train_vad_loss",
+                vad_loss,
                 on_step=True,
                 on_epoch=True,
                 prog_bar=False,
                 logger=True,
             )
 
-            if self.vad_loss is None:
-                vad_loss = 0.0
+        if self.count_loss:
+            count_loss = self.speaker_count_loss(y, y_pred)
 
-            else:
-                vad_loss = self.voice_activity_detection_loss(y, y_pred)
+            model.log(
+                f"{self.ACRONYM}@train_count_loss",
+                count_loss,
+                on_step=True,
+                on_epoch=True,
+                prog_bar=False,
+                logger=True,
+            )
 
-                model.log(
-                    f"{self.ACRONYM}@train_vad_loss",
-                    vad_loss,
-                    on_step=True,
-                    on_epoch=True,
-                    prog_bar=False,
-                    logger=True,
-                )
+        else:
+            count_loss = 0.0
 
-            if self.count_loss:
-                count_loss = self.speaker_count_loss(y, y_pred)
-
-                model.log(
-                    f"{self.ACRONYM}@train_count_loss",
-                    count_loss,
-                    on_step=True,
-                    on_epoch=True,
-                    prog_bar=False,
-                    logger=True,
-                )
-
-            else:
-                count_loss = 0.0
-
-            loss = seg_loss + vad_loss + count_loss
+        loss = seg_loss + vad_loss + count_loss
 
         model.log(
             f"{self.ACRONYM}@train_loss",
