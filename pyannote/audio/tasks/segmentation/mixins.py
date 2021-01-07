@@ -68,9 +68,7 @@ class SegmentationTaskMixin:
                     if segment.duration < self.duration:
                         continue
 
-                    num_chunks = sum(
-                        round(segment.duration // self.duration) for segment in segments
-                    )
+                    num_chunks = round(segment.duration // self.duration)
 
                     for c in range(num_chunks):
                         start_time = segment.start + c * self.duration
