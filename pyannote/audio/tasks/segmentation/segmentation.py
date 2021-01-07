@@ -450,3 +450,33 @@ class Segmentation(SegmentationTaskMixin, Task):
             logger=True,
             sync_dist=True,
         )
+
+    def validation_step(self, model: Model, batch, batch_idx: int):
+        """Compute area under ROC curve
+
+        Parameters
+        ----------
+        model : Model
+            Model currently being validated.
+        batch : dict of torch.Tensor
+            Current batch.
+        batch_idx: int
+            Batch index.
+        """
+
+        X, y = batch["X"], batch["y"]
+        # X = (batch_size, num_channels, num_samples)
+        # y = (batch_size, num_frames, num_classes)
+
+        y_pred, _ = permutate(y, model(X))
+        # y_pred = (batch_size, num_frames, num_classes)
+
+        val_fbeta = self.val_fbeta(y_pred[:, ::10].squeeze(), y[:, ::10].squeeze())
+        model.log(
+            f"{self.ACRONYM}@val_fbeta",
+            val_fbeta,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+        )
