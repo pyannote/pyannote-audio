@@ -430,8 +430,8 @@ class Segmentation(SegmentationTaskMixin, Task):
 
         try:
             auc = auroc(
-                y_pred.flatten(),
-                y.flatten(),
+                y_pred[:, ::10].view(-1),
+                y[:, ::10].view(-1),
                 # give less importance to start and end of chunks
                 # using the same (Hamming) window as inference.
                 sample_weight=model.val_sample_weight,
