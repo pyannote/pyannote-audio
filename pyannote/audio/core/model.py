@@ -322,6 +322,8 @@ class Model(pl.LightningModule):
             # setup_loss_func will take care of adding them to the model
             self.task.setup_loss_func(self)
 
+            self.task.setup_validation_metric(self)
+
     def on_save_checkpoint(self, checkpoint):
 
         #  put everything pyannote.audio-specific under pyannote.audio
@@ -416,7 +418,8 @@ class Model(pl.LightningModule):
     def default_activation(self) -> Union[nn.Module, Dict[str, nn.Module]]:
         """Guess default activation function according to task specification
 
-            * log-softmax for regular classification
+            * sigmoid for binary classification
+            * log-softmax for regular multi-class classification
             * sigmoid for multi-label classification
 
         Returns

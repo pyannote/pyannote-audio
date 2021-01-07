@@ -27,7 +27,6 @@ from typing import Callable, Iterable, Literal
 import numpy as np
 import torch
 import torch.nn.functional as F
-from pytorch_lightning.metrics.functional.classification import auroc
 from torch.nn import Parameter
 from torch.optim import Optimizer
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
@@ -411,45 +410,6 @@ class Segmentation(SegmentationTaskMixin, Task):
             logger=True,
         )
         return {"loss": loss}
-
-    def validation_step(self, model: Model, batch, batch_idx: int):
-        """
-
-        Parameters
-        ----------
-        model : Model
-            Model currently being validated.
-        batch : dict of torch.Tensor
-            Current batch.
-        batch_idx: int
-            Batch index.
-        """
-
-        X, y = batch["X"], batch["y"]
-        y_pred, _ = permutate(y, model(X))
-
-        try:
-            auc = auroc(
-                y_pred[:, ::10].flatten(),
-                y[:, ::10].flatten(),
-                # give less importance to start and end of chunks
-                # using the same (Hamming) window as inference.
-                sample_weight=model.val_sample_weight,
-                pos_label=1.0,
-            )
-        except ValueError:
-            # in case of all positive or all negative samples, auroc will raise a ValueError.
-            return
-
-        model.log(
-            f"{self.ACRONYM}@val_auroc",
-            auc,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-            logger=True,
-            sync_dist=True,
-        )
 
     def validation_step(self, model: Model, batch, batch_idx: int):
         """Compute area under ROC curve

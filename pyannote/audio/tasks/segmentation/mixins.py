@@ -76,15 +76,17 @@ class SegmentationTaskMixin:
                         chunk = Segment(start_time, start_time + self.duration)
                         self.validation.append((f, chunk))
 
-            self.val_fbeta = FBeta(
-                len(self.specifications.classes),
-                beta=1.0,
-                threshold=0.5,
-                multilabel=(
-                    self.specifications.problem == Problem.MULTI_LABEL_CLASSIFICATION
-                ),
-                average="macro",
-            )
+    def setup_validation_metric(self, model):
+
+        self.val_fbeta = FBeta(
+            len(self.specifications.classes),
+            beta=1.0,
+            threshold=0.5,
+            multilabel=(
+                self.specifications.problem == Problem.MULTI_LABEL_CLASSIFICATION
+            ),
+            average="macro",
+        )
 
     def prepare_y(self, one_hot_y: np.ndarray) -> np.ndarray:
         return one_hot_y
@@ -237,6 +239,9 @@ class SegmentationTaskMixin:
         batch_idx: int
             Batch index.
         """
+
+        # move metric to model device
+        self.val_fbeta.to(model.device)
 
         X, y = batch["X"], batch["y"]
         # X = (batch_size, num_channels, num_samples)

@@ -25,14 +25,14 @@ import random
 from typing import Callable, Iterable, Mapping
 
 import numpy as np
-from pytorch_lightning.metrics.functional.classification import auroc
+from pytorch_lightning.metrics.classification import FBeta
 from torch.nn import Parameter
 from torch.optim import Optimizer
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 
 from pyannote.audio.core.io import Audio
 from pyannote.audio.core.model import Model
-from pyannote.audio.core.task import Task
+from pyannote.audio.core.task import Problem, Task
 from pyannote.audio.tasks import (
     OverlappedSpeechDetection,
     SpeakerChangeDetection,
@@ -307,6 +307,21 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
 
             yield {"X": X, "y": self.prepare_y(combined_y)}
 
+    def setup_validation_metric(self, model):
+
+        self.val_fbeta = {
+            task_name: FBeta(
+                len(specifications.classes),
+                beta=1.0,
+                threshold=0.5,
+                multilabel=(
+                    specifications.problem == Problem.MULTI_LABEL_CLASSIFICATION
+                ),
+                average="macro",
+            )
+            for task_name, specifications in self.specifications.items()
+        }
+
     def validation_step(self, model: Model, batch, batch_idx: int):
         """Compute areas under ROC curve
 
@@ -323,41 +338,31 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
         X, y = batch["X"], batch["y"]
         y_pred = model(X)
 
-        auc = dict()
-        skipped = False
+        val_fbeta = dict()
 
         for task_name in self.specifications:
-            try:
-                auc[task_name] = auroc(
-                    y_pred[task_name].view(-1),
-                    y[task_name].view(-1),
-                    sample_weight=None,
-                    pos_label=1.0,
-                )
-            except ValueError:
-                # in case of all positive or all negative samples, auroc will raise a ValueError.
-                skipped = True
-                continue
+
+            # move metric to model device
+            self.val_fbeta[task_name].to(model.device)
+
+            val_fbeta[task_name] = self.val_fbeta[task_name](
+                y_pred[task_name][:, ::10].squeeze(), y[task_name][:, ::10].squeeze()
+            )
 
             model.log(
-                f"{task_name}@val_auroc",
-                auc[task_name],
+                f"{task_name}@val_fbeta",
+                val_fbeta[task_name],
                 on_step=False,
                 on_epoch=True,
                 prog_bar=True,
                 logger=True,
-                sync_dist=True,
             )
 
-        if skipped:
-            return
-
         model.log(
-            f"{self.ACRONYM}@val_auroc",
-            sum(auc.values()) / len(auc),
+            f"{self.ACRONYM}@val_fbeta",
+            sum(val_fbeta.values()) / len(val_fbeta),
             on_step=False,
             on_epoch=True,
             prog_bar=True,
             logger=True,
-            sync_dist=True,
         )

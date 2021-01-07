@@ -242,6 +242,9 @@ class Task(pl.LightningDataModule):
     def setup_loss_func(self, model: Model):
         pass
 
+    def setup_validation_metric(self, model: Model):
+        pass
+
     @cached_property
     def is_multi_task(self) -> bool:
         """"Check whether multiple tasks are addressed at once"""
