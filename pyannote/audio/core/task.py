@@ -35,7 +35,7 @@ import torch
 import torch.nn.functional as F
 from torch.nn import Parameter
 from torch.optim import Adam, Optimizer
-from torch.utils.data import DataLoader, IterableDataset
+from torch.utils.data import DataLoader, Dataset, IterableDataset
 
 from pyannote.database import Protocol
 
@@ -101,13 +101,13 @@ class TrainDataset(IterableDataset):
         return self.task.train__len__()
 
 
-class ValDataset(IterableDataset):
+class ValDataset(Dataset):
     def __init__(self, task: Task):
         super().__init__()
         self.task = task
 
-    def __iter__(self):
-        return self.task.val__iter__()
+    def __getitem__(self, idx):
+        return self.task.val__getitem__(idx)
 
     def __len__(self):
         return self.task.val__len__()
@@ -393,9 +393,9 @@ class Task(pl.LightningDataModule):
         )
         return {"loss": loss}
 
-    def val__iter__(self):
-        # will become val_dataset.__iter__ method
-        msg = f"Missing '{self.__class__.__name__}.val__iter__' method."
+    def val__getitem__(self, idx):
+        # will become val_dataset.__getitem__ method
+        msg = f"Missing '{self.__class__.__name__}.val__getitem__' method."
         raise NotImplementedError(msg)
 
     def val__len__(self):

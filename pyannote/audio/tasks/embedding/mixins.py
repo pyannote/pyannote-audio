@@ -134,7 +134,7 @@ class SupervisedRepresentationLearningTaskMixin:
                         session_hash = self.helper_trial_hash(trial[session])
                         if session_hash not in sessions:
                             sessions[session_hash] = trial[session]
-                self.validation = sessions
+                self.validation = list(sessions.items())
 
     def train__iter__(self):
         """Iterate over training samples
@@ -231,20 +231,19 @@ class SupervisedRepresentationLearningTaskMixin:
     def helper_trial_hash(file) -> int:
         return hash((file["database"], file["uri"], tuple(file["try_with"])))
 
-    def val__iter__(self):
-
+    def val__getitem__(self, idx):
         if isinstance(self.protocol, SpeakerVerificationProtocol):
-            for session_hash, session in self.validation.items():
-                X = np.concatenate(
-                    [
-                        self.audio.crop(session, segment, mode="center")[0]
-                        for segment in session["try_with"]
-                    ],
-                    axis=0,
-                )
-                yield {"session_hash": session_hash, "X": X}
+            session_hash, session = self.validation[idx]
+            X = np.concatenate(
+                [
+                    self.audio.crop(session, segment, mode="center")[0]
+                    for segment in session["try_with"]
+                ],
+                axis=0,
+            )
+            return {"session_hash": session_hash, "X": X}
 
-        elif isinstance(self.protocol, SpeakerVerificationProtocol):
+        elif isinstance(self.protocol, SpeakerDiarizationProtocol):
             pass
 
     def val__len__(self):

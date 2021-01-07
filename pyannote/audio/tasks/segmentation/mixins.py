@@ -62,23 +62,20 @@ class SegmentationTaskMixin:
             # chunk duration, and keep track of the reference annotations.
             self.validation = []
             for f in self.protocol.development():
-                segments = [
-                    segment
-                    for segment in f["annotated"]
-                    if segment.duration > self.duration
-                ]
-                num_chunks = sum(
-                    round(segment.duration // self.duration) for segment in segments
-                )
-                self.validation.append(
-                    {
-                        "uri": f["uri"],
-                        "annotated": segments,
-                        "annotation": f["annotation"],
-                        "num_chunks": num_chunks,
-                        "audio": f["audio"],
-                    }
-                )
+
+                for segment in f["annotated"]:
+
+                    if segment.duration < self.duration:
+                        continue
+
+                    num_chunks = sum(
+                        round(segment.duration // self.duration) for segment in segments
+                    )
+
+                    for c in range(num_chunks):
+                        start_time = segment.start + c * self.duration
+                        chunk = Segment(start_time, start_time + self.duration)
+                        self.validation.append((f, chunk))
 
     def prepare_y(self, one_hot_y: np.ndarray) -> np.ndarray:
         return one_hot_y
@@ -210,39 +207,14 @@ class SegmentationTaskMixin:
         duration = sum(file["duration"] for file in self.train)
         return math.ceil(duration / self.duration)
 
-    def val__iter__(self):
-        """Iterate over validation samples
-
-        Yields
-        ------
-        X: (time, channel)
-            Audio chunks.
-        y: (frame, )
-            Frame-level targets. Note that frame < time.
-            `frame` is infered automagically from the
-            example model output.
-        """
-
-        for f in self.validation:
-
-            for segment in f["annotated"]:
-
-                for c in range(f["num_chunks"]):
-                    start_time = segment.start + c * self.duration
-                    chunk = Segment(start_time, start_time + self.duration)
-
-                    X, one_hot_y, _ = self.prepare_chunk(
-                        f, chunk, duration=self.duration
-                    )
-
-                    y = self.prepare_y(one_hot_y)
-
-                    yield {"X": X, "y": y}
+    def val__getitem__(self, idx):
+        f, chunk = self.validation[idx]
+        X, one_hot_y, _ = self.prepare_chunk(f, chunk, duration=self.duration)
+        y = self.prepare_y(one_hot_y)
+        return {"X": X, "y": y}
 
     def val__len__(self):
-        # Number of validation samples in one epoch
-        num_chunks = sum(file["num_chunks"] for file in self.validation)
-        return num_chunks
+        return len(self.validation)
 
     def validation_step(self, model: Model, batch, batch_idx: int):
         """Compute area under ROC curve
