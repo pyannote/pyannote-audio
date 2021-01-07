@@ -25,10 +25,11 @@ import warnings
 from typing import List, Optional, Text, Tuple
 
 import numpy as np
-from pytorch_lightning.metrics.functional.classification import auroc
+from pytorch_lightning.metrics.classification import FBeta
 
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import Model
+from pyannote.audio.core.task import Problem
 from pyannote.audio.utils.random import create_rng_for_worker
 from pyannote.core import Segment, SlidingWindow
 
@@ -74,6 +75,16 @@ class SegmentationTaskMixin:
                         start_time = segment.start + c * self.duration
                         chunk = Segment(start_time, start_time + self.duration)
                         self.validation.append((f, chunk))
+
+            self.val_fbeta = FBeta(
+                len(self.specifications.classes),
+                beta=1.0,
+                threshold=0.5,
+                multilabel=(
+                    self.specifications.problem == Problem.MULTI_LABEL_CLASSIFICATION
+                ),
+                average="macro",
+            )
 
     def prepare_y(self, one_hot_y: np.ndarray) -> np.ndarray:
         return one_hot_y
@@ -228,30 +239,26 @@ class SegmentationTaskMixin:
         """
 
         X, y = batch["X"], batch["y"]
+        # X = (batch_size, num_channels, num_samples)
+        # y = (batch_size, num_frames, num_classes)
+
         y_pred = model(X)
+        # y_pred = (batch_size, num_frames, num_classes)
 
-        try:
-            auc = auroc(
-                y_pred.view(-1)[::10],
-                y.view(-1)[::10],
-                sample_weight=None,
-                pos_label=1.0,
-            )
-        except ValueError:
-            # in case of all positive or all negative samples, auroc will raise a ValueError.
-            return
+        # print(y_pred.shape)
+        # print(y.shape)
 
+        val_fbeta = self.val_fbeta(y_pred[:, ::10].squeeze(), y[:, ::10].squeeze())
         model.log(
-            f"{self.ACRONYM}@val_auroc",
-            auc,
+            f"{self.ACRONYM}@val_fbeta",
+            val_fbeta,
             on_step=False,
             on_epoch=True,
             prog_bar=True,
             logger=True,
-            sync_dist=True,
         )
 
     @property
     def val_monitor(self):
         """Maximize validation area under ROC curve"""
-        return f"{self.ACRONYM}@val_auroc", "max"
+        return f"{self.ACRONYM}@val_fbeta", "max"
