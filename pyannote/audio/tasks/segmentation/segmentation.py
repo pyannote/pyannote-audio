@@ -20,9 +20,9 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-
 import math
 import random
+from collections import Counter
 from typing import Callable, Iterable, Literal
 
 import matplotlib.pyplot as plt
@@ -39,7 +39,7 @@ from pyannote.audio.core.task import Problem, Scale, Task, TaskSpecification
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
 from pyannote.audio.utils.permutation import permutate
 from pyannote.audio.utils.random import create_rng_for_worker
-from pyannote.core import Segment
+from pyannote.core import Segment, SlidingWindow
 from pyannote.database import Protocol
 
 
@@ -56,9 +56,6 @@ class Segmentation(SegmentationTaskMixin, Task):
         pyannote.database protocol
     duration : float, optional
         Chunks duration. Defaults to 2s.
-    num_speakers : int, optional
-        Maximum number of speakers per chunk. Defaults to 4. Note that one should account
-        for artificial chunks (see below) when setting this number.
     augmentation_probability : float, optional
         Probability of artificial overlapping chunks. A probability of 0.6 means that,
         on average, 40% of training chunks are "real" chunks, while 60% are artifical
@@ -96,7 +93,6 @@ class Segmentation(SegmentationTaskMixin, Task):
         self,
         protocol: Protocol,
         duration: float = 2.0,
-        num_speakers: int = 4,
         augmentation_probability: float = 0.5,
         snr_min: float = 0.0,
         snr_max: float = 10.0,
@@ -122,8 +118,6 @@ class Segmentation(SegmentationTaskMixin, Task):
             augmentation=augmentation,
         )
 
-        self.num_speakers = num_speakers
-
         self.augmentation_probability = augmentation_probability
         self.snr_min = snr_min
         self.snr_max = snr_max
@@ -133,14 +127,6 @@ class Segmentation(SegmentationTaskMixin, Task):
             raise ValueError("'loss' must be one of {'bce', 'mse'}.")
         self.loss = loss
         self.vad_loss = vad_loss
-
-        self.specifications = TaskSpecification(
-            problem=Problem.MULTI_LABEL_CLASSIFICATION,
-            scale=Scale.FRAME,
-            duration=self.duration,
-            classes=[f"speaker#{i+1}" for i in range(self.num_speakers)],
-            permutation_invariant=True,
-        )
 
     def setup(self, stage=None):
 
@@ -153,6 +139,45 @@ class Segmentation(SegmentationTaskMixin, Task):
                 for f in self.train:
                     f["domain"] = f[self.domain]
                 self.domains = list(set(f["domain"] for f in self.train))
+
+            # slide a window (with 1s step) over the whole training set
+            # and keep track of the number of speakers in each location
+            num_speakers = []
+            for file in self.train:
+                start = file["annotated"][0].start
+                end = file["annotated"][-1].end
+                window = SlidingWindow(
+                    start=start,
+                    end=end,
+                    duration=self.duration,
+                    step=1.0,
+                )
+                for chunk in window:
+                    num_speakers.append(len(file["annotation"].crop(chunk).labels()))
+
+            # because there might a few outliers, estimate the upper bound for the
+            # number of speakers as the 99th percentile
+
+            num_speakers, counts = zip(*list(Counter(num_speakers).items()))
+            num_speakers, counts = np.array(num_speakers), np.array(counts)
+
+            sorting_indices = np.argsort(num_speakers)
+            num_speakers = num_speakers[sorting_indices]
+            counts = counts[sorting_indices]
+
+            self.num_speakers = num_speakers[
+                np.where(np.cumsum(counts) / np.sum(counts) > 0.99)[0][0]
+            ]
+
+            # now that we know about the number of speakers upper bound
+            # we can set task specifications
+            self.specifications = TaskSpecification(
+                problem=Problem.MULTI_LABEL_CLASSIFICATION,
+                scale=Scale.FRAME,
+                duration=self.duration,
+                classes=[f"speaker#{i+1}" for i in range(self.num_speakers)],
+                permutation_invariant=True,
+            )
 
     def setup_loss_func(self, model: Model):
 
@@ -172,7 +197,7 @@ class Segmentation(SegmentationTaskMixin, Task):
         model.register_buffer("val_sample_weight", val_sample_weight)
 
     def prepare_y(self, one_hot_y: np.ndarray):
-        """Get segmentation targets
+        """Zero-pad segmentation targets
 
         Parameters
         ----------
@@ -183,25 +208,15 @@ class Segmentation(SegmentationTaskMixin, Task):
 
         Returns
         -------
-        y : (num_frames, ) np.ndarray
-            y[t] = 1 if there is two or more active speakers at tth frame, 0 otherwise.
+        padded_one_hot_y : (num_frames, self.num_speakers) np.ndarray
+            One-hot-encoding of current chunk speaker activity:
+                * one_hot_y[t, k] = 1 if kth speaker is active at tth frame
+                * one_hot_y[t, k] = 0 otherwise.
         """
 
         num_frames, num_speakers = one_hot_y.shape
 
-        # in case there are too many speakers, remove less talkative ones
-        if num_speakers > self.num_speakers:
-
-            # TODO: warn
-
-            most_talkative = np.argpartition(
-                np.sum(one_hot_y, axis=0), num_speakers - self.num_speakers
-            )[-self.num_speakers :]
-
-            one_hot_y = np.take(one_hot_y, most_talkative, axis=1)
-
-        # in case there are not enough speakers, add empty ones
-        elif num_speakers < self.num_speakers:
+        if num_speakers < self.num_speakers:
             one_hot_y = np.pad(
                 one_hot_y, ((0, 0), (0, self.num_speakers - num_speakers))
             )
@@ -272,8 +287,14 @@ class Segmentation(SegmentationTaskMixin, Task):
             X, one_hot_y, labels = next(chunks)
 
             if rng.random() > self.augmentation_probability:
-                # yield it as it is
-                yield {"X": X, "y": self.prepare_y(one_hot_y)}
+                if one_hot_y.shape[1] > self.num_speakers:
+                    # skip chunks that happen to have too many speakers
+                    pass
+
+                else:
+                    # pad and yield good ones
+                    yield {"X": X, "y": self.prepare_y(one_hot_y)}
+
                 continue
 
             #  generate second random chunk
@@ -302,7 +323,13 @@ class Segmentation(SegmentationTaskMixin, Task):
             # handle corner case when the same label is active at the same time in both chunks
             combined_y = np.minimum(combined_y, 1, out=combined_y)
 
-            yield {"X": X, "y": self.prepare_y(combined_y)}
+            if combined_y.shape[1] > self.num_speakers:
+                # skip artificial chunks that happen to have too many speakers
+                pass
+
+            else:
+                # pad and yield good ones
+                yield {"X": X, "y": self.prepare_y(combined_y)}
 
     # def segmentation_loss(self, model, y, y_pred):
     def segmentation_loss(self, y: torch.Tensor, y_pred: torch.Tensor) -> torch.Tensor:
