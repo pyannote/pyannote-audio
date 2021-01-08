@@ -22,12 +22,10 @@
 
 from typing import Callable, Iterable, List, Text
 
-from pytorch_lightning.metrics.functional.classification import auroc
 from torch.nn import Parameter
 from torch.optim import Optimizer
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 
-from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Problem, Scale, Task, TaskSpecification
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
 from pyannote.database import Protocol
@@ -127,45 +125,3 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
         Used by `prepare_chunk` so that y[:, k] corresponds to activity of kth speaker
         """
         return self.specifications.classes
-
-    def validation_step(self, model: Model, batch, batch_idx: int):
-        """Compute area under ROC curve
-
-        Parameters
-        ----------
-        model : Model
-            Model currently being validated.
-        batch : dict of torch.Tensor
-            Current batch.
-        batch_idx: int
-            Batch index.
-        """
-
-        num_speakers = len(self.specifications.classes)
-
-        X = batch["X"]
-        y = batch["y"].view(-1, num_speakers)
-        y_pred = model(X).view(-1, num_speakers)
-
-        auc = dict()
-        for k, speaker in enumerate(self.specifications.classes):
-            try:
-                auc[speaker] = auroc(
-                    y_pred[:, k],
-                    y[:, k],
-                    sample_weight=None,
-                    pos_label=1.0,
-                )
-            except ValueError:
-                # in case of all positive or all negative samples, auroc will raise a ValueError.
-                return
-
-        model.log(
-            f"{self.ACRONYM}@val_auroc",
-            sum(auc.values()) / len(auc),
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-            logger=True,
-            sync_dist=True,
-        )
