@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020 CNRS
+# Copyright (c) 2020-2021 CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -21,9 +21,11 @@
 # SOFTWARE.
 
 
+import math
 import random
 from typing import Callable, Iterable, Literal
 
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -428,10 +430,15 @@ class Segmentation(SegmentationTaskMixin, Task):
         # X = (batch_size, num_channels, num_samples)
         # y = (batch_size, num_frames, num_classes)
 
-        y_pred, _ = permutate(y, model(X))
+        y_pred = model(X)
+
+        permutated_y_pred, _ = permutate(y, y_pred)
+
         # y_pred = (batch_size, num_frames, num_classes)
 
-        val_fbeta = self.val_fbeta(y_pred[:, ::10].squeeze(), y[:, ::10].squeeze())
+        val_fbeta = self.val_fbeta(
+            permutated_y_pred[:, ::10].squeeze(), y[:, ::10].squeeze()
+        )
         model.log(
             f"{self.ACRONYM}@val_fbeta",
             val_fbeta,
@@ -439,4 +446,69 @@ class Segmentation(SegmentationTaskMixin, Task):
             on_epoch=True,
             prog_bar=True,
             logger=True,
+        )
+
+        if batch_idx > 0:
+            return
+
+        # visualize first 9 validation samples of first batch in Tensorboard
+
+        # prepare 3 x 3 grid (or smaller if batch size is smaller)
+        num_samples = min(self.batch_size, 9)
+        nrows = math.ceil(math.sqrt(num_samples))
+        ncols = math.ceil(num_samples / nrows)
+        fig, axes = plt.subplots(
+            nrows=4 * nrows,
+            ncols=ncols,
+            figsize=(15, 10),
+        )
+
+        # reshape target so that there is one line per class when plottingit
+        y = y.detach().cpu().float().numpy()
+        y[y == 0] = np.NaN
+        y *= np.arange(y.shape[2])
+
+        # plot each sample
+        for sample_idx in range(num_samples):
+
+            # find where in the grid it should be plotted
+            row_idx = sample_idx // nrows
+            col_idx = sample_idx % ncols
+
+            # plot waveform
+            ax_wav = axes[row_idx * 4 + 0, col_idx]
+            sample_X = torch.mean(X[sample_idx], dim=0)
+            ax_wav.plot(sample_X)
+            ax_wav.set_xlim(0, len(sample_X))
+            ax_wav.get_xaxis().set_visible(False)
+            ax_wav.get_yaxis().set_visible(False)
+
+            # plot target
+            ax_ref = axes[row_idx * 4 + 1, col_idx]
+            sample_y = y[sample_idx]
+            ax_ref.plot(sample_y)
+            ax_ref.set_xlim(0, len(sample_y))
+            ax_ref.set_ylim(-1, sample_y.shape[1])
+            ax_ref.get_xaxis().set_visible(False)
+            ax_ref.get_yaxis().set_visible(False)
+
+            # plot prediction
+            ax_hyp = axes[row_idx * 4 + 2, col_idx]
+            sample_y_pred = y_pred[sample_idx]
+            ax_hyp.plot(sample_y_pred)
+            ax_hyp.set_ylim(-0.1, 1.1)
+            ax_hyp.set_xlim(0, len(sample_y))
+            ax_hyp.get_xaxis().set_visible(False)
+
+            # plot permutated prediction
+            ax_map = axes[row_idx * 4 + 3, col_idx]
+            sample_y_pred_map = permutated_y_pred[sample_idx]
+            ax_map.plot(sample_y_pred_map)
+            ax_map.set_ylim(-0.1, 1.1)
+            ax_map.set_xlim(0, len(sample_y))
+
+        plt.tight_layout()
+
+        model.logger.experiment.add_figure(
+            f"{self.ACRONYM}@val_samples", fig, model.current_epoch
         )
