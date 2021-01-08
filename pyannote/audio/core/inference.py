@@ -25,7 +25,7 @@ import warnings
 from collections import Counter, deque
 from functools import cached_property
 from pathlib import Path
-from typing import Deque, Dict, List, Optional, Text, Tuple, Union
+from typing import Any, Callable, Deque, Dict, List, Optional, Text, Tuple, Union
 
 import numpy as np
 import torch
@@ -36,6 +36,7 @@ from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import Model, ModelIntrospection, load_from_checkpoint
 from pyannote.audio.core.task import Scale, TaskSpecification
 from pyannote.audio.utils.permutation import permutate
+from pyannote.audio.utils.progress import InferenceProgressHook
 from pyannote.core import Segment, SlidingWindow, SlidingWindowFeature
 
 TaskName = Union[Text, None]
@@ -64,6 +65,12 @@ class Inference:
     device : torch.device, optional
         Device used for inference. Defaults to `model.device`.
         In case `device` and `model.device` are different, model is sent to device.
+    progress_hook : {callable, True, str}, optional
+        When a callable is provided, it is called everytime a batch is processed
+        with two integer arguments:
+        - the number of chunks that have been processed so far
+        - the total number of chunks
+        Set to True (or a descriptive string) to display a tqdm progress bar.
     """
 
     def __init__(
@@ -74,6 +81,7 @@ class Inference:
         duration: float = None,
         step: float = None,
         batch_size: int = 32,
+        progress_hook: Union[bool, Text, Callable[[int, int], Any]] = False,
     ):
 
         self.model = (
@@ -127,6 +135,16 @@ class Inference:
         self.step = step
 
         self.batch_size = batch_size
+
+        if callable(progress_hook):
+            pass
+        elif isinstance(progress_hook, Text):
+            progress_hook = InferenceProgressHook(desc=progress_hook)
+        elif progress_hook:
+            progress_hook = InferenceProgressHook()
+        else:
+            progress_hook = None
+        self.progress_hook = progress_hook
 
     @cached_property
     def is_multi_task(self) -> bool:
@@ -263,13 +281,20 @@ class Inference:
             task_name: list() for task_name, _ in self.task_specifications
         }
 
+        if self.progress_hook is not None:
+            self.progress_hook(0, num_chunks + has_last_chunk)
+
         # slide over audio chunks in batch
         for c in np.arange(0, num_chunks, self.batch_size):
+
             batch: torch.Tensor = chunks[c : c + self.batch_size]
 
             output = self.infer(batch)
             for task_name, task_output in output.items():
                 outputs[task_name].append(task_output)
+
+            if self.progress_hook is not None:
+                self.progress_hook(c + 1, num_chunks + has_last_chunk)
 
         outputs = {
             task_name: np.vstack(task_outputs)
@@ -292,6 +317,10 @@ class Inference:
                     task_name: output[0]
                     for task_name, output in self.infer(last_chunk[None]).items()
                 }
+                if self.progress_hook is not None:
+                    self.progress_hook(
+                        num_chunks + has_last_chunk, num_chunks + has_last_chunk
+                    )
 
             # use model introspection to estimate the total number of frames
             _, model_introspection = self.model_introspection[t]
@@ -448,6 +477,7 @@ class Inference:
         }
         if self.is_multi_task:
             return outputs
+
         return outputs[None]
 
     def crop(
