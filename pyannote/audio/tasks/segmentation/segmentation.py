@@ -331,6 +331,20 @@ class Segmentation(SegmentationTaskMixin, Task):
                 # pad and yield good ones
                 yield {"X": X, "y": self.prepare_y(combined_y)}
 
+    def val__getitem__(self, idx):
+        f, chunk = self.validation[idx]
+        X, one_hot_y, _ = self.prepare_chunk(f, chunk, duration=self.duration)
+
+        # since number of speakers is estimated from the training set,
+        # we might encounter validation chunks that have more speakers.
+        # in that case, we arbirarily remove last speakers
+        if one_hot_y.shape[1] > self.num_speakers:
+            one_hot_y = one_hot_y[:, : self.num_speakers]
+
+        y = self.prepare_y(one_hot_y)
+
+        return {"X": X, "y": y}
+
     # def segmentation_loss(self, model, y, y_pred):
     def segmentation_loss(self, y: torch.Tensor, y_pred: torch.Tensor) -> torch.Tensor:
         """Permutation-invariant segmentation loss
