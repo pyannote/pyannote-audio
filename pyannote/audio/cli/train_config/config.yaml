@@ -1,0 +1,10 @@
+
+protocol: ???
+verbose: False
+
+defaults:
+  - task: vad
+  - model: dbg_seg
+  - optimizer: adam
+  - trainer: default
+  - hydra: train

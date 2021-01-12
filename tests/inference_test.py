@@ -4,14 +4,15 @@ import pytorch_lightning as pl
 
 from pyannote.audio.core.inference import Inference
 from pyannote.audio.core.task import Scale
-from pyannote.audio.models.debug import (
+from pyannote.audio.models.segmentation.debug import (
     MultiTaskSegmentationModel,
     SimpleSegmentationModel,
 )
-from pyannote.audio.tasks import MultiTaskSegmentation
-from pyannote.audio.tasks.voice_activity_detection.task import VoiceActivityDetection
+from pyannote.audio.tasks import MultiTaskSegmentation, VoiceActivityDetection
 from pyannote.core import SlidingWindowFeature
 from pyannote.database import FileFinder, get_protocol
+
+HF_SAMPLE_MODEL_ID = "julien-c/voice-activity-detection"
 
 
 @pytest.fixture()
@@ -94,3 +95,8 @@ def test_multi_seg_infer():
     for attr in ["vad", "scd", "osd"]:
         assert attr in scores
         assert isinstance(scores[attr], SlidingWindowFeature)
+
+
+def test_hf_download():
+    inference = Inference(HF_SAMPLE_MODEL_ID, device="cpu")
+    assert isinstance(inference, Inference)

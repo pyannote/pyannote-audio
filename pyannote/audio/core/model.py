@@ -20,21 +20,31 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import os
 import warnings
 from dataclasses import dataclass
 from functools import cached_property
 from importlib import import_module
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Text, Tuple, Union
+from urllib.parse import urlparse
 
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
+from huggingface_hub import cached_download, hf_hub_url
 from pytorch_lightning.utilities.cloud_io import load as pl_load
 from semver import VersionInfo
 
 from pyannote.audio import __version__
 from pyannote.audio.core.io import Audio
 from pyannote.audio.core.task import Problem, Scale, Task, TaskSpecification
+
+CACHE_DIR = os.getenv(
+    "PYANNOTE_CACHE",
+    os.path.expanduser("~/.cache/torch/pyannote"),
+)
+HF_PYTORCH_WEIGHTS_NAME = "pytorch_model.bin"
 
 
 @dataclass
@@ -136,6 +146,11 @@ class Model(pl.LightningModule):
         # (e.g. the final classification and activation layers)
         pass
 
+    #  used by Tensorboard logger to log model graph
+    @cached_property
+    def example_input_array(self) -> torch.Tensor:
+        return self.task.example_input_array
+
     def helper_introspect(
         self,
         specifications: TaskSpecification,
@@ -162,7 +177,7 @@ class Model(pl.LightningModule):
             layout=example_input_array.layout,
             device=example_input_array.device,
             requires_grad=False,
-        )
+        ).to(self.device)
 
         # dichotomic search of "min_num_samples"
         lower, upper, min_num_samples = 1, num_samples, None
@@ -299,6 +314,16 @@ class Model(pl.LightningModule):
             # so that its dataloader knows how to generate targets
             self.task.model_introspection = self.hparams.model_introspection
 
+            # this is needed to support pytorch-lightning auto_lr_find feature
+            # as it expects to find a "learning_rate" entry in model.hparams
+            self.hparams.learning_rate = self.task.learning_rate
+
+            # some tasks use loss functions with learnable parameters
+            # setup_loss_func will take care of adding them to the model
+            self.task.setup_loss_func(self)
+
+            self.task.setup_validation_metric(self)
+
     def on_save_checkpoint(self, checkpoint):
 
         #  put everything pyannote.audio-specific under pyannote.audio
@@ -393,7 +418,8 @@ class Model(pl.LightningModule):
     def default_activation(self) -> Union[nn.Module, Dict[str, nn.Module]]:
         """Guess default activation function according to task specification
 
-            * log-softmax for regular classification
+            * sigmoid for binary classification
+            * log-softmax for regular multi-class classification
             * sigmoid for multi-label classification
 
         Returns
@@ -405,22 +431,30 @@ class Model(pl.LightningModule):
         task_specifications = self.hparams.task_specifications
 
         if self.is_multi_task:
-            return {
-                name: self.helper_default_activation(specs)
-                for name, specs in task_specifications.items()
-            }
+            return nn.ModuleDict(
+                {
+                    name: self.helper_default_activation(specs)
+                    for name, specs in task_specifications.items()
+                }
+            )
 
         return self.helper_default_activation(task_specifications)
+
+    def on_epoch_start(self):
+        self.task.current_epoch = self.current_epoch
 
     # training step logic is delegated to the task because the
     # model does not really need to know how it is being used.
     def training_step(self, batch, batch_idx):
         return self.task.training_step(self, batch, batch_idx)
 
-    # validation step logic is delegated to the task because the
+    # validation logic is delegated to the task because the
     # model does not really need to know how it is being used.
     def validation_step(self, batch, batch_idx):
         return self.task.validation_step(self, batch, batch_idx)
+
+    def validation_epoch_end(self, outputs):
+        return self.task.validation_epoch_end(self, outputs)
 
     # optimizer is delegated to the task for the same reason as above
     def configure_optimizers(self):
@@ -594,13 +628,40 @@ class Model(pl.LightningModule):
         return self._helper_by_name(modules, recurse=recurse, requires_grad=True)
 
 
-def load_from_checkpoint(checkpoint_path: str, map_location=None) -> Model:
+def load_from_checkpoint(
+    checkpoint_path: Union[Path, Text],
+    map_location=None,
+    hparams_file: Union[Path, Text] = None,
+    strict: bool = True,
+    **kwargs,
+) -> Model:
     """Load model from checkpoint
 
     Parameters
     ----------
-    checkpoint_path: str
-        Path to checkpoint. This can also be a URL.
+    checkpoint_path : Path or str
+        Path to checkpoint, or a remote URL, or a model identifier from
+        the huggingface.co model hub.
+    map_location: optional
+        If your checkpoint saved a GPU model and you now load on CPUs
+        or a different number of GPUs, use this to map to the new setup.
+        The behaviour is the same as in torch.load().
+    hparams_file : Path or str, optional
+        Path to a .yaml file with hierarchical structure as in this example:
+            drop_prob: 0.2
+            dataloader:
+                batch_size: 32
+        You most likely won’t need this since Lightning will always save the
+        hyperparameters to the checkpoint. However, if your checkpoint weights
+        do not have the hyperparameters saved, use this method to pass in a .yaml
+        file with the hparams you would like to use. These will be converted
+        into a dict and passed into your Model for use.
+    strict : bool, optional
+        Whether to strictly enforce that the keys in checkpoint_path match
+        the keys returned by this module’s state dict. Defaults to True.
+    kwargs: optional
+        Any extra keyword args needed to init the model.
+        Can also be used to override saved hyperparameter values.
 
     Returns
     -------
@@ -608,8 +669,39 @@ def load_from_checkpoint(checkpoint_path: str, map_location=None) -> Model:
         Model
     """
 
+    # pytorch-lightning expects str, not Path.
+    checkpoint_path = str(checkpoint_path)
+    if hparams_file is not None:
+        hparams_file = str(hparams_file)
+
+    # resolve the checkpoint_path to
+    # something that pl will handle
+    if os.path.isfile(checkpoint_path):
+        path_for_pl = checkpoint_path
+    elif urlparse(checkpoint_path).scheme in ("http", "https"):
+        path_for_pl = checkpoint_path
+    else:
+        # Finally, let's try to find it on Hugging Face model hub
+        # e.g. julien-c/voice-activity-detection is a valid model id
+        # and  julien-c/voice-activity-detection@main supports specifying a commit/branch/tag.
+        if "@" in checkpoint_path:
+            model_id = checkpoint_path.split("@")[0]
+            revision = checkpoint_path.split("@")[1]
+        else:
+            model_id = checkpoint_path
+            revision = None
+        url = hf_hub_url(
+            model_id=model_id, filename=HF_PYTORCH_WEIGHTS_NAME, revision=revision
+        )
+        path_for_pl = cached_download(
+            url=url,
+            library_name="pyannote",
+            library_version=__version__,
+            cache_dir=CACHE_DIR,
+        )
+
     # obtain model class from the checkpoint
-    checkpoint = pl_load(checkpoint_path, map_location=map_location)
+    checkpoint = pl_load(path_for_pl, map_location=map_location)
 
     module_name: str = checkpoint["pyannote.audio"]["model"]["module"]
     module = import_module(module_name)
@@ -617,4 +709,10 @@ def load_from_checkpoint(checkpoint_path: str, map_location=None) -> Model:
     class_name: str = checkpoint["pyannote.audio"]["model"]["class"]
     Klass: Model = getattr(module, class_name)
 
-    return Klass.load_from_checkpoint(checkpoint_path)
+    return Klass.load_from_checkpoint(
+        path_for_pl,
+        map_location=map_location,
+        hparams_file=hparams_file,
+        strict=strict,
+        **kwargs,
+    )

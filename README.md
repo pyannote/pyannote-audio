@@ -1,6 +1,14 @@
 # pyannote-audio
 Rewriting pyannote.audio from scratch
 
+
+## CLI
+
+```bash
+pyannote-audio-train task=vad model=debug protocol=Debug.SpeakerDiarization.Debug
+```
+
+
 ## Contributing
 
 The commands below will setup pre-commit hooks and packages needed for developing the `pyannote.audio` library.

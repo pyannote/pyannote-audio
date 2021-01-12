@@ -56,7 +56,7 @@ Audio files can be provided to the Audio class using different types:
     - a ProtocolFile (or regular dict) with an "audio" key:
         {"audio": Path("/path/to/audio.wav")}
     - a ProtocolFile (or regular dict) with both "waveform" and "sample_rate" key:
-        {"waveform": (time, channel) numpy array, "sample_rate": 44100}
+        {"waveform": (channel, time) numpy.ndarray or torch.Tensor, "sample_rate": 44100}
 
 For last two options, an additional "channel" key can be provided as a zero-indexed
 integer to load a specific channel:
@@ -89,6 +89,8 @@ class Audio:
     >>> assert sample_rate == 16000
     >>> assert waveform.shape[0] == 1
     """
+
+    PRECISION = 0.001
 
     @staticmethod
     def power_normalize(waveform: Tensor) -> Tensor:
@@ -321,20 +323,45 @@ class Audio:
             frames = info.num_frames
 
         # infer which samples to load from sample rate and requested chunk
-        start_frame = int(segment.start * sample_rate)
+        start_frame = round(segment.start * sample_rate)
 
         if fixed:
+
             num_frames = math.floor(fixed * sample_rate)
+
+            if num_frames > frames:
+                raise ValueError(
+                    f"requested fixed duration ({fixed:6f}s, or {num_frames:d} frames) is longer "
+                    f"than file duration ({frames / sample_rate:.6f}s, or {frames:d} frames)."
+                )
+
+            end_frame = start_frame + num_frames
+
+            # raise an error if it "out-of-bounds" by more than precision
+            if end_frame > frames + math.ceil(self.PRECISION * sample_rate):
+                raise ValueError(
+                    f"requested chunk [{segment.start:.6f}, {segment.end:.6f}] ({start_frame:d}:{end_frame:d}) "
+                    f"lies outside of file bounds [0., {frames / sample_rate:.6f}] (0:{frames:d})."
+                )
+
+            # shift chunk to the left if it "out-of-bounds" by less than precision
+            end_frame = min(end_frame, frames)
+            start_frame = end_frame - num_frames
+
         else:
-            num_frames = math.floor(segment.end * sample_rate - start_frame)
 
-        end_frame = start_frame + num_frames
+            end_frame = math.floor(segment.end * sample_rate)
 
-        if start_frame < 0 or end_frame > frames:
-            raise ValueError(
-                f"requested chunk [{segment.start:.6f}, {segment.end:.6f}] "
-                f"lies outside of file bounds [0., {frames / sample_rate:.6f}]."
-            )
+            # raise an error if it "out-of-bounds" by more than precision
+            if end_frame > frames + math.ceil(self.PRECISION * sample_rate):
+                raise ValueError(
+                    f"requested chunk [{segment.start:.6f}, {segment.end:.6f}] ({start_frame:d}:{end_frame:d}) "
+                    f"lies outside of file bounds [0., {frames / sample_rate:.6f}] (0:{frames:d})."
+                )
+
+            # crop chunk if it "out-of-bounds" by less than precision
+            end_frame = min(end_frame, frames)
+            num_frames = end_frame - start_frame
 
         if waveform is not None:
             data = waveform[:, start_frame:end_frame]

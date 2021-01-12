@@ -1,0 +1,3 @@
+# @package _group_
+_target_: pytorch_lightning.Trainer
+fast_dev_run: True
