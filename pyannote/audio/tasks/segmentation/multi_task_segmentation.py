@@ -31,7 +31,6 @@ from torch.optim import Optimizer
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 
 from pyannote.audio.core.io import Audio
-from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Problem, Task
 from pyannote.audio.tasks import (
     OverlappedSpeechDetection,
@@ -180,9 +179,9 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
         if stage == "fit":
 
             if self.osd and self.tasks["osd"].domain is not None:
-                for f in self.train:
+                for f in self._train:
                     f["domain"] = f[self.tasks["osd"].domain]
-                self.domains = list(set(f["domain"] for f in self.train))
+                self.domains = list(set(f["domain"] for f in self._train))
 
             self.specifications = {
                 name: task.specifications for name, task in self.tasks.items()
@@ -208,7 +207,7 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
 
     def train__iter__helper(self, rng: random.Random, domain: str = None):
 
-        train = self.train
+        train = self._train
 
         if domain is not None:
             train = [f for f in train if f["domain"] == domain]
@@ -249,7 +248,7 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
         """
 
         # create worker-specific random number generator
-        rng = create_rng_for_worker(self.current_epoch)
+        rng = create_rng_for_worker(self.model.current_epoch)
 
         if self.osd and self.tasks["osd"].domain is not None:
             chunks_by_domain = {
@@ -307,7 +306,7 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
 
             yield {"X": X, "y": self.prepare_y(combined_y)}
 
-    def setup_validation_metric(self, model):
+    def setup_validation_metric(self):
 
         self.val_fbeta = {
             task_name: FBeta(
@@ -322,13 +321,11 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
             for task_name, specifications in self.specifications.items()
         }
 
-    def validation_step(self, model: Model, batch, batch_idx: int):
+    def validation_step(self, batch, batch_idx: int):
         """Compute areas under ROC curve
 
         Parameters
         ----------
-        model : Model
-            Model currently being validated.
         batch : dict of torch.Tensor
             Current batch.
         batch_idx: int
@@ -336,20 +333,20 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
         """
 
         X, y = batch["X"], batch["y"]
-        y_pred = model(X)
+        y_pred = self.model(X)
 
         val_fbeta = dict()
 
         for task_name in self.specifications:
 
             # move metric to model device
-            self.val_fbeta[task_name].to(model.device)
+            self.val_fbeta[task_name].to(self.model.device)
 
             val_fbeta[task_name] = self.val_fbeta[task_name](
                 y_pred[task_name][:, ::10].squeeze(), y[task_name][:, ::10].squeeze()
             )
 
-            model.log(
+            self.model.log(
                 f"{task_name}@val_fbeta",
                 val_fbeta[task_name],
                 on_step=False,
@@ -358,7 +355,7 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
                 logger=True,
             )
 
-        model.log(
+        self.model.log(
             f"{self.ACRONYM}@val_fbeta",
             sum(val_fbeta.values()) / len(val_fbeta),
             on_step=False,

@@ -43,7 +43,7 @@ class SimpleEmbeddingModel(Model):
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
 
         self.mfcc = MFCC(
-            sample_rate=self.hparams.sample_rate,
+            sample_rate=self.sample_rate,
             n_mfcc=40,
             dct_type=2,
             norm="ortho",
@@ -51,7 +51,7 @@ class SimpleEmbeddingModel(Model):
         )
 
         self.lstm = nn.LSTM(
-            self.mfcc.n_mfcc * self.hparams.num_channels,
+            self.mfcc.n_mfcc * self.num_channels,
             32,
             num_layers=1,
             batch_first=True,

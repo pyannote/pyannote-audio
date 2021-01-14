@@ -35,6 +35,8 @@ from pyannote.audio.models.blocks.sincnet import SincNet
 from pyannote.audio.utils.probe import probe
 from pyannote.core.utils.generators import pairwise
 
+# from pyannote.core.utils.params import merge_dict
+
 
 class Branch(nn.Module):
     """Branch"""
@@ -192,7 +194,7 @@ class MultiPyanNet(Model):
         probes = dict()
         self.branches = nn.ModuleDict()
         self.classifiers = nn.ModuleDict()
-        for task_name, specifications in self.hparams.task_specifications.items():
+        for task_name, specifications in self.specifications.items():
             branch_hparams = self.hparams.branches[task_name]
             probes[task_name] = f"lstm.{branch_hparams['head']:d}"
             branch = Branch(self.trunk.out_features, **branch_hparams)
@@ -230,5 +232,5 @@ class MultiPyanNet(Model):
                     self.branches[task_name](outputs[task_name][0])
                 )
             )
-            for task_name in self.hparams.task_specifications
+            for task_name in self.specifications
         }

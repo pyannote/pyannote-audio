@@ -27,8 +27,7 @@ import sys
 import warnings
 from dataclasses import dataclass
 from enum import Enum
-from functools import cached_property
-from typing import TYPE_CHECKING, Callable, Iterable, List, Optional, Text
+from typing import Callable, Iterable, List, Optional, Text
 
 import pytorch_lightning as pl
 import torch
@@ -36,14 +35,10 @@ import torch.nn.functional as F
 from torch.nn import Parameter
 from torch.optim import Adam, Optimizer
 from torch.utils.data import DataLoader, Dataset, IterableDataset
-
-from pyannote.database import Protocol
-
-if TYPE_CHECKING:
-    from pyannote.audio.core.model import Model
-
 from torch.utils.data._utils.collate import default_collate
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
+
+from pyannote.database import Protocol
 
 
 # Type of machine learning problem
@@ -65,7 +60,7 @@ class Scale(Enum):
 
 
 @dataclass
-class TaskSpecification:
+class Specifications:
     problem: Problem
     scale: Scale
 
@@ -85,8 +80,19 @@ class TaskSpecification:
         # because multi-task specifications are stored as {task_name: specifications} dict
         return 1
 
+    def __getitem__(self, key):
+        if key is not None:
+            raise KeyError
+        return self
+
     def items(self):
         yield None, self
+
+    def keys(self):
+        yield None
+
+    def __iter__(self):
+        yield None
 
 
 class TrainDataset(IterableDataset):
@@ -155,10 +161,10 @@ class Task(pl.LightningDataModule):
 
     Attributes
     ----------
-    specifications : TaskSpecification or dict of TaskSpecification
+    specifications : Specifications or dict of Specifications
         Task specifications (available after `Task.setup` has been called.)
         For multi-task learning, this should be a dictionary where keys are
-        task names and values are corresponding TaskSpecification instances.
+        task names and values are corresponding Specifications instances.
     """
 
     def __init__(
@@ -235,28 +241,19 @@ class Task(pl.LightningDataModule):
 
         If `specifications` attribute has not been set in `__init__`,
         `setup` is your last chance to set it.
-
         """
         pass
 
-    def setup_loss_func(self, model: Model):
+    def setup_loss_func(self):
         pass
 
-    def setup_validation_metric(self, model: Model):
+    def setup_validation_metric(self):
         pass
 
-    @cached_property
+    @property
     def is_multi_task(self) -> bool:
         """"Check whether multiple tasks are addressed at once"""
         return len(self.specifications) > 1
-
-    @property
-    def current_epoch(self) -> int:
-        return getattr(self, "current_epoch_", 0)
-
-    @current_epoch.setter
-    def current_epoch(self, current_epoch: int):
-        self.current_epoch_ = current_epoch
 
     def train__iter__(self):
         # will become train_dataset.__iter__ method
@@ -272,7 +269,7 @@ class Task(pl.LightningDataModule):
         collated_batch = default_collate(batch)
         if self.augmentation is not None:
             collated_batch["X"] = self.augmentation(
-                collated_batch["X"], sample_rate=self.audio.sample_rate
+                collated_batch["X"], sample_rate=self.model.sample_rate
             )
         return collated_batch
 
@@ -286,34 +283,7 @@ class Task(pl.LightningDataModule):
             collate_fn=self.collate_fn,
         )
 
-    @cached_property
-    def example_input_array(self):
-        # this method is called in Model.introspect where it is used
-        # to automagically infer the temporal resolution of the
-        # model output, and hence allow the dataloader to shape
-        # its targets correctly.
-
-        # since we plan to have the feature extraction step done
-        # on GPU as part of the model, the example input array is
-        # basically always a chunk of audio
-
-        if self.audio.mono:
-            num_channels = 1
-        else:
-            msg = "Only 'mono' audio is supported."
-            raise NotImplementedError(msg)
-
-        return torch.randn(
-            (
-                self.batch_size,
-                num_channels,
-                int(self.audio.sample_rate * self.duration),
-            )
-        )
-
-    def default_loss(
-        self, specifications: TaskSpecification, y, y_pred
-    ) -> torch.Tensor:
+    def default_loss(self, specifications: Specifications, y, y_pred) -> torch.Tensor:
         """Guess and compute default loss according to task specification"""
 
         if specifications.problem == Problem.BINARY_CLASSIFICATION:
@@ -333,7 +303,7 @@ class Task(pl.LightningDataModule):
 
     # default training_step provided for convenience
     # can obviously be overriden for each task
-    def training_step(self, model: Model, batch, batch_idx: int):
+    def training_step(self, batch, batch_idx: int):
         """Default training_step according to task specification
 
             * binary cross-entropy loss for binary or multi-label classification
@@ -343,8 +313,6 @@ class Task(pl.LightningDataModule):
 
         Parameters
         ----------
-        model : Model
-            Model currently being trained.
         batch : (usually) dict of torch.Tensor
             Current batch.
         batch_idx: int
@@ -357,7 +325,7 @@ class Task(pl.LightningDataModule):
         """
 
         X, y = batch["X"], batch["y"]
-        y_pred = model(X)
+        y_pred = self.model(X)
 
         if self.is_multi_task:
             loss = dict()
@@ -365,7 +333,7 @@ class Task(pl.LightningDataModule):
                 loss[task_name] = self.default_loss(
                     specifications, y[task_name], y_pred[task_name]
                 )
-                model.log(
+                self.model.log(
                     f"{task_name}@train_loss",
                     loss[task_name],
                     on_step=True,
@@ -375,7 +343,7 @@ class Task(pl.LightningDataModule):
                 )
 
             loss["loss"] = sum(loss.values())
-            model.log(
+            self.model.log(
                 f"{self.ACRONYM}@train_loss",
                 loss["loss"],
                 on_step=True,
@@ -386,7 +354,7 @@ class Task(pl.LightningDataModule):
             return loss
 
         loss = self.default_loss(self.specifications, y, y_pred)
-        model.log(
+        self.model.log(
             f"{self.ACRONYM}@train_loss",
             loss,
             on_step=True,
@@ -421,7 +389,7 @@ class Task(pl.LightningDataModule):
 
     # default validation_step provided for convenience
     # can obviously be overriden for each task
-    def validation_step(self, model: Model, batch, batch_idx: int):
+    def validation_step(self, batch, batch_idx: int):
         """Guess default validation_step according to task specification
 
             * binary cross-entropy loss for binary or multi-label classification
@@ -431,8 +399,6 @@ class Task(pl.LightningDataModule):
 
         Parameters
         ----------
-        model : Model
-            Model currently being validated.
         batch : (usually) dict of torch.Tensor
             Current batch.
         batch_idx: int
@@ -445,7 +411,7 @@ class Task(pl.LightningDataModule):
         """
 
         X, y = batch["X"], batch["y"]
-        y_pred = model(X)
+        y_pred = self.model(X)
 
         if self.is_multi_task:
             loss = dict()
@@ -453,10 +419,10 @@ class Task(pl.LightningDataModule):
                 loss[task_name] = self.default_loss(
                     specifications, y[task_name], y_pred[task_name]
                 )
-                model.log(f"{task_name}@val_loss", loss[task_name])
+                self.model.log(f"{task_name}@val_loss", loss[task_name])
 
             loss["loss"] = sum(loss.values())
-            model.log(
+            self.model.log(
                 f"{self.ACRONYM}@val_loss",
                 loss["loss"],
                 on_step=False,
@@ -466,7 +432,7 @@ class Task(pl.LightningDataModule):
             return loss
 
         loss = self.default_loss(self.specifications, y, y_pred)
-        model.log(
+        self.model.log(
             f"{self.ACRONYM}@val_loss",
             loss,
             on_step=False,
@@ -475,24 +441,16 @@ class Task(pl.LightningDataModule):
         )
         return {"loss": loss}
 
-    def validation_epoch_end(self, model: Model, outputs):
+    def validation_epoch_end(self, outputs):
         pass
 
     def val_callback(self):
         return None
 
-    def parameters(self, model: Model) -> Iterable[Parameter]:
-        return model.parameters()
-
     # default configure_optimizers provided for convenience
     # can obviously be overriden for each task
-    def configure_optimizers(self, model: Model):
-        # this is needed to support pytorch-lightning auto_lr_find feature
-        # as it modifies model.hparams.learning_rate and not task.learning_rate.
-        # in case one does not use auto_lr_find, Model.setup() takes care of
-        # setting model.hparams.learning_rate to task.learning_rate so we are safe.
-        lr = model.hparams.learning_rate
-        return self.optimizer(self.parameters(model), lr=lr)
+    def configure_optimizers(self):
+        return self.optimizer(self.model.parameters(), lr=self.learning_rate)
 
     @property
     def val_monitor(self):

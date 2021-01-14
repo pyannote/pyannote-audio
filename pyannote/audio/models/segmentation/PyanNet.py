@@ -31,6 +31,7 @@ from einops import rearrange
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
 from pyannote.audio.models.blocks.sincnet import SincNet
+from pyannote.audio.utils.params import merge_dict
 from pyannote.core.utils.generators import pairwise
 
 
@@ -64,62 +65,55 @@ class PyanNet(Model):
 
     def __init__(
         self,
-        sample_rate: int = 16000,
-        num_channels: int = 1,
         sincnet: dict = None,
         lstm: dict = None,
         linear: dict = None,
+        sample_rate: int = 16000,
+        num_channels: int = 1,
         task: Optional[Task] = None,
     ):
 
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
 
-        sincnet_hparams = dict(**self.SINCNET_DEFAULTS)
-        if sincnet is not None:
-            sincnet_hparams.update(**sincnet)
-        sincnet_hparams["sample_rate"] = sample_rate
-        self.hparams.sincnet = sincnet_hparams
-        self.sincnet = SincNet(**self.hparams.sincnet)
+        sincnet = merge_dict(self.SINCNET_DEFAULTS, sincnet)
+        sincnet["sample_rate"] = sample_rate
+        lstm = merge_dict(self.LSTM_DEFAULTS, lstm)
+        lstm["batch_first"] = True
+        linear = merge_dict(self.LINEAR_DEFAULTS, linear)
+        self.save_hyperparameters("sincnet", "lstm", "linear")
 
-        lstm_hparams = dict(**self.LSTM_DEFAULTS)
-        if lstm is not None:
-            lstm_hparams.update(**lstm)
-        lstm_hparams["batch_first"] = True  # this is not negotiable
-        self.hparams.lstm = lstm_hparams
+        self.sincnet = SincNet(**self.hparams.sincnet)
         self.lstm = nn.LSTM(60, **self.hparams.lstm)
 
-        lstm_out_features: int = self.lstm.hidden_size * (
-            2 if self.lstm.bidirectional else 1
-        )
+        if linear["num_layers"] < 1:
+            return
 
-        linear_hparams = dict(**self.LINEAR_DEFAULTS)
-        if linear is not None:
-            linear_hparams.update(**linear)
-        self.hparams.linear = linear_hparams
-        if self.hparams.linear["num_layers"] > 0:
-            self.linear = nn.ModuleList(
-                [
-                    nn.Linear(in_features, out_features)
-                    for in_features, out_features in pairwise(
-                        [
-                            lstm_out_features,
-                        ]
-                        + [self.hparams.linear["hidden_size"]]
-                        * self.hparams.linear["num_layers"]
-                    )
-                ]
-            )
+        lstm_out_features: int = self.hparams.lstm["hidden_size"] * (
+            2 if self.hparams.lstm["bidirectional"] else 1
+        )
+        self.linear = nn.ModuleList(
+            [
+                nn.Linear(in_features, out_features)
+                for in_features, out_features in pairwise(
+                    [
+                        lstm_out_features,
+                    ]
+                    + [self.hparams.linear["hidden_size"]]
+                    * self.hparams.linear["num_layers"]
+                )
+            ]
+        )
 
     def build(self):
 
         if self.hparams.linear["num_layers"] > 0:
             in_features = self.hparams.linear["hidden_size"]
         else:
-            in_features = self.lstm.hidden_size * (2 if self.lstm.bidirectional else 1)
+            in_features = self.hparams.lstm["hidden_size"] * (
+                2 if self.hparams.lstm["bidirectional"] else 1
+            )
 
-        self.classifier = nn.Linear(
-            in_features, len(self.hparams.task_specifications.classes)
-        )
+        self.classifier = nn.Linear(in_features, len(self.specifications.classes))
         self.activation = self.default_activation()
 
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:

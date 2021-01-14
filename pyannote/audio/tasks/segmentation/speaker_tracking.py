@@ -26,7 +26,7 @@ from torch.nn import Parameter
 from torch.optim import Optimizer
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 
-from pyannote.audio.core.task import Problem, Scale, Task, TaskSpecification
+from pyannote.audio.core.task import Problem, Scale, Specifications, Task
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
 from pyannote.database import Protocol
 
@@ -103,7 +103,7 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
 
             # build the list of speakers to be tracked.
             speakers = set()
-            for f in self.train:
+            for f in self._train:
                 speakers.update(f["annotation"].labels())
 
             # now that we now who the speakers are, we can
@@ -111,7 +111,7 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
 
             # note that, since multiple speakers can be active
             # at once, the problem is multi-label classification.
-            self.specifications = TaskSpecification(
+            self.specifications = Specifications(
                 problem=Problem.MULTI_LABEL_CLASSIFICATION,
                 scale=Scale.FRAME,
                 duration=self.duration,

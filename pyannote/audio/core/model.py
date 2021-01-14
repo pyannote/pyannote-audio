@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020 CNRS
+# Copyright (c) 2020-2021 CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -23,7 +23,6 @@
 import os
 import warnings
 from dataclasses import dataclass
-from functools import cached_property
 from importlib import import_module
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Text, Tuple, Union
@@ -38,7 +37,7 @@ from semver import VersionInfo
 
 from pyannote.audio import __version__
 from pyannote.audio.core.io import Audio
-from pyannote.audio.core.task import Problem, Scale, Task, TaskSpecification
+from pyannote.audio.core.task import Problem, Scale, Specifications, Task
 
 CACHE_DIR = os.getenv(
     "PYANNOTE_CACHE",
@@ -48,7 +47,11 @@ HF_PYTORCH_WEIGHTS_NAME = "pytorch_model.bin"
 
 
 @dataclass
-class ModelIntrospection:
+class Introspection:
+
+    # TODO: make it a regular class
+    # TODO: add from_model class method that will replace Model.introspection property
+
     # minimum number of input samples
     min_num_samples: int
     # corresponding minimum number of output frames
@@ -89,12 +92,23 @@ class ModelIntrospection:
 
     def __len__(self):
         # makes it possible to do something like:
-        # multi_task = len(model_introspection) > 1
+        # multi_task = len(introspection) > 1
         # because multi-task introspections are stored as {task_name: introspection} dict
         return 1
 
+    def __getitem__(self, key):
+        if key is not None:
+            raise KeyError
+        return self
+
     def items(self):
         yield None, self
+
+    def keys(self):
+        yield None
+
+    def __iter__(self):
+        yield None
 
 
 class Model(pl.LightningModule):
@@ -107,9 +121,7 @@ class Model(pl.LightningModule):
     num_channels : int, optional
         Number of channels. Defaults to mono (1).
     task : Task, optional
-        Task addressed by the model. Only provided when training the model.
-        A model should be `load_from_checkpoint`-able without a task as
-        `on_load_checkpoint` hook takes care of calling `setup`.
+        Task addressed by the model.
     """
 
     def __init__(
@@ -120,56 +132,90 @@ class Model(pl.LightningModule):
     ):
         super().__init__()
 
-        # set-up audio IO
         assert (
             num_channels == 1
         ), "Only mono audio is supported for now (num_channels = 1)"
-        self.hparams.sample_rate = sample_rate
-        self.hparams.num_channels = num_channels
-        self.audio = Audio(sample_rate=self.hparams.sample_rate, mono=True)
 
-        # set task attribute when available (i.e. at training time)
-        # and also tell the task what kind of audio is expected from
-        # the model
-        if task is not None:
-            self.task = task
-            self.task.audio = self.audio
+        self.save_hyperparameters("sample_rate", "num_channels")
 
-    @cached_property
-    def is_multi_task(self) -> bool:
-        if hasattr(self, "task"):
-            return self.task.is_multi_task
-        return len(self.hparams.task_specifications) > 1
+        self.task = task
+        self.audio = Audio(
+            sample_rate=self.hparams.sample_rate, mono=self.hparams.num_channels == 1
+        )
+
+    @property
+    def datamodule(self):
+        return self.task
+
+    @property
+    def example_input_array(self) -> torch.Tensor:
+        batch_size = 3 if self.task is None else self.task.batch_size
+        duration = self.specifications.duration
+        return torch.randn(
+            (
+                batch_size,
+                self.hparams.num_channels,
+                int(self.hparams.sample_rate * duration),
+            )
+        )
+
+        return self.task.example_input_array
+
+    @property
+    def task(self):
+        return self._task
+
+    @task.setter
+    def task(self, task):
+        self._task = task
+        del self.introspection
+        del self.specifications
+
+    @property
+    def specifications(self):
+        if self.task is not None:
+            return self.task.specifications
+        return self._specifications
+
+    @specifications.setter
+    def specifications(self, specifications):
+        self._specifications = specifications
+
+    @specifications.deleter
+    def specifications(self):
+        if hasattr(self, "_specifications"):
+            del self._specifications
+
+    @property
+    def is_multi_task(self):
+        return len(self.specifications) > 1
 
     def build(self):
         # use this method to add task-dependent layers to the model
         # (e.g. the final classification and activation layers)
         pass
 
-    #  used by Tensorboard logger to log model graph
-    @cached_property
-    def example_input_array(self) -> torch.Tensor:
-        return self.task.example_input_array
-
-    def helper_introspect(
+    def helper_introspection(
         self,
-        specifications: TaskSpecification,
+        specifications: Specifications,
         task: str = None,
-    ) -> ModelIntrospection:
+    ) -> Introspection:
         """Helper function for model introspection
 
         Parameters
         ----------
-        specifications : TaskSpecification
+        specifications : Specifications
+            Task specifications.
         task : str, optional
             Task name.
 
         Returns
         -------
-        introspection : ModelIntrospection
+        introspection : Introspection
             Model introspection.
         """
-        example_input_array = self.task.example_input_array
+
+        example_input_array = self.example_input_array
         batch_size, num_channels, num_samples = example_input_array.shape
         example_input_array = torch.randn(
             (1, num_channels, num_samples),
@@ -214,7 +260,7 @@ class Model(pl.LightningModule):
 
         # corner case for chunk-scale tasks
         if specifications.scale == Scale.CHUNK:
-            return ModelIntrospection(
+            return Introspection(
                 min_num_samples=min_num_samples,
                 min_num_frames=1,
                 inc_num_samples=0,
@@ -266,7 +312,7 @@ class Model(pl.LightningModule):
             if lower + 1 == upper:
                 break
 
-        return ModelIntrospection(
+        return Introspection(
             min_num_samples=min_num_samples,
             min_num_frames=min_num_frames,
             inc_num_samples=inc_num_samples,
@@ -274,55 +320,47 @@ class Model(pl.LightningModule):
             dimension=dimension,
         )
 
-    def introspect(self) -> Union[ModelIntrospection, Dict[Text, ModelIntrospection]]:
-        """Perform model introspection
+    @property
+    def introspection(self) -> Union[Introspection, Dict[Text, Introspection]]:
+        """Introspection
 
         Returns
         -------
-        introspection: ModelIntrospection or {str: ModelIntrospection} dict
+        introspection: Introspection or {str: Introspection} dict
             Model introspection or {task_name: introspection} dictionary for
             multi-task models.
         """
 
-        task_specifications = self.hparams.task_specifications
+        if not hasattr(self, "_introspection"):
 
-        if self.is_multi_task:
-            return {
-                name: self.helper_introspect(specs, task=name)
-                for name, specs in task_specifications.items()
-            }
+            if self.is_multi_task:
+                self._introspection = {
+                    name: self.helper_introspection(specs, task=name)
+                    for name, specs in self.specifications.items()
+                }
+                # TODO: raises an error in case of multiple tasks with different introspections
 
-        return self.helper_introspect(task_specifications)
+            self._introspection = self.helper_introspection(self.specifications)
+
+        return self._introspection
+
+    @introspection.setter
+    def introspection(self, introspection):
+        self._introspection = introspection
+
+    @introspection.deleter
+    def introspection(self):
+        if hasattr(self, "_introspection"):
+            del self._introspection
 
     def setup(self, stage=None):
 
-        if stage == "fit":
-            #  keep track of task specifications
-            self.hparams.task_specifications = self.task.specifications
-
-        # add task-dependent layers to the model
-        # (e.g. the final classification and activation layers)
         self.build()
 
         if stage == "fit":
-            # model introspection
-            self.hparams.model_introspection = self.introspect()
-
-            # TODO: raises an error in case of multiple tasks with different introspections
-
-            # let task know about model introspection
-            # so that its dataloader knows how to generate targets
-            self.task.model_introspection = self.hparams.model_introspection
-
-            # this is needed to support pytorch-lightning auto_lr_find feature
-            # as it expects to find a "learning_rate" entry in model.hparams
-            self.hparams.learning_rate = self.task.learning_rate
-
-            # some tasks use loss functions with learnable parameters
-            # setup_loss_func will take care of adding them to the model
-            self.task.setup_loss_func(self)
-
-            self.task.setup_validation_metric(self)
+            self.task.model = self
+            self.task.setup_loss_func()
+            self.task.setup_validation_metric()
 
     def on_save_checkpoint(self, checkpoint):
 
@@ -333,10 +371,12 @@ class Model(pl.LightningModule):
                 "torch": torch.__version__,
                 "pyannote.audio": __version__,
             },
-            "model": {
+            "architecture": {
                 "module": self.__class__.__module__,
                 "class": self.__class__.__name__,
             },
+            "introspection": self.introspection,
+            "specifications": self.specifications,
         }
 
     @staticmethod
@@ -367,32 +407,26 @@ class Model(pl.LightningModule):
             checkpoint["pyannote.audio"]["versions"]["torch"],
             torch.__version__,
         )
+
         self.check_version(
             "pytorch-lightning", checkpoint["pytorch-lightning_version"], pl.__version__
         )
 
-        self.hparams.task_specifications = checkpoint["hyper_parameters"][
-            "task_specifications"
-        ]
+        self.introspection = checkpoint["pyannote.audio"]["introspection"]
+        self.specifications = checkpoint["pyannote.audio"]["specifications"]
 
-        self.hparams.model_introspection = checkpoint["hyper_parameters"][
-            "model_introspection"
-        ]
-
-        # now that setup()-defined hyper-parameters are available,
-        # we can actually setup() the model.
-        self.setup()
+        self.build()
 
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
         msg = "Class {self.__class__.__name__} should define a `forward` method."
         raise NotImplementedError(msg)
 
-    def helper_default_activation(self, specifications: TaskSpecification) -> nn.Module:
+    def helper_default_activation(self, specifications: Specifications) -> nn.Module:
         """Helper function for default_activation
 
         Parameters
         ----------
-        specifications: TaskSpecification
+        specifications: Specifications
             Task specification.
 
         Returns
@@ -428,37 +462,32 @@ class Model(pl.LightningModule):
             Activation or {task_name: activation} dictionary for multi-task models.
         """
 
-        task_specifications = self.hparams.task_specifications
-
         if self.is_multi_task:
             return nn.ModuleDict(
                 {
                     name: self.helper_default_activation(specs)
-                    for name, specs in task_specifications.items()
+                    for name, specs in self.specifications.items()
                 }
             )
 
-        return self.helper_default_activation(task_specifications)
-
-    def on_epoch_start(self):
-        self.task.current_epoch = self.current_epoch
+        return self.helper_default_activation(self.specifications)
 
     # training step logic is delegated to the task because the
     # model does not really need to know how it is being used.
     def training_step(self, batch, batch_idx):
-        return self.task.training_step(self, batch, batch_idx)
+        return self.task.training_step(batch, batch_idx)
 
     # validation logic is delegated to the task because the
     # model does not really need to know how it is being used.
     def validation_step(self, batch, batch_idx):
-        return self.task.validation_step(self, batch, batch_idx)
+        return self.task.validation_step(batch, batch_idx)
 
     def validation_epoch_end(self, outputs):
-        return self.task.validation_epoch_end(self, outputs)
+        return self.task.validation_epoch_end(outputs)
 
     # optimizer is delegated to the task for the same reason as above
     def configure_optimizers(self):
-        return self.task.configure_optimizers(self)
+        return self.task.configure_optimizers()
 
     def _helper_up_to(
         self, module_name: Text, requires_grad: bool = False
@@ -703,10 +732,10 @@ def load_from_checkpoint(
     # obtain model class from the checkpoint
     checkpoint = pl_load(path_for_pl, map_location=map_location)
 
-    module_name: str = checkpoint["pyannote.audio"]["model"]["module"]
+    module_name: str = checkpoint["pyannote.audio"]["architecture"]["module"]
     module = import_module(module_name)
 
-    class_name: str = checkpoint["pyannote.audio"]["model"]["class"]
+    class_name: str = checkpoint["pyannote.audio"]["architecture"]["class"]
     Klass: Model = getattr(module, class_name)
 
     return Klass.load_from_checkpoint(

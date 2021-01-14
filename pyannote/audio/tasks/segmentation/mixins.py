@@ -30,7 +30,6 @@ import numpy as np
 from pytorch_lightning.metrics.classification import FBeta
 
 from pyannote.audio.core.io import AudioFile
-from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Problem
 from pyannote.audio.utils.random import create_rng_for_worker
 from pyannote.core import Segment, SlidingWindow
@@ -43,7 +42,7 @@ class SegmentationTaskMixin:
         if stage == "fit":
             # loop over the training set, remove annotated regions shorter than
             # chunk duration, and keep track of the reference annotations.
-            self.train = []
+            self._train = []
             for f in self.protocol.train():
                 segments = [
                     segment
@@ -51,7 +50,7 @@ class SegmentationTaskMixin:
                     if segment.duration > self.duration
                 ]
                 duration = sum(segment.duration for segment in segments)
-                self.train.append(
+                self._train.append(
                     {
                         "uri": f["uri"],
                         "annotated": segments,
@@ -63,7 +62,7 @@ class SegmentationTaskMixin:
 
             # loop over the validation set, remove annotated regions shorter than
             # chunk duration, and keep track of the reference annotations.
-            self.validation = []
+            self._validation = []
             for f in self.protocol.development():
 
                 for segment in f["annotated"]:
@@ -76,11 +75,11 @@ class SegmentationTaskMixin:
                     for c in range(num_chunks):
                         start_time = segment.start + c * self.duration
                         chunk = Segment(start_time, start_time + self.duration)
-                        self.validation.append((f, chunk))
+                        self._validation.append((f, chunk))
 
-            random.shuffle(self.validation)
+            random.shuffle(self._validation)
 
-    def setup_validation_metric(self, model):
+    def setup_validation_metric(self):
 
         self.val_fbeta = FBeta(
             len(self.specifications.classes),
@@ -133,20 +132,22 @@ class SegmentationTaskMixin:
             Ordered labels such that y[:, k] corresponds to activity of labels[k].
         """
 
-        X, _ = self.audio.crop(
+        X, _ = self.model.audio.crop(
             file,
             chunk,
             mode="center",
             fixed=self.duration if duration is None else duration,
         )
 
+        introspection = self.model.introspection
+
         if self.is_multi_task:
             # this assumes that all tasks share the same model introspection.
             # this is a reasonable assumption for now.
-            any_task = next(iter(self.model_introspection.keys()))
-            num_frames, _ = self.model_introspection[any_task](X.shape[1])
+            any_task = next(iter(introspection.keys()))
+            num_frames, _ = introspection[any_task](X.shape[1])
         else:
-            num_frames, _ = self.model_introspection(X.shape[1])
+            num_frames, _ = introspection(X.shape[1])
 
         annotation = file["annotation"].crop(chunk)
         labels = annotation.labels() if self.chunk_labels is None else self.chunk_labels
@@ -189,14 +190,14 @@ class SegmentationTaskMixin:
         """
 
         # create worker-specific random number generator
-        rng = create_rng_for_worker(self.current_epoch)
+        rng = create_rng_for_worker(self.model.current_epoch)
 
         while True:
 
             # select one file at random (with probability proportional to its annotated duration)
             file, *_ = rng.choices(
-                self.train,
-                weights=[f["duration"] for f in self.train],
+                self._train,
+                weights=[f["duration"] for f in self._train],
                 k=1,
             )
 
@@ -219,25 +220,23 @@ class SegmentationTaskMixin:
 
     def train__len__(self):
         # Number of training samples in one epoch
-        duration = sum(file["duration"] for file in self.train)
+        duration = sum(file["duration"] for file in self._train)
         return math.ceil(duration / self.duration)
 
     def val__getitem__(self, idx):
-        f, chunk = self.validation[idx]
+        f, chunk = self._validation[idx]
         X, one_hot_y, _ = self.prepare_chunk(f, chunk, duration=self.duration)
         y = self.prepare_y(one_hot_y)
         return {"X": X, "y": y}
 
     def val__len__(self):
-        return len(self.validation)
+        return len(self._validation)
 
-    def validation_step(self, model: Model, batch, batch_idx: int):
+    def validation_step(self, batch, batch_idx: int):
         """Compute area under ROC curve
 
         Parameters
         ----------
-        model : Model
-            Model currently being validated.
         batch : dict of torch.Tensor
             Current batch.
         batch_idx: int
@@ -245,17 +244,17 @@ class SegmentationTaskMixin:
         """
 
         # move metric to model device
-        self.val_fbeta.to(model.device)
+        self.val_fbeta.to(self.model.device)
 
         X, y = batch["X"], batch["y"]
         # X = (batch_size, num_channels, num_samples)
         # y = (batch_size, num_frames, num_classes)
 
-        y_pred = model(X)
+        y_pred = self.model(X)
         # y_pred = (batch_size, num_frames, num_classes)
 
         val_fbeta = self.val_fbeta(y_pred[:, ::10].squeeze(), y[:, ::10].squeeze())
-        model.log(
+        self.model.log(
             f"{self.ACRONYM}@val_fbeta",
             val_fbeta,
             on_step=False,
@@ -322,8 +321,8 @@ class SegmentationTaskMixin:
 
         plt.tight_layout()
 
-        model.logger.experiment.add_figure(
-            f"{self.ACRONYM}@val_samples", fig, model.current_epoch
+        self.model.logger.experiment.add_figure(
+            f"{self.ACRONYM}@val_samples", fig, self.model.current_epoch
         )
 
     @property
