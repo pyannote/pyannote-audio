@@ -110,7 +110,11 @@ class Inference:
 
         # chunk duration used during training. for multi-task,
         # we assume that the same duration was used for each task.
-        training_duration = next(self.model.specifications.items())[1].duration
+        if self.model.is_multi_task:
+            _, specifications = next(iter(self.model.specifications.items()))
+        else:
+            specifications = self.model.specifications
+        training_duration = specifications.duration
 
         if duration is None:
             duration = training_duration
