@@ -7,7 +7,7 @@ amp_level: 'O2'
 auto_lr_find: False
 auto_scale_batch_size: False
 auto_select_gpus: True
-benchmark: True
+benchmark: False
 check_val_every_n_epoch: 1
 checkpoint_callback: True
 deterministic: False
