@@ -272,7 +272,7 @@ class Task(pl.LightningDataModule):
         collated_batch = default_collate(batch)
         if self.augmentation is not None:
             collated_batch["X"] = self.augmentation(
-                collated_batch["X"], sample_rate=self.model.sample_rate
+                collated_batch["X"], sample_rate=self.model.hparams.sample_rate
             )
         return collated_batch
 

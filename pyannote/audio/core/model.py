@@ -167,8 +167,6 @@ class Model(pl.LightningModule):
             device=self.device,
         )
 
-        return self.task.example_input_array
-
     @property
     def task(self):
         return self._task
@@ -369,6 +367,7 @@ class Model(pl.LightningModule):
             self.task.model = self
             self.task.setup_loss_func()
             self.task.setup_validation_metric()
+            # this is to make sure introspection is performed here, once and for all
             _ = self.introspection
 
     def on_save_checkpoint(self, checkpoint):
