@@ -23,7 +23,7 @@
 import math
 import random
 from collections import Counter
-from typing import Callable, Iterable, Literal
+from typing import Callable, Iterable
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -32,6 +32,7 @@ import torch.nn.functional as F
 from torch.nn import Parameter
 from torch.optim import Optimizer
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
+from typing_extensions import Literal
 
 from pyannote.audio.core.io import Audio
 from pyannote.audio.core.task import Problem, Scale, Specifications, Task

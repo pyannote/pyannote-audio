@@ -30,10 +30,11 @@
 # Signal processing
 """
 
-from typing import List, Literal
+from typing import List
 
 import numpy as np
 import scipy.signal
+from typing_extensions import Literal
 
 from pyannote.core import Segment, SlidingWindowFeature, Timeline
 from pyannote.core.utils.generators import pairwise
