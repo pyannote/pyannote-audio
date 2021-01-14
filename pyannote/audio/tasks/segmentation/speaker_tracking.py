@@ -24,8 +24,9 @@ from typing import Callable, Iterable, List, Text
 
 from torch.nn import Parameter
 from torch.optim import Optimizer
+from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 
-from pyannote.audio.core.task import Problem, Scale, Task, TaskSpecification
+from pyannote.audio.core.task import Problem, Scale, Specifications, Task
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
 from pyannote.database import Protocol
 
@@ -59,7 +60,12 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
         an Optimizer instance. Defaults to `torch.optim.Adam`.
     learning_rate : float, optional
         Learning rate. Defaults to 1e-3.
+    augmentation : BaseWaveformTransform, optional
+        torch_audiomentations waveform transform, used by dataloader
+        during training.
     """
+
+    ACRONYM = "spk"
 
     def __init__(
         self,
@@ -70,6 +76,7 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
         pin_memory: bool = False,
         optimizer: Callable[[Iterable[Parameter]], Optimizer] = None,
         learning_rate: float = 1e-3,
+        augmentation: BaseWaveformTransform = None,
     ):
 
         super().__init__(
@@ -80,6 +87,7 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
             pin_memory=pin_memory,
             optimizer=optimizer,
             learning_rate=learning_rate,
+            augmentation=augmentation,
         )
 
         # for speaker tracking, task specification depends
@@ -95,7 +103,7 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
 
             # build the list of speakers to be tracked.
             speakers = set()
-            for f in self.train:
+            for f in self._train:
                 speakers.update(f["annotation"].labels())
 
             # now that we now who the speakers are, we can
@@ -103,7 +111,7 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
 
             # note that, since multiple speakers can be active
             # at once, the problem is multi-label classification.
-            self.specifications = TaskSpecification(
+            self.specifications = Specifications(
                 problem=Problem.MULTI_LABEL_CLASSIFICATION,
                 scale=Scale.FRAME,
                 duration=self.duration,

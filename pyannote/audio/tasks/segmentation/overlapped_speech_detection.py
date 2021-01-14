@@ -27,9 +27,10 @@ from typing import Callable, Iterable
 import numpy as np
 from torch.nn import Parameter
 from torch.optim import Optimizer
+from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 
 from pyannote.audio.core.io import Audio
-from pyannote.audio.core.task import Problem, Scale, Task, TaskSpecification
+from pyannote.audio.core.task import Problem, Scale, Specifications, Task
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
 from pyannote.audio.utils.random import create_rng_for_worker
 from pyannote.core import Segment
@@ -80,7 +81,12 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
         an Optimizer instance. Defaults to `torch.optim.Adam`.
     learning_rate : float, optional
         Learning rate. Defaults to 1e-3.
+    augmentation : BaseWaveformTransform, optional
+        torch_audiomentations waveform transform, used by dataloader
+        during training.
     """
+
+    ACRONYM = "osd"
 
     def __init__(
         self,
@@ -95,6 +101,7 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
         pin_memory: bool = False,
         optimizer: Callable[[Iterable[Parameter]], Optimizer] = None,
         learning_rate: float = 1e-3,
+        augmentation: BaseWaveformTransform = None,
     ):
 
         super().__init__(
@@ -105,9 +112,10 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
             pin_memory=pin_memory,
             optimizer=optimizer,
             learning_rate=learning_rate,
+            augmentation=augmentation,
         )
 
-        self.specifications = TaskSpecification(
+        self.specifications = Specifications(
             problem=Problem.BINARY_CLASSIFICATION,
             scale=Scale.FRAME,
             duration=self.duration,
@@ -129,9 +137,9 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
 
             # build the list of domains
             if self.domain is not None:
-                for f in self.train:
+                for f in self._train:
                     f["domain"] = f[self.domain]
-                self.domains = list(set(f["domain"] for f in self.train))
+                self.domains = list(set(f["domain"] for f in self._train))
 
     def prepare_y(self, one_hot_y: np.ndarray):
         """Get overlapped speech detection targets
@@ -153,7 +161,7 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
 
     def train__iter__helper(self, rng: random.Random, domain: str = None):
 
-        train = self.train
+        train = self._train
 
         if domain is not None:
             train = [f for f in train if f["domain"] == domain]
@@ -194,7 +202,7 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
         """
 
         # create worker-specific random number generator
-        rng = create_rng_for_worker()
+        rng = create_rng_for_worker(self.model.current_epoch)
 
         if self.domain is None:
             chunks = self.train__iter__helper(rng)

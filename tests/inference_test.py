@@ -4,13 +4,16 @@ import pytorch_lightning as pl
 
 from pyannote.audio.core.inference import Inference
 from pyannote.audio.core.task import Scale
-from pyannote.audio.models.debug import (
+from pyannote.audio.models.segmentation.debug import (
     MultiTaskSegmentationModel,
     SimpleSegmentationModel,
 )
 from pyannote.audio.tasks import MultiTaskSegmentation, VoiceActivityDetection
 from pyannote.core import SlidingWindowFeature
 from pyannote.database import FileFinder, get_protocol
+
+# TODO: upload a very light model just for unit tests
+# HF_SAMPLE_MODEL_ID = "julien-c/voice-activity-detection"
 
 
 @pytest.fixture()
@@ -28,7 +31,7 @@ def trained():
 def test_duration_warning(trained):
     protocol, model = trained
     with pytest.warns(UserWarning):
-        duration = model.hparams.task_specifications.duration
+        duration = model.specifications.duration
         new_duration = duration + 1
         Inference(model, duration=new_duration, step=0.1, batch_size=128)
 
@@ -36,7 +39,7 @@ def test_duration_warning(trained):
 def test_step_check_warning(trained):
     protocol, model = trained
     with pytest.raises(ValueError):
-        duration = model.hparams.task_specifications.duration
+        duration = model.specifications.duration
         Inference(model, step=duration + 1, batch_size=128)
 
 
@@ -49,7 +52,7 @@ def test_invalid_window_fails(trained):
 def test_invalid_scale_fails(trained):
     protocol, model = trained
     with pytest.warns(UserWarning):
-        model.hparams.task_specifications.scale = Scale.FRAME
+        model.specifications.scale = Scale.FRAME
         Inference(model, window="whole", batch_size=128)
 
 
@@ -93,3 +96,8 @@ def test_multi_seg_infer():
     for attr in ["vad", "scd", "osd"]:
         assert attr in scores
         assert isinstance(scores[attr], SlidingWindowFeature)
+
+
+# def test_hf_download():
+#     inference = Inference(HF_SAMPLE_MODEL_ID, device="cpu")
+#     assert isinstance(inference, Inference)

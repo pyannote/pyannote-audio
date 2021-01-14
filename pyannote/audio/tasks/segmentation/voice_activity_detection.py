@@ -25,8 +25,9 @@ from typing import Callable, Iterable
 import numpy as np
 from torch.nn import Parameter
 from torch.optim import Optimizer
+from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 
-from pyannote.audio.core.task import Problem, Scale, Task, TaskSpecification
+from pyannote.audio.core.task import Problem, Scale, Specifications, Task
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
 from pyannote.database import Protocol
 
@@ -59,7 +60,12 @@ class VoiceActivityDetection(SegmentationTaskMixin, Task):
         an Optimizer instance. Defaults to `torch.optim.Adam`.
     learning_rate : float, optional
         Learning rate. Defaults to 1e-3.
+    augmentation : BaseWaveformTransform, optional
+        torch_audiomentations waveform transform, used by dataloader
+        during training.
     """
+
+    ACRONYM = "vad"
 
     def __init__(
         self,
@@ -70,6 +76,7 @@ class VoiceActivityDetection(SegmentationTaskMixin, Task):
         pin_memory: bool = False,
         optimizer: Callable[[Iterable[Parameter]], Optimizer] = None,
         learning_rate: float = 1e-3,
+        augmentation: BaseWaveformTransform = None,
     ):
 
         super().__init__(
@@ -80,9 +87,10 @@ class VoiceActivityDetection(SegmentationTaskMixin, Task):
             pin_memory=pin_memory,
             optimizer=optimizer,
             learning_rate=learning_rate,
+            augmentation=augmentation,
         )
 
-        self.specifications = TaskSpecification(
+        self.specifications = Specifications(
             problem=Problem.BINARY_CLASSIFICATION,
             scale=Scale.FRAME,
             duration=self.duration,
