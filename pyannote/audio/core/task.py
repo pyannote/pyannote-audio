@@ -184,6 +184,8 @@ class Task(pl.LightningDataModule):
         # dataset
         self.protocol = protocol
 
+        # TODO: check that protocol files come with required fields: audio, annotation, annotated, uri, what else?
+
         # batching
         self.duration = duration
         self.min_duration = duration if min_duration is None else min_duration

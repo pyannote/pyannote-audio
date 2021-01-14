@@ -150,7 +150,14 @@ class Model(pl.LightningModule):
     @property
     def example_input_array(self) -> torch.Tensor:
         batch_size = 3 if self.task is None else self.task.batch_size
-        duration = self.specifications.duration
+
+        if self.is_multi_task:
+            # this assumes that all tasks share the same duration
+            _, specifications = next(iter(self.specifications.items()))
+        else:
+            specifications = self.specifications
+        duration = specifications.duration
+
         return torch.randn(
             (
                 batch_size,
@@ -339,8 +346,8 @@ class Model(pl.LightningModule):
                     for name, specs in self.specifications.items()
                 }
                 # TODO: raises an error in case of multiple tasks with different introspections
-
-            self._introspection = self.helper_introspection(self.specifications)
+            else:
+                self._introspection = self.helper_introspection(self.specifications)
 
         return self._introspection
 
