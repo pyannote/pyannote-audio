@@ -1,7 +1,6 @@
 # @package _group_
 
 run:
-  # dir: train/${now:%Y-%m-%d}/${now:%H-%M-%S}
   dir: ${protocol}/${task._target_}/${now:%Y-%m-%d}/${now:%H-%M-%S}
 
 sweep:
