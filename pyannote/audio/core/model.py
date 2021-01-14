@@ -368,6 +368,7 @@ class Model(pl.LightningModule):
             self.task.model = self
             self.task.setup_loss_func()
             self.task.setup_validation_metric()
+            _ = self.introspection
 
     def on_save_checkpoint(self, checkpoint):
 
@@ -419,10 +420,11 @@ class Model(pl.LightningModule):
             "pytorch-lightning", checkpoint["pytorch-lightning_version"], pl.__version__
         )
 
-        self.introspection = checkpoint["pyannote.audio"]["introspection"]
         self.specifications = checkpoint["pyannote.audio"]["specifications"]
 
         self.build()
+
+        self.introspection = checkpoint["pyannote.audio"]["introspection"]
 
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
         msg = "Class {self.__class__.__name__} should define a `forward` method."
