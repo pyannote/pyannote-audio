@@ -163,7 +163,8 @@ class Model(pl.LightningModule):
                 batch_size,
                 self.hparams.num_channels,
                 int(self.hparams.sample_rate * duration),
-            )
+            ),
+            device=self.device,
         )
 
         return self.task.example_input_array
@@ -230,7 +231,7 @@ class Model(pl.LightningModule):
             layout=example_input_array.layout,
             device=example_input_array.device,
             requires_grad=False,
-        ).to(self.device)
+        )
 
         # dichotomic search of "min_num_samples"
         lower, upper, min_num_samples = 1, num_samples, None
