@@ -76,7 +76,7 @@ class Specifications:
 
     def __len__(self):
         # makes it possible to do something like:
-        # multi_task = len(task_specifications) > 1
+        # multi_task = len(specifications) > 1
         # because multi-task specifications are stored as {task_name: specifications} dict
         return 1
 
@@ -185,6 +185,7 @@ class Task(pl.LightningDataModule):
         self.protocol = protocol
 
         # TODO: check that protocol files come with required fields: audio, annotation, annotated, uri, what else?
+        # if not, complain and explain :)
 
         # batching
         self.duration = duration
@@ -377,17 +378,13 @@ class Task(pl.LightningDataModule):
         raise NotImplementedError(msg)
 
     def val_dataloader(self) -> Optional[DataLoader]:
-        val_callback = self.val_callback()
-        if val_callback is None:
-            return DataLoader(
-                ValDataset(self),
-                batch_size=self.batch_size,
-                num_workers=self.num_workers,
-                pin_memory=self.pin_memory,
-                drop_last=False,
-            )
-        else:
-            return None
+        return DataLoader(
+            ValDataset(self),
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            pin_memory=self.pin_memory,
+            drop_last=False,
+        )
 
     # default validation_step provided for convenience
     # can obviously be overriden for each task
@@ -446,9 +443,6 @@ class Task(pl.LightningDataModule):
     def validation_epoch_end(self, outputs):
         pass
 
-    def val_callback(self):
-        return None
-
     # default configure_optimizers provided for convenience
     # can obviously be overriden for each task
     def configure_optimizers(self):
@@ -472,4 +466,5 @@ class Task(pl.LightningDataModule):
         pytorch_lightning.callbacks.ModelCheckpoint
         pytorch_lightning.callbacks.EarlyStopping
         """
+
         return f"{self.ACRONYM}@val_loss", "min"

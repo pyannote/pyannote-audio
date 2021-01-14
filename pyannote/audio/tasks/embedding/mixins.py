@@ -25,16 +25,13 @@ from typing import Optional
 
 import numpy as np
 import torch
-from pytorch_lightning import Callback, Trainer
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from pyannote.audio.core.inference import Inference
-from pyannote.audio.core.model import Model
-from pyannote.audio.core.task import Problem, Scale, Specifications, Task, ValDataset
+from pyannote.audio.core.task import Problem, Scale, Specifications, ValDataset
 from pyannote.audio.utils.random import create_rng_for_worker
 from pyannote.core import Segment
-from pyannote.core.utils.distance import cdist, pdist
+from pyannote.core.utils.distance import cdist
 from pyannote.database.protocol import (
     SpeakerDiarizationProtocol,
     SpeakerVerificationProtocol,
@@ -319,16 +316,6 @@ class SupervisedRepresentationLearningTaskMixin:
 
         return None
 
-    def val_callback(self) -> Optional[Callback]:
-
-        if isinstance(self.protocol, SpeakerVerificationProtocol):
-            return None
-
-        elif isinstance(self.protocol, SpeakerDiarizationProtocol):
-            return _SpeakerDiarizationValidationCallback(self)
-
-        return None
-
     @property
     def val_monitor(self):
 
@@ -336,50 +323,4 @@ class SupervisedRepresentationLearningTaskMixin:
             return f"{self.ACRONYM}@val_eer", "min"
 
         elif isinstance(self.protocol, SpeakerDiarizationProtocol):
-            pass
-
-
-class _SpeakerDiarizationValidationCallback(Callback):
-    def __init__(self, task: Task):
-        super().__init__()
-        self.task = task
-
-    def on_epoch_end(self, trainer: Trainer, model: Model):
-
-        inference = Inference(model, window="whole")
-
-        y_true, y_pred = [], []
-        for file in tqdm(self.task.protocol.development()):
-            X, y = zip(
-                *[
-                    (inference.crop(file, chunk), label)
-                    for chunk, _, label in file["annotation"].itertracks(
-                        yield_label=True
-                    )
-                ]
-            )
-
-            y_true.append(pdist(np.array(y), metric="equal"))
-            y_pred.append(pdist(np.stack(X), metric="cosine"))
-        y_true = np.concatenate(y_true)
-        y_pred = np.concatenate(y_pred)
-
-        fpr, fnr, thresholds, eer = det_curve(y_true, y_pred, distances=True)
-
-        model.log(
-            f"{self.task.ACRONYM}@val_eer",
-            torch.tensor(eer, device=model.device),
-            logger=True,
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=True,
-        )
-
-        # TODO: log det curve
-
-        # set model back to "train" mode
-        model.train()
-
-    @property
-    def val_monitor(self):
-        return f"{self.task.ACRONYM}@val_eer", "min"
+            return None, "min"

@@ -76,38 +76,33 @@ def main(cfg: DictConfig) -> None:
 
     callbacks = []
 
-    val_callback = task.val_callback()
-    if val_callback is None:
-        monitor, mode = task.val_monitor
-    else:
-        callbacks.append(val_callback)
-        monitor, mode = val_callback.val_monitor
-
     model = instantiate(cfg.model, task=task)
 
-    model_checkpoint = ModelCheckpoint(
+    monitor, direction = task.val_monitor
+    checkpoint = ModelCheckpoint(
         monitor=monitor,
-        mode=mode,
-        save_top_k=10,
+        mode=direction,
+        save_top_k=None if monitor is None else 3,
         period=1,
         save_last=True,
         save_weights_only=False,
         dirpath=".",
-        filename=f"{{epoch}}-{{{monitor}:.6f}}",
+        filename="{epoch}" if monitor is None else f"{{epoch}}-{{{monitor}:.6f}}",
         verbose=cfg.verbose,
     )
-    callbacks.append(model_checkpoint)
+    callbacks.append(checkpoint)
 
-    # TODO: add option to configure early stopping patience
-    early_stopping = EarlyStopping(
-        monitor=monitor,
-        mode=mode,
-        min_delta=0.0,
-        patience=50,
-        strict=True,
-        verbose=cfg.verbose,
-    )
-    callbacks.append(early_stopping)
+    if monitor is not None:
+        # TODO: add option to configure early stopping patience
+        early_stopping = EarlyStopping(
+            monitor=monitor,
+            mode=direction,
+            min_delta=0.0,
+            patience=50,
+            strict=True,
+            verbose=cfg.verbose,
+        )
+        callbacks.append(early_stopping)
 
     # TODO: fail safely when log_graph=True raises an onnx error
     logger = TensorBoardLogger(
@@ -117,35 +112,18 @@ def main(cfg: DictConfig) -> None:
         # log_graph=True,
     )
 
-    trainer = instantiate(
-        cfg.trainer,
-        callbacks=callbacks,
-        logger=logger,
-    )
+    trainer = instantiate(cfg.trainer, callbacks=callbacks, logger=logger)
+    trainer.fit(model)
 
-    if cfg.trainer.get("auto_lr_find", False):
-        # HACK: everything but trainer.tune(...) should be removed
-        # once the corresponding bug is fixed in pytorch-lighting.
-        # https://github.com/pyannote/pyannote-audio/issues/514
-        task.setup(stage="fit")
-        model.setup(stage="fit")
-        trainer.tune(model, task)
-        lr = model.hparams.learning_rate
-        task = instantiate(
-            cfg.task,
-            protocol,
-            optimizer=optimizer,
-            learning_rate=lr,
-        )
-        model = instantiate(cfg.model, task=task)
+    # save paths to best models
+    checkpoint.to_yaml()
 
-    trainer.fit(model, task)
-
-    best_monitor = float(model_checkpoint.best_model_score)
-    if mode == "min":
-        return best_monitor
-    else:
-        return -best_monitor
+    if monitor is not None:
+        best_monitor = float(checkpoint.best_model_score)
+        if direction == "min":
+            return best_monitor
+        else:
+            return -best_monitor
 
 
 if __name__ == "__main__":
