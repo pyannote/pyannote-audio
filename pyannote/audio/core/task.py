@@ -38,6 +38,7 @@ from torch.utils.data import DataLoader, Dataset, IterableDataset
 from torch.utils.data._utils.collate import default_collate
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 
+from pyannote.audio.utils.protocol import check_protocol
 from pyannote.database import Protocol
 
 
@@ -182,10 +183,7 @@ class Task(pl.LightningDataModule):
         super().__init__()
 
         # dataset
-        self.protocol = protocol
-
-        # TODO: check that protocol files come with required fields: audio, annotation, annotated, uri, what else?
-        # if not, complain and explain :)
+        self.protocol = check_protocol(protocol)
 
         # batching
         self.duration = duration
