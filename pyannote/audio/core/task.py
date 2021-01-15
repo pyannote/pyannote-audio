@@ -23,6 +23,7 @@
 
 from __future__ import annotations
 
+import multiprocessing
 import sys
 import warnings
 from dataclasses import dataclass
@@ -146,6 +147,7 @@ class Task(pl.LightningDataModule):
         Number of training samples per batch. Defaults to 32.
     num_workers : int, optional
         Number of workers used for generating training samples.
+        Defaults to multiprocessing.cpu_count() // 2.
     pin_memory : bool, optional
         If True, data loaders will copy tensors into CUDA pinned
         memory before returning them. See pytorch documentation
@@ -173,7 +175,7 @@ class Task(pl.LightningDataModule):
         duration: float = 2.0,
         min_duration: float = None,
         batch_size: int = 32,
-        num_workers: int = 1,
+        num_workers: int = None,
         pin_memory: bool = False,
         optimizer: Callable[[Iterable[Parameter]], Optimizer] = None,
         learning_rate: float = 1e-3,
@@ -193,6 +195,9 @@ class Task(pl.LightningDataModule):
         self.batch_size = batch_size
 
         # multi-processing
+        if num_workers is None:
+            num_workers = multiprocessing.cpu_count() // 2
+
         if (
             num_workers > 0
             and sys.platform == "darwin"

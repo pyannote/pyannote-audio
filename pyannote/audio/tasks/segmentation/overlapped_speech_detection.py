@@ -72,6 +72,7 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
         Number of training samples per batch. Defaults to 32.
     num_workers : int, optional
         Number of workers used for generating training samples.
+        Defaults to multiprocessing.cpu_count() // 2.
     pin_memory : bool, optional
         If True, data loaders will copy tensors into CUDA pinned
         memory before returning them. See pytorch documentation
@@ -97,7 +98,7 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
         snr_max: float = 10.0,
         domain: str = None,
         batch_size: int = 32,
-        num_workers: int = 1,
+        num_workers: int = None,
         pin_memory: bool = False,
         optimizer: Callable[[Iterable[Parameter]], Optimizer] = None,
         learning_rate: float = 1e-3,
