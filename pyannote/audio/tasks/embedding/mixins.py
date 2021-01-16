@@ -28,7 +28,7 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from pyannote.audio.core.task import Problem, Scale, Specifications, ValDataset
+from pyannote.audio.core.task import Problem, Resolution, Specifications, ValDataset
 from pyannote.audio.utils.random import create_rng_for_worker
 from pyannote.core import Segment
 from pyannote.core.utils.distance import cdist
@@ -117,7 +117,7 @@ class SupervisedRepresentationLearningTaskMixin:
 
             self.specifications = Specifications(
                 problem=Problem.REPRESENTATION,
-                scale=Scale.CHUNK,
+                resolution=Resolution.CHUNK,
                 duration=self.duration,
                 classes=sorted(self._train),
             )

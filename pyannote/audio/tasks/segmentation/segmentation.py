@@ -35,7 +35,7 @@ from torch_audiomentations.core.transforms_interface import BaseWaveformTransfor
 from typing_extensions import Literal
 
 from pyannote.audio.core.io import Audio
-from pyannote.audio.core.task import Problem, Scale, Specifications, Task
+from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
 from pyannote.audio.utils.permutation import permutate
 from pyannote.audio.utils.random import create_rng_for_worker
@@ -180,7 +180,7 @@ class Segmentation(SegmentationTaskMixin, Task):
             # we can set task specifications
             self.specifications = Specifications(
                 problem=Problem.MULTI_LABEL_CLASSIFICATION,
-                scale=Scale.FRAME,
+                resolution=Resolution.FRAME,
                 duration=self.duration,
                 classes=[f"speaker#{i+1}" for i in range(self.num_speakers)],
                 permutation_invariant=True,

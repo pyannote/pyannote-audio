@@ -37,7 +37,7 @@ from semver import VersionInfo
 
 from pyannote.audio import __version__
 from pyannote.audio.core.io import Audio
-from pyannote.audio.core.task import Problem, Scale, Specifications, Task
+from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
 
 CACHE_DIR = os.getenv(
     "PYANNOTE_CACHE",
@@ -244,9 +244,9 @@ class Model(pl.LightningModule):
                 lower = num_samples
             else:
                 min_num_samples = num_samples
-                if specifications.scale == Scale.FRAME:
+                if specifications.resolution == Resolution.FRAME:
                     _, min_num_frames, dimension = frames.shape
-                elif specifications.scale == Scale.CHUNK:
+                elif specifications.resolution == Resolution.CHUNK:
                     min_num_frames, dimension = frames.shape
                 else:
                     # should never happen
@@ -264,8 +264,8 @@ class Model(pl.LightningModule):
         if min_num_samples is None:
             frames = self(example_input_array)
 
-        # corner case for chunk-scale tasks
-        if specifications.scale == Scale.CHUNK:
+        # corner case for chunk-level tasks
+        if specifications.resolution == Resolution.CHUNK:
             return Introspection(
                 min_num_samples=min_num_samples,
                 min_num_frames=1,

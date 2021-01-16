@@ -28,7 +28,7 @@ from torch.nn import Parameter
 from torch.optim import Optimizer
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 
-from pyannote.audio.core.task import Problem, Scale, Specifications, Task
+from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
 from pyannote.database import Protocol
 
@@ -101,7 +101,7 @@ class SpeakerChangeDetection(SegmentationTaskMixin, Task):
 
         self.specifications = Specifications(
             problem=Problem.BINARY_CLASSIFICATION,
-            scale=Scale.FRAME,
+            resolution=Resolution.FRAME,
             duration=self.duration,
             classes=[
                 "change",

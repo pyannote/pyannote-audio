@@ -3,7 +3,7 @@ import pytest
 import pytorch_lightning as pl
 
 from pyannote.audio.core.inference import Inference
-from pyannote.audio.core.task import Scale
+from pyannote.audio.core.task import Resolution
 from pyannote.audio.models.segmentation.debug import (
     MultiTaskSegmentationModel,
     SimpleSegmentationModel,
@@ -49,10 +49,10 @@ def test_invalid_window_fails(trained):
         Inference(model, window="unknown")
 
 
-def test_invalid_scale_fails(trained):
+def test_invalid_resolution_fails(trained):
     protocol, model = trained
     with pytest.warns(UserWarning):
-        model.specifications.scale = Scale.FRAME
+        model.specifications.resolution = Resolution.FRAME
         Inference(model, window="whole", batch_size=128)
 
 

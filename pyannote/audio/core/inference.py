@@ -33,7 +33,7 @@ from pytorch_lightning.utilities.memory import is_oom_error
 
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import Model, load_from_checkpoint
-from pyannote.audio.core.task import Scale
+from pyannote.audio.core.task import Resolution
 from pyannote.audio.utils.permutation import permutate
 from pyannote.audio.utils.progress import InferenceProgressHook
 from pyannote.core import Segment, SlidingWindow, SlidingWindowFeature
@@ -93,7 +93,7 @@ class Inference:
             raise ValueError('`window` must be "sliding" or "whole".')
 
         for task_name, specifications in self.model.specifications.items():
-            if specifications.scale == Scale.FRAME and window == "whole":
+            if specifications.resolution == Resolution.FRAME and window == "whole":
                 warnings.warn(
                     'Using "whole" `window` inference with a frame-based model might lead to bad results '
                     'and huge memory consumption: it is recommended to set `window` to "sliding".'
@@ -200,8 +200,8 @@ class Inference:
         Returns
         -------
         output : SlidingWindowFeature
-            Model output. Shape is (num_chunks, dimension) for chunk-scaled tasks,
-            and (num_frames, dimension) for frame-scaled tasks.
+            Model output. Shape is (num_chunks, dimension) for chunk-level tasks,
+            and (num_frames, dimension) for frame-level tasks.
 
         Notes
         -----
@@ -227,7 +227,7 @@ class Inference:
             one_output = self.infer(waveform[None, :])
 
             for task_name, specifications in self.model.specifications.items():
-                if specifications.scale == Scale.CHUNK:
+                if specifications.resolution == Resolution.CHUNK:
                     frames = SlidingWindow(
                         start=0.0, duration=self.duration, step=self.step
                     )
@@ -295,7 +295,7 @@ class Inference:
         for task_name, specifications in self.model.specifications.items():
             # if model outputs just one vector per chunk, return the outputs as they are
             # (i.e. do not aggregate them)
-            if specifications.scale == Scale.CHUNK:
+            if specifications.resolution == Resolution.CHUNK:
                 frames = SlidingWindow(
                     start=0.0, duration=self.duration, step=self.step
                 )

@@ -56,7 +56,7 @@ class Problem(Enum):
 # A task takes an audio chunk as input and returns
 # either a temporal sequence of predictions
 # or just one prediction for the whole audio chunk
-class Scale(Enum):
+class Resolution(Enum):
     FRAME = 1  # model outputs a sequence of frames
     CHUNK = 2  # model outputs just one vector for the whole chunk
 
@@ -64,7 +64,7 @@ class Scale(Enum):
 @dataclass
 class Specifications:
     problem: Problem
-    scale: Scale
+    resolution: Resolution
 
     # chunk duration in seconds.
     # use None for variable-length chunks
