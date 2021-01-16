@@ -210,7 +210,7 @@ class Task(pl.LightningDataModule):
             )
             num_workers = 0
 
-        self.num_workers = num_workers
+        self.num_workers = 0
         self.pin_memory = pin_memory
         if len(transforms) > 0:
             self.waveform_transforms = Compose(transforms=transforms)
@@ -305,7 +305,25 @@ class Task(pl.LightningDataModule):
         )
 
         if not self.gpu:
-            dl.collate_fn = self.waveform_transforms
+
+            def _collate(batch):
+                x = torch.stack(
+                    [self.waveform_transforms(b["X"][None])[0] for b in batch]
+                )
+                if self.is_multi_task:
+                    Y = {}
+                    for b in batch:
+                        for k, v in b["y"].items():
+                            if k not in Y:
+                                Y[k] = []
+                            Y[k].append(torch.tensor(v))
+                    for k in Y.keys():
+                        Y[k] = torch.stack(Y[k])
+                else:
+                    Y = torch.stack([torch.tensor(b["y"]) for b in batch])
+                return {"X": x, "y": Y}
+
+            dl.collate_fn = _collate
         return dl
 
     @cached_property
@@ -377,7 +395,6 @@ class Task(pl.LightningDataModule):
         loss : {str: torch.tensor}
             {"loss": loss} with additional "loss_{task_name}" keys for multi-task models.
         """
-
         X, y = batch["X"], batch["y"]
         y_pred = model(X)
 
