@@ -3,6 +3,7 @@ einops >= 0.3.0
 huggingface_hub
 hydra-core >= 1.0.4
 librosa >= 0.8
+moviepy
 pyannote.core >= 4.1
 pyannote.database >= 4.0.4
 pyannote.metrics >= 3.0.1
