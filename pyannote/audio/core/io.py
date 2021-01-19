@@ -63,6 +63,7 @@ integer to load a specific channel:
         {"audio": Path("/path/to/stereo.wav"), "channel": 0}
 """
 
+torchaudio.USE_SOUNDFILE_LEGACY_INTERFACE = False
 torchaudio.set_audio_backend("soundfile")
 
 
