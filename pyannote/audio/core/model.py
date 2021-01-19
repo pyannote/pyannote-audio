@@ -671,6 +671,7 @@ def load_from_checkpoint(
     map_location=None,
     hparams_file: Union[Path, Text] = None,
     strict: bool = True,
+    use_auth_token: Union[Text, None] = None,
     **kwargs,
 ) -> Model:
     """Load model from checkpoint
@@ -697,6 +698,10 @@ def load_from_checkpoint(
     strict : bool, optional
         Whether to strictly enforce that the keys in checkpoint_path match
         the keys returned by this module’s state dict. Defaults to True.
+    use_auth_token : str, optional
+        When loading a private huggingface.co model, set `use_auth_token`
+        to True or to a string containing your hugginface.co authentication
+        token that can be obtained by running `huggingface-cli login`
     kwargs: optional
         Any extra keyword args needed to init the model.
         Can also be used to override saved hyperparameter values.
@@ -731,11 +736,13 @@ def load_from_checkpoint(
         url = hf_hub_url(
             model_id=model_id, filename=HF_PYTORCH_WEIGHTS_NAME, revision=revision
         )
+
         path_for_pl = cached_download(
             url=url,
             library_name="pyannote",
             library_version=__version__,
             cache_dir=CACHE_DIR,
+            use_auth_token=use_auth_token,
         )
 
     # obtain model class from the checkpoint
