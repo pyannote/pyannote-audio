@@ -186,23 +186,6 @@ class Segmentation(SegmentationTaskMixin, Task):
                 permutation_invariant=True,
             )
 
-    def setup_loss_func(self):
-
-        example_input_array = self.model.example_input_array
-        _, _, num_samples = example_input_array.shape
-        self.num_samples = num_samples
-
-        batch_size, num_frames, num_speakers = self.model(example_input_array).shape
-        self.num_frames = num_frames
-        hamming_window = torch.hamming_window(num_frames, periodic=False).reshape(-1, 1)
-        self.model.register_buffer("hamming_window", hamming_window)
-
-        val_sample_weight = hamming_window.expand(
-            batch_size, num_frames, num_speakers
-        ).flatten()
-
-        self.model.register_buffer("val_sample_weight", val_sample_weight)
-
     def prepare_y(self, one_hot_y: np.ndarray):
         """Zero-pad segmentation targets
 
@@ -378,7 +361,6 @@ class Segmentation(SegmentationTaskMixin, Task):
         elif self.loss == "mse":
             seg_losses = F.mse_loss(permutated_y_pred, y.float(), reduction="none")
 
-        # seg_loss = torch.mean(seg_losses * model.hamming_window)
         seg_loss = torch.mean(seg_losses)
 
         return seg_loss
