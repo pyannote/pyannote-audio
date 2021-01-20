@@ -32,7 +32,7 @@ from einops import rearrange
 from pytorch_lightning.utilities.memory import is_oom_error
 
 from pyannote.audio.core.io import AudioFile
-from pyannote.audio.core.model import Model, load_from_checkpoint
+from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Resolution
 from pyannote.audio.utils.permutation import permutate
 from pyannote.audio.utils.progress import InferenceProgressHook
@@ -86,7 +86,7 @@ class Inference:
         self.model = (
             model
             if isinstance(model, Model)
-            else load_from_checkpoint(Path(model), map_location=device, strict=False)
+            else Model.from_pretrained(Path(model), map_location=device, strict=False)
         )
 
         if window not in ["sliding", "whole"]:

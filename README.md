@@ -83,8 +83,8 @@ Fine-tuning is as easy as setting the `task` attribute, freezing early layers an
 *Here, we fine-tune on AMI dataset a voice activity detection model pretrained on DIHARD dataset.*
 
 ```python
-from pyannote.audio.core.model import load_from_checkpoint
-model = load_from_checkpoint('hbredin/VoiceActivityDetection-PyanNet-DIHARD')
+from pyannote.audio import Model
+model = Model.from_pretrained('hbredin/VoiceActivityDetection-PyanNet-DIHARD')
 model.task = VoiceActivityDetection(ami)
 model.freeze_up_to('sincnet')
 trainer.fit(model)

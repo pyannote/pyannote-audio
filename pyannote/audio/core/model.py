@@ -665,99 +665,100 @@ class Model(pl.LightningModule):
 
         return self._helper_by_name(modules, recurse=recurse, requires_grad=True)
 
-
-def load_from_checkpoint(
-    checkpoint_path: Union[Path, Text],
-    map_location=None,
-    hparams_file: Union[Path, Text] = None,
-    strict: bool = True,
-    use_auth_token: Union[Text, None] = None,
-    **kwargs,
-) -> Model:
-    """Load model from checkpoint
-
-    Parameters
-    ----------
-    checkpoint_path : Path or str
-        Path to checkpoint, or a remote URL, or a model identifier from
-        the huggingface.co model hub.
-    map_location: optional
-        If your checkpoint saved a GPU model and you now load on CPUs
-        or a different number of GPUs, use this to map to the new setup.
-        The behaviour is the same as in torch.load().
-    hparams_file : Path or str, optional
-        Path to a .yaml file with hierarchical structure as in this example:
-            drop_prob: 0.2
-            dataloader:
-                batch_size: 32
-        You most likely won’t need this since Lightning will always save the
-        hyperparameters to the checkpoint. However, if your checkpoint weights
-        do not have the hyperparameters saved, use this method to pass in a .yaml
-        file with the hparams you would like to use. These will be converted
-        into a dict and passed into your Model for use.
-    strict : bool, optional
-        Whether to strictly enforce that the keys in checkpoint_path match
-        the keys returned by this module’s state dict. Defaults to True.
-    use_auth_token : str, optional
-        When loading a private huggingface.co model, set `use_auth_token`
-        to True or to a string containing your hugginface.co authentication
-        token that can be obtained by running `huggingface-cli login`
-    kwargs: optional
-        Any extra keyword args needed to init the model.
-        Can also be used to override saved hyperparameter values.
-
-    Returns
-    -------
-    model : Model
-        Model
-    """
-
-    # pytorch-lightning expects str, not Path.
-    checkpoint_path = str(checkpoint_path)
-    if hparams_file is not None:
-        hparams_file = str(hparams_file)
-
-    # resolve the checkpoint_path to
-    # something that pl will handle
-    if os.path.isfile(checkpoint_path):
-        path_for_pl = checkpoint_path
-    elif urlparse(checkpoint_path).scheme in ("http", "https"):
-        path_for_pl = checkpoint_path
-    else:
-        # Finally, let's try to find it on Hugging Face model hub
-        # e.g. julien-c/voice-activity-detection is a valid model id
-        # and  julien-c/voice-activity-detection@main supports specifying a commit/branch/tag.
-        if "@" in checkpoint_path:
-            model_id = checkpoint_path.split("@")[0]
-            revision = checkpoint_path.split("@")[1]
-        else:
-            model_id = checkpoint_path
-            revision = None
-        url = hf_hub_url(
-            model_id=model_id, filename=HF_PYTORCH_WEIGHTS_NAME, revision=revision
-        )
-
-        path_for_pl = cached_download(
-            url=url,
-            library_name="pyannote",
-            library_version=__version__,
-            cache_dir=CACHE_DIR,
-            use_auth_token=use_auth_token,
-        )
-
-    # obtain model class from the checkpoint
-    checkpoint = pl_load(path_for_pl, map_location=map_location)
-
-    module_name: str = checkpoint["pyannote.audio"]["architecture"]["module"]
-    module = import_module(module_name)
-
-    class_name: str = checkpoint["pyannote.audio"]["architecture"]["class"]
-    Klass: Model = getattr(module, class_name)
-
-    return Klass.load_from_checkpoint(
-        path_for_pl,
-        map_location=map_location,
-        hparams_file=hparams_file,
-        strict=strict,
+    @classmethod
+    def from_pretrained(
+        cls,
+        checkpoint_path: Union[Path, Text],
+        map_location=None,
+        hparams_file: Union[Path, Text] = None,
+        strict: bool = True,
+        use_auth_token: Union[Text, None] = None,
         **kwargs,
-    )
+    ) -> "Model":
+        """Load pretrained model
+
+        Parameters
+        ----------
+        checkpoint_path : Path or str
+            Path to checkpoint, or a remote URL, or a model identifier from
+            the huggingface.co model hub.
+        map_location: optional
+            If your checkpoint saved a GPU model and you now load on CPUs
+            or a different number of GPUs, use this to map to the new setup.
+            The behaviour is the same as in torch.load().
+        hparams_file : Path or str, optional
+            Path to a .yaml file with hierarchical structure as in this example:
+                drop_prob: 0.2
+                dataloader:
+                    batch_size: 32
+            You most likely won’t need this since Lightning will always save the
+            hyperparameters to the checkpoint. However, if your checkpoint weights
+            do not have the hyperparameters saved, use this method to pass in a .yaml
+            file with the hparams you would like to use. These will be converted
+            into a dict and passed into your Model for use.
+        strict : bool, optional
+            Whether to strictly enforce that the keys in checkpoint_path match
+            the keys returned by this module’s state dict. Defaults to True.
+        use_auth_token : str, optional
+            When loading a private huggingface.co model, set `use_auth_token`
+            to True or to a string containing your hugginface.co authentication
+            token that can be obtained by running `huggingface-cli login`
+        kwargs: optional
+            Any extra keyword args needed to init the model.
+            Can also be used to override saved hyperparameter values.
+
+        Returns
+        -------
+        model : Model
+            Model
+        """
+
+        # pytorch-lightning expects str, not Path.
+        checkpoint_path = str(checkpoint_path)
+        if hparams_file is not None:
+            hparams_file = str(hparams_file)
+
+        # resolve the checkpoint_path to
+        # something that pl will handle
+        if os.path.isfile(checkpoint_path):
+            path_for_pl = checkpoint_path
+        elif urlparse(checkpoint_path).scheme in ("http", "https"):
+            path_for_pl = checkpoint_path
+        else:
+            # Finally, let's try to find it on Hugging Face model hub
+            # e.g. julien-c/voice-activity-detection is a valid model id
+            # and  julien-c/voice-activity-detection@main supports specifying a commit/branch/tag.
+            if "@" in checkpoint_path:
+                model_id = checkpoint_path.split("@")[0]
+                revision = checkpoint_path.split("@")[1]
+            else:
+                model_id = checkpoint_path
+                revision = None
+            url = hf_hub_url(
+                model_id=model_id, filename=HF_PYTORCH_WEIGHTS_NAME, revision=revision
+            )
+
+            path_for_pl = cached_download(
+                url=url,
+                library_name="pyannote",
+                library_version=__version__,
+                cache_dir=CACHE_DIR,
+                use_auth_token=use_auth_token,
+            )
+
+        # obtain model class from the checkpoint
+        checkpoint = pl_load(path_for_pl, map_location=map_location)
+
+        module_name: str = checkpoint["pyannote.audio"]["architecture"]["module"]
+        module = import_module(module_name)
+
+        class_name: str = checkpoint["pyannote.audio"]["architecture"]["class"]
+        Klass = getattr(module, class_name)
+
+        return Klass.load_from_checkpoint(
+            path_for_pl,
+            map_location=map_location,
+            hparams_file=hparams_file,
+            strict=strict,
+            **kwargs,
+        )

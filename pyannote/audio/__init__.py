@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020 CNRS
+# Copyright (c) 2020-2021 CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -24,3 +24,9 @@ try:
     from .version import __version__, git_version  # noqa: F401
 except ImportError:
     pass
+
+
+from .core.inference import Inference
+from .core.model import Model
+
+__all__ = ["Model", "Inference"]
