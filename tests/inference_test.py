@@ -8,7 +8,8 @@ from pyannote.audio.models.segmentation.debug import (
     MultiTaskSegmentationModel,
     SimpleSegmentationModel,
 )
-from pyannote.audio.tasks import MultiTaskSegmentation, VoiceActivityDetection
+from pyannote.audio.tasks import VoiceActivityDetection
+from pyannote.audio.tasks.multi_task_segmentation import MultiTaskSegmentation
 from pyannote.core import SlidingWindowFeature
 from pyannote.database import FileFinder, get_protocol
 
