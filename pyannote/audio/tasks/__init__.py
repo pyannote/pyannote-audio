@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020 CNRS
+# Copyright (c) 2020-2021 CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -25,7 +25,6 @@ from .segmentation.speaker_change_detection import SpeakerChangeDetection  # iso
 from .segmentation.overlapped_speech_detection import (  # isort:skip
     OverlappedSpeechDetection,
 )
-from .segmentation.multi_task_segmentation import MultiTaskSegmentation  # isort:skip
 
 from .segmentation.speaker_tracking import SpeakerTracking  # isort:skip
 
@@ -34,15 +33,12 @@ from .segmentation.segmentation import Segmentation  # isort:skip
 from .embedding.arcface import SupervisedRepresentationLearningWithArcFace  # isort:skip
 
 SpeakerEmbedding = SupervisedRepresentationLearningWithArcFace
-Diarization = Segmentation
 
 __all__ = [
+    "Segmentation",
     "VoiceActivityDetection",
     "SpeakerChangeDetection",
     "OverlappedSpeechDetection",
-    "MultiTaskSegmentation",
     "SpeakerTracking",
     "SpeakerEmbedding",
-    "Segmentation",
-    "Diarization",
 ]
