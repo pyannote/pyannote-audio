@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import pytorch_lightning as pl
 
-from pyannote.audio.core.inference import Inference
+from pyannote.audio import Inference
 from pyannote.audio.core.task import Resolution
 from pyannote.audio.models.segmentation.debug import (
     MultiTaskSegmentationModel,

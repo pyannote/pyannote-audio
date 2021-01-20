@@ -66,7 +66,7 @@ trainer.fit(model)
 Predictions are obtained by wrapping the model into the `Inference` engine.
 
 ```python
-from pyannote.audio.core.inference import Inference
+from pyannote.audio import Inference
 inference = Inference(model)
 predictions = inference('audio.wav')
 ```

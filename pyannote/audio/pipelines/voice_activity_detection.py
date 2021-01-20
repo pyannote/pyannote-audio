@@ -24,7 +24,7 @@
 
 from typing import Text, Union
 
-from pyannote.audio.core.inference import Inference
+from pyannote.audio import Inference
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.utils.signal import Binarize
 from pyannote.core import Annotation
