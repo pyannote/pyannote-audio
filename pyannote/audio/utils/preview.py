@@ -1,15 +1,28 @@
 try:
     from IPython.display import Audio as IPythonAudio
+    from IPython.display import Video as IPythonVideo
 
     IPYTHON_INSTALLED = True
 except ImportError:
     IPYTHON_INSTALLED = False
 
+import tempfile
 import warnings
+from pathlib import Path
 
 import matplotlib.pyplot as plt
-from moviepy.editor import VideoClip
-from moviepy.video.io.bindings import mplfig_to_npimage
+import numpy as np
+
+try:
+    from moviepy.editor import AudioClip, VideoClip
+    from moviepy.video.io.bindings import mplfig_to_npimage
+
+    MOVIEPY_INSTALLED = True
+except ImportError:
+    MOVIEPY_INSTALLED = False
+
+
+from typing import Mapping
 
 from pyannote.audio.core.io import Audio, AudioFile
 from pyannote.core import (
@@ -34,7 +47,8 @@ def listen(audio_file: AudioFile, segment: Segment = None) -> None:
     audio_file : AudioFile
         A str, Path or ProtocolFile to be loaded.
     segment : Segment, optional
-        The segment to crop the playback too
+        The segment to crop the playback to.
+        Defaults to playback the whole file.
     """
     if not IPYTHON_INSTALLED:
         warnings.warn("You need IPython installed to use this method")
@@ -48,8 +62,48 @@ def listen(audio_file: AudioFile, segment: Segment = None) -> None:
 
 
 def preview(
-    audio_file: AudioFile, segment: Segment = None, zoom: float = 10.0, **views
+    audio_file: AudioFile,
+    segment: Segment = None,
+    zoom: float = 10.0,
+    video_fps: int = 5,
+    video_ext: str = "webm",
+    **views,
 ):
+    """Preview
+
+    Parameters
+    ----------
+    audio_file : AudioFile
+        A str, Path or ProtocolFile to be previewed
+    segment : Segment, optional
+        The segment to crop the preview to.
+        Defaults to preview the whole file.
+    video_fps : int, optional
+        Defaults to 5.
+    video_ext : str, optional
+        One of "mp4", "webm", "ogv". Defaults to "webm".
+
+
+
+    Returns
+    -------
+    IPython.display.Video instance
+
+    """
+
+    if not MOVIEPY_INSTALLED:
+        warnings.warn("You need MoviePy installed to use this method")
+        return
+
+    if isinstance(audio_file, Mapping) and "uri" in audio_file:
+        uri = audio_file["uri"]
+    elif isinstance(audio_file, (str, Path)):
+        uri = Path(audio_file).name
+    else:
+        raise ValueError("Unsupported 'audio_file' type.")
+
+    temp_dir = tempfile.mkdtemp(prefix="pyannote-audio-preview")
+    video_path = f"{temp_dir}/{uri}.{video_ext}"
 
     audio = Audio(sample_rate=16000, mono=True)
 
@@ -59,11 +113,20 @@ def preview(
 
     # load waveform as SlidingWindowFeautre
     data, sample_rate = audio.crop(audio_file, segment)
+    data = data.numpy().T
     samples = SlidingWindow(
         start=segment.start, duration=1 / sample_rate, step=1 / sample_rate
     )
+    waveform = SlidingWindowFeature(data, samples)
+    ylim_waveform = np.min(data), np.max(data)
 
-    waveform = SlidingWindowFeature(data.T, samples)
+    def make_audio_frame(T: float):
+        t = T + segment.start
+        if isinstance(t, np.ndarray):
+            return np.take(data, (t * sample_rate).astype(np.int64))
+        return data[round(t * sample_rate)]
+
+    audio_clip = AudioClip(make_audio_frame, duration=segment.duration, fps=sample_rate)
 
     # reset notebook just once so that colors are coherent between views
     notebook.reset()
@@ -87,7 +150,9 @@ def preview(
 
         notebook.crop = Segment(t - 0.5 * zoom, t + 0.5 * zoom)
 
-        notebook.plot_feature(waveform, ax=ax_wav, time=True, ylim=None)
+        ax_wav.clear()
+        notebook.plot_feature(waveform, ax=ax_wav, time=True, ylim=ylim_waveform)
+        ax_wav.plot([t, t], ylim_waveform, "k--")
 
         for (name, view), ax_view in zip(views.items(), ax_views):
 
@@ -101,13 +166,28 @@ def preview(
 
             elif isinstance(view, SlidingWindowFeature):
                 # TODO: be smarter about ylim
-                notebook.plot_feature(view, ax=ax_view, time=True, ylim=ylim)
+                notebook.plot_feature(view, ax=ax_view, time=False, ylim=ylim)
 
             # time cursor
             ax_view.plot([t, t], ylim, "k--")
 
-            # ax_view.set_ylim(*ylim)
-
         return mplfig_to_npimage(fig)
 
-    return VideoClip(make_frame, duration=segment.duration)
+    video_clip = VideoClip(make_frame, duration=segment.duration)
+    video_clip = video_clip.set_audio(audio_clip)
+
+    video_clip.write_videofile(
+        video_path,
+        fps=video_fps,
+        audio=True,
+        audio_fps=sample_rate,
+        preset="ultrafast",
+        logger="bar",
+    )
+
+    plt.close(fig)
+
+    if IPYTHON_INSTALLED:
+        return IPythonVideo(video_path, embed=True)
+
+    return video_path
