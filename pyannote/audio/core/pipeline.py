@@ -128,11 +128,10 @@ class Pipeline(_Pipeline):
 
     def __call__(self, file: AudioFile):
 
+        if not isinstance(file, Mapping):
+            file = {"audio": file}
+
         if hasattr(self, "preprocessors"):
-
-            if not isinstance(file, Mapping):
-                file = {"audio": file}
-
             file = ProtocolFile(file, lazy=self.preprocessors)
 
         return super().__call__(file)
