@@ -41,7 +41,6 @@ def listen(audio_file: AudioFile, segment: Segment = None) -> None:
     Allows playing of audio files. It will play the whole thing unless
     given a `Segment` to crop to.
 
-
     Parameters
     ----------
     audio_file : AudioFile
@@ -67,6 +66,7 @@ def preview(
     zoom: float = 10.0,
     video_fps: int = 5,
     video_ext: str = "webm",
+    display: bool = True,
     **views,
 ):
     """Preview
@@ -79,21 +79,46 @@ def preview(
         The segment to crop the preview to.
         Defaults to preview the whole file.
     video_fps : int, optional
-        Defaults to 5.
+        Video frame rate. Defaults to 5. Higher frame rate leads
+        to a smoother video but longer processing time.
     video_ext : str, optional
-        One of "mp4", "webm", "ogv". Defaults to "webm".
-
-
+        One of {"webm", "mp4", "ogv"} according to what your
+        browser supports. Defaults to "webm" as it seems to
+        be supported by most browsers (see caniuse.com/webm)/
+    display : bool, optional
+        Wrap the video in a IPython.display.Video instance for
+        visualization in notebooks (default). Set to False if
+        you are only interested in saving the video preview to
+        disk.
+    **views : dict
+        Additional views. See Usage section below.
 
     Returns
     -------
-    IPython.display.Video instance
+    * IPython.display.Video instance if `display` is True (default)
+    * path to video preview file if `display` is False
+
+    Usage
+    -----
+    >>> assert isinstance(annotation, pyannote.core.Annotation)
+    >>> assert isinstance(scores, pyannote.core.SlidingWindowFeature)
+    >>> assert isinstance(timeline, pyannote.core.Timeline)
+    >>> preview("audio.wav", reference=annotation, speech_probability=scores, speech_regions=timeline)
+    # will create a video with 4 views. from to bottom:
+    # "reference", "speech probability", "speech regions", and "waveform")
 
     """
 
     if not MOVIEPY_INSTALLED:
         warnings.warn("You need MoviePy installed to use this method")
         return
+
+    if display and not IPYTHON_INSTALLED:
+        warnings.warn(
+            "Since IPython is not installed, this method cannot be used "
+            "with default display=True option. Either run this method in "
+            "a notebook or use display=False to save video preview to disk."
+        )
 
     if isinstance(audio_file, Mapping) and "uri" in audio_file:
         uri = audio_file["uri"]
@@ -152,7 +177,14 @@ def preview(
 
         ax_wav.clear()
         notebook.plot_feature(waveform, ax=ax_wav, time=True, ylim=ylim_waveform)
+
+        # display time cursor
         ax_wav.plot([t, t], ylim_waveform, "k--")
+
+        # display view name
+        ax_wav.axes.get_yaxis().set_visible(True)
+        ax_wav.axes.get_yaxis().set_ticks([])
+        ax_wav.set_ylabel("waveform")
 
         for (name, view), ax_view in zip(views.items(), ax_views):
 
@@ -168,8 +200,13 @@ def preview(
                 # TODO: be smarter about ylim
                 notebook.plot_feature(view, ax=ax_view, time=False, ylim=ylim)
 
-            # time cursor
+            # display time cursor
             ax_view.plot([t, t], ylim, "k--")
+
+            # display view name
+            ax_view.axes.get_yaxis().set_visible(True)
+            ax_view.axes.get_yaxis().set_ticks([])
+            ax_view.set_ylabel(" ".join(name.split("_")))
 
         return mplfig_to_npimage(fig)
 
@@ -187,7 +224,7 @@ def preview(
 
     plt.close(fig)
 
-    if IPYTHON_INSTALLED:
-        return IPythonVideo(video_path, embed=True)
+    if not display:
+        return video_path
 
-    return video_path
+    return IPythonVideo(video_path, embed=True)
