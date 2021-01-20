@@ -134,4 +134,4 @@ class Pipeline(_Pipeline):
         if hasattr(self, "preprocessors"):
             file = ProtocolFile(file, lazy=self.preprocessors)
 
-        return super().__call__(file)
+        return self.apply(file)

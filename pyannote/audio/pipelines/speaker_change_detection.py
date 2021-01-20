@@ -67,7 +67,7 @@ class SpeakerChangeDetection(Pipeline):
 
         self._peak = Peak(alpha=self.alpha, min_duration=self.min_duration)
 
-    def __call__(self, file: AudioFile) -> Annotation:
+    def apply(self, file: AudioFile) -> Annotation:
         """Apply speaker change detection
 
         Parameters

@@ -39,7 +39,7 @@ from pyannote.pipeline.parameter import Uniform
 class OracleVoiceActivityDetection(Pipeline):
     """Oracle voice activity detection pipeline"""
 
-    def __call__(self, file: AudioFile) -> Annotation:
+    def apply(self, file: AudioFile) -> Annotation:
         """Return groundtruth voice activity detection
 
         Parameter
@@ -104,7 +104,7 @@ class VoiceActivityDetection(Pipeline):
             min_duration_off=self.min_duration_off,
         )
 
-    def __call__(self, file: AudioFile) -> Annotation:
+    def apply(self, file: AudioFile) -> Annotation:
         """Apply voice activity detection
 
         Parameters

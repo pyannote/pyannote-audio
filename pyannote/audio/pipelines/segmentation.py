@@ -36,7 +36,7 @@ from pyannote.pipeline.parameter import Uniform
 class OracleSegmentation(Pipeline):
     """Oracle segmentation pipeline"""
 
-    def __call__(self, file: AudioFile) -> Annotation:
+    def apply(self, file: AudioFile) -> Annotation:
         """Return groundtruth segmentation
 
         Parameter
@@ -107,7 +107,7 @@ class Segmentation(Pipeline):
             min_duration_off=self.min_duration_off,
         )
 
-    def __call__(self, file: AudioFile) -> Annotation:
+    def apply(self, file: AudioFile) -> Annotation:
         """Apply segmentation
 
         Parameters

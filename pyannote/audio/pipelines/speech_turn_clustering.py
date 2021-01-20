@@ -58,7 +58,7 @@ class SpeechTurnClustering(Pipeline):
             metric=self.metric, use_threshold=True
         )
 
-    def __call__(self, file: AudioFile, speech_turns: Annotation) -> Annotation:
+    def apply(self, file: AudioFile, speech_turns: Annotation) -> Annotation:
         """Apply speech turn clustering
 
         Parameters

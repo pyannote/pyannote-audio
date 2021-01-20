@@ -115,7 +115,7 @@ class SpeakerDiarization(Pipeline):
         self.coverage = coverage
         self.fscore = fscore
 
-    def __call__(self, file: AudioFile) -> Annotation:
+    def apply(self, file: AudioFile) -> Annotation:
         """Apply speaker diarization
 
         Parameters

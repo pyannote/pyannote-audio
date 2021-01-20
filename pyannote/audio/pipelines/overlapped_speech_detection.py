@@ -61,7 +61,7 @@ def to_overlap(annotation: Annotation) -> Annotation:
 class OracleOverlappedSpeechDetection(Pipeline):
     """Oracle overlapped speech detection pipeline"""
 
-    def __call__(self, file: AudioFile) -> Annotation:
+    def apply(self, file: AudioFile) -> Annotation:
         """Return groundtruth overlapped speech detection
 
         Parameter
@@ -138,7 +138,7 @@ class OverlappedSpeechDetection(Pipeline):
             min_duration_off=self.min_duration_off,
         )
 
-    def __call__(self, file: AudioFile) -> Annotation:
+    def apply(self, file: AudioFile) -> Annotation:
         """Apply overlapped speech detection
 
         Parameters

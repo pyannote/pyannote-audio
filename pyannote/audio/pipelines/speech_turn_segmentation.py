@@ -82,7 +82,7 @@ class SpeechTurnSegmentation(Pipeline):
 
         self.gap_max_duration = Uniform(0.0, 2.0)
 
-    def __call__(self, file: AudioFile) -> Annotation:
+    def apply(self, file: AudioFile) -> Annotation:
         """Apply speech turn segmentation
 
         Parameter

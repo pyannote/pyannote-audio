@@ -57,7 +57,7 @@ class SpeechTurnClosestAssignment(Pipeline):
 
         self.closest_assignment = ClosestAssignment(metric=self.metric)
 
-    def __call__(
+    def apply(
         self, file: AudioFile, speech_turns: Annotation, targets: Annotation
     ) -> Annotation:
         """Assign each speech turn to closest target (if close enough)
