@@ -24,8 +24,8 @@ from typing import Optional, Text, Union
 
 from pyannote.audio import Inference
 from pyannote.audio.core.io import AudioFile
+from pyannote.audio.core.pipeline import Pipeline
 from pyannote.core import Annotation
-from pyannote.pipeline import Pipeline
 from pyannote.pipeline.blocks.clustering import HierarchicalAgglomerativeClustering
 
 from .utils import assert_string_labels, gather_label_embeddings

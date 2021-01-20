@@ -26,11 +26,11 @@ from typing import Optional, Text, Union
 
 from pyannote.audio import Inference
 from pyannote.audio.core.io import AudioFile
+from pyannote.audio.core.pipeline import Pipeline
 from pyannote.audio.utils.signal import Binarize
 from pyannote.core import Annotation, Timeline
 from pyannote.database import get_annotated
 from pyannote.metrics.detection import DetectionPrecisionRecallFMeasure
-from pyannote.pipeline import Pipeline
 from pyannote.pipeline.parameter import Uniform
 
 

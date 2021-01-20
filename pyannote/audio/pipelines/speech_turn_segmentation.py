@@ -24,8 +24,8 @@ from typing import Text, Union
 
 from pyannote.audio import Inference
 from pyannote.audio.core.io import AudioFile
+from pyannote.audio.core.pipeline import Pipeline
 from pyannote.core import Annotation
-from pyannote.pipeline import Pipeline
 from pyannote.pipeline.parameter import Uniform
 
 from .speaker_change_detection import SpeakerChangeDetection

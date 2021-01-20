@@ -24,13 +24,13 @@ from typing import Mapping, Optional, Text, Union
 
 from pyannote.audio import Inference
 from pyannote.audio.core.io import AudioFile
+from pyannote.audio.core.pipeline import Pipeline
 from pyannote.core import Annotation
 from pyannote.database import get_annotated
 from pyannote.metrics.diarization import (
     DiarizationPurityCoverageFMeasure,
     GreedyDiarizationErrorRate,
 )
-from pyannote.pipeline import Pipeline
 from pyannote.pipeline.parameter import Uniform
 
 from .segmentation import Segmentation

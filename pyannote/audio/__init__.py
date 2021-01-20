@@ -28,5 +28,6 @@ except ImportError:
 
 from .core.inference import Inference
 from .core.model import Model
+from .core.pipeline import Pipeline
 
-__all__ = ["Model", "Inference"]
+__all__ = ["Model", "Inference", "Pipeline"]

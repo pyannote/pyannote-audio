@@ -26,13 +26,13 @@ from typing import Text, Union
 
 from pyannote.audio import Inference
 from pyannote.audio.core.io import AudioFile
+from pyannote.audio.core.pipeline import Pipeline
 from pyannote.audio.utils.signal import Binarize
 from pyannote.core import Annotation
 from pyannote.metrics.detection import (
     DetectionErrorRate,
     DetectionPrecisionRecallFMeasure,
 )
-from pyannote.pipeline import Pipeline
 from pyannote.pipeline.parameter import Uniform
 
 

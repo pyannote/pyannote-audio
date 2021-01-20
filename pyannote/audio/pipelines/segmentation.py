@@ -26,10 +26,10 @@ from typing import Text, Union
 
 from pyannote.audio import Inference
 from pyannote.audio.core.io import AudioFile
+from pyannote.audio.core.pipeline import Pipeline
 from pyannote.audio.utils.signal import Binarize
 from pyannote.core import Annotation, Segment, SlidingWindowFeature, Timeline
 from pyannote.metrics.diarization import GreedyDiarizationErrorRate
-from pyannote.pipeline import Pipeline
 from pyannote.pipeline.parameter import Uniform
 
 
