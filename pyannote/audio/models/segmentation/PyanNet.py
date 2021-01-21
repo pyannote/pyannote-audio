@@ -53,6 +53,8 @@ class PyanNet(Model):
         Keyword arguments passed to the LSTM layer.
         Defaults to {"hidden_size": 128, "num_layers": 2, "bidirectional": True},
         i.e. two bidirectional layers with 128 units each.
+        Set "monolithic" to False to split monolithic multi-layer LSTM into multiple mono-layer LSTMs.
+        This may proove useful for probing LSTM internals.
     linear : dict, optional
         Keyword arugments used to initialize linear layers
         Defaults to {"hidden_size": 128, "num_layers": 2},
@@ -60,7 +62,13 @@ class PyanNet(Model):
     """
 
     SINCNET_DEFAULTS = {"stride": 1}
-    LSTM_DEFAULTS = {"hidden_size": 128, "num_layers": 2, "bidirectional": True}
+    LSTM_DEFAULTS = {
+        "hidden_size": 128,
+        "num_layers": 2,
+        "bidirectional": True,
+        "monolithic": True,
+        "dropout": 0.0,
+    }
     LINEAR_DEFAULTS = {"hidden_size": 128, "num_layers": 2}
 
     def __init__(
@@ -83,7 +91,34 @@ class PyanNet(Model):
         self.save_hyperparameters("sincnet", "lstm", "linear")
 
         self.sincnet = SincNet(**self.hparams.sincnet)
-        self.lstm = nn.LSTM(60, **self.hparams.lstm)
+
+        monolithic = lstm["monolithic"]
+        if monolithic:
+            multi_layer_lstm = dict(lstm)
+            del multi_layer_lstm["monolithic"]
+            self.lstm = nn.LSTM(60, **multi_layer_lstm)
+
+        else:
+            num_layers = lstm["num_layers"]
+            if num_layers > 1:
+                self.dropout = nn.Dropout(p=lstm["dropout"])
+
+            one_layer_lstm = dict(lstm)
+            one_layer_lstm["num_layers"] = 1
+            one_layer_lstm["dropout"] = 0.0
+            del one_layer_lstm["monolithic"]
+
+            self.lstm = nn.ModuleList(
+                [
+                    nn.LSTM(
+                        60
+                        if i == 0
+                        else lstm["hidden_size"] * (2 if lstm["bidirectional"] else 1),
+                        **one_layer_lstm
+                    )
+                    for i in range(num_layers)
+                ]
+            )
 
         if linear["num_layers"] < 1:
             return
@@ -130,9 +165,16 @@ class PyanNet(Model):
 
         outputs = self.sincnet(waveforms)
 
-        outputs, _ = self.lstm(
-            rearrange(outputs, "batch feature frame -> batch frame feature")
-        )
+        if self.hparams.lstm["monolithic"]:
+            outputs, _ = self.lstm(
+                rearrange(outputs, "batch feature frame -> batch frame feature")
+            )
+        else:
+            outputs = rearrange(outputs, "batch feature frame -> batch frame feature")
+            for i, lstm in enumerate(self.lstm):
+                outputs, _ = lstm(outputs)
+                if i + 1 < self.hparams.lstm["num_layers"]:
+                    outputs = self.dropout(outputs)
 
         if self.hparams.linear["num_layers"] > 0:
             for linear in self.linear:
