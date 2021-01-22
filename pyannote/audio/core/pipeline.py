@@ -71,6 +71,9 @@ class Pipeline(_Pipeline):
             preprocessor.
         """
 
+        if device is not None:
+            device = torch.device(device)
+
         checkpoint_path = str(checkpoint_path)
 
         if os.path.isfile(checkpoint_path):
