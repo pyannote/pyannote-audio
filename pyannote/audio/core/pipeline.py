@@ -24,10 +24,12 @@ import os
 from pathlib import Path
 from typing import Mapping, Text, Union
 
+import torch
 import yaml
 from huggingface_hub import cached_download, hf_hub_url
 
 from pyannote.audio import __version__
+from pyannote.audio.core.inference import Inference
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import CACHE_DIR
 from pyannote.core.utils.helper import get_class_by_name
@@ -41,23 +43,45 @@ class Pipeline(_Pipeline):
     @classmethod
     def from_pretrained(
         cls,
-        pipeline_yml: Union[Text, Path],
-        params_yml: Union[Text, Path] = None,
+        checkpoint_path: Union[Text, Path],
+        hparams_file: Union[Text, Path] = None,
+        device: torch.device = None,
+        batch_size: int = 32,
         use_auth_token: Union[Text, None] = None,
+        progress_hook: bool = False,
     ) -> "Pipeline":
-        """Load pretrained pipeline"""
+        """Load pretrained pipeline
 
-        pipeline_yml = str(pipeline_yml)
+        Parameters
+        ----------
+        checkpoint_path : Path or str
+            Path to pipeline checkpoint, or a remote URL,
+            or a pipeline identifier from the huggingface.co model hub.
+        hparams_file: Path or str, optional
+        batch_size : int, optional
+            Batch size used by `Inference` preprocessors.
+        device : torch.device, optional
+            Device used by `Inference` preprocessors.
+        use_auth_token : str, optional
+            When loading a private huggingface.co pipeline, set `use_auth_token`
+            to True or to a string containing your hugginface.co authentication
+            token that can be obtained by running `huggingface-cli login`
+        progress_hook : bool, optional
+            Set to True to display a tqdm progress bar for each `Inference`
+            preprocessor.
+        """
 
-        if os.path.isfile(pipeline_yml):
-            config_yml = pipeline_yml
+        checkpoint_path = str(checkpoint_path)
+
+        if os.path.isfile(checkpoint_path):
+            config_yml = checkpoint_path
 
         else:
-            if "@" in pipeline_yml:
-                model_id = pipeline_yml.split("@")[0]
-                revision = pipeline_yml.split("@")[1]
+            if "@" in checkpoint_path:
+                model_id = checkpoint_path.split("@")[0]
+                revision = checkpoint_path.split("@")[1]
             else:
-                model_id = pipeline_yml
+                model_id = checkpoint_path
                 revision = None
             url = hf_hub_url(
                 model_id=model_id, filename=PIPELINE_PARAMS_NAME, revision=revision
@@ -89,8 +113,8 @@ class Pipeline(_Pipeline):
         if "params" in config:
             pipeline.instantiate(config["params"])
 
-        if params_yml is not None:
-            pipeline.load_params(params_yml)
+        if hparams_file is not None:
+            pipeline.load_params(hparams_file)
 
         if "preprocessors" in config:
             preprocessors = {}
@@ -107,7 +131,15 @@ class Pipeline(_Pipeline):
                         preprocessor["name"], default_module_name="pyannote.audio"
                     )
 
-                    preprocessors[key] = Klass(**preprocessor.get("params", {}))
+                    params = preprocessor.get("params", {})
+                    if issubclass(Klass, Inference):
+                        params["device"] = device
+                        params["batch_size"] = batch_size
+                        params["use_auth_token"] = use_auth_token
+                        if progress_hook:
+                            params["progress_hook"] = key
+
+                    preprocessors[key] = Klass(**params)
 
                     continue
 
