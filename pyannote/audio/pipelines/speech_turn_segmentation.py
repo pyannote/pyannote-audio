@@ -24,8 +24,8 @@ from typing import Text, Union
 
 from pyannote.audio import Inference
 from pyannote.audio.core.io import AudioFile
+from pyannote.audio.core.pipeline import Pipeline
 from pyannote.core import Annotation
-from pyannote.pipeline import Pipeline
 from pyannote.pipeline.parameter import Uniform
 
 from .speaker_change_detection import SpeakerChangeDetection
@@ -82,7 +82,7 @@ class SpeechTurnSegmentation(Pipeline):
 
         self.gap_max_duration = Uniform(0.0, 2.0)
 
-    def __call__(self, file: AudioFile) -> Annotation:
+    def apply(self, file: AudioFile) -> Annotation:
         """Apply speech turn segmentation
 
         Parameter

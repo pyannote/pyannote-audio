@@ -26,9 +26,9 @@ from typing import Text, Union
 
 from pyannote.audio import Inference
 from pyannote.audio.core.io import AudioFile
+from pyannote.audio.core.pipeline import Pipeline
 from pyannote.audio.utils.signal import Peak
 from pyannote.core import Annotation
-from pyannote.pipeline import Pipeline
 from pyannote.pipeline.parameter import Uniform
 
 
@@ -67,7 +67,7 @@ class SpeakerChangeDetection(Pipeline):
 
         self._peak = Peak(alpha=self.alpha, min_duration=self.min_duration)
 
-    def __call__(self, file: AudioFile) -> Annotation:
+    def apply(self, file: AudioFile) -> Annotation:
         """Apply speaker change detection
 
         Parameters
