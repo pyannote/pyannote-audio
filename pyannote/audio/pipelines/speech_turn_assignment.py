@@ -25,8 +25,8 @@ from typing import Optional, Text, Union
 
 from pyannote.audio import Inference
 from pyannote.audio.core.io import AudioFile
+from pyannote.audio.core.pipeline import Pipeline
 from pyannote.core import Annotation
-from pyannote.pipeline import Pipeline
 from pyannote.pipeline.blocks.classification import ClosestAssignment
 
 from .utils import assert_int_labels, assert_string_labels, gather_label_embeddings
@@ -57,7 +57,7 @@ class SpeechTurnClosestAssignment(Pipeline):
 
         self.closest_assignment = ClosestAssignment(metric=self.metric)
 
-    def __call__(
+    def apply(
         self, file: AudioFile, speech_turns: Annotation, targets: Annotation
     ) -> Annotation:
         """Assign each speech turn to closest target (if close enough)

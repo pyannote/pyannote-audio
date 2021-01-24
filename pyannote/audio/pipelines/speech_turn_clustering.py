@@ -24,8 +24,8 @@ from typing import Optional, Text, Union
 
 from pyannote.audio import Inference
 from pyannote.audio.core.io import AudioFile
+from pyannote.audio.core.pipeline import Pipeline
 from pyannote.core import Annotation
-from pyannote.pipeline import Pipeline
 from pyannote.pipeline.blocks.clustering import HierarchicalAgglomerativeClustering
 
 from .utils import assert_string_labels, gather_label_embeddings
@@ -58,7 +58,7 @@ class SpeechTurnClustering(Pipeline):
             metric=self.metric, use_threshold=True
         )
 
-    def __call__(self, file: AudioFile, speech_turns: Annotation) -> Annotation:
+    def apply(self, file: AudioFile, speech_turns: Annotation) -> Annotation:
         """Apply speech turn clustering
 
         Parameters

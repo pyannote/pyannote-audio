@@ -70,6 +70,10 @@ class Inference:
         - the number of chunks that have been processed so far
         - the total number of chunks
         Set to True (or a descriptive string) to display a tqdm progress bar.
+    use_auth_token : str, optional
+        When loading a private huggingface.co model, set `use_auth_token`
+        to True or to a string containing your hugginface.co authentication
+        token that can be obtained by running `huggingface-cli login`
     """
 
     def __init__(
@@ -81,12 +85,18 @@ class Inference:
         step: float = None,
         batch_size: int = 32,
         progress_hook: Union[bool, Text, Callable[[int, int], Any]] = False,
+        use_auth_token: Union[Text, None] = None,
     ):
 
         self.model = (
             model
             if isinstance(model, Model)
-            else Model.from_pretrained(Path(model), map_location=device, strict=False)
+            else Model.from_pretrained(
+                Path(model),
+                map_location=device,
+                strict=False,
+                use_auth_token=use_auth_token,
+            )
         )
 
         if window not in ["sliding", "whole"]:

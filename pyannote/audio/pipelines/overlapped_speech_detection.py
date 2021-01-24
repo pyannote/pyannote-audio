@@ -26,11 +26,11 @@ from typing import Optional, Text, Union
 
 from pyannote.audio import Inference
 from pyannote.audio.core.io import AudioFile
+from pyannote.audio.core.pipeline import Pipeline
 from pyannote.audio.utils.signal import Binarize
 from pyannote.core import Annotation, Timeline
 from pyannote.database import get_annotated
 from pyannote.metrics.detection import DetectionPrecisionRecallFMeasure
-from pyannote.pipeline import Pipeline
 from pyannote.pipeline.parameter import Uniform
 
 
@@ -61,7 +61,7 @@ def to_overlap(annotation: Annotation) -> Annotation:
 class OracleOverlappedSpeechDetection(Pipeline):
     """Oracle overlapped speech detection pipeline"""
 
-    def __call__(self, file: AudioFile) -> Annotation:
+    def apply(self, file: AudioFile) -> Annotation:
         """Return groundtruth overlapped speech detection
 
         Parameter
@@ -138,7 +138,7 @@ class OverlappedSpeechDetection(Pipeline):
             min_duration_off=self.min_duration_off,
         )
 
-    def __call__(self, file: AudioFile) -> Annotation:
+    def apply(self, file: AudioFile) -> Annotation:
         """Apply overlapped speech detection
 
         Parameters
