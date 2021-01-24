@@ -27,6 +27,7 @@ except ImportError:
 
 
 from .core.inference import Inference
+from .core.io import Audio
 from .core.model import Model
 
-__all__ = ["Model", "Inference"]
+__all__ = ["Audio", "Model", "Inference"]
