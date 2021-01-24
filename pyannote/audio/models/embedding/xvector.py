@@ -84,13 +84,17 @@ class XVectorMFCC(Model):
         self.segment6 = nn.Linear(3000, 512)
         self.segment7 = nn.Linear(512, 512)
 
-    def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, waveforms: torch.Tensor, weights: torch.Tensor = None
+    ) -> torch.Tensor:
         """
 
         Parameters
         ----------
-        waveforms : (batch, channel, sample)
-
+        waveforms : torch.Tensor
+            Batch of waveforms with shape (batch, channel, sample)
+        weights : torch.Tensor, optional
+            Batch of weights with shape (batch, frame).
         """
 
         outputs = self.mfcc(waveforms).squeeze(dim=1)
@@ -99,7 +103,7 @@ class XVectorMFCC(Model):
         outputs = self.frame3(outputs)
         outputs = self.frame4(outputs)
         outputs = self.frame5(outputs)
-        outputs = self.stats_pool(outputs)
+        outputs = self.stats_pool(outputs, weights=weights)
         outputs = self.segment6(F.relu(outputs))
         return self.segment7(F.relu(outputs))
 
@@ -154,13 +158,17 @@ class XVector(Model):
         self.segment6 = nn.Linear(3000, 512)
         self.segment7 = nn.Linear(512, 512)
 
-    def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, waveforms: torch.Tensor, weights: torch.Tensor = None
+    ) -> torch.Tensor:
         """
 
         Parameters
         ----------
-        waveforms : (batch, channel, sample)
-
+        waveforms : torch.Tensor
+            Batch of waveforms with shape (batch, channel, sample)
+        weights : torch.Tensor, optional
+            Batch of weights with shape (batch, frame).
         """
 
         outputs = self.sincnet(waveforms)
@@ -169,6 +177,6 @@ class XVector(Model):
         outputs = self.frame3(outputs)
         outputs = self.frame4(outputs)
         outputs = self.frame5(outputs)
-        outputs = self.stats_pool(outputs)
+        outputs = self.stats_pool(outputs, weights=weights)
         outputs = self.segment6(F.relu(outputs))
         return self.segment7(F.relu(outputs))
