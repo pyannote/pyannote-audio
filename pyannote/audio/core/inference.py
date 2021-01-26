@@ -387,7 +387,7 @@ class Inference:
                 )
                 overlapping_chunk_count[-num_frames_per_chunk:] += hamming
 
-            aggregated_output /= np.maximum(overlapping_chunk_count, 1.0)
+            aggregated_output /= np.maximum(overlapping_chunk_count, 1e-12)
 
             frames = SlidingWindow(
                 start=0,
