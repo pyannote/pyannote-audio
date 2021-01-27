@@ -510,24 +510,27 @@ class Model(pl.LightningModule):
     def scheduler(self):
         if not hasattr(self, "_scheduler"):
             monitor, direction = self.task.val_monitor
-            self._scheduler = {
-                "scheduler": torch.optim.lr_scheduler.ReduceLROnPlateau(
-                    self.optimizer,
-                    mode=direction,
-                    factor=0.1,
-                    patience=20,
-                    threshold=0.0001,
-                    threshold_mode="rel",
-                    cooldown=10,
-                    min_lr=0,
-                    eps=1e-08,
-                    verbose=True,
-                ),
-                "interval": "epoch",
-                "reduce_on_plateau": True,
-                "monitor": monitor,
-                "strict": True,
-            }
+            if monitor is None:
+                self._scheduler = None
+            else:
+                self._scheduler = {
+                    "scheduler": torch.optim.lr_scheduler.ReduceLROnPlateau(
+                        self.optimizer,
+                        mode=direction,
+                        factor=0.1,
+                        patience=20,
+                        threshold=0.0001,
+                        threshold_mode="rel",
+                        cooldown=10,
+                        min_lr=0,
+                        eps=1e-08,
+                        verbose=True,
+                    ),
+                    "interval": "epoch",
+                    "reduce_on_plateau": True,
+                    "monitor": monitor,
+                    "strict": True,
+                }
 
         return self._scheduler
 
