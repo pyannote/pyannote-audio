@@ -31,6 +31,7 @@ from urllib.parse import urlparse
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
+import torch.optim
 from huggingface_hub import cached_download, hf_hub_url
 from pytorch_lightning.utilities.cloud_io import load as pl_load
 from semver import VersionInfo
@@ -494,9 +495,52 @@ class Model(pl.LightningModule):
     def validation_epoch_end(self, outputs):
         return self.task.validation_epoch_end(outputs)
 
-    # optimizer is delegated to the task for the same reason as above
+    @property
+    def optimizer(self):
+        if not hasattr(self, "_optimizer"):
+            self._optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
+
+        return self._optimizer
+
+    @optimizer.setter
+    def optimizer(self, optimizer):
+        self._optimizer = optimizer
+
+    @property
+    def scheduler(self):
+        if not hasattr(self, "_scheduler"):
+            monitor, direction = self.task.val_monitor
+            self._scheduler = {
+                "scheduler": torch.optim.lr_scheduler.ReduceLROnPlateau(
+                    self.optimizer,
+                    mode=direction,
+                    factor=0.1,
+                    patience=20,
+                    threshold=0.0001,
+                    threshold_mode="rel",
+                    cooldown=10,
+                    min_lr=0,
+                    eps=1e-08,
+                    verbose=True,
+                ),
+                "interval": "epoch",
+                "reduce_on_plateau": True,
+                "monitor": monitor,
+                "strict": True,
+            }
+
+        return self._scheduler
+
+    @scheduler.setter
+    def scheduler(self, scheduler):
+        self._scheduler = scheduler
+
     def configure_optimizers(self):
-        return self.task.configure_optimizers()
+        scheduler = self.scheduler
+        if scheduler is None:
+            return self.optimizer
+
+        return {"optimizer": self.optimizer, "lr_scheduler": self.scheduler}
 
     def _helper_up_to(
         self, module_name: Text, requires_grad: bool = False

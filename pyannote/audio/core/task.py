@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020 CNRS
+# Copyright (c) 2020-2021 CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -28,13 +28,11 @@ import sys
 import warnings
 from dataclasses import dataclass
 from enum import Enum
-from typing import Callable, Iterable, List, Optional, Text
+from typing import List, Optional, Text
 
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
-from torch.nn import Parameter
-from torch.optim import Adam, Optimizer
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 from torch.utils.data._utils.collate import default_collate
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
@@ -153,11 +151,6 @@ class Task(pl.LightningDataModule):
         If True, data loaders will copy tensors into CUDA pinned
         memory before returning them. See pytorch documentation
         for more details. Defaults to False.
-    optimizer : callable, optional
-        Callable that takes model parameters as input and returns
-        an Optimizer instance. Defaults to `torch.optim.Adam`.
-    learning_rate : float, optional
-        Learning rate. Defaults to 1e-3.
     augmentation : BaseWaveformTransform, optional
         torch_audiomentations waveform transform, used by dataloader
         during training.
@@ -178,8 +171,6 @@ class Task(pl.LightningDataModule):
         batch_size: int = 32,
         num_workers: int = None,
         pin_memory: bool = False,
-        optimizer: Callable[[Iterable[Parameter]], Optimizer] = None,
-        learning_rate: float = 1e-3,
         augmentation: BaseWaveformTransform = None,
     ):
         super().__init__()
@@ -209,14 +200,7 @@ class Task(pl.LightningDataModule):
             num_workers = 0
 
         self.num_workers = num_workers
-
         self.pin_memory = pin_memory
-
-        if optimizer is None:
-            optimizer = Adam
-        self.optimizer = optimizer
-        self.learning_rate = learning_rate
-
         self.augmentation = augmentation
 
     def prepare_data(self):
@@ -445,11 +429,6 @@ class Task(pl.LightningDataModule):
 
     def validation_epoch_end(self, outputs):
         pass
-
-    # default configure_optimizers provided for convenience
-    # can obviously be overriden for each task
-    def configure_optimizers(self):
-        return self.optimizer(self.model.parameters(), lr=self.learning_rate)
 
     @property
     def val_monitor(self):

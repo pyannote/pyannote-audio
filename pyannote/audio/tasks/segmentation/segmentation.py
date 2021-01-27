@@ -23,14 +23,11 @@
 import math
 import random
 from collections import Counter
-from typing import Callable, Iterable
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn.functional as F
-from torch.nn import Parameter
-from torch.optim import Optimizer
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from typing_extensions import Literal
 
@@ -76,11 +73,6 @@ class Segmentation(SegmentationTaskMixin, Task):
         If True, data loaders will copy tensors into CUDA pinned
         memory before returning them. See pytorch documentation
         for more details. Defaults to False.
-    optimizer : callable, optional
-        Callable that takes model parameters as input and returns
-        an Optimizer instance. Defaults to `torch.optim.Adam`.
-    learning_rate : float, optional
-        Learning rate. Defaults to 1e-3.
     augmentation : BaseWaveformTransform, optional
         torch_audiomentations waveform transform, used by dataloader
         during training.
@@ -101,8 +93,6 @@ class Segmentation(SegmentationTaskMixin, Task):
         batch_size: int = 32,
         num_workers: int = None,
         pin_memory: bool = False,
-        optimizer: Callable[[Iterable[Parameter]], Optimizer] = None,
-        learning_rate: float = 1e-3,
         augmentation: BaseWaveformTransform = None,
         loss: Literal["bce", "mse"] = "bce",
         vad_loss: Literal["bce", "mse"] = None,
@@ -114,8 +104,6 @@ class Segmentation(SegmentationTaskMixin, Task):
             batch_size=batch_size,
             num_workers=num_workers,
             pin_memory=pin_memory,
-            optimizer=optimizer,
-            learning_rate=learning_rate,
             augmentation=augmentation,
         )
 

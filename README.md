@@ -100,6 +100,27 @@ model.task = osd
 trainer.fit(model)
 ```
 
+Default optimizer (`Adam` with default parameters) and scheduler (`ReduceLROnPlateau`) are automatically set up for you.  Customizing them requires a bit more work:
+
+```python
+import torch.optim
+task.setup(stage="fit")
+model.setup(stage="fit")
+model.optimizer = torch.optim.SGD(model.parameters(), lr=1e-3)
+model.scheduler = torch.optim.lr_scheduler.ExponentialLR(model.optimizer, 0.9)
+trainer.fit(model)
+```
+
+If you feel adventurous or need more flexibility, you may override [`model.configure_optimizers`](https://pytorch-lightning.readthedocs.io/en/stable/api/pytorch_lightning.core.lightning.html#pytorch_lightning.core.lightning.LightningModule.configure_optimizers) method:
+
+```python
+def custom_configure_optimizers(self):
+    optimizer = torch.optim.SGD(self.parameters(), lr=1e-3)
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.9)
+    return {"optimizer": optimizer, "lr_scheduler": scheduler}
+model.configure_optimizers = custom_configure_optimizers
+trainer.fit(model)
+```
 
 ## Contributing
 
