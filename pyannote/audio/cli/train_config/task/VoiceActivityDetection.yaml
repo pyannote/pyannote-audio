@@ -1,2 +1,6 @@
 # @package _group_
 _target_: pyannote.audio.tasks.VoiceActivityDetection
+duration: 3.0
+batch_size: 32
+num_workers: null
+pin_memory: True

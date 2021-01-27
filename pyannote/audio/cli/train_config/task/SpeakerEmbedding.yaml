@@ -1,0 +1,10 @@
+# @package _group_
+_target_: pyannote.audio.tasks.SupervisedRepresentationLearningWithArcFace
+min_duration: 2.0
+duration: 5.0
+num_classes_per_batch: 512
+num_chunks_per_class: 1
+margin: 2.0
+scale: 12.0
+num_workers: null
+pin_memory: False

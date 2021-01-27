@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020 CNRS
+# Copyright (c) 2020-2021 CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -20,31 +20,27 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import functools
 import os
-from typing import Iterable
+from typing import Optional
 
 import hydra
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
-from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
+from pytorch_lightning.callbacks import (
+    EarlyStopping,
+    LearningRateMonitor,
+    ModelCheckpoint,
+)
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.utilities.seed import seed_everything
-from torch.nn import Parameter
-from torch.optim import Optimizer
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch_audiomentations.utils.config import from_dict as get_augmentation
 
 from pyannote.database import FileFinder, get_protocol
 
 
-def get_optimizer(
-    parameters: Iterable[Parameter], lr: float = 1e-3, cfg: DictConfig = None
-) -> Optimizer:
-    return instantiate(cfg.optimizer, parameters, lr=lr)
-
-
 @hydra.main(config_path="train_config", config_name="config")
-def main(cfg: DictConfig) -> None:
+def main(cfg: DictConfig) -> Optional[float]:
 
     # make sure to set the random seed before the instantiation of Trainer
     # so that each model initializes with the same weights when using DDP.
@@ -53,8 +49,11 @@ def main(cfg: DictConfig) -> None:
 
     protocol = get_protocol(cfg.protocol, preprocessors={"audio": FileFinder()})
 
-    # TODO: configure scheduler
     # TODO: configure layer freezing
+
+    # TODO: when fine-tuning or transfer learning a model whose last layers
+    # needs to change -- fit those last layers for a bit before fitting the
+    # whole model
 
     # TODO: remove this OmegaConf.to_container hack once bug is solved:
     # https://github.com/omry/omegaconf/pull/443
@@ -64,21 +63,49 @@ def main(cfg: DictConfig) -> None:
         else None
     )
 
-    optimizer = functools.partial(get_optimizer, cfg=cfg)
+    # instantiate task and model
+    task = instantiate(cfg.task, protocol, augmentation=augmentation)
+    model = instantiate(cfg.model, task=task)
 
-    task = instantiate(
-        cfg.task,
-        protocol,
-        optimizer=optimizer,
-        learning_rate=cfg.optimizer.lr,
-        augmentation=augmentation,
-    )
+    # setup optimizer and scheduler
+    task.setup(stage="fit")
+    model.setup(stage="fit")
+
+    # TODO: catch resume_from_checkpoint before it is too late (i.e. before it overrides optimizer)
+
+    model.optimizer = instantiate(cfg.optimizer, model.parameters())
+
+    monitor, direction = task.val_monitor
+
+    # TODO: allow configuring scheduler
+    if monitor is None:
+        model.scheduler = None
+    else:
+        model.scheduler = {
+            "scheduler": ReduceLROnPlateau(
+                model.optimizer,
+                mode=direction,
+                factor=0.1,
+                patience=20,
+                threshold=0.0001,
+                threshold_mode="rel",
+                cooldown=10,
+                min_lr=0,
+                eps=1e-08,
+                verbose=False,
+            ),
+            "interval": "epoch",
+            "reduce_on_plateau": True,
+            "monitor": monitor,
+            "strict": True,
+        }
 
     callbacks = []
 
-    model = instantiate(cfg.model, task=task)
+    if model.scheduler is not None:
+        learning_rate_monitor = LearningRateMonitor(logging_interval="step")
+        callbacks.append(learning_rate_monitor)
 
-    monitor, direction = task.val_monitor
     checkpoint = ModelCheckpoint(
         monitor=monitor,
         mode=direction,
@@ -88,36 +115,37 @@ def main(cfg: DictConfig) -> None:
         save_weights_only=False,
         dirpath=".",
         filename="{epoch}" if monitor is None else f"{{epoch}}-{{{monitor}:.6f}}",
-        verbose=cfg.verbose,
+        verbose=False,
     )
     callbacks.append(checkpoint)
 
     if monitor is not None:
-        # TODO: add option to configure early stopping patience
         early_stopping = EarlyStopping(
             monitor=monitor,
             mode=direction,
             min_delta=0.0,
-            patience=50,
+            patience=100,  # TODO: make it an hyper-parameter
             strict=True,
-            verbose=cfg.verbose,
+            verbose=False,
         )
         callbacks.append(early_stopping)
 
-    # TODO: fail safely when log_graph=True raises an onnx error
     logger = TensorBoardLogger(
         ".",
         name="",
         version="",
-        # log_graph=True,
+        log_graph=False,  # TODO: fixes onnx error with asteroid-filterbanks
     )
 
+    # TODO: defaults to one-GPU training (one GPU is available)
     trainer = instantiate(cfg.trainer, callbacks=callbacks, logger=logger)
     trainer.fit(model)
 
     # save paths to best models
     checkpoint.to_yaml()
 
+    # return the best validation score
+    # this can be used for hyper-parameter optimization with Hydra sweepers
     if monitor is not None:
         best_monitor = float(checkpoint.best_model_score)
         if direction == "min":
