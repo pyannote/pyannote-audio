@@ -7,4 +7,4 @@ snr_max: 10.0
 domain: null
 batch_size: 32
 num_workers: null
-pin_memory: True
+pin_memory: False
