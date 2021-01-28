@@ -273,23 +273,68 @@ class Task(pl.LightningDataModule):
             collate_fn=self.collate_fn,
         )
 
-    def default_loss(self, specifications: Specifications, y, y_pred) -> torch.Tensor:
-        """Guess and compute default loss according to task specification"""
+    def default_loss(
+        self, specifications: Specifications, target, prediction, weight=None
+    ) -> torch.Tensor:
+        """Guess and compute default loss according to task specification
+
+        Parameters
+        ----------
+        specifications : Specifications
+            Task specifications
+        target : torch.Tensor
+            * (batch_size, num_frames) for binary classification
+            * (batch_size, num_frames) for multi-class classification
+            * (batch_size, num_frames, num_classes) for multi-label classification
+        predictions : torch.Tensor
+            (batch_size, num_frames, num_classes)
+        weight : torch.Tensor, optional
+            (batch_size, num_frames)
+
+        Returns
+        -------
+        loss : torch.Tensor
+            Binary cross-entropy loss in case of binary and multi-label classification,
+            Negative log-likelihood loss in case of multi-class classification.
+
+        """
 
         if specifications.problem == Problem.BINARY_CLASSIFICATION:
-            loss = F.binary_cross_entropy(y_pred.squeeze(dim=-1), y.float())
+
+            return F.binary_cross_entropy(
+                prediction.squeeze(dim=-1), target.float(), weight=weight
+            )
 
         elif specifications.problem == Problem.MONO_LABEL_CLASSIFICATION:
-            loss = F.nll_loss(y_pred.view(-1, len(specifications.classes)), y.view(-1))
+
+            # (b, f) loss
+            losses = F.nll_loss(
+                # (b x f, c) prediction
+                prediction.view(-1, len(specifications.classes)),
+                # (b x f, ) target
+                target.view(-1),
+                reduction="none",
+            ).view(target.shape)
+
+            if weight is None:
+                return torch.mean(losses)
+            else:
+                return torch.sum(losses * weight) / torch.sum(weight)
 
         elif specifications.problem == Problem.MULTI_LABEL_CLASSIFICATION:
-            loss = F.binary_cross_entropy(y_pred, y.float())
+
+            if weight is None:
+                return F.binary_cross_entropy(prediction, target.float())
+            else:
+                return F.binary_cross_entropy(
+                    prediction,
+                    target.float(),
+                    weight=weight.unsqueeze(dim=2).expand(target.shape),
+                )
 
         else:
             msg = "TODO: implement for other types of problems"
             raise NotImplementedError(msg)
-
-        return loss
 
     # default training_step provided for convenience
     # can obviously be overriden for each task
