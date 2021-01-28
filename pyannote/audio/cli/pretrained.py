@@ -20,8 +20,13 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from .pretrained import pretrained
 
-__all__ = [
-    "pretrained",
-]
+from typing import Text
+
+import torch
+
+from pyannote.audio import Model
+
+
+def pretrained(checkpoint: Text):
+    return Model.from_pretrained(checkpoint, map_location=torch.device("cpu"))

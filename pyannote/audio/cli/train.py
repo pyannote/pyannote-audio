@@ -42,6 +42,12 @@ from pyannote.database import FileFinder, get_protocol
 @hydra.main(config_path="train_config", config_name="config")
 def main(cfg: DictConfig) -> Optional[float]:
 
+    if cfg.trainer.get("resume_from_checkpoint", None) is not None:
+        raise ValueError(
+            "trainer.resume_from_checkpoint is not supported. "
+            "use model=pretrained model.checkpoint=... instead."
+        )
+
     # make sure to set the random seed before the instantiation of Trainer
     # so that each model initializes with the same weights when using DDP.
     seed = int(os.environ.get("PL_GLOBAL_SEED", "0"))
@@ -63,15 +69,15 @@ def main(cfg: DictConfig) -> Optional[float]:
         else None
     )
 
-    # instantiate task and model
+    # instantiate task
     task = instantiate(cfg.task, protocol, augmentation=augmentation)
-    model = instantiate(cfg.model, task=task)
+
+    model = instantiate(cfg.model)
+    model.task = task
 
     # setup optimizer and scheduler
     task.setup(stage="fit")
     model.setup(stage="fit")
-
-    # TODO: catch resume_from_checkpoint before it is too late (i.e. before it overrides optimizer)
 
     model.optimizer = instantiate(cfg.optimizer, model.parameters())
 
@@ -85,7 +91,7 @@ def main(cfg: DictConfig) -> Optional[float]:
             "scheduler": ReduceLROnPlateau(
                 model.optimizer,
                 mode=direction,
-                factor=0.1,
+                factor=0.5,
                 patience=20,
                 threshold=0.0001,
                 threshold_mode="rel",
@@ -138,6 +144,7 @@ def main(cfg: DictConfig) -> Optional[float]:
     )
 
     # TODO: defaults to one-GPU training (one GPU is available)
+
     trainer = instantiate(cfg.trainer, callbacks=callbacks, logger=logger)
     trainer.fit(model)
 
