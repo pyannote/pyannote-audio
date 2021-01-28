@@ -100,7 +100,7 @@ model.task = osd
 trainer.fit(model)
 ```
 
-Default optimizer (`Adam` with default parameters) and scheduler (`ReduceLROnPlateau`) are automatically set up for you.  Customizing them requires a bit more work:
+Default optimizer (`Adam` with default parameters) is automatically set up for you.  Customizing optimizer (and scheduler) requires a bit more work:
 
 ```python
 import torch.optim
