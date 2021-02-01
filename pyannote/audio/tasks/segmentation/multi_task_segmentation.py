@@ -266,6 +266,7 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
             ):
                 # yield it as it is
                 sample["y"] = self.prepare_y(sample["y"])
+                _ = sample.pop("labels")
                 yield sample
                 continue
 

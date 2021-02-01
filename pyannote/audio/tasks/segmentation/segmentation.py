@@ -334,6 +334,7 @@ class Segmentation(SegmentationTaskMixin, Task):
             sample["y"] = sample["y"][:, : self.num_speakers]
 
         sample["y"] = self.prepare_y(sample["y"])
+        _ = sample.pop("labels")
         return sample
 
     def segmentation_loss(self, y: torch.Tensor, y_pred: torch.Tensor) -> torch.Tensor:
