@@ -423,7 +423,7 @@ class Model(pl.LightningModule):
 
         self.specifications = checkpoint["pyannote.audio"]["specifications"]
 
-        self.build()
+        self.setup()
 
         self.introspection = checkpoint["pyannote.audio"]["introspection"]
 
@@ -696,6 +696,7 @@ class Model(pl.LightningModule):
         map_location=None,
         hparams_file: Union[Path, Text] = None,
         strict: bool = True,
+        task: Task = None,
         use_auth_token: Union[Text, None] = None,
         **kwargs,
     ) -> "Model":
@@ -723,6 +724,8 @@ class Model(pl.LightningModule):
         strict : bool, optional
             Whether to strictly enforce that the keys in checkpoint_path match
             the keys returned by this module’s state dict. Defaults to True.
+        task : Task, optional
+            Setup model for fine tuning (or transfer learning) on this task.
         use_auth_token : str, optional
             When loading a private huggingface.co model, set `use_auth_token`
             to True or to a string containing your hugginface.co authentication
@@ -772,17 +775,57 @@ class Model(pl.LightningModule):
 
         # obtain model class from the checkpoint
         checkpoint = pl_load(path_for_pl, map_location=map_location)
-
         module_name: str = checkpoint["pyannote.audio"]["architecture"]["module"]
         module = import_module(module_name)
-
         class_name: str = checkpoint["pyannote.audio"]["architecture"]["class"]
         Klass = getattr(module, class_name)
 
-        return Klass.load_from_checkpoint(
-            path_for_pl,
-            map_location=map_location,
-            hparams_file=hparams_file,
-            strict=strict,
-            **kwargs,
-        )
+        try:
+            model = Klass.load_from_checkpoint(
+                path_for_pl,
+                map_location=map_location,
+                hparams_file=hparams_file,
+                strict=strict if task is None else False,
+                **kwargs,
+            )
+        except RuntimeError as e:
+            if "loss_func" in str(e):
+                msg = (
+                    "Model has been trained with a task-dependent loss function. "
+                    "Either use the 'task' argument to force setting up the loss function "
+                    "or set 'strict' to False to load the model without its loss function ."
+                )
+                warnings.warn(msg)
+                model = Klass.load_from_checkpoint(
+                    path_for_pl,
+                    map_location=map_location,
+                    hparams_file=hparams_file,
+                    strict=False,
+                    **kwargs,
+                )
+                return model
+
+            raise e
+
+        if task is not None:
+            model.task = task
+            task.setup(stage="fit")
+            model.setup(stage="fit")
+
+            try:
+                missing_keys, unexpected_keys = model.load_state_dict(
+                    checkpoint["state_dict"], strict=strict
+                )
+            except RuntimeError as e:
+                if "size mismatch" in str(e):
+                    msg = (
+                        "Model has been trained for a different task. "
+                        "For fine tuning or transfer learning, remember to start by "
+                        "training task-dependent layers first."
+                    )
+                    warnings.warn(msg)
+                    return model
+
+                raise e
+
+        return model
