@@ -362,6 +362,8 @@ class Model(pl.LightningModule):
 
     def setup(self, stage=None):
 
+        before = set((name, id(module)) for name, module in self.named_modules())
+
         self.build()
 
         if stage == "fit":
@@ -370,6 +372,10 @@ class Model(pl.LightningModule):
             self.task.setup_validation_metric()
             # this is to make sure introspection is performed here, once and for all
             _ = self.introspection
+
+        after = set((name, id(module)) for name, module in self.named_modules())
+
+        self.task_dependent = list(name for name, _ in after - before)
 
     def on_save_checkpoint(self, checkpoint):
 
@@ -793,7 +799,8 @@ class Model(pl.LightningModule):
                 msg = (
                     "Model has been trained with a task-dependent loss function. "
                     "Either use the 'task' argument to force setting up the loss function "
-                    "or set 'strict' to False to load the model without its loss function ."
+                    "or set 'strict' to False to load the model without its loss function "
+                    "and prevent this warning from appearing. "
                 )
                 warnings.warn(msg)
                 model = Klass.load_from_checkpoint(
@@ -819,9 +826,9 @@ class Model(pl.LightningModule):
             except RuntimeError as e:
                 if "size mismatch" in str(e):
                     msg = (
-                        "Model has been trained for a different task. "
-                        "For fine tuning or transfer learning, remember to start by "
-                        "training task-dependent layers first."
+                        "Model has been trained for a different task. For fine tuning or transfer learning, "
+                        "it is recommended to train task-dependent layers for a few epochs "
+                        f"before training the whole model: {model.task_dependent}."
                     )
                     warnings.warn(msg)
                     return model
