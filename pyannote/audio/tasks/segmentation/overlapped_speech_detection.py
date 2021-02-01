@@ -176,7 +176,10 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
             chunk = Segment(start_time, start_time + self.duration)
 
             yield self.prepare_chunk(
-                file, chunk, duration=self.duration, weight=self.weight
+                file,
+                chunk,
+                duration=self.duration,
+                weight=getattr(self, "weight", None),
             )
 
     def train__iter__(self):

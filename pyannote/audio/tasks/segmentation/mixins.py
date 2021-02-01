@@ -233,7 +233,10 @@ class SegmentationTaskMixin:
             chunk = Segment(start_time, start_time + self.duration)
 
             sample = self.prepare_chunk(
-                file, chunk, duration=self.duration, weight=self.weight
+                file,
+                chunk,
+                duration=self.duration,
+                weight=getattr(self, "weight", None),
             )
             sample["y"] = self.prepare_y(sample["y"])
             _ = sample.pop("labels")
