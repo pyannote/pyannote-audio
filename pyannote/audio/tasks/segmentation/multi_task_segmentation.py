@@ -222,7 +222,9 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
             start_time = rng.uniform(segment.start, segment.end - self.duration)
             chunk = Segment(start_time, start_time + self.duration)
 
-            yield self.prepare_chunk(file, chunk, duration=self.duration)
+            yield self.prepare_chunk(
+                file, chunk, duration=self.duration, weight=self.weight
+            )
 
     def train__iter__(self):
         """Iterate over training samples
@@ -256,45 +258,55 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
                 chunks = chunks_by_domain[domain]
 
             # generate random chunk
-            X, one_hot_y, labels = next(chunks)
+            sample = next(chunks)
 
             if (
                 not self.osd
                 or rng.random() > self.tasks["osd"].augmentation_probability
             ):
                 # yield it as it is
-                yield {"X": X, "y": self.prepare_y(one_hot_y)}
+                sample["y"] = self.prepare_y(sample["y"])
+                yield sample
                 continue
 
             #  generate second random chunk
-            other_X, other_one_hot_y, other_labels = next(chunks)
+            other_sample = next(chunks)
 
             #  sum both chunks with random SNR
             random_snr = (
                 self.tasks["osd"].snr_max - self.tasks["osd"].snr_min
             ) * rng.random() + self.tasks["osd"].snr_min
             alpha = np.exp(-np.log(10) * random_snr / 20)
-            X = Audio.power_normalize(X) + alpha * Audio.power_normalize(other_X)
+            X = Audio.power_normalize(sample["X"]) + alpha * Audio.power_normalize(
+                other_sample["X"]
+            )
 
             # combine speaker-to-index mapping
-            y_mapping = {label: i for i, label in enumerate(labels)}
+            y_mapping = {label: i for i, label in enumerate(sample["labels"])}
             num_labels = len(y_mapping)
-            for label in other_labels:
+            for label in other_sample["labels"]:
                 if label not in y_mapping:
                     y_mapping[label] = num_labels
                     num_labels += 1
 
             #  combine one-hot-encoded speaker activities
-            combined_y = np.zeros_like(one_hot_y, shape=(len(one_hot_y), num_labels))
-            for i, label in enumerate(labels):
-                combined_y[:, y_mapping[label]] += one_hot_y[:, i]
-            for i, label in enumerate(other_labels):
-                combined_y[:, y_mapping[label]] += other_one_hot_y[:, i]
+            combined_y = np.zeros_like(
+                sample["y"], shape=(len(sample["y"]), num_labels)
+            )
+            for i, label in enumerate(sample["labels"]):
+                combined_y[:, y_mapping[label]] += sample["y"][:, i]
+            for i, label in enumerate(other_sample["labels"]):
+                combined_y[:, y_mapping[label]] += other_sample["y"][:, i]
 
             # handle corner case when the same label is active at the same time in both chunks
             combined_y = np.minimum(combined_y, 1, out=combined_y)
 
-            yield {"X": X, "y": self.prepare_y(combined_y)}
+            combined_sample = {"X": X, "y": self.prepare_y(combined_y)}
+            if getattr(self, "weight", None):
+                combined_sample["weight"] = np.sqrt(
+                    sample["weight"] * other_sample["weight"]
+                )
+            yield combined_sample
 
     def setup_validation_metric(self):
 

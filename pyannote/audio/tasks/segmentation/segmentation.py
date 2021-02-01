@@ -235,12 +235,15 @@ class Segmentation(SegmentationTaskMixin, Task):
 
         Yields
         ------
-        X: (time, channel)
-            Audio chunks.
-        y: (frame, )
-            Frame-level targets. Note that frame < time.
-            `frame` is infered automagically from the
-            example model output.
+        sample : dict
+            X: (time, channel)
+                Audio chunks.
+            y: (frame, )
+                Frame-level targets. Note that frame < time.
+                `frame` is infered automagically from the
+                example model output.
+            weight : (frame, ), optional.
+                Frame-level weight
         """
 
         # create worker-specific random number generator
@@ -262,41 +265,47 @@ class Segmentation(SegmentationTaskMixin, Task):
                 chunks = chunks_by_domain[domain]
 
             # generate random chunk
-            X, one_hot_y, labels = next(chunks)
+            sample = next(chunks)
 
             if rng.random() > self.augmentation_probability:
-                if one_hot_y.shape[1] > self.num_speakers:
+                if sample["y"].shape[1] > self.num_speakers:
                     # skip chunks that happen to have too many speakers
                     pass
 
                 else:
                     # pad and yield good ones
-                    yield {"X": X, "y": self.prepare_y(one_hot_y)}
+                    _ = sample.pop("labels")
+                    sample["y"] = self.prepare_y(sample["y"])
+                    yield sample
 
                 continue
 
             #  generate second random chunk
-            other_X, other_one_hot_y, other_labels = next(chunks)
+            other_sample = next(chunks)
 
             #  sum both chunks with random SNR
             random_snr = (self.snr_max - self.snr_min) * rng.random() + self.snr_min
             alpha = np.exp(-np.log(10) * random_snr / 20)
-            X = Audio.power_normalize(X) + alpha * Audio.power_normalize(other_X)
+            X = Audio.power_normalize(sample["X"]) + alpha * Audio.power_normalize(
+                other_sample["X"]
+            )
 
             # combine speaker-to-index mapping
-            y_mapping = {label: i for i, label in enumerate(labels)}
+            y_mapping = {label: i for i, label in enumerate(sample["labels"])}
             num_labels = len(y_mapping)
-            for label in other_labels:
+            for label in other_sample["labels"]:
                 if label not in y_mapping:
                     y_mapping[label] = num_labels
                     num_labels += 1
 
             #  combine one-hot-encoded speaker activities
-            combined_y = np.zeros_like(one_hot_y, shape=(len(one_hot_y), num_labels))
-            for i, label in enumerate(labels):
-                combined_y[:, y_mapping[label]] += one_hot_y[:, i]
-            for i, label in enumerate(other_labels):
-                combined_y[:, y_mapping[label]] += other_one_hot_y[:, i]
+            combined_y = np.zeros_like(
+                sample["y"], shape=(len(sample["y"]), num_labels)
+            )
+            for i, label in enumerate(sample["labels"]):
+                combined_y[:, y_mapping[label]] += sample["y"][:, i]
+            for i, label in enumerate(other_sample["labels"]):
+                combined_y[:, y_mapping[label]] += other_sample["y"][:, i]
 
             # handle corner case when the same label is active at the same time in both chunks
             combined_y = np.minimum(combined_y, 1, out=combined_y)
@@ -307,21 +316,25 @@ class Segmentation(SegmentationTaskMixin, Task):
 
             else:
                 # pad and yield good ones
-                yield {"X": X, "y": self.prepare_y(combined_y)}
+                combined_sample = {"X": X, "y": self.prepare_y(combined_y)}
+                if getattr(self, "weight", None):
+                    combined_sample["weight"] = np.sqrt(
+                        sample["weight"] * other_sample["weight"]
+                    )
+                yield combined_sample
 
     def val__getitem__(self, idx):
         f, chunk = self._validation[idx]
-        X, one_hot_y, _ = self.prepare_chunk(f, chunk, duration=self.duration)
+        sample = self.prepare_chunk(f, chunk, duration=self.duration)
 
         # since number of speakers is estimated from the training set,
         # we might encounter validation chunks that have more speakers.
-        # in that case, we arbirarily remove last speakers
-        if one_hot_y.shape[1] > self.num_speakers:
-            one_hot_y = one_hot_y[:, : self.num_speakers]
+        # in that case, we arbitrarily remove last speakers
+        if sample["y"].shape[1] > self.num_speakers:
+            sample["y"] = sample["y"][:, : self.num_speakers]
 
-        y = self.prepare_y(one_hot_y)
-
-        return {"X": X, "y": y}
+        sample["y"] = self.prepare_y(sample["y"])
+        return sample
 
     def segmentation_loss(self, y: torch.Tensor, y_pred: torch.Tensor) -> torch.Tensor:
         """Permutation-invariant segmentation loss

@@ -36,6 +36,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 from torch.utils.data._utils.collate import default_collate
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
+from typing_extensions import Literal
 
 from pyannote.audio.utils.protocol import check_protocol
 from pyannote.database import Protocol
@@ -299,6 +300,11 @@ class Task(pl.LightningDataModule):
 
         """
 
+        if weight is not None and weight.shape[1] != target.shape[1]:
+            weight = F.interpolate(
+                weight.unsqueeze(1), size=target.shape[1], mode="linear"
+            ).squeeze(1)
+
         if specifications.problem == Problem.BINARY_CLASSIFICATION:
 
             return F.binary_cross_entropy(
@@ -336,10 +342,8 @@ class Task(pl.LightningDataModule):
             msg = "TODO: implement for other types of problems"
             raise NotImplementedError(msg)
 
-    # default training_step provided for convenience
-    # can obviously be overriden for each task
-    def training_step(self, batch, batch_idx: int):
-        """Default training_step according to task specification
+    def common_step(self, batch, batch_idx: int, stage: Literal["train", "val"]):
+        """Default training or validation step according to task specification
 
             * binary cross-entropy loss for binary or multi-label classification
             * negative log-likelihood loss for regular classification
@@ -352,6 +356,8 @@ class Task(pl.LightningDataModule):
             Current batch.
         batch_idx: int
             Batch index.
+        stage : {"train", "val"}
+            "train" for training step, "val" for validation step
 
         Returns
         -------
@@ -359,19 +365,19 @@ class Task(pl.LightningDataModule):
             {"loss": loss} with additional "loss_{task_name}" keys for multi-task models.
         """
 
-        X, y = batch["X"], batch["y"]
+        X, y, weight = batch["X"], batch["y"], batch.get("weight", None)
         y_pred = self.model(X)
 
         if self.is_multi_task:
             loss = dict()
             for task_name, specifications in self.specifications.items():
                 loss[task_name] = self.default_loss(
-                    specifications, y[task_name], y_pred[task_name]
+                    specifications, y[task_name], y_pred[task_name], weight=weight
                 )
                 self.model.log(
-                    f"{task_name}@train_loss",
+                    f"{task_name}@{stage}_loss",
                     loss[task_name],
-                    on_step=True,
+                    on_step=False,
                     on_epoch=True,
                     prog_bar=False,
                     logger=False,
@@ -379,25 +385,30 @@ class Task(pl.LightningDataModule):
 
             loss["loss"] = sum(loss.values())
             self.model.log(
-                f"{self.ACRONYM}@train_loss",
+                f"{self.ACRONYM}@{stage}_loss",
                 loss["loss"],
-                on_step=True,
+                on_step=False,
                 on_epoch=True,
                 prog_bar=True,
                 logger=True,
             )
             return loss
 
-        loss = self.default_loss(self.specifications, y, y_pred)
+        loss = self.default_loss(self.specifications, y, y_pred, weight=weight)
         self.model.log(
-            f"{self.ACRONYM}@train_loss",
+            f"{self.ACRONYM}@{stage}_loss",
             loss,
-            on_step=True,
+            on_step=False,
             on_epoch=True,
             prog_bar=True,
             logger=True,
         )
         return {"loss": loss}
+
+    # default training_step provided for convenience
+    # can obviously be overriden for each task
+    def training_step(self, batch, batch_idx: int):
+        return self.common_step(batch, batch_idx, "train")
 
     def val__getitem__(self, idx):
         # will become val_dataset.__getitem__ method
@@ -421,56 +432,7 @@ class Task(pl.LightningDataModule):
     # default validation_step provided for convenience
     # can obviously be overriden for each task
     def validation_step(self, batch, batch_idx: int):
-        """Guess default validation_step according to task specification
-
-            * binary cross-entropy loss for binary or multi-label classification
-            * negative log-likelihood loss for regular classification
-
-        In case of multi-tasking, it will default to summing loss of each task.
-
-        Parameters
-        ----------
-        batch : (usually) dict of torch.Tensor
-            Current batch.
-        batch_idx: int
-            Batch index.
-
-        Returns
-        -------
-        loss : {str: torch.tensor}
-            {"loss": loss} with additional "{task_name}" keys for multi-task models.
-        """
-
-        X, y = batch["X"], batch["y"]
-        y_pred = self.model(X)
-
-        if self.is_multi_task:
-            loss = dict()
-            for task_name, specifications in self.specifications.items():
-                loss[task_name] = self.default_loss(
-                    specifications, y[task_name], y_pred[task_name]
-                )
-                self.model.log(f"{task_name}@val_loss", loss[task_name])
-
-            loss["loss"] = sum(loss.values())
-            self.model.log(
-                f"{self.ACRONYM}@val_loss",
-                loss["loss"],
-                on_step=False,
-                on_epoch=True,
-                prog_bar=True,
-            )
-            return loss
-
-        loss = self.default_loss(self.specifications, y, y_pred)
-        self.model.log(
-            f"{self.ACRONYM}@val_loss",
-            loss,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-        )
-        return {"loss": loss}
+        return self.common_step(batch, batch_idx, "val")
 
     def validation_epoch_end(self, outputs):
         pass

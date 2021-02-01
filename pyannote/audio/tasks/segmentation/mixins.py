@@ -50,15 +50,16 @@ class SegmentationTaskMixin:
                     if segment.duration > self.duration
                 ]
                 duration = sum(segment.duration for segment in segments)
-                self._train.append(
-                    {
-                        "uri": f["uri"],
-                        "annotated": segments,
-                        "annotation": f["annotation"],
-                        "duration": duration,
-                        "audio": f["audio"],
-                    }
-                )
+                file = {
+                    "uri": f["uri"],
+                    "annotated": segments,
+                    "annotation": f["annotation"],
+                    "duration": duration,
+                    "audio": f["audio"],
+                }
+                if getattr(self, "weight", None):
+                    file[self.weight] = f[self.weight]
+                self._train.append(file)
 
             # loop over the validation set, remove annotated regions shorter than
             # chunk duration, and keep track of the reference annotations.
@@ -110,6 +111,7 @@ class SegmentationTaskMixin:
         file: AudioFile,
         chunk: Segment,
         duration: float = None,
+        weight: Text = None,
     ) -> Tuple[np.ndarray, np.ndarray, List[Text]]:
         """Extract audio chunk and corresponding frame-wise labels
 
@@ -121,15 +123,23 @@ class SegmentationTaskMixin:
             Audio chunk.
         duration : float, optional
             Fix chunk duration to avoid rounding errors. Defaults to self.duration
+        weight : str, optional
+            When provided, file[weight] is expected to be a SlidingWindowFeature instance.
+            This will add a "weight" keys to the returned dictionary that contains the output
+            of file[weight].crop(chunk).
 
         Returns
         -------
-        X : np.ndarray
-            Audio chunk as (num_samples, num_channels) array.
-        y : np.ndarray, optional
-            Frame-wise labels as (num_frames, num_labels) array.
-        labels : list of str, optional
-            Ordered labels such that y[:, k] corresponds to activity of labels[k].
+        sample : dict
+            Dictionary with the following keys:
+            X : np.ndarray
+                Audio chunk as (num_samples, num_channels) array.
+            y : np.ndarray
+                Frame-wise labels as (num_frames, num_labels) array.
+            labels : list of str
+                Ordered labels such that y[:, k] corresponds to activity of labels[k].
+            weight : np.ndarray, optional
+                Frame-wise weights as (num_frames, ) array.
         """
 
         X, _ = self.model.audio.crop(
@@ -174,19 +184,29 @@ class SegmentationTaskMixin:
         # handle corner case when the same label is active more than once
         y = np.minimum(y, 1, out=y)
 
-        return X, y, labels
+        sample = {"X": X, "y": y, "labels": labels}
+
+        if weight is not None:
+            sample["weight"] = (
+                file[weight].crop(chunk, fixed=duration, mode="center").squeeze(axis=1)
+            )
+
+        return sample
 
     def train__iter__(self):
         """Iterate over training samples
 
         Yields
         ------
-        X: (time, channel)
-            Audio chunks.
-        y: (frame, )
-            Frame-level targets. Note that frame < time.
-            `frame` is infered automagically from the
-            example model output.
+        dict:
+            X: (time, channel)
+                Audio chunks.
+            y: (frame, )
+                Frame-level targets. Note that frame < time.
+                `frame` is infered automagically from the
+                example model output.
+            weights : (frame, ), optional
+                Frame-level weights.
         """
 
         # create worker-specific random number generator
@@ -212,11 +232,12 @@ class SegmentationTaskMixin:
             start_time = rng.uniform(segment.start, segment.end - self.duration)
             chunk = Segment(start_time, start_time + self.duration)
 
-            X, one_hot_y, _ = self.prepare_chunk(file, chunk, duration=self.duration)
-
-            y = self.prepare_y(one_hot_y)
-
-            yield {"X": X, "y": y}
+            sample = self.prepare_chunk(
+                file, chunk, duration=self.duration, weight=self.weight
+            )
+            sample["y"] = self.prepare_y(sample["y"])
+            _ = sample.pop("labels")
+            yield sample
 
     def train__len__(self):
         # Number of training samples in one epoch
@@ -225,9 +246,10 @@ class SegmentationTaskMixin:
 
     def val__getitem__(self, idx):
         f, chunk = self._validation[idx]
-        X, one_hot_y, _ = self.prepare_chunk(f, chunk, duration=self.duration)
-        y = self.prepare_y(one_hot_y)
-        return {"X": X, "y": y}
+        sample = self.prepare_chunk(f, chunk, duration=self.duration)
+        sample["y"] = self.prepare_y(sample["y"])
+        _ = sample.pop("labels")
+        return sample
 
     def val__len__(self):
         return len(self._validation)
@@ -276,9 +298,7 @@ class SegmentationTaskMixin:
         nrows = math.ceil(math.sqrt(num_samples))
         ncols = math.ceil(num_samples / nrows)
         fig, axes = plt.subplots(
-            nrows=3 * nrows,
-            ncols=ncols,
-            figsize=(15, 10),
+            nrows=3 * nrows, ncols=ncols, figsize=(15, 10), squeeze=False
         )
 
         # reshape target so that there is one line per class when plottingit
