@@ -24,6 +24,9 @@ def check_protocol(protocol: Protocol) -> Protocol:
 
     """
 
+    if protocol is None:
+        return None
+
     # does protocol define a training set?
     try:
         file = next(protocol.train())
