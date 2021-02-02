@@ -645,7 +645,9 @@ class Model(pl.LightningModule):
         return updated_modules
 
     def freeze_by_name(
-        self, modules: Union[Text, List[Text]], recurse: bool = True
+        self,
+        modules: Union[Text, List[Text]],
+        recurse: bool = True,
     ) -> List[Text]:
         """Freeze modules
 
@@ -674,7 +676,9 @@ class Model(pl.LightningModule):
         )
 
     def unfreeze_by_name(
-        self, modules: Union[List[Text], Text], recurse: bool = True
+        self,
+        modules: Union[List[Text], Text],
+        recurse: bool = True,
     ) -> List[Text]:
         """Unfreeze modules
 
@@ -682,6 +686,9 @@ class Model(pl.LightningModule):
         ----------
         modules : list of str, str
             Name(s) of modules to unfreeze
+        recurse : bool, optional
+            If True (default), unfreezes parameters of these modules and all submodules.
+            Otherwise, only unfreezes parameters that are direct members of these modules.
 
         Returns
         -------
