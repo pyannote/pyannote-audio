@@ -26,9 +26,13 @@ from typing import Text
 import torch
 
 from pyannote.audio import Model
+from pyannote.audio.core.task import Task
 
 
-def pretrained(checkpoint: Text):
-    return Model.from_pretrained(
-        checkpoint, map_location=torch.device("cpu"), strict=False
+def pretrained(checkpoint: Text, task: Task = None):
+    model = Model.from_pretrained(
+        checkpoint,
+        map_location=torch.device("cpu"),
+        task=task,
     )
+    return model
