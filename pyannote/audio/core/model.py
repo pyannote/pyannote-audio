@@ -501,32 +501,8 @@ class Model(pl.LightningModule):
     def validation_epoch_end(self, outputs):
         return self.task.validation_epoch_end(outputs)
 
-    @property
-    def optimizer(self):
-        if not hasattr(self, "_optimizer"):
-            self._optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
-        return self._optimizer
-
-    @optimizer.setter
-    def optimizer(self, optimizer):
-        self._optimizer = optimizer
-
-    @property
-    def scheduler(self):
-        if not hasattr(self, "_scheduler"):
-            self._scheduler = None
-        return self._scheduler
-
-    @scheduler.setter
-    def scheduler(self, scheduler):
-        self._scheduler = scheduler
-
     def configure_optimizers(self):
-        scheduler = self.scheduler
-        if scheduler is None:
-            return self.optimizer
-
-        return {"optimizer": self.optimizer, "lr_scheduler": self.scheduler}
+        return torch.optim.Adam(self.parameters(), lr=1e-3)
 
     def _helper_up_to(
         self, module_name: Text, requires_grad: bool = False
@@ -551,6 +527,7 @@ class Model(pl.LightningModule):
 
             for parameter in module.parameters(recurse=True):
                 parameter.requires_grad = requires_grad
+            module.train(mode=requires_grad)
 
             updated_modules.append(name)
 
@@ -634,6 +611,7 @@ class Model(pl.LightningModule):
 
             for parameter in module.parameters(recurse=True):
                 parameter.requires_grad = requires_grad
+            module.train(requires_grad)
 
             # keep track of updated modules
             updated_modules.append(name)
