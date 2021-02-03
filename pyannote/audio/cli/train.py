@@ -37,6 +37,7 @@ from pytorch_lightning.utilities.seed import seed_everything
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch_audiomentations.utils.config import from_dict as get_augmentation
 
+from pyannote.audio.core.callback import GraduallyUnfreeze
 from pyannote.database import FileFinder, get_protocol
 
 
@@ -57,10 +58,6 @@ def main(cfg: DictConfig) -> Optional[float]:
     protocol = get_protocol(cfg.protocol, preprocessors={"audio": FileFinder()})
 
     # TODO: configure layer freezing
-
-    # TODO: when fine-tuning or transfer learning a model whose last layers
-    # needs to change -- fit those last layers for a bit before fitting the
-    # whole model
 
     # TODO: remove this OmegaConf.to_container hack once bug is solved:
     # https://github.com/omry/omegaconf/pull/443
@@ -115,6 +112,11 @@ def main(cfg: DictConfig) -> Optional[float]:
     model.configure_optimizers = MethodType(configure_optimizers, model)
 
     callbacks = []
+
+    if pretrained:
+        # for fine-tuning and/or transfer learning,
+        # we start by fitting task-dependent layers
+        callbacks.append(GraduallyUnfreeze())
 
     learning_rate_monitor = LearningRateMonitor(logging_interval="step")
     callbacks.append(learning_rate_monitor)
