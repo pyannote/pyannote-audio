@@ -1,4 +1,5 @@
 protocol: ???
+patience: 5
 
 defaults:
   - task: Segmentation
