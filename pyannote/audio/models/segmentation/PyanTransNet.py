@@ -92,7 +92,6 @@ class PyanTransNet(Model):
         sincnet = merge_dict(self.SINCNET_DEFAULTS, sincnet)
         sincnet["sample_rate"] = sample_rate
         transformer = merge_dict(self.TRANSFORMER_DEFAULT, transformer)
-        transformer["batch_first"] = True
         linear = merge_dict(self.LINEAR_DEFAULTS, linear)
         self.save_hyperparameters("sincnet", "transformer", "linear")
 
