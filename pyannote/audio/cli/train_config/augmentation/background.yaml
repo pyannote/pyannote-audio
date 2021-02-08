@@ -1,8 +1,0 @@
-# @package _group_
-transform: ApplyBackgroundNoise
-params:
-  background_paths: ???
-  min_snr_in_db: 5.
-  max_snr_in_db: 20.
-  mode: per_example
-  p: 1.0

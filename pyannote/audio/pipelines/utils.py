@@ -24,7 +24,7 @@ from typing import Union
 
 import numpy as np
 
-from pyannote.audio.core.inference import Inference
+from pyannote.audio import Inference
 from pyannote.audio.core.io import AudioFile
 from pyannote.core import Annotation, SlidingWindowFeature
 

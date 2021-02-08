@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020 CNRS
+# Copyright (c) 2020-2021 CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -22,15 +22,12 @@
 
 
 import random
-from typing import Callable, Iterable
 
 import numpy as np
-from torch.nn import Parameter
-from torch.optim import Optimizer
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 
 from pyannote.audio.core.io import Audio
-from pyannote.audio.core.task import Problem, Scale, Task, TaskSpecification
+from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
 from pyannote.audio.utils.random import create_rng_for_worker
 from pyannote.core import Segment
@@ -72,15 +69,11 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
         Number of training samples per batch. Defaults to 32.
     num_workers : int, optional
         Number of workers used for generating training samples.
+        Defaults to multiprocessing.cpu_count() // 2.
     pin_memory : bool, optional
         If True, data loaders will copy tensors into CUDA pinned
         memory before returning them. See pytorch documentation
         for more details. Defaults to False.
-    optimizer : callable, optional
-        Callable that takes model parameters as input and returns
-        an Optimizer instance. Defaults to `torch.optim.Adam`.
-    learning_rate : float, optional
-        Learning rate. Defaults to 1e-3.
     augmentation : BaseWaveformTransform, optional
         torch_audiomentations waveform transform, used by dataloader
         during training.
@@ -97,10 +90,8 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
         snr_max: float = 10.0,
         domain: str = None,
         batch_size: int = 32,
-        num_workers: int = 1,
+        num_workers: int = None,
         pin_memory: bool = False,
-        optimizer: Callable[[Iterable[Parameter]], Optimizer] = None,
-        learning_rate: float = 1e-3,
         augmentation: BaseWaveformTransform = None,
     ):
 
@@ -110,14 +101,12 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
             batch_size=batch_size,
             num_workers=num_workers,
             pin_memory=pin_memory,
-            optimizer=optimizer,
-            learning_rate=learning_rate,
             augmentation=augmentation,
         )
 
-        self.specifications = TaskSpecification(
+        self.specifications = Specifications(
             problem=Problem.BINARY_CLASSIFICATION,
-            scale=Scale.FRAME,
+            resolution=Resolution.FRAME,
             duration=self.duration,
             classes=[
                 "overlap",
@@ -137,9 +126,9 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
 
             # build the list of domains
             if self.domain is not None:
-                for f in self.train:
+                for f in self._train:
                     f["domain"] = f[self.domain]
-                self.domains = list(set(f["domain"] for f in self.train))
+                self.domains = list(set(f["domain"] for f in self._train))
 
     def prepare_y(self, one_hot_y: np.ndarray):
         """Get overlapped speech detection targets
@@ -161,7 +150,7 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
 
     def train__iter__helper(self, rng: random.Random, domain: str = None):
 
-        train = self.train
+        train = self._train
 
         if domain is not None:
             train = [f for f in train if f["domain"] == domain]
@@ -202,7 +191,7 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
         """
 
         # create worker-specific random number generator
-        rng = create_rng_for_worker(self.current_epoch)
+        rng = create_rng_for_worker(self.model.current_epoch)
 
         if self.domain is None:
             chunks = self.train__iter__helper(rng)

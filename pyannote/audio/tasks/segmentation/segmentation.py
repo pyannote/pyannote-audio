@@ -23,19 +23,16 @@
 import math
 import random
 from collections import Counter
-from typing import Callable, Iterable, Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn.functional as F
-from torch.nn import Parameter
-from torch.optim import Optimizer
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
+from typing_extensions import Literal
 
 from pyannote.audio.core.io import Audio
-from pyannote.audio.core.model import Model
-from pyannote.audio.core.task import Problem, Scale, Task, TaskSpecification
+from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
 from pyannote.audio.utils.permutation import permutate
 from pyannote.audio.utils.random import create_rng_for_worker
@@ -71,15 +68,11 @@ class Segmentation(SegmentationTaskMixin, Task):
         Number of training samples per batch. Defaults to 32.
     num_workers : int, optional
         Number of workers used for generating training samples.
+        Defaults to multiprocessing.cpu_count() // 2.
     pin_memory : bool, optional
         If True, data loaders will copy tensors into CUDA pinned
         memory before returning them. See pytorch documentation
         for more details. Defaults to False.
-    optimizer : callable, optional
-        Callable that takes model parameters as input and returns
-        an Optimizer instance. Defaults to `torch.optim.Adam`.
-    learning_rate : float, optional
-        Learning rate. Defaults to 1e-3.
     augmentation : BaseWaveformTransform, optional
         torch_audiomentations waveform transform, used by dataloader
         during training.
@@ -98,10 +91,8 @@ class Segmentation(SegmentationTaskMixin, Task):
         snr_max: float = 10.0,
         domain: str = None,
         batch_size: int = 32,
-        num_workers: int = 1,
+        num_workers: int = None,
         pin_memory: bool = False,
-        optimizer: Callable[[Iterable[Parameter]], Optimizer] = None,
-        learning_rate: float = 1e-3,
         augmentation: BaseWaveformTransform = None,
         loss: Literal["bce", "mse"] = "bce",
         vad_loss: Literal["bce", "mse"] = None,
@@ -113,8 +104,6 @@ class Segmentation(SegmentationTaskMixin, Task):
             batch_size=batch_size,
             num_workers=num_workers,
             pin_memory=pin_memory,
-            optimizer=optimizer,
-            learning_rate=learning_rate,
             augmentation=augmentation,
         )
 
@@ -134,16 +123,18 @@ class Segmentation(SegmentationTaskMixin, Task):
 
         if stage == "fit":
 
+            # TODO: handle this domain thing in SegmentationTaskMixin
+
             # build the list of domains
             if self.domain is not None:
-                for f in self.train:
+                for f in self._train:
                     f["domain"] = f[self.domain]
-                self.domains = list(set(f["domain"] for f in self.train))
+                self.domains = list(set(f["domain"] for f in self._train))
 
             # slide a window (with 1s step) over the whole training set
             # and keep track of the number of speakers in each location
             num_speakers = []
-            for file in self.train:
+            for file in self._train:
                 start = file["annotated"][0].start
                 end = file["annotated"][-1].end
                 window = SlidingWindow(
@@ -169,32 +160,19 @@ class Segmentation(SegmentationTaskMixin, Task):
                 np.where(np.cumsum(counts) / np.sum(counts) > 0.99)[0][0]
             ]
 
+            # TODO: add a few more speakers to make sure we don't skip
+            # too many artificial chunks (which might result in less
+            # overlap that we think we have)
+
             # now that we know about the number of speakers upper bound
             # we can set task specifications
-            self.specifications = TaskSpecification(
+            self.specifications = Specifications(
                 problem=Problem.MULTI_LABEL_CLASSIFICATION,
-                scale=Scale.FRAME,
+                resolution=Resolution.FRAME,
                 duration=self.duration,
                 classes=[f"speaker#{i+1}" for i in range(self.num_speakers)],
                 permutation_invariant=True,
             )
-
-    def setup_loss_func(self, model: Model):
-
-        example_input_array = self.example_input_array
-        _, _, num_samples = example_input_array.shape
-        self.num_samples = num_samples
-
-        batch_size, num_frames, num_speakers = model(example_input_array).shape
-        self.num_frames = num_frames
-        hamming_window = torch.hamming_window(num_frames, periodic=False).reshape(-1, 1)
-        model.register_buffer("hamming_window", hamming_window)
-
-        val_sample_weight = hamming_window.expand(
-            batch_size, num_frames, num_speakers
-        ).flatten()
-
-        model.register_buffer("val_sample_weight", val_sample_weight)
 
     def prepare_y(self, one_hot_y: np.ndarray):
         """Zero-pad segmentation targets
@@ -225,7 +203,7 @@ class Segmentation(SegmentationTaskMixin, Task):
 
     def train__iter__helper(self, rng: random.Random, domain: str = None):
 
-        train = self.train
+        train = self._train
 
         if domain is not None:
             train = [f for f in train if f["domain"] == domain]
@@ -266,7 +244,7 @@ class Segmentation(SegmentationTaskMixin, Task):
         """
 
         # create worker-specific random number generator
-        rng = create_rng_for_worker(self.current_epoch)
+        rng = create_rng_for_worker(self.model.current_epoch)
 
         if self.domain is None:
             chunks = self.train__iter__helper(rng)
@@ -332,7 +310,7 @@ class Segmentation(SegmentationTaskMixin, Task):
                 yield {"X": X, "y": self.prepare_y(combined_y)}
 
     def val__getitem__(self, idx):
-        f, chunk = self.validation[idx]
+        f, chunk = self._validation[idx]
         X, one_hot_y, _ = self.prepare_chunk(f, chunk, duration=self.duration)
 
         # since number of speakers is estimated from the training set,
@@ -345,7 +323,6 @@ class Segmentation(SegmentationTaskMixin, Task):
 
         return {"X": X, "y": y}
 
-    # def segmentation_loss(self, model, y, y_pred):
     def segmentation_loss(self, y: torch.Tensor, y_pred: torch.Tensor) -> torch.Tensor:
         """Permutation-invariant segmentation loss
 
@@ -372,7 +349,6 @@ class Segmentation(SegmentationTaskMixin, Task):
         elif self.loss == "mse":
             seg_losses = F.mse_loss(permutated_y_pred, y.float(), reduction="none")
 
-        # seg_loss = torch.mean(seg_losses * model.hamming_window)
         seg_loss = torch.mean(seg_losses)
 
         return seg_loss
@@ -394,13 +370,11 @@ class Segmentation(SegmentationTaskMixin, Task):
 
         return vad_loss
 
-    def training_step(self, model: Model, batch, batch_idx: int):
+    def training_step(self, batch, batch_idx: int):
         """Compute permutation-invariant binary cross-entropy
 
         Parameters
         ----------
-        model : Model
-            Model currently being trained.
         batch : (usually) dict of torch.Tensor
             Current batch.
         batch_idx: int
@@ -414,11 +388,11 @@ class Segmentation(SegmentationTaskMixin, Task):
 
         X, y = batch["X"], batch["y"]
 
-        y_pred = model(X)
+        y_pred = self.model(X)
         # loss = self.segmentation_loss(model, y, y_pred)
         seg_loss = self.segmentation_loss(y, y_pred)
 
-        model.log(
+        self.model.log(
             f"{self.ACRONYM}@train_seg_loss",
             seg_loss,
             on_step=True,
@@ -433,7 +407,7 @@ class Segmentation(SegmentationTaskMixin, Task):
         else:
             vad_loss = self.voice_activity_detection_loss(y, y_pred)
 
-            model.log(
+            self.model.log(
                 f"{self.ACRONYM}@train_vad_loss",
                 vad_loss,
                 on_step=True,
@@ -444,7 +418,7 @@ class Segmentation(SegmentationTaskMixin, Task):
 
         loss = seg_loss + vad_loss
 
-        model.log(
+        self.model.log(
             f"{self.ACRONYM}@train_loss",
             loss,
             on_step=True,
@@ -454,13 +428,11 @@ class Segmentation(SegmentationTaskMixin, Task):
         )
         return {"loss": loss}
 
-    def validation_step(self, model: Model, batch, batch_idx: int):
-        """Compute area under ROC curve
+    def validation_step(self, batch, batch_idx: int):
+        """Compute validation F-score
 
         Parameters
         ----------
-        model : Model
-            Model currently being validated.
         batch : dict of torch.Tensor
             Current batch.
         batch_idx: int
@@ -468,13 +440,13 @@ class Segmentation(SegmentationTaskMixin, Task):
         """
 
         # move metric to model device
-        self.val_fbeta.to(model.device)
+        self.val_fbeta.to(self.model.device)
 
         X, y = batch["X"], batch["y"]
         # X = (batch_size, num_channels, num_samples)
         # y = (batch_size, num_frames, num_classes)
 
-        y_pred = model(X)
+        y_pred = self.model(X)
 
         permutated_y_pred, _ = permutate(y, y_pred)
 
@@ -483,7 +455,7 @@ class Segmentation(SegmentationTaskMixin, Task):
         val_fbeta = self.val_fbeta(
             permutated_y_pred[:, ::10].squeeze(), y[:, ::10].squeeze()
         )
-        model.log(
+        self.model.log(
             f"{self.ACRONYM}@val_fbeta",
             val_fbeta,
             on_step=False,
@@ -556,6 +528,6 @@ class Segmentation(SegmentationTaskMixin, Task):
 
         plt.tight_layout()
 
-        model.logger.experiment.add_figure(
-            f"{self.ACRONYM}@val_samples", fig, model.current_epoch
+        self.model.logger.experiment.add_figure(
+            f"{self.ACRONYM}@val_samples", fig, self.model.current_epoch
         )

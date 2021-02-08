@@ -25,16 +25,13 @@ from typing import Optional
 
 import numpy as np
 import torch
-from pytorch_lightning import Callback, Trainer
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from pyannote.audio.core.inference import Inference
-from pyannote.audio.core.model import Model
-from pyannote.audio.core.task import Problem, Scale, Task, TaskSpecification, ValDataset
+from pyannote.audio.core.task import Problem, Resolution, Specifications, ValDataset
 from pyannote.audio.utils.random import create_rng_for_worker
 from pyannote.core import Segment
-from pyannote.core.utils.distance import cdist, pdist
+from pyannote.core.utils.distance import cdist
 from pyannote.database.protocol import (
     SpeakerDiarizationProtocol,
     SpeakerVerificationProtocol,
@@ -84,7 +81,7 @@ class SupervisedRepresentationLearningTaskMixin:
             # loop over the training set, remove annotated regions shorter than
             # chunk duration, and keep track of the reference annotations, per class.
 
-            self.train = dict()
+            self._train = dict()
 
             desc = f"Loading {self.protocol.name} training labels"
             for f in tqdm(iterable=self.protocol.train(), desc=desc, unit="file"):
@@ -106,10 +103,10 @@ class SupervisedRepresentationLearningTaskMixin:
                     duration = sum(segment.duration for segment in speech_turns)
 
                     # add class to the list of classes
-                    if klass not in self.train:
-                        self.train[klass] = list()
+                    if klass not in self._train:
+                        self._train[klass] = list()
 
-                    self.train[klass].append(
+                    self._train[klass].append(
                         {
                             "uri": f["uri"],
                             "audio": f["audio"],
@@ -118,13 +115,11 @@ class SupervisedRepresentationLearningTaskMixin:
                         }
                     )
 
-            # there is no such thing as a "class" in representation
-            # learning, so we do not need to define it here.
-            self.specifications = TaskSpecification(
+            self.specifications = Specifications(
                 problem=Problem.REPRESENTATION,
-                scale=Scale.CHUNK,
+                resolution=Resolution.CHUNK,
                 duration=self.duration,
-                classes=sorted(self.train),
+                classes=sorted(self._train),
             )
 
             if isinstance(self.protocol, SpeakerVerificationProtocol):
@@ -134,7 +129,7 @@ class SupervisedRepresentationLearningTaskMixin:
                         session_hash = self.helper_trial_hash(trial[session])
                         if session_hash not in sessions:
                             sessions[session_hash] = trial[session]
-                self.validation = list(sessions.items())
+                self._validation = list(sessions.items())
 
     def train__iter__(self):
         """Iterate over training samples
@@ -148,7 +143,7 @@ class SupervisedRepresentationLearningTaskMixin:
         """
 
         # create worker-specific random number generator
-        rng = create_rng_for_worker(self.current_epoch)
+        rng = create_rng_for_worker(self.model.current_epoch)
 
         classes = list(self.specifications.classes)
 
@@ -173,8 +168,8 @@ class SupervisedRepresentationLearningTaskMixin:
 
                     # select one file at random (with probability proportional to its class duration)
                     file, *_ = rng.choices(
-                        self.train[klass],
-                        weights=[f["duration"] for f in self.train[klass]],
+                        self._train[klass],
+                        weights=[f["duration"] for f in self._train[klass]],
                         k=1,
                     )
 
@@ -191,7 +186,7 @@ class SupervisedRepresentationLearningTaskMixin:
                     )
                     chunk = Segment(start_time, start_time + batch_duration)
 
-                    X, _ = self.audio.crop(
+                    X, _ = self.model.audio.crop(
                         file,
                         chunk,
                         mode="center",
@@ -207,17 +202,17 @@ class SupervisedRepresentationLearningTaskMixin:
 
     def train__len__(self):
         duration = sum(
-            datum["duration"] for data in self.train.values() for datum in data
+            datum["duration"] for data in self._train.values() for datum in data
         )
         avg_chunk_duration = 0.5 * (self.min_duration + self.duration)
         return math.ceil(duration / avg_chunk_duration)
 
-    def training_step(self, model: "Model", batch, batch_idx: int):
+    def training_step(self, batch, batch_idx: int):
 
         X, y = batch["X"], batch["y"]
-        loss = model.loss_func(model(X), y)
+        loss = self.model.loss_func(self.model(X), y)
 
-        model.log(
+        self.model.log(
             f"{self.ACRONYM}@train_loss",
             loss,
             on_step=True,
@@ -233,10 +228,10 @@ class SupervisedRepresentationLearningTaskMixin:
 
     def val__getitem__(self, idx):
         if isinstance(self.protocol, SpeakerVerificationProtocol):
-            session_hash, session = self.validation[idx]
+            session_hash, session = self._validation[idx]
             X = np.concatenate(
                 [
-                    self.audio.crop(session, segment, mode="center")[0]
+                    self.model.audio.crop(session, segment, mode="center")[0]
                     for segment in session["try_with"]
                 ],
                 axis=0,
@@ -249,23 +244,23 @@ class SupervisedRepresentationLearningTaskMixin:
     def val__len__(self):
 
         if isinstance(self.protocol, SpeakerVerificationProtocol):
-            return len(self.validation)
+            return len(self._validation)
 
         elif isinstance(self.protocol, SpeakerDiarizationProtocol):
             return 0
 
-    def validation_step(self, model: "Model", batch, batch_idx: int):
+    def validation_step(self, batch, batch_idx: int):
 
         if isinstance(self.protocol, SpeakerVerificationProtocol):
             return (
                 batch["session_hash"][0].detach().cpu().numpy().item(),
-                model(batch["X"]).detach().cpu().numpy(),
+                self.model(batch["X"]).detach().cpu().numpy(),
             )
 
         elif isinstance(self.protocol, SpeakerDiarizationProtocol):
             pass
 
-    def validation_epoch_end(self, model: "Model", outputs):
+    def validation_epoch_end(self, outputs):
 
         if isinstance(self.protocol, SpeakerVerificationProtocol):
 
@@ -294,9 +289,9 @@ class SupervisedRepresentationLearningTaskMixin:
             if num_target_trials > 2 and num_non_target_trials > 2:
                 fpr, fnr, thresholds, eer = det_curve(y_true, y_pred, distances=True)
 
-                model.log(
+                self.model.log(
                     f"{self.ACRONYM}@val_eer",
-                    torch.tensor(eer, device=model.device),
+                    torch.tensor(eer, device=self.model.device),
                     logger=True,
                     on_epoch=True,
                     prog_bar=True,
@@ -321,16 +316,6 @@ class SupervisedRepresentationLearningTaskMixin:
 
         return None
 
-    def val_callback(self) -> Optional[Callback]:
-
-        if isinstance(self.protocol, SpeakerVerificationProtocol):
-            return None
-
-        elif isinstance(self.protocol, SpeakerDiarizationProtocol):
-            return _SpeakerDiarizationValidationCallback(self)
-
-        return None
-
     @property
     def val_monitor(self):
 
@@ -338,50 +323,4 @@ class SupervisedRepresentationLearningTaskMixin:
             return f"{self.ACRONYM}@val_eer", "min"
 
         elif isinstance(self.protocol, SpeakerDiarizationProtocol):
-            pass
-
-
-class _SpeakerDiarizationValidationCallback(Callback):
-    def __init__(self, task: Task):
-        super().__init__()
-        self.task = task
-
-    def on_epoch_end(self, trainer: Trainer, model: Model):
-
-        inference = Inference(model, window="whole")
-
-        y_true, y_pred = [], []
-        for file in tqdm(self.task.protocol.development()):
-            X, y = zip(
-                *[
-                    (inference.crop(file, chunk), label)
-                    for chunk, _, label in file["annotation"].itertracks(
-                        yield_label=True
-                    )
-                ]
-            )
-
-            y_true.append(pdist(np.array(y), metric="equal"))
-            y_pred.append(pdist(np.stack(X), metric="cosine"))
-        y_true = np.concatenate(y_true)
-        y_pred = np.concatenate(y_pred)
-
-        fpr, fnr, thresholds, eer = det_curve(y_true, y_pred, distances=True)
-
-        model.log(
-            f"{self.task.ACRONYM}@val_eer",
-            torch.tensor(eer, device=model.device),
-            logger=True,
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=True,
-        )
-
-        # TODO: log det curve
-
-        # set model back to "train" mode
-        model.train()
-
-    @property
-    def val_monitor(self):
-        return f"{self.task.ACRONYM}@val_eer", "min"
+            return None, "min"

@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020 CNRS
+# Copyright (c) 2020-2021 CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -23,14 +23,9 @@
 
 from __future__ import annotations
 
-from typing import Callable, Iterable
-
 import pytorch_metric_learning.losses
-from torch.nn import Parameter
-from torch.optim import Optimizer
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 
-from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
 from pyannote.database import Protocol
 
@@ -64,15 +59,11 @@ class SupervisedRepresentationLearningWithArcFace(
         Scale. Defaults to 64.
     num_workers : int, optional
         Number of workers used for generating training samples.
+        Defaults to multiprocessing.cpu_count() // 2.
     pin_memory : bool, optional
         If True, data loaders will copy tensors into CUDA pinned
         memory before returning them. See pytorch documentation
         for more details. Defaults to False.
-    optimizer : callable, optional
-        Callable that takes model parameters as input and returns
-        an Optimizer instance. Defaults to `torch.optim.Adam`.
-    learning_rate : float, optional
-        Learning rate. Defaults to 1e-3.
     augmentation : BaseWaveformTransform, optional
         torch_audiomentations waveform transform, used by dataloader
         during training.
@@ -93,10 +84,8 @@ class SupervisedRepresentationLearningWithArcFace(
         num_chunks_per_class: int = 1,
         margin: float = 28.6,
         scale: float = 64.0,
-        num_workers: int = 1,
+        num_workers: int = None,
         pin_memory: bool = False,
-        optimizer: Callable[[Iterable[Parameter]], Optimizer] = None,
-        learning_rate: float = 1e-3,
         augmentation: BaseWaveformTransform = None,
     ):
 
@@ -113,16 +102,14 @@ class SupervisedRepresentationLearningWithArcFace(
             batch_size=self.batch_size,
             num_workers=num_workers,
             pin_memory=pin_memory,
-            optimizer=optimizer,
-            learning_rate=learning_rate,
             augmentation=augmentation,
         )
 
-    def setup_loss_func(self, model: Model):
+    def setup_loss_func(self):
 
-        _, embedding_size = model(self.example_input_array).shape
+        _, embedding_size = self.model(self.model.example_input_array).shape
 
-        model.loss_func = pytorch_metric_learning.losses.ArcFaceLoss(
+        self.model.loss_func = pytorch_metric_learning.losses.ArcFaceLoss(
             len(self.specifications.classes),
             embedding_size,
             margin=self.margin,

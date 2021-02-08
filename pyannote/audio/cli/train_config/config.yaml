@@ -1,10 +1,9 @@
-
 protocol: ???
-verbose: False
+patience: 5
 
 defaults:
-  - task: vad
-  - model: dbg_seg
-  - optimizer: adam
+  - task: Segmentation
+  - model: PyanNet
+  - optimizer: Adam
   - trainer: default
   - hydra: train

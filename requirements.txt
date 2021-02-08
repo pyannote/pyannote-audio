@@ -13,4 +13,5 @@ semver >= 2.10.2
 soundfile >= 0.10.2
 torch >= 1.6
 torch-audiomentations >= 0.4
-torchaudio >= 0.6
+torchaudio >= 0.7
+typing_extensions >= 3.7.4.3

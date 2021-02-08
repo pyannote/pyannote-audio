@@ -20,25 +20,38 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from .segmentation.voice_activity_detection import VoiceActivityDetection  # isort:skip
-from .segmentation.speaker_change_detection import SpeakerChangeDetection  # isort:skip
-from .segmentation.overlapped_speech_detection import (  # isort:skip
-    OverlappedSpeechDetection,
-)
 
-from .segmentation.speaker_tracking import SpeakerTracking  # isort:skip
+from pytorch_lightning import Callback, Trainer
 
-from .segmentation.segmentation import Segmentation  # isort:skip
+from pyannote.audio import Model
 
-from .embedding.arcface import SupervisedRepresentationLearningWithArcFace  # isort:skip
 
-SpeakerEmbedding = SupervisedRepresentationLearningWithArcFace
+class GraduallyUnfreeze(Callback):
+    """Gradually unfreeze layers
 
-__all__ = [
-    "Segmentation",
-    "VoiceActivityDetection",
-    "SpeakerChangeDetection",
-    "OverlappedSpeechDetection",
-    "SpeakerTracking",
-    "SpeakerEmbedding",
-]
+    1. Freezes all layers but those that depends on the task.
+    2. Waits for a few training epochs to pass.
+    3. Unfreezes all layers.
+
+    Parameters
+    ----------
+    patience : int, optional
+        Wait for that many epochs before unfreezing all layers.
+        Defaults to 1.
+    """
+
+    def __init__(self, patience: int = 1):
+        super().__init__()
+        self.patience = patience
+
+    def on_fit_start(self, trainer: Trainer, model: Model):
+        self._task_independent_layers = [
+            name
+            for name, _ in model.named_modules()
+            if name not in model.task_dependent and name != ""
+        ]
+        _ = model.freeze_by_name(self._task_independent_layers)
+
+    def on_train_epoch_start(self, trainer: Trainer, model: Model):
+        if trainer.current_epoch == self.patience:
+            _ = model.unfreeze_by_name(self._task_independent_layers)

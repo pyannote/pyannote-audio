@@ -20,25 +20,14 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from .segmentation.voice_activity_detection import VoiceActivityDetection  # isort:skip
-from .segmentation.speaker_change_detection import SpeakerChangeDetection  # isort:skip
-from .segmentation.overlapped_speech_detection import (  # isort:skip
-    OverlappedSpeechDetection,
-)
 
-from .segmentation.speaker_tracking import SpeakerTracking  # isort:skip
+from typing import Text
 
-from .segmentation.segmentation import Segmentation  # isort:skip
+from pyannote.audio import Model
+from pyannote.audio.core.task import Task
 
-from .embedding.arcface import SupervisedRepresentationLearningWithArcFace  # isort:skip
 
-SpeakerEmbedding = SupervisedRepresentationLearningWithArcFace
-
-__all__ = [
-    "Segmentation",
-    "VoiceActivityDetection",
-    "SpeakerChangeDetection",
-    "OverlappedSpeechDetection",
-    "SpeakerTracking",
-    "SpeakerEmbedding",
-]
+def pretrained(checkpoint: Text, task: Task = None):
+    return Model.from_pretrained(
+        checkpoint, task=task, map_location=lambda storage, loc: storage
+    )

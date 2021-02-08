@@ -60,9 +60,7 @@ class SimpleSegmentationModel(Model):
 
     def build(self):
         # define task-dependent layers
-        self.classifier = nn.Linear(
-            32 * 2, len(self.hparams.task_specifications.classes)
-        )
+        self.classifier = nn.Linear(32 * 2, len(self.specifications.classes))
         self.activation = self.default_activation()
 
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
@@ -115,7 +113,7 @@ class MultiTaskSegmentationModel(Model):
         self.classifier = nn.ModuleDict(
             {
                 name: nn.Linear(32 * 2, len(specifications.classes))
-                for name, specifications in self.hparams.task_specifications.items()
+                for name, specifications in self.specifications.items()
             }
         )
 
@@ -129,5 +127,5 @@ class MultiTaskSegmentationModel(Model):
 
         return {
             name: self.activation[name](self.classifier[name](output))
-            for name in self.hparams.task_specifications
+            for name in self.specifications
         }
