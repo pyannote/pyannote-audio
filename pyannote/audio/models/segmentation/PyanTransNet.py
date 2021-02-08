@@ -34,8 +34,6 @@ from pyannote.audio.models.blocks.sincnet import SincNet
 from pyannote.audio.utils.params import merge_dict
 from pyannote.core.utils.generators import pairwise
 
-import ipdb
-
 
 class Toto():
     def __init__(self, var):
@@ -91,8 +89,6 @@ class PyanTransNet(Model):
 
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
 
-        ipdb.set_trace()
-
         sincnet = merge_dict(self.SINCNET_DEFAULTS, sincnet)
         sincnet["sample_rate"] = sample_rate
         transformer = merge_dict(self.TRANSFORMER_DEFAULT, transformer)
@@ -145,7 +141,7 @@ class PyanTransNet(Model):
         -------
         scores : (batch, frame, classes)
         """
-        ipdb.set_trace()
+
         outputs = self.sincnet(waveforms)
 
         outputs = self.transformer(outputs)
