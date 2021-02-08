@@ -37,6 +37,11 @@ from pyannote.core.utils.generators import pairwise
 import ipdb
 
 
+class Toto():
+    def __init__(self, var):
+        self.var = var
+
+
 class PyanTransNet(Model):
     """PyanTransNet segmentation model
 
