@@ -34,8 +34,6 @@ from pyannote.audio.models.blocks.sincnet import SincNet
 from pyannote.audio.utils.params import merge_dict
 from pyannote.core.utils.generators import pairwise
 
-import ipdb
-
 
 class PyanTransNet(Model):
     """PyanTransNet segmentation model
@@ -85,7 +83,6 @@ class PyanTransNet(Model):
     ):
 
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
-        ipdb.set_trace()
 
         sincnet = merge_dict(self.SINCNET_DEFAULTS, sincnet)
         sincnet["sample_rate"] = sample_rate
