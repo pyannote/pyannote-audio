@@ -33,7 +33,6 @@ from pyannote.audio.core.task import Task
 from pyannote.audio.models.blocks.sincnet import SincNet
 from pyannote.audio.utils.params import merge_dict
 from pyannote.core.utils.generators import pairwise
-import ipdb
 
 
 class PyanTransNet(Model):
@@ -136,8 +135,6 @@ class PyanTransNet(Model):
         -------
         scores : (batch, frame, classes)
         """
-
-        ipdb.set_trace()
 
         outputs = self.sincnet(waveforms)
         outputs = rearrange(
