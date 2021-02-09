@@ -56,7 +56,7 @@ class PyanTransNet(Model):
         Defaults to {"stride": 1}.
     transformer : dict, optional
         Keyword arguments passed to the Transformer layer.
-        Defaults to {"nhead": 8, "num_encoder_layers": 6, "num_decoder_layers": 0, "dim_feedforward: 2048", "dropout: 0.1"},
+        Defaults to {"nhead": 4, "num_encoder_layers": 6, "num_decoder_layers": 0, "dim_feedforward: 2048", "dropout: 0.1"},
     linear : dict, optional
         Keyword arugments used to initialize linear layers
         Defaults to {"hidden_size": 128, "num_layers": 2},
@@ -65,7 +65,7 @@ class PyanTransNet(Model):
 
     SINCNET_DEFAULTS = {"stride": 1}
     TRANSFORMER_DEFAULT = {
-        "nhead": 8,
+        "nhead": 4,
         "num_encoder_layers": 6,
         "dim_feedforward": 2048,
         "dropout": 0.1,
