@@ -140,6 +140,8 @@ class PyanTransNet(Model):
         ipdb.set_trace()
 
         outputs = self.sincnet(waveforms)
+        outputs = rearrange(
+            outputs, "batch feature frame -> batch frame feature")
 
         outputs = self.transformer(outputs)
 
