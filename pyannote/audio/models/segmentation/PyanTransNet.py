@@ -73,7 +73,7 @@ class PyanTransNet(Model):
 
     LSTM_DEFAULTS = {
         "hidden_size": 128,
-        "num_layers": 2,
+        "num_layers": 0,
         "bidirectional": True,
         "monolithic": True,
         "dropout": 0.0,
