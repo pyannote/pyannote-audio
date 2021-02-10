@@ -34,8 +34,6 @@ from pyannote.audio.models.blocks.sincnet import SincNet
 from pyannote.audio.utils.params import merge_dict
 from pyannote.core.utils.generators import pairwise
 
-import ipdb
-
 
 class PyanTransNet(Model):
     """PyanTransNet segmentation model
@@ -196,7 +194,6 @@ class PyanTransNet(Model):
         """
 
         outputs = self.sincnet(waveforms)
-        ipdb.set_trace()
 
         if self.lstm_numlayers > 0:
             if self.afterlstm:
