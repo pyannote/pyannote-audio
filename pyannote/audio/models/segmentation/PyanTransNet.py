@@ -68,6 +68,15 @@ class PyanTransNet(Model):
         "dim_feedforward": 2048,
         "dropout": 0.1,
         "activation": 'relu',
+        "afterlstm": True,
+    }
+
+    LSTM_DEFAULTS = {
+        "hidden_size": 128,
+        "num_layers": 2,
+        "bidirectional": True,
+        "monolithic": True,
+        "dropout": 0.0,
     }
 
     LINEAR_DEFAULTS = {"hidden_size": 60, "num_layers": 2}
@@ -75,6 +84,7 @@ class PyanTransNet(Model):
     def __init__(
         self,
         sincnet: dict = None,
+        lstm: dict = None,
         transformer: dict = None,
         linear: dict = None,
         sample_rate: int = 16000,
@@ -86,6 +96,10 @@ class PyanTransNet(Model):
 
         sincnet = merge_dict(self.SINCNET_DEFAULTS, sincnet)
         sincnet["sample_rate"] = sample_rate
+
+        lstm = merge_dict(self.LSTM_DEFAULTS, lstm)
+        lstm["batch_first"] = True
+
         transformer = merge_dict(self.TRANSFORMER_DEFAULT, transformer)
         linear = merge_dict(self.LINEAR_DEFAULTS, linear)
         self.save_hyperparameters("sincnet", "transformer", "linear")
@@ -95,28 +109,64 @@ class PyanTransNet(Model):
         num_transformer_encoder_layers = transformer["num_encoder_layers"]
         del transformer["num_encoder_layers"]
 
+        transformer_input_dim = 60
+
+        if lstm["num_layers"] > 0:
+            if transformer["afterlstm"]:
+                transformer_input_dim = lstm["hidden_size"]
+            monolithic = lstm["monolithic"]
+            if monolithic:
+                multi_layer_lstm = dict(lstm)
+                del multi_layer_lstm["monolithic"]
+                self.lstm = nn.LSTM(60, **multi_layer_lstm)
+
+            else:
+                num_layers = lstm["num_layers"]
+                if num_layers > 1:
+                    self.dropout = nn.Dropout(p=lstm["dropout"])
+
+                one_layer_lstm = dict(lstm)
+                one_layer_lstm["num_layers"] = 1
+                one_layer_lstm["dropout"] = 0.0
+                del one_layer_lstm["monolithic"]
+
+                self.lstm = nn.ModuleList(
+                    [
+                        nn.LSTM(
+                            60
+                            if i == 0
+                            else lstm["hidden_size"] * (2 if lstm["bidirectional"] else 1),
+                            **one_layer_lstm
+                        )
+                        for i in range(num_layers)
+                    ]
+                )
+
         transformerEncoderLayer = nn.TransformerEncoderLayer(
-            d_model=60,  ** transformer)
+            d_model=transformer_input_dim,  ** transformer)
         self.transformer = nn.TransformerEncoder(
             transformerEncoderLayer, num_transformer_encoder_layers)
 
         if linear["num_layers"] < 1:
             return
 
-        transformer_out_features = 60
+        transformer_output_dim = transformer_input_dim
 
         self.linear = nn.ModuleList(
             [
                 nn.Linear(in_features, out_features)
                 for in_features, out_features in pairwise(
                     [
-                        transformer_out_features,
+                        transformer_output_dim,
                     ]
                     + [self.hparams.linear["hidden_size"]]
                     * self.hparams.linear["num_layers"]
                 )
             ]
         )
+
+        self.afterlstm = transformer["afterlstm"]
+        self.lstm_numlayers = lstm["num_layers"]
 
     def build(self):
         in_features = 60
@@ -137,10 +187,39 @@ class PyanTransNet(Model):
         """
 
         outputs = self.sincnet(waveforms)
-        outputs = rearrange(
-            outputs, "batch feature frame -> batch frame feature")
 
-        outputs = self.transformer(outputs)
+        if self.lstm_numlayers > 0:
+            if self.afterlstm:
+                if self.hparams.lstm["monolithic"]:
+                    outputs, _ = self.lstm(
+                        rearrange(
+                            outputs, "batch feature frame -> batch frame feature")
+                    )
+                else:
+                    outputs = rearrange(
+                        outputs, "batch feature frame -> batch frame feature")
+                    for i, lstm in enumerate(self.lstm):
+                        outputs, _ = lstm(outputs)
+                        if i + 1 < self.hparams.lstm["num_layers"]:
+                            outputs = self.dropout(outputs)
+                    outputs = self.transformer(outputs)
+            else:
+                outputs = rearrange(
+                    outputs, "batch feature frame -> batch frame feature")
+                outputs = self.transformer(outputs)
+                if self.hparams.lstm["monolithic"]:
+                    outputs, _ = self.lstm(
+                        outputs
+                    )
+                else:
+                    for i, lstm in enumerate(self.lstm):
+                        outputs, _ = lstm(outputs)
+                        if i + 1 < self.hparams.lstm["num_layers"]:
+                            outputs = self.dropout(outputs)
+        else:
+            outputs = rearrange(
+                outputs, "batch feature frame -> batch frame feature")
+            outputs = self.transformer(outputs)
 
         if self.hparams.linear["num_layers"] > 0:
             for linear in self.linear:
