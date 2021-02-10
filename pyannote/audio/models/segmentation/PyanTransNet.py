@@ -116,7 +116,8 @@ class PyanTransNet(Model):
 
         if lstm["num_layers"] > 0:
             if self.afterlstm:
-                transformer_input_dim = lstm["hidden_size"]
+                transformer_input_dim = lstm["hidden_size"] * \
+                    (2 if lstm["bidirectional"] else 1)
             monolithic = lstm["monolithic"]
             if monolithic:
                 multi_layer_lstm = dict(lstm)
