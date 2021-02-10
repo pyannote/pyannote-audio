@@ -192,6 +192,7 @@ class PyanTransNet(Model):
         scores : (batch, frame, classes)
         """
 
+        ipdb.set_trace()
         outputs = self.sincnet(waveforms)
 
         if self.lstm_numlayers > 0:
