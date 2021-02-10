@@ -156,14 +156,18 @@ class PyanTransNet(Model):
         if linear["num_layers"] < 1:
             return
 
-        transformer_output_dim = transformer_input_dim
+        if self.afterlstm or lstm["num_layers"] == 0:
+            last_layer_odir = transformer_input_dim
+        elif not self.afterlstm:
+            last_layer_odir = lstm["hidden_size"] * \
+                (2 if lstm["bidirectional"] else 1)
 
         self.linear = nn.ModuleList(
             [
                 nn.Linear(in_features, out_features)
                 for in_features, out_features in pairwise(
                     [
-                        transformer_output_dim,
+                        last_layer_odir,
                     ]
                     + [self.hparams.linear["hidden_size"]]
                     * self.hparams.linear["num_layers"]
