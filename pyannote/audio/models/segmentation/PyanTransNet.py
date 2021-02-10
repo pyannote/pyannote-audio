@@ -54,7 +54,7 @@ class PyanTransNet(Model):
         Defaults to {"stride": 1}.
     transformer : dict, optional
         Keyword arguments passed to the Transformer layer.
-        Defaults to {"nhead": 4, "num_encoder_layers": 1,  "dim_feedforward: 2048", "dropout: 0.1"},
+        Defaults to {"nhead": 4, "num_encoder_layers": 1,  "dim_feedforward: 2048", "dropout: 0.1", "afterlstm": True},
     linear : dict, optional
         Keyword arugments used to initialize linear layers
         Defaults to {"hidden_size": 128, "num_layers": 2},
@@ -109,10 +109,13 @@ class PyanTransNet(Model):
         num_transformer_encoder_layers = transformer["num_encoder_layers"]
         del transformer["num_encoder_layers"]
 
+        self.afterlstm = transformer["afterlstm"]
+        del transformer["afterlstm"]
+
         transformer_input_dim = 60
 
         if lstm["num_layers"] > 0:
-            if transformer["afterlstm"]:
+            if self.afterlstm:
                 transformer_input_dim = lstm["hidden_size"]
             monolithic = lstm["monolithic"]
             if monolithic:
@@ -165,7 +168,6 @@ class PyanTransNet(Model):
             ]
         )
 
-        self.afterlstm = transformer["afterlstm"]
         self.lstm_numlayers = lstm["num_layers"]
 
     def build(self):
