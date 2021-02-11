@@ -69,6 +69,7 @@ class PyanTransNet(Model):
         "dropout": 0.1,
         "activation": 'relu',
         "afterlstm": True,
+        "masking": True,
     }
 
     LSTM_DEFAULTS = {
@@ -111,6 +112,9 @@ class PyanTransNet(Model):
 
         self.afterlstm = transformer["afterlstm"]
         del transformer["afterlstm"]
+        self.masking = transformer["masking"]
+        del transformer["masking"]
+        self.src_mask = None
 
         transformer_input_dim = 60
 
@@ -182,6 +186,23 @@ class PyanTransNet(Model):
             in_features, len(self.specifications.classes))
         self.activation = self.default_activation()
 
+    def _generate_square_subsequent_mask(self, sz):
+        mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
+        mask = mask.float().masked_fill(mask == 0, float(
+            '-inf')).masked_fill(mask == 1, float(0.0))
+        return mask
+
+    def _getmask(self, outputs):
+        if self.masking:
+            device = outputs.device
+            if self.src_mask is None or self.src_mask.size(0) != len(outputs):
+                mask = self._generate_square_subsequent_mask(
+                    len(outputs)).to(device)
+                self.src_mask = mask
+        else:
+            self.src_mask = None
+        return self.src_mask
+
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
         """Pass forward
 
@@ -210,11 +231,13 @@ class PyanTransNet(Model):
                         outputs, _ = lstm(outputs)
                         if i + 1 < self.hparams.lstm["num_layers"]:
                             outputs = self.dropout(outputs)
-                    outputs = self.transformer(outputs)
+
+                    outputs = self.transformer(outputs, self._getmask(outputs))
             else:
                 outputs = rearrange(
                     outputs, "batch feature frame -> batch frame feature")
-                outputs = self.transformer(outputs)
+                outputs = self.transformer(outputs, self._getmask(outputs))
+
                 if self.hparams.lstm["monolithic"]:
                     outputs, _ = self.lstm(
                         outputs
@@ -227,7 +250,7 @@ class PyanTransNet(Model):
         else:
             outputs = rearrange(
                 outputs, "batch feature frame -> batch frame feature")
-            outputs = self.transformer(outputs)
+            outputs = self.transformer(outputs, self._getmask(outputs))
 
         if self.hparams.linear["num_layers"] > 0:
             for linear in self.linear:
