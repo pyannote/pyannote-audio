@@ -148,8 +148,9 @@ class PyanTransNet(Model):
 
         transformerEncoderLayer = nn.TransformerEncoderLayer(
             d_model=transformer_input_dim,  ** transformer)
+        encoder_norm = nn.LayerNorm(transformer_input_dim)
         self.transformer = nn.TransformerEncoder(
-            transformerEncoderLayer, num_transformer_encoder_layers)
+            transformerEncoderLayer, num_transformer_encoder_layers, encoder_norm)
 
         if linear["num_layers"] < 1:
             return
