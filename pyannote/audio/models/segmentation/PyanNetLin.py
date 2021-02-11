@@ -86,6 +86,11 @@ class PyanNetLin(Model):
         sincnet = merge_dict(self.SINCNET_DEFAULTS, sincnet)
         sincnet["sample_rate"] = sample_rate
 
+        linear = merge_dict(self.LINEAR_DEFAULTS, linear)
+
+        self.save_hyperparameters("sincnet", "linear")
+        self.sincnet = SincNet(**self.hparams.sincnet)
+
         self.linear = nn.ModuleList(
             [
                 nn.Linear(in_features, out_features)
