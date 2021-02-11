@@ -157,7 +157,7 @@ def get_model(model: PipelineModel) -> Model:
     --------
     >>> model = get_model("hbredin/VoiceActivityDetection-PyanNet-DIHARD")
     >>> model = get_model("/path/to/checkpoint.ckpt")
-    >>> model = get_model({"model": "hbredin/VoiceActivityDetection-PyanNet-DIHARD",
+    >>> model = get_model({"checkpoint": "hbredin/VoiceActivityDetection-PyanNet-DIHARD",
     ...                    "map_location": torch.device("cuda")})
 
     See also
