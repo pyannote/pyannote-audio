@@ -5,7 +5,7 @@ run:
 
 sweep:
   dir: ${protocol}/${task._target_}/${now:%Y-%m-%d}/${now:%H-%M-%S}
-  subdir: ${hydra.job.id}
+  subdir: ${hydra.job.num}_${hydra.job.id}
 
 output_subdir: ""
 
