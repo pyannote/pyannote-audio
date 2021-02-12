@@ -1,7 +1,7 @@
 # @package _group_
 
 run:
-  dir: ${protocol}/${task._target_}/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  dir: ${protocol}/${task._target_}/${now:%Y-%m-%d}/${now:%H-%M-%S}_%env(string:SLURM_JOB_ID)
 
 sweep:
   dir: ${protocol}/${task._target_}/${now:%Y-%m-%d}/${now:%H-%M-%S}
