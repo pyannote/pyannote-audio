@@ -86,9 +86,7 @@ class Pipeline(_Pipeline):
             else:
                 model_id = checkpoint_path
                 revision = None
-            url = hf_hub_url(
-                model_id=model_id, filename=PIPELINE_PARAMS_NAME, revision=revision
-            )
+            url = hf_hub_url(model_id, filename=PIPELINE_PARAMS_NAME, revision=revision)
 
             config_yml = cached_download(
                 url=url,
