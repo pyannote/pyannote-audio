@@ -7,25 +7,6 @@ sweep:
   dir: ${protocol}/${task._target_}/${now:%Y-%m-%d}/${now:%H-%M-%S}
   subdir: ${hydra.job.num}_${hydra.job.id}
 
-launcher:
-  _target_: hydra_plugins.hydra_submitit_launcher.submitit_launcher.SlurmLauncher
-  submitit_folder: ${hydra.sweep.dir}/.submitit/%j
-  timeout_min: 120
-  cpus_per_task: 10
-  gpus_per_node: 1
-  tasks_per_node: 1
-  mem_gb: 4
-  nodes: 1
-  name: ${hydra.job.name}
-  partition: non-k40
-  comment: null
-  constraint: null
-  exclude: null
-  signal_delay_s: 120
-  max_num_timeout: 0
-  additional_parameters: {}
-  array_parallelism: 256
-
 output_subdir: ""
 
 help:
