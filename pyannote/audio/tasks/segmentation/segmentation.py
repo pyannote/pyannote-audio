@@ -269,8 +269,11 @@ class Segmentation(SegmentationTaskMixin, Task):
             Voice activity detection loss.
         """
 
-        vad_prediction, _ = torch.max(permutated_prediction, dim=2, keepdim=False)
+        vad_prediction, _ = torch.max(permutated_prediction, dim=2, keepdim=True)
+        # (batch_size, num_frames, 1)
+
         vad_target, _ = torch.max(target.float(), dim=2, keepdim=False)
+        # (batch_size, num_frames)
 
         if self.vad_loss == "bce":
             loss = binary_cross_entropy(vad_prediction, vad_target, weight=weight)
