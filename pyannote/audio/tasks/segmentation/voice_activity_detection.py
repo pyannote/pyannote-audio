@@ -20,6 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+from typing import Text
 
 import numpy as np
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
@@ -44,6 +45,12 @@ class VoiceActivityDetection(SegmentationTaskMixin, Task):
         pyannote.database protocol
     duration : float, optional
         Chunks duration. Defaults to 2s.
+    balance: str, optional
+        When provided, training samples are sampled uniformly with respect to that key.
+        For instance, setting `balance` to "uri" will make sure that each file will be
+        equally represented in the training samples.
+    weight: str, optional
+        When provided, use this key to as frame-wise weight in loss function.
     batch_size : int, optional
         Number of training samples per batch. Defaults to 32.
     num_workers : int, optional
@@ -64,6 +71,8 @@ class VoiceActivityDetection(SegmentationTaskMixin, Task):
         self,
         protocol: Protocol,
         duration: float = 2.0,
+        balance: Text = None,
+        weight: Text = None,
         batch_size: int = 32,
         num_workers: int = None,
         pin_memory: bool = False,
@@ -79,6 +88,9 @@ class VoiceActivityDetection(SegmentationTaskMixin, Task):
             augmentation=augmentation,
         )
 
+        self.balance = balance
+        self.weight = weight
+
         self.specifications = Specifications(
             problem=Problem.BINARY_CLASSIFICATION,
             resolution=Resolution.FRAME,
@@ -88,7 +100,7 @@ class VoiceActivityDetection(SegmentationTaskMixin, Task):
             ],
         )
 
-    def prepare_y(self, one_hot_y: np.ndarray):
+    def prepare_y(self, one_hot_y: np.ndarray) -> np.ndarray:
         """Get voice activity detection targets
 
         Parameters

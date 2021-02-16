@@ -32,12 +32,12 @@ from typing import List, Optional, Text
 
 import pytorch_lightning as pl
 import torch
-import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 from torch.utils.data._utils.collate import default_collate
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from typing_extensions import Literal
 
+from pyannote.audio.utils.loss import binary_cross_entropy, nll_loss
 from pyannote.audio.utils.protocol import check_protocol
 from pyannote.database import Protocol
 
@@ -287,10 +287,10 @@ class Task(pl.LightningDataModule):
             * (batch_size, num_frames) for binary classification
             * (batch_size, num_frames) for multi-class classification
             * (batch_size, num_frames, num_classes) for multi-label classification
-        predictions : torch.Tensor
+        prediction : torch.Tensor
             (batch_size, num_frames, num_classes)
         weight : torch.Tensor, optional
-            (batch_size, num_frames)
+            (batch_size, num_frames, 1)
 
         Returns
         -------
@@ -300,43 +300,14 @@ class Task(pl.LightningDataModule):
 
         """
 
-        if weight is not None and weight.shape[1] != target.shape[1]:
-            weight = F.interpolate(
-                weight.unsqueeze(1), size=target.shape[1], mode="linear"
-            ).squeeze(1)
-
-        if specifications.problem == Problem.BINARY_CLASSIFICATION:
-
-            return F.binary_cross_entropy(
-                prediction.squeeze(dim=-1), target.float(), weight=weight
-            )
+        if specifications.problem in [
+            Problem.BINARY_CLASSIFICATION,
+            Problem.MULTI_LABEL_CLASSIFICATION,
+        ]:
+            return binary_cross_entropy(prediction, target, weight=weight)
 
         elif specifications.problem == Problem.MONO_LABEL_CLASSIFICATION:
-
-            # (b, f) loss
-            losses = F.nll_loss(
-                # (b x f, c) prediction
-                prediction.view(-1, len(specifications.classes)),
-                # (b x f, ) target
-                target.view(-1),
-                reduction="none",
-            ).view(target.shape)
-
-            if weight is None:
-                return torch.mean(losses)
-            else:
-                return torch.sum(losses * weight) / torch.sum(weight)
-
-        elif specifications.problem == Problem.MULTI_LABEL_CLASSIFICATION:
-
-            if weight is None:
-                return F.binary_cross_entropy(prediction, target.float())
-            else:
-                return F.binary_cross_entropy(
-                    prediction,
-                    target.float(),
-                    weight=weight.unsqueeze(dim=2).expand(target.shape),
-                )
+            return nll_loss(prediction, target, weight=weight)
 
         else:
             msg = "TODO: implement for other types of problems"
@@ -349,6 +320,9 @@ class Task(pl.LightningDataModule):
             * negative log-likelihood loss for regular classification
 
         In case of multi-tasking, it will default to summing loss of each task.
+
+        If "weight" attribute exists, batch[self.weight] is also passed to the loss function
+        during training (but has no effect in validation).
 
         Parameters
         ----------
@@ -365,9 +339,19 @@ class Task(pl.LightningDataModule):
             {"loss": loss} with additional "loss_{task_name}" keys for multi-task models.
         """
 
-        X, y, weight = batch["X"], batch["y"], batch.get("weight", None)
-        y_pred = self.model(X)
+        # forward pass
+        y_pred = self.model(batch["X"])
+        # (batch_size, num_frames, num_classes)
 
+        # target
+        y = batch["y"]
+
+        # frames weight
+        weight_key = getattr(self, "weight", None) if stage == "train" else None
+        weight = batch.get(weight_key, None)
+        # (batch_size, num_frames, 1)
+
+        # compute multi-task loss as the sum of loss of each task
         if self.is_multi_task:
             loss = dict()
             for task_name, specifications in self.specifications.items():
@@ -394,6 +378,7 @@ class Task(pl.LightningDataModule):
             )
             return loss
 
+        # compute mono-task loss
         loss = self.default_loss(self.specifications, y, y_pred, weight=weight)
         self.model.log(
             f"{self.ACRONYM}@{stage}_loss",

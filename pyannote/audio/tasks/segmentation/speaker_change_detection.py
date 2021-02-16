@@ -20,6 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+from typing import Text
 
 import numpy as np
 import scipy.signal
@@ -48,6 +49,12 @@ class SpeakerChangeDetection(SegmentationTaskMixin, Task):
         pyannote.database protocol
     duration : float, optional
         Chunks duration. Defaults to 2s.
+    balance: str, optional
+        When provided, training samples are sampled uniformly with respect to that key.
+        For instance, setting `balance` to "uri" will make sure that each file will be
+        equally represented in the training samples.
+    weight: str, optional
+        When provided, use this key to as frame-wise weight in loss function.
     collar : int, optional.
         Mark frames less than `collar` frames away from actual change point as positive.
         Defaults to 1.
@@ -71,6 +78,8 @@ class SpeakerChangeDetection(SegmentationTaskMixin, Task):
         self,
         protocol: Protocol,
         duration: float = 2.0,
+        balance: Text = None,
+        weight: Text = None,
         collar: int = 1,
         batch_size: int = 32,
         num_workers: int = None,
@@ -87,6 +96,10 @@ class SpeakerChangeDetection(SegmentationTaskMixin, Task):
             augmentation=augmentation,
         )
 
+        self.balance = balance
+        self.weight = weight
+        self.collar = collar
+
         self.specifications = Specifications(
             problem=Problem.BINARY_CLASSIFICATION,
             resolution=Resolution.FRAME,
@@ -96,9 +109,7 @@ class SpeakerChangeDetection(SegmentationTaskMixin, Task):
             ],
         )
 
-        self.collar = collar
-
-    def prepare_y(self, one_hot_y: np.ndarray, collar: int = None):
+    def prepare_y(self, one_hot_y: np.ndarray):
         """Get speaker change detection targets
 
         Parameters
@@ -107,17 +118,12 @@ class SpeakerChangeDetection(SegmentationTaskMixin, Task):
             One-hot-encoding of current chunk speaker activity:
                 * one_hot_y[t, k] = 1 if kth speaker is active at tth frame
                 * one_hot_y[t, k] = 0 otherwise.
-        collar : int, optional
-            Mark frames less than `collar` frames away from actual change point as positive.
 
         Returns
         -------
         y : (num_frames, ) np.ndarray
             y[t] = 1 if there is a change of speaker at tth frame, 0 otherwise.
         """
-
-        if collar is None:
-            collar = self.collar
 
         num_frames, num_speakers = one_hot_y.shape
 
@@ -126,7 +132,7 @@ class SpeakerChangeDetection(SegmentationTaskMixin, Task):
         y = np.vstack(([[0]], y > 0))
 
         # mark frames in the neighborhood of actual change point as positive.
-        window = scipy.signal.triang(2 * collar + 1)[:, np.newaxis]
+        window = scipy.signal.triang(2 * self.collar + 1)[:, np.newaxis]
         y = np.minimum(1, scipy.signal.convolve(y, window, mode="same"))
         y = 1 * (y > 1e-10)
 
@@ -136,9 +142,9 @@ class SpeakerChangeDetection(SegmentationTaskMixin, Task):
         # append empty samples at the beginning/end
         expanded_y = np.vstack(
             [
-                np.zeros((collar, num_speakers), dtype=one_hot_y.dtype),
+                np.zeros((self.collar, num_speakers), dtype=one_hot_y.dtype),
                 one_hot_y,
-                np.zeros((collar, num_speakers), dtype=one_hot_y.dtype),
+                np.zeros((self.collar, num_speakers), dtype=one_hot_y.dtype),
             ]
         )
 
@@ -146,7 +152,7 @@ class SpeakerChangeDetection(SegmentationTaskMixin, Task):
         # centered at time step i.
         data = np.lib.stride_tricks.as_strided(
             expanded_y,
-            shape=(num_frames, num_speakers, 2 * collar + 1),
+            shape=(num_frames, num_speakers, 2 * self.collar + 1),
             strides=(one_hot_y.strides[0], one_hot_y.strides[1], one_hot_y.strides[0]),
         )
 
