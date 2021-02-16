@@ -53,6 +53,8 @@ class Inference:
     window : {"sliding", "whole"}, optional
         Use a "sliding" window and aggregate the corresponding outputs (default)
         or just one (potentially long) window covering the "whole" file or chunk.
+    skip_aggregation : bool, optional
+        Do not aggregate outputs when using "sliding" window. Defaults to False.
     duration : float, optional
         Chunk duration, in seconds. Defaults to duration used for training the model.
         Has no effect when `window` is "whole".
@@ -76,10 +78,13 @@ class Inference:
         token that can be obtained by running `huggingface-cli login`
     """
 
+    # TODO: add option to automatically find maximum batch size
+
     def __init__(
         self,
         model: Union[Model, Text, Path],
         window: Text = "sliding",
+        skip_aggregation: bool = False,
         device: torch.device = None,
         duration: float = None,
         step: float = None,
@@ -110,6 +115,7 @@ class Inference:
                 )
 
         self.window = window
+        self.skip_aggregation = skip_aggregation
 
         if device is None:
             device = self.model.device
@@ -303,9 +309,9 @@ class Inference:
         }
 
         for task_name, specifications in self.model.specifications.items():
-            # if model outputs just one vector per chunk, return the outputs as they are
-            # (i.e. do not aggregate them)
-            if specifications.resolution == Resolution.CHUNK:
+            # skip aggregation when requested
+            # or when model outputs just one vector per chunk
+            if self.skip_aggregation or specifications.resolution == Resolution.CHUNK:
                 frames = SlidingWindow(
                     start=0.0, duration=self.duration, step=self.step
                 )
