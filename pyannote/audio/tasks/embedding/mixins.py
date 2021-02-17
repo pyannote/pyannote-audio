@@ -303,24 +303,32 @@ class SupervisedRepresentationLearningTaskMixin:
 
     def val_dataloader(self) -> Optional[DataLoader]:
 
-        if isinstance(self.protocol, SpeakerVerificationProtocol):
-            return DataLoader(
-                ValDataset(self),
-                batch_size=1,
-                pin_memory=self.pin_memory,
-                drop_last=False,
-            )
+        if self.has_validation:
 
-        elif isinstance(self.protocol, SpeakerDiarizationProtocol):
+            if isinstance(self.protocol, SpeakerVerificationProtocol):
+                return DataLoader(
+                    ValDataset(self),
+                    batch_size=1,
+                    pin_memory=self.pin_memory,
+                    drop_last=False,
+                )
+
+            elif isinstance(self.protocol, SpeakerDiarizationProtocol):
+                return None
+
+        else:
             return None
-
-        return None
 
     @property
     def val_monitor(self):
 
-        if isinstance(self.protocol, SpeakerVerificationProtocol):
-            return f"{self.ACRONYM}@val_eer", "min"
+        if self.has_validation:
 
-        elif isinstance(self.protocol, SpeakerDiarizationProtocol):
+            if isinstance(self.protocol, SpeakerVerificationProtocol):
+                return f"{self.ACRONYM}@val_eer", "min"
+
+            elif isinstance(self.protocol, SpeakerDiarizationProtocol):
+                return None, "min"
+
+        else:
             return None, "min"

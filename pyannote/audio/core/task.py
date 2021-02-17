@@ -177,7 +177,7 @@ class Task(pl.LightningDataModule):
         super().__init__()
 
         # dataset
-        self.protocol = check_protocol(protocol)
+        self.protocol, self.has_validation = check_protocol(protocol)
 
         # batching
         self.duration = duration
@@ -406,13 +406,16 @@ class Task(pl.LightningDataModule):
         raise NotImplementedError(msg)
 
     def val_dataloader(self) -> Optional[DataLoader]:
-        return DataLoader(
-            ValDataset(self),
-            batch_size=self.batch_size,
-            num_workers=self.num_workers,
-            pin_memory=self.pin_memory,
-            drop_last=False,
-        )
+        if self.has_validation:
+            return DataLoader(
+                ValDataset(self),
+                batch_size=self.batch_size,
+                num_workers=self.num_workers,
+                pin_memory=self.pin_memory,
+                drop_last=False,
+            )
+        else:
+            return None
 
     # default validation_step provided for convenience
     # can obviously be overriden for each task
@@ -440,5 +443,7 @@ class Task(pl.LightningDataModule):
         pytorch_lightning.callbacks.ModelCheckpoint
         pytorch_lightning.callbacks.EarlyStopping
         """
-
-        return f"{self.ACRONYM}@val_loss", "min"
+        if self.has_validation:
+            return f"{self.ACRONYM}@val_loss", "min"
+        else:
+            return None, "min"
