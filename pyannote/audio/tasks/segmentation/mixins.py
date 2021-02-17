@@ -105,6 +105,9 @@ class SegmentationTaskMixin:
             # PREPARE VALIDATION DATA
             # ==================================================================
 
+            if not self.has_validation:
+                return
+
             self._validation = []
 
             for f in self.protocol.development():

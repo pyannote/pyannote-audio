@@ -122,6 +122,9 @@ class SupervisedRepresentationLearningTaskMixin:
                 classes=sorted(self._train),
             )
 
+            if not self.has_validation:
+                return
+
             if isinstance(self.protocol, SpeakerVerificationProtocol):
                 sessions = dict()
                 for trial in self.protocol.development_trial():
