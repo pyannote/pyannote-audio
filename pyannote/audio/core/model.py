@@ -33,6 +33,7 @@ import torch
 import torch.nn as nn
 import torch.optim
 from huggingface_hub import cached_download, hf_hub_url
+from pytorch_lightning.core.memory import ModelSummary
 from pytorch_lightning.utilities.cloud_io import load as pl_load
 from semver import VersionInfo
 
@@ -364,7 +365,7 @@ class Model(pl.LightningModule):
 
         # list of layers before adding task-dependent layers
         before = set((name, id(module)) for name, module in self.named_modules())
-        
+
         # add layers that depends on task specs (e.g. final classification layer)
         self.build()
 
@@ -525,7 +526,7 @@ class Model(pl.LightningModule):
         tokens = module_name.split(".")
         updated_modules = list()
 
-        for name, module in self.summarize("full").named_modules:
+        for name, module in ModelSummary(self, mode="full").named_modules:
             name_tokens = name.split(".")
             matching_tokens = list(
                 token
@@ -617,7 +618,7 @@ class Model(pl.LightningModule):
         if isinstance(modules, str):
             modules = [modules]
 
-        for name, module in self.summarize("full").named_modules:
+        for name, module in ModelSummary(self, mode="full").named_modules:
 
             if name not in modules:
                 continue
