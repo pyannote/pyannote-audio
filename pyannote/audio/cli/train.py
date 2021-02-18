@@ -116,8 +116,8 @@ def main(cfg: DictConfig) -> Optional[float]:
     callbacks = []
 
     if pretrained:
-        # for fine-tuning and/or transfer learning,
-        # we start by fitting task-dependent layers
+        # for fine-tuning and/or transfer learning, we start by fitting
+        # task-dependent layers and gradully unfreeze more layers
         callbacks.append(GraduallyUnfreeze(patience=patience))
 
     learning_rate_monitor = LearningRateMonitor(logging_interval="step")

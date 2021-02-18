@@ -20,8 +20,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+from typing import Mapping, Union
 
 from pytorch_lightning import Callback, Trainer
+from pytorch_lightning.core.memory import ModelSummary
 
 from pyannote.audio import Model
 
@@ -29,29 +31,48 @@ from pyannote.audio import Model
 class GraduallyUnfreeze(Callback):
     """Gradually unfreeze layers
 
-    1. Freezes all layers but those that depends on the task.
-    2. Waits for a few training epochs to pass.
-    3. Unfreezes all layers.
+    1. Start training with all layers frozen, but those that depends on the task
+       (i.e. those instantiated in model.build() and task.setup_loss_func()
+    2. Train for a few epochs and unfreeze a few more layers
+    3. Repeat
 
     Parameters
     ----------
-    patience : int, optional
-        Wait for that many epochs before unfreezing all layers.
-        Defaults to 1.
+    patience : int or dict, optional
+        If `dict`, it should use the following convention:
+            {epoch: list of names of layers to unfreeze at this epoch}
+        For instance, {10: ["linear",], 15: ["lstm", "sincnet"]} will unfreeze
+        "linear" at epoch #10 and "lstm" and "sincnet" at epoch #15.
+        If `int`, unfreezes one more layer every `patience` epochs, starting from
+        layers closer to the output up to layers closer to the input.
+
+    Usage
+    -----
+    >>> callback = GraduallyUnfreeze(patience=10)
+    >>> callback = GraduallyUnfreeze(patience={10: ["linear", ], 15: ["lstm", ]})
+    >>> Trainer(callbacks=[callback]).fit(model)
     """
 
-    def __init__(self, patience: int = 1):
+    def __init__(self, patience: Union[Mapping, int] = 1):
         super().__init__()
         self.patience = patience
 
     def on_fit_start(self, trainer: Trainer, model: Model):
-        self._task_independent_layers = [
-            name
-            for name, _ in model.named_modules()
-            if name not in model.task_dependent and name != ""
-        ]
-        _ = model.freeze_by_name(self._task_independent_layers)
+
+        if isinstance(self.patience, int):
+            self._schedule = {}
+            summary = ModelSummary(model, mode="top")
+            step = 1
+            for layer, _ in reversed(summary.named_modules):
+                if layer in model.task_dependent:
+                    continue
+                self._schedule[step * self.patience] = [layer]
+                step += 1
+                model.freeze_by_name(layer)
+
+        elif isinstance(self.patience, Mapping):
+            self._schedule = dict(self.patience)
 
     def on_train_epoch_start(self, trainer: Trainer, model: Model):
-        if trainer.current_epoch == self.patience:
-            _ = model.unfreeze_by_name(self._task_independent_layers)
+        for layer in self._schedule.get(trainer.current_epoch, list()):
+            model.unfreeze_by_name(layer)
