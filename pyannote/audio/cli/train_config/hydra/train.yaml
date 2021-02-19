@@ -1,10 +1,11 @@
 # @package _group_
 
 run:
-  dir: ${protocol}/${task._target_}/${now:%Y-%m-%d}/${now:%H-%M-%S}/${env:HOSTNAME}${$$}
+  dir: ${protocol}/${task._target_}/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  subdir: ${hydra.job.num}_${hydra.job.id}
 
 #run:
-#  dir: ${protocol}/${task._target_}/${now:%Y-%m-%d}/${now:%H-%M-%S}
+#  dir: ${protocol}/${task._target_}/${now:%Y-%m-%d}/${now:%H-%M-%S}/${env:HOSTNAME}${$$}
 
 sweep:
   dir: ${protocol}/${task._target_}/${now:%Y-%m-%d}/${now:%H-%M-%S}
