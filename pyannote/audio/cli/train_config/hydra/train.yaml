@@ -1,7 +1,7 @@
 # @package _group_
 
 run:
-  dir: ${protocol}/${task._target_}/${now:%Y-%m-%d}/${now:%H-%M-%S}/${env:HOSTNAME}${env:$}
+  dir: ${protocol}/${task._target_}/${now:%Y-%m-%d}/${now:%H-%M-%S}/${env:HOSTNAME}${env:$$}
 
 #run:
 #  dir: ${protocol}/${task._target_}/${now:%Y-%m-%d}/${now:%H-%M-%S}
