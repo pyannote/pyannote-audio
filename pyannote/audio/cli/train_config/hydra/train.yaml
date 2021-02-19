@@ -1,10 +1,10 @@
 # @package _group_
 
-#run:
-#  dir: ${protocol}/${task._target_}/${now:%Y-%m-%d}/${now:%H-%M-%S}/${env:SLURM_JOB_ID}${env:SLURM_ARRAY_TASK_ID}
-
 run:
-  dir: ${protocol}/${task._target_}/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  dir: ${protocol}/${task._target_}/${now:%Y-%m-%d}/${now:%H-%M-%S}/${env:HOSTNAME}${env:$}
+
+#run:
+#  dir: ${protocol}/${task._target_}/${now:%Y-%m-%d}/${now:%H-%M-%S}
 
 sweep:
   dir: ${protocol}/${task._target_}/${now:%Y-%m-%d}/${now:%H-%M-%S}
