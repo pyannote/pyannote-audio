@@ -143,7 +143,7 @@ class VoiceActivityDetection(Pipeline):
 
         speech = self._binarize(speech_probability)
         speech.uri = file.get("uri", None)
-        return speech.to_annotation(generator="string", modality="speech")
+        return speech
 
     def get_metric(self) -> Union[DetectionErrorRate, DetectionPrecisionRecallFMeasure]:
         """Return new instance of detection metric"""

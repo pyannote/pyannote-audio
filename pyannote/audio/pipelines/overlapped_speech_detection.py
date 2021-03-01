@@ -159,7 +159,7 @@ class OverlappedSpeechDetection(Pipeline):
 
         overlap = self._binarize(overlap_probability)
         overlap.uri = file.get("uri", None)
-        return overlap.to_annotation(generator="string", modality="overlap")
+        return overlap
 
     def get_metric(self, **kwargs) -> DetectionPrecisionRecallFMeasure:
         """Get overlapped speech detection metric
