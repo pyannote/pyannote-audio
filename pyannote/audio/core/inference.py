@@ -354,15 +354,16 @@ class Inference:
 
             if specifications.permutation_invariant:
                 # previous outputs that overlap with current output by at least 50%
-                maxlen = max(1, math.floor(0.5 * self.duration / self.step))
-                previous_outputs: Deque[np.ndarray] = deque([], maxlen=maxlen)
+                num_overlap = math.floor(0.5 * self.duration / self.step)
+                if num_overlap > 0:
+                    previous_outputs: Deque[np.ndarray] = deque([], maxlen=num_overlap)
 
             # loop on the outputs of sliding chunks
             for c, output in enumerate(outputs[task_name]):
                 start_sample = c * step_size
                 start_frame, _ = introspection(start_sample)
 
-                if specifications.permutation_invariant:
+                if specifications.permutation_invariant and num_overlap > 0:
                     if c > 0:
                         output = self.permutate(
                             np.stack(previous_outputs), output, num_frames_per_step
@@ -380,7 +381,11 @@ class Inference:
             # process last (right-aligned) chunk separately
             if has_last_chunk:
 
-                if specifications.permutation_invariant and previous_outputs:
+                if (
+                    specifications.permutation_invariant
+                    and num_overlap > 0
+                    and previous_outputs
+                ):
                     # FIXME
                     last_output[task_name] = self.permutate(
                         previous_outputs[-1][np.newaxis],
