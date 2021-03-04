@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import Mapping, Union
+from typing import List, Mapping, Text, Union
 
 from pytorch_lightning import Callback, Trainer
 from pytorch_lightning.core.memory import ModelSummary
@@ -38,41 +38,78 @@ class GraduallyUnfreeze(Callback):
 
     Parameters
     ----------
-    patience : int or dict, optional
-        If `dict`, it should use the following convention:
-            {epoch: list of names of layers to unfreeze at this epoch}
-        For instance, {10: ["linear",], 15: ["lstm", "sincnet"]} will unfreeze
-        "linear" at epoch #10 and "lstm" and "sincnet" at epoch #15.
-        If `int`, unfreezes one more layer every `patience` epochs, starting from
-        layers closer to the output up to layers closer to the input.
+    schedule:
+        See examples for supported format.
+    epochs_per_stage : int, optional
+        Number of epochs between each stage. Defaults to 1.
+        Has no effect if schedule is provided as a {layer_name: epoch} dictionary.
 
     Usage
     -----
-    >>> callback = GraduallyUnfreeze(patience=10)
-    >>> callback = GraduallyUnfreeze(patience={10: ["linear", ], 15: ["lstm", ]})
+    >>> callback = GraduallyUnfreeze()
     >>> Trainer(callbacks=[callback]).fit(model)
+
+    Examples
+    --------
+    # for a model with PyanNet architecture (sincnet > lstm > linear > task_specific),
+    # those are equivalent and will unfreeze 'linear' at epoch 1, 'lstm' at epoch 2,
+    # and 'sincnet' at epoch 3.
+    GraduallyUnfreeze()
+    GraduallyUnfreeze(schedule=['linear', 'lstm', 'sincnet'])
+    GraduallyUnfreeze(schedule={'linear': 1, 'lstm': 2, 'sincnet': 3})
+
+    # the following syntax is also possible (with its dict-based equivalent just below):
+    GraduallyUnfreeze(schedule=['linear', ['lstm', 'sincnet']], epochs_per_stage=10)
+    GraduallyUnfreeze(schedule={'linear': 10, 'lstm': 20, 'sincnet': 20})
+    # will unfreeze 'linear' at epoch 10, and both 'lstm' and 'sincnet' at epoch 20.
     """
 
-    def __init__(self, patience: Union[Mapping, int] = 1):
+    def __init__(
+        self,
+        schedule: Union[Mapping[Text, int], List[Union[List[Text], Text]]] = None,
+        epochs_per_stage: int = None,
+    ):
         super().__init__()
-        self.patience = patience
+
+        if (
+            (schedule is None) or (isinstance(schedule, List))
+        ) and epochs_per_stage is None:
+            epochs_per_stage = 1
+
+        self.epochs_per_stage = epochs_per_stage
+        self.schedule = schedule
 
     def on_fit_start(self, trainer: Trainer, model: Model):
 
-        if isinstance(self.patience, int):
-            self._schedule = {}
-            summary = ModelSummary(model, mode="top")
-            step = 1
-            for layer, _ in reversed(summary.named_modules):
-                if layer in model.task_dependent:
-                    continue
-                self._schedule[step * self.patience] = [layer]
-                step += 1
-                model.freeze_by_name(layer)
+        schedule = self.schedule
 
-        elif isinstance(self.patience, Mapping):
-            self._schedule = dict(self.patience)
+        task_specific_layers = model.task_dependent
+        backbone_layers = [
+            layer
+            for layer, _ in reversed(ModelSummary(model, mode="top"))
+            if layer not in task_specific_layers
+        ]
+
+        if schedule is None:
+            schedule = backbone_layers
+
+        if isinstance(schedule, List):
+            _schedule = dict()
+            for depth, layers in enumerate(schedule):
+                layers = layers if isinstance(layers, List) else [layers]
+                for layer in layers:
+                    _schedule[layer] = (depth * 1) * self.epochs_per_stage
+            schedule = _schedule
+
+        self.schedule = schedule
+
+        print(f"GraduallyUnfreeze schedule: {self.schedule}")
+
+        # freeze all but task specific layers
+        for layer in backbone_layers:
+            model.freeze_by_name(layer)
 
     def on_train_epoch_start(self, trainer: Trainer, model: Model):
-        for layer in self._schedule.get(trainer.current_epoch, list()):
-            model.unfreeze_by_name(layer)
+        for layer, epoch in self.schedule.items():
+            if epoch == trainer.current_epoch:
+                model.unfreeze_by_name(layer)
