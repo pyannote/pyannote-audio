@@ -98,7 +98,7 @@ class GraduallyUnfreeze(Callback):
             for depth, layers in enumerate(schedule):
                 layers = layers if isinstance(layers, List) else [layers]
                 for layer in layers:
-                    _schedule[layer] = (depth * 1) * self.epochs_per_stage
+                    _schedule[layer] = (depth + 1) * self.epochs_per_stage
             schedule = _schedule
 
         self.schedule = schedule
