@@ -86,7 +86,7 @@ class GraduallyUnfreeze(Callback):
         task_specific_layers = model.task_dependent
         backbone_layers = [
             layer
-            for layer, _ in reversed(ModelSummary(model, mode="top"))
+            for layer, _ in reversed(ModelSummary(model, mode="top").named_modules)
             if layer not in task_specific_layers
         ]
 
@@ -102,8 +102,6 @@ class GraduallyUnfreeze(Callback):
             schedule = _schedule
 
         self.schedule = schedule
-
-        print(f"GraduallyUnfreeze schedule: {self.schedule}")
 
         # freeze all but task specific layers
         for layer in backbone_layers:
