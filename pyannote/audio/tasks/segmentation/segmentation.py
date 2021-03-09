@@ -22,7 +22,7 @@
 
 import math
 from collections import Counter
-from typing import Text
+from typing import Text, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -51,6 +51,9 @@ class Segmentation(SegmentationTaskMixin, Task):
         pyannote.database protocol
     duration : float, optional
         Chunks duration. Defaults to 2s.
+    warm_up : float or (float, float), optional
+        Do not evaluate model on that many seconds on left- and rightmost
+        parts of each chunk.
     balance: str, optional
         When provided, training samples are sampled uniformly with respect to that key.
         For instance, setting `balance` to "uri" will make sure that each file will be
@@ -89,6 +92,7 @@ class Segmentation(SegmentationTaskMixin, Task):
         self,
         protocol: Protocol,
         duration: float = 2.0,
+        warm_up: Union[float, Tuple[float, float]] = 0.0,
         overlap: dict = OVERLAP_DEFAULTS,
         balance: Text = None,
         weight: Text = None,
@@ -103,6 +107,7 @@ class Segmentation(SegmentationTaskMixin, Task):
         super().__init__(
             protocol,
             duration=duration,
+            warm_up=warm_up,
             batch_size=batch_size,
             num_workers=num_workers,
             pin_memory=pin_memory,
@@ -163,6 +168,7 @@ class Segmentation(SegmentationTaskMixin, Task):
                 problem=Problem.MULTI_LABEL_CLASSIFICATION,
                 resolution=Resolution.FRAME,
                 duration=self.duration,
+                warm_up=self.warm_up,
                 classes=[f"speaker#{i+1}" for i in range(self.num_speakers)],
                 permutation_invariant=True,
             )
@@ -301,6 +307,7 @@ class Segmentation(SegmentationTaskMixin, Task):
 
         # forward pass
         prediction = self.model(batch["X"])
+        batch_size, num_frames, _ = prediction.shape
         # (batch_size, num_frames, num_classes)
 
         # target
@@ -310,8 +317,14 @@ class Segmentation(SegmentationTaskMixin, Task):
 
         # frames weight
         weight_key = getattr(self, "weight", None)
-        weight = batch.get(weight_key, None)
+        weight = batch.get(weight_key, torch.ones(batch_size, num_frames, 1))
         # (batch_size, num_frames, 1)
+
+        # warm-up
+        warm_up_left = round(self.warm_up[0] / self.duration * num_frames)
+        weight[:, :warm_up_left] = 0.0
+        warm_up_right = round(self.warm_up[1] / self.duration * num_frames)
+        weight[:, num_frames - warm_up_right :] = 0.0
 
         seg_loss = self.segmentation_loss(permutated_prediction, target, weight=weight)
 
@@ -372,13 +385,17 @@ class Segmentation(SegmentationTaskMixin, Task):
         # y = (batch_size, num_frames, num_classes)
 
         y_pred = self.model(X)
+        _, num_frames, _ = y_pred.shape
+        # y_pred = (batch_size, num_frames, num_classes)
 
         permutated_y_pred, _ = permutate(y, y_pred)
 
-        # y_pred = (batch_size, num_frames, num_classes)
+        warm_up_left = round(self.warm_up[0] / self.duration * num_frames)
+        warm_up_right = round(self.warm_up[1] / self.duration * num_frames)
 
         val_fbeta = self.val_fbeta(
-            permutated_y_pred[:, ::10].squeeze(), y[:, ::10].squeeze()
+            y_pred[:, warm_up_left : num_frames - warm_up_right : 10].squeeze(),
+            y[:, warm_up_left : num_frames - warm_up_right : 10].squeeze(),
         )
         self.model.log(
             f"{self.ACRONYM}@val_fbeta",
@@ -439,6 +456,10 @@ class Segmentation(SegmentationTaskMixin, Task):
             # plot prediction
             ax_hyp = axes[row_idx * 4 + 2, col_idx]
             sample_y_pred = y_pred[sample_idx]
+            ax_hyp.axvspan(0, warm_up_left, color="k", alpha=0.5, lw=0)
+            ax_hyp.axvspan(
+                num_frames - warm_up_right, num_frames, color="k", alpha=0.5, lw=0
+            )
             ax_hyp.plot(sample_y_pred)
             ax_hyp.set_ylim(-0.1, 1.1)
             ax_hyp.set_xlim(0, len(sample_y))
@@ -447,6 +468,10 @@ class Segmentation(SegmentationTaskMixin, Task):
             # plot permutated prediction
             ax_map = axes[row_idx * 4 + 3, col_idx]
             sample_y_pred_map = permutated_y_pred[sample_idx]
+            ax_map.axvspan(0, warm_up_left, color="k", alpha=0.5, lw=0)
+            ax_map.axvspan(
+                num_frames - warm_up_right, num_frames, color="k", alpha=0.5, lw=0
+            )
             ax_map.plot(sample_y_pred_map)
             ax_map.set_ylim(-0.1, 1.1)
             ax_map.set_xlim(0, len(sample_y))

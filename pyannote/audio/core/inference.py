@@ -44,8 +44,6 @@ TaskName = Union[Text, None]
 class Inference:
     """Inference
 
-    TODO: add support for model averaging (either at output or weight level)
-
     Parameters
     ----------
     model : Model
@@ -140,6 +138,7 @@ class Inference:
                 f"{duration:g}s chunks for inference: this might lead to suboptimal results."
             )
         self.duration = duration
+        self.warm_up = specifications.warm_up
 
         # step between consecutive chunks
         if step is None:
@@ -340,6 +339,19 @@ class Inference:
             # Hamming window used for overlap-add aggregation
             hamming = np.hamming(num_frames_per_chunk).reshape(-1, 1)
 
+            # warm-up window used for overlap-add aggregation
+            warm_up = np.ones((num_frames_per_chunk, 1))
+            warm_up_first = np.ones((num_frames_per_chunk, 1))
+            warm_up_last = np.ones((num_frames_per_chunk, 1))
+            warm_up_left = round(self.warm_up[0] / self.duration * num_frames_per_chunk)
+            warm_up_right = round(
+                self.warm_up[1] / self.duration * num_frames_per_chunk
+            )
+            warm_up[:warm_up_left] = 0.0
+            warm_up_last[:warm_up_left] = 0.0
+            warm_up[num_frames_per_chunk - warm_up_right :] = 0.0
+            warm_up_first[num_frames_per_chunk - warm_up_right :] = 0.0
+
             # aggregated_output[i] will be used to store the (hamming-weighted) sum
             # of all predictions for frame #i
             aggregated_output: np.ndarray = np.zeros(
@@ -370,13 +382,29 @@ class Inference:
                         )
                     previous_outputs.append(output)
 
+                # when processing first chunk, do not weigh-down its left-most side
+                if c == 0:
+                    # unless there is just one chunk, where we do not weigh-down any side
+                    if not has_last_chunk and num_chunks == 1:
+                        warm_up_ = 1.0
+                    else:
+                        warm_up_ = warm_up_first
+
+                # when processing last chunk, make sure to not weigh-down its right-most side
+                elif not has_last_chunk and c + 1 == num_chunks:
+                    warm_up_ = warm_up_last
+
+                # when processing an internal chunk, weigh-down both sides
+                else:
+                    warm_up_ = warm_up
+
                 aggregated_output[start_frame : start_frame + num_frames_per_chunk] += (
-                    output * hamming
+                    output * hamming * warm_up_
                 )
 
                 overlapping_chunk_count[
                     start_frame : start_frame + num_frames_per_chunk
-                ] += hamming
+                ] += (hamming * warm_up_)
 
             # process last (right-aligned) chunk separately
             if has_last_chunk:
@@ -394,9 +422,11 @@ class Inference:
                     )
 
                 aggregated_output[-num_frames_per_chunk:] += (
-                    last_output[task_name] * hamming
+                    last_output[task_name] * hamming * warm_up_last
                 )
-                overlapping_chunk_count[-num_frames_per_chunk:] += hamming
+                overlapping_chunk_count[-num_frames_per_chunk:] += (
+                    hamming * warm_up_last
+                )
 
             aggregated_output /= np.maximum(overlapping_chunk_count, 1e-12)
 
@@ -420,7 +450,7 @@ class Inference:
 
         Parameters
         ----------
-        past_outputs : deque of(num_frames, num_classes) np.ndarray
+        past_outputs : deque of (num_frames, num_classes) np.ndarray
             Previous output
         output : (num_frames, num_classes) np.ndarray
             Current output
@@ -434,13 +464,18 @@ class Inference:
             Permutated current output.
         """
 
-        num_frames, num_classes = output.shape
+        num_frames, _ = output.shape
+        warm_up_left = round(self.warm_up[0] / self.duration * num_frames)
+        warm_up_right = round(self.warm_up[1] / self.duration * num_frames)
 
         permutations = []
         for o, past_output in enumerate(reversed(past_outputs)):
             permutation = permutate(
-                past_output[np.newaxis, (o + 1) * step_size :],
-                output[: num_frames - (o + 1) * step_size],
+                past_output[
+                    np.newaxis,
+                    warm_up_left + (o + 1) * step_size : num_frames - warm_up_right,
+                ],
+                output[warm_up_left : num_frames - warm_up_right - (o + 1) * step_size],
             )[1][0]
             permutations.append(permutation)
 
@@ -533,6 +568,12 @@ class Inference:
         -----
         If model has several outputs (multi-task), those will be returned as a
         {task_name: output} dictionary.
+
+
+        Notes
+        -----
+        It is the responsibility of the user to extend chunks to the left and to the right
+        to make sure the model is warmed up when processing the region of interest.
         """
 
         if self.window == "sliding":

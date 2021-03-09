@@ -28,7 +28,8 @@ import sys
 import warnings
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Optional, Text
+from numbers import Number
+from typing import List, Optional, Text, Tuple, Union
 
 import pytorch_lightning as pl
 import torch
@@ -68,6 +69,8 @@ class Specifications:
     # chunk duration in seconds.
     # use None for variable-length chunks
     duration: Optional[float] = None
+
+    warm_up: Optional[Tuple[float, float]] = (0.0, 0.0)
 
     # (for classification tasks only) list of classes
     classes: Optional[List[Text]] = None
@@ -143,6 +146,9 @@ class Task(pl.LightningDataModule):
     min_duration : float, optional
         Sample training chunks duration uniformely between `min_duration`
         and `duration`. Defaults to `duration` (i.e. fixed length chunks).
+    warm_up : float or (float, float), optional
+        Do not evaluate model on that many seconds on left- and rightmost
+        parts of each chunk.
     batch_size : int, optional
         Number of training samples per batch. Defaults to 32.
     num_workers : int, optional
@@ -169,6 +175,7 @@ class Task(pl.LightningDataModule):
         protocol: Protocol,
         duration: float = 2.0,
         min_duration: float = None,
+        warm_up: Union[float, Tuple[float, float]] = 0.0,
         batch_size: int = 32,
         num_workers: int = None,
         pin_memory: bool = False,
@@ -183,6 +190,11 @@ class Task(pl.LightningDataModule):
         self.duration = duration
         self.min_duration = duration if min_duration is None else min_duration
         self.batch_size = batch_size
+
+        # training
+        if isinstance(warm_up, Number):
+            warm_up = (warm_up, warm_up)
+        self.warm_up = warm_up
 
         # multi-processing
         if num_workers is None:
@@ -341,6 +353,7 @@ class Task(pl.LightningDataModule):
 
         # forward pass
         y_pred = self.model(batch["X"])
+        batch_size, num_frames, _ = y_pred.shape
         # (batch_size, num_frames, num_classes)
 
         # target
@@ -348,8 +361,14 @@ class Task(pl.LightningDataModule):
 
         # frames weight
         weight_key = getattr(self, "weight", None) if stage == "train" else None
-        weight = batch.get(weight_key, None)
+        weight = batch.get(weight_key, torch.ones(batch_size, num_frames, 1))
         # (batch_size, num_frames, 1)
+
+        # warm-up
+        warm_up_left = round(self.warm_up[0] / self.duration * num_frames)
+        weight[:, :warm_up_left] = 0.0
+        warm_up_right = round(self.warm_up[1] / self.duration * num_frames)
+        weight[:, num_frames - warm_up_right :] = 0.0
 
         # compute multi-task loss as the sum of loss of each task
         if self.is_multi_task:

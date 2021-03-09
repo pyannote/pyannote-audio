@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import List, Text
+from typing import List, Text, Tuple, Union
 
 import numpy as np
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
@@ -46,6 +46,9 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
         pyannote.database protocol
     duration : float, optional
         Chunks duration. Defaults to 2s.
+    warm_up : float or (float, float), optional
+        Do not evaluate model on that many seconds on left- and rightmost
+        parts of each chunk.
     balance: str, optional
         When provided, training samples are sampled uniformly with respect to that key.
         For instance, setting `balance` to "uri" will make sure that each file will be
@@ -72,6 +75,7 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
         self,
         protocol: Protocol,
         duration: float = 2.0,
+        warm_up: Union[float, Tuple[float, float]] = 0.0,
         balance: Text = None,
         weight: Text = None,
         batch_size: int = 32,
@@ -83,6 +87,7 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
         super().__init__(
             protocol,
             duration=duration,
+            warm_up=warm_up,
             batch_size=batch_size,
             num_workers=num_workers,
             pin_memory=pin_memory,
@@ -110,6 +115,7 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
                 problem=Problem.MULTI_LABEL_CLASSIFICATION,
                 resolution=Resolution.FRAME,
                 duration=self.duration,
+                warm_up=self.warm_up,
             )
 
     @property
@@ -123,3 +129,6 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
     def prepare_y(self, y: np.ndarray) -> np.ndarray:
         """Get speaker tracking targets"""
         return y
+
+    # TODO: add option to give more weights to smaller classes
+    # TODO: add option to balance training samples between classes
