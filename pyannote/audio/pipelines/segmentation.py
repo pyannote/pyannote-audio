@@ -136,7 +136,9 @@ class Segmentation(Pipeline):
             speaker_probability = SlidingWindowFeature(
                 data.reshape(-1, 1), sliding_window
             )
-            for s, speaker_turn in enumerate(self._binarize(speaker_probability)):
+            for s, speaker_turn in enumerate(
+                self._binarize(speaker_probability).get_timeline()
+            ):
                 if (s == 0) or (
                     speaker_turn.start - previous_speaker_turn.end
                     > self.last_active_patience

@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import pytorch_lightning as pl
 
-from pyannote.audio import Inference
+from pyannote.audio import Inference, Model
 from pyannote.audio.core.task import Resolution
 from pyannote.audio.models.segmentation.debug import (
     MultiTaskSegmentationModel,
@@ -15,8 +15,17 @@ from pyannote.audio.tasks.segmentation.multi_task_segmentation import (
 from pyannote.core import SlidingWindowFeature
 from pyannote.database import FileFinder, get_protocol
 
-# TODO: upload a very light model just for unit tests
-# HF_SAMPLE_MODEL_ID = "julien-c/voice-activity-detection"
+HF_SAMPLE_MODEL_ID = "pyannote/TestModelForContinuousIntegration"
+
+
+def test_hf_download_inference():
+    inference = Inference(HF_SAMPLE_MODEL_ID, device="cpu")
+    assert isinstance(inference, Inference)
+
+
+def test_hf_download_model():
+    model = Model.from_pretrained(HF_SAMPLE_MODEL_ID)
+    assert isinstance(model, Model)
 
 
 @pytest.fixture()
@@ -29,6 +38,19 @@ def trained():
     trainer = pl.Trainer(fast_dev_run=True)
     trainer.fit(model, vad)
     return protocol, model
+
+
+@pytest.fixture()
+def pretrained_model():
+    return Model.from_pretrained(HF_SAMPLE_MODEL_ID)
+
+
+@pytest.fixture()
+def dev_file():
+    protocol = get_protocol(
+        "Debug.SpeakerDiarization.Debug", preprocessors={"audio": FileFinder()}
+    )
+    return next(protocol.development())
 
 
 def test_duration_warning(trained):
@@ -101,6 +123,8 @@ def test_multi_seg_infer():
         assert isinstance(scores[attr], SlidingWindowFeature)
 
 
-# def test_hf_download():
-#     inference = Inference(HF_SAMPLE_MODEL_ID, device="cpu")
-#     assert isinstance(inference, Inference)
+def test_skip_aggregation(pretrained_model, dev_file):
+
+    inference = Inference(pretrained_model, skip_aggregation=True)
+    scores = inference(dev_file)
+    assert len(scores.data.shape) == 3

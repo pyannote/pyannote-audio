@@ -30,51 +30,12 @@
 # Signal processing
 """
 
-from typing import List
 
 import numpy as np
 import scipy.signal
-from typing_extensions import Literal
 
-from pyannote.core import Segment, SlidingWindowFeature, Timeline
+from pyannote.core import Annotation, Segment, SlidingWindowFeature, Timeline
 from pyannote.core.utils.generators import pairwise
-
-ThresholdScale = Literal["absolute", "relative", "percentile"]
-
-
-def scale_threshold(
-    thresholds: List[float],
-    scores: SlidingWindowFeature = None,
-    scale: ThresholdScale = "absolute",
-) -> List[float]:
-
-    """
-
-    Parameters
-    ----------
-    thresholds : list of float
-        Thresholds.
-    scores : SlidingWindowFeature, optional
-        One-dimensional scores.
-    scale : {"absolute", "relative", "percentile"}, optional
-        Set to "relative" to scale threshold relatively to min/max.
-        Set to "percentile" to make them relative to 1% and 99% percentiles.
-        Defaults to "absolute" (do not scale them)
-    """
-
-    if scale == "absolute":
-        mini = 0
-        maxi = 1
-
-    elif scale == "relative":
-        mini = np.nanmin(scores.data)
-        maxi = np.nanmax(scores.data)
-
-    elif scale == "percentile":
-        mini = np.nanpercentile(scores.data, 1)
-        maxi = np.nanpercentile(scores.data, 99)
-
-    return [mini + t * (maxi - mini) for t in thresholds]
 
 
 class Binarize:
@@ -86,10 +47,6 @@ class Binarize:
         Onset threshold. Defaults to 0.5.
     offset : float, optional
         Offset threshold. Defaults to 0.5.
-    scale : {"absolute", "relative", "percentile"}, optional
-        Set to "relative" to make onset/offset relative to min/max.
-        Set to "percentile" to make them relative 1% and 99% percentiles.
-        Defaults to "absolute".
     min_duration_on : float, optional
         Remove active regions shorter than that many seconds. Defaults to 0s.
     min_duration_off : float, optional
@@ -98,7 +55,7 @@ class Binarize:
         Extend active regions by moving their start time by that many seconds.
         Defaults to 0s.
     pad_offset : float, optional
-        Extend actiev regions by moving their end time by that many seconds.
+        Extend active regions by moving their end time by that many seconds.
         Defaults to 0s.
 
     Reference
@@ -111,7 +68,6 @@ class Binarize:
         self,
         onset: float = 0.5,
         offset: float = 0.5,
-        scale: ThresholdScale = "absolute",
         min_duration_on: float = 0.0,
         min_duration_off: float = 0.0,
         pad_onset: float = 0.0,
@@ -122,7 +78,6 @@ class Binarize:
 
         self.onset = onset
         self.offset = offset
-        self.scale = scale
 
         self.pad_onset = pad_onset
         self.pad_offset = pad_offset
@@ -130,7 +85,7 @@ class Binarize:
         self.min_duration_on = min_duration_on
         self.min_duration_off = min_duration_off
 
-    def __call__(self, scores: SlidingWindowFeature):
+    def __call__(self, scores: SlidingWindowFeature) -> Annotation:
         """Binarize detection scores
 
         Parameters
@@ -140,64 +95,60 @@ class Binarize:
 
         Returns
         -------
-        active : Timeline
-            Active regions.
+        active : Annotation
+            Binarized scores.
         """
 
-        if scores.dimension != 1:
-            raise ValueError("Binarize expects one-dimensional scores.")
-
-        onset, offset = scale_threshold(
-            (self.onset, self.offset), scores=scores, scale=self.scale
-        )
-
-        num_frames = len(scores)
+        num_frames, num_classes = scores.data.shape
         frames = scores.sliding_window
         timestamps = [frames[i].middle for i in range(num_frames)]
 
-        # timeline meant to store 'active' regions
-        active = Timeline()
+        # annotation meant to store 'active' regions
+        active = Annotation()
 
-        # initial state
-        start = timestamps[0]
-        is_active = scores[0] > self.onset
+        for k, k_scores in enumerate(scores.data.T):
 
-        for t, y in zip(timestamps[1:], scores[1:]):
+            label = k if scores.labels is None else scores.labels[k]
 
-            # currently active
+            # initial state
+            start = timestamps[0]
+            is_active = k_scores[0] > self.onset
+
+            for t, y in zip(timestamps[1:], k_scores[1:]):
+
+                # currently active
+                if is_active:
+                    # switching from active to inactive
+                    if y < self.offset:
+                        region = Segment(start - self.pad_onset, t + self.pad_offset)
+                        active[region, k] = label
+                        start = t
+                        is_active = False
+
+                # currently inactive
+                else:
+                    # switching from inactive to active
+                    if y > self.onset:
+                        start = t
+                        is_active = True
+
+            # if active at the end, add final region
             if is_active:
-                # switching from active to inactive
-                if y < offset:
-                    region = Segment(start - self.pad_onset, t + self.pad_offset)
-                    active.add(region)
-                    start = t
-                    is_active = False
-
-            # currently inactive
-            else:
-                # switching from inactive to active
-                if y > onset:
-                    start = t
-                    is_active = True
-
-        # if active at the end, add final region
-        if is_active:
-            region = Segment(start - self.pad_onset, t + self.pad_offset)
-            active.add(region)
+                region = Segment(start - self.pad_onset, t + self.pad_offset)
+                active[region, k] = label
 
         # because of padding, some active regions might be overlapping: merge them.
-        active = active.support()
+        # also: fill same speaker gaps shorter than min_duration_off
+        if self.pad_offset > 0.0 or self.pad_onset > 0.0 or self.min_duration_off > 0.0:
+            active = active.support(collar=self.min_duration_off)
 
-        # remove short active regions
-        active = Timeline([s for s in active if s.duration > self.min_duration_on])
+        # remove tracks shorter than min_duration_on
+        if self.min_duration_on > 0:
+            for segment, track in list(active.itertracks()):
+                if segment.duration < self.min_duration_on:
+                    del active[segment, track]
 
-        # fill short inactive regions
-        inactive = active.gaps()
-        for s in inactive:
-            if s.duration < self.min_duration_off:
-                active.add(s)
-
-        return active.support()
+        return active
 
 
 class Peak:
@@ -207,10 +158,6 @@ class Peak:
     ----------
     alpha : float, optional
         Peak threshold. Defaults to 0.5
-    scale : {"absolute", "relative", "percentile"}, optional
-        Set to "relative" to make alpha relative to min/max.
-        Set to "percentile" to make it relative 1% and 99% percentiles.
-        Defaults to "absolute".
     min_duration : float, optional
         Minimum elapsed time between two consecutive peaks. Defaults to 1 second.
     """
@@ -219,11 +166,9 @@ class Peak:
         self,
         alpha: float = 0.5,
         min_duration: float = 1.0,
-        scale: ThresholdScale = "absolute",
     ):
         super(Peak, self).__init__()
         self.alpha = alpha
-        self.scale = scale
         self.min_duration = min_duration
 
     def __call__(self, scores: SlidingWindowFeature):
@@ -250,9 +195,9 @@ class Peak:
         order = max(1, int(np.rint(self.min_duration / precision)))
         indices = scipy.signal.argrelmax(scores[:], order=order)[0]
 
-        (alpha,) = scale_threshold((self.alpha,), scores=scores, scale=self.scale)
-
-        peak_time = np.array([frames[i].middle for i in indices if scores[i] > alpha])
+        peak_time = np.array(
+            [frames[i].middle for i in indices if scores[i] > self.alpha]
+        )
         boundaries = np.hstack([[frames[0].start], peak_time, [frames[num_frames].end]])
 
         segmentation = Timeline()

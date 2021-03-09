@@ -22,6 +22,7 @@
 
 from typing import List, Text
 
+import numpy as np
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 
 from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
@@ -45,6 +46,12 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
         pyannote.database protocol
     duration : float, optional
         Chunks duration. Defaults to 2s.
+    balance: str, optional
+        When provided, training samples are sampled uniformly with respect to that key.
+        For instance, setting `balance` to "uri" will make sure that each file will be
+        equally represented in the training samples.
+    weight: str, optional
+        When provided, use this key to as frame-wise weight in loss function.
     batch_size : int, optional
         Number of training samples per batch. Defaults to 32.
     num_workers : int, optional
@@ -65,6 +72,8 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
         self,
         protocol: Protocol,
         duration: float = 2.0,
+        balance: Text = None,
+        weight: Text = None,
         batch_size: int = 32,
         num_workers: int = None,
         pin_memory: bool = False,
@@ -80,6 +89,9 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
             augmentation=augmentation,
         )
 
+        self.balance = balance
+        self.weight = weight
+
         # for speaker tracking, task specification depends
         # on the data: we do not know in advance which
         # speakers should be tracked. therefore, we postpone
@@ -91,21 +103,13 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
 
         if stage == "fit":
 
-            # build the list of speakers to be tracked.
-            speakers = set()
-            for f in self._train:
-                speakers.update(f["annotation"].labels())
-
-            # now that we now who the speakers are, we can
-            # define the task specifications.
-
-            # note that, since multiple speakers can be active
-            # at once, the problem is multi-label classification.
             self.specifications = Specifications(
+                # one class per speaker
+                classes=sorted(self._train_metadata["annotation"]),
+                # multiple speakers can be active at once
                 problem=Problem.MULTI_LABEL_CLASSIFICATION,
                 resolution=Resolution.FRAME,
                 duration=self.duration,
-                classes=sorted(speakers),
             )
 
     @property
@@ -115,3 +119,7 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
         Used by `prepare_chunk` so that y[:, k] corresponds to activity of kth speaker
         """
         return self.specifications.classes
+
+    def prepare_y(self, y: np.ndarray) -> np.ndarray:
+        """Get speaker tracking targets"""
+        return y

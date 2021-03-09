@@ -1,10 +1,12 @@
 # @package _group_
 _target_: pyannote.audio.tasks.Segmentation
 duration: 5.0
-augmentation_probability: 0.5
-snr_min: 0.0
-snr_max: 10.0
-domain: null
+balance: null
+overlap:
+  probability: 0.5
+  snr_min: 0.0
+  snr_max: 10.0
+weight: null
 batch_size: 32
 num_workers: null
 pin_memory: False

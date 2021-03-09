@@ -17,6 +17,7 @@ def check_protocol(protocol: Protocol) -> Protocol:
     Returns
     -------
     fixed_protocol : Protocol
+    has_validation : bool
 
     Raises
     ------
@@ -74,7 +75,8 @@ def check_protocol(protocol: Protocol) -> Protocol:
     try:
         file = next(protocol.development())
     except (AttributeError, NotImplementedError):
-        msg = f"Protocol {protocol.name} does not define a development set."
-        raise ValueError(msg)
+        has_validation = False
+    else:
+        has_validation = True
 
-    return protocol
+    return protocol, has_validation

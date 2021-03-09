@@ -8,7 +8,7 @@ from scipy.optimize import linear_sum_assignment
 
 
 @singledispatch
-def permutate(y1, y2, cost_func: Optional[Callable] = None):
+def permutate(y1, y2, cost_func: Optional[Callable] = None, returns_cost: bool = False):
     """Find cost-minimizing permutation
 
     Parameters
@@ -20,13 +20,18 @@ def permutate(y1, y2, cost_func: Optional[Callable] = None):
     cost_func : callable
         Takes two (num_samples, num_speakers) sequences and returns (num_speakers, ) pairwise cost.
         Defaults to computing mean squared error.
+    returns_cost : bool, optional
+        Whether to return cost matrix. Defaults to False.
 
     Returns
     -------
     permutated_y2 : np.ndarray or torch.Tensor
         (batch_size, num_samples, num_speakers)
     permutations : list of tuple
-        List of permutations
+        List of permutations so that permutation[i] == j indicates that jth speaker of y2
+        should be mapped to ith speaker of y1.
+    cost : np.ndarray or torch.Tensor, optional
+        (batch_size, num_speakers, num_speakers)
     """
     raise TypeError()
 
@@ -37,7 +42,10 @@ def mse_cost_func(Y, y):
 
 @permutate.register
 def permutate_torch(
-    y1: torch.Tensor, y2: torch.Tensor, cost_func: Optional[Callable] = None
+    y1: torch.Tensor,
+    y2: torch.Tensor,
+    cost_func: Optional[Callable] = None,
+    returns_cost: bool = False,
 ) -> Tuple[torch.Tensor, List[Tuple[int]]]:
 
     batch_size, num_samples, num_speakers = y1.shape
@@ -64,6 +72,9 @@ def permutate_torch(
     permutations = []
     permutated_y2 = []
 
+    if returns_cost:
+        costs = []
+
     for y1_, y2_ in zip(y1, y2):
         with torch.no_grad():
             cost = torch.stack(
@@ -74,19 +85,34 @@ def permutate_torch(
             )
         permutation = tuple(linear_sum_assignment(cost.cpu())[1])
         permutations.append(permutation)
-
         permutated_y2.append(y2_[:, permutation])
+        if returns_cost:
+            costs.append(cost)
+
+    if returns_cost:
+        return torch.stack(permutated_y2), permutations, torch.stack(costs)
 
     return torch.stack(permutated_y2), permutations
 
 
 @permutate.register
 def permutate_numpy(
-    y1: np.ndarray, y2: np.ndarray, cost_func: Optional[Callable] = None
+    y1: np.ndarray,
+    y2: np.ndarray,
+    cost_func: Optional[Callable] = None,
+    returns_cost: bool = False,
 ) -> Tuple[np.ndarray, List[Tuple[int]]]:
 
-    permutated_y2, permutations = permutate(
-        torch.from_numpy(y1), torch.from_numpy(y2), cost_func=cost_func
+    output = permutate(
+        torch.from_numpy(y1),
+        torch.from_numpy(y2),
+        cost_func=cost_func,
+        returns_cost=returns_cost,
     )
 
+    if returns_cost:
+        permutated_y2, permutations, costs = output
+        return permutated_y2.numpy(), permutations, costs.numpy()
+
+    permutated_y2, permutations = output
     return permutated_y2.numpy(), permutations

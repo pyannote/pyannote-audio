@@ -216,7 +216,7 @@ class Audio:
 
         Returns
         -------
-        waveform : (time, channel) numpy array
+        waveform : (channel, time) torch.Tensor
             Waveform
         sample_rate : int
             Sample rate
@@ -287,7 +287,7 @@ class Audio:
 
         Returns
         -------
-        waveform : (time, channel) numpy array
+        waveform : (channel, time) torch.Tensor
             Waveform
         sample_rate : int
             Sample rate
@@ -371,11 +371,18 @@ class Audio:
                 )
             except RuntimeError:
                 msg = (
-                    f"torchaudio failed to seek-and-read in "
-                    f"{audio}: loading the whole file..."
+                    f"torchaudio failed to seek-and-read in {audio}: "
+                    f"loading the whole file instead."
                 )
                 warnings.warn(msg)
-                return self(audio).crop(segment, mode=mode, fixed=fixed)
+                waveform, sample_rate = self(audio)
+                data = waveform[:, start_frame:end_frame]
+                # storing waveform and sample_rate for next time
+                # as it is very likely that seek-and-read will
+                # fail again for this particular file
+                if isinstance(file, (ProtocolFile, dict)):
+                    file["waveform"] = waveform
+                    file["sample_rate"] = sample_rate
 
         if channel is not None:
             data = data[channel - 1 : channel, :]

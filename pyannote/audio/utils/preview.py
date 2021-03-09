@@ -146,10 +146,9 @@ def preview(
     ylim_waveform = np.min(data), np.max(data)
 
     def make_audio_frame(T: float):
-        t = T + segment.start
-        if isinstance(t, np.ndarray):
-            return np.take(data, (t * sample_rate).astype(np.int64))
-        return data[round(t * sample_rate)]
+        if isinstance(T, np.ndarray):
+            return np.take(data, (T * sample_rate).astype(np.int64))
+        return data[round(T * sample_rate)]
 
     audio_clip = AudioClip(make_audio_frame, duration=segment.duration, fps=sample_rate)
 
