@@ -35,8 +35,8 @@ from pyannote.audio.utils.params import merge_dict
 from pyannote.core.utils.generators import pairwise
 
 
-class PyanTransNet(Model):
-    """PyanTransNet segmentation model
+class AntoiNet(Model):
+    """AntoiNet segmentation model
 
     SincNet > Transformer -> Transformer output
                    |                             -> Feed forward -> Classifer
