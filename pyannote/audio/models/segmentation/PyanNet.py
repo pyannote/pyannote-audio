@@ -148,7 +148,8 @@ class PyanNet(Model):
                 2 if self.hparams.lstm["bidirectional"] else 1
             )
 
-        self.classifier = nn.Linear(in_features, len(self.specifications.classes))
+        self.classifier = nn.Linear(
+            in_features, len(self.specifications.classes))
         self.activation = self.default_activation()
 
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
@@ -170,7 +171,8 @@ class PyanNet(Model):
                 rearrange(outputs, "batch feature frame -> batch frame feature")
             )
         else:
-            outputs = rearrange(outputs, "batch feature frame -> batch frame feature")
+            outputs = rearrange(
+                outputs, "batch feature frame -> batch frame feature")
             for i, lstm in enumerate(self.lstm):
                 outputs, _ = lstm(outputs)
                 if i + 1 < self.hparams.lstm["num_layers"]:

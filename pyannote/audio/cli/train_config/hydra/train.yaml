@@ -1,11 +1,11 @@
 # @package _group_
 
 run:
-  dir: ${protocol}/${task._target_}/${now:%Y-%m-%d}/${now:%H-%M-%S}/${env:HOSTNAME}${env:SLURM_JOB_ID}
+  dir: ${protocol}/${task._target_}/${now:%Y-%m-%d}/${now:%H-%M-%S}
 
 sweep:
-  dir: ${protocol}/${task._target_}/${now:%Y-%m-%d}/${now:%H-%M-%S}
-  subdir: ${hydra.job.num}_${hydra.job.id}
+  dir: multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}/${protocol}/${task._target_}
+  subdir: ${hydra.job.num}
 
 output_subdir: ""
 
@@ -36,7 +36,7 @@ help:
     {optimizer} can be any of the following
     * adam (default) = Adam optimizer
 
-    {trainer} can be any of the following
+    {trainer} can be any of the following
     * fast_dev_run for debugging
     * default (default) for training the model
 
@@ -71,7 +71,7 @@ help:
     1. define your_package.YourTask (or your_package.YourModel) class
     2. create file /path/to/your_config/task/your_task.yaml  (or /path/to/your_config/model/your_model.yaml)
        # @package _group_
-       _target_: your_package.YourTask  # or YourModel
+       _target_: your_package.YourTask  # or YourModel
        param1: value1
        param2: value2
     3. call pyannote-audio-train --config-dir /path/to/your_config task=your_task task.param1=modified_value1 model=your_model ...
