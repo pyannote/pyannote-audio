@@ -376,7 +376,10 @@ class Task(pl.LightningDataModule):
 
         # frames weight
         weight_key = getattr(self, "weight", None) if stage == "train" else None
-        weight = batch.get(weight_key, torch.ones(batch_size, num_frames, 1))
+        weight = batch.get(
+            weight_key,
+            torch.ones(batch_size, num_frames, 1, device=self.model.device),
+        )
         # (batch_size, num_frames, 1)
 
         # warm-up

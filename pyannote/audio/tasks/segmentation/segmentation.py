@@ -320,7 +320,10 @@ class Segmentation(SegmentationTaskMixin, Task):
 
         # frames weight
         weight_key = getattr(self, "weight", None)
-        weight = batch.get(weight_key, torch.ones(batch_size, num_frames, 1))
+        weight = batch.get(
+            weight_key,
+            torch.ones(batch_size, num_frames, 1, device=self.model.device),
+        )
         # (batch_size, num_frames, 1)
 
         # warm-up
@@ -397,7 +400,9 @@ class Segmentation(SegmentationTaskMixin, Task):
         warm_up_right = round(self.warm_up[1] / self.duration * num_frames)
 
         val_fbeta = self.val_fbeta(
-            y_pred[:, warm_up_left : num_frames - warm_up_right : 10].squeeze(),
+            permutated_y_pred[
+                :, warm_up_left : num_frames - warm_up_right : 10
+            ].squeeze(),
             y[:, warm_up_left : num_frames - warm_up_right : 10].squeeze(),
         )
         self.model.log(
