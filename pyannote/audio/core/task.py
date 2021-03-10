@@ -353,8 +353,13 @@ class Task(pl.LightningDataModule):
 
         # forward pass
         y_pred = self.model(batch["X"])
-        batch_size, num_frames, _ = y_pred.shape
-        # (batch_size, num_frames, num_classes)
+
+        if self.is_multi_task:
+            _, any_y_pred = next(iter(y_pred.items()))
+            batch_size, num_frames, _ = any_y_pred.shape
+        else:
+            batch_size, num_frames, _ = y_pred.shape
+            # (batch_size, num_frames, num_classes)
 
         # target
         y = batch["y"]
