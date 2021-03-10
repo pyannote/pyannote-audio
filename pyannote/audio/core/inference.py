@@ -370,8 +370,13 @@ class Inference:
             )
 
             if specifications.permutation_invariant:
-                # previous outputs that overlap with current output by at least 50%
-                num_overlap = math.floor(0.5 * self.duration / self.step)
+                # number of previous outputs that overlap with current one by at least 50% of their warmed up region
+                num_overlap = math.floor(
+                    0.5
+                    * (self.duration - self.warm_up[0] - self.warm_up[1])
+                    / self.step
+                )
+                # keep track of those previous outputs in a "deque"
                 if num_overlap > 0:
                     previous_outputs: Deque[np.ndarray] = deque([], maxlen=num_overlap)
 
