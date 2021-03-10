@@ -70,6 +70,12 @@ class Specifications:
     # use None for variable-length chunks
     duration: Optional[float] = None
 
+    # use that many seconds on the left- and rightmost parts of each chunk
+    # to warm up the model. This is mostly useful for segmentation tasks.
+    # While the model does process those left- and right-most parts, only
+    # the remaining central part of each chunk is used for computing the
+    # loss during training, and for aggregating scores during inference.
+    # Defaults to 0. (i.e. no warm-up).
     warm_up: Optional[Tuple[float, float]] = (0.0, 0.0)
 
     # (for classification tasks only) list of classes
