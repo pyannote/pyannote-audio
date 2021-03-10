@@ -57,8 +57,8 @@ class Inference:
         Chunk duration, in seconds. Defaults to duration used for training the model.
         Has no effect when `window` is "whole".
     step : float, optional
-        Step between consecutive chunks, in seconds. Defaults to 10% of duration.
-        Has no effect when `window` is "whole".
+        Step between consecutive chunks, in seconds. Defaults to warm-up duration when
+        greater than 0s, otherwise 10% of duration. Has no effect when `window` is "whole".
     batch_size : int, optional
         Batch size. Larger values make inference faster. Defaults to 32.
     device : torch.device, optional
@@ -147,7 +147,8 @@ class Inference:
 
         # step between consecutive chunks
         if step is None:
-            step = 0.1 * self.duration
+            step = 0.1 * self.duration if self.warm_up[0] == 0.0 else self.warm_up[0]
+
         if step > self.duration:
             raise ValueError(
                 f"Step between consecutive chunks is set to {step:g}s, while chunks are "
