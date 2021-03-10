@@ -580,11 +580,12 @@ class Inference:
         If model has several outputs (multi-task), those will be returned as a
         {task_name: output} dictionary.
 
-
-        Notes
-        -----
-        It is the responsibility of the user to extend chunks to the left and to the right
-        to make sure the model is warmed up when processing the region of interest.
+        If model needs to be warmed up, remember to extend the requested chunk with the
+        corresponding amount of time so that it is actually warmed up when processing the
+        chunk of interest:
+        >>> chunk_of_interest = Segment(10, 15)
+        >>> extended_chunk = Segment(10 - warm_up, 15 + warm_up)
+        >>> inference.crop(file, extended_chunk).crop(chunk_of_interest, returns_data=False)
         """
 
         if self.window == "sliding":
