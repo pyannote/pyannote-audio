@@ -147,8 +147,12 @@ class Task(pl.LightningDataModule):
         Sample training chunks duration uniformely between `min_duration`
         and `duration`. Defaults to `duration` (i.e. fixed length chunks).
     warm_up : float or (float, float), optional
-        Do not evaluate model on that many seconds on left- and rightmost
-        parts of each chunk.
+        Use that many seconds on the left- and rightmost parts of each chunk
+        to warm up the model. This is mostly useful for segmentation tasks.
+        While the model does process those left- and right-most parts, only
+        the remaining central part of each chunk is used for computing the
+        loss during training, and for aggregating scores during inference.
+        Defaults to 0. (i.e. no warm-up).
     batch_size : int, optional
         Number of training samples per batch. Defaults to 32.
     num_workers : int, optional

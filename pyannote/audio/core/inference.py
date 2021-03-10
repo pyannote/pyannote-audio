@@ -138,7 +138,12 @@ class Inference:
                 f"{duration:g}s chunks for inference: this might lead to suboptimal results."
             )
         self.duration = duration
+
         self.warm_up = specifications.warm_up
+        # Use that many seconds on the left- and rightmost parts of each chunk
+        # to warm up the model. While the model does process those left- and right-most
+        # parts, only the remaining central part of each chunk is used for aggregating
+        # scores during inference.
 
         # step between consecutive chunks
         if step is None:

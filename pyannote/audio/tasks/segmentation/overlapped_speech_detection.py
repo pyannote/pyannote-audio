@@ -52,8 +52,11 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
     duration : float, optional
         Chunks duration. Defaults to 2s.
     warm_up : float or (float, float), optional
-        Do not evaluate model on that many seconds on left- and rightmost
-        parts of each chunk.
+        Use that many seconds on the left- and rightmost parts of each chunk
+        to warm up the model. While the model does process those left- and right-most
+        parts, only the remaining central part of each chunk is used for computing the
+        loss during training, and for aggregating scores during inference.
+        Defaults to 0. (i.e. no warm-up).
     balance: str, optional
         When provided, training samples are sampled uniformly with respect to that key.
         For instance, setting `balance` to "uri" will make sure that each file will be
