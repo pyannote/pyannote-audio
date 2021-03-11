@@ -64,6 +64,7 @@ class AntoiNet(Model):
     SINCNET_DEFAULTS = {"stride": 1}
     TRANSFORMER_DEFAULT = {
         "nhead": 4,
+        "trs_in_dim": 256,
         "num_encoder_layers": 2,
         "dim_feedforward": 2048,
         "dropout": 0.1,
@@ -109,12 +110,15 @@ class AntoiNet(Model):
 
         num_transformer_encoder_layers = transformer["num_encoder_layers"]
         del transformer["num_encoder_layers"]
-
+        trs_in_dim = transformer["trs_in_dim"]
+        del transformer["trs_in_dim"]
         self.afterlstm = transformer["afterlstm"]
         del transformer["afterlstm"]
         self.masking = transformer["masking"]
         del transformer["masking"]
         self.src_mask = None
+
+        self.fc0 = None
 
         transformer_input_dim = 60
 
@@ -122,6 +126,7 @@ class AntoiNet(Model):
             if self.afterlstm:
                 transformer_input_dim = lstm["hidden_size"] * \
                     (2 if lstm["bidirectional"] else 1)
+
             monolithic = lstm["monolithic"]
             if monolithic:
                 multi_layer_lstm = dict(lstm)
@@ -149,6 +154,10 @@ class AntoiNet(Model):
                         for i in range(num_layers)
                     ]
                 )
+
+        self.fc0 = nn.Linear(
+            transformer_input_dim, trs_in_dim) if transformer_input_dim != trs_in_dim else None
+        transformer_input_dim = trs_in_dim
 
         transformerEncoderLayer = nn.TransformerEncoderLayer(
             d_model=transformer_input_dim,  ** transformer)
@@ -231,11 +240,15 @@ class AntoiNet(Model):
                         outputs, _ = lstm(outputs)
                         if i + 1 < self.hparams.lstm["num_layers"]:
                             outputs = self.dropout(outputs)
-
+                    if self.fc0 is not None:
+                        outputs = self.fc0(outputs)
                     outputs = self.transformer(outputs, self._getmask(outputs))
             else:
                 outputs = rearrange(
                     outputs, "batch feature frame -> batch frame feature")
+
+                if self.fc0 is not None:
+                    outputs = self.fc0(outputs)
                 outputs = self.transformer(outputs, self._getmask(outputs))
 
                 if self.hparams.lstm["monolithic"]:
@@ -247,9 +260,11 @@ class AntoiNet(Model):
                         outputs, _ = lstm(outputs)
                         if i + 1 < self.hparams.lstm["num_layers"]:
                             outputs = self.dropout(outputs)
-        else:
+        else:  # no lstm layers
             outputs = rearrange(
                 outputs, "batch feature frame -> batch frame feature")
+            if self.fc0 is not None:
+                outputs = self.fc0(outputs)
             outputs = self.transformer(outputs, self._getmask(outputs))
 
         if self.hparams.linear["num_layers"] > 0:
