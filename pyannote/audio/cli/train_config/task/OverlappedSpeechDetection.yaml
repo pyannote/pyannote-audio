@@ -1,6 +1,7 @@
 # @package _group_
 _target_: pyannote.audio.tasks.OverlappedSpeechDetection
 duration: 3.0
+warm_up: 0.0
 balance: null
 overlap:
   probability: 0.5
