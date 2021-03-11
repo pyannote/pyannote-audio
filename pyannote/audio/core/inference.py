@@ -342,30 +342,45 @@ class Inference:
             if has_last_chunk:
                 num_frames_last_step, _ = introspection(last_step_size)
 
-            # Hamming window used for overlap-add aggregation
-            hamming = np.hamming(num_frames_per_chunk).reshape(-1, 1)
-
             # warm-up window used for overlap-add aggregation
             warm_up = np.ones((num_frames_per_chunk, 1))
             warm_up_first = np.ones((num_frames_per_chunk, 1))
             warm_up_last = np.ones((num_frames_per_chunk, 1))
-            warm_up_left = round(self.warm_up[0] / self.duration * num_frames_per_chunk)
-            warm_up_right = round(
-                self.warm_up[1] / self.duration * num_frames_per_chunk
-            )
+
+            # TODO/ documment this
+            if specifications.permutation_invariant:
+                warm_up_left = round(
+                    0.5
+                    * (self.duration + self.warm_up[0] - self.warm_up[1] - self.step)
+                    / self.duration
+                    * num_frames_per_chunk
+                )
+                warm_up_right = round(
+                    0.5
+                    * (self.duration + self.warm_up[0] - self.warm_up[1] + self.step)
+                    / self.duration
+                    * num_frames_per_chunk
+                )
+            else:
+                warm_up_left = round(
+                    self.warm_up[0] / self.duration * num_frames_per_chunk
+                )
+                warm_up_right = round(
+                    self.warm_up[1] / self.duration * num_frames_per_chunk
+                )
             warm_up[:warm_up_left] = 0.0
             warm_up_last[:warm_up_left] = 0.0
             warm_up[num_frames_per_chunk - warm_up_right :] = 0.0
             warm_up_first[num_frames_per_chunk - warm_up_right :] = 0.0
 
-            # aggregated_output[i] will be used to store the (hamming-weighted) sum
-            # of all predictions for frame #i
+            # aggregated_output[i] will be used to store the sum of all predictions
+            # for frame #i
             aggregated_output: np.ndarray = np.zeros(
                 (num_frames, dimension), dtype=np.float32
             )
 
-            # overlapping_chunk_count[i] will be used to store the (hamming-weighted)
-            # number of chunks that overlap with frame #i
+            # overlapping_chunk_count[i] will be used to store the number of chunks
+            # that contributed to frame #i
             overlapping_chunk_count: np.ndarray = np.zeros(
                 (num_frames, 1), dtype=np.float32
             )
@@ -410,12 +425,12 @@ class Inference:
                     warm_up_ = warm_up
 
                 aggregated_output[start_frame : start_frame + num_frames_per_chunk] += (
-                    output * hamming * warm_up_
+                    output * warm_up_
                 )
 
                 overlapping_chunk_count[
                     start_frame : start_frame + num_frames_per_chunk
-                ] += (hamming * warm_up_)
+                ] += warm_up_
 
             # process last (right-aligned) chunk separately
             if has_last_chunk:
@@ -433,11 +448,9 @@ class Inference:
                     )
 
                 aggregated_output[-num_frames_per_chunk:] += (
-                    last_output[task_name] * hamming * warm_up_last
+                    last_output[task_name] * warm_up_last
                 )
-                overlapping_chunk_count[-num_frames_per_chunk:] += (
-                    hamming * warm_up_last
-                )
+                overlapping_chunk_count[-num_frames_per_chunk:] += warm_up_last
 
             aggregated_output /= np.maximum(overlapping_chunk_count, 1e-12)
 
