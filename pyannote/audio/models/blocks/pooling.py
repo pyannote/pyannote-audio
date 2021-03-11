@@ -64,6 +64,7 @@ class StatsPool(nn.Module):
 
         else:
             weights = weights.unsqueeze(dim=1)
+            # (batch, 1, frames)
 
             num_frames = sequences.shape[2]
             num_weights = weights.shape[2]
@@ -71,7 +72,9 @@ class StatsPool(nn.Module):
                 warnings.warn(
                     f"Mismatch between frames ({num_frames}) and weights ({num_weights}) numbers."
                 )
-                weights = F.interpolate(weights, size=num_frames, mode="nearest")
+                weights = F.interpolate(
+                    weights, size=num_frames, mode="linear", align_corners=False
+                )
 
             v1 = weights.sum(dim=2)
             mean = torch.sum(sequences * weights, dim=2) / v1

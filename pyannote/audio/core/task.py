@@ -32,11 +32,12 @@ from typing import List, Optional, Text
 
 import pytorch_lightning as pl
 import torch
-import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 from torch.utils.data._utils.collate import default_collate
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
+from typing_extensions import Literal
 
+from pyannote.audio.utils.loss import binary_cross_entropy, nll_loss
 from pyannote.audio.utils.protocol import check_protocol
 from pyannote.database import Protocol
 
@@ -176,7 +177,7 @@ class Task(pl.LightningDataModule):
         super().__init__()
 
         # dataset
-        self.protocol = check_protocol(protocol)
+        self.protocol, self.has_validation = check_protocol(protocol)
 
         # batching
         self.duration = duration
@@ -273,33 +274,55 @@ class Task(pl.LightningDataModule):
             collate_fn=self.collate_fn,
         )
 
-    def default_loss(self, specifications: Specifications, y, y_pred) -> torch.Tensor:
-        """Guess and compute default loss according to task specification"""
+    def default_loss(
+        self, specifications: Specifications, target, prediction, weight=None
+    ) -> torch.Tensor:
+        """Guess and compute default loss according to task specification
 
-        if specifications.problem == Problem.BINARY_CLASSIFICATION:
-            loss = F.binary_cross_entropy(y_pred.squeeze(dim=-1), y.float())
+        Parameters
+        ----------
+        specifications : Specifications
+            Task specifications
+        target : torch.Tensor
+            * (batch_size, num_frames) for binary classification
+            * (batch_size, num_frames) for multi-class classification
+            * (batch_size, num_frames, num_classes) for multi-label classification
+        prediction : torch.Tensor
+            (batch_size, num_frames, num_classes)
+        weight : torch.Tensor, optional
+            (batch_size, num_frames, 1)
+
+        Returns
+        -------
+        loss : torch.Tensor
+            Binary cross-entropy loss in case of binary and multi-label classification,
+            Negative log-likelihood loss in case of multi-class classification.
+
+        """
+
+        if specifications.problem in [
+            Problem.BINARY_CLASSIFICATION,
+            Problem.MULTI_LABEL_CLASSIFICATION,
+        ]:
+            return binary_cross_entropy(prediction, target, weight=weight)
 
         elif specifications.problem == Problem.MONO_LABEL_CLASSIFICATION:
-            loss = F.nll_loss(y_pred.view(-1, len(specifications.classes)), y.view(-1))
-
-        elif specifications.problem == Problem.MULTI_LABEL_CLASSIFICATION:
-            loss = F.binary_cross_entropy(y_pred, y.float())
+            return nll_loss(prediction, target, weight=weight)
 
         else:
             msg = "TODO: implement for other types of problems"
             raise NotImplementedError(msg)
 
-        return loss
-
-    # default training_step provided for convenience
-    # can obviously be overriden for each task
-    def training_step(self, batch, batch_idx: int):
-        """Default training_step according to task specification
+    def common_step(self, batch, batch_idx: int, stage: Literal["train", "val"]):
+        """Default training or validation step according to task specification
 
             * binary cross-entropy loss for binary or multi-label classification
             * negative log-likelihood loss for regular classification
 
         In case of multi-tasking, it will default to summing loss of each task.
+
+        If "weight" attribute exists, batch[self.weight] is also passed to the loss function
+        during training (but has no effect in validation).
 
         Parameters
         ----------
@@ -307,6 +330,8 @@ class Task(pl.LightningDataModule):
             Current batch.
         batch_idx: int
             Batch index.
+        stage : {"train", "val"}
+            "train" for training step, "val" for validation step
 
         Returns
         -------
@@ -314,19 +339,29 @@ class Task(pl.LightningDataModule):
             {"loss": loss} with additional "loss_{task_name}" keys for multi-task models.
         """
 
-        X, y = batch["X"], batch["y"]
-        y_pred = self.model(X)
+        # forward pass
+        y_pred = self.model(batch["X"])
+        # (batch_size, num_frames, num_classes)
 
+        # target
+        y = batch["y"]
+
+        # frames weight
+        weight_key = getattr(self, "weight", None) if stage == "train" else None
+        weight = batch.get(weight_key, None)
+        # (batch_size, num_frames, 1)
+
+        # compute multi-task loss as the sum of loss of each task
         if self.is_multi_task:
             loss = dict()
             for task_name, specifications in self.specifications.items():
                 loss[task_name] = self.default_loss(
-                    specifications, y[task_name], y_pred[task_name]
+                    specifications, y[task_name], y_pred[task_name], weight=weight
                 )
                 self.model.log(
-                    f"{task_name}@train_loss",
+                    f"{task_name}@{stage}_loss",
                     loss[task_name],
-                    on_step=True,
+                    on_step=False,
                     on_epoch=True,
                     prog_bar=False,
                     logger=False,
@@ -334,25 +369,31 @@ class Task(pl.LightningDataModule):
 
             loss["loss"] = sum(loss.values())
             self.model.log(
-                f"{self.ACRONYM}@train_loss",
+                f"{self.ACRONYM}@{stage}_loss",
                 loss["loss"],
-                on_step=True,
+                on_step=False,
                 on_epoch=True,
                 prog_bar=True,
                 logger=True,
             )
             return loss
 
-        loss = self.default_loss(self.specifications, y, y_pred)
+        # compute mono-task loss
+        loss = self.default_loss(self.specifications, y, y_pred, weight=weight)
         self.model.log(
-            f"{self.ACRONYM}@train_loss",
+            f"{self.ACRONYM}@{stage}_loss",
             loss,
-            on_step=True,
+            on_step=False,
             on_epoch=True,
             prog_bar=True,
             logger=True,
         )
         return {"loss": loss}
+
+    # default training_step provided for convenience
+    # can obviously be overriden for each task
+    def training_step(self, batch, batch_idx: int):
+        return self.common_step(batch, batch_idx, "train")
 
     def val__getitem__(self, idx):
         # will become val_dataset.__getitem__ method
@@ -365,67 +406,21 @@ class Task(pl.LightningDataModule):
         raise NotImplementedError(msg)
 
     def val_dataloader(self) -> Optional[DataLoader]:
-        return DataLoader(
-            ValDataset(self),
-            batch_size=self.batch_size,
-            num_workers=self.num_workers,
-            pin_memory=self.pin_memory,
-            drop_last=False,
-        )
+        if self.has_validation:
+            return DataLoader(
+                ValDataset(self),
+                batch_size=self.batch_size,
+                num_workers=self.num_workers,
+                pin_memory=self.pin_memory,
+                drop_last=False,
+            )
+        else:
+            return None
 
     # default validation_step provided for convenience
     # can obviously be overriden for each task
     def validation_step(self, batch, batch_idx: int):
-        """Guess default validation_step according to task specification
-
-            * binary cross-entropy loss for binary or multi-label classification
-            * negative log-likelihood loss for regular classification
-
-        In case of multi-tasking, it will default to summing loss of each task.
-
-        Parameters
-        ----------
-        batch : (usually) dict of torch.Tensor
-            Current batch.
-        batch_idx: int
-            Batch index.
-
-        Returns
-        -------
-        loss : {str: torch.tensor}
-            {"loss": loss} with additional "{task_name}" keys for multi-task models.
-        """
-
-        X, y = batch["X"], batch["y"]
-        y_pred = self.model(X)
-
-        if self.is_multi_task:
-            loss = dict()
-            for task_name, specifications in self.specifications.items():
-                loss[task_name] = self.default_loss(
-                    specifications, y[task_name], y_pred[task_name]
-                )
-                self.model.log(f"{task_name}@val_loss", loss[task_name])
-
-            loss["loss"] = sum(loss.values())
-            self.model.log(
-                f"{self.ACRONYM}@val_loss",
-                loss["loss"],
-                on_step=False,
-                on_epoch=True,
-                prog_bar=True,
-            )
-            return loss
-
-        loss = self.default_loss(self.specifications, y, y_pred)
-        self.model.log(
-            f"{self.ACRONYM}@val_loss",
-            loss,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-        )
-        return {"loss": loss}
+        return self.common_step(batch, batch_idx, "val")
 
     def validation_epoch_end(self, outputs):
         pass
@@ -448,5 +443,7 @@ class Task(pl.LightningDataModule):
         pytorch_lightning.callbacks.ModelCheckpoint
         pytorch_lightning.callbacks.EarlyStopping
         """
-
-        return f"{self.ACRONYM}@val_loss", "min"
+        if self.has_validation:
+            return f"{self.ACRONYM}@val_loss", "min"
+        else:
+            return None, "min"

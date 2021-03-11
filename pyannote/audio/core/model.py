@@ -33,6 +33,7 @@ import torch
 import torch.nn as nn
 import torch.optim
 from huggingface_hub import cached_download, hf_hub_url
+from pytorch_lightning.core.memory import ModelSummary
 from pytorch_lightning.utilities.cloud_io import load as pl_load
 from semver import VersionInfo
 
@@ -368,6 +369,11 @@ class Model(pl.LightningModule):
         # add layers that depends on task specs (e.g. final classification layer)
         self.build()
 
+        # move layers that were added by build() to same device as the rest of the model
+        for name, module in self.named_modules():
+            if (name, id(module)) not in before:
+                module.to(self.device)
+
         # add (trainable) loss function (e.g. ArcFace has its own set of trainable weights)
         if stage == "fit":
             # let task know about the model
@@ -387,8 +393,8 @@ class Model(pl.LightningModule):
 
     def on_save_checkpoint(self, checkpoint):
 
-        #  put everything pyannote.audio-specific under pyannote.audio
-        #  to avoid any future conflicts with pytorch-lightning updates
+        # put everything pyannote.audio-specific under pyannote.audio
+        # to avoid any future conflicts with pytorch-lightning updates
         checkpoint["pyannote.audio"] = {
             "versions": {
                 "torch": torch.__version__,
@@ -520,7 +526,7 @@ class Model(pl.LightningModule):
         tokens = module_name.split(".")
         updated_modules = list()
 
-        for name, module in self.summarize("full").named_modules:
+        for name, module in ModelSummary(self, mode="full").named_modules:
             name_tokens = name.split(".")
             matching_tokens = list(
                 token
@@ -612,7 +618,7 @@ class Model(pl.LightningModule):
         if isinstance(modules, str):
             modules = [modules]
 
-        for name, module in self.summarize("full").named_modules:
+        for name, module in ModelSummary(self, mode="full").named_modules:
 
             if name not in modules:
                 continue
@@ -691,7 +697,7 @@ class Model(pl.LightningModule):
     @classmethod
     def from_pretrained(
         cls,
-        checkpoint_path: Union[Path, Text],
+        checkpoint: Union[Path, Text],
         map_location=None,
         hparams_file: Union[Path, Text] = None,
         strict: bool = True,
@@ -703,13 +709,12 @@ class Model(pl.LightningModule):
 
         Parameters
         ----------
-        checkpoint_path : Path or str
+        checkpoint : Path or str
             Path to checkpoint, or a remote URL, or a model identifier from
             the huggingface.co model hub.
         map_location: optional
-            If your checkpoint saved a GPU model and you now load on CPUs
-            or a different number of GPUs, use this to map to the new setup.
-            The behaviour is the same as in torch.load().
+            Same role as in torch.load().
+            Defaults to `lambda storage, loc: storage`.
         hparams_file : Path or str, optional
             Path to a .yaml file with hierarchical structure as in this example:
                 drop_prob: 0.2
@@ -721,7 +726,7 @@ class Model(pl.LightningModule):
             file with the hparams you would like to use. These will be converted
             into a dict and passed into your Model for use.
         strict : bool, optional
-            Whether to strictly enforce that the keys in checkpoint_path match
+            Whether to strictly enforce that the keys in checkpoint match
             the keys returned by this module’s state dict. Defaults to True.
         task : Task, optional
             Setup model for fine tuning (or transfer learning) on this task.
@@ -737,31 +742,35 @@ class Model(pl.LightningModule):
         -------
         model : Model
             Model
+
+        See also
+        --------
+        torch.load
         """
 
         # pytorch-lightning expects str, not Path.
-        checkpoint_path = str(checkpoint_path)
+        checkpoint = str(checkpoint)
         if hparams_file is not None:
             hparams_file = str(hparams_file)
 
-        # resolve the checkpoint_path to
+        # resolve the checkpoint to
         # something that pl will handle
-        if os.path.isfile(checkpoint_path):
-            path_for_pl = checkpoint_path
-        elif urlparse(checkpoint_path).scheme in ("http", "https"):
-            path_for_pl = checkpoint_path
+        if os.path.isfile(checkpoint):
+            path_for_pl = checkpoint
+        elif urlparse(checkpoint).scheme in ("http", "https"):
+            path_for_pl = checkpoint
         else:
             # Finally, let's try to find it on Hugging Face model hub
             # e.g. julien-c/voice-activity-detection is a valid model id
             # and  julien-c/voice-activity-detection@main supports specifying a commit/branch/tag.
-            if "@" in checkpoint_path:
-                model_id = checkpoint_path.split("@")[0]
-                revision = checkpoint_path.split("@")[1]
+            if "@" in checkpoint:
+                model_id = checkpoint.split("@")[0]
+                revision = checkpoint.split("@")[1]
             else:
-                model_id = checkpoint_path
+                model_id = checkpoint
                 revision = None
             url = hf_hub_url(
-                model_id=model_id, filename=HF_PYTORCH_WEIGHTS_NAME, revision=revision
+                model_id, filename=HF_PYTORCH_WEIGHTS_NAME, revision=revision
             )
 
             path_for_pl = cached_download(
@@ -772,11 +781,18 @@ class Model(pl.LightningModule):
                 use_auth_token=use_auth_token,
             )
 
+        if map_location is None:
+
+            def default_map_location(storage, loc):
+                return storage
+
+            map_location = default_map_location
+
         # obtain model class from the checkpoint
-        checkpoint = pl_load(path_for_pl, map_location=map_location)
-        module_name: str = checkpoint["pyannote.audio"]["architecture"]["module"]
+        loaded_checkpoint = pl_load(path_for_pl, map_location=map_location)
+        module_name: str = loaded_checkpoint["pyannote.audio"]["architecture"]["module"]
         module = import_module(module_name)
-        class_name: str = checkpoint["pyannote.audio"]["architecture"]["class"]
+        class_name: str = loaded_checkpoint["pyannote.audio"]["architecture"]["class"]
         Klass = getattr(module, class_name)
 
         try:
@@ -814,7 +830,7 @@ class Model(pl.LightningModule):
 
             try:
                 missing_keys, unexpected_keys = model.load_state_dict(
-                    checkpoint["state_dict"], strict=strict
+                    loaded_checkpoint["state_dict"], strict=strict
                 )
             except RuntimeError as e:
                 if "size mismatch" in str(e):
