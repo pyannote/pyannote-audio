@@ -126,12 +126,15 @@ class AntoiNet(Model):
             if self.afterlstm:
                 transformer_input_dim = lstm["hidden_size"] * \
                     (2 if lstm["bidirectional"] else 1)
+                lstm_in_size = 60
+            else:
+                lstm_in_size = trs_in_dim
 
             monolithic = lstm["monolithic"]
             if monolithic:
                 multi_layer_lstm = dict(lstm)
                 del multi_layer_lstm["monolithic"]
-                self.lstm = nn.LSTM(60, **multi_layer_lstm)
+                self.lstm = nn.LSTM(lstm_in_size, **multi_layer_lstm)
 
             else:
                 num_layers = lstm["num_layers"]
@@ -146,7 +149,7 @@ class AntoiNet(Model):
                 self.lstm = nn.ModuleList(
                     [
                         nn.LSTM(
-                            60
+                            lstm_in_size
                             if i == 0
                             else lstm["hidden_size"] * (2 if lstm["bidirectional"] else 1),
                             **one_layer_lstm
