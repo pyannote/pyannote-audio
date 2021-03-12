@@ -349,13 +349,13 @@ class Inference:
 
             # TODO/ documment this
             if specifications.permutation_invariant:
-                warm_up_left = round(
+                warm_up_left = math.floor(
                     0.5
                     * (self.duration + self.warm_up[0] - self.warm_up[1] - self.step)
                     / self.duration
                     * num_frames_per_chunk
                 )
-                warm_up_right = num_frames_per_chunk - round(
+                warm_up_right = num_frames_per_chunk - math.ceil(
                     0.5
                     * (self.duration + self.warm_up[0] - self.warm_up[1] + self.step)
                     / self.duration
