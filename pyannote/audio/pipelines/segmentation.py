@@ -57,7 +57,7 @@ class Segmentation(Pipeline):
 
     Parameters
     ----------
-    segmentation : Model, str, or dict
+    segmentation : Model, str, or dict, optional
         Pretrained segmentation model. Defaults to "pyannote/Segmentation-PyanNet-DIHARD".
         See pyannote.audio.pipelines.utils.get_model for supported format.
     batch_size : int, optional
