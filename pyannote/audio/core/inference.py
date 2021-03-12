@@ -342,6 +342,12 @@ class Inference:
             if has_last_chunk:
                 num_frames_last_step, _ = introspection(last_step_size)
 
+            if specifications.permutation_invariant:
+                window = 1.0
+            else:
+                # Hamming window used for overlap-add aggregation
+                window = np.hamming(num_frames_per_chunk).reshape(-1, 1)
+
             # warm-up window used for overlap-add aggregation
             warm_up = np.ones((num_frames_per_chunk, 1))
             warm_up_first = np.ones((num_frames_per_chunk, 1))
@@ -425,12 +431,12 @@ class Inference:
                     warm_up_ = warm_up
 
                 aggregated_output[start_frame : start_frame + num_frames_per_chunk] += (
-                    output * warm_up_
+                    output * window * warm_up_
                 )
 
                 overlapping_chunk_count[
                     start_frame : start_frame + num_frames_per_chunk
-                ] += warm_up_
+                ] += (window * warm_up_)
 
             # process last (right-aligned) chunk separately
             if has_last_chunk:
@@ -448,9 +454,9 @@ class Inference:
                     )
 
                 aggregated_output[-num_frames_per_chunk:] += (
-                    last_output[task_name] * warm_up_last
+                    last_output[task_name] * window * warm_up_last
                 )
-                overlapping_chunk_count[-num_frames_per_chunk:] += warm_up_last
+                overlapping_chunk_count[-num_frames_per_chunk:] += window * warm_up_last
 
             aggregated_output /= np.maximum(overlapping_chunk_count, 1e-12)
 
