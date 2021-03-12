@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020 CNRS
+# Copyright (c) 2020-2021 CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -23,20 +23,15 @@
 """
 # Audio IO
 
-pyannote.audio relies on SoundFile for reading and librosa for resampling.
+pyannote.audio relies on torchaudio for reading and librosa for resampling.
 
-The reasons behind this technical choice are summarized in the following benchmarking notebooks:
-- Loading: https://gist.github.com/fcbec863c79e8b63242779f77f87a995
-- Resampling: https://gist.github.com/mogwai/a5df03e89ab33bc0a5648965280d5445
-
-Those benchmarks (and implementation choices) are meant to be updated when
-better options become available: we welcome PRs!
+We should switch torchaudio resampling as well at some point...
 """
 
 import math
 import warnings
 from pathlib import Path
-from typing import Optional, Text, Tuple, Union
+from typing import Mapping, Optional, Text, Tuple, Union
 
 import librosa
 import torch
@@ -136,9 +131,18 @@ class Audio:
         return info.num_frames / info.sample_rate
 
     @staticmethod
-    def is_valid(file: AudioFile) -> bool:
+    def validate_file(file: AudioFile) -> Union[Mapping, ProtocolFile]:
 
-        if isinstance(file, (ProtocolFile, dict)):
+        # TODO: add support for file-like object
+        # see https://github.com/pyannote/pyannote-audio/issues/564
+
+        if isinstance(file, str):
+            file = Path(file)
+
+        if isinstance(file, Path):
+            file = {"audio": file}
+
+        if isinstance(file, Mapping):
 
             if "waveform" in file:
 
@@ -153,16 +157,38 @@ class Audio:
                     raise ValueError(
                         "'waveform' must be provided with their 'sample_rate'."
                     )
-                return True
 
-            elif "audio" in file:
-                return True
+                if "uri" not in file:
+                    file["uri"] = "waveform"
 
-            else:
-                # TODO improve error message
-                raise ValueError("either 'audio' or 'waveform' key must be provided.")
+                return file
 
-        return True
+            if "audio" in file:
+
+                path = Path(file["audio"])
+                if not path.is_file():
+                    raise ValueError(f"File {path} does not exist")
+
+                if "uri" not in file:
+                    file["uri"] = path.stem
+
+                return file
+
+        raise ValueError(
+            """
+            Audio files can be provided using different types:
+                - a "str" instance: "/path/to/audio.wav"
+                - a "Path" instance: Path("/path/to/audio.wav")
+                - a ProtocolFile (or regular dict) with an "audio" key:
+                    {"audio": Path("/path/to/audio.wav")}
+                - a ProtocolFile (or regular dict) with both "waveform" and "sample_rate" key:
+                    {"waveform": (channel, time) numpy.ndarray or torch.Tensor, "sample_rate": 44100}
+
+            For last two options, an additional "channel" key can be provided as a zero-indexed
+            integer to load a specific channel:
+                    {"audio": Path("/path/to/stereo.wav"), "channel": 0}
+            """
+        )
 
     def __init__(self, sample_rate=None, mono=True):
         super().__init__()
@@ -226,32 +252,16 @@ class Audio:
         AudioFile
         """
 
-        self.is_valid(file)
-        audio = file
-        waveform = None
-        sample_rate = None
-        channel = None
+        file = self.validate_file(file)
 
-        if isinstance(file, (ProtocolFile, dict)):
+        if "waveform" in file:
+            waveform = file["waveform"]
+            sample_rate = file["sample_rate"]
 
-            if "waveform" in file:
-                audio = None
-                waveform = file["waveform"]
-                sample_rate = file.get("sample_rate", None)
+        elif "audio" in file:
+            waveform, sample_rate = torchaudio.load(file["audio"])
 
-            elif "audio" in file:
-                audio = file["audio"]
-
-            else:
-                pass
-
-            channel = file.get("channel", None)
-
-        if isinstance(audio, Path):
-            audio = str(audio)
-
-        if waveform is None:
-            waveform, sample_rate = torchaudio.load(audio)
+        channel = file.get("channel", None)
 
         if channel is not None:
             waveform = waveform[channel - 1 : channel]
@@ -295,31 +305,19 @@ class Audio:
         TODO: remove support for "mode" option. It is always "center" anyway.
         """
 
-        self.is_valid(file)
-        audio = file
-        waveform = None
-        channel = None
+        file = self.validate_file(file)
 
-        if isinstance(file, (ProtocolFile, dict)):
-            if "waveform" in file:
-                audio = None
-                waveform = file["waveform"]
-                sample_rate = file.get("sample_rate", None)
-                frames = waveform.shape[1]
+        if "waveform" in file:
+            waveform = file["waveform"]
+            sample_rate = file["sample_rate"]
+            frames = waveform.shape[1]
 
-            elif "audio" in file:
-                audio = file["audio"]
-
-            channel = file.get("channel", None)
-
-        if isinstance(audio, Path):
-            audio = str(audio)
-
-        # read sample rate and number of frames
-        if waveform is None:
-            info = torchaudio.info(audio)
+        else:
+            info = torchaudio.info(file["audio"])
             sample_rate = info.sample_rate
             frames = info.num_frames
+
+        channel = file.get("channel", None)
 
         # infer which samples to load from sample rate and requested chunk
         start_frame = round(segment.start * sample_rate)
@@ -362,27 +360,28 @@ class Audio:
             end_frame = min(end_frame, frames)
             num_frames = end_frame - start_frame
 
-        if waveform is not None:
-            data = waveform[:, start_frame:end_frame]
+        if "waveform" in file:
+            data = file["waveform"][:, start_frame:end_frame]
+
         else:
             try:
                 data, _ = torchaudio.load(
-                    audio, frame_offset=start_frame, num_frames=num_frames
+                    file["audio"], frame_offset=start_frame, num_frames=num_frames
                 )
             except RuntimeError:
                 msg = (
-                    f"torchaudio failed to seek-and-read in {audio}: "
+                    f"torchaudio failed to seek-and-read in {file['audio']}: "
                     f"loading the whole file instead."
                 )
                 warnings.warn(msg)
-                waveform, sample_rate = self(audio)
+                waveform, sample_rate = self(file)
                 data = waveform[:, start_frame:end_frame]
+
                 # storing waveform and sample_rate for next time
                 # as it is very likely that seek-and-read will
                 # fail again for this particular file
-                if isinstance(file, (ProtocolFile, dict)):
-                    file["waveform"] = waveform
-                    file["sample_rate"] = sample_rate
+                file["waveform"] = waveform
+                file["sample_rate"] = sample_rate
 
         if channel is not None:
             data = data[channel - 1 : channel, :]
