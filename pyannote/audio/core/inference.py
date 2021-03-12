@@ -342,19 +342,37 @@ class Inference:
             if has_last_chunk:
                 num_frames_last_step, _ = introspection(last_step_size)
 
-            if specifications.permutation_invariant:
-                window = 1.0
-            else:
+            # warm-up window used for overlap-add aggregation
+            warm_up = np.ones((num_frames_per_chunk, 1))
+            # ... for very first chunk
+            warm_up_first = np.ones((num_frames_per_chunk, 1))
+            # ... forvery last chunk
+            warm_up_last = np.ones((num_frames_per_chunk, 1))
+
+            if not specifications.permutation_invariant:
+
+                # anything before warm_up_left (and after num_frames_per_chunk - warm_up_right)
+                # will not be used in the final aggregation
+                warm_up_left = round(
+                    self.warm_up[0] / self.duration * num_frames_per_chunk
+                )
+                warm_up_right = round(
+                    self.warm_up[1] / self.duration * num_frames_per_chunk
+                )
+
                 # Hamming window used for overlap-add aggregation
                 window = np.hamming(num_frames_per_chunk).reshape(-1, 1)
 
-            # warm-up window used for overlap-add aggregation
-            warm_up = np.ones((num_frames_per_chunk, 1))
-            warm_up_first = np.ones((num_frames_per_chunk, 1))
-            warm_up_last = np.ones((num_frames_per_chunk, 1))
+            else:
+                # Regular overlap-add aggregation cannot be used directly for
+                # permutation-invariant models. Why? Because two consecutive
+                # chunks may disagree on part of their output (even after optimal
+                # permutation).
 
-            # TODO/ documment this
-            if specifications.permutation_invariant:
+                # These two lines make inference use only the (step-long) central
+                # part of each chunk in the final aggregation... essentially
+                # switching to a simple concatenation.
+
                 warm_up_left = math.floor(
                     0.5
                     * (self.duration + self.warm_up[0] - self.warm_up[1] - self.step)
@@ -367,13 +385,11 @@ class Inference:
                     / self.duration
                     * num_frames_per_chunk
                 )
-            else:
-                warm_up_left = round(
-                    self.warm_up[0] / self.duration * num_frames_per_chunk
-                )
-                warm_up_right = round(
-                    self.warm_up[1] / self.duration * num_frames_per_chunk
-                )
+
+                # we do not need a window here because there is no overlap
+                # between concatenated chunk central parts.
+                window = 1.0
+
             warm_up[:warm_up_left] = 0.0
             warm_up_last[:warm_up_left] = 0.0
             warm_up[num_frames_per_chunk - warm_up_right :] = 0.0
