@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020 CNRS
+# Copyright (c) 2020-2021 CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -22,13 +22,12 @@
 
 """Segmentation pipelines"""
 
-from typing import Text, Union
-
 from pyannote.audio import Inference
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.pipeline import Pipeline
+from pyannote.audio.pipelines.utils import PipelineModel, get_devices, get_model
 from pyannote.audio.utils.signal import Binarize
-from pyannote.core import Annotation, SlidingWindowFeature
+from pyannote.core import Annotation
 from pyannote.metrics.diarization import GreedyDiarizationErrorRate
 from pyannote.pipeline.parameter import Uniform
 
@@ -58,10 +57,11 @@ class Segmentation(Pipeline):
 
     Parameters
     ----------
-    scores : Inference or str, optional
-        `Inference` instance used to extract raw segmentation scores.
-        When `str`, assumes that file already contains a corresponding key with
-        precomputed scores. Defaults to "seg".
+    segmentation : Model, str, or dict
+        Pretrained segmentation model. Defaults to "pyannote/Segmentation-PyanNet-DIHARD".
+        See pyannote.audio.pipelines.utils.get_model for supported format.
+    batch_size : int, optional
+        Batch size. Defaults to 32.
 
     Hyper-parameters
     ----------------
@@ -73,12 +73,26 @@ class Segmentation(Pipeline):
         Fill same-speaker gaps shorter than that many seconds.
     """
 
-    def __init__(self, scores: Union[Inference, Text] = "seg"):
+    def __init__(
+        self,
+        segmentation: PipelineModel = "pyannote/Segmentation-PyanNet-DIHARD",
+        batch_size: int = 32,
+    ):
         super().__init__()
 
-        self.scores = scores
+        self.segmentation = segmentation
+        self.batch_size = batch_size
 
-        # TODO / one binarize per speaker dimension
+        # load model and send it to GPU (when available and not already on GPU)
+        model = get_model(segmentation)
+        if model.device.type == "cpu":
+            (segmentation_device,) = get_devices(needs=1)
+            model.to(segmentation_device)
+
+        self.segmentation_inference_ = Inference(
+            model,
+            batch_size=self.batch_size,
+        )
 
         #  hyper-parameters used for hysteresis thresholding
         self.onset = Uniform(0.0, 1.0)
@@ -86,8 +100,8 @@ class Segmentation(Pipeline):
 
         # hyper-parameters used for post-processing i.e. removing short speech turns
         # or filling short gaps between speech turns of one speaker
-        self.min_duration_on = Uniform(0.0, 2.0)
-        self.min_duration_off = Uniform(0.0, 2.0)
+        self.min_duration_on = Uniform(0.0, 1.0)
+        self.min_duration_off = Uniform(0.0, 1.0)
 
     def initialize(self):
         """Initialize pipeline with current set of parameters"""
@@ -113,12 +127,10 @@ class Segmentation(Pipeline):
             Segmentation
         """
 
-        if isinstance(self.scores, Inference):
-            speakers_probability: SlidingWindowFeature = self.scores(file)
-        else:
-            speakers_probability = file[self.scores]
+        speaker_activations = self.segmentation_inference_(file)
+        file["@segmentation/speaker_activations"] = speaker_activations
 
-        return self._binarize(speakers_probability)
+        return self._binarize(speaker_activations)
 
     def get_metric(self) -> GreedyDiarizationErrorRate:
         return GreedyDiarizationErrorRate(collar=0.0, skip_overlap=False)
