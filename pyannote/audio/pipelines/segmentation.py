@@ -129,8 +129,9 @@ class Segmentation(Pipeline):
 
         speaker_activations = self.segmentation_inference_(file)
         file["@segmentation/speaker_activations"] = speaker_activations
-
-        return self._binarize(speaker_activations)
+        segmentation = self._binarize(speaker_activations)
+        segmentation.uri = file["uri"]
+        return segmentation
 
     def get_metric(self) -> GreedyDiarizationErrorRate:
         return GreedyDiarizationErrorRate(collar=0.0, skip_overlap=False)
