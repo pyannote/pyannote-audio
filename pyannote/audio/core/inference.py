@@ -355,7 +355,7 @@ class Inference:
                     / self.duration
                     * num_frames_per_chunk
                 )
-                warm_up_right = round(
+                warm_up_right = num_frames_per_chunk - round(
                     0.5
                     * (self.duration + self.warm_up[0] - self.warm_up[1] + self.step)
                     / self.duration
