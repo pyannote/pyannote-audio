@@ -97,7 +97,7 @@ def permutate_torch(
             if k1 < num_classes_1:
                 permutation[k1] = k2
                 permutated_y2[b, :, k1] = y2_[:, k2]
-        permutations.append(permutation)
+        permutations.append(tuple(permutation))
 
         if returns_cost:
             costs.append(cost)
