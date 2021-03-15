@@ -70,7 +70,7 @@ class AntoiNet(Model):
         "dropout": 0.1,
         "activation": 'relu',
         "afterlstm": True,
-        "masking": True,
+        "masking": False,
     }
 
     LSTM_DEFAULTS = {
