@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020 CNRS
+# Copyright (c) 2020-2021 CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -22,13 +22,12 @@
 
 """Segmentation pipelines"""
 
-from typing import Text, Union
-
 from pyannote.audio import Inference
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.pipeline import Pipeline
+from pyannote.audio.pipelines.utils import PipelineModel, get_devices, get_model
 from pyannote.audio.utils.signal import Binarize
-from pyannote.core import Annotation, Segment, SlidingWindowFeature, Timeline
+from pyannote.core import Annotation
 from pyannote.metrics.diarization import GreedyDiarizationErrorRate
 from pyannote.pipeline.parameter import Uniform
 
@@ -58,10 +57,11 @@ class Segmentation(Pipeline):
 
     Parameters
     ----------
-    scores : Inference or str, optional
-        `Inference` instance used to extract raw segmentation scores.
-        When `str`, assumes that file already contains a corresponding key with
-        precomputed scores. Defaults to "seg".
+    segmentation : Model, str, or dict, optional
+        Pretrained segmentation model. Defaults to "pyannote/Segmentation-PyanNet-DIHARD".
+        See pyannote.audio.pipelines.utils.get_model for supported format.
+    batch_size : int, optional
+        Batch size. Defaults to 32.
 
     Hyper-parameters
     ----------------
@@ -71,18 +71,28 @@ class Segmentation(Pipeline):
         Remove speaker turn shorter than that many seconds.
     min_duration_off : float
         Fill same-speaker gaps shorter than that many seconds.
-    last_active_patience : float
-        Stop tracking a speaker if it has not been active for that many seconds.
-        This hyper-parameter has no effect when optimizing the segmentation pipeline,
-        but should be optimized when part of a larger (diarization) pipeline.
     """
 
-    def __init__(self, scores: Union[Inference, Text] = "seg"):
+    def __init__(
+        self,
+        segmentation: PipelineModel = "pyannote/Segmentation-PyanNet-DIHARD",
+        batch_size: int = 32,
+    ):
         super().__init__()
 
-        self.scores = scores
+        self.segmentation = segmentation
+        self.batch_size = batch_size
 
-        # TODO / one binarize per speaker dimension
+        # load model and send it to GPU (when available and not already on GPU)
+        model = get_model(segmentation)
+        if model.device.type == "cpu":
+            (segmentation_device,) = get_devices(needs=1)
+            model.to(segmentation_device)
+
+        self.segmentation_inference_ = Inference(
+            model,
+            batch_size=self.batch_size,
+        )
 
         #  hyper-parameters used for hysteresis thresholding
         self.onset = Uniform(0.0, 1.0)
@@ -90,12 +100,8 @@ class Segmentation(Pipeline):
 
         # hyper-parameters used for post-processing i.e. removing short speech turns
         # or filling short gaps between speech turns of one speaker
-        self.min_duration_on = Uniform(0.0, 2.0)
-        self.min_duration_off = Uniform(0.0, 2.0)
-
-        # hyper-parameters that controls when to stop tracking a speaker.
-        # this hyper-parameter has no effect when optimizing the Segmentation pipeline directly
-        self.last_active_patience = Uniform(0.0, 2.0)
+        self.min_duration_on = Uniform(0.0, 1.0)
+        self.min_duration_off = Uniform(0.0, 1.0)
 
     def initialize(self):
         """Initialize pipeline with current set of parameters"""
@@ -121,55 +127,14 @@ class Segmentation(Pipeline):
             Segmentation
         """
 
-        if isinstance(self.scores, Inference):
-            speakers_probability: SlidingWindowFeature = self.scores(file)
-        else:
-            speakers_probability = file[self.scores]
-
-        sliding_window = speakers_probability.sliding_window
-
-        uri = file.get("uri", None)
-        segmentation = Annotation(uri=uri, modality="speech")
-
-        previous_speaker_turn: Segment = None
-        for i, data in enumerate(speakers_probability.data.T):
-            speaker_probability = SlidingWindowFeature(
-                data.reshape(-1, 1), sliding_window
-            )
-            for s, speaker_turn in enumerate(
-                self._binarize(speaker_probability).get_timeline()
-            ):
-                if (s == 0) or (
-                    speaker_turn.start - previous_speaker_turn.end
-                    > self.last_active_patience
-                ):
-                    label = f"{i}-{s}"
-                segmentation[speaker_turn, i] = label
-                previous_speaker_turn = speaker_turn
-
-        return segmentation.rename_labels(generator="string")
+        speaker_activations = self.segmentation_inference_(file)
+        file["@segmentation/speaker_activations"] = speaker_activations
+        segmentation = self._binarize(speaker_activations)
+        segmentation.uri = file["uri"]
+        return segmentation
 
     def get_metric(self) -> GreedyDiarizationErrorRate:
-        """Return new instance of segmentation metric"""
-
-        # TODO: give each segment the same weight
-
-        class _Metric(GreedyDiarizationErrorRate):
-            def compute_components(
-                _self,
-                reference: Annotation,
-                hypothesis: Annotation,
-                uem: Timeline = None,
-                **kwargs,
-            ) -> dict:
-                return super().compute_components(
-                    reference.relabel_tracks(generator="string"),
-                    hypothesis.relabel_tracks(generator="string"),
-                    uem=uem,
-                    **kwargs,
-                )
-
-        return _Metric()
+        return GreedyDiarizationErrorRate(collar=0.0, skip_overlap=False)
 
     def get_direction(self):
         return "minimize"
