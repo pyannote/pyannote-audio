@@ -141,8 +141,9 @@ class BasicResegmentation(Pipeline):
             file
         )
 
-        file["debug/resegmentation/segmentation"] = self.segmentation_inference_(file)
-
+        file["@debug/resegmentation/segmentation"] = self.segmentation_inference_(file)
+        frames = file["@debug/resegmentation/segmentation"].sliding_window
+        
         # number of frames in each chunk
         num_chunks, num_frames_in_chunk, num_speakers = segmentations.data.shape
         # number of frames in the whole file
@@ -153,27 +154,24 @@ class BasicResegmentation(Pipeline):
         # turn input diarization into binary (0 or 1) activations
         labels = file[self.diarization].labels()
         num_clusters = len(labels)
-        y_original = np.zeros((num_frames_in_file, len(labels)), dtype=np.int8)
-        frames = SlidingWindow(
-            start=0.0,
-            duration=self.seg_chunk_duration_ / num_frames_in_chunk,
-            step=self.seg_chunk_duration_ / num_frames_in_chunk,
-        )
+        y_original = np.zeros((num_frames_in_file, len(labels)), dtype=segmentations.data.dtype)
         for k, label in enumerate(labels):
             segments = file[self.diarization].label_timeline(label)
             for start, stop in frames.crop(segments, mode="center", return_ranges=True):
                 y_original[start:stop, k] += 1
         y_original = np.minimum(y_original, 1, out=y_original)
         diarization = SlidingWindowFeature(y_original, frames)
-
+        file["@debug/resegmentation/diarization"] = diarization
+        
         aggregated = np.zeros((num_frames_in_file, num_clusters))
         overlapped = np.zeros((num_frames_in_file, num_clusters))
 
         for chunk, segmentation in segmentations:
             # TODO/ understand why we have to do this :num_frames_in_chunk thing
-            (permutated_segmentation,), _ = permutate(
-                diarization.crop(chunk)[np.newaxis, :num_frames_in_chunk],
-                segmentation,
+            local_diarization = diarization.crop(chunk)[np.newaxis, :num_frames_in_chunk]
+            #local_diarization = diarization.crop(chunk)[np.newaxis]
+            (permutated_segmentation,), (permutation,), (cost,) = permutate(
+                local_diarization, segmentation, returns_cost=True,
             )
 
             start_frame = round(chunk.start / self.seg_frame_duration_)
@@ -186,7 +184,7 @@ class BasicResegmentation(Pipeline):
             aggregated / overlapped, frames, labels=labels
         )
 
-        file["debug/resegmentation/activations"] = speaker_activations
+        file["@debug/resegmentation/activations"] = speaker_activations
 
         return self.binarize_(speaker_activations)
 
