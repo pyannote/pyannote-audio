@@ -105,17 +105,18 @@ class AntoiNet(Model):
         transformer = merge_dict(self.TRANSFORMER_DEFAULT, transformer)
         linear = merge_dict(self.LINEAR_DEFAULTS, linear)
         self.save_hyperparameters("sincnet", "transformer", "linear", "lstm")
-
         self.sincnet = SincNet(**self.hparams.sincnet)
 
-        num_transformer_encoder_layers = transformer["num_encoder_layers"]
-        del transformer["num_encoder_layers"]
-        trs_in_dim = transformer["trs_in_dim"]
-        del transformer["trs_in_dim"]
-        self.afterlstm = transformer["afterlstm"]
-        del transformer["afterlstm"]
-        self.masking = transformer["masking"]
-        del transformer["masking"]
+        trans_cp = transformer.copy()
+
+        num_transformer_encoder_layers = trans_cp["num_encoder_layers"]
+        del trans_cp["num_encoder_layers"]
+        trs_in_dim = trans_cp["trs_in_dim"]
+        del trans_cp["trs_in_dim"]
+        self.afterlstm = trans_cp["afterlstm"]
+        del trans_cp["afterlstm"]
+        self.masking = trans_cp["masking"]
+        del trans_cp["masking"]
         self.src_mask = None
 
         self.fc0 = None
@@ -163,7 +164,7 @@ class AntoiNet(Model):
         transformer_input_dim = trs_in_dim
 
         transformerEncoderLayer = nn.TransformerEncoderLayer(
-            d_model=transformer_input_dim,  ** transformer)
+            d_model=transformer_input_dim,  ** trans_cp)
         encoder_norm = nn.LayerNorm(transformer_input_dim)
         self.transformer = nn.TransformerEncoder(
             transformerEncoderLayer, num_transformer_encoder_layers, encoder_norm)
