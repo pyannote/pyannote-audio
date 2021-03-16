@@ -104,9 +104,6 @@ class BasicResegmentation(Pipeline):
             batch_size=32,
         )
 
-        self.segmentation_inference_.warm_up = (1.0, 1.0)
-        self.step = 1.0
-
         self.onset = 0.5
 
         # will be used to go from speaker activations SlidingWindowFeature instance
