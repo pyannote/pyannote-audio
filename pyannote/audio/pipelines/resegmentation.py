@@ -35,6 +35,7 @@ from pyannote.audio.utils.permutation import permutate
 from pyannote.audio.utils.signal import Binarize
 from pyannote.core import Annotation, SlidingWindow, SlidingWindowFeature
 from pyannote.metrics.diarization import GreedyDiarizationErrorRate
+from pyannote.pipeline.parameter import Uniform
 
 
 class BasicResegmentation(Pipeline):
@@ -104,17 +105,23 @@ class BasicResegmentation(Pipeline):
             batch_size=32,
         )
 
-        self.onset = 0.5
+        #  hyper-parameters used for hysteresis thresholding
+        self.onset = Uniform(0.0, 1.0)
+        self.offset = Uniform(0.0, 1.0)
 
-        # will be used to go from speaker activations SlidingWindowFeature instance
-        # to an actual diarization (as Annotation instance).
-        self.binarize_ = Binarize(
+        # hyper-parameters used for post-processing i.e. removing short speech turns
+        # or filling short gaps between speech turns of one speaker
+        self.min_duration_on = Uniform(0.0, 1.0)
+        self.min_duration_off = Uniform(0.0, 1.0)
+
+    def initialize(self):
+        """Initialize pipeline with current set of parameters"""
+
+        self._binarize = Binarize(
             onset=self.onset,
-            offset=0.5,
-            min_duration_on=0.0,
-            min_duration_off=0.0,
-            pad_onset=0.0,
-            pad_offset=0.0,
+            offset=self.offset,
+            min_duration_on=self.min_duration_on,
+            min_duration_off=self.min_duration_off,
         )
 
     def apply(self, file: AudioFile) -> Annotation:
@@ -197,7 +204,7 @@ class BasicResegmentation(Pipeline):
 
         file["@debug/resegmentation/activations"] = speaker_activations
 
-        return self.binarize_(speaker_activations)
+        return self._binarize(speaker_activations)
 
     def get_metric(self) -> GreedyDiarizationErrorRate:
         return GreedyDiarizationErrorRate(collar=0.0, skip_overlap=False)
