@@ -107,10 +107,12 @@ class BasicResegmentation(Pipeline):
         self.segmentation_inference_.warm_up = (1.0, 1.0)
         self.step = 1.0
 
+        self.onset = 0.5
+
         # will be used to go from speaker activations SlidingWindowFeature instance
         # to an actual diarization (as Annotation instance).
         self.binarize_ = Binarize(
-            onset=0.5,
+            onset=self.onset,
             offset=0.5,
             min_duration_on=0.0,
             min_duration_off=0.0,
@@ -143,7 +145,7 @@ class BasicResegmentation(Pipeline):
 
         file["@debug/resegmentation/segmentation"] = self.segmentation_inference_(file)
         frames = file["@debug/resegmentation/segmentation"].sliding_window
-        
+
         # number of frames in each chunk
         num_chunks, num_frames_in_chunk, num_speakers = segmentations.data.shape
         # number of frames in the whole file
@@ -154,7 +156,9 @@ class BasicResegmentation(Pipeline):
         # turn input diarization into binary (0 or 1) activations
         labels = file[self.diarization].labels()
         num_clusters = len(labels)
-        y_original = np.zeros((num_frames_in_file, len(labels)), dtype=segmentations.data.dtype)
+        y_original = np.zeros(
+            (num_frames_in_file, len(labels)), dtype=segmentations.data.dtype
+        )
         for k, label in enumerate(labels):
             segments = file[self.diarization].label_timeline(label)
             for start, stop in frames.crop(segments, mode="center", return_ranges=True):
@@ -162,16 +166,26 @@ class BasicResegmentation(Pipeline):
         y_original = np.minimum(y_original, 1, out=y_original)
         diarization = SlidingWindowFeature(y_original, frames)
         file["@debug/resegmentation/diarization"] = diarization
-        
+
         aggregated = np.zeros((num_frames_in_file, num_clusters))
         overlapped = np.zeros((num_frames_in_file, num_clusters))
 
         for chunk, segmentation in segmentations:
+
+            # only consider active speakers in `segmentation`
+            active = np.max(segmentation, axis=0) > self.onset
+            if np.sum(active) == 0:
+                continue
+            segmentation = segmentation[:, active]
+
             # TODO/ understand why we have to do this :num_frames_in_chunk thing
-            local_diarization = diarization.crop(chunk)[np.newaxis, :num_frames_in_chunk]
-            #local_diarization = diarization.crop(chunk)[np.newaxis]
+            local_diarization = diarization.crop(chunk)[
+                np.newaxis, :num_frames_in_chunk
+            ]
             (permutated_segmentation,), (permutation,), (cost,) = permutate(
-                local_diarization, segmentation, returns_cost=True,
+                local_diarization,
+                segmentation,
+                returns_cost=True,
             )
 
             start_frame = round(chunk.start / self.seg_frame_duration_)
