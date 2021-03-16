@@ -138,10 +138,6 @@ class BasicResegmentation(Pipeline):
             Speaker diarization
         """
 
-        # =====================================================================
-        # Apply the pretrained segmentation model S on sliding chunks.
-        # =====================================================================
-
         # output of segmentation model on each chunk
         segmentations: SlidingWindowFeature = self.segmentation_inference_by_chunk_(
             file
