@@ -20,8 +20,9 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import List, Text
+from typing import List, Text, Tuple, Union
 
+import numpy as np
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 
 from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
@@ -45,6 +46,18 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
         pyannote.database protocol
     duration : float, optional
         Chunks duration. Defaults to 2s.
+    warm_up : float or (float, float), optional
+        Use that many seconds on the left- and rightmost parts of each chunk
+        to warm up the model. While the model does process those left- and right-most
+        parts, only the remaining central part of each chunk is used for computing the
+        loss during training, and for aggregating scores during inference.
+        Defaults to 0. (i.e. no warm-up).
+    balance: str, optional
+        When provided, training samples are sampled uniformly with respect to that key.
+        For instance, setting `balance` to "uri" will make sure that each file will be
+        equally represented in the training samples.
+    weight: str, optional
+        When provided, use this key to as frame-wise weight in loss function.
     batch_size : int, optional
         Number of training samples per batch. Defaults to 32.
     num_workers : int, optional
@@ -65,6 +78,9 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
         self,
         protocol: Protocol,
         duration: float = 2.0,
+        warm_up: Union[float, Tuple[float, float]] = 0.0,
+        balance: Text = None,
+        weight: Text = None,
         batch_size: int = 32,
         num_workers: int = None,
         pin_memory: bool = False,
@@ -74,11 +90,15 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
         super().__init__(
             protocol,
             duration=duration,
+            warm_up=warm_up,
             batch_size=batch_size,
             num_workers=num_workers,
             pin_memory=pin_memory,
             augmentation=augmentation,
         )
+
+        self.balance = balance
+        self.weight = weight
 
         # for speaker tracking, task specification depends
         # on the data: we do not know in advance which
@@ -91,21 +111,14 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
 
         if stage == "fit":
 
-            # build the list of speakers to be tracked.
-            speakers = set()
-            for f in self._train:
-                speakers.update(f["annotation"].labels())
-
-            # now that we now who the speakers are, we can
-            # define the task specifications.
-
-            # note that, since multiple speakers can be active
-            # at once, the problem is multi-label classification.
             self.specifications = Specifications(
+                # one class per speaker
+                classes=sorted(self._train_metadata["annotation"]),
+                # multiple speakers can be active at once
                 problem=Problem.MULTI_LABEL_CLASSIFICATION,
                 resolution=Resolution.FRAME,
                 duration=self.duration,
-                classes=sorted(speakers),
+                warm_up=self.warm_up,
             )
 
     @property
@@ -115,3 +128,10 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
         Used by `prepare_chunk` so that y[:, k] corresponds to activity of kth speaker
         """
         return self.specifications.classes
+
+    def prepare_y(self, y: np.ndarray) -> np.ndarray:
+        """Get speaker tracking targets"""
+        return y
+
+    # TODO: add option to give more weights to smaller classes
+    # TODO: add option to balance training samples between classes

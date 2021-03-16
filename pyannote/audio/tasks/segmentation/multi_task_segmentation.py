@@ -21,14 +21,12 @@
 # SOFTWARE.
 
 
-import random
-from typing import Mapping
+from typing import Mapping, Text
 
 import numpy as np
 from pytorch_lightning.metrics.classification import FBeta
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 
-from pyannote.audio.core.io import Audio
 from pyannote.audio.core.task import Problem, Task
 from pyannote.audio.tasks import (
     OverlappedSpeechDetection,
@@ -36,8 +34,6 @@ from pyannote.audio.tasks import (
     VoiceActivityDetection,
 )
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
-from pyannote.audio.utils.random import create_rng_for_worker
-from pyannote.core import Segment
 from pyannote.database import Protocol
 
 
@@ -59,6 +55,20 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
         pyannote.database protocol
     duration : float, optional
         Chunks duration. Defaults to 2s.
+    balance: str, optional
+        When provided, training samples are sampled uniformly with respect to that key.
+        For instance, setting `balance` to "uri" will make sure that each file will be
+        equally represented in the training samples.
+    overlap: dict, optional
+        Controls how artificial chunks with overlapping speech are generated:
+        - "probability" key is the probability of artificial overlapping chunks. Setting
+          "probability" to 0.6 means that, on average, 40% of training chunks are "real"
+          chunks, while 60% are artifical chunks made out of the (weighted) sum of two
+          chunks. Defaults to 0.5.
+        - "snr_min" and "snr_max" keys control the minimum and maximum signal-to-noise
+          ratio between summed chunks, in dB. Default to 0.0 and 10.
+    weight: str, optional
+        When provided, use this key to as frame-wise weight in loss function.
     vad : bool, optional
         Add voice activity detection in the pool of tasks.
         Defaults to False.
@@ -94,10 +104,15 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
 
     ACRONYM = "xseg"
 
+    OVERLAP_DEFAULTS = {"probability": 0.5, "snr_min": 0.0, "snr_max": 10.0}
+
     def __init__(
         self,
         protocol: Protocol,
         duration: float = 2.0,
+        overlap: dict = OVERLAP_DEFAULTS,
+        balance: Text = None,
+        weight: Text = None,
         vad: bool = False,
         vad_params: Mapping = None,
         scd: bool = False,
@@ -168,11 +183,6 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
 
         if stage == "fit":
 
-            if self.osd and self.tasks["osd"].domain is not None:
-                for f in self._train:
-                    f["domain"] = f[self.tasks["osd"].domain]
-                self.domains = list(set(f["domain"] for f in self._train))
-
             self.specifications = {
                 name: task.specifications for name, task in self.tasks.items()
             }
@@ -194,107 +204,6 @@ class MultiTaskSegmentation(SegmentationTaskMixin, Task):
         """
 
         return {name: task.prepare_y(one_hot_y) for name, task in self.tasks.items()}
-
-    def train__iter__helper(self, rng: random.Random, domain: str = None):
-
-        train = self._train
-
-        if domain is not None:
-            train = [f for f in train if f["domain"] == domain]
-
-        while True:
-
-            # select one file at random (with probability proportional to its annotated duration)
-            file, *_ = rng.choices(
-                train,
-                weights=[f["duration"] for f in train],
-                k=1,
-            )
-
-            # select one annotated region at random (with probability proportional to its duration)
-            segment, *_ = rng.choices(
-                file["annotated"],
-                weights=[s.duration for s in file["annotated"]],
-                k=1,
-            )
-
-            # select one chunk at random (with uniform distribution)
-            start_time = rng.uniform(segment.start, segment.end - self.duration)
-            chunk = Segment(start_time, start_time + self.duration)
-
-            yield self.prepare_chunk(file, chunk, duration=self.duration)
-
-    def train__iter__(self):
-        """Iterate over training samples
-
-        Yields
-        ------
-        X: (time, channel)
-            Audio chunks.
-        y: (frame, )
-            Frame-level targets. Note that frame < time.
-            `frame` is infered automagically from the
-            example model output.
-        """
-
-        # create worker-specific random number generator
-        rng = create_rng_for_worker(self.model.current_epoch)
-
-        if self.osd and self.tasks["osd"].domain is not None:
-            chunks_by_domain = {
-                domain: self.train__iter__helper(rng, domain=domain)
-                for domain in self.domains
-            }
-        else:
-            chunks = self.train__iter__helper(rng)
-
-        while True:
-
-            if self.osd and self.tasks["osd"].domain is not None:
-                #  draw domain at random
-                domain = rng.choice(self.domains)
-                chunks = chunks_by_domain[domain]
-
-            # generate random chunk
-            X, one_hot_y, labels = next(chunks)
-
-            if (
-                not self.osd
-                or rng.random() > self.tasks["osd"].augmentation_probability
-            ):
-                # yield it as it is
-                yield {"X": X, "y": self.prepare_y(one_hot_y)}
-                continue
-
-            #  generate second random chunk
-            other_X, other_one_hot_y, other_labels = next(chunks)
-
-            #  sum both chunks with random SNR
-            random_snr = (
-                self.tasks["osd"].snr_max - self.tasks["osd"].snr_min
-            ) * rng.random() + self.tasks["osd"].snr_min
-            alpha = np.exp(-np.log(10) * random_snr / 20)
-            X = Audio.power_normalize(X) + alpha * Audio.power_normalize(other_X)
-
-            # combine speaker-to-index mapping
-            y_mapping = {label: i for i, label in enumerate(labels)}
-            num_labels = len(y_mapping)
-            for label in other_labels:
-                if label not in y_mapping:
-                    y_mapping[label] = num_labels
-                    num_labels += 1
-
-            #  combine one-hot-encoded speaker activities
-            combined_y = np.zeros_like(one_hot_y, shape=(len(one_hot_y), num_labels))
-            for i, label in enumerate(labels):
-                combined_y[:, y_mapping[label]] += one_hot_y[:, i]
-            for i, label in enumerate(other_labels):
-                combined_y[:, y_mapping[label]] += other_one_hot_y[:, i]
-
-            # handle corner case when the same label is active at the same time in both chunks
-            combined_y = np.minimum(combined_y, 1, out=combined_y)
-
-            yield {"X": X, "y": self.prepare_y(combined_y)}
 
     def setup_validation_metric(self):
 
