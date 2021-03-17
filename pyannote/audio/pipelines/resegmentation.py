@@ -51,12 +51,6 @@ class BasicResegmentation(Pipeline):
 
     Hyper-parameters
     ----------------
-    onset, offset : float
-        Onset/offset detection thresholds
-    min_duration_on : float
-        Remove speaker turn shorter than that many seconds.
-    min_duration_off : float
-        Fill same-speaker gaps shorter than that many seconds.
 
     """
 
@@ -176,7 +170,7 @@ class BasicResegmentation(Pipeline):
         aggregated = np.zeros((num_frames_in_file, num_clusters))
         overlapped = np.zeros((num_frames_in_file, num_clusters))
 
-        for c, (chunk, segmentation) in enumerate(segmentations):
+        for chunk, segmentation in segmentations:
 
             # only consider active speakers in `segmentation`
             active = np.max(segmentation, axis=0) > self.onset
@@ -195,53 +189,10 @@ class BasicResegmentation(Pipeline):
             )
 
             start_frame = round(chunk.start / self.seg_frame_duration_)
-
-            window = np.zeros(num_frames_in_chunk, 1)
-            if c == 0:
-                window[
-                    : math.ceil(
-                        0.5
-                        * (
-                            self.seg_chunk_duration_
-                            + self.segmentation_inference_by_chunk_.step
-                        )
-                        / self.seg_frame_duration_
-                    )
-                ] = 1
-            elif c + 1 == num_chunks:
-                window[
-                    math.floor(
-                        0.5
-                        * (
-                            self.seg_chunk_duration_
-                            - self.segmentation_inference_by_chunk_.step
-                        )
-                        / self.seg_frame_duration_
-                    ) :
-                ] = 1
-            else:
-                window[
-                    math.floor(
-                        0.5
-                        * (
-                            self.seg_chunk_duration_
-                            - self.segmentation_inference_by_chunk_.step
-                        )
-                        / self.seg_frame_duration_
-                    ) : math.ceil(
-                        0.5
-                        * (
-                            self.seg_chunk_duration_
-                            + self.segmentation_inference_by_chunk_.step
-                        )
-                        / self.seg_frame_duration_
-                    )
-                ] = 1
-
-            aggregated[start_frame : start_frame + num_frames_in_chunk] += (
-                permutated_segmentation * window
-            )
-            overlapped[start_frame : start_frame + num_frames_in_chunk] += window
+            aggregated[
+                start_frame : start_frame + num_frames_in_chunk
+            ] += permutated_segmentation
+            overlapped[start_frame : start_frame + num_frames_in_chunk] += 1.0
 
         speaker_activations = SlidingWindowFeature(
             aggregated / overlapped, frames, labels=labels
