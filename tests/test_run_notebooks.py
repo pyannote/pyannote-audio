@@ -5,7 +5,7 @@ import papermill as pm
 
 def test_can_run_notebooks():
     # Search for all notebooks in directory
-    notebooks = glob("**/*.ipynb")
+    notebooks = glob("notebook/**/*.ipynb")
     for nb in notebooks:
         try:
             pm.execute_notebook(
