@@ -567,6 +567,8 @@ class SegmentationTaskMixin:
             f"{self.ACRONYM}@val_samples", fig, self.model.current_epoch
         )
 
+        plt.close(fig)
+
     @property
     def val_monitor(self):
         """Maximize validation area under ROC curve"""

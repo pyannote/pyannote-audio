@@ -490,3 +490,5 @@ class Segmentation(SegmentationTaskMixin, Task):
         self.model.logger.experiment.add_figure(
             f"{self.ACRONYM}@val_samples", fig, self.model.current_epoch
         )
+
+        plt.close(fig)
