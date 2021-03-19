@@ -1,2 +1,5 @@
-codecov:
-  require_ci_to_pass: no
+coverage:
+  status:
+    patch:
+      default:
+        enabled: false
