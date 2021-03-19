@@ -85,7 +85,7 @@ class VoiceActivityDetection(Pipeline):
     ----------
     segmentation : Model, str, or dict, optional
         Pretrained segmentation (or voice activity detection) model.
-        Defaults to "pyannote/Segmentation-PyanNet-DIHARD".
+        Defaults to "hbredin/VoiceActivityDetection-PyanNet-DIHARD".
         See pyannote.audio.pipelines.utils.get_model for supported format.
     batch_size : int, optional
         Batch size. Defaults to 32.
@@ -105,7 +105,7 @@ class VoiceActivityDetection(Pipeline):
 
     def __init__(
         self,
-        segmentation: PipelineModel = "pyannote/Segmentation-PyanNet-DIHARD",
+        segmentation: PipelineModel = "hbredin/VoiceActivityDetection-PyanNet-DIHARD",
         batch_size: int = 32,
         fscore: bool = False,
     ):
