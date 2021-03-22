@@ -40,6 +40,7 @@ from semver import VersionInfo
 from pyannote.audio import __version__
 from pyannote.audio.core.io import Audio
 from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
+from pyannote.core import SlidingWindow
 
 CACHE_DIR = os.getenv(
     "PYANNOTE_CACHE",
@@ -51,9 +52,8 @@ HF_PYTORCH_WEIGHTS_NAME = "pytorch_model.bin"
 @dataclass
 class Introspection:
 
-    # TODO: make it a regular class
-    # TODO: add from_model class method that will replace Model.introspection property
-
+    # expected input sample rate
+    sample_rate: int
     # minimum number of input samples
     min_num_samples: int
     # corresponding minimum number of output frames
@@ -66,7 +66,7 @@ class Introspection:
     dimension: int
 
     def __call__(self, num_samples: int) -> Tuple[int, int]:
-        """Estimate output shape
+        """Predict output shape, given number of input samples
 
         Parameters
         ----------
@@ -79,7 +79,6 @@ class Introspection:
             Number of output frames
         dimension : int
             Dimension of output frames
-
         """
 
         if num_samples < self.min_num_samples:
@@ -91,6 +90,11 @@ class Introspection:
             * ((num_samples - self.min_num_samples + 1) // self.inc_num_samples),
             self.dimension,
         )
+
+    @property
+    def frames(self) -> SlidingWindow:
+        step = (self.inc_num_samples / self.inc_num_frames) / self.sample_rate
+        return SlidingWindow(start=0.0, step=step, duration=step)
 
     def __len__(self):
         # makes it possible to do something like:
@@ -269,6 +273,7 @@ class Model(pl.LightningModule):
         # corner case for chunk-level tasks
         if specifications.resolution == Resolution.CHUNK:
             return Introspection(
+                sample_rate=self.hparams.sample_rate,
                 min_num_samples=min_num_samples,
                 min_num_frames=1,
                 inc_num_samples=0,
@@ -321,6 +326,7 @@ class Model(pl.LightningModule):
                 break
 
         return Introspection(
+            sample_rate=self.hparams.sample_rate,
             min_num_samples=min_num_samples,
             min_num_frames=min_num_frames,
             inc_num_samples=inc_num_samples,

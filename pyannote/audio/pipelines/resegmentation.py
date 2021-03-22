@@ -22,7 +22,6 @@
 
 """Resegmentation pipeline"""
 
-import math
 from typing import Text
 
 import numpy as np
@@ -33,7 +32,7 @@ from pyannote.audio.core.pipeline import Pipeline
 from pyannote.audio.pipelines.utils import PipelineModel, get_devices, get_model
 from pyannote.audio.utils.permutation import permutate
 from pyannote.audio.utils.signal import Binarize
-from pyannote.core import Annotation, SlidingWindow, SlidingWindowFeature
+from pyannote.core import Annotation, SlidingWindowFeature
 from pyannote.metrics.diarization import GreedyDiarizationErrorRate
 from pyannote.pipeline.parameter import Uniform
 
@@ -75,33 +74,20 @@ class BasicResegmentation(Pipeline):
 
         self.audio_ = model.audio
 
-        # duration of chunks (in seconds) given as input of segmentation model
-        self.seg_chunk_duration_ = model.specifications.duration
         # number of speakers in output of segmentation model
-        self.seg_num_speakers_ = len(model.specifications.classes)
-        # duration of a frame (in seconds) in output of segmentation model
-        self.seg_frame_duration_ = (
-            model.introspection.inc_num_samples / self.audio_.sample_rate
-        )
-        # output frames as SlidingWindow instances
-        self.seg_frames_ = SlidingWindow(
-            start=0.0, step=self.seg_frame_duration_, duration=self.seg_frame_duration_
+        self.num_frames_in_chunk_, self.seg_num_speakers_ = model.introspection(
+            model.specifications.duration * model.hparams.sample_rate
         )
 
+        # output frames as SlidingWindow instances
+        self.seg_frames_ = model.introspection.frames
+
         # prepare segmentation model for inference
-        self.segmentation_inference_by_chunk_ = Inference(
+        self.seg_inference_ = Inference(
             model,
             window="sliding",
             skip_aggregation=True,
-            duration=self.seg_chunk_duration_,
-            batch_size=32,
-        )
-
-        self.segmentation_inference_ = Inference(
-            model,
-            window="sliding",
-            skip_aggregation=False,
-            duration=self.seg_chunk_duration_,
+            duration=model.specifications.duration,
             batch_size=32,
         )
 
@@ -139,18 +125,16 @@ class BasicResegmentation(Pipeline):
         """
 
         # output of segmentation model on each chunk
-        segmentations: SlidingWindowFeature = self.segmentation_inference_by_chunk_(
-            file
-        )
-
-        file["@debug/resegmentation/segmentation"] = self.segmentation_inference_(file)
-        frames = file["@debug/resegmentation/segmentation"].sliding_window
+        segmentations: SlidingWindowFeature = self.seg_inference_(file)
 
         # number of frames in each chunk
-        num_chunks, num_frames_in_chunk, num_speakers = segmentations.data.shape
+        num_chunks, num_frames_in_chunk, _ = segmentations.data.shape
+
+        assert num_frames_in_chunk == self.num_frames_in_chunk_
+
         # number of frames in the whole file
-        num_frames_in_file = math.ceil(
-            self.audio_.get_duration(file) / self.seg_frame_duration_
+        num_frames_in_file = self.seg_frames_.samples(
+            self.audio_.get_duration(file), mode="center"
         )
 
         # turn input diarization into binary (0 or 1) activations
@@ -161,10 +145,12 @@ class BasicResegmentation(Pipeline):
         )
         for k, label in enumerate(labels):
             segments = file[self.diarization].label_timeline(label)
-            for start, stop in frames.crop(segments, mode="center", return_ranges=True):
+            for start, stop in self.seg_frames_.crop(
+                segments, mode="center", return_ranges=True
+            ):
                 y_original[start:stop, k] += 1
         y_original = np.minimum(y_original, 1, out=y_original)
-        diarization = SlidingWindowFeature(y_original, frames)
+        diarization = SlidingWindowFeature(y_original, self.seg_frames_)
         file["@debug/resegmentation/diarization"] = diarization
 
         aggregated = np.zeros((num_frames_in_file, num_clusters))
@@ -179,23 +165,20 @@ class BasicResegmentation(Pipeline):
             segmentation = segmentation[:, active]
 
             # TODO/ understand why we have to do this :num_frames_in_chunk thing
-            local_diarization = diarization.crop(chunk)[
-                np.newaxis, :num_frames_in_chunk
-            ]
-            (permutated_segmentation,), (permutation,), (cost,) = permutate(
-                local_diarization,
-                segmentation,
-                returns_cost=True,
-            )
+            # local_diarization = diarization.crop(chunk)[
+            #     np.newaxis, :num_frames_in_chunk
+            # ]
+            local_diarization = diarization.crop(chunk)[np.newaxis]
+            (permutated_segmentation,), _ = permutate(local_diarization, segmentation)
 
-            start_frame = round(chunk.start / self.seg_frame_duration_)
+            start_frame = round(chunk.start / self.seg_frames_.duration)
             aggregated[
                 start_frame : start_frame + num_frames_in_chunk
             ] += permutated_segmentation
             overlapped[start_frame : start_frame + num_frames_in_chunk] += 1.0
 
         speaker_activations = SlidingWindowFeature(
-            aggregated / overlapped, frames, labels=labels
+            aggregated / overlapped, self.seg_frames_, labels=labels
         )
 
         file["@debug/resegmentation/activations"] = speaker_activations
