@@ -52,8 +52,6 @@ HF_PYTORCH_WEIGHTS_NAME = "pytorch_model.bin"
 @dataclass
 class Introspection:
 
-    # expected input sample rate
-    sample_rate: int = 16000
     # minimum number of input samples
     min_num_samples: int
     # corresponding minimum number of output frames
@@ -64,6 +62,8 @@ class Introspection:
     inc_num_frames: int
     # output dimension
     dimension: int
+    # expected input sample rate
+    sample_rate: int = 16000
 
     def __call__(self, num_samples: int) -> Tuple[int, int]:
         """Predict output shape, given number of input samples
