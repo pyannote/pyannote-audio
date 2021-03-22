@@ -53,7 +53,7 @@ HF_PYTORCH_WEIGHTS_NAME = "pytorch_model.bin"
 class Introspection:
 
     # expected input sample rate
-    sample_rate: int
+    sample_rate: int = 16000
     # minimum number of input samples
     min_num_samples: int
     # corresponding minimum number of output frames
