@@ -21,6 +21,7 @@
 # SOFTWARE.
 
 from .overlapped_speech_detection import OverlappedSpeechDetection
+from .resegmentation import Resegmentation
 from .segmentation import Segmentation
 from .speaker_diarization import SpeakerDiarization
 from .voice_activity_detection import VoiceActivityDetection
@@ -35,4 +36,5 @@ __all__ = [
     "Segmentation",
     "OverlappedSpeechDetection",
     "SpeakerDiarization",
+    "Resegmentation",
 ]
