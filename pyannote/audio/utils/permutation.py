@@ -71,7 +71,7 @@ def permutate_torch(
     if returns_cost:
         costs = []
 
-    permutated_y2 = torch.zeros_like(y1)
+    permutated_y2 = torch.zeros(y1.shape, device=y2.device, dtype=y2.dtype)
 
     for b, (y1_, y2_) in enumerate(zip(y1, y2)):
         with torch.no_grad():
