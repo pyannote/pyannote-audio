@@ -139,11 +139,6 @@ class Resegmentation(Pipeline):
         # output of segmentation model on each chunk
         segmentations: SlidingWindowFeature = self.seg_inference_(file)
 
-        # number of frames in each chunk
-        num_chunks, num_frames_in_chunk, _ = segmentations.data.shape
-
-        assert num_frames_in_chunk == self.num_frames_in_chunk_
-
         # number of frames in the whole file
         num_frames_in_file = self.seg_frames_.samples(
             self.audio_.get_duration(file), mode="center"
@@ -177,15 +172,15 @@ class Resegmentation(Pipeline):
             segmentation = segmentation[:, active]
 
             local_diarization = diarization.crop(chunk)[
-                np.newaxis, :num_frames_in_chunk
+                np.newaxis, : self.num_frames_in_chunk_
             ]
             (permutated_segmentation,), _ = permutate(local_diarization, segmentation)
 
             start_frame = round(chunk.start / self.seg_frames_.duration)
             aggregated[
-                start_frame : start_frame + num_frames_in_chunk
+                start_frame : start_frame + self.num_frames_in_chunk_
             ] += permutated_segmentation
-            overlapped[start_frame : start_frame + num_frames_in_chunk] += 1.0
+            overlapped[start_frame : start_frame + self.num_frames_in_chunk_] += 1.0
 
         speaker_activations = SlidingWindowFeature(
             aggregated / overlapped, self.seg_frames_, labels=labels
