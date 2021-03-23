@@ -88,7 +88,7 @@ class Resegmentation(Pipeline):
 
         # number of speakers in output of segmentation model
         self.num_frames_in_chunk_, self.seg_num_speakers_ = model.introspection(
-            model.specifications.duration * model.hparams.sample_rate
+            round(model.specifications.duration * model.hparams.sample_rate)
         )
 
         # output frames as SlidingWindow instances
