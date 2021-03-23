@@ -83,7 +83,7 @@ class Introspection:
         inc_num_samples: int,
         inc_num_frames: int,
         dimension: int,
-        sample_rate: int = 16000,
+        sample_rate: int,
     ):
         super().__init__()
         self.min_num_samples = min_num_samples
@@ -231,7 +231,9 @@ class Introspection:
 
     @property
     def frames(self) -> SlidingWindow:
-        step = (self.inc_num_samples / self.inc_num_frames) / self.sample_rate
+        # HACK to support model trained before 'sample_rate' was an Introspection attribute
+        sample_rate = getattr(self, "sample_rate", 16000)
+        step = (self.inc_num_samples / self.inc_num_frames) / sample_rate
         return SlidingWindow(start=0.0, step=step, duration=step)
 
     def __len__(self):
