@@ -128,7 +128,7 @@ class Segmentation(Pipeline):
         """
 
         speaker_activations = self.segmentation_inference_(file)
-        file["@segmentation/speaker_activations"] = speaker_activations
+        file["@segmentation/activations"] = speaker_activations
         segmentation = self._binarize(speaker_activations)
         segmentation.uri = file["uri"]
         return segmentation

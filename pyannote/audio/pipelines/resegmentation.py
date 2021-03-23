@@ -163,7 +163,7 @@ class Resegmentation(Pipeline):
                 y_original[start:stop, k] += 1
         y_original = np.minimum(y_original, 1, out=y_original)
         diarization = SlidingWindowFeature(y_original, self.seg_frames_)
-        file["@debug/resegmentation/diarization"] = diarization
+        file["@resegmentation/diarization"] = diarization
 
         aggregated = np.zeros((num_frames_in_file, num_clusters))
         overlapped = np.zeros((num_frames_in_file, num_clusters))
@@ -191,7 +191,7 @@ class Resegmentation(Pipeline):
             aggregated / overlapped, self.seg_frames_, labels=labels
         )
 
-        file["@debug/resegmentation/activations"] = speaker_activations
+        file["@resegmentation/activations"] = speaker_activations
 
         return self._binarize(speaker_activations)
 
