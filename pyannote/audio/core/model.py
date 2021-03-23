@@ -97,6 +97,8 @@ class Introspection:
     def from_model(cls, model: "Model", task: str = None) -> Introspection:
 
         specifications = model.specifications
+        if task is not None:
+            specifications = specifications[task]
 
         example_input_array = model.example_input_array
         batch_size, num_channels, num_samples = example_input_array.shape
