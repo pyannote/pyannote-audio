@@ -176,11 +176,9 @@ class Resegmentation(Pipeline):
                 continue
             segmentation = segmentation[:, active]
 
-            # TODO/ understand why we have to do this :num_frames_in_chunk thing
-            # local_diarization = diarization.crop(chunk)[
-            #     np.newaxis, :num_frames_in_chunk
-            # ]
-            local_diarization = diarization.crop(chunk)[np.newaxis]
+            local_diarization = diarization.crop(chunk)[
+                np.newaxis, :num_frames_in_chunk
+            ]
             (permutated_segmentation,), _ = permutate(local_diarization, segmentation)
 
             start_frame = round(chunk.start / self.seg_frames_.duration)
