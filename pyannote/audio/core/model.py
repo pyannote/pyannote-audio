@@ -90,6 +90,7 @@ class Introspection:
         self.min_num_frames = min_num_frames
         self.inc_num_samples = inc_num_samples
         self.inc_num_frames = inc_num_frames
+        self.dimension = dimension
         self.sample_rate = sample_rate
 
     @classmethod
