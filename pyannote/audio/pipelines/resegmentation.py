@@ -37,8 +37,15 @@ from pyannote.metrics.diarization import GreedyDiarizationErrorRate
 from pyannote.pipeline.parameter import Uniform
 
 
-class BasicResegmentation(Pipeline):
+class Resegmentation(Pipeline):
     """Resegmentation pipeline
+
+    This pipeline relies on a pretrained segmentation model to improve an existing diarization
+    hypothesis. Resegmentation is done locally by sliding the segmentation model over the whole
+    file. For each position of the sliding window, we find the optimal mapping between the input
+    diarization and the output of the segmentation model and permutate the latter accordingly.
+    Permutated local segmentations scores are then aggregated over time and postprocessed using
+    hysteresis thresholding.
 
     Parameters
     ----------
@@ -50,7 +57,12 @@ class BasicResegmentation(Pipeline):
 
     Hyper-parameters
     ----------------
-
+    onset, offset : float
+        Onset/offset detection thresholds
+    min_duration_on : float
+        Remove speaker turn shorter than that many seconds.
+    min_duration_off : float
+        Fill same-speaker gaps shorter than that many seconds.
     """
 
     def __init__(
