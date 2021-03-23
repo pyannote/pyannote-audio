@@ -145,6 +145,7 @@ class Introspection:
         if specifications.resolution == Resolution.CHUNK:
             return cls(
                 min_num_samples=min_num_samples,
+                min_num_frames=1,
                 inc_num_samples=0,
                 inc_num_frames=0,
                 dimension=dimension,
