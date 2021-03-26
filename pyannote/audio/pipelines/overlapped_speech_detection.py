@@ -1,6 +1,6 @@
 # The MIT License (MIT)
 #
-# Copyright (c) 2018-2020 CNRS
+# Copyright (c) 2018-2021 CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -22,13 +22,16 @@
 
 """Overlapped speech detection pipelines"""
 
-from typing import Optional, Text, Union
+from typing import Optional
+
+import numpy as np
 
 from pyannote.audio import Inference
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.pipeline import Pipeline
+from pyannote.audio.pipelines.utils import PipelineModel, get_devices, get_model
 from pyannote.audio.utils.signal import Binarize
-from pyannote.core import Annotation, Timeline
+from pyannote.core import Annotation, SlidingWindowFeature, Timeline
 from pyannote.database import get_annotated
 from pyannote.metrics.detection import DetectionPrecisionRecallFMeasure
 from pyannote.pipeline.parameter import Uniform
@@ -82,10 +85,12 @@ class OverlappedSpeechDetection(Pipeline):
 
     Parameters
     ----------
-    scores : Inference or str
-        `Inference` instance used to extract raw overlapped speech detection scores.
-        When `str`, assumes that file already contains a corresponding key with
-        precomputed scores. Defaults to "osd".
+    segmentation : Model, str, or dict, optional
+        Pretrained segmentation (or overlapped speech detection) model.
+        Defaults to "pyannote/Segmentation-PyanNet-DIHARD".
+        See pyannote.audio.pipelines.utils.get_model for supported format.
+    batch_size : int, optional
+        Batch size. Defaults to 32.
     precision : float, optional
         Optimize recall at target precision.
         Defaults to optimize precision/recall fscore.
@@ -95,30 +100,45 @@ class OverlappedSpeechDetection(Pipeline):
 
     Hyper-parameters
     ----------------
-    onset, offset : `float`
+    onset, offset : float
         Onset/offset detection thresholds
-    min_duration_on, min_duration_off : `float`
-        Minimum duration in either state (overlap or not)
+    min_duration_on : float
+        Remove speech regions shorter than that many seconds.
+    min_duration_off : float
+        Fill non-speech regions shorter than that many seconds.
     """
 
     def __init__(
         self,
-        scores: Union[Inference, Text] = "vad",
+        segmentation: PipelineModel = "pyannote/Segmentation-PyanNet-DIHARD",
+        batch_size: int = 32,
         precision: Optional[float] = None,
         recall: Optional[float] = None,
     ):
         super().__init__()
 
-        self.scores = scores
+        self.segmentation = segmentation
+        self.batch_size = batch_size
+
+        # load model and send it to GPU (when available and not already on GPU)
+        model = get_model(segmentation)
+        if model.device.type == "cpu":
+            (segmentation_device,) = get_devices(needs=1)
+            model.to(segmentation_device)
+
+        self.segmentation_inference_ = Inference(
+            model,
+            batch_size=self.batch_size,
+        )
 
         #  hyper-parameters used for hysteresis thresholding
         self.onset = Uniform(0.0, 1.0)
         self.offset = Uniform(0.0, 1.0)
 
-        #  hyper-parameters used for post-processing
-        # i.e. removing short overlap/non-overlap regions
-        self.min_duration_on = Uniform(0.0, 2.0)
-        self.min_duration_off = Uniform(0.0, 2.0)
+        # hyper-parameters used for post-processing i.e. removing short overlapped regions
+        # or filling short gaps between overlapped regions
+        self.min_duration_on = Uniform(0.0, 1.0)
+        self.min_duration_off = Uniform(0.0, 1.0)
 
         if (precision is not None) and (recall is not None):
             raise ValueError(
@@ -148,18 +168,26 @@ class OverlappedSpeechDetection(Pipeline):
 
         Returns
         -------
-        speech : Annotation
+        overlapped_speech : `pyannote.core.Annotation`
             Overlapped speech regions.
         """
 
-        if isinstance(self.scores, Inference):
-            overlap_probability = self.scores(file)
-        else:
-            overlap_probability = file[self.scores]
+        segmentation = self.segmentation_inference_(file)
 
-        overlap = self._binarize(overlap_probability)
-        overlap.uri = file.get("uri", None)
-        return overlap
+        if segmentation.data.shape[1] == 1:
+            file["@overlapped_speech_detection/activation"] = segmentation
+            activation = segmentation
+        else:
+            file["@overlapped_speech_detection/segmentation"] = segmentation
+            # second largest activation
+            activation = SlidingWindowFeature(
+                np.partition(segmentation.data, -2, axis=1)[:, -2, np.newaxis],
+                segmentation.sliding_window,
+            )
+
+        overlapped_speech = self._binarize(activation)
+        overlapped_speech.uri = file["uri"]
+        return overlapped_speech
 
     def get_metric(self, **kwargs) -> DetectionPrecisionRecallFMeasure:
         """Get overlapped speech detection metric

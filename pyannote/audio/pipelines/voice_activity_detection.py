@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2018-2020 CNRS
+# Copyright (c) 2018-2021 CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -25,7 +25,7 @@
 import tempfile
 from copy import deepcopy
 from types import MethodType
-from typing import Text, Union
+from typing import Union
 
 import numpy as np
 from pytorch_lightning import Trainer
@@ -39,12 +39,15 @@ from pyannote.audio.core.pipeline import Pipeline
 from pyannote.audio.pipelines.utils import (
     PipelineAugmentation,
     PipelineInference,
+    PipelineModel,
     get_augmentation,
+    get_devices,
     get_inference,
+    get_model,
 )
 from pyannote.audio.tasks import VoiceActivityDetection as VoiceActivityDetectionTask
 from pyannote.audio.utils.signal import Binarize
-from pyannote.core import Annotation
+from pyannote.core import Annotation, SlidingWindowFeature
 from pyannote.database.protocol import SpeakerDiarizationProtocol
 from pyannote.metrics.detection import (
     DetectionErrorRate,
@@ -80,10 +83,12 @@ class VoiceActivityDetection(Pipeline):
 
     Parameters
     ----------
-    scores : Inference or str, optional
-        `Inference` instance used to extract raw voice activity detection scores.
-        When `str`, assumes that file already contains a corresponding key with
-        precomputed scores. Defaults to "vad".
+    segmentation : Model, str, or dict, optional
+        Pretrained segmentation (or voice activity detection) model.
+        Defaults to "hbredin/VoiceActivityDetection-PyanNet-DIHARD".
+        See pyannote.audio.pipelines.utils.get_model for supported format.
+    batch_size : int, optional
+        Batch size. Defaults to 32.
     fscore : bool, optional
         Optimize (precision/recall) fscore. Defaults to optimizing detection
         error rate.
@@ -92,25 +97,43 @@ class VoiceActivityDetection(Pipeline):
     ----------------
     onset, offset : float
         Onset/offset detection thresholds
-    min_duration_on, min_duration_off : float
-        Minimum duration in either state (speech or not)
-
+    min_duration_on : float
+        Remove speech regions shorter than that many seconds.
+    min_duration_off : float
+        Fill non-speech regions shorter than that many seconds.
     """
 
-    def __init__(self, scores: Union[Inference, Text] = "vad", fscore: bool = False):
+    def __init__(
+        self,
+        segmentation: PipelineModel = "hbredin/VoiceActivityDetection-PyanNet-DIHARD",
+        batch_size: int = 32,
+        fscore: bool = False,
+    ):
         super().__init__()
 
-        self.scores = scores
+        self.segmentation = segmentation
+        self.batch_size = batch_size
         self.fscore = fscore
 
-        # hyper-parameters used for hysteresis thresholding
+        # load model and send it to GPU (when available and not already on GPU)
+        model = get_model(segmentation)
+        if model.device.type == "cpu":
+            (segmentation_device,) = get_devices(needs=1)
+            model.to(segmentation_device)
+
+        self.segmentation_inference_ = Inference(
+            model,
+            batch_size=self.batch_size,
+        )
+
+        #  hyper-parameters used for hysteresis thresholding
         self.onset = Uniform(0.0, 1.0)
         self.offset = Uniform(0.0, 1.0)
 
-        # hyper-parameters used for post-processing
-        # i.e. removing short speech/non-speech regions
-        self.min_duration_on = Uniform(0.0, 2.0)
-        self.min_duration_off = Uniform(0.0, 2.0)
+        # hyper-parameters used for post-processing i.e. removing short speech regions
+        # or filling short gaps between speech regions
+        self.min_duration_on = Uniform(0.0, 1.0)
+        self.min_duration_off = Uniform(0.0, 1.0)
 
     def initialize(self):
         """Initialize pipeline with current set of parameters"""
@@ -136,13 +159,20 @@ class VoiceActivityDetection(Pipeline):
             Speech regions.
         """
 
-        if isinstance(self.scores, Inference):
-            speech_probability = self.scores(file)
-        else:
-            speech_probability = file[self.scores]
+        segmentation = self.segmentation_inference_(file)
 
-        speech = self._binarize(speech_probability)
-        speech.uri = file.get("uri", None)
+        if segmentation.data.shape[1] == 1:
+            file["@voice_activity_detection/activation"] = segmentation
+            activation = segmentation
+        else:
+            file["@voice_activity_detection/segmentation"] = segmentation
+            activation = SlidingWindowFeature(
+                np.max(segmentation.data, axis=1, keepdims=True),
+                segmentation.sliding_window,
+            )
+
+        speech = self._binarize(activation)
+        speech.uri = file["uri"]
         return speech
 
     def get_metric(self) -> Union[DetectionErrorRate, DetectionPrecisionRecallFMeasure]:

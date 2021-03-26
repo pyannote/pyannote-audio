@@ -4,7 +4,7 @@ huggingface_hub
 hydra-core >= 1.0.4
 librosa >= 0.8
 pyannote.core >= 4.1
-pyannote.database >= 4.0.4
+pyannote.database >= 4.0.4,<4.1
 pyannote.metrics >= 3.0.1
 pyannote.pipeline >= 2.0
 pytorch_lightning >= 1.0.0

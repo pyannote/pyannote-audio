@@ -22,14 +22,13 @@
 
 import os
 from pathlib import Path
-from typing import Mapping, Text, Union
+from typing import Text, Union
 
 import torch
 import yaml
 from huggingface_hub import cached_download, hf_hub_url
 
-from pyannote.audio import __version__
-from pyannote.audio.core.inference import Inference
+from pyannote.audio import Audio, Inference, __version__
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import CACHE_DIR
 from pyannote.core.utils.helper import get_class_by_name
@@ -161,8 +160,7 @@ class Pipeline(_Pipeline):
 
     def __call__(self, file: AudioFile):
 
-        if not isinstance(file, Mapping):
-            file = {"audio": file}
+        file = Audio.validate_file(file)
 
         if hasattr(self, "preprocessors"):
             file = ProtocolFile(file, lazy=self.preprocessors)
