@@ -54,7 +54,7 @@ def permutate_torch(
         y2 = y2.expand(batch_size, -1, -1)
 
     if len(y2.shape) != 3:
-        msg = "Incorrect shape: should be (batch_size, num_frames, num_classes_1)."
+        msg = "Incorrect shape: should be (batch_size, num_frames, num_classes)."
         raise ValueError(msg)
 
     batch_size_, num_samples_, num_classes_2 = y2.shape
