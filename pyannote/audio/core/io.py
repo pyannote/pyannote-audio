@@ -171,6 +171,9 @@ class Audio:
 
         elif "audio" in file:
 
+            if callable(getattr(file["audio"], "read", None)):
+                return file
+                        
             path = Path(file["audio"])
             if not path.is_file():
                 raise ValueError(f"File {path} does not exist")
