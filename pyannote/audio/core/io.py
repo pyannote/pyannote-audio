@@ -173,7 +173,7 @@ class Audio:
 
             if callable(getattr(file["audio"], "read", None)):
                 return file
-                        
+
             path = Path(file["audio"])
             if not path.is_file():
                 raise ValueError(f"File {path} does not exist")
@@ -247,6 +247,10 @@ class Audio:
             return len(file["waveform"].T / file["sample_rate"])
 
         info = torchaudio.info(file["audio"])
+
+        if callable(getattr(file["audio"], "read", None)):
+            file["audio"].seek(0)
+
         return info.num_frames / info.sample_rate
 
     def __call__(self, file: AudioFile) -> Tuple[Tensor, int]:
