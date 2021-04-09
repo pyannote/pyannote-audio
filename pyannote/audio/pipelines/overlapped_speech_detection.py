@@ -87,16 +87,16 @@ class OverlappedSpeechDetection(Pipeline):
     ----------
     segmentation : Model, str, or dict, optional
         Pretrained segmentation (or overlapped speech detection) model.
-        Defaults to "pyannote/Segmentation-PyanNet-DIHARD".
+        Defaults to "pyannote/segmentation".
         See pyannote.audio.pipelines.utils.get_model for supported format.
-    batch_size : int, optional
-        Batch size. Defaults to 32.
     precision : float, optional
         Optimize recall at target precision.
         Defaults to optimize precision/recall fscore.
     recall : float, optional
         Optimize precision at target recall
         Defaults to optimize precision/recall fscore
+    inference_kwargs : dict, optional
+        Keywords arguments passed to Inference.
 
     Hyper-parameters
     ----------------
@@ -110,15 +110,14 @@ class OverlappedSpeechDetection(Pipeline):
 
     def __init__(
         self,
-        segmentation: PipelineModel = "pyannote/Segmentation-PyanNet-DIHARD",
-        batch_size: int = 32,
+        segmentation: PipelineModel = "pyannote/segmentation",
         precision: Optional[float] = None,
         recall: Optional[float] = None,
+        **inference_kwargs,
     ):
         super().__init__()
 
         self.segmentation = segmentation
-        self.batch_size = batch_size
 
         # load model and send it to GPU (when available and not already on GPU)
         model = get_model(segmentation)
@@ -126,10 +125,7 @@ class OverlappedSpeechDetection(Pipeline):
             (segmentation_device,) = get_devices(needs=1)
             model.to(segmentation_device)
 
-        self.segmentation_inference_ = Inference(
-            model,
-            batch_size=self.batch_size,
-        )
+        self.segmentation_inference_ = Inference(model, **inference_kwargs)
 
         #  hyper-parameters used for hysteresis thresholding
         self.onset = Uniform(0.0, 1.0)
@@ -209,7 +205,7 @@ class OverlappedSpeechDetection(Pipeline):
                 reference: Annotation,
                 hypothesis: Annotation,
                 uem: Timeline = None,
-                **kwargs
+                **kwargs,
             ) -> dict:
                 return super().compute_components(
                     to_overlap(reference), hypothesis, uem=uem, **kwargs

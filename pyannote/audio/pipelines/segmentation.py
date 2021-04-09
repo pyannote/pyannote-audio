@@ -58,10 +58,10 @@ class Segmentation(Pipeline):
     Parameters
     ----------
     segmentation : Model, str, or dict, optional
-        Pretrained segmentation model. Defaults to "pyannote/Segmentation-PyanNet-DIHARD".
+        Pretrained segmentation model. Defaults to "pyannote/segmentation".
         See pyannote.audio.pipelines.utils.get_model for supported format.
-    batch_size : int, optional
-        Batch size. Defaults to 32.
+    inference_kwargs : dict, optional
+        Keywords arguments passed to Inference.
 
     Hyper-parameters
     ----------------
@@ -75,13 +75,12 @@ class Segmentation(Pipeline):
 
     def __init__(
         self,
-        segmentation: PipelineModel = "pyannote/Segmentation-PyanNet-DIHARD",
-        batch_size: int = 32,
+        segmentation: PipelineModel = "pyannote/segmentation",
+        **inference_kwargs,
     ):
         super().__init__()
 
         self.segmentation = segmentation
-        self.batch_size = batch_size
 
         # load model and send it to GPU (when available and not already on GPU)
         model = get_model(segmentation)
@@ -89,10 +88,7 @@ class Segmentation(Pipeline):
             (segmentation_device,) = get_devices(needs=1)
             model.to(segmentation_device)
 
-        self.segmentation_inference_ = Inference(
-            model,
-            batch_size=self.batch_size,
-        )
+        self.segmentation_inference_ = Inference(model, **inference_kwargs)
 
         #  hyper-parameters used for hysteresis thresholding
         self.onset = Uniform(0.0, 1.0)
