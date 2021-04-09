@@ -50,10 +50,13 @@ class Resegmentation(Pipeline):
     Parameters
     ----------
     segmentation : Model, str, or dict, optional
-        Pretrained segmentation model. Defaults to "pyannote/Segmentation-PyanNet-DIHARD".
+        Pretrained segmentation model. Defaults to "pyannote/segmentation".
         See pyannote.audio.pipelines.utils.get_model for supported format.
     diarization : str, optional
         File key to use as input diarization. Defaults to "diarization".
+    inference_kwargs : dict, optional
+        Keywords arguments passed to Inference.
+
 
     Hyper-parameters
     ----------------
@@ -67,16 +70,15 @@ class Resegmentation(Pipeline):
 
     def __init__(
         self,
-        segmentation: PipelineModel = "pyannote/Segmentation-PyanNet-DIHARD",
-        batch_size: int = 32,
+        segmentation: PipelineModel = "pyannote/segmentation",
         diarization: Text = "diarization",
+        **inference_kwargs,
     ):
 
         super().__init__()
 
         self.segmentation = segmentation
         self.diarization = diarization
-        self.batch_size = batch_size
 
         # load model and send it to GPU (when available and not already on GPU)
         model = get_model(segmentation)
@@ -95,13 +97,9 @@ class Resegmentation(Pipeline):
         self.seg_frames_ = model.introspection.frames
 
         # prepare segmentation model for inference
-        self.seg_inference_ = Inference(
-            model,
-            window="sliding",
-            skip_aggregation=True,
-            duration=model.specifications.duration,
-            batch_size=32,
-        )
+        inference_kwargs["window"] = "sliding"
+        inference_kwargs["skip_aggregation"] = True
+        self.seg_inference_ = Inference(model, **inference_kwargs)
 
         #  hyper-parameters used for hysteresis thresholding
         self.onset = Uniform(0.0, 1.0)
