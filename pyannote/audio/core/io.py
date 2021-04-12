@@ -51,7 +51,7 @@ AudioFile = Union[Text, Path, IOBase, Mapping]
 AudioFileDocString = """
 Audio files can be provided to the Audio class using different types:
     - a "str" or "Path" instance: "audio.wav" or Path("audio.wav")
-    - a "IOBase" instance: open("audio.wav", "rb") with "read" and "seek" support
+    - a "IOBase" instance with "read" and "seek" support: open("audio.wav", "rb")
     - a "Mapping" with any of the above as "audio" key: {"audio": ...}
     - a "Mapping" with both "waveform" and "sample_rate" key:
         {"waveform": (channel, time) numpy.ndarray or torch.Tensor, "sample_rate": 44100}
@@ -116,7 +116,7 @@ class Audio:
         validated_file : Mapping
             {"audio": str, "uri": str, ...}
             {"waveform": array or tensor, "sample_rate": int, "uri": str, ...}
-            {"audio": file, "uri": "stream"} if `file` is a file-like object
+            {"audio": file, "uri": "stream"} if `file` is an IOBase instance
 
         Raises
         ------
