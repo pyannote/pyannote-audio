@@ -85,23 +85,3 @@ def test_can_crop_from_file_like():
     assert sr == 16000
     assert wav.shape[1] == 0.5 * 16000
 
-
-# def test_can_load_from_download():
-#     url = "https://raw.githubusercontent.com/pyannote/pyannote-audio/master/tests/data/dev01.wav"
-#     response = request.urlopen(url)
-#     loader = Audio()
-#     wav, sr = loader(response)
-#     assert isinstance(wav, Tensor)
-#     assert sr == 16000
-
-
-def test_load_multiple_times_from_file_like():
-    """
-    Make sure that we can load from the same file like
-    object multiple times.
-    """
-    for i in range(3):
-        test_can_load_from_file_like()
-
-    for i in range(3):
-        test_can_crop_from_file_like()
