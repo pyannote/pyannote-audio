@@ -30,7 +30,7 @@ We should switch torchaudio resampling as well at some point...
 
 import math
 import warnings
-from io import BytesIO
+from io import IOBase
 from pathlib import Path
 from typing import Mapping, Optional, Text, Tuple, Union
 
@@ -46,12 +46,12 @@ from pyannote.database import ProtocolFile
 
 torchaudio.set_audio_backend("soundfile")
 
-AudioFile = Union[Text, Path, BytesIO, Mapping]
+AudioFile = Union[Text, Path, IOBase, Mapping]
 
 AudioFileDocString = """
 Audio files can be provided to the Audio class using different types:
     - a "str" or "Path" instance: "audio.wav" or Path("audio.wav")
-    - a "BytesIO" instance: open("audio.wav", "rb")
+    - a "IOBase" instance: open("audio.wav", "rb") with "read" and "seek" support
     - a "Mapping" with any of the above as "audio" key: {"audio": ...}
     - a "Mapping" with both "waveform" and "sample_rate" key:
         {"waveform": (channel, time) numpy.ndarray or torch.Tensor, "sample_rate": 44100}
@@ -130,7 +130,7 @@ class Audio:
         elif isinstance(file, (str, Path)):
             file = {"audio": str(file), "uri": Path(file).stem}
 
-        elif isinstance(file, BytesIO):
+        elif isinstance(file, IOBase):
             return {"audio": file, "uri": "stream"}
 
         else:
@@ -154,7 +154,7 @@ class Audio:
 
         elif "audio" in file:
 
-            if isinstance(file["audio"], BytesIO):
+            if isinstance(file["audio"], IOBase):
                 return file
 
             path = Path(file["audio"])
@@ -231,7 +231,7 @@ class Audio:
 
         info = torchaudio.info(file["audio"])
 
-        if isinstance(file["audio"], BytesIO):
+        if isinstance(file["audio"], IOBase):
             file["audio"].seek(0)
 
         return info.num_frames / info.sample_rate
@@ -320,7 +320,7 @@ class Audio:
             sample_rate = info.sample_rate
             frames = info.num_frames
 
-            if isinstance(file["audio"], BytesIO):
+            if isinstance(file["audio"], IOBase):
                 file["audio"].seek(0)
 
         channel = file.get("channel", None)
@@ -374,11 +374,11 @@ class Audio:
                 data, _ = torchaudio.load(
                     file["audio"], frame_offset=start_frame, num_frames=num_frames
                 )
-                if isinstance(file["audio"], BytesIO):
+                if isinstance(file["audio"], IOBase):
                     file["audio"].seek(0)
             except RuntimeError:
 
-                if isinstance(file["audio"], BytesIO):
+                if isinstance(file["audio"], IOBase):
                     msg = "torchaudio failed to seek-and-read in file-like object."
                     raise RuntimeError(msg)
 
