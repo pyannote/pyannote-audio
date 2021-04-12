@@ -12,9 +12,18 @@ This is the development branch of upcoming `pyannote.audio` 2.0 for which it has
 
 ## Installation
 
-Until a proper release is available on PyPI, install from the `develop` branch:
-
 ```bash
+conda create -n pyannote python=3.8.5
+conda activate pyannote
+
+# pyannote.audio relies on torchaudio's soundfile backend, itself relying
+# on libsndfile, sometimes tricky to install. This seems to work fine but
+# is provided with no guarantee of success:
+conda install numpy cffi
+conda install libsndfile=1.0.28 -c conda-forge
+
+# until a proper release of pyannote.audio 2.x is available on PyPI,
+# install from the `develop` branch:
 pip install https://github.com/pyannote/pyannote-audio/archive/develop.zip
 ```
 

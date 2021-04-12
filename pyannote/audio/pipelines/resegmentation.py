@@ -22,283 +22,172 @@
 
 """Resegmentation pipeline"""
 
-import math
-import tempfile
-from copy import deepcopy
-from types import MethodType
-from typing import List, Text
+from typing import Text
 
 import numpy as np
-import scipy.optimize
-import torch
-from pytorch_lightning import Trainer
-from pytorch_lightning.callbacks import ProgressBar
-from torch.optim import SGD
-from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 
 from pyannote.audio import Inference
-from pyannote.audio.core.callback import GraduallyUnfreeze
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.pipeline import Pipeline
-from pyannote.audio.pipelines.utils import (
-    PipelineAugmentation,
-    PipelineModel,
-    get_augmentation,
-    get_devices,
-    get_model,
-)
-from pyannote.audio.tasks import SpeakerTracking
+from pyannote.audio.pipelines.utils import PipelineModel, get_devices, get_model
+from pyannote.audio.utils.permutation import permutate
 from pyannote.audio.utils.signal import Binarize
-from pyannote.core import Annotation, SlidingWindow, SlidingWindowFeature
-from pyannote.database.protocol import SpeakerDiarizationProtocol
+from pyannote.core import Annotation, SlidingWindowFeature
 from pyannote.metrics.diarization import GreedyDiarizationErrorRate
-from pyannote.pipeline.parameter import Categorical, Integer, LogUniform
+from pyannote.pipeline.parameter import Uniform
 
 
 class Resegmentation(Pipeline):
-    """Self-supervised resegmentation (aka AdaptiveSpeakerTracking)
+    """Resegmentation pipeline
 
-    Let M be a pretrained segmentation model.
-
-    For each file f, this pipeline uses an initial speaker diarization result as a first
-    step of speaker tracking labels.
-
-    Those (automatic and therefore imprecise) labels are then used to do transfer learning
-    from a pretrained segmentation model M into a speaker tracking model M_f, in a
-    self-supervised manner.
-
-    Finally, the fine-tuned model M_f is applied to file f to obtain the final (and
-    hopefully better) speaker tracking labels.
-
-    During transfer-learning, it is possible to weight some frames more than others: the
-    intuition is that the model will use high confidence regions to learn speaker models
-    and hence will eventually be able to correctly assign parts where the confidence
-    was initially low.
-
-    Conversely, to avoid overfitting too much to those high confidence regions, we use
-    data augmentation and gradually unfreeze layers of the pretrained model M.
+    This pipeline relies on a pretrained segmentation model to improve an existing diarization
+    hypothesis. Resegmentation is done locally by sliding the segmentation model over the whole
+    file. For each position of the sliding window, we find the optimal mapping between the input
+    diarization and the output of the segmentation model and permutate the latter accordingly.
+    Permutated local segmentations scores are then aggregated over time and postprocessed using
+    hysteresis thresholding.
 
     Parameters
     ----------
     segmentation : Model, str, or dict, optional
-        Pretrained segmentation model.
-        Defaults to "pyannote/Segmentation-PyanNet-DIHARD".
-    layers : list, optional
-        Only fine-tune those layers, unfreezing them in that order.
-        Defaults to fine-tuning all layers from output layer to input layer.
-    augmentation : BaseWaveformTransform, or dict, optional
-        torch_audiomentations waveform transform, used during fine-tuning.
-        Defaults to no augmentation.
+        Pretrained segmentation model. Defaults to "pyannote/segmentation".
+        See pyannote.audio.pipelines.utils.get_model for supported format.
     diarization : str, optional
         File key to use as input diarization. Defaults to "diarization".
-    confidence : str, optional
-        File key to use as confidence. Defaults to not use any confidence estimation.
-    verbose : bool, optional
-
+    inference_kwargs : dict, optional
+        Keywords arguments passed to Inference.
 
     Hyper-parameters
     ----------------
-    num_epochs : int
-        Number of epochs (where one epoch = going through the file once) between
-        each gradual unfreezing step.
-    batch_size : int
-        Batch size.
-    learning_rate : float
-        Learning rate.
-
-    See also
-    --------
-    pyannote.audio.pipelines.utils.get_inference
+    onset, offset : float
+        Onset/offset detection thresholds
+    min_duration_on : float
+        Remove speaker turn shorter than that many seconds.
+    min_duration_off : float
+        Fill same-speaker gaps shorter than that many seconds.
     """
 
     def __init__(
         self,
-        segmentation: PipelineModel = "pyannote/Segmentation-PyanNet-DIHARD",
-        layers: List[Text] = None,
-        augmentation: PipelineAugmentation = None,
+        segmentation: PipelineModel = "pyannote/segmentation",
         diarization: Text = "diarization",
-        confidence: Text = None,
-        verbose: bool = False,
+        **inference_kwargs,
     ):
+
         super().__init__()
 
         self.segmentation = segmentation
-        self.layers = layers
-        self.augmentation: BaseWaveformTransform = get_augmentation(augmentation)
         self.diarization = diarization
-        self.confidence = confidence
-        self.verbose = verbose
 
-        # base pretrained segmentation model
-        self.seg_model_ = get_model(segmentation)
-        self.chunk_duration_ = self.seg_model_.specifications.duration
-        self.audio_ = self.seg_model_.audio
+        # load model and send it to GPU (when available and not already on GPU)
+        model = get_model(segmentation)
+        if model.device.type == "cpu":
+            (segmentation_device,) = get_devices(needs=1)
+            model.to(segmentation_device)
 
-        # if model is on CPU and GPU is available, move to GPU
-        # if model is already on GPU, leave it there
-        if self.seg_model_.device.type == "cpu" and torch.cuda.is_available():
-            (device,) = get_devices(needs=1)
-            self.seg_model_.to(device)
+        self.audio_ = model.audio
 
-        # will be used to go from speaker activations SlidingWindowFeature instance
-        # to an actual diarization (as Annotation instance).
-        self.binarize_ = Binarize(
-            onset=0.5,
-            offset=0.5,
-            min_duration_on=0.0,
-            min_duration_off=0.0,
-            pad_onset=0.0,
-            pad_offset=0.0,
+        # number of speakers in output of segmentation model
+        self.num_frames_in_chunk_, self.seg_num_speakers_ = model.introspection(
+            round(model.specifications.duration * model.hparams.sample_rate)
         )
 
-        # hyper-parameters
-        self.batch_size = Categorical([1, 2, 4, 8])
-        self.epochs_per_layer = Integer(1, 20)
-        self.learning_rate = LogUniform(1e-4, 1e-1)
+        # output frames as SlidingWindow instances
+        self.seg_frames_ = model.introspection.frames
+
+        # prepare segmentation model for inference
+        inference_kwargs["window"] = "sliding"
+        inference_kwargs["skip_aggregation"] = True
+        self.seg_inference_ = Inference(model, **inference_kwargs)
+
+        #  hyper-parameters used for hysteresis thresholding
+        self.onset = Uniform(0.0, 1.0)
+        self.offset = Uniform(0.0, 1.0)
+
+        # hyper-parameters used for post-processing i.e. removing short speech turns
+        # or filling short gaps between speech turns of one speaker
+        self.min_duration_on = Uniform(0.0, 1.0)
+        self.min_duration_off = Uniform(0.0, 1.0)
+
+    def initialize(self):
+        """Initialize pipeline with current set of parameters"""
+
+        self._binarize = Binarize(
+            onset=self.onset,
+            offset=self.offset,
+            min_duration_on=self.min_duration_on,
+            min_duration_off=self.min_duration_off,
+        )
 
     def apply(self, file: AudioFile) -> Annotation:
+        """Apply speaker diarization
 
-        # do not fine tune the model if num_epochs is zero
-        if self.epochs_per_layer == 0:
-            return file[self.diarization]
+        Parameters
+        ----------
+        file : AudioFile
+            Processed file.
 
-        # create a copy of file
-        file_copy = dict(file)
+        Returns
+        -------
+        diarization : Annotation
+            Speaker diarization
+        """
 
-        # create a dummy train-only protocol where `file` is the only training file
-        file_copy["annotation"] = file_copy[self.diarization]
+        # output of segmentation model on each chunk
+        segmentations: SlidingWindowFeature = self.seg_inference_(file)
 
-        class DummyProtocol(SpeakerDiarizationProtocol):
-            name = "DummyProtocol"
-
-            # TODO: support multiple version of the same file? (e.g. )
-            # TODO: support multi-file segmentation (e.g. for cross-show diarization)
-            def train_iter(self):
-                yield file_copy
-
-            # TODO: support validation?
-
-        spk = SpeakerTracking(
-            DummyProtocol(),
-            duration=1.0,
-            # duration=self.chunk_duration_,
-            balance=None,
-            weight=self.confidence,
-            batch_size=self.batch_size,
-            num_workers=None,
-            pin_memory=False,
-            augmentation=self.augmentation,
+        # number of frames in the whole file
+        num_frames_in_file = self.seg_frames_.samples(
+            self.audio_.get_duration(file), mode="center"
         )
 
-        fine_tuning_callback = GraduallyUnfreeze(
-            schedule=self.layers, epochs_per_stage=self.epochs_per_layer
+        # turn input diarization into binary (0 or 1) activations
+        labels = file[self.diarization].labels()
+        num_clusters = len(labels)
+        y_original = np.zeros(
+            (num_frames_in_file, len(labels)), dtype=segmentations.data.dtype
         )
+        for k, label in enumerate(labels):
+            segments = file[self.diarization].label_timeline(label)
+            for start, stop in self.seg_frames_.crop(
+                segments, mode="center", return_ranges=True
+            ):
+                y_original[start:stop, k] += 1
+        y_original = np.minimum(y_original, 1, out=y_original)
+        diarization = SlidingWindowFeature(y_original, self.seg_frames_)
+        file["@resegmentation/diarization"] = diarization
 
-        # duplicate the segmentation model as we will use it later
-        speaker_tracking_model = deepcopy(self.seg_model_)
-        speaker_tracking_model.task = spk
-
-        def configure_optimizers(model):
-            return SGD(model.parameters(), lr=self.learning_rate)
-
-        speaker_tracking_model.configure_optimizers = MethodType(
-            configure_optimizers, speaker_tracking_model
-        )
-
-        # TODO: add option to pass a directory to `apply` and have the trainer
-        # use this directory and save logs in there. that would be useful for
-        # debugging purposes. for now, a new temporary directory is created
-        # on-the-fly and automatically destroyed after training.
-        # TODO: this option might also activate progress bar and weights summary
-        with tempfile.TemporaryDirectory() as default_root_dir:
-            trainer = Trainer(
-                gpus=1 if self.seg_model_.device.type == "cuda" else 0,
-                callbacks=[
-                    fine_tuning_callback,
-                    ProgressBar(refresh_rate=1 if self.verbose else 0),
-                ],
-                checkpoint_callback=False,
-                weights_summary="top" if self.verbose else None,
-                default_root_dir=default_root_dir,
-            )
-            trainer.fit(speaker_tracking_model)
-
-        segmentation_inference = Inference(
-            self.seg_model_,
-            window="sliding",
-            skip_aggregation=True,
-            duration=self.chunk_duration_,
-            step=0.1 * self.chunk_duration_,
-        )
-
-        speaker_tracking_inference = Inference(
-            speaker_tracking_model,
-            window="sliding",
-            skip_aggregation=False,
-            duration=self.chunk_duration_,
-            step=0.1 * self.chunk_duration_,
-        )
-
-        speakers = speaker_tracking_inference(file_copy)
-        file["debug/resegmentation/aggregated_speaker_tracking"] = speakers
-
-        segmentations = segmentation_inference(file_copy)
-
-        if self.verbose:
-            segmentation_inference_debug = Inference(
-                self.seg_model_,
-                window="sliding",
-                skip_aggregation=False,
-                duration=self.chunk_duration_,
-                step=0.1 * self.chunk_duration_,
-            )
-            file[
-                "debug/resegmentation/aggregated_segmentation"
-            ] = segmentation_inference_debug(file_copy)
-
-        _, num_frames_in_chunk, _ = segmentations.data.shape
-        _, num_speakers = speakers.data.shape
-
-        frame_duration = (
-            self.seg_model_.introspection.inc_num_samples / self.audio_.sample_rate
-        )
-        num_frames_in_file = math.ceil(
-            self.audio_.get_duration(file_copy) / frame_duration
-        )
-        aggregated = np.zeros((num_frames_in_file, num_speakers))
-        overlapped = np.zeros((num_frames_in_file, num_speakers))
-
-        # TODO: filter out inactive speakers before mapping
-        # TODO: do not use left- and right-most part of each chunk
-        # TODO: do not use overlapping regions (might be dangerous in case a speaker is only overlapping)
+        aggregated = np.zeros((num_frames_in_file, num_clusters))
+        overlapped = np.zeros((num_frames_in_file, num_clusters))
 
         for chunk, segmentation in segmentations:
-            start_frame = round(chunk.start / frame_duration)
-            speaker = speakers.crop(chunk, fixed=self.chunk_duration_)[
-                :num_frames_in_chunk
+
+            # only consider active speakers in `segmentation`
+            active = np.max(segmentation, axis=0) > self.onset
+            if np.sum(active) == 0:
+                continue
+            segmentation = segmentation[:, active]
+
+            local_diarization = diarization.crop(chunk)[
+                np.newaxis, : self.num_frames_in_chunk_
             ]
+            (permutated_segmentation,), _ = permutate(local_diarization, segmentation)
 
-            cost = -np.einsum("nS,ns->Ss", speaker, segmentation)
-            S, s = scipy.optimize.linear_sum_assignment(cost)
-            for Si, si in zip(S, s):
-                aggregated[
-                    start_frame : start_frame + num_frames_in_chunk, Si
-                ] += segmentation[:, si]
-                overlapped[start_frame : start_frame + num_frames_in_chunk, Si] += 1
+            start_frame = round(chunk.start / self.seg_frames_.duration)
+            aggregated[
+                start_frame : start_frame + self.num_frames_in_chunk_
+            ] += permutated_segmentation
+            overlapped[start_frame : start_frame + self.num_frames_in_chunk_] += 1.0
 
-        frames = SlidingWindow(start=0.0, step=frame_duration, duration=frame_duration)
-
-        mapped_segmentation = SlidingWindowFeature(
-            aggregated / (overlapped + 1e-12), frames
+        speaker_activations = SlidingWindowFeature(
+            aggregated / overlapped, self.seg_frames_, labels=labels
         )
 
-        file["debug/resegmentation/mapped_segmentation"] = mapped_segmentation
+        file["@resegmentation/activations"] = speaker_activations
 
-        return self.binarize_(mapped_segmentation)
+        diarization = self._binarize(speaker_activations)
+        diarization.uri = file["uri"]
+        return diarization
 
     def get_metric(self) -> GreedyDiarizationErrorRate:
         return GreedyDiarizationErrorRate(collar=0.0, skip_overlap=False)
-
-    # TODO: try to use speaker embeddings instead of speaker tracking model?
-    # either with direct cosine distance (would solve the class imbalance problem)
-    # or with a classifier trained on top of speaker embeddings

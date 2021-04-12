@@ -20,9 +20,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+from __future__ import annotations
+
 import os
 import warnings
-from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Text, Tuple, Union
@@ -40,6 +41,7 @@ from semver import VersionInfo
 from pyannote.audio import __version__
 from pyannote.audio.core.io import Audio
 from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
+from pyannote.core import SlidingWindow
 
 CACHE_DIR = os.getenv(
     "PYANNOTE_CACHE",
@@ -48,25 +50,165 @@ CACHE_DIR = os.getenv(
 HF_PYTORCH_WEIGHTS_NAME = "pytorch_model.bin"
 
 
-@dataclass
 class Introspection:
+    """Model introspection
 
-    # TODO: make it a regular class
-    # TODO: add from_model class method that will replace Model.introspection property
-
-    # minimum number of input samples
+    Parameters
+    ----------
     min_num_samples: int
-    # corresponding minimum number of output frames
+        Minimum number of input samples
     min_num_frames: int
-    # number of input samples leading to an increase of number of output frames
+        Corresponding minimum number of output frames
     inc_num_samples: int
-    # corresponding increase in number of output frames
+        Number of input samples leading to an increase of number of output frames
     inc_num_frames: int
-    # output dimension
+        Corresponding increase in number of output frames
     dimension: int
+        Output dimension
+    sample_rate: int
+        Expected input sample rate
+
+    Usage
+    -----
+    >>> introspection = Introspection.from_model(model)
+    >>> isinstance(introspection.frames, SlidingWindow)
+    >>> num_samples = 16000 # 1s at 16kHz
+    >>> num_frames, dimension = introspection(num_samples)
+    """
+
+    def __init__(
+        self,
+        min_num_samples: int,
+        min_num_frames: int,
+        inc_num_samples: int,
+        inc_num_frames: int,
+        dimension: int,
+        sample_rate: int,
+    ):
+        super().__init__()
+        self.min_num_samples = min_num_samples
+        self.min_num_frames = min_num_frames
+        self.inc_num_samples = inc_num_samples
+        self.inc_num_frames = inc_num_frames
+        self.dimension = dimension
+        self.sample_rate = sample_rate
+
+    @classmethod
+    def from_model(cls, model: "Model", task: str = None) -> Introspection:
+
+        specifications = model.specifications
+        if task is not None:
+            specifications = specifications[task]
+
+        example_input_array = model.example_input_array
+        batch_size, num_channels, num_samples = example_input_array.shape
+        example_input_array = torch.randn(
+            (1, num_channels, num_samples),
+            dtype=example_input_array.dtype,
+            layout=example_input_array.layout,
+            device=example_input_array.device,
+            requires_grad=False,
+        )
+
+        # dichotomic search of "min_num_samples"
+        lower, upper, min_num_samples = 1, num_samples, None
+        while True:
+            num_samples = (lower + upper) // 2
+            try:
+                with torch.no_grad():
+                    frames = model(example_input_array[:, :, :num_samples])
+                if task is not None:
+                    frames = frames[task]
+            except Exception:
+                lower = num_samples
+            else:
+                min_num_samples = num_samples
+                if specifications.resolution == Resolution.FRAME:
+                    _, min_num_frames, dimension = frames.shape
+                elif specifications.resolution == Resolution.CHUNK:
+                    min_num_frames, dimension = frames.shape
+                else:
+                    # should never happen
+                    pass
+                upper = num_samples
+
+            if lower + 1 == upper:
+                break
+
+        # if "min_num_samples" is still None at this point, it means that
+        # the forward pass always failed and raised an exception. most likely,
+        # it means that there is a problem with the model definition.
+        # we try again without catching the exception to help the end user debug
+        # their model
+        if min_num_samples is None:
+            frames = model(example_input_array)
+
+        # corner case for chunk-level tasks
+        if specifications.resolution == Resolution.CHUNK:
+            return cls(
+                min_num_samples=min_num_samples,
+                min_num_frames=1,
+                inc_num_samples=0,
+                inc_num_frames=0,
+                dimension=dimension,
+                sample_rate=model.hparams.sample_rate,
+            )
+
+        # search reasonable upper bound for "inc_num_samples"
+        while True:
+            num_samples = 2 * min_num_samples
+            example_input_array = torch.randn(
+                (1, num_channels, num_samples),
+                dtype=example_input_array.dtype,
+                layout=example_input_array.layout,
+                device=example_input_array.device,
+                requires_grad=False,
+            )
+            with torch.no_grad():
+                frames = model(example_input_array)
+            if task is not None:
+                frames = frames[task]
+            num_frames = frames.shape[1]
+            if num_frames > min_num_frames:
+                break
+
+        # dichotomic search of "inc_num_samples"
+        lower, upper = min_num_samples, num_samples
+        while True:
+            num_samples = (lower + upper) // 2
+            example_input_array = torch.randn(
+                (1, num_channels, num_samples),
+                dtype=example_input_array.dtype,
+                layout=example_input_array.layout,
+                device=example_input_array.device,
+                requires_grad=False,
+            )
+            with torch.no_grad():
+                frames = model(example_input_array)
+            if task is not None:
+                frames = frames[task]
+            num_frames = frames.shape[1]
+            if num_frames > min_num_frames:
+                inc_num_frames = num_frames - min_num_frames
+                inc_num_samples = num_samples - min_num_samples
+                upper = num_samples
+            else:
+                lower = num_samples
+
+            if lower + 1 == upper:
+                break
+
+        return cls(
+            min_num_samples=min_num_samples,
+            min_num_frames=min_num_frames,
+            inc_num_samples=inc_num_samples,
+            inc_num_frames=inc_num_frames,
+            dimension=dimension,
+            sample_rate=model.hparams.sample_rate,
+        )
 
     def __call__(self, num_samples: int) -> Tuple[int, int]:
-        """Estimate output shape
+        """Predict output shape, given number of input samples
 
         Parameters
         ----------
@@ -79,7 +221,6 @@ class Introspection:
             Number of output frames
         dimension : int
             Dimension of output frames
-
         """
 
         if num_samples < self.min_num_samples:
@@ -91,6 +232,13 @@ class Introspection:
             * ((num_samples - self.min_num_samples + 1) // self.inc_num_samples),
             self.dimension,
         )
+
+    @property
+    def frames(self) -> SlidingWindow:
+        # HACK to support model trained before 'sample_rate' was an Introspection attribute
+        sample_rate = getattr(self, "sample_rate", 16000)
+        step = (self.inc_num_samples / self.inc_num_frames) / sample_rate
+        return SlidingWindow(start=0.0, step=step, duration=step)
 
     def __len__(self):
         # makes it possible to do something like:
@@ -203,131 +351,6 @@ class Model(pl.LightningModule):
         # (e.g. the final classification and activation layers)
         pass
 
-    def helper_introspection(
-        self,
-        specifications: Specifications,
-        task: str = None,
-    ) -> Introspection:
-        """Helper function for model introspection
-
-        Parameters
-        ----------
-        specifications : Specifications
-            Task specifications.
-        task : str, optional
-            Task name.
-
-        Returns
-        -------
-        introspection : Introspection
-            Model introspection.
-        """
-
-        example_input_array = self.example_input_array
-        batch_size, num_channels, num_samples = example_input_array.shape
-        example_input_array = torch.randn(
-            (1, num_channels, num_samples),
-            dtype=example_input_array.dtype,
-            layout=example_input_array.layout,
-            device=example_input_array.device,
-            requires_grad=False,
-        )
-
-        # dichotomic search of "min_num_samples"
-        lower, upper, min_num_samples = 1, num_samples, None
-        while True:
-            num_samples = (lower + upper) // 2
-            try:
-                with torch.no_grad():
-                    frames = self(example_input_array[:, :, :num_samples])
-                if task is not None:
-                    frames = frames[task]
-            except Exception:
-                lower = num_samples
-            else:
-                min_num_samples = num_samples
-                if specifications.resolution == Resolution.FRAME:
-                    _, min_num_frames, dimension = frames.shape
-                elif specifications.resolution == Resolution.CHUNK:
-                    min_num_frames, dimension = frames.shape
-                else:
-                    # should never happen
-                    pass
-                upper = num_samples
-
-            if lower + 1 == upper:
-                break
-
-        # if "min_num_samples" is still None at this point, it means that
-        # the forward pass always failed and raised an exception. most likely,
-        # it means that there is a problem with the model definition.
-        # we try again without catching the exception to help the end user debug
-        # their model
-        if min_num_samples is None:
-            frames = self(example_input_array)
-
-        # corner case for chunk-level tasks
-        if specifications.resolution == Resolution.CHUNK:
-            return Introspection(
-                min_num_samples=min_num_samples,
-                min_num_frames=1,
-                inc_num_samples=0,
-                inc_num_frames=0,
-                dimension=dimension,
-            )
-
-        # search reasonable upper bound for "inc_num_samples"
-        while True:
-            num_samples = 2 * min_num_samples
-            example_input_array = torch.randn(
-                (1, num_channels, num_samples),
-                dtype=example_input_array.dtype,
-                layout=example_input_array.layout,
-                device=example_input_array.device,
-                requires_grad=False,
-            )
-            with torch.no_grad():
-                frames = self(example_input_array)
-            if task is not None:
-                frames = frames[task]
-            num_frames = frames.shape[1]
-            if num_frames > min_num_frames:
-                break
-
-        # dichotomic search of "inc_num_samples"
-        lower, upper = min_num_samples, num_samples
-        while True:
-            num_samples = (lower + upper) // 2
-            example_input_array = torch.randn(
-                (1, num_channels, num_samples),
-                dtype=example_input_array.dtype,
-                layout=example_input_array.layout,
-                device=example_input_array.device,
-                requires_grad=False,
-            )
-            with torch.no_grad():
-                frames = self(example_input_array)
-            if task is not None:
-                frames = frames[task]
-            num_frames = frames.shape[1]
-            if num_frames > min_num_frames:
-                inc_num_frames = num_frames - min_num_frames
-                inc_num_samples = num_samples - min_num_samples
-                upper = num_samples
-            else:
-                lower = num_samples
-
-            if lower + 1 == upper:
-                break
-
-        return Introspection(
-            min_num_samples=min_num_samples,
-            min_num_frames=min_num_frames,
-            inc_num_samples=inc_num_samples,
-            inc_num_frames=inc_num_frames,
-            dimension=dimension,
-        )
-
     @property
     def introspection(self) -> Union[Introspection, Dict[Text, Introspection]]:
         """Introspection
@@ -343,12 +366,12 @@ class Model(pl.LightningModule):
 
             if self.is_multi_task:
                 self._introspection = {
-                    name: self.helper_introspection(specs, task=name)
-                    for name, specs in self.specifications.items()
+                    name: Introspection.from_model(self, task=name)
+                    for name in self.specifications
                 }
                 # TODO: raises an error in case of multiple tasks with different introspections
             else:
-                self._introspection = self.helper_introspection(self.specifications)
+                self._introspection = Introspection.from_model(self)
 
         return self._introspection
 
