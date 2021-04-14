@@ -726,6 +726,7 @@ class Model(pl.LightningModule):
         strict: bool = True,
         task: Task = None,
         use_auth_token: Union[Text, None] = None,
+        cache_dir: Union[Path, Text] = CACHE_DIR,
         **kwargs,
     ) -> "Model":
         """Load pretrained model
@@ -757,6 +758,9 @@ class Model(pl.LightningModule):
             When loading a private huggingface.co model, set `use_auth_token`
             to True or to a string containing your hugginface.co authentication
             token that can be obtained by running `huggingface-cli login`
+        cache_dir: Path or str
+            Path to models folder cache dir
+            Defaults to `os.getenv('PYANNOTE_CACHE').
         kwargs: optional
             Any extra keyword args needed to init the model.
             Can also be used to override saved hyperparameter values.
@@ -800,7 +804,7 @@ class Model(pl.LightningModule):
                 url=url,
                 library_name="pyannote",
                 library_version=__version__,
-                cache_dir=CACHE_DIR,
+                cache_dir=cache_dir,
                 use_auth_token=use_auth_token,
             )
 

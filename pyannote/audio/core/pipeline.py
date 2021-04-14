@@ -48,6 +48,7 @@ class Pipeline(_Pipeline):
         batch_size: int = 32,
         use_auth_token: Union[Text, None] = None,
         progress_hook: bool = False,
+        cache_dir: Union[Path, Text] = CACHE_DIR,
     ) -> "Pipeline":
         """Load pretrained pipeline
 
@@ -68,12 +69,16 @@ class Pipeline(_Pipeline):
         progress_hook : bool, optional
             Set to True to display a tqdm progress bar for each `Inference`
             preprocessor.
+        cache_dir: Path or str
+            Path to models folder cache dir
+            Defaults to `os.getenv('PYANNOTE_CACHE').
         """
 
         if device is not None:
             device = torch.device(device)
 
         checkpoint_path = str(checkpoint_path)
+        cache_dir = str(cache_dir)
 
         if os.path.isfile(checkpoint_path):
             config_yml = checkpoint_path
@@ -91,7 +96,7 @@ class Pipeline(_Pipeline):
                 url=url,
                 library_name="pyannote",
                 library_version=__version__,
-                cache_dir=CACHE_DIR,
+                cache_dir=cache_dir,
                 use_auth_token=use_auth_token,
             )
 
