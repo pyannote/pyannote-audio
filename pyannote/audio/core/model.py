@@ -758,9 +758,9 @@ class Model(pl.LightningModule):
             When loading a private huggingface.co model, set `use_auth_token`
             to True or to a string containing your hugginface.co authentication
             token that can be obtained by running `huggingface-cli login`
-        cache_dir: Path or str
-            Path to models folder cache dir
-            Defaults to `os.getenv('PYANNOTE_CACHE').
+        cache_dir: Path or str, optional
+            Path to model cache directory. Defaults to content of PYANNOTE_CACHE
+            environment variable, or "~/.cache/torch/pyannote" when unset.
         kwargs: optional
             Any extra keyword args needed to init the model.
             Can also be used to override saved hyperparameter values.
