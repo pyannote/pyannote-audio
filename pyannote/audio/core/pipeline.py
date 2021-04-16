@@ -69,9 +69,9 @@ class Pipeline(_Pipeline):
         progress_hook : bool, optional
             Set to True to display a tqdm progress bar for each `Inference`
             preprocessor.
-        cache_dir: Path or str
-            Path to models folder cache dir
-            Defaults to `os.getenv('PYANNOTE_CACHE').
+        cache_dir: Path or str, optional
+            Path to model cache directory. Defaults to content of PYANNOTE_CACHE
+            environment variable, or "~/.cache/torch/pyannote" when unset.
         """
 
         if device is not None:
