@@ -78,7 +78,6 @@ class Pipeline(_Pipeline):
             device = torch.device(device)
 
         checkpoint_path = str(checkpoint_path)
-        cache_dir = str(cache_dir)
 
         if os.path.isfile(checkpoint_path):
             config_yml = checkpoint_path
