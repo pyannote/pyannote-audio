@@ -240,26 +240,6 @@ class Introspection:
         step = (self.inc_num_samples / self.inc_num_frames) / sample_rate
         return SlidingWindow(start=0.0, step=step, duration=step)
 
-    def __len__(self):
-        # makes it possible to do something like:
-        # multi_task = len(introspection) > 1
-        # because multi-task introspections are stored as {task_name: introspection} dict
-        return 1
-
-    def __getitem__(self, key):
-        if key is not None:
-            raise KeyError
-        return self
-
-    def items(self):
-        yield None, self
-
-    def keys(self):
-        yield None
-
-    def __iter__(self):
-        yield None
-
 
 class Model(pl.LightningModule):
     """Base model
@@ -301,18 +281,11 @@ class Model(pl.LightningModule):
     def example_input_array(self) -> torch.Tensor:
         batch_size = 3 if self.task is None else self.task.batch_size
 
-        if self.is_multi_task:
-            # this assumes that all tasks share the same duration
-            _, specifications = next(iter(self.specifications.items()))
-        else:
-            specifications = self.specifications
-        duration = specifications.duration
-
         return torch.randn(
             (
                 batch_size,
                 self.hparams.num_channels,
-                int(self.hparams.sample_rate * duration),
+                int(self.hparams.sample_rate * self.specifications.duration),
             ),
             device=self.device,
         )
@@ -342,36 +315,23 @@ class Model(pl.LightningModule):
         if hasattr(self, "_specifications"):
             del self._specifications
 
-    @property
-    def is_multi_task(self):
-        return len(self.specifications) > 1
-
     def build(self):
         # use this method to add task-dependent layers to the model
         # (e.g. the final classification and activation layers)
         pass
 
     @property
-    def introspection(self) -> Union[Introspection, Dict[Text, Introspection]]:
+    def introspection(self) -> Introspection:
         """Introspection
 
         Returns
         -------
-        introspection: Introspection or {str: Introspection} dict
-            Model introspection or {task_name: introspection} dictionary for
-            multi-task models.
+        introspection: Introspection
+            Model introspection
         """
 
         if not hasattr(self, "_introspection"):
-
-            if self.is_multi_task:
-                self._introspection = {
-                    name: Introspection.from_model(self, task=name)
-                    for name in self.specifications
-                }
-                # TODO: raises an error in case of multiple tasks with different introspections
-            else:
-                self._introspection = Introspection.from_model(self)
+            self._introspection = Introspection.from_model(self)
 
         return self._introspection
 
@@ -502,7 +462,7 @@ class Model(pl.LightningModule):
             raise NotImplementedError(msg)
 
     # convenience function to automate the choice of the final activation function
-    def default_activation(self) -> Union[nn.Module, Dict[str, nn.Module]]:
+    def default_activation(self) -> nn.Module:
         """Guess default activation function according to task specification
 
             * sigmoid for binary classification
@@ -511,18 +471,9 @@ class Model(pl.LightningModule):
 
         Returns
         -------
-        activation : nn.Module or {str: nn.Module}
-            Activation or {task_name: activation} dictionary for multi-task models.
+        activation : nn.Module
+            Activation.
         """
-
-        if self.is_multi_task:
-            return nn.ModuleDict(
-                {
-                    name: self.helper_default_activation(specs)
-                    for name, specs in self.specifications.items()
-                }
-            )
-
         return self.helper_default_activation(self.specifications)
 
     # training step logic is delegated to the task because the
