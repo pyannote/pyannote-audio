@@ -64,8 +64,6 @@ class Inference:
     device : torch.device, optional
         Device used for inference. Defaults to `model.device`.
         In case `device` and `model.device` are different, model is sent to device.
-    postprocess_hook : callable, optional
-        When a callable is provided,
     progress_hook : {callable, True, str}, optional
         When a callable is provided, it is called everytime a batch is processed
         with two integer arguments:
