@@ -305,7 +305,7 @@ class Segmentation(SegmentationTaskMixin, Task):
         Returns
         -------
         loss : {str: torch.tensor}
-            {"loss": loss} with additional "loss_{task_name}" keys for multi-task models.
+            {"loss": loss}
         """
 
         # forward pass

@@ -84,26 +84,6 @@ class Specifications:
     # whether classes are permutation-invariant (e.g. diarization)
     permutation_invariant: bool = False
 
-    def __len__(self):
-        # makes it possible to do something like:
-        # multi_task = len(specifications) > 1
-        # because multi-task specifications are stored as {task_name: specifications} dict
-        return 1
-
-    def __getitem__(self, key):
-        if key is not None:
-            raise KeyError
-        return self
-
-    def items(self):
-        yield None, self
-
-    def keys(self):
-        yield None
-
-    def __iter__(self):
-        yield None
-
 
 class TrainDataset(IterableDataset):
     def __init__(self, task: Task):
@@ -176,8 +156,6 @@ class Task(pl.LightningDataModule):
     ----------
     specifications : Specifications or dict of Specifications
         Task specifications (available after `Task.setup` has been called.)
-        For multi-task learning, this should be a dictionary where keys are
-        task names and values are corresponding Specifications instances.
     """
 
     def __init__(
@@ -263,11 +241,6 @@ class Task(pl.LightningDataModule):
     def setup_validation_metric(self):
         pass
 
-    @property
-    def is_multi_task(self) -> bool:
-        """"Check whether multiple tasks are addressed at once"""
-        return len(self.specifications) > 1
-
     def train__iter__(self):
         # will become train_dataset.__iter__ method
         msg = f"Missing '{self.__class__.__name__}.train__iter__' method."
@@ -341,8 +314,6 @@ class Task(pl.LightningDataModule):
             * binary cross-entropy loss for binary or multi-label classification
             * negative log-likelihood loss for regular classification
 
-        In case of multi-tasking, it will default to summing loss of each task.
-
         If "weight" attribute exists, batch[self.weight] is also passed to the loss function
         during training (but has no effect in validation).
 
@@ -358,18 +329,14 @@ class Task(pl.LightningDataModule):
         Returns
         -------
         loss : {str: torch.tensor}
-            {"loss": loss} with additional "loss_{task_name}" keys for multi-task models.
+            {"loss": loss}
         """
 
         # forward pass
         y_pred = self.model(batch["X"])
 
-        if self.is_multi_task:
-            _, any_y_pred = next(iter(y_pred.items()))
-            batch_size, num_frames, _ = any_y_pred.shape
-        else:
-            batch_size, num_frames, _ = y_pred.shape
-            # (batch_size, num_frames, num_classes)
+        batch_size, num_frames, _ = y_pred.shape
+        # (batch_size, num_frames, num_classes)
 
         # target
         y = batch["y"]
@@ -388,34 +355,7 @@ class Task(pl.LightningDataModule):
         warm_up_right = round(self.warm_up[1] / self.duration * num_frames)
         weight[:, num_frames - warm_up_right :] = 0.0
 
-        # compute multi-task loss as the sum of loss of each task
-        if self.is_multi_task:
-            loss = dict()
-            for task_name, specifications in self.specifications.items():
-                loss[task_name] = self.default_loss(
-                    specifications, y[task_name], y_pred[task_name], weight=weight
-                )
-                self.model.log(
-                    f"{task_name}@{stage}_loss",
-                    loss[task_name],
-                    on_step=False,
-                    on_epoch=True,
-                    prog_bar=False,
-                    logger=False,
-                )
-
-            loss["loss"] = sum(loss.values())
-            self.model.log(
-                f"{self.ACRONYM}@{stage}_loss",
-                loss["loss"],
-                on_step=False,
-                on_epoch=True,
-                prog_bar=True,
-                logger=True,
-            )
-            return loss
-
-        # compute mono-task loss
+        # compute loss
         loss = self.default_loss(self.specifications, y, y_pred, weight=weight)
         self.model.log(
             f"{self.ACRONYM}@{stage}_loss",

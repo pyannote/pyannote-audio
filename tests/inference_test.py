@@ -4,14 +4,8 @@ import pytorch_lightning as pl
 
 from pyannote.audio import Inference, Model
 from pyannote.audio.core.task import Resolution
-from pyannote.audio.models.segmentation.debug import (
-    MultiTaskSegmentationModel,
-    SimpleSegmentationModel,
-)
+from pyannote.audio.models.segmentation.debug import SimpleSegmentationModel
 from pyannote.audio.tasks import VoiceActivityDetection
-from pyannote.audio.tasks.segmentation.multi_task_segmentation import (
-    MultiTaskSegmentation,
-)
 from pyannote.core import SlidingWindowFeature
 from pyannote.database import FileFinder, get_protocol
 
@@ -94,33 +88,6 @@ def test_on_file_path(trained):
     inference = Inference(model, batch_size=128)
     output = inference("tests/data/dev00.wav")
     assert isinstance(output, SlidingWindowFeature)
-
-
-def test_multi_seg_infer():
-    protocol = get_protocol(
-        "Debug.SpeakerDiarization.Debug", preprocessors={"audio": FileFinder()}
-    )
-    xseg = MultiTaskSegmentation(
-        protocol,
-        duration=2.0,
-        vad=True,
-        scd=True,
-        osd=True,
-        batch_size=32,
-        num_workers=4,
-    )
-    model = MultiTaskSegmentationModel(task=xseg)
-    trainer = pl.Trainer(max_epochs=1, fast_dev_run=True)
-    _ = trainer.fit(model, xseg)
-    inference = Inference(model, duration=2.0, step=0.5)
-    dev_file = next(protocol.development())
-    scores = inference(dev_file)
-
-    assert isinstance(scores, dict)
-
-    for attr in ["vad", "scd", "osd"]:
-        assert attr in scores
-        assert isinstance(scores[attr], SlidingWindowFeature)
 
 
 def test_skip_aggregation(pretrained_model, dev_file):
