@@ -20,11 +20,9 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import math
 import warnings
-from collections import Counter, deque
 from pathlib import Path
-from typing import Any, Callable, Deque, List, Optional, Text, Union
+from typing import Any, Callable, List, Optional, Text, Union
 
 import numpy as np
 import torch
@@ -34,7 +32,6 @@ from pytorch_lightning.utilities.memory import is_oom_error
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Resolution
-from pyannote.audio.utils.permutation import permutate
 from pyannote.audio.utils.progress import InferenceProgressHook
 from pyannote.core import Segment, SlidingWindow, SlidingWindowFeature
 
@@ -168,14 +165,16 @@ class Inference:
     def infer(self, chunks: torch.Tensor) -> np.ndarray:
         """Forward pass
 
+        Takes care of sending chunks to right device and outputs back to CPU
+
         Parameters
         ----------
-        chunks : torch.Tensor
+        chunks : (batch_size, num_channels, num_samples) torch.Tensor
             Batch of audio chunks.
 
         Returns
         -------
-        outputs : np.ndarray
+        outputs : (batch_size, ...) np.ndarray
             Model output.
         """
 
@@ -198,8 +197,8 @@ class Inference:
 
         Parameters
         ----------
-        waveform: torch.Tensor
-            (num_channels, num_samples) waveform.
+        waveform: (num_channels, num_samples) torch.Tensor
+            Waveform.
         sample_rate : int
             Sample rate.
 
@@ -210,54 +209,35 @@ class Inference:
             and (num_frames, dimension) for frame-level tasks.
         """
 
-        # prepare sliding audio chunks
-        num_channels, num_samples = waveform.shape
-        file_duration = num_samples / sample_rate
         window_size: int = round(self.duration * sample_rate)
-
-        # corner case: waveform is shorter than chunk duration
-        if num_samples < window_size:
-
-            warnings.warn(
-                f"Waveform is shorter than requested sliding window ({self.duration}s): "
-                f"this might lead to inconsistant results."
-            )
-
-            one_output = self.infer(waveform[None, :])
-
-            if self.model.specifications.resolution == Resolution.CHUNK:
-                frames = SlidingWindow(
-                    start=0.0, duration=self.duration, step=self.step
-                )
-                results = SlidingWindowFeature(one_output, frames)
-
-            else:
-                _, num_frames, dimension = one_output.shape
-                frames = SlidingWindow(
-                    start=0,
-                    duration=file_duration / num_frames,
-                    step=file_duration / num_frames,
-                )
-                results = SlidingWindowFeature(one_output[0], frames)
-
-            return results
-
-        # prepare (and count) sliding audio chunks
         step_size: int = round(self.step * sample_rate)
-        chunks: torch.Tensor = rearrange(
-            waveform.unfold(1, window_size, step_size),
-            "channel chunk frame -> chunk channel frame",
-        )
-        num_chunks, _, _ = chunks.shape
+        num_channels, num_samples = waveform.shape
 
-        # prepare last (right-aligned) audio chunk
-        last_step_size = (num_samples - window_size) % step_size
-        if last_step_size > 0:
-            last_start = num_samples - window_size
-            last_chunk: torch.Tensor = waveform[:, last_start:]
-            has_last_chunk = True
+        specifications = self.model.specifications
+        resolution = specifications.resolution
+        introspection = self.model.introspection
+        if resolution == Resolution.CHUNK:
+            frames = SlidingWindow(start=0.0, duration=self.duration, step=self.step)
+        elif resolution == Resolution.FRAME:
+            frames = introspection.frames
+            num_frames_per_chunk, dimension = introspection(window_size)
+
+        # prepare complete chunks
+        if num_samples >= window_size:
+            chunks: torch.Tensor = rearrange(
+                waveform.unfold(1, window_size, step_size),
+                "channel chunk frame -> chunk channel frame",
+            )
+            num_chunks, _, _ = chunks.shape
         else:
-            has_last_chunk = False
+            num_chunks = 0
+
+        # prepare last incomplete chunk
+        has_last_chunk = (num_samples < window_size) or (
+            num_samples - window_size
+        ) % step_size > 0
+        if has_last_chunk:
+            last_chunk: torch.Tensor = waveform[:, num_chunks * step_size :]
 
         outputs: Union[List[np.ndarray], np.ndarray] = list()
 
@@ -271,85 +251,53 @@ class Inference:
             if self.progress_hook is not None:
                 self.progress_hook(c + 1, num_chunks + has_last_chunk)
 
-        outputs = np.vstack(outputs)
-
-        specifications = self.model.specifications
-
-        # skip aggregation when requested
-        # or when model outputs just one vector per chunk
-        if self.skip_aggregation or specifications.resolution == Resolution.CHUNK:
-            frames = SlidingWindow(start=0.0, duration=self.duration, step=self.step)
-            return SlidingWindowFeature(outputs, frames)
-
         # process orphan last chunk
         if has_last_chunk:
-            last_output = self.infer(last_chunk[None])[0]
+
+            last_output = self.infer(last_chunk[None])
+
+            if specifications.resolution == Resolution.FRAME:
+                pad = num_frames_per_chunk - last_output.shape[1]
+                last_output = np.pad(last_output, ((0, 0), (0, pad), (0, 0)))
+
+            outputs.append(last_output)
             if self.progress_hook is not None:
                 self.progress_hook(
                     num_chunks + has_last_chunk, num_chunks + has_last_chunk
                 )
 
+        outputs = np.vstack(outputs)
+
+        # skip aggregation when requested,
+        # or when model outputs just one vector per chunk
+        # or when model is permutation-invariant
+        if (
+            self.skip_aggregation
+            or specifications.resolution == Resolution.CHUNK
+            or specifications.permutation_invariant
+        ):
+            return SlidingWindowFeature(outputs, frames)
+
+        # Hamming window used for overlap-add aggregation
+        window = np.hamming(num_frames_per_chunk).reshape(-1, 1)
+
         # use model introspection to estimate the total number of frames
-        introspection = self.model.introspection
-        num_frames, dimension = introspection(num_samples)
-        num_frames_per_chunk, _ = introspection(window_size)
-        num_frames_per_step, _ = introspection(step_size)
-        if has_last_chunk:
-            num_frames_last_step, _ = introspection(last_step_size)
 
-        # warm-up window used for overlap-add aggregation
+        # anything before warm_up_left (and after num_frames_per_chunk - warm_up_right)
+        # will not be used in the final aggregation
+
+        # warm-up windows used for overlap-add aggregation
         warm_up = np.ones((num_frames_per_chunk, 1))
-        # ... for very first chunk
-        warm_up_first = np.ones((num_frames_per_chunk, 1))
-        # ... forvery last chunk
-        warm_up_last = np.ones((num_frames_per_chunk, 1))
-
-        if not specifications.permutation_invariant:
-
-            # anything before warm_up_left (and after num_frames_per_chunk - warm_up_right)
-            # will not be used in the final aggregation
-            warm_up_left = round(self.warm_up[0] / self.duration * num_frames_per_chunk)
-            warm_up_right = round(
-                self.warm_up[1] / self.duration * num_frames_per_chunk
-            )
-
-            # Hamming window used for overlap-add aggregation
-            window = np.hamming(num_frames_per_chunk).reshape(-1, 1)
-
-        else:
-            # Regular overlap-add aggregation cannot be used directly for
-            # permutation-invariant models. Why? Because two consecutive
-            # chunks may disagree on part of their output (even after optimal
-            # permutation).
-
-            # These two lines make inference use only the (step-long) central
-            # part of each chunk in the final aggregation... essentially
-            # switching to a simple concatenation.
-
-            warm_up_left = math.floor(
-                0.5
-                * (self.duration + self.warm_up[0] - self.warm_up[1] - self.step)
-                / self.duration
-                * num_frames_per_chunk
-            )
-            warm_up_right = num_frames_per_chunk - math.ceil(
-                0.5
-                * (self.duration + self.warm_up[0] - self.warm_up[1] + self.step)
-                / self.duration
-                * num_frames_per_chunk
-            )
-
-            # we do not need a window here because there is no overlap
-            # between concatenated chunk central parts.
-            window = 1.0
-
-        warm_up[:warm_up_left] = 0.0
-        warm_up_last[:warm_up_left] = 0.0
-        warm_up[num_frames_per_chunk - warm_up_right :] = 0.0
-        warm_up_first[num_frames_per_chunk - warm_up_right :] = 0.0
+        # anything before warm_up_left will not contribute to aggregation
+        warm_up_left = round(self.warm_up[0] / self.duration * num_frames_per_chunk)
+        warm_up[:warm_up_left] = 1e-12
+        # anything after num_frames_per_chunk - warm_up_right either
+        warm_up_right = round(self.warm_up[1] / self.duration * num_frames_per_chunk)
+        warm_up[num_frames_per_chunk - warm_up_right :] = 1e-12
 
         # aggregated_output[i] will be used to store the sum of all predictions
         # for frame #i
+        num_frames = frames.closest_frame(self.duration + num_chunks * self.step) + 1
         aggregated_output: np.ndarray = np.zeros(
             (num_frames, dimension), dtype=np.float32
         )
@@ -360,125 +308,22 @@ class Inference:
             (num_frames, 1), dtype=np.float32
         )
 
-        if specifications.permutation_invariant:
-            # number of previous outputs that overlap with current one by at least 50% of their warmed up region
-            num_overlap = math.floor(
-                0.5 * (self.duration - self.warm_up[0] - self.warm_up[1]) / self.step
-            )
-            # keep track of those previous outputs in a "deque"
-            if num_overlap > 0:
-                previous_outputs: Deque[np.ndarray] = deque([], maxlen=num_overlap)
-
         # loop on the outputs of sliding chunks
         for c, output in enumerate(outputs):
-            start_sample = c * step_size
-            start_frame, _ = introspection(start_sample)
-
-            if specifications.permutation_invariant and num_overlap > 0:
-                if c > 0:
-                    output = self.permutate(
-                        np.stack(previous_outputs), output, num_frames_per_step
-                    )
-                previous_outputs.append(output)
-
-            # when processing first chunk, do not weigh-down its left-most side
-            if c == 0:
-                # unless there is just one chunk, where we do not weigh-down any side
-                if not has_last_chunk and num_chunks == 1:
-                    warm_up_ = 1.0
-                else:
-                    warm_up_ = warm_up_first
-
-            # when processing last chunk, make sure to not weigh-down its right-most side
-            elif not has_last_chunk and c + 1 == num_chunks:
-                warm_up_ = warm_up_last
-
-            # when processing an internal chunk, weigh-down both sides
-            else:
-                warm_up_ = warm_up
-
+            start_frame = frames.closest_frame(c * self.step)
             aggregated_output[start_frame : start_frame + num_frames_per_chunk] += (
-                output * window * warm_up_
+                output * window * warm_up
             )
 
             overlapping_chunk_count[
                 start_frame : start_frame + num_frames_per_chunk
-            ] += (window * warm_up_)
+            ] += (window * warm_up)
 
-        # process last (right-aligned) chunk separately
         if has_last_chunk:
+            aggregated_output = aggregated_output[: num_frames - pad, :]
+            overlapping_chunk_count = overlapping_chunk_count[: num_frames - pad, :]
 
-            if (
-                specifications.permutation_invariant
-                and num_overlap > 0
-                and previous_outputs
-            ):
-                # FIXME
-                last_output = self.permutate(
-                    previous_outputs[-1][np.newaxis],
-                    last_output,
-                    num_frames_last_step,
-                )
-
-            aggregated_output[-num_frames_per_chunk:] += (
-                last_output * window * warm_up_last
-            )
-            overlapping_chunk_count[-num_frames_per_chunk:] += window * warm_up_last
-
-        aggregated_output /= np.maximum(overlapping_chunk_count, 1e-12)
-
-        # FIXME -- get this from introspection
-        frames = SlidingWindow(
-            start=0,
-            duration=file_duration / num_frames,
-            step=file_duration / num_frames,
-        )
-
-        return SlidingWindowFeature(aggregated_output, frames)
-
-    def permutate(
-        self, past_outputs: Deque[np.ndarray], output: np.ndarray, step_size: int
-    ) -> np.ndarray:
-        """Find optimal permutation between past outputs and current output
-
-        Parameters
-        ----------
-        past_outputs : deque of (num_frames, num_classes) np.ndarray
-            Previous output
-        output : (num_frames, num_classes) np.ndarray
-            Current output
-        step_size : int
-            Step between previous and current outputs.
-            Should be smaller than num_frames.
-
-        Returns
-        -------
-        perm_output : (num_frames, num_classes) np.ndarray
-            Permutated current output.
-        """
-
-        num_frames, _ = output.shape
-        warm_up_left = round(self.warm_up[0] / self.duration * num_frames)
-        warm_up_right = round(self.warm_up[1] / self.duration * num_frames)
-
-        permutations = []
-        for o, past_output in enumerate(reversed(past_outputs)):
-            permutation = permutate(
-                past_output[
-                    np.newaxis,
-                    warm_up_left + (o + 1) * step_size : num_frames - warm_up_right,
-                ],
-                output[warm_up_left : num_frames - warm_up_right - (o + 1) * step_size],
-            )[1][0]
-            permutations.append(permutation)
-
-        # TODO: track regions where more than one permutation is selected
-        # as those regions should probably not be trusted too much
-        # TODO: be even smarter and re-initialize tracking at those regions
-
-        # choose most frequent permutation
-        ((permutation, _),) = Counter(permutations).most_common(1)
-        return output[:, permutation]
+        return SlidingWindowFeature(aggregated_output / overlapping_chunk_count, frames)
 
     def __call__(self, file: AudioFile) -> Union[SlidingWindowFeature, np.ndarray]:
         """Run inference on a whole file
@@ -575,5 +420,3 @@ class Inference:
             raise NotImplementedError(
                 f"Unsupported window type '{self.window}': should be 'sliding' or 'whole'."
             )
-
-    # TODO: add a way to process a stream (to allow for online processing)
