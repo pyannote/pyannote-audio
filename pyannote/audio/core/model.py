@@ -48,6 +48,7 @@ CACHE_DIR = os.getenv(
     os.path.expanduser("~/.cache/torch/pyannote"),
 )
 HF_PYTORCH_WEIGHTS_NAME = "pytorch_model.bin"
+HF_LIGHTNING_CONFIG_NAME = "config.yaml"
 
 
 class Introspection:
@@ -750,7 +751,6 @@ class Model(pl.LightningModule):
             url = hf_hub_url(
                 model_id, filename=HF_PYTORCH_WEIGHTS_NAME, revision=revision
             )
-
             path_for_pl = cached_download(
                 url=url,
                 library_name="pyannote",
@@ -758,6 +758,24 @@ class Model(pl.LightningModule):
                 cache_dir=cache_dir,
                 use_auth_token=use_auth_token,
             )
+
+            # HACK Huggingface download counters rely on config.yaml
+            # HACK Therefore we download config.yaml even though we
+            # HACK do not use it. Fails silently in case model does not
+            # HACK have a config.yaml file.
+            try:
+                config_url = hf_hub_url(
+                    model_id, filename=HF_LIGHTNING_CONFIG_NAME, revision=revision
+                )
+                path_for_pl = cached_download(
+                    url=config_url,
+                    library_name="pyannote",
+                    library_version=__version__,
+                    cache_dir=cache_dir,
+                    use_auth_token=use_auth_token,
+                )
+            except Exception:
+                pass
 
         if map_location is None:
 
