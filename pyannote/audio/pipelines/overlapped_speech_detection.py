@@ -125,9 +125,10 @@ class OverlappedSpeechDetection(Pipeline):
             (segmentation_device,) = get_devices(needs=1)
             model.to(segmentation_device)
 
-        inference_kwargs["pre_aggregation_hook"] = lambda scores: np.partition(
-            scores, -2, axis=-1
-        )[:, :, -2, np.newaxis]
+        if model.introspection.dimension > 1:
+            inference_kwargs["pre_aggregation_hook"] = lambda scores: np.partition(
+                scores, -2, axis=-1
+            )[:, :, -2, np.newaxis]
         self.segmentation_inference_ = Inference(model, **inference_kwargs)
 
         #  hyper-parameters used for hysteresis thresholding
