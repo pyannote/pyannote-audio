@@ -31,7 +31,7 @@ from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.pipeline import Pipeline
 from pyannote.audio.pipelines.utils import PipelineModel, get_devices, get_model
 from pyannote.audio.utils.signal import Binarize
-from pyannote.core import Annotation, SlidingWindowFeature, Timeline
+from pyannote.core import Annotation, Timeline
 from pyannote.database import get_annotated
 from pyannote.metrics.detection import DetectionPrecisionRecallFMeasure
 from pyannote.pipeline.parameter import Uniform
@@ -125,6 +125,9 @@ class OverlappedSpeechDetection(Pipeline):
             (segmentation_device,) = get_devices(needs=1)
             model.to(segmentation_device)
 
+        inference_kwargs["pre_aggregation_hook"] = lambda scores: np.partition(
+            scores, -2, axis=-1
+        )[:, :, -2, np.newaxis]
         self.segmentation_inference_ = Inference(model, **inference_kwargs)
 
         #  hyper-parameters used for hysteresis thresholding
@@ -168,18 +171,8 @@ class OverlappedSpeechDetection(Pipeline):
             Overlapped speech regions.
         """
 
-        segmentation = self.segmentation_inference_(file)
-
-        if segmentation.data.shape[1] == 1:
-            file["@overlapped_speech_detection/activation"] = segmentation
-            activation = segmentation
-        else:
-            file["@overlapped_speech_detection/segmentation"] = segmentation
-            # second largest activation
-            activation = SlidingWindowFeature(
-                np.partition(segmentation.data, -2, axis=1)[:, -2, np.newaxis],
-                segmentation.sliding_window,
-            )
+        activation = self.segmentation_inference_(file)
+        file["@overlapped_speech_detection/activation"] = activation
 
         overlapped_speech = self._binarize(activation)
         overlapped_speech.uri = file["uri"]

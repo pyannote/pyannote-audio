@@ -61,6 +61,10 @@ class Inference:
     device : torch.device, optional
         Device used for inference. Defaults to `model.device`.
         In case `device` and `model.device` are different, model is sent to device.
+    pre_aggregation_hook : callable, optional
+        When a callable is provided, it is applied to the model output, just before aggregation.
+        Takes a (num_chunks, num_frames, dimension) numpy array as input and returns a modified
+        (num_chunks, num_frames, other_dimension) numpy array passed to overlap-add aggregation.
     progress_hook : {callable, True, str}, optional
         When a callable is provided, it is called everytime a batch is processed
         with two integer arguments:
@@ -73,8 +77,6 @@ class Inference:
         token that can be obtained by running `huggingface-cli login`
     """
 
-    # TODO: add option to automatically find maximum batch size
-
     def __init__(
         self,
         model: Union[Model, Text, Path],
@@ -84,6 +86,7 @@ class Inference:
         duration: float = None,
         step: float = None,
         batch_size: int = 32,
+        pre_aggregation_hook: Callable[[np.ndarray], np.ndarray] = None,
         progress_hook: Union[bool, Text, Callable[[int, int], Any]] = False,
         use_auth_token: Union[Text, None] = None,
     ):
@@ -115,6 +118,8 @@ class Inference:
         if device is None:
             device = self.model.device
         self.device = device
+
+        self.pre_aggregation_hook = pre_aggregation_hook
 
         self.model.eval()
         self.model.to(self.device)
@@ -270,18 +275,23 @@ class Inference:
 
         # skip aggregation when requested,
         # or when model outputs just one vector per chunk
-        # or when model is permutation-invariant
+        # or when model is permutation-invariant (and not post-processed)
         if (
             self.skip_aggregation
             or specifications.resolution == Resolution.CHUNK
-            or specifications.permutation_invariant
+            or (
+                specifications.permutation_invariant
+                and self.pre_aggregation_hook is None
+            )
         ):
             return SlidingWindowFeature(outputs, frames)
 
+        if self.pre_aggregation_hook is not None:
+            outputs = self.pre_aggregation_hook(outputs)
+            _, _, dimension = outputs.shape
+
         # Hamming window used for overlap-add aggregation
         window = np.hamming(num_frames_per_chunk).reshape(-1, 1)
-
-        # use model introspection to estimate the total number of frames
 
         # anything before warm_up_left (and after num_frames_per_chunk - warm_up_right)
         # will not be used in the final aggregation
