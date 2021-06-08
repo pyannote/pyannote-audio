@@ -748,6 +748,7 @@ class Model(pl.LightningModule):
             else:
                 model_id = checkpoint
                 revision = None
+
             url = hf_hub_url(
                 model_id, filename=HF_PYTORCH_WEIGHTS_NAME, revision=revision
             )
@@ -767,7 +768,7 @@ class Model(pl.LightningModule):
                 config_url = hf_hub_url(
                     model_id, filename=HF_LIGHTNING_CONFIG_NAME, revision=revision
                 )
-                path_for_pl = cached_download(
+                _ = cached_download(
                     url=config_url,
                     library_name="pyannote",
                     library_version=__version__,
