@@ -138,7 +138,9 @@ class Resegmentation(Pipeline):
         segmentations: SlidingWindowFeature = self.seg_inference_(file)
 
         # number of frames in the whole file
-        num_frames_in_file = self.seg_frames_.closest_frame(segmentations.extent.end)
+        num_frames_in_file = (
+            self.seg_frames_.closest_frame(segmentations.extent.end) + 100
+        )
 
         # turn input diarization into binary (0 or 1) activations
         labels = file[self.diarization].labels()
@@ -179,7 +181,7 @@ class Resegmentation(Pipeline):
             overlapped[start_frame : start_frame + self.num_frames_in_chunk_] += 1.0
 
         speaker_activations = SlidingWindowFeature(
-            aggregated / overlapped, self.seg_frames_, labels=labels
+            aggregated / np.maximum(overlapped, 1e-12), self.seg_frames_, labels=labels
         )
 
         file["@resegmentation/activations"] = speaker_activations
