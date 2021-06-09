@@ -284,6 +284,7 @@ class Inference:
                 and self.pre_aggregation_hook is None
             )
         ):
+            frames = SlidingWindow(start=0.0, duration=self.duration, step=self.step)
             return SlidingWindowFeature(outputs, frames)
 
         if self.pre_aggregation_hook is not None:
