@@ -138,8 +138,8 @@ class Resegmentation(Pipeline):
         segmentations: SlidingWindowFeature = self.seg_inference_(file)
 
         # number of frames in the whole file
-        num_frames_in_file = (
-            self.seg_frames_.closest_frame(segmentations.extent.end) + 100
+        num_frames_in_file = self.seg_frames_.closest_frame(
+            segmentations.sliding_window[len(segmentations) - 1].end
         )
 
         # turn input diarization into binary (0 or 1) activations
