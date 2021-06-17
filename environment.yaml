@@ -1,11 +1,10 @@
 name: pyannote-audio
 channels:
-  - pytorch
   - defaults
+  - conda-forge
 dependencies:
-  - python==3.8
-  - pytorch==1.7
-  - torchaudio==0.7
+  - python==3.8.5
+  - libsndfile==1.0.28
   - pip>=20.2
   - pip:
     - -r requirements.txt

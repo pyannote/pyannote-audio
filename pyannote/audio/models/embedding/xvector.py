@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020 CNRS
+# Copyright (c) 2021 CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -24,14 +24,13 @@ from typing import Optional
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torchaudio.transforms import MFCC
 
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
 from pyannote.audio.models.blocks.pooling import StatsPool
 from pyannote.audio.models.blocks.sincnet import SincNet
-from pyannote.audio.models.blocks.tdnn import TDNN
+from pyannote.audio.utils.params import merge_dict
 
 
 class XVectorMFCC(Model):
@@ -43,46 +42,44 @@ class XVectorMFCC(Model):
         sample_rate: int = 16000,
         num_channels: int = 1,
         mfcc: dict = None,
+        dimension: int = 512,
         task: Optional[Task] = None,
     ):
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
 
-        mfcc_params = dict(**self.MFCC_DEFAULTS)
-        if mfcc is not None:
-            mfcc_params.update(**mfcc)
-        mfcc_params["sample_rate"] = sample_rate
-        self.hparams.mfcc = mfcc_params
+        mfcc = merge_dict(self.MFCC_DEFAULTS, mfcc)
+        mfcc["sample_rate"] = sample_rate
+
+        self.save_hyperparameters("mfcc", "dimension")
+
         self.mfcc = MFCC(**self.hparams.mfcc)
 
-        self.frame1 = TDNN(
-            context=[-2, 2],
-            input_channels=self.hparams.mfcc["n_mfcc"],
-            output_channels=512,
-            full_context=True,
-        )
-        self.frame2 = TDNN(
-            context=[-2, 0, 2],
-            input_channels=512,
-            output_channels=512,
-            full_context=False,
-        )
-        self.frame3 = TDNN(
-            context=[-3, 0, 3],
-            input_channels=512,
-            output_channels=512,
-            full_context=False,
-        )
-        self.frame4 = TDNN(
-            context=[0], input_channels=512, output_channels=512, full_context=True
-        )
-        self.frame5 = TDNN(
-            context=[0], input_channels=512, output_channels=1500, full_context=True
-        )
+        self.tdnns = nn.ModuleList()
+        in_channel = self.hparams.mfcc["n_mfcc"]
+        out_channels = [512, 512, 512, 512, 1500]
+        kernel_sizes = [5, 3, 3, 1, 1]
+        dilations = [1, 2, 3, 1, 1]
+
+        for out_channel, kernel_size, dilation in zip(
+            out_channels, kernel_sizes, dilations
+        ):
+            self.tdnns.extend(
+                [
+                    nn.Conv1d(
+                        in_channels=in_channel,
+                        out_channels=out_channel,
+                        kernel_size=kernel_size,
+                        dilation=dilation,
+                    ),
+                    nn.LeakyReLU(),
+                    nn.BatchNorm1d(out_channel),
+                ]
+            )
+            in_channel = out_channel
 
         self.stats_pool = StatsPool()
 
-        self.segment6 = nn.Linear(3000, 512)
-        self.segment7 = nn.Linear(512, 512)
+        self.embedding = nn.Linear(in_channel * 2, self.hparams.dimension)
 
     def forward(
         self, waveforms: torch.Tensor, weights: torch.Tensor = None
@@ -98,65 +95,59 @@ class XVectorMFCC(Model):
         """
 
         outputs = self.mfcc(waveforms).squeeze(dim=1)
-        outputs = self.frame1(outputs)
-        outputs = self.frame2(outputs)
-        outputs = self.frame3(outputs)
-        outputs = self.frame4(outputs)
-        outputs = self.frame5(outputs)
+        for block in self.tdnns:
+            outputs = block(outputs)
         outputs = self.stats_pool(outputs, weights=weights)
-        outputs = self.segment6(F.relu(outputs))
-        return self.segment7(F.relu(outputs))
+        return self.embedding(outputs)
 
 
-class XVector(Model):
+class XVectorSincNet(Model):
 
-    SINCNET_DEFAULTS = {"stride": 1}
+    SINCNET_DEFAULTS = {"stride": 10}
 
     def __init__(
         self,
         sample_rate: int = 16000,
         num_channels: int = 1,
         sincnet: dict = None,
+        dimension: int = 512,
         task: Optional[Task] = None,
     ):
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
 
-        sincnet_hparams = dict(**self.SINCNET_DEFAULTS)
-        if sincnet is not None:
-            sincnet_hparams.update(**sincnet)
-        sincnet_hparams["sample_rate"] = sample_rate
-        self.hparams.sincnet = sincnet_hparams
-        self.sincnet = SincNet(**self.hparams.sincnet)
+        sincnet = merge_dict(self.SINCNET_DEFAULTS, sincnet)
+        sincnet["sample_rate"] = sample_rate
 
-        self.frame1 = TDNN(
-            context=[-2, 2],
-            input_channels=60,
-            output_channels=512,
-            full_context=True,
-        )
-        self.frame2 = TDNN(
-            context=[-2, 0, 2],
-            input_channels=512,
-            output_channels=512,
-            full_context=False,
-        )
-        self.frame3 = TDNN(
-            context=[-3, 0, 3],
-            input_channels=512,
-            output_channels=512,
-            full_context=False,
-        )
-        self.frame4 = TDNN(
-            context=[0], input_channels=512, output_channels=512, full_context=True
-        )
-        self.frame5 = TDNN(
-            context=[0], input_channels=512, output_channels=1500, full_context=True
-        )
+        self.save_hyperparameters("sincnet", "dimension")
+
+        self.sincnet = SincNet(**self.hparams.sincnet)
+        in_channel = 60
+
+        self.tdnns = nn.ModuleList()
+        out_channels = [512, 512, 512, 512, 1500]
+        kernel_sizes = [5, 3, 3, 1, 1]
+        dilations = [1, 2, 3, 1, 1]
+
+        for out_channel, kernel_size, dilation in zip(
+            out_channels, kernel_sizes, dilations
+        ):
+            self.tdnns.extend(
+                [
+                    nn.Conv1d(
+                        in_channels=in_channel,
+                        out_channels=out_channel,
+                        kernel_size=kernel_size,
+                        dilation=dilation,
+                    ),
+                    nn.LeakyReLU(),
+                    nn.BatchNorm1d(out_channel),
+                ]
+            )
+            in_channel = out_channel
 
         self.stats_pool = StatsPool()
 
-        self.segment6 = nn.Linear(3000, 512)
-        self.segment7 = nn.Linear(512, 512)
+        self.embedding = nn.Linear(in_channel * 2, self.hparams.dimension)
 
     def forward(
         self, waveforms: torch.Tensor, weights: torch.Tensor = None
@@ -171,12 +162,8 @@ class XVector(Model):
             Batch of weights with shape (batch, frame).
         """
 
-        outputs = self.sincnet(waveforms)
-        outputs = self.frame1(outputs)
-        outputs = self.frame2(outputs)
-        outputs = self.frame3(outputs)
-        outputs = self.frame4(outputs)
-        outputs = self.frame5(outputs)
+        outputs = self.sincnet(waveforms).squeeze(dim=1)
+        for tdnn in self.tdnns:
+            outputs = tdnn(outputs)
         outputs = self.stats_pool(outputs, weights=weights)
-        outputs = self.segment6(F.relu(outputs))
-        return self.segment7(F.relu(outputs))
+        return self.embedding(outputs)

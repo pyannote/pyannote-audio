@@ -208,7 +208,7 @@ class SupervisedRepresentationLearningTaskMixin:
             datum["duration"] for data in self._train.values() for datum in data
         )
         avg_chunk_duration = 0.5 * (self.min_duration + self.duration)
-        return math.ceil(duration / avg_chunk_duration)
+        return max(self.batch_size, math.ceil(duration / avg_chunk_duration))
 
     def training_step(self, batch, batch_idx: int):
 
@@ -218,7 +218,7 @@ class SupervisedRepresentationLearningTaskMixin:
         self.model.log(
             f"{self.ACRONYM}@train_loss",
             loss,
-            on_step=True,
+            on_step=False,
             on_epoch=True,
             prog_bar=True,
             logger=True,

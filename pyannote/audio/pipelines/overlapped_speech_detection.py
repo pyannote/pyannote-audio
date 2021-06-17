@@ -31,7 +31,7 @@ from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.pipeline import Pipeline
 from pyannote.audio.pipelines.utils import PipelineModel, get_devices, get_model
 from pyannote.audio.utils.signal import Binarize
-from pyannote.core import Annotation, SlidingWindowFeature, Timeline
+from pyannote.core import Annotation, Timeline
 from pyannote.database import get_annotated
 from pyannote.metrics.detection import DetectionPrecisionRecallFMeasure
 from pyannote.pipeline.parameter import Uniform
@@ -87,16 +87,16 @@ class OverlappedSpeechDetection(Pipeline):
     ----------
     segmentation : Model, str, or dict, optional
         Pretrained segmentation (or overlapped speech detection) model.
-        Defaults to "pyannote/Segmentation-PyanNet-DIHARD".
+        Defaults to "pyannote/segmentation".
         See pyannote.audio.pipelines.utils.get_model for supported format.
-    batch_size : int, optional
-        Batch size. Defaults to 32.
     precision : float, optional
         Optimize recall at target precision.
         Defaults to optimize precision/recall fscore.
     recall : float, optional
         Optimize precision at target recall
         Defaults to optimize precision/recall fscore
+    inference_kwargs : dict, optional
+        Keywords arguments passed to Inference.
 
     Hyper-parameters
     ----------------
@@ -110,15 +110,14 @@ class OverlappedSpeechDetection(Pipeline):
 
     def __init__(
         self,
-        segmentation: PipelineModel = "pyannote/Segmentation-PyanNet-DIHARD",
-        batch_size: int = 32,
+        segmentation: PipelineModel = "pyannote/segmentation",
         precision: Optional[float] = None,
         recall: Optional[float] = None,
+        **inference_kwargs,
     ):
         super().__init__()
 
         self.segmentation = segmentation
-        self.batch_size = batch_size
 
         # load model and send it to GPU (when available and not already on GPU)
         model = get_model(segmentation)
@@ -126,10 +125,11 @@ class OverlappedSpeechDetection(Pipeline):
             (segmentation_device,) = get_devices(needs=1)
             model.to(segmentation_device)
 
-        self.segmentation_inference_ = Inference(
-            model,
-            batch_size=self.batch_size,
-        )
+        if model.introspection.dimension > 1:
+            inference_kwargs["pre_aggregation_hook"] = lambda scores: np.partition(
+                scores, -2, axis=-1
+            )[:, :, -2, np.newaxis]
+        self.segmentation_inference_ = Inference(model, **inference_kwargs)
 
         #  hyper-parameters used for hysteresis thresholding
         self.onset = Uniform(0.0, 1.0)
@@ -172,18 +172,8 @@ class OverlappedSpeechDetection(Pipeline):
             Overlapped speech regions.
         """
 
-        segmentation = self.segmentation_inference_(file)
-
-        if segmentation.data.shape[1] == 1:
-            file["@overlapped_speech_detection/activation"] = segmentation
-            activation = segmentation
-        else:
-            file["@overlapped_speech_detection/segmentation"] = segmentation
-            # second largest activation
-            activation = SlidingWindowFeature(
-                np.partition(segmentation.data, -2, axis=1)[:, -2, np.newaxis],
-                segmentation.sliding_window,
-            )
+        activation = self.segmentation_inference_(file)
+        file["@overlapped_speech_detection/activation"] = activation
 
         overlapped_speech = self._binarize(activation)
         overlapped_speech.uri = file["uri"]
@@ -209,7 +199,7 @@ class OverlappedSpeechDetection(Pipeline):
                 reference: Annotation,
                 hypothesis: Annotation,
                 uem: Timeline = None,
-                **kwargs
+                **kwargs,
             ) -> dict:
                 return super().compute_components(
                     to_overlap(reference), hypothesis, uem=uem, **kwargs

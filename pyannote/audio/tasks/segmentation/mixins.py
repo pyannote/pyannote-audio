@@ -208,14 +208,7 @@ class SegmentationTaskMixin:
 
         # use model introspection to predict how many frames it will output
         num_samples = sample["X"].shape[1]
-        introspection = self.model.introspection
-        if self.is_multi_task:
-            # this assumes that all tasks share the same model introspection.
-            # this is a reasonable assumption for now.
-            any_task = next(iter(introspection.keys()))
-            num_frames, _ = introspection[any_task](num_samples)
-        else:
-            num_frames, _ = introspection(num_samples)
+        num_frames, _ = self.model.introspection(num_samples)
 
         # crop "annotation" and keep track of corresponding list of labels if needed
         annotation: Annotation = file["annotation"].crop(chunk)

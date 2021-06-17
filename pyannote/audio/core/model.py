@@ -48,6 +48,7 @@ CACHE_DIR = os.getenv(
     os.path.expanduser("~/.cache/torch/pyannote"),
 )
 HF_PYTORCH_WEIGHTS_NAME = "pytorch_model.bin"
+HF_LIGHTNING_CONFIG_NAME = "config.yaml"
 
 
 class Introspection:
@@ -103,7 +104,7 @@ class Introspection:
         example_input_array = model.example_input_array
         batch_size, num_channels, num_samples = example_input_array.shape
         example_input_array = torch.randn(
-            (1, num_channels, num_samples),
+            (batch_size, num_channels, num_samples),
             dtype=example_input_array.dtype,
             layout=example_input_array.layout,
             device=example_input_array.device,
@@ -126,7 +127,7 @@ class Introspection:
                 if specifications.resolution == Resolution.FRAME:
                     _, min_num_frames, dimension = frames.shape
                 elif specifications.resolution == Resolution.CHUNK:
-                    min_num_frames, dimension = frames.shape
+                    _, dimension = frames.shape
                 else:
                     # should never happen
                     pass
@@ -158,7 +159,7 @@ class Introspection:
         while True:
             num_samples = 2 * min_num_samples
             example_input_array = torch.randn(
-                (1, num_channels, num_samples),
+                (batch_size, num_channels, num_samples),
                 dtype=example_input_array.dtype,
                 layout=example_input_array.layout,
                 device=example_input_array.device,
@@ -177,7 +178,7 @@ class Introspection:
         while True:
             num_samples = (lower + upper) // 2
             example_input_array = torch.randn(
-                (1, num_channels, num_samples),
+                (batch_size, num_channels, num_samples),
                 dtype=example_input_array.dtype,
                 layout=example_input_array.layout,
                 device=example_input_array.device,
@@ -240,26 +241,6 @@ class Introspection:
         step = (self.inc_num_samples / self.inc_num_frames) / sample_rate
         return SlidingWindow(start=0.0, step=step, duration=step)
 
-    def __len__(self):
-        # makes it possible to do something like:
-        # multi_task = len(introspection) > 1
-        # because multi-task introspections are stored as {task_name: introspection} dict
-        return 1
-
-    def __getitem__(self, key):
-        if key is not None:
-            raise KeyError
-        return self
-
-    def items(self):
-        yield None, self
-
-    def keys(self):
-        yield None
-
-    def __iter__(self):
-        yield None
-
 
 class Model(pl.LightningModule):
     """Base model
@@ -301,18 +282,11 @@ class Model(pl.LightningModule):
     def example_input_array(self) -> torch.Tensor:
         batch_size = 3 if self.task is None else self.task.batch_size
 
-        if self.is_multi_task:
-            # this assumes that all tasks share the same duration
-            _, specifications = next(iter(self.specifications.items()))
-        else:
-            specifications = self.specifications
-        duration = specifications.duration
-
         return torch.randn(
             (
                 batch_size,
                 self.hparams.num_channels,
-                int(self.hparams.sample_rate * duration),
+                int(self.hparams.sample_rate * self.specifications.duration),
             ),
             device=self.device,
         )
@@ -342,36 +316,23 @@ class Model(pl.LightningModule):
         if hasattr(self, "_specifications"):
             del self._specifications
 
-    @property
-    def is_multi_task(self):
-        return len(self.specifications) > 1
-
     def build(self):
         # use this method to add task-dependent layers to the model
         # (e.g. the final classification and activation layers)
         pass
 
     @property
-    def introspection(self) -> Union[Introspection, Dict[Text, Introspection]]:
+    def introspection(self) -> Introspection:
         """Introspection
 
         Returns
         -------
-        introspection: Introspection or {str: Introspection} dict
-            Model introspection or {task_name: introspection} dictionary for
-            multi-task models.
+        introspection: Introspection
+            Model introspection
         """
 
         if not hasattr(self, "_introspection"):
-
-            if self.is_multi_task:
-                self._introspection = {
-                    name: Introspection.from_model(self, task=name)
-                    for name in self.specifications
-                }
-                # TODO: raises an error in case of multiple tasks with different introspections
-            else:
-                self._introspection = Introspection.from_model(self)
+            self._introspection = Introspection.from_model(self)
 
         return self._introspection
 
@@ -502,7 +463,7 @@ class Model(pl.LightningModule):
             raise NotImplementedError(msg)
 
     # convenience function to automate the choice of the final activation function
-    def default_activation(self) -> Union[nn.Module, Dict[str, nn.Module]]:
+    def default_activation(self) -> nn.Module:
         """Guess default activation function according to task specification
 
             * sigmoid for binary classification
@@ -511,18 +472,9 @@ class Model(pl.LightningModule):
 
         Returns
         -------
-        activation : nn.Module or {str: nn.Module}
-            Activation or {task_name: activation} dictionary for multi-task models.
+        activation : nn.Module
+            Activation.
         """
-
-        if self.is_multi_task:
-            return nn.ModuleDict(
-                {
-                    name: self.helper_default_activation(specs)
-                    for name, specs in self.specifications.items()
-                }
-            )
-
         return self.helper_default_activation(self.specifications)
 
     # training step logic is delegated to the task because the
@@ -726,6 +678,7 @@ class Model(pl.LightningModule):
         strict: bool = True,
         task: Task = None,
         use_auth_token: Union[Text, None] = None,
+        cache_dir: Union[Path, Text] = CACHE_DIR,
         **kwargs,
     ) -> "Model":
         """Load pretrained model
@@ -757,6 +710,9 @@ class Model(pl.LightningModule):
             When loading a private huggingface.co model, set `use_auth_token`
             to True or to a string containing your hugginface.co authentication
             token that can be obtained by running `huggingface-cli login`
+        cache_dir: Path or str, optional
+            Path to model cache directory. Defaults to content of PYANNOTE_CACHE
+            environment variable, or "~/.cache/torch/pyannote" when unset.
         kwargs: optional
             Any extra keyword args needed to init the model.
             Can also be used to override saved hyperparameter values.
@@ -792,17 +748,35 @@ class Model(pl.LightningModule):
             else:
                 model_id = checkpoint
                 revision = None
+
             url = hf_hub_url(
                 model_id, filename=HF_PYTORCH_WEIGHTS_NAME, revision=revision
             )
-
             path_for_pl = cached_download(
                 url=url,
                 library_name="pyannote",
                 library_version=__version__,
-                cache_dir=CACHE_DIR,
+                cache_dir=cache_dir,
                 use_auth_token=use_auth_token,
             )
+
+            # HACK Huggingface download counters rely on config.yaml
+            # HACK Therefore we download config.yaml even though we
+            # HACK do not use it. Fails silently in case model does not
+            # HACK have a config.yaml file.
+            try:
+                config_url = hf_hub_url(
+                    model_id, filename=HF_LIGHTNING_CONFIG_NAME, revision=revision
+                )
+                _ = cached_download(
+                    url=config_url,
+                    library_name="pyannote",
+                    library_version=__version__,
+                    cache_dir=cache_dir,
+                    use_auth_token=use_auth_token,
+                )
+            except Exception:
+                pass
 
         if map_location is None:
 

@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020 CNRS
+# Copyright (c) 2020-2021 CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -21,6 +21,6 @@
 # SOFTWARE.
 
 
-from .xvector import XVector, XVectorMFCC
+from .xvector import XVectorMFCC, XVectorSincNet
 
-__all__ = ["XVector", "XVectorMFCC"]
+__all__ = ["XVectorSincNet", "XVectorMFCC"]

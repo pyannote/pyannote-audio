@@ -2,6 +2,7 @@ import warnings
 
 from pyannote.audio.core.io import Audio
 from pyannote.database import FileFinder, Protocol, get_annotated
+from pyannote.database.protocol import SpeakerVerificationProtocol
 
 get_duration = Audio().get_duration
 
@@ -72,8 +73,13 @@ def check_protocol(protocol: Protocol) -> Protocol:
         warnings.warn(msg)
 
     # does protocol define a validation set?
+    if isinstance(protocol, SpeakerVerificationProtocol):
+        validation_method = "development_trial"
+    else:
+        validation_method = "development"
+
     try:
-        file = next(protocol.development())
+        _ = next(getattr(protocol, validation_method)())
     except (AttributeError, NotImplementedError):
         has_validation = False
     else:

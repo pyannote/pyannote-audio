@@ -47,7 +47,7 @@ from pyannote.audio.pipelines.utils import (
 )
 from pyannote.audio.tasks import VoiceActivityDetection as VoiceActivityDetectionTask
 from pyannote.audio.utils.signal import Binarize
-from pyannote.core import Annotation, SlidingWindowFeature
+from pyannote.core import Annotation
 from pyannote.database.protocol import SpeakerDiarizationProtocol
 from pyannote.metrics.detection import (
     DetectionErrorRate,
@@ -85,13 +85,13 @@ class VoiceActivityDetection(Pipeline):
     ----------
     segmentation : Model, str, or dict, optional
         Pretrained segmentation (or voice activity detection) model.
-        Defaults to "hbredin/VoiceActivityDetection-PyanNet-DIHARD".
+        Defaults to "pyannote/segmentation".
         See pyannote.audio.pipelines.utils.get_model for supported format.
-    batch_size : int, optional
-        Batch size. Defaults to 32.
     fscore : bool, optional
         Optimize (precision/recall) fscore. Defaults to optimizing detection
         error rate.
+    inference_kwargs : dict, optional
+        Keywords arguments passed to Inference.
 
     Hyper-parameters
     ----------------
@@ -105,14 +105,13 @@ class VoiceActivityDetection(Pipeline):
 
     def __init__(
         self,
-        segmentation: PipelineModel = "hbredin/VoiceActivityDetection-PyanNet-DIHARD",
-        batch_size: int = 32,
+        segmentation: PipelineModel = "pyannote/segmentation",
         fscore: bool = False,
+        **inference_kwargs,
     ):
         super().__init__()
 
         self.segmentation = segmentation
-        self.batch_size = batch_size
         self.fscore = fscore
 
         # load model and send it to GPU (when available and not already on GPU)
@@ -121,10 +120,10 @@ class VoiceActivityDetection(Pipeline):
             (segmentation_device,) = get_devices(needs=1)
             model.to(segmentation_device)
 
-        self.segmentation_inference_ = Inference(
-            model,
-            batch_size=self.batch_size,
+        inference_kwargs["pre_aggregation_hook"] = lambda scores: np.max(
+            scores, axis=-1, keepdims=True
         )
+        self.segmentation_inference_ = Inference(model, **inference_kwargs)
 
         #  hyper-parameters used for hysteresis thresholding
         self.onset = Uniform(0.0, 1.0)
@@ -159,17 +158,8 @@ class VoiceActivityDetection(Pipeline):
             Speech regions.
         """
 
-        segmentation = self.segmentation_inference_(file)
-
-        if segmentation.data.shape[1] == 1:
-            file["@voice_activity_detection/activation"] = segmentation
-            activation = segmentation
-        else:
-            file["@voice_activity_detection/segmentation"] = segmentation
-            activation = SlidingWindowFeature(
-                np.max(segmentation.data, axis=1, keepdims=True),
-                segmentation.sliding_window,
-            )
+        activation = self.segmentation_inference_(file)
+        file["@voice_activity_detection/activation"] = activation
 
         speech = self._binarize(activation)
         speech.uri = file["uri"]

@@ -28,7 +28,6 @@ help:
     * vad (default) = voice activity detection
     * scd = speaker change detection
     * osd = overlapped speech detection
-    * xseg = multi-task segmentation
 
     {model} can be any of the following:
     * debug (default) = simple segmentation model for debugging purposes
