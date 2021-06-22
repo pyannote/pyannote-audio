@@ -495,8 +495,8 @@ class SegmentationTaskMixin:
             logger=True,
         )
 
-        # log first batch visualization every 10 epochs.
-        if self.model.current_epoch % 10 > 0 or batch_idx > 0:
+        # log first batch visualization every 2^n epochs.
+        if math.log2(self.model.current_epoch) % 1 > 0 or batch_idx > 0:
             return
 
         # visualize first 9 validation samples of first batch in Tensorboard
