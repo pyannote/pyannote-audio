@@ -337,7 +337,7 @@ class Segmentation(SegmentationTaskMixin, Task):
         self.model.log(
             f"{self.ACRONYM}@train_seg_loss",
             seg_loss,
-            on_step=True,
+            on_step=False,
             on_epoch=True,
             prog_bar=False,
             logger=True,
@@ -354,7 +354,7 @@ class Segmentation(SegmentationTaskMixin, Task):
             self.model.log(
                 f"{self.ACRONYM}@train_vad_loss",
                 vad_loss,
-                on_step=True,
+                on_step=False,
                 on_epoch=True,
                 prog_bar=False,
                 logger=True,
@@ -365,7 +365,7 @@ class Segmentation(SegmentationTaskMixin, Task):
         self.model.log(
             f"{self.ACRONYM}@train_loss",
             loss,
-            on_step=True,
+            on_step=False,
             on_epoch=True,
             prog_bar=True,
             logger=True,
