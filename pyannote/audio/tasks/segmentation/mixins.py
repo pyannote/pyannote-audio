@@ -131,11 +131,13 @@ class SegmentationTaskMixin:
         Use macro-average of F-score with a 0.5 threshold
         """
 
+        num_classes = len(self.specifications.classes)
         self.val_fbeta = FBeta(
-            len(self.specifications.classes),
+            num_classes,
             beta=1.0,
             threshold=0.5,
             average="macro",
+            multiclass=num_classes > 1,
         )
 
     def prepare_y(self, one_hot_y: np.ndarray) -> np.ndarray:
