@@ -31,7 +31,6 @@ from torchmetrics import FBeta
 from typing_extensions import Literal
 
 from pyannote.audio.core.io import Audio, AudioFile
-from pyannote.audio.core.task import Problem
 from pyannote.audio.utils.random import create_rng_for_worker
 from pyannote.core import Annotation, Segment, SlidingWindow, SlidingWindowFeature
 
@@ -136,9 +135,6 @@ class SegmentationTaskMixin:
             len(self.specifications.classes),
             beta=1.0,
             threshold=0.5,
-            multilabel=(
-                self.specifications.problem == Problem.MULTI_LABEL_CLASSIFICATION
-            ),
             average="macro",
         )
 
