@@ -132,12 +132,8 @@ class SegmentationTaskMixin:
         """
 
         num_classes = len(self.specifications.classes)
-        self.val_fbeta = FBeta(
-            num_classes,
-            beta=1.0,
-            threshold=0.5,
-            average="macro",
-            multiclass=num_classes > 1,
+        return FBeta(
+            num_classes, beta=1.0, threshold=0.5, average="macro", compute_on_step=False
         )
 
     def prepare_y(self, one_hot_y: np.ndarray) -> np.ndarray:
@@ -466,9 +462,6 @@ class SegmentationTaskMixin:
             Batch index.
         """
 
-        # move metric to model device
-        self.val_fbeta.to(self.model.device)
-
         X, y = batch["X"], batch["y"]
         # X = (batch_size, num_channels, num_samples)
         # y = (batch_size, num_frames, num_classes)
@@ -480,13 +473,17 @@ class SegmentationTaskMixin:
         warm_up_left = round(self.warm_up[0] / self.duration * num_frames)
         warm_up_right = round(self.warm_up[1] / self.duration * num_frames)
 
-        val_fbeta = self.val_fbeta(
-            y_pred[:, warm_up_left : num_frames - warm_up_right : 10].squeeze(),
-            y[:, warm_up_left : num_frames - warm_up_right : 10].squeeze(),
+        # downsample and switch {num_frames, num_classes} dimensions to match torchmetrics API
+        preds = y_pred[:, warm_up_left : num_frames - warm_up_right : 10].transpose(
+            1, 2
         )
+        target = y[:, warm_up_left : num_frames - warm_up_right : 10].transpose(1, 2)
+
+        self.model.validation_metric(preds, target)
+
         self.model.log(
             f"{self.ACRONYM}@val_fbeta",
-            val_fbeta,
+            self.model.validation_metric,
             on_step=False,
             on_epoch=True,
             prog_bar=True,

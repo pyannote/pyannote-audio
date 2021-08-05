@@ -365,7 +365,11 @@ class Model(pl.LightningModule):
             # setup custom loss function
             self.task.setup_loss_func()
             # setup custom validation metrics
-            self.task.setup_validation_metric()
+            validation_metric = self.task.setup_validation_metric()
+            if validation_metric is not None:
+                self.validation_metric = validation_metric
+                self.validation_metric.to(self.device)
+
             # this is to make sure introspection is performed here, once and for all
             _ = self.introspection
 
