@@ -383,31 +383,33 @@ class Segmentation(SegmentationTaskMixin, Task):
             Batch index.
         """
 
-        # move metric to model device
-        self.val_fbeta.to(self.model.device)
-
         X, y = batch["X"], batch["y"]
         # X = (batch_size, num_channels, num_samples)
         # y = (batch_size, num_frames, num_classes)
 
         y_pred = self.model(X)
-        _, num_frames, _ = y_pred.shape
+        _, num_frames, num_classes = y_pred.shape
         # y_pred = (batch_size, num_frames, num_classes)
 
         permutated_y_pred, _ = permutate(y, y_pred)
 
+        # - remove warm-up frames
+        # - downsample remaining frames
+        # - switch {num_frames, num_classes} dimensions
         warm_up_left = round(self.warm_up[0] / self.duration * num_frames)
         warm_up_right = round(self.warm_up[1] / self.duration * num_frames)
-
-        val_fbeta = self.val_fbeta(
-            permutated_y_pred[
-                :, warm_up_left : num_frames - warm_up_right : 10
-            ].squeeze(),
-            y[:, warm_up_left : num_frames - warm_up_right : 10].squeeze(),
+        preds = y_pred[:, warm_up_left : num_frames - warm_up_right : 10].transpose(
+            1, 2
         )
+        target = y[:, warm_up_left : num_frames - warm_up_right : 10]
+        if num_classes > 1:
+            target = target.transpose(1, 2)
+
+        self.model.validation_metric(preds, target)
+
         self.model.log(
             f"{self.ACRONYM}@val_fbeta",
-            val_fbeta,
+            self.model.validation_metric,
             on_step=False,
             on_epoch=True,
             prog_bar=True,

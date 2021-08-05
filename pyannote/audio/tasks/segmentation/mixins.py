@@ -464,20 +464,23 @@ class SegmentationTaskMixin:
 
         X, y = batch["X"], batch["y"]
         # X = (batch_size, num_channels, num_samples)
-        # y = (batch_size, num_frames, num_classes)
+        # y = (batch_size, num_frames, num_classes) or (batch_size, num_frames)
 
         y_pred = self.model(X)
-        _, num_frames, _ = y_pred.shape
+        _, num_frames, num_classes = y_pred.shape
         # y_pred = (batch_size, num_frames, num_classes)
 
+        # - remove warm-up frames
+        # - downsample remaining frames
+        # - switch {num_frames, num_classes} dimensions
         warm_up_left = round(self.warm_up[0] / self.duration * num_frames)
         warm_up_right = round(self.warm_up[1] / self.duration * num_frames)
-
-        # downsample and switch {num_frames, num_classes} dimensions to match torchmetrics API
         preds = y_pred[:, warm_up_left : num_frames - warm_up_right : 10].transpose(
             1, 2
         )
-        target = y[:, warm_up_left : num_frames - warm_up_right : 10].transpose(1, 2)
+        target = y[:, warm_up_left : num_frames - warm_up_right : 10]
+        if num_classes > 1:
+            target = target.transpose(1, 2)
 
         self.model.validation_metric(preds, target)
 
