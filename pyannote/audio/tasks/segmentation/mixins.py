@@ -27,7 +27,7 @@ from typing import List, Optional, Text, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
-from pytorch_lightning.metrics.classification import FBeta
+from torchmetrics import FBeta
 from typing_extensions import Literal
 
 from pyannote.audio.core.io import Audio, AudioFile
