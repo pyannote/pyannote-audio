@@ -31,6 +31,7 @@ from torchmetrics import FBeta
 from typing_extensions import Literal
 
 from pyannote.audio.core.io import Audio, AudioFile
+from pyannote.audio.core.task import Problem
 from pyannote.audio.utils.random import create_rng_for_worker
 from pyannote.core import Annotation, Segment, SlidingWindow, SlidingWindowFeature
 
@@ -451,8 +452,11 @@ class SegmentationTaskMixin:
     def val__len__(self):
         return len(self._validation)
 
+    def validation_postprocess(self, y, y_pred):
+        return y_pred
+
     def validation_step(self, batch, batch_idx: int):
-        """Compute area under ROC curve
+        """Compute validation F-score
 
         Parameters
         ----------
@@ -467,22 +471,54 @@ class SegmentationTaskMixin:
         # y = (batch_size, num_frames, num_classes) or (batch_size, num_frames)
 
         y_pred = self.model(X)
-        _, num_frames, num_classes = y_pred.shape
+        _, num_frames, _ = y_pred.shape
         # y_pred = (batch_size, num_frames, num_classes)
+
+        # postprocess
+        y_pred = self.validation_postprocess(y, y_pred)
 
         # - remove warm-up frames
         # - downsample remaining frames
-        # - switch {num_frames, num_classes} dimensions
         warm_up_left = round(self.warm_up[0] / self.duration * num_frames)
         warm_up_right = round(self.warm_up[1] / self.duration * num_frames)
-        preds = y_pred[:, warm_up_left : num_frames - warm_up_right : 10].transpose(
-            1, 2
-        )
+        preds = y_pred[:, warm_up_left : num_frames - warm_up_right : 10]
         target = y[:, warm_up_left : num_frames - warm_up_right : 10]
-        if num_classes > 1:
-            target = target.transpose(1, 2)
 
-        self.model.validation_metric(preds, target)
+        # torchmetrics tries to be smart about the type of machine learning problem
+        # pyannote.audio is more explicit so we have to reshape target and preds for
+        # torchmetrics to be happy... more details can be found here:
+        # https://torchmetrics.readthedocs.io/en/latest/references/modules.html#input-types
+
+        if self.specifications.problem == Problem.BINARY_CLASSIFICATION:
+            # target: shape (batch_size, num_frames), type binary
+            # preds:  shape (batch_size, num_frames, 1), type float
+
+            # torchmetrics expects:
+            # target: shape (N,), type binary
+            # preds:  shape (N,), type float
+
+            self.model.validation_metric(preds.reshape(-1), target.reshape(-1))
+
+        elif self.specifications.problem == Problem.MULTI_LABEL_CLASSIFICATION:
+            # target: shape (batch_size, num_frames, num_classes), type binary
+            # preds:  shape (batch_size, num_frames, num_classes), type float
+
+            # torchmetrics expects
+            # target: shape (N, ...), type binary
+            # preds:  shape (N, ...), type float
+
+            self.model.validation_metric(preds.reshape(-1), target.reshape(-1))
+
+        elif self.specifications.problem == Problem.MONO_LABEL_CLASSIFICATION:
+            # target: shape (batch_size, num_frames, num_classes), type binary
+            # preds:  shape (batch_size, num_frames, num_classes), type float
+
+            # torchmetrics expects:
+            # target: shape (N, ), type int
+            # preds:  shape (N, num_classes), type float
+
+            # TODO: implement when pyannote.audio gets its first mono-label segmentation task
+            raise NotImplementedError()
 
         self.model.log(
             f"{self.ACRONYM}@val_fbeta",

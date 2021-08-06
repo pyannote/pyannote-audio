@@ -20,11 +20,9 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import math
 from collections import Counter
 from typing import Text, Tuple, Union
 
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
@@ -372,129 +370,6 @@ class Segmentation(SegmentationTaskMixin, Task):
         )
         return {"loss": loss}
 
-    def validation_step(self, batch, batch_idx: int):
-        """Compute validation F-score
-
-        Parameters
-        ----------
-        batch : dict of torch.Tensor
-            Current batch.
-        batch_idx: int
-            Batch index.
-        """
-
-        X, y = batch["X"], batch["y"]
-        # X = (batch_size, num_channels, num_samples)
-        # y = (batch_size, num_frames, num_classes)
-
-        y_pred = self.model(X)
-        _, num_frames, num_classes = y_pred.shape
-        # y_pred = (batch_size, num_frames, num_classes)
-
+    def validation_postprocess(self, y, y_pred):
         permutated_y_pred, _ = permutate(y, y_pred)
-
-        # - remove warm-up frames
-        # - downsample remaining frames
-        # - switch {num_frames, num_classes} dimensions
-        warm_up_left = round(self.warm_up[0] / self.duration * num_frames)
-        warm_up_right = round(self.warm_up[1] / self.duration * num_frames)
-        preds = y_pred[:, warm_up_left : num_frames - warm_up_right : 10].transpose(
-            1, 2
-        )
-        target = y[:, warm_up_left : num_frames - warm_up_right : 10]
-        if num_classes > 1:
-            target = target.transpose(1, 2)
-
-        self.model.validation_metric(preds, target)
-
-        self.model.log(
-            f"{self.ACRONYM}@val_fbeta",
-            self.model.validation_metric,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-            logger=True,
-        )
-
-        # log first batch visualization every 2^n epochs.
-        if (
-            self.model.current_epoch == 0
-            or math.log2(self.model.current_epoch) % 1 > 0
-            or batch_idx > 0
-        ):
-            return
-
-        # visualize first 9 validation samples of first batch in Tensorboard
-        X = X.cpu().numpy()
-        y = y.float().cpu().numpy()
-        y_pred = y_pred.cpu().numpy()
-        permutated_y_pred = permutated_y_pred.cpu().numpy()
-
-        # prepare 3 x 3 grid (or smaller if batch size is smaller)
-        num_samples = min(self.batch_size, 9)
-        nrows = math.ceil(math.sqrt(num_samples))
-        ncols = math.ceil(num_samples / nrows)
-        fig, axes = plt.subplots(
-            nrows=4 * nrows,
-            ncols=ncols,
-            figsize=(15, 10),
-        )
-
-        # reshape target so that there is one line per class when plottingit
-        y[y == 0] = np.NaN
-        y *= np.arange(y.shape[2])
-
-        # plot each sample
-        for sample_idx in range(num_samples):
-
-            # find where in the grid it should be plotted
-            row_idx = sample_idx // nrows
-            col_idx = sample_idx % ncols
-
-            # plot waveform
-            ax_wav = axes[row_idx * 4 + 0, col_idx]
-            sample_X = np.mean(X[sample_idx], axis=0)
-            ax_wav.plot(sample_X)
-            ax_wav.set_xlim(0, len(sample_X))
-            ax_wav.get_xaxis().set_visible(False)
-            ax_wav.get_yaxis().set_visible(False)
-
-            # plot target
-            ax_ref = axes[row_idx * 4 + 1, col_idx]
-            sample_y = y[sample_idx]
-            ax_ref.plot(sample_y)
-            ax_ref.set_xlim(0, len(sample_y))
-            ax_ref.set_ylim(-1, sample_y.shape[1])
-            ax_ref.get_xaxis().set_visible(False)
-            ax_ref.get_yaxis().set_visible(False)
-
-            # plot prediction
-            ax_hyp = axes[row_idx * 4 + 2, col_idx]
-            sample_y_pred = y_pred[sample_idx]
-            ax_hyp.axvspan(0, warm_up_left, color="k", alpha=0.5, lw=0)
-            ax_hyp.axvspan(
-                num_frames - warm_up_right, num_frames, color="k", alpha=0.5, lw=0
-            )
-            ax_hyp.plot(sample_y_pred)
-            ax_hyp.set_ylim(-0.1, 1.1)
-            ax_hyp.set_xlim(0, len(sample_y))
-            ax_hyp.get_xaxis().set_visible(False)
-
-            # plot permutated prediction
-            ax_map = axes[row_idx * 4 + 3, col_idx]
-            sample_y_pred_map = permutated_y_pred[sample_idx]
-            ax_map.axvspan(0, warm_up_left, color="k", alpha=0.5, lw=0)
-            ax_map.axvspan(
-                num_frames - warm_up_right, num_frames, color="k", alpha=0.5, lw=0
-            )
-            ax_map.plot(sample_y_pred_map)
-            ax_map.set_ylim(-0.1, 1.1)
-            ax_map.set_xlim(0, len(sample_y))
-
-        plt.tight_layout()
-
-        self.model.logger.experiment.add_figure(
-            f"{self.ACRONYM}@val_samples", fig, self.model.current_epoch
-        )
-
-        plt.close(fig)
+        return permutated_y_pred
