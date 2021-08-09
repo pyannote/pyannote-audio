@@ -127,7 +127,7 @@ def main(cfg: DictConfig) -> Optional[float]:
         monitor=monitor,
         mode=direction,
         save_top_k=None if monitor is None else 5,
-        period=1,
+        every_n_epochs=1,
         save_last=True,
         save_weights_only=False,
         dirpath=".",
