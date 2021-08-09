@@ -25,18 +25,18 @@ from typing import Optional
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
+from torchmetrics import AUROC
 from tqdm import tqdm
 
 from pyannote.audio.core.task import Problem, Resolution, Specifications, ValDataset
 from pyannote.audio.utils.random import create_rng_for_worker
 from pyannote.core import Segment
-from pyannote.core.utils.distance import cdist
 from pyannote.database.protocol import (
     SpeakerDiarizationProtocol,
     SpeakerVerificationProtocol,
 )
-from pyannote.metrics.binary_classification import det_curve
 
 
 class SupervisedRepresentationLearningTaskMixin:
@@ -126,13 +126,10 @@ class SupervisedRepresentationLearningTaskMixin:
                 return
 
             if isinstance(self.protocol, SpeakerVerificationProtocol):
-                sessions = dict()
-                for trial in self.protocol.development_trial():
-                    for session in ["file1", "file2"]:
-                        session_hash = self.helper_trial_hash(trial[session])
-                        if session_hash not in sessions:
-                            sessions[session_hash] = trial[session]
-                self._validation = list(sessions.items())
+                self._validation = list(self.protocol.development_trial())
+
+    def setup_validation_metric(self):
+        return AUROC(compute_on_step=False)
 
     def train__iter__(self):
         """Iterate over training samples
@@ -225,21 +222,27 @@ class SupervisedRepresentationLearningTaskMixin:
         )
         return {"loss": loss}
 
-    @staticmethod
-    def helper_trial_hash(file) -> int:
-        return hash((file["database"], file["uri"], tuple(file["try_with"])))
-
     def val__getitem__(self, idx):
         if isinstance(self.protocol, SpeakerVerificationProtocol):
-            session_hash, session = self._validation[idx]
-            X = np.concatenate(
+            trial = self._validation[idx]
+
+            X1 = np.concatenate(
                 [
-                    self.model.audio.crop(session, segment, mode="center")[0]
-                    for segment in session["try_with"]
+                    self.model.audio.crop(trial["file1"], segment, mode="center")[0]
+                    for segment in trial["file1"]["try_with"]
                 ],
                 axis=0,
             )
-            return {"session_hash": session_hash, "X": X}
+
+            X2 = np.concatenate(
+                [
+                    self.model.audio.crop(trial["file2"], segment, mode="center")[0]
+                    for segment in trial["file2"]["try_with"]
+                ],
+                axis=0,
+            )
+
+            return {"X1": X1, "X2": X2, "y": trial["reference"]}
 
         elif isinstance(self.protocol, SpeakerDiarizationProtocol):
             pass
@@ -255,51 +258,23 @@ class SupervisedRepresentationLearningTaskMixin:
     def validation_step(self, batch, batch_idx: int):
 
         if isinstance(self.protocol, SpeakerVerificationProtocol):
-            return (
-                batch["session_hash"][0].detach().cpu().numpy().item(),
-                self.model(batch["X"]).detach().cpu().numpy(),
+
+            with torch.no_grad():
+                emb1 = self.model(batch["X1"])  # .detach().cpu().numpy()
+                emb2 = self.model(batch["X1"])  # .detach().cpu().numpy()
+                y_pred = F.cosine_similarity(emb1, emb2).reshape(-1)
+
+            y_true = batch["y"].reshape(-1)
+            self.model.validation_metric(y_pred, y_true)
+
+            self.model.log(
+                f"{self.ACRONYM}@val_auroc",
+                self.model.validation_metric,
+                on_step=False,
+                on_epoch=True,
+                prog_bar=True,
+                logger=True,
             )
-
-        elif isinstance(self.protocol, SpeakerDiarizationProtocol):
-            pass
-
-    def validation_epoch_end(self, outputs):
-
-        if isinstance(self.protocol, SpeakerVerificationProtocol):
-
-            embeddings = dict(outputs)
-
-            y_true, y_pred = [], []
-            for trial in self.protocol.development_trial():
-
-                session1_hash = self.helper_trial_hash(trial["file1"])
-                session2_hash = self.helper_trial_hash(trial["file2"])
-
-                try:
-                    emb1 = embeddings[session1_hash]
-                    emb2 = embeddings[session2_hash]
-                except KeyError:
-                    return
-
-                y_pred.append(cdist(emb1, emb2, metric="cosine").item())
-                y_true.append(trial["reference"])
-
-            y_pred = np.array(y_pred)
-            y_true = np.array(y_true)
-
-            num_target_trials = np.sum(y_true)
-            num_non_target_trials = np.sum(1.0 - y_true)
-            if num_target_trials > 2 and num_non_target_trials > 2:
-                fpr, fnr, thresholds, eer = det_curve(y_true, y_pred, distances=True)
-
-                self.model.log(
-                    f"{self.ACRONYM}@val_eer",
-                    torch.tensor(eer, device=self.model.device),
-                    logger=True,
-                    on_epoch=True,
-                    prog_bar=True,
-                    sync_dist=True,
-                )
 
         elif isinstance(self.protocol, SpeakerDiarizationProtocol):
             pass
@@ -328,7 +303,7 @@ class SupervisedRepresentationLearningTaskMixin:
         if self.has_validation:
 
             if isinstance(self.protocol, SpeakerVerificationProtocol):
-                return f"{self.ACRONYM}@val_eer", "min"
+                return f"{self.ACRONYM}@val_auroc", "max"
 
             elif isinstance(self.protocol, SpeakerDiarizationProtocol):
                 return None, "min"
