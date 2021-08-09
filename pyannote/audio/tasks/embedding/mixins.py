@@ -25,6 +25,7 @@ from typing import Optional
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -92,7 +93,7 @@ class SupervisedRepresentationLearningTaskMixin:
                     speech_turns = [
                         segment
                         for segment in f["annotation"].label_timeline(klass)
-                        if segment.duration > self.duration
+                        if segment.duration > self.min_duration
                     ]
 
                     # skip if there is no speech turns left
@@ -183,18 +184,29 @@ class SupervisedRepresentationLearningTaskMixin:
                         k=1,
                     )
 
-                    # select one chunk at random (with uniform distribution)
-                    start_time = rng.uniform(
-                        speech_turn.start, speech_turn.end - batch_duration
-                    )
-                    chunk = Segment(start_time, start_time + batch_duration)
+                    # if speech turn is too short, pad with zeros
+                    if speech_turn.duration < batch_duration:
+                        X, _ = self.model.audio.crop(file, speech_turn, mode="center")
+                        num_missing_frames = (
+                            math.floor(batch_duration * self.model.audio.sample_rate)
+                            - X.shape[1]
+                        )
+                        left_pad = rng.randint(0, num_missing_frames)
+                        X = F.pad(X, (left_pad, num_missing_frames - left_pad))
 
-                    X, _ = self.model.audio.crop(
-                        file,
-                        chunk,
-                        mode="center",
-                        fixed=batch_duration,
-                    )
+                    # if it is long enough, select chunk at random
+                    else:
+                        start_time = rng.uniform(
+                            speech_turn.start, speech_turn.end - batch_duration
+                        )
+                        chunk = Segment(start_time, start_time + batch_duration)
+
+                        X, _ = self.model.audio.crop(
+                            file,
+                            chunk,
+                            mode="center",
+                            fixed=batch_duration,
+                        )
 
                     yield {"X": X, "y": y}
 
