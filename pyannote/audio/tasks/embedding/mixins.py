@@ -239,7 +239,7 @@ class SupervisedRepresentationLearningTaskMixin:
             data = dict()
             for idx in [1, 2]:
                 file = trial[f"file{idx:d}"]
-                duration = file["duration"]
+                duration = self.model.audio.get_duration(file)
                 if duration > self.duration:
                     middle = Segment(
                         0.5 * duration - 0.5 * self.duration,
