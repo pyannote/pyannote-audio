@@ -260,8 +260,8 @@ class SupervisedRepresentationLearningTaskMixin:
         if isinstance(self.protocol, SpeakerVerificationProtocol):
 
             with torch.no_grad():
-                emb1 = self.model(batch["X1"]).detach().cpu().numpy()
-                emb2 = self.model(batch["X2"]).detach().cpu().numpy()
+                emb1 = self.model(batch["X1"]).detach()
+                emb2 = self.model(batch["X2"]).detach()
                 y_pred = F.cosine_similarity(emb1, emb2).reshape(-1)
 
             y_true = batch["y"].reshape(-1)
