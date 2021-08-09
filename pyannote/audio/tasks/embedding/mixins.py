@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020 CNRS
+# Copyright (c) 2020-2021 CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -23,7 +23,6 @@
 import math
 from typing import Optional
 
-import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
@@ -237,23 +236,29 @@ class SupervisedRepresentationLearningTaskMixin:
         if isinstance(self.protocol, SpeakerVerificationProtocol):
             trial = self._validation[idx]
 
-            X1 = np.concatenate(
-                [
-                    self.model.audio.crop(trial["file1"], segment, mode="center")[0]
-                    for segment in trial["file1"]["try_with"]
-                ],
-                axis=0,
-            )
+            data = dict()
+            for idx in [1, 2]:
+                file = trial[f"file{idx:d}"]
+                duration = file["duration"]
+                if duration > self.duration:
+                    middle = Segment(
+                        0.5 * duration - 0.5 * self.duration,
+                        0.5 * duration + 0.5 * self.duration,
+                    )
+                    X, _ = self.model.audio.crop(
+                        file, middle, mode="center", fixed=self.duration
+                    )
+                else:
+                    X, _ = self.model.audio(file)
+                    num_missing_frames = (
+                        math.floor(self.duration * self.model.audio.sample_rate)
+                        - X.shape[1]
+                    )
+                    X = F.pad(X, (0, num_missing_frames))
+                data[f"X{idx:d}"] = X
+            data["y"] = trial["reference"]
 
-            X2 = np.concatenate(
-                [
-                    self.model.audio.crop(trial["file2"], segment, mode="center")[0]
-                    for segment in trial["file2"]["try_with"]
-                ],
-                axis=0,
-            )
-
-            return {"X1": X1, "X2": X2, "y": trial["reference"]}
+            return data
 
         elif isinstance(self.protocol, SpeakerDiarizationProtocol):
             pass
@@ -273,9 +278,9 @@ class SupervisedRepresentationLearningTaskMixin:
             with torch.no_grad():
                 emb1 = self.model(batch["X1"]).detach()
                 emb2 = self.model(batch["X2"]).detach()
-                y_pred = F.cosine_similarity(emb1, emb2).reshape(-1)
+                y_pred = F.cosine_similarity(emb1, emb2)
 
-            y_true = batch["y"].reshape(-1)
+            y_true = batch["y"]
             self.model.validation_metric(y_pred, y_true)
 
             self.model.log(
@@ -297,7 +302,7 @@ class SupervisedRepresentationLearningTaskMixin:
             if isinstance(self.protocol, SpeakerVerificationProtocol):
                 return DataLoader(
                     ValDataset(self),
-                    batch_size=1,
+                    batch_size=self.batch_size,
                     pin_memory=self.pin_memory,
                     drop_last=False,
                 )
