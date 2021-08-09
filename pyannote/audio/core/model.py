@@ -37,6 +37,7 @@ from huggingface_hub import cached_download, hf_hub_url
 from pytorch_lightning.core.memory import ModelSummary
 from pytorch_lightning.utilities.cloud_io import load as pl_load
 from semver import VersionInfo
+from torch.utils.data import DataLoader
 
 from pyannote.audio import __version__
 from pyannote.audio.core.io import Audio
@@ -275,10 +276,6 @@ class Model(pl.LightningModule):
         )
 
     @property
-    def datamodule(self):
-        return self.task
-
-    @property
     def example_input_array(self) -> torch.Tensor:
         batch_size = 3 if self.task is None else self.task.batch_size
 
@@ -481,10 +478,20 @@ class Model(pl.LightningModule):
         """
         return self.helper_default_activation(self.specifications)
 
+    # training data logic is delegated to the task because the
+    # model does not really need to know how it is being used.
+    def train_dataloader(self) -> DataLoader:
+        return self.task.train_dataloader()
+
     # training step logic is delegated to the task because the
     # model does not really need to know how it is being used.
     def training_step(self, batch, batch_idx):
         return self.task.training_step(batch, batch_idx)
+
+    # validation data logic is delegated to the task because the
+    # model does not really need to know how it is being used.
+    def val_dataloader(self) -> DataLoader:
+        return self.task.val_dataloader()
 
     # validation logic is delegated to the task because the
     # model does not really need to know how it is being used.
