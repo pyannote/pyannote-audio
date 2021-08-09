@@ -21,15 +21,13 @@
 # SOFTWARE.
 
 import math
-from typing import Optional
 
 import torch
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
 from torchmetrics import AUROC
 from tqdm import tqdm
 
-from pyannote.audio.core.task import Problem, Resolution, Specifications, ValDataset
+from pyannote.audio.core.task import Problem, Resolution, Specifications
 from pyannote.audio.utils.random import create_rng_for_worker
 from pyannote.core import Segment
 from pyannote.database.protocol import (
@@ -294,24 +292,6 @@ class SupervisedRepresentationLearningTaskMixin:
 
         elif isinstance(self.protocol, SpeakerDiarizationProtocol):
             pass
-
-    def val_dataloader(self) -> Optional[DataLoader]:
-
-        if self.has_validation:
-
-            if isinstance(self.protocol, SpeakerVerificationProtocol):
-                return DataLoader(
-                    ValDataset(self),
-                    batch_size=self.batch_size,
-                    pin_memory=self.pin_memory,
-                    drop_last=False,
-                )
-
-            elif isinstance(self.protocol, SpeakerDiarizationProtocol):
-                return None
-
-        else:
-            return None
 
     @property
     def val_monitor(self):
