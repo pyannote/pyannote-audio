@@ -110,6 +110,7 @@ class SpeakerEmbedding(Pipeline):
 
 def main(
     protocol: str = "VoxCeleb.SpeakerVerification.VoxCeleb1",
+    subset: str = "test",
     embedding: str = "pyannote/embedding",
     segmentation: str = None,
 ):
@@ -128,7 +129,10 @@ def main(
     y_true, y_pred = [], []
 
     emb = dict()
-    for t, trial in enumerate(tqdm(protocol.test_trial())):
+
+    trials = getattr(protocol, f"{subset}_trial")()
+
+    for t, trial in enumerate(tqdm(trials)):
 
         audio1 = trial["file1"]["audio"]
         if audio1 not in emb:
@@ -143,7 +147,7 @@ def main(
 
     _, _, _, eer = det_curve(y_true, np.array(y_pred), distances=True)
     typer.echo(
-        f"{protocol.name} | {embedding} | {segmentation} | EER = {100 * eer:.3f}%"
+        f"{protocol.name} | {subset} | {embedding} | {segmentation} | EER = {100 * eer:.3f}%"
     )
 
 
