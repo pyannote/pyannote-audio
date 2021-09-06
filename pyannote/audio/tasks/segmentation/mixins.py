@@ -27,6 +27,7 @@ from typing import List, Optional, Text, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
+from einops import rearrange
 from torchmetrics import FBeta
 from typing_extensions import Literal
 
@@ -498,10 +499,13 @@ class SegmentationTaskMixin:
             # preds:  shape (batch_size, num_frames, num_classes), type float
 
             # torchmetrics expects
-            # target: shape (N, ...), type binary
-            # preds:  shape (N, ...), type float
+            # target: shape (N, num_classes), type binary
+            # preds:  shape (N, num_classes), type float
 
-            self.model.validation_metric(preds.reshape(-1), target.reshape(-1))
+            self.model.validation_metric(
+                rearrange(preds, "b f c -> (b f) c"),
+                rearrange(target, "b f c -> (b f) c"),
+            )
 
         elif self.specifications.problem == Problem.MONO_LABEL_CLASSIFICATION:
             # target: shape (batch_size, num_frames, num_classes), type binary
