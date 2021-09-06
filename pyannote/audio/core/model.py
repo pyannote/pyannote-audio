@@ -344,6 +344,9 @@ class Model(pl.LightningModule):
 
     def setup(self, stage=None):
 
+        if stage == "fit":
+            self.task.setup()
+
         # list of layers before adding task-dependent layers
         before = set((name, id(module)) for name, module in self.named_modules())
 
@@ -833,7 +836,6 @@ class Model(pl.LightningModule):
 
         if task is not None:
             model.task = task
-            task.setup(stage="fit")
             model.setup(stage="fit")
 
             try:

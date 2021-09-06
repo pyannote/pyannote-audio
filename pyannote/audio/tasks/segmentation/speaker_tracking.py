@@ -105,21 +105,19 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
         # speakers should be tracked. therefore, we postpone
         # the definition of specifications.
 
-    def setup(self, stage=None):
+    def setup(self):
 
-        super().setup(stage=stage)
+        super().setup()
 
-        if stage == "fit":
-
-            self.specifications = Specifications(
-                # one class per speaker
-                classes=sorted(self._train_metadata["annotation"]),
-                # multiple speakers can be active at once
-                problem=Problem.MULTI_LABEL_CLASSIFICATION,
-                resolution=Resolution.FRAME,
-                duration=self.duration,
-                warm_up=self.warm_up,
-            )
+        self.specifications = Specifications(
+            # one class per speaker
+            classes=sorted(self._train_metadata["annotation"]),
+            # multiple speakers can be active at once
+            problem=Problem.MULTI_LABEL_CLASSIFICATION,
+            resolution=Resolution.FRAME,
+            duration=self.duration,
+            warm_up=self.warm_up,
+        )
 
     @property
     def chunk_labels(self) -> List[Text]:
