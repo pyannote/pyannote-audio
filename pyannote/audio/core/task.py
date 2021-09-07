@@ -218,7 +218,7 @@ class Task(pl.LightningDataModule):
         """
         pass
 
-    def setup(self):
+    def setup(self, stage: Optional[str] = None):
         """Called at the beginning of training at the very beginning of Model.setup(stage="fit")
 
         Notes

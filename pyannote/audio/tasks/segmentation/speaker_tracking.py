@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import List, Text, Tuple, Union
+from typing import List, Optional, Text, Tuple, Union
 
 import numpy as np
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
@@ -105,9 +105,9 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
         # speakers should be tracked. therefore, we postpone
         # the definition of specifications.
 
-    def setup(self):
+    def setup(self, stage: Optional[str] = None):
 
-        super().setup()
+        super().setup(stage=stage)
 
         self.specifications = Specifications(
             # one class per speaker

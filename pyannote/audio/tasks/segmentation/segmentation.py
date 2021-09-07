@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 from collections import Counter
-from typing import Text, Tuple, Union
+from typing import Optional, Text, Tuple, Union
 
 import numpy as np
 import torch
@@ -124,9 +124,9 @@ class Segmentation(SegmentationTaskMixin, Task):
         self.loss = loss
         self.vad_loss = vad_loss
 
-    def setup(self):
+    def setup(self, stage: Optional[str] = None):
 
-        super().setup()
+        super().setup(stage=stage)
 
         # slide a window (with 1s step) over the whole training set
         # and keep track of the number of speakers in each location

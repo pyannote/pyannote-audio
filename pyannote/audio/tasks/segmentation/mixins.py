@@ -40,7 +40,7 @@ from pyannote.core import Annotation, Segment, SlidingWindow, SlidingWindowFeatu
 class SegmentationTaskMixin:
     """Methods common to most segmentation tasks"""
 
-    def setup(self):
+    def setup(self, stage: Optional[str] = None):
 
         # ==================================================================
         # PREPARE TRAINING DATA
