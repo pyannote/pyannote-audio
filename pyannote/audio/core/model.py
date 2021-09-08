@@ -278,12 +278,13 @@ class Model(pl.LightningModule):
     @property
     def example_input_array(self) -> torch.Tensor:
         batch_size = 3 if self.task is None else self.task.batch_size
+        duration = 2.0 if self.task is None else self.task.duration
 
         return torch.randn(
             (
                 batch_size,
                 self.hparams.num_channels,
-                int(self.hparams.sample_rate * self.specifications.duration),
+                int(self.hparams.sample_rate * duration),
             ),
             device=self.device,
         )
