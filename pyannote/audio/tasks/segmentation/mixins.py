@@ -27,6 +27,7 @@ from typing import List, Optional, Text, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
+from einops import rearrange
 from torchmetrics import FBeta
 from typing_extensions import Literal
 
@@ -39,92 +40,86 @@ from pyannote.core import Annotation, Segment, SlidingWindow, SlidingWindowFeatu
 class SegmentationTaskMixin:
     """Methods common to most segmentation tasks"""
 
-    def setup(self, stage=None):
+    def setup(self, stage: Optional[str] = None):
 
-        if stage == "fit":
+        # ==================================================================
+        # PREPARE TRAINING DATA
+        # ==================================================================
 
-            # ==================================================================
-            # PREPARE TRAINING DATA
-            # ==================================================================
+        self._train = []
+        self._train_metadata = dict()
 
-            self._train = []
-            self._train_metadata = dict()
+        for f in self.protocol.train():
 
-            for f in self.protocol.train():
+            file = dict()
 
-                file = dict()
+            for key, value in f.items():
 
-                for key, value in f.items():
+                # keep track of unique labels in self._train_metadata["annotation"]
+                if key == "annotation":
+                    for label in value.labels():
+                        self._train_metadata.setdefault("annotation", set()).add(label)
 
-                    # keep track of unique labels in self._train_metadata["annotation"]
-                    if key == "annotation":
-                        for label in value.labels():
-                            self._train_metadata.setdefault("annotation", set()).add(
-                                label
-                            )
+                # pass "audio" entry as it is
+                elif key == "audio":
+                    pass
 
-                    # pass "audio" entry as it is
-                    elif key == "audio":
-                        pass
+                # remove segments shorter than chunks from "annotated" entry
+                elif key == "annotated":
+                    value = [
+                        segment for segment in value if segment.duration > self.duration
+                    ]
+                    file["_annotated_duration"] = sum(
+                        segment.duration for segment in value
+                    )
 
-                    # remove segments shorter than chunks from "annotated" entry
-                    elif key == "annotated":
-                        value = [
-                            segment
-                            for segment in value
-                            if segment.duration > self.duration
-                        ]
-                        file["_annotated_duration"] = sum(
-                            segment.duration for segment in value
-                        )
+                # keey track of unique text-like entries (incl. "uri" and "database")
+                # and pass them as they are
+                elif isinstance(value, Text):
+                    self._train_metadata.setdefault(key, set()).add(value)
 
-                    # keey track of unique text-like entries (incl. "uri" and "database")
-                    # and pass them as they are
-                    elif isinstance(value, Text):
-                        self._train_metadata.setdefault(key, set()).add(value)
+                # pass score-like entries as they are
+                elif isinstance(value, SlidingWindowFeature):
+                    pass
 
-                    # pass score-like entries as they are
-                    elif isinstance(value, SlidingWindowFeature):
-                        pass
+                else:
+                    msg = (
+                        f"Protocol '{self.protocol.name}' defines a '{key}' entry of type {type(value)} "
+                        f"which we do not know how to handle."
+                    )
+                    warnings.warn(msg)
+                file[key] = value
 
-                    else:
-                        msg = (
-                            f"Protocol '{self.protocol.name}' defines a '{key}' entry of type {type(value)} "
-                            f"which we do not know how to handle."
-                        )
-                        warnings.warn(msg)
-                    file[key] = value
+            self._train.append(file)
 
-                self._train.append(file)
+        self._train_metadata = {
+            key: sorted(values) for key, values in self._train_metadata.items()
+        }
 
-            self._train_metadata = {
-                key: sorted(values) for key, values in self._train_metadata.items()
-            }
+        # ==================================================================
+        # PREPARE VALIDATION DATA
+        # ==================================================================
 
-            # ==================================================================
-            # PREPARE VALIDATION DATA
-            # ==================================================================
+        if not self.has_validation:
+            return
 
-            if not self.has_validation:
-                return
+        self._validation = []
 
-            self._validation = []
+        for f in self.protocol.development():
 
-            for f in self.protocol.development():
+            for segment in f["annotated"]:
 
-                for segment in f["annotated"]:
+                if segment.duration < self.duration:
+                    continue
 
-                    if segment.duration < self.duration:
-                        continue
+                num_chunks = round(segment.duration // self.duration)
 
-                    num_chunks = round(segment.duration // self.duration)
+                for c in range(num_chunks):
+                    start_time = segment.start + c * self.duration
+                    chunk = Segment(start_time, start_time + self.duration)
+                    self._validation.append((f, chunk))
 
-                    for c in range(num_chunks):
-                        start_time = segment.start + c * self.duration
-                        chunk = Segment(start_time, start_time + self.duration)
-                        self._validation.append((f, chunk))
-
-            random.shuffle(self._validation)
+        random.shuffle(self._validation)
 
     def setup_validation_metric(self):
         """Setup default validation metric
@@ -504,10 +499,13 @@ class SegmentationTaskMixin:
             # preds:  shape (batch_size, num_frames, num_classes), type float
 
             # torchmetrics expects
-            # target: shape (N, ...), type binary
-            # preds:  shape (N, ...), type float
+            # target: shape (N, num_classes), type binary
+            # preds:  shape (N, num_classes), type float
 
-            self.model.validation_metric(preds.reshape(-1), target.reshape(-1))
+            self.model.validation_metric(
+                rearrange(preds, "b f c -> (b f) c"),
+                rearrange(target, "b f c -> (b f) c"),
+            )
 
         elif self.specifications.problem == Problem.MONO_LABEL_CLASSIFICATION:
             # target: shape (batch_size, num_frames, num_classes), type binary

@@ -21,6 +21,7 @@
 # SOFTWARE.
 
 import math
+from typing import Optional
 
 import torch
 import torch.nn.functional as F
@@ -71,59 +72,57 @@ class SupervisedRepresentationLearningTaskMixin:
     def batch_size(self, batch_size: int):
         self.batch_size_ = batch_size
 
-    def setup(self, stage=None):
+    def setup(self, stage: Optional[str] = None):
 
-        if stage == "fit":
+        # loop over the training set, remove annotated regions shorter than
+        # chunk duration, and keep track of the reference annotations, per class.
 
-            # loop over the training set, remove annotated regions shorter than
-            # chunk duration, and keep track of the reference annotations, per class.
+        self._train = dict()
 
-            self._train = dict()
+        desc = f"Loading {self.protocol.name} training labels"
+        for f in tqdm(iterable=self.protocol.train(), desc=desc, unit="file"):
 
-            desc = f"Loading {self.protocol.name} training labels"
-            for f in tqdm(iterable=self.protocol.train(), desc=desc, unit="file"):
+            for klass in f["annotation"].labels():
 
-                for klass in f["annotation"].labels():
+                # keep class's (long enough) speech turns...
+                speech_turns = [
+                    segment
+                    for segment in f["annotation"].label_timeline(klass)
+                    if segment.duration > self.min_duration
+                ]
 
-                    # keep class's (long enough) speech turns...
-                    speech_turns = [
-                        segment
-                        for segment in f["annotation"].label_timeline(klass)
-                        if segment.duration > self.min_duration
-                    ]
+                # skip if there is no speech turns left
+                if not speech_turns:
+                    continue
 
-                    # skip if there is no speech turns left
-                    if not speech_turns:
-                        continue
+                # ... and their total duration
+                duration = sum(segment.duration for segment in speech_turns)
 
-                    # ... and their total duration
-                    duration = sum(segment.duration for segment in speech_turns)
+                # add class to the list of classes
+                if klass not in self._train:
+                    self._train[klass] = list()
 
-                    # add class to the list of classes
-                    if klass not in self._train:
-                        self._train[klass] = list()
+                self._train[klass].append(
+                    {
+                        "uri": f["uri"],
+                        "audio": f["audio"],
+                        "duration": duration,
+                        "speech_turns": speech_turns,
+                    }
+                )
 
-                    self._train[klass].append(
-                        {
-                            "uri": f["uri"],
-                            "audio": f["audio"],
-                            "duration": duration,
-                            "speech_turns": speech_turns,
-                        }
-                    )
+        self.specifications = Specifications(
+            problem=Problem.REPRESENTATION,
+            resolution=Resolution.CHUNK,
+            duration=self.duration,
+            classes=sorted(self._train),
+        )
 
-            self.specifications = Specifications(
-                problem=Problem.REPRESENTATION,
-                resolution=Resolution.CHUNK,
-                duration=self.duration,
-                classes=sorted(self._train),
-            )
+        if not self.has_validation:
+            return
 
-            if not self.has_validation:
-                return
-
-            if isinstance(self.protocol, SpeakerVerificationProtocol):
-                self._validation = list(self.protocol.development_trial())
+        if isinstance(self.protocol, SpeakerVerificationProtocol):
+            self._validation = list(self.protocol.development_trial())
 
     def setup_validation_metric(self):
         return AUROC(compute_on_step=False)

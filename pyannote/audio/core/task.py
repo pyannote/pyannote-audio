@@ -218,13 +218,8 @@ class Task(pl.LightningDataModule):
         """
         pass
 
-    def setup(self, stage=None):
-        """Called at the beginning of fit and test just before Model.setup()
-
-        Parameters
-        ----------
-        stage : "fit" or "test"
-            Whether model is being trained ("fit") or used for inference ("test").
+    def setup(self, stage: Optional[str] = None):
+        """Called at the beginning of training at the very beginning of Model.setup(stage="fit")
 
         Notes
         -----

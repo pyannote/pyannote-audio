@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import List, Text, Tuple, Union
+from typing import List, Optional, Text, Tuple, Union
 
 import numpy as np
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
@@ -105,21 +105,19 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
         # speakers should be tracked. therefore, we postpone
         # the definition of specifications.
 
-    def setup(self, stage=None):
+    def setup(self, stage: Optional[str] = None):
 
         super().setup(stage=stage)
 
-        if stage == "fit":
-
-            self.specifications = Specifications(
-                # one class per speaker
-                classes=sorted(self._train_metadata["annotation"]),
-                # multiple speakers can be active at once
-                problem=Problem.MULTI_LABEL_CLASSIFICATION,
-                resolution=Resolution.FRAME,
-                duration=self.duration,
-                warm_up=self.warm_up,
-            )
+        self.specifications = Specifications(
+            # one class per speaker
+            classes=sorted(self._train_metadata["annotation"]),
+            # multiple speakers can be active at once
+            problem=Problem.MULTI_LABEL_CLASSIFICATION,
+            resolution=Resolution.FRAME,
+            duration=self.duration,
+            warm_up=self.warm_up,
+        )
 
     @property
     def chunk_labels(self) -> List[Text]:

@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 from collections import Counter
-from typing import Text, Tuple, Union
+from typing import Optional, Text, Tuple, Union
 
 import numpy as np
 import torch
@@ -124,55 +124,53 @@ class Segmentation(SegmentationTaskMixin, Task):
         self.loss = loss
         self.vad_loss = vad_loss
 
-    def setup(self, stage=None):
+    def setup(self, stage: Optional[str] = None):
 
         super().setup(stage=stage)
 
-        if stage == "fit":
-
-            # slide a window (with 1s step) over the whole training set
-            # and keep track of the number of speakers in each location
-            num_speakers = []
-            for file in self._train:
-                start = file["annotated"][0].start
-                end = file["annotated"][-1].end
-                window = SlidingWindow(
-                    start=start,
-                    end=end,
-                    duration=self.duration,
-                    step=1.0,
-                )
-                for chunk in window:
-                    num_speakers.append(len(file["annotation"].crop(chunk).labels()))
-
-            # because there might a few outliers, estimate the upper bound for the
-            # number of speakers as the 99th percentile
-
-            num_speakers, counts = zip(*list(Counter(num_speakers).items()))
-            num_speakers, counts = np.array(num_speakers), np.array(counts)
-
-            sorting_indices = np.argsort(num_speakers)
-            num_speakers = num_speakers[sorting_indices]
-            counts = counts[sorting_indices]
-
-            self.num_speakers = num_speakers[
-                np.where(np.cumsum(counts) / np.sum(counts) > 0.99)[0][0]
-            ]
-
-            # TODO: add a few more speakers to make sure we don't skip
-            # too many artificial chunks (which might result in less
-            # overlap that we think we have)
-
-            # now that we know about the number of speakers upper bound
-            # we can set task specifications
-            self.specifications = Specifications(
-                problem=Problem.MULTI_LABEL_CLASSIFICATION,
-                resolution=Resolution.FRAME,
+        # slide a window (with 1s step) over the whole training set
+        # and keep track of the number of speakers in each location
+        num_speakers = []
+        for file in self._train:
+            start = file["annotated"][0].start
+            end = file["annotated"][-1].end
+            window = SlidingWindow(
+                start=start,
+                end=end,
                 duration=self.duration,
-                warm_up=self.warm_up,
-                classes=[f"speaker#{i+1}" for i in range(self.num_speakers)],
-                permutation_invariant=True,
+                step=1.0,
             )
+            for chunk in window:
+                num_speakers.append(len(file["annotation"].crop(chunk).labels()))
+
+        # because there might a few outliers, estimate the upper bound for the
+        # number of speakers as the 99th percentile
+
+        num_speakers, counts = zip(*list(Counter(num_speakers).items()))
+        num_speakers, counts = np.array(num_speakers), np.array(counts)
+
+        sorting_indices = np.argsort(num_speakers)
+        num_speakers = num_speakers[sorting_indices]
+        counts = counts[sorting_indices]
+
+        self.num_speakers = num_speakers[
+            np.where(np.cumsum(counts) / np.sum(counts) > 0.99)[0][0]
+        ]
+
+        # TODO: add a few more speakers to make sure we don't skip
+        # too many artificial chunks (which might result in less
+        # overlap that we think we have)
+
+        # now that we know about the number of speakers upper bound
+        # we can set task specifications
+        self.specifications = Specifications(
+            problem=Problem.MULTI_LABEL_CLASSIFICATION,
+            resolution=Resolution.FRAME,
+            duration=self.duration,
+            warm_up=self.warm_up,
+            classes=[f"speaker#{i+1}" for i in range(self.num_speakers)],
+            permutation_invariant=True,
+        )
 
     def prepare_y(self, one_hot_y: np.ndarray):
         """Zero-pad segmentation targets

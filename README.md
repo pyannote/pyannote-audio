@@ -1,4 +1,4 @@
-# Neural speaker diarization with pyannote.audio
+# Neural speaker diarization
 
 This is the development branch of upcoming `pyannote.audio` 2.0 for which it has been decided to rewrite almost everything from scratch.  Highlights of this upcoming release will be:
 

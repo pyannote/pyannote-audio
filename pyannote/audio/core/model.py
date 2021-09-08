@@ -278,12 +278,13 @@ class Model(pl.LightningModule):
     @property
     def example_input_array(self) -> torch.Tensor:
         batch_size = 3 if self.task is None else self.task.batch_size
+        duration = 2.0 if self.task is None else self.task.duration
 
         return torch.randn(
             (
                 batch_size,
                 self.hparams.num_channels,
-                int(self.hparams.sample_rate * self.specifications.duration),
+                int(self.hparams.sample_rate * duration),
             ),
             device=self.device,
         )
@@ -343,6 +344,9 @@ class Model(pl.LightningModule):
             del self._introspection
 
     def setup(self, stage=None):
+
+        if stage == "fit":
+            self.task.setup()
 
         # list of layers before adding task-dependent layers
         before = set((name, id(module)) for name, module in self.named_modules())
@@ -833,7 +837,6 @@ class Model(pl.LightningModule):
 
         if task is not None:
             model.task = task
-            task.setup(stage="fit")
             model.setup(stage="fit")
 
             try:
