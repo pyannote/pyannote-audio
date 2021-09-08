@@ -1,16 +1,17 @@
-from typing import List, Optional, Union, Iterable, Dict, Any
+#Prodigy
 import prodigy
 from prodigy.core import recipe
-from prodigy.components.loaders import get_stream
+from prodigy.components.loaders import get_stream, Audio
 from prodigy.components.preprocess import fetch_media as fetch_media_preprocessor
+from prodigy.components.db import connect
 from prodigy.util import log, msg, get_labels, split_string
 
+#types
 from pathlib import Path
-from typing import Text, Dict, List, Iterable
+from typing import Text, Dict, List, Iterable, Optional, Union, Any
 from pyannote.core import Segment, Timeline, Annotation
 
-from prodigy.components.loaders import Audio
-from prodigy.components.db import connect
+
 from utils import SAMPLE_RATE
 from utils import normalize
 from utils import to_base64
@@ -18,6 +19,7 @@ from utils import to_audio_spans
 from utils import chunks
 from copy import deepcopy
 
+#pyannote.audio
 from pyannote.audio.core.io import Audio as AudioFile
 from pyannote.audio.pipelines import VoiceActivityDetection
 
