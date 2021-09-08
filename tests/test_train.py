@@ -38,7 +38,19 @@ def test_train_overlapped_speech_detection(protocol):
     trainer.fit(model)
 
 
-def test_finetune(protocol):
+def test_finetune_with_task_that_does_not_need_setup_for_specs(protocol):
+    voice_activity_detection = VoiceActivityDetection(protocol)
+    model = SimpleSegmentationModel(task=voice_activity_detection)
+    trainer = Trainer(fast_dev_run=True)
+    trainer.fit(model)
+
+    voice_activity_detection = VoiceActivityDetection(protocol)
+    model.task = voice_activity_detection
+    trainer = Trainer(fast_dev_run=True)
+    trainer.fit(model)
+
+
+def test_finetune_with_task_that_needs_setup_for_specs(protocol):
     segmentation = Segmentation(protocol)
     model = SimpleSegmentationModel(task=segmentation)
     trainer = Trainer(fast_dev_run=True)
@@ -50,7 +62,8 @@ def test_finetune(protocol):
     trainer.fit(model)
 
 
-def test_transfer(protocol):
+def test_transfer_with_task_that_does_not_need_setup_for_specs(protocol):
+
     segmentation = Segmentation(protocol)
     model = SimpleSegmentationModel(task=segmentation)
     trainer = Trainer(fast_dev_run=True)
@@ -58,5 +71,74 @@ def test_transfer(protocol):
 
     voice_activity_detection = VoiceActivityDetection(protocol)
     model.task = voice_activity_detection
+    trainer = Trainer(fast_dev_run=True)
+    trainer.fit(model)
+
+
+def test_transfer_with_task_that_needs_setup_for_specs(protocol):
+
+    voice_activity_detection = VoiceActivityDetection(protocol)
+    model = SimpleSegmentationModel(task=voice_activity_detection)
+    trainer = Trainer(fast_dev_run=True)
+    trainer.fit(model)
+
+    segmentation = Segmentation(protocol)
+    model.task = segmentation
+    trainer = Trainer(fast_dev_run=True)
+    trainer.fit(model)
+
+
+def test_finetune_freeze_with_task_that_needs_setup_for_specs(protocol):
+
+    segmentation = Segmentation(protocol)
+    model = SimpleSegmentationModel(task=segmentation)
+    trainer = Trainer(fast_dev_run=True)
+    trainer.fit(model)
+
+    segmentation = Segmentation(protocol)
+    model.task = segmentation
+    model.freeze_up_to("mfcc")
+    trainer = Trainer(fast_dev_run=True)
+    trainer.fit(model)
+
+
+def test_finetune_freeze_with_task_that_does_not_need_setup_for_specs(protocol):
+
+    vad = VoiceActivityDetection(protocol)
+    model = SimpleSegmentationModel(task=vad)
+    trainer = Trainer(fast_dev_run=True)
+    trainer.fit(model)
+
+    vad = VoiceActivityDetection(protocol)
+    model.task = vad
+    model.freeze_up_to("mfcc")
+    trainer = Trainer(fast_dev_run=True)
+    trainer.fit(model)
+
+
+def test_transfer_freeze_with_task_that_does_not_need_setup_for_specs(protocol):
+
+    segmentation = Segmentation(protocol)
+    model = SimpleSegmentationModel(task=segmentation)
+    trainer = Trainer(fast_dev_run=True)
+    trainer.fit(model)
+
+    voice_activity_detection = VoiceActivityDetection(protocol)
+    model.task = voice_activity_detection
+    model.freeze_up_to("mfcc")
+    trainer = Trainer(fast_dev_run=True)
+    trainer.fit(model)
+
+
+def test_transfer_freeze_with_task_that_needs_setup_for_specs(protocol):
+
+    voice_activity_detection = VoiceActivityDetection(protocol)
+    model = SimpleSegmentationModel(task=voice_activity_detection)
+    trainer = Trainer(fast_dev_run=True)
+    trainer.fit(model)
+
+    segmentation = Segmentation(protocol)
+    model.task = segmentation
+    model.freeze_up_to("mfcc")
     trainer = Trainer(fast_dev_run=True)
     trainer.fit(model)
