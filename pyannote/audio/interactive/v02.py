@@ -4,7 +4,6 @@ from prodigy.core import recipe
 from prodigy.components.loaders import get_stream
 from prodigy.components.preprocess import fetch_media as fetch_media_preprocessor
 from prodigy.util import log, msg, get_labels, split_string
-#IMPORT POUR SAD
 
 from pathlib import Path
 from typing import Text, Dict, List, Iterable
@@ -17,7 +16,6 @@ from utils import normalize
 from utils import to_base64
 from utils import to_audio_spans
 from utils import chunks
-from utils import remove_audio_before_db
 from copy import deepcopy
 
 from pyannote.audio.core.io import Audio as AudioFile
