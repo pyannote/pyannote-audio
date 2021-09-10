@@ -27,7 +27,8 @@ from typing import Optional
 import hydra
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
-from pytorch_lightning.callbacks import (  # EarlyStopping,
+from pytorch_lightning.callbacks import (
+    EarlyStopping,
     LearningRateMonitor,
     ModelCheckpoint,
 )
@@ -54,8 +55,6 @@ def main(cfg: DictConfig) -> Optional[float]:
     seed_everything(seed=seed)
 
     protocol = get_protocol(cfg.protocol, preprocessors={"audio": FileFinder()})
-
-    # patience: int = cfg["patience"]
 
     # TODO: configure layer freezing
 
@@ -97,7 +96,7 @@ def main(cfg: DictConfig) -> Optional[float]:
     # if pretrained:
     #     # for fine-tuning and/or transfer learning, we start by fitting
     #     # task-dependent layers and gradully unfreeze more layers
-    #     callbacks.append(GraduallyUnfreeze(epochs_per_stage=patience))
+    #     callbacks.append(GraduallyUnfreeze(epochs_per_stage=1))
 
     learning_rate_monitor = LearningRateMonitor()
     callbacks.append(learning_rate_monitor)
@@ -115,16 +114,16 @@ def main(cfg: DictConfig) -> Optional[float]:
     )
     callbacks.append(checkpoint)
 
-    # if monitor is not None:
-    #     early_stopping = EarlyStopping(
-    #         monitor=monitor,
-    #         mode=direction,
-    #         min_delta=0.0,
-    #         patience=12 * patience,
-    #         strict=True,
-    #         verbose=False,
-    #     )
-    #     callbacks.append(early_stopping)
+    if monitor is not None:
+        early_stopping = EarlyStopping(
+            monitor=monitor,
+            mode=direction,
+            min_delta=0.0,
+            patience=100,
+            strict=True,
+            verbose=False,
+        )
+        callbacks.append(early_stopping)
 
     logger = TensorBoardLogger(
         ".",

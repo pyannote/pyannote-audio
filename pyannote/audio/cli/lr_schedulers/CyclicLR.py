@@ -43,14 +43,8 @@ def CyclicLR(
     max_lr : float, optional
         Defaults to 1e-3
     step_size_up : int, optional
-
-    monitor : str, optional
-        Value to monitor
-    direction : {"min", "max"}, optional
-        "min" (resp. "max") means smaller (resp. larger) is better.
-    patience : int, optional
-        Wait that many epochs with no improvement before reducing the learning rate.
-        Defaults to 10.
+        Number of training iterations in the increasing half of a cycle.
+        Defaults to 50000.
     """
 
     return {
