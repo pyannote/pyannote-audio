@@ -60,6 +60,7 @@ def CyclicLR(
             max_lr=max_lr,
             step_size_up=step_size_up,
             mode="triangular2",
+            cycle_momentum=False,
         ),
         "interval": "step",
     }
