@@ -29,10 +29,10 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau as _ReduceLROnPlateau
 
 def ReduceLROnPlateau(
     optimizer: Optimizer,
-    min_lr: float = 1e-8,
-    max_lr: float = 1e-3,
     monitor: Optional[Text] = None,
     direction: Optional[Text] = "min",
+    min_lr: float = 1e-8,
+    max_lr: float = 1e-3,
     factor: float = 0.5,
     patience: int = 10,
     **kwargs,
