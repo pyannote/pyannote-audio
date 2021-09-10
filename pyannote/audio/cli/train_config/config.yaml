@@ -5,6 +5,6 @@ defaults:
   - task: Segmentation
   - model: PyanNet
   - optimizer: Adam
-  - scheduler: ReduceLROnPlateau
+  - lr_scheduler: ReduceLROnPlateau
   - trainer: default
   - hydra: train
