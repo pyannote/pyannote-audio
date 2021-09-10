@@ -1,0 +1,7 @@
+# @package _group_
+_target_: pyannote.audio.cli.lr_schedulers.CyclicLR
+optimizer: ???
+min_lr: 1e-8
+max_lr: 1e-3
+step_size_up: 50000
+mode: triangular2

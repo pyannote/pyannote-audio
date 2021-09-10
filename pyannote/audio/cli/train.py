@@ -27,17 +27,15 @@ from typing import Optional
 import hydra
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
-from pytorch_lightning.callbacks import (
-    EarlyStopping,
+from pytorch_lightning.callbacks import (  # EarlyStopping,
     LearningRateMonitor,
     ModelCheckpoint,
 )
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.utilities.seed import seed_everything
-from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch_audiomentations.utils.config import from_dict as get_augmentation
 
-from pyannote.audio.core.callback import GraduallyUnfreeze
+# from pyannote.audio.core.callback import GraduallyUnfreeze
 from pyannote.database import FileFinder, get_protocol
 
 
@@ -57,7 +55,7 @@ def main(cfg: DictConfig) -> Optional[float]:
 
     protocol = get_protocol(cfg.protocol, preprocessors={"audio": FileFinder()})
 
-    patience: int = cfg["patience"]
+    # patience: int = cfg["patience"]
 
     # TODO: configure layer freezing
 
@@ -86,38 +84,20 @@ def main(cfg: DictConfig) -> Optional[float]:
     def configure_optimizers(self):
 
         optimizer = instantiate(cfg.optimizer, self.parameters())
-
-        if monitor is None:
-            return optimizer
-
-        lr_scheduler = {
-            "scheduler": ReduceLROnPlateau(
-                optimizer,
-                mode=direction,
-                factor=0.5,
-                patience=4 * patience,
-                threshold=0.0001,
-                threshold_mode="rel",
-                cooldown=2 * patience,
-                min_lr=0,
-                eps=1e-08,
-                verbose=False,
-            ),
-            "interval": "epoch",
-            "reduce_on_plateau": True,
-            "monitor": monitor,
-            "strict": True,
-        }
+        lr_scheduler = instantiate(
+            cfg.lr_scheduler, optimizer, monitor=monitor, direction=direction
+        )
         return {"optimizer": optimizer, "lr_scheduler": lr_scheduler}
 
     model.configure_optimizers = MethodType(configure_optimizers, model)
 
     callbacks = []
 
-    if pretrained:
-        # for fine-tuning and/or transfer learning, we start by fitting
-        # task-dependent layers and gradully unfreeze more layers
-        callbacks.append(GraduallyUnfreeze(epochs_per_stage=patience))
+    # # TODO: replace by finetune_scheduler config
+    # if pretrained:
+    #     # for fine-tuning and/or transfer learning, we start by fitting
+    #     # task-dependent layers and gradully unfreeze more layers
+    #     callbacks.append(GraduallyUnfreeze(epochs_per_stage=patience))
 
     learning_rate_monitor = LearningRateMonitor(logging_interval="step")
     callbacks.append(learning_rate_monitor)
@@ -135,16 +115,16 @@ def main(cfg: DictConfig) -> Optional[float]:
     )
     callbacks.append(checkpoint)
 
-    if monitor is not None:
-        early_stopping = EarlyStopping(
-            monitor=monitor,
-            mode=direction,
-            min_delta=0.0,
-            patience=12 * patience,
-            strict=True,
-            verbose=False,
-        )
-        callbacks.append(early_stopping)
+    # if monitor is not None:
+    #     early_stopping = EarlyStopping(
+    #         monitor=monitor,
+    #         mode=direction,
+    #         min_delta=0.0,
+    #         patience=12 * patience,
+    #         strict=True,
+    #         verbose=False,
+    #     )
+    #     callbacks.append(early_stopping)
 
     logger = TensorBoardLogger(
         ".",
