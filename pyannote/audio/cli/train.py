@@ -99,7 +99,7 @@ def main(cfg: DictConfig) -> Optional[float]:
     #     # task-dependent layers and gradully unfreeze more layers
     #     callbacks.append(GraduallyUnfreeze(epochs_per_stage=patience))
 
-    learning_rate_monitor = LearningRateMonitor(logging_interval="step")
+    learning_rate_monitor = LearningRateMonitor()
     callbacks.append(learning_rate_monitor)
 
     checkpoint = ModelCheckpoint(
