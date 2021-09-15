@@ -160,8 +160,9 @@ class VoiceActivityDetection(Pipeline):
             Speech regions.
         """
 
-        if self.training and self.CACHED_ACTIVATIONS not in file:
-            file[self.CACHED_ACTIVATIONS] = self.segmentation_inference_(file)
+        if self.training:
+            if self.CACHED_ACTIVATIONS not in file:
+                file[self.CACHED_ACTIVATIONS] = self.segmentation_inference_(file)
         else:
             file[self.CACHED_ACTIVATIONS] = self.segmentation_inference_(file)
 
