@@ -134,7 +134,7 @@ class SegmentationTaskMixin:
         else:
             num_classes = len(self.specifications.classes)
 
-        return AUROC(num_classes, average="macro", compute_on_step=False)
+        return AUROC(num_classes, pos_label=1, average="macro", compute_on_step=False)
 
     def prepare_y(self, one_hot_y: np.ndarray) -> np.ndarray:
         raise NotImplementedError(
