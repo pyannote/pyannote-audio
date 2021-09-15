@@ -109,6 +109,8 @@ class Segmentation(Pipeline):
             min_duration_off=self.min_duration_off,
         )
 
+    CACHED_ACTIVATIONS = "@segmentation/activations"
+
     def apply(self, file: AudioFile) -> Annotation:
         """Apply segmentation
 
@@ -123,9 +125,13 @@ class Segmentation(Pipeline):
             Segmentation
         """
 
-        speaker_activations = self.segmentation_inference_(file)
-        file["@segmentation/activations"] = speaker_activations
-        segmentation = self._binarize(speaker_activations)
+        if self.training:
+            if self.CACHED_ACTIVATIONS not in file:
+                file[self.CACHED_ACTIVATIONS] = self.segmentation_inference_(file)
+        else:
+            file[self.CACHED_ACTIVATIONS] = self.segmentation_inference_(file)
+
+        segmentation = self._binarize(file[self.CACHED_ACTIVATIONS])
         segmentation.uri = file["uri"]
         return segmentation
 

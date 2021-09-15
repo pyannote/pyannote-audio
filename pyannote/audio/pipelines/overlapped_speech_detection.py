@@ -158,6 +158,8 @@ class OverlappedSpeechDetection(Pipeline):
             min_duration_off=self.min_duration_off,
         )
 
+    CACHED_ACTIVATIONS = "@overlapped_speech_detection/activations"
+
     def apply(self, file: AudioFile) -> Annotation:
         """Apply overlapped speech detection
 
@@ -172,10 +174,13 @@ class OverlappedSpeechDetection(Pipeline):
             Overlapped speech regions.
         """
 
-        activation = self.segmentation_inference_(file)
-        file["@overlapped_speech_detection/activation"] = activation
+        if self.training:
+            if self.CACHED_ACTIVATIONS not in file:
+                file[self.CACHED_ACTIVATIONS] = self.segmentation_inference_(file)
+        else:
+            file[self.CACHED_ACTIVATIONS] = self.segmentation_inference_(file)
 
-        overlapped_speech = self._binarize(activation)
+        overlapped_speech = self._binarize(file[self.CACHED_ACTIVATIONS])
         overlapped_speech.uri = file["uri"]
         return overlapped_speech
 

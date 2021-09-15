@@ -120,6 +120,8 @@ class Resegmentation(Pipeline):
             min_duration_off=self.min_duration_off,
         )
 
+    CACHED_ACTIVATIONS = "@resegmentation/activations"
+
     def apply(self, file: AudioFile) -> Annotation:
         """Apply speaker diarization
 
@@ -134,59 +136,66 @@ class Resegmentation(Pipeline):
             Speaker diarization
         """
 
-        # output of segmentation model on each chunk
-        segmentations: SlidingWindowFeature = self.seg_inference_(file)
+        if (not self.training) or (
+            self.training and self.CACHED_ACTIVATIONS not in file
+        ):
 
-        # number of frames in the whole file
-        num_frames_in_file = self.seg_frames_.closest_frame(
-            segmentations.sliding_window[len(segmentations) - 1].end
-        )
+            # output of segmentation model on each chunk
+            segmentations: SlidingWindowFeature = self.seg_inference_(file)
 
-        # turn input diarization into binary (0 or 1) activations
-        labels = file[self.diarization].labels()
-        num_clusters = len(labels)
-        y_original = np.zeros(
-            (num_frames_in_file, len(labels)), dtype=segmentations.data.dtype
-        )
-        for k, label in enumerate(labels):
-            segments = file[self.diarization].label_timeline(label)
-            for start, stop in self.seg_frames_.crop(
-                segments, mode="center", return_ranges=True
-            ):
-                y_original[start:stop, k] += 1
-        y_original = np.minimum(y_original, 1, out=y_original)
-        diarization = SlidingWindowFeature(y_original, self.seg_frames_)
-        file["@resegmentation/diarization"] = diarization
+            # number of frames in the whole file
+            num_frames_in_file = self.seg_frames_.closest_frame(
+                segmentations.sliding_window[len(segmentations) - 1].end
+            )
 
-        aggregated = np.zeros((num_frames_in_file, num_clusters))
-        overlapped = np.zeros((num_frames_in_file, num_clusters))
+            # turn input diarization into binary (0 or 1) activations
+            labels = file[self.diarization].labels()
+            num_clusters = len(labels)
+            y_original = np.zeros(
+                (num_frames_in_file, len(labels)), dtype=segmentations.data.dtype
+            )
+            for k, label in enumerate(labels):
+                segments = file[self.diarization].label_timeline(label)
+                for start, stop in self.seg_frames_.crop(
+                    segments, mode="center", return_ranges=True
+                ):
+                    y_original[start:stop, k] += 1
+            y_original = np.minimum(y_original, 1, out=y_original)
+            diarization = SlidingWindowFeature(y_original, self.seg_frames_)
 
-        for chunk, segmentation in segmentations:
+            aggregated = np.zeros((num_frames_in_file, num_clusters))
+            overlapped = np.zeros((num_frames_in_file, num_clusters))
 
-            # only consider active speakers in `segmentation`
-            active = np.max(segmentation, axis=0) > self.onset
-            if np.sum(active) == 0:
-                continue
-            segmentation = segmentation[:, active]
+            for chunk, segmentation in segmentations:
 
-            local_diarization = diarization.crop(chunk)[
-                np.newaxis, : self.num_frames_in_chunk_
-            ]
-            (permutated_segmentation,), _ = permutate(local_diarization, segmentation)
+                # only consider active speakers in `segmentation`
+                active = np.max(segmentation, axis=0) > self.onset
+                if np.sum(active) == 0:
+                    continue
+                segmentation = segmentation[:, active]
 
-            start_frame = round(chunk.start / self.seg_frames_.duration)
-            aggregated[
-                start_frame : start_frame + self.num_frames_in_chunk_
-            ] += permutated_segmentation
-            overlapped[start_frame : start_frame + self.num_frames_in_chunk_] += 1.0
+                local_diarization = diarization.crop(chunk)[
+                    np.newaxis, : self.num_frames_in_chunk_
+                ]
+                (permutated_segmentation,), _ = permutate(
+                    local_diarization, segmentation
+                )
 
-        speaker_activations = SlidingWindowFeature(
-            aggregated / np.maximum(overlapped, 1e-12), self.seg_frames_, labels=labels
-        )
+                start_frame = round(chunk.start / self.seg_frames_.duration)
+                aggregated[
+                    start_frame : start_frame + self.num_frames_in_chunk_
+                ] += permutated_segmentation
+                overlapped[start_frame : start_frame + self.num_frames_in_chunk_] += 1.0
 
-        file["@resegmentation/activations"] = speaker_activations
+            speaker_activations = SlidingWindowFeature(
+                aggregated / np.maximum(overlapped, 1e-12),
+                self.seg_frames_,
+                labels=labels,
+            )
 
-        diarization = self._binarize(speaker_activations)
+            file[self.CACHED_ACTIVATIONS] = speaker_activations
+
+        diarization = self._binarize(file[self.CACHED_ACTIVATIONS])
         diarization.uri = file["uri"]
         return diarization
 
