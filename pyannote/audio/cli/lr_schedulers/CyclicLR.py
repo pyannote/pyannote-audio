@@ -29,8 +29,9 @@ def CyclicLR(
     optimizer: Optimizer,
     min_lr: float = 1e-8,
     max_lr: float = 1e-3,
-    step_size_up: int = 50000,
-    mode: str = "triangular",
+    mode: str = "triangular2",
+    patience: int = 50,
+    num_batches_per_epoch: int = None,
     **kwargs,
 ):
     """Wrapper around CyclicLR learning rate scheduler
@@ -43,12 +44,15 @@ def CyclicLR(
         Defaults to 1e-8.
     max_lr : float, optional
         Defaults to 1e-3
-    step_size_up : int, optional
-        Number of training iterations in the increasing half of a cycle.
-        Defaults to 50000.
+    patience : int, optional
+        Number of epochs per cycle. Defaults to 50.
+    num_batches_per_epoch : int, optional
+        Number of batches per epoch.
     mode : {"triangular", "triangular2"}, optional
-        Defaults to "triangular".
+        Defaults to "triangular2".
     """
+
+    step_size_up = int(0.5 * patience * num_batches_per_epoch)
 
     return {
         "scheduler": _CyclicLR(

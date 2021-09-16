@@ -80,11 +80,18 @@ def main(cfg: DictConfig) -> Optional[float]:
         # done for pretrained models (TODO: check that this is true)
         model.setup(stage="fit")
 
+    # number of batches in one epoch
+    num_batches_per_epoch = model.task.train__len__()
+
     def configure_optimizers(self):
 
         optimizer = instantiate(cfg.optimizer, self.parameters())
         lr_scheduler = instantiate(
-            cfg.lr_scheduler, optimizer, monitor=monitor, direction=direction
+            cfg.lr_scheduler,
+            optimizer,
+            monitor=monitor,
+            direction=direction,
+            num_batches_per_epoch=num_batches_per_epoch,
         )
         return {"optimizer": optimizer, "lr_scheduler": lr_scheduler}
 
@@ -119,7 +126,7 @@ def main(cfg: DictConfig) -> Optional[float]:
             monitor=monitor,
             mode=direction,
             min_delta=0.0,
-            patience=100,
+            patience=cfg.lr_scheduler.patience * 2,
             strict=True,
             verbose=False,
         )
