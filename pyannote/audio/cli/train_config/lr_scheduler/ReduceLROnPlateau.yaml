@@ -1,0 +1,6 @@
+# @package _group_
+_target_: pyannote.audio.cli.lr_schedulers.ReduceLROnPlateau
+min_lr: 1e-8
+max_lr: 1e-3
+factor: 0.5
+patience: 50

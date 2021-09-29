@@ -144,6 +144,8 @@ class VoiceActivityDetection(Pipeline):
             min_duration_off=self.min_duration_off,
         )
 
+    CACHED_ACTIVATIONS = "@voice_activity_detection/activations"
+
     def apply(self, file: AudioFile) -> Annotation:
         """Apply voice activity detection
 
@@ -158,10 +160,13 @@ class VoiceActivityDetection(Pipeline):
             Speech regions.
         """
 
-        activation = self.segmentation_inference_(file)
-        file["@voice_activity_detection/activation"] = activation
+        if self.training:
+            if self.CACHED_ACTIVATIONS not in file:
+                file[self.CACHED_ACTIVATIONS] = self.segmentation_inference_(file)
+        else:
+            file[self.CACHED_ACTIVATIONS] = self.segmentation_inference_(file)
 
-        speech = self._binarize(activation)
+        speech = self._binarize(file[self.CACHED_ACTIVATIONS])
         speech.uri = file["uri"]
         return speech
 

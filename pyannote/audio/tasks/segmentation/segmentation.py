@@ -37,11 +37,7 @@ from pyannote.database import Protocol
 
 
 class Segmentation(SegmentationTaskMixin, Task):
-    """Segmentation
-
-    Note that data augmentation is used to increase the proportion of "overlap".
-    This is achieved by generating chunks made out of the (weighted) sum of two
-    random chunks.
+    """Speaker segmentation
 
     Parameters
     ----------
@@ -49,6 +45,9 @@ class Segmentation(SegmentationTaskMixin, Task):
         pyannote.database protocol
     duration : float, optional
         Chunks duration. Defaults to 2s.
+    max_num_speakers : int, optional
+        Force maximum number of speakers per chunk (must be at least 2).
+        Defaults to estimating it from the training set.
     warm_up : float or (float, float), optional
         Use that many seconds on the left- and rightmost parts of each chunk
         to warm up the model. While the model does process those left- and right-most
@@ -83,6 +82,12 @@ class Segmentation(SegmentationTaskMixin, Task):
         during training.
     vad_loss : {"bce", "mse"}, optional
         Add voice activity detection loss.
+
+    Reference
+    ----------
+    Hervé Bredin and Antoine Laurent
+    "End-To-End Speaker Segmentation for Overlap-Aware Resegmentation."
+    Proc. Interspeech 2021
     """
 
     ACRONYM = "seg"
@@ -93,6 +98,7 @@ class Segmentation(SegmentationTaskMixin, Task):
         self,
         protocol: Protocol,
         duration: float = 2.0,
+        max_num_speakers: int = None,
         warm_up: Union[float, Tuple[float, float]] = 0.0,
         overlap: dict = OVERLAP_DEFAULTS,
         balance: Text = None,
@@ -115,6 +121,7 @@ class Segmentation(SegmentationTaskMixin, Task):
             augmentation=augmentation,
         )
 
+        self.max_num_speakers = max_num_speakers
         self.overlap = overlap
         self.balance = balance
         self.weight = weight
@@ -128,38 +135,37 @@ class Segmentation(SegmentationTaskMixin, Task):
 
         super().setup(stage=stage)
 
-        # slide a window (with 1s step) over the whole training set
-        # and keep track of the number of speakers in each location
-        num_speakers = []
-        for file in self._train:
-            start = file["annotated"][0].start
-            end = file["annotated"][-1].end
-            window = SlidingWindow(
-                start=start,
-                end=end,
-                duration=self.duration,
-                step=1.0,
+        if self.max_num_speakers is None:
+
+            # slide a window (with 1s step) over the whole training set
+            # and keep track of the number of speakers in each location
+            num_speakers = []
+            for file in self._train:
+                start = file["annotated"][0].start
+                end = file["annotated"][-1].end
+                window = SlidingWindow(
+                    start=start,
+                    end=end,
+                    duration=self.duration,
+                    step=1.0,
+                )
+                for chunk in window:
+                    num_speakers.append(len(file["annotation"].crop(chunk).labels()))
+
+            # because there might a few outliers, estimate the upper bound for the
+            # number of speakers as the 99th percentile
+
+            num_speakers, counts = zip(*list(Counter(num_speakers).items()))
+            num_speakers, counts = np.array(num_speakers), np.array(counts)
+
+            sorting_indices = np.argsort(num_speakers)
+            num_speakers = num_speakers[sorting_indices]
+            counts = counts[sorting_indices]
+
+            self.max_num_speakers = max(
+                2,
+                num_speakers[np.where(np.cumsum(counts) / np.sum(counts) > 0.99)[0][0]],
             )
-            for chunk in window:
-                num_speakers.append(len(file["annotation"].crop(chunk).labels()))
-
-        # because there might a few outliers, estimate the upper bound for the
-        # number of speakers as the 99th percentile
-
-        num_speakers, counts = zip(*list(Counter(num_speakers).items()))
-        num_speakers, counts = np.array(num_speakers), np.array(counts)
-
-        sorting_indices = np.argsort(num_speakers)
-        num_speakers = num_speakers[sorting_indices]
-        counts = counts[sorting_indices]
-
-        self.num_speakers = num_speakers[
-            np.where(np.cumsum(counts) / np.sum(counts) > 0.99)[0][0]
-        ]
-
-        # TODO: add a few more speakers to make sure we don't skip
-        # too many artificial chunks (which might result in less
-        # overlap that we think we have)
 
         # now that we know about the number of speakers upper bound
         # we can set task specifications
@@ -168,7 +174,7 @@ class Segmentation(SegmentationTaskMixin, Task):
             resolution=Resolution.FRAME,
             duration=self.duration,
             warm_up=self.warm_up,
-            classes=[f"speaker#{i+1}" for i in range(self.num_speakers)],
+            classes=[f"speaker#{i+1}" for i in range(self.max_num_speakers)],
             permutation_invariant=True,
         )
 
@@ -184,7 +190,7 @@ class Segmentation(SegmentationTaskMixin, Task):
 
         Returns
         -------
-        padded_one_hot_y : (num_frames, self.num_speakers) np.ndarray
+        padded_one_hot_y : (num_frames, self.max_num_speakers) np.ndarray
             One-hot-encoding of current chunk speaker activity:
                 * one_hot_y[t, k] = 1 if kth speaker is active at tth frame
                 * one_hot_y[t, k] = 0 otherwise.
@@ -192,12 +198,12 @@ class Segmentation(SegmentationTaskMixin, Task):
 
         num_frames, num_speakers = one_hot_y.shape
 
-        if num_speakers > self.num_speakers:
+        if num_speakers > self.max_num_speakers:
             raise ValueError()
 
-        if num_speakers < self.num_speakers:
+        if num_speakers < self.max_num_speakers:
             one_hot_y = np.pad(
-                one_hot_y, ((0, 0), (0, self.num_speakers - num_speakers))
+                one_hot_y, ((0, 0), (0, self.max_num_speakers - num_speakers))
             )
 
         return one_hot_y
@@ -211,9 +217,9 @@ class Segmentation(SegmentationTaskMixin, Task):
         # since number of speakers is estimated from the training set,
         # we might encounter validation chunks that have more speakers.
         # in that case, we arbitrarily remove last speakers
-        if y.shape[1] > self.num_speakers:
-            y = y[:, : self.num_speakers]
-            labels = labels[: self.num_speakers]
+        if y.shape[1] > self.max_num_speakers:
+            y = y[:, : self.max_num_speakers]
+            labels = labels[: self.max_num_speakers]
 
         sample["y"] = self.prepare_y(y)
         return sample
