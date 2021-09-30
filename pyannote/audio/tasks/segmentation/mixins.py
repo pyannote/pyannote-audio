@@ -27,8 +27,7 @@ from typing import List, Optional, Text, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
-from einops import rearrange
-from torchmetrics import FBeta
+from torchmetrics import AUROC
 from typing_extensions import Literal
 
 from pyannote.audio.core.io import Audio, AudioFile
@@ -124,13 +123,18 @@ class SegmentationTaskMixin:
     def setup_validation_metric(self):
         """Setup default validation metric
 
-        Use macro-average of F-score with a 0.5 threshold
+        Use macro-average of area under the ROC curve
         """
 
-        num_classes = len(self.specifications.classes)
-        return FBeta(
-            num_classes, beta=1.0, threshold=0.5, average="macro", compute_on_step=False
-        )
+        if self.specifications.problem in [
+            Problem.BINARY_CLASSIFICATION,
+            Problem.MULTI_LABEL_CLASSIFICATION,
+        ]:
+            num_classes = 1
+        else:
+            num_classes = len(self.specifications.classes)
+
+        return AUROC(num_classes, pos_label=1, average="macro", compute_on_step=False)
 
     def prepare_y(self, one_hot_y: np.ndarray) -> np.ndarray:
         raise NotImplementedError(
@@ -451,7 +455,7 @@ class SegmentationTaskMixin:
         return y_pred
 
     def validation_step(self, batch, batch_idx: int):
-        """Compute validation F-score
+        """Compute validation area under the ROC curve
 
         Parameters
         ----------
@@ -499,13 +503,10 @@ class SegmentationTaskMixin:
             # preds:  shape (batch_size, num_frames, num_classes), type float
 
             # torchmetrics expects
-            # target: shape (N, num_classes), type binary
-            # preds:  shape (N, num_classes), type float
+            # target: shape (N, ), type binary
+            # preds:  shape (N, ), type float
 
-            self.model.validation_metric(
-                rearrange(preds, "b f c -> (b f) c"),
-                rearrange(target, "b f c -> (b f) c"),
-            )
+            self.model.validation_metric(preds.reshape(-1), target.reshape(-1))
 
         elif self.specifications.problem == Problem.MONO_LABEL_CLASSIFICATION:
             # target: shape (batch_size, num_frames, num_classes), type binary
@@ -519,7 +520,7 @@ class SegmentationTaskMixin:
             raise NotImplementedError()
 
         self.model.log(
-            f"{self.ACRONYM}@val_fbeta",
+            f"{self.ACRONYM}@val_auroc",
             self.model.validation_metric,
             on_step=False,
             on_epoch=True,
@@ -601,4 +602,4 @@ class SegmentationTaskMixin:
     @property
     def val_monitor(self):
         """Maximize validation area under ROC curve"""
-        return f"{self.ACRONYM}@val_fbeta", "max"
+        return f"{self.ACRONYM}@val_auroc", "max"
