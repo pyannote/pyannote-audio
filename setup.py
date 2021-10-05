@@ -61,7 +61,7 @@ if __name__ == "__main__":
         ],
         entry_points={
             "prodigy_recipes": [
-                "pyannote.voice_activity_detection = pyannote.voice_activity_detection",
+                "pyannote.voice_activity_detection = pyannote.audio.interactive.recipes.voice_activity_detection:voice_activity_detection",
             ],
         },
     )

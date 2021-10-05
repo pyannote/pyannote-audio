@@ -4,21 +4,18 @@ from typing import Any, Dict, Iterable, Optional, Union
 
 import prodigy
 from prodigy.components.loaders import Audio as AudioLoader
-from utils import SAMPLE_RATE, chunks, normalize, to_audio_spans, to_base64
+from utils import (
+    SAMPLE_RATE,
+    chunks,
+    normalize,
+    remove_audio_before_db,
+    to_audio_spans,
+    to_base64,
+)
 
 from pyannote.audio.core.io import Audio
 from pyannote.audio.pipelines import VoiceActivityDetection
 from pyannote.core import Annotation, Segment
-
-
-def remove_base64(examples):
-    """Remove base64-encoded string if "path" is preserved in example."""
-    for eg in examples:
-        if "audio" in eg and eg["audio"].startswith("data:") and "path" in eg:
-            eg["audio"] = eg["path"]
-        if "video" in eg and eg["video"].startswith("data:") and "path" in eg:
-            eg["video"] = eg["path"]
-    return examples
 
 
 def voice_activity_detection_stream(
@@ -59,11 +56,8 @@ def voice_activity_detection_stream(
         duration = raw_audio.get_duration(file)
         file["duration"] = duration
 
-        prodigy.log(f"RECIPE: detecting speech regions in '{path}'")
-
-        speech: Annotation = pipeline(file)
-
         if duration <= chunk:
+            speech: Annotation = pipeline(file)
             waveform, sr = raw_audio.crop(file, Segment(0, duration))
             waveform = waveform.numpy()
             task_audio = to_base64(normalize(waveform), sample_rate=SAMPLE_RATE)
@@ -83,11 +77,17 @@ def voice_activity_detection_stream(
             for focus in chunks(duration, chunk=chunk, shuffle=False):
                 task_text = f"{text} [{focus.start:.1f}, {focus.end:.1f}]"
                 waveform, sr = raw_audio.crop(file, focus)
+                if waveform.shape[1] != SAMPLE_RATE * chunk:
+                    waveform = waveform.pad(
+                        input=waveform,
+                        pad=(0, SAMPLE_RATE * chunk - waveform.shape[1]),
+                        mode="constant",
+                        value=0,
+                    )
+                speech: Annotation = pipeline({"waveform": waveform, "sample_rate": sr})
                 waveform = waveform.numpy().T
                 task_audio = to_base64(normalize(waveform), sample_rate=SAMPLE_RATE)
-                task_audio_spans = to_audio_spans(
-                    speech.crop(focus, mode="intersection"), focus=focus
-                )
+                task_audio_spans = to_audio_spans(speech)
 
                 yield {
                     "path": path,
@@ -119,6 +119,13 @@ def voice_activity_detection_stream(
         None,
         float,
     ),
+    segmentation_model=("Segmentation model to use", "option", "sm", str),
+    hyper_parameters=(
+        "Hyper parameters to instantiate the pipeline",
+        "option",
+        "hp",
+        dict,
+    ),
 )
 def voice_activity_detection(
     dataset: str,
@@ -141,7 +148,7 @@ def voice_activity_detection(
         "view_id": "audio_manual",
         "dataset": dataset,
         "stream": voice_activity_detection_stream(pipeline, source, chunk=chunk),
-        "before_db": remove_base64,
+        "before_db": remove_audio_before_db,
         "config": {
             "labels": ["Speech"],
             "audio_autoplay": True,
