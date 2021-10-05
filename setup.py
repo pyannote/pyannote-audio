@@ -61,7 +61,7 @@ if __name__ == "__main__":
         ],
         entry_points={
             "prodigy_recipes": [
-                "pyannote.sad.manual = pyannote.audio.interactive.v03:sad_manual",
+                "pyannote.voice_activity_detection = pyannote.voice_activity_detection",
             ],
         },
     )
