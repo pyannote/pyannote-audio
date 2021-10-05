@@ -59,7 +59,7 @@ def voice_activity_detection_stream(
         if duration <= chunk:
             speech: Annotation = pipeline(file)
             waveform, sr = raw_audio.crop(file, Segment(0, duration))
-            waveform = waveform.numpy()
+            waveform = waveform.numpy().T
             task_audio = to_base64(normalize(waveform), sample_rate=SAMPLE_RATE)
             task_audio_spans = to_audio_spans(speech)
 
