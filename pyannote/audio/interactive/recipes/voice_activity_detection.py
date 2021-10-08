@@ -1,10 +1,17 @@
+import os
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Union
 
 import prodigy
 from prodigy.components.loaders import Audio as AudioLoader
-from utils import (
+
+from pyannote.audio import Pipeline
+from pyannote.audio.core.io import Audio
+from pyannote.audio.pipelines import VoiceActivityDetection
+from pyannote.core import Annotation, Segment
+
+from ..utils import (
     SAMPLE_RATE,
     chunks,
     normalize,
@@ -12,10 +19,6 @@ from utils import (
     to_audio_spans,
     to_base64,
 )
-
-from pyannote.audio.core.io import Audio
-from pyannote.audio.pipelines import VoiceActivityDetection
-from pyannote.core import Annotation, Segment
 
 
 def voice_activity_detection_stream(
@@ -119,29 +122,52 @@ def voice_activity_detection_stream(
         None,
         float,
     ),
-    segmentation_model=("Segmentation model to use", "option", "sm", str),
-    hyper_parameters=(
-        "Hyper parameters to instantiate the pipeline",
+    path_pretrained_model=(
+        "Yaml configuration file from pretrained model",
         "option",
-        "hp",
-        dict,
+        "cf",
+        str,
     ),
 )
 def voice_activity_detection(
     dataset: str,
     source: Union[str, Iterable[dict]],
     chunk: float = 10.0,
-    segmentation_model: Optional[str] = "pyannote/segmentation",
-    hyper_parameters: Optional[dict] = {
-        "onset": 0.5,
-        "offset": 0.5,
-        "min_duration_on": 0.0,
-        "min_duration_off": 0.0,
-    },
+    path_pretrained_model: Optional[str] = None,
 ) -> Dict[str, Any]:
 
-    pipeline = VoiceActivityDetection(segmentation=segmentation_model, step=0.5)
-    pipeline.instantiate(hyper_parameters)
+    if path_pretrained_model is not None:
+        pipeline = Pipeline.from_pretrained(path_pretrained_model)
+    else:
+        pipeline = VoiceActivityDetection(
+            segmentation="pyannote/segmentation", step=0.5
+        )
+        HYPER_PARAMETERS = {
+            "onset": 0.767,
+            "offset": 0.377,
+            "min_duration_on": 0.136,
+            "min_duration_off": 0.067,
+        }
+        pipeline.instantiate(HYPER_PARAMETERS)
+
+    realpath = os.path.dirname(os.path.realpath(__file__)) + "/wavesurferControler.js"
+    with open(realpath) as txt:
+        script_text = txt.read()
+
+    """
+    Keys function	[Keys exemple]
+    ----------------------------------
+    SR : Start Right	[D]
+    SL : Start Left	[S]
+    ER : End Right	[K]
+    EL : End Left	[J]
+    N  : Next           [N]
+    R  : Remove         [R]
+    For D,S,K and J : Keypress code
+    For R and N : Keydown code
+    """
+    keys = {"SR": 100, "SL": 115, "ER": 107, "EL": 106, "N": 78, "R": 82}
+
     prodigy.log("RECIPE: Starting recipe voice_activity_detection", locals())
 
     return {
@@ -150,8 +176,10 @@ def voice_activity_detection(
         "stream": voice_activity_detection_stream(pipeline, source, chunk=chunk),
         "before_db": remove_audio_before_db,
         "config": {
+            "javascript": script_text,
             "labels": ["Speech"],
             "audio_autoplay": True,
             "show_audio_minimap": False,
+            "keys": keys,
         },
     }
