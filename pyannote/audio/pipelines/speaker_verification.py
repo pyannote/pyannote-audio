@@ -20,12 +20,192 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+from typing import Text
+
 import numpy as np
 import torch
+import torch.nn.functional as F
+from speechbrain.pretrained import EncoderClassifier
+from torch.nn.utils.rnn import pad_sequence
 
 from pyannote.audio import Inference, Model, Pipeline
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.pipelines.utils import PipelineModel, get_devices, get_model
+
+
+class SpeechBrainPretrainedSpeakerEmbedding:
+    """Pretrained SpeechBrain speaker embedding
+
+    Parameters
+    ----------
+    embedding : str
+        Name of SpeechBrain model
+    device : torch.device, optional
+        Device
+
+    Usage
+    -----
+    >>> get_embedding = SpeechBrainPretrainedSpeakerEmbedding("speechbrain/spkrec-ecapa-voxceleb")
+    >>> assert waveforms.ndim == 3
+    >>> batch_size, num_channels, num_samples = waveforms.shape
+    >>> assert num_channels == 1
+    >>> embeddings = get_embedding(waveforms)
+    >>> assert embeddings.ndim == 2
+    >>> assert embeddings.shape[0] == batch_size
+
+    >>> assert binary_masks.ndim == 1
+    >>> assert binary_masks.shape[0] == batch_size
+    >>> embeddings = get_embedding(waveforms, masks=binary_masks)
+    """
+
+    def __init__(
+        self,
+        embedding: Text = "speechbrain/spkrec-ecapa-voxceleb",
+        device: torch.device = None,
+    ):
+        super().__init__()
+        self.embedding = embedding
+        self.device = device
+        self.classifier_ = EncoderClassifier.from_hparams(
+            source=self.embedding, run_opts={"device": self.device}
+        )
+
+    @property
+    def sample_rate(self) -> int:
+        return self.classifier_.audio_normalizer.sample_rate
+
+    @property
+    def dimension(self) -> int:
+        # TODO: find a way to read it from EncoderClassifier
+        return 192
+
+    def __call__(
+        self, waveforms: torch.Tensor, masks: torch.Tensor = None
+    ) -> np.ndarray:
+
+        batch_size, num_channels, num_samples = waveforms.shape
+        assert num_channels == 1
+
+        waveforms = waveforms.squeeze(dim=1)
+
+        batch_size_masks, _ = masks.shape
+        assert batch_size == batch_size_masks
+
+        imasks = F.interpolate(
+            masks.unsqueeze(dim=1), size=num_samples, mode="nearest"
+        ).squeeze(dim=1)
+
+        imasks = imasks > 0.5
+
+        signals = pad_sequence(
+            [waveform[imask] for waveform, imask in zip(waveforms, imasks)],
+            batch_first=True,
+        )
+
+        wav_lens = imasks.sum(dim=1)
+        wav_lens = wav_lens / wav_lens.max()
+
+        # handle corner case where mask is empty
+        empty = wav_lens == 0
+        wav_lens[empty] == 1.0
+
+        embeddings = (
+            self.classifier_.encode_batch(signals, wav_lens=wav_lens)
+            .squeeze(dim=1)
+            .cpu()
+            .numpy()
+        )
+
+        embeddings[empty] = np.NAN
+
+        return embeddings
+
+
+class PyannoteAudioPretrainedSpeakerEmbedding:
+    """Pretrained pyannote.audio speaker embedding
+
+    Parameters
+    ----------
+    embedding : PipelineModel
+        pyannote.audio model
+    device : torch.device, optional
+        Device
+
+    Usage
+    -----
+    >>> get_embedding = PyannoteAudioPretrainedSpeakerEmbedding("pyannote/embedding")
+    >>> assert waveforms.ndim == 3
+    >>> batch_size, num_channels, num_samples = waveforms.shape
+    >>> assert num_channels == 1
+    >>> embeddings = get_embedding(waveforms)
+    >>> assert embeddings.ndim == 2
+    >>> assert embeddings.shape[0] == batch_size
+
+    >>> assert masks.ndim == 1
+    >>> assert masks.shape[0] == batch_size
+    >>> embeddings = get_embedding(waveforms, masks=masks)
+    """
+
+    def __init__(
+        self,
+        embedding: PipelineModel = "pyannote/embedding",
+        device: torch.device = None,
+    ):
+        super().__init__()
+        self.embedding = embedding
+        self.device = device
+
+        self.model_: Model = get_model(self.embedding)
+        self.model_.eval()
+        self.model_.to(self.device)
+
+    @property
+    def sample_rate(self) -> int:
+        return self.model_.audio.sample_rate
+
+    @property
+    def dimension(self) -> int:
+        return self.model_.introspection.dimension
+
+    def __call__(
+        self, waveforms: torch.Tensor, masks: torch.Tensor = None
+    ) -> np.ndarray:
+        with torch.no_grad():
+            embeddings = self.model_(waveforms, weights=masks)
+        return embeddings.cpu().numpy()
+
+
+def PretrainedSpeakerEmbedding(embedding: PipelineModel, device: torch.device = None):
+    """Pretrained speaker embedding
+
+    Parameters
+    ----------
+    embedding : Text
+        Can be a SpeechBrain (e.g. "speechbrain/spkrec-ecapa-voxceleb")
+        or a pyannote.audio model.
+    device : torch.device, optional
+        Device
+
+    Usage
+    -----
+    >>> get_embedding = PretrainedSpeakerEmbedding("pyannote/embedding")
+    >>> get_embedding = PretrainedSpeakerEmbedding("speechbrain/spkrec-ecapa-voxceleb")
+    >>> assert waveforms.ndim == 3
+    >>> batch_size, num_channels, num_samples = waveforms.shape
+    >>> assert num_channels == 1
+    >>> embeddings = get_embedding(waveforms)
+    >>> assert embeddings.ndim == 2
+    >>> assert embeddings.shape[0] == batch_size
+
+    >>> assert masks.ndim == 1
+    >>> assert masks.shape[0] == batch_size
+    >>> embeddings = get_embedding(waveforms, masks=masks)
+    """
+
+    if isinstance(embedding, str) and embedding.split("/")[0] == "speechbrain":
+        return SpeechBrainPretrainedSpeakerEmbedding(embedding, device=device)
+    else:
+        return PyannoteAudioPretrainedSpeakerEmbedding(embedding, device=device)
 
 
 class SpeakerEmbedding(Pipeline):

@@ -30,7 +30,6 @@ import numpy as np
 import torch
 from einops import rearrange
 from scipy.spatial.distance import cdist, squareform
-from scipy.special import softmax
 
 from pyannote.audio import Audio, Inference, Model, Pipeline
 from pyannote.audio.core.io import AudioFile
@@ -43,8 +42,7 @@ from pyannote.metrics.diarization import GreedyDiarizationErrorRate
 from pyannote.pipeline.parameter import Uniform
 
 from .clustering import Clustering
-
-# TODO: automagically estimate HAC threshold based on local segmentation
+from .speaker_verification import PretrainedSpeakerEmbedding
 
 
 class SpeakerDiarization(Pipeline):
@@ -90,6 +88,15 @@ class SpeakerDiarization(Pipeline):
         self.embedding = embedding
         self.expects_num_speakers = expects_num_speakers
 
+        seg_device, emb_device = get_devices(needs=2)
+
+        self.seg_model_: Model = get_model(segmentation)
+        self.seg_model_.to(seg_device)
+        self._segmentation_inference = Inference(self.seg_model_, skip_aggregation=True)
+
+        self.emb_model_ = PretrainedSpeakerEmbedding(self.embedding, device=emb_device)
+        self.emb_audio_ = Audio(sample_rate=self.emb_model_.sample_rate, mono=True)
+
         try:
             Klustering = Clustering[clustering]
         except KeyError:
@@ -99,25 +106,6 @@ class SpeakerDiarization(Pipeline):
         self.clustering = Klustering.value(
             expects_num_clusters=self.expects_num_speakers
         )
-
-        self.seg_model_: Model = get_model(segmentation)
-
-        # TODO: add support for SpeechBrain ECAPA-TDNN
-        self.emb_model_: Model = get_model(embedding)
-        self.emb_model_.eval()
-
-        # send models to GPU (when GPUs are available and model is not already on GPU)
-        cpu_models = [
-            model
-            for model in (self.seg_model_, self.emb_model_)
-            if model.device.type == "cpu"
-        ]
-        for cpu_model, gpu_device in zip(
-            cpu_models, get_devices(needs=len(cpu_models))
-        ):
-            cpu_model.to(gpu_device)
-
-        self._segmentation_inference = Inference(self.seg_model_, skip_aggregation=True)
 
         self.warm_up = Uniform(0.0, 0.2)
 
@@ -172,82 +160,6 @@ class SpeakerDiarization(Pipeline):
         )
 
         return SlidingWindowFeature(new_data, new_chunks)
-
-    @staticmethod
-    def get_pooling_weights(segmentation: np.ndarray) -> np.ndarray:
-        """Overlap-aware weights
-
-        Parameters
-        ----------
-        segmentation: np.ndarray
-            (num_frames, local_num_speakers) segmentation scores
-
-        Returns
-        -------
-        weights: np.ndarray
-            (num_frames, local_num_speakers) overlap-aware weights
-        """
-
-        power: int = 3
-        scale: float = 10.0
-        pow_segmentation = pow(segmentation, power)
-        weights = pow_segmentation * pow(
-            softmax(scale * pow_segmentation, axis=1), power
-        )
-        weights[weights < 1e-8] = 1e-8
-        return weights
-
-    @staticmethod
-    def get_embedding(
-        file: AudioFile,
-        chunk: Segment,
-        model: Model,
-        masks: np.ndarray = None,
-    ) -> np.ndarray:
-        """Extract embedding from a chunk
-
-        Parameters
-        ----------
-        file : AudioFile
-        chunk : Segment
-        model : Model
-            Pretrained embedding model.
-        masks : np.ndarray, optional
-            (num_frames, local_num_speakers) pooling weights
-
-        Returns
-        -------
-        embeddings : np.ndarray
-            (1, dimension) if masks is None, else (local_num_speakers, dimension)
-        """
-
-        if masks is None:
-            local_num_speakers = 1
-
-        else:
-            _, local_num_speakers = masks.shape
-            masks = torch.from_numpy(masks).float().T.to(model.device)
-            # (local_num_speakers, num_frames)
-
-        waveforms = (
-            model.audio.crop(file, chunk)[0]
-            .unsqueeze(0)
-            .expand(local_num_speakers, -1, -1)
-            .to(model.device)
-        )
-        # (local_num_speakers, num_channels == 1, num_samples)
-
-        with torch.no_grad():
-            if masks is None:
-                embeddings = model(waveforms)
-            else:
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    embeddings = model(waveforms, weights=masks)
-
-        embeddings = embeddings.cpu().numpy()
-
-        return embeddings
 
     def compute_constraints(
         self, binarized_segmentations: SlidingWindowFeature
@@ -511,12 +423,26 @@ class SpeakerDiarization(Pipeline):
 
         embeddings = []
 
-        for c, (chunk, masked_segmentation) in enumerate(masked_segmentations):
+        for c, ((chunk, masked_segmentation), status) in enumerate(
+            zip(masked_segmentations, speaker_status)
+        ):
 
-            chunk_embeddings: np.ndarray = self.get_embedding(
-                file, chunk, self.emb_model_, masks=masked_segmentation
-            )
-            # (local_num_speakers, dimension)
+            if np.all(status == SKIP):
+                chunk_embeddings = np.zeros(
+                    (local_num_speakers, self.emb_model_.dimension), dtype=np.float32
+                )
+
+            else:
+
+                waveforms: torch.Tensor = (
+                    self.emb_audio_.crop(file, chunk)[0]
+                    .unsqueeze(0)
+                    .expand(local_num_speakers, -1, -1)
+                    .to(self.emb_model_.device)
+                )
+                masks = torch.tensor(masked_segmentation.T, dtype=torch.float32)
+                chunk_embeddings: np.ndarray = self.emb_model_(waveforms, masks=masks)
+                # (local_num_speakers, dimension)
 
             embeddings.append(chunk_embeddings)
 
