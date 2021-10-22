@@ -30,6 +30,7 @@ from torch.nn.utils.rnn import pad_sequence
 
 from pyannote.audio import Inference, Model, Pipeline
 from pyannote.audio.core.io import AudioFile
+from pyannote.audio.core.model import CACHE_DIR
 from pyannote.audio.pipelines.utils import PipelineModel, get_devices, get_model
 
 
@@ -67,7 +68,9 @@ class SpeechBrainPretrainedSpeakerEmbedding:
         self.embedding = embedding
         self.device = device
         self.classifier_ = EncoderClassifier.from_hparams(
-            source=self.embedding, run_opts={"device": self.device}
+            source=self.embedding,
+            savedir=f"{CACHE_DIR}/speechbrain",
+            run_opts={"device": self.device},
         )
 
     @property
