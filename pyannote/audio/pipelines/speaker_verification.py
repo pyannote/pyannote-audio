@@ -108,8 +108,8 @@ class SpeechBrainPretrainedSpeakerEmbedding:
         wav_lens = imasks.sum(dim=1)
         wav_lens = wav_lens / wav_lens.max()
 
-        # handle corner case where mask is empty
-        empty = wav_lens == 0
+        # handle corner case where mask is too small
+        empty = wav_lens < 640
         wav_lens[empty] == 1.0
 
         embeddings = (
