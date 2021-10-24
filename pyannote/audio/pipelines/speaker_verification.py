@@ -20,6 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+from functools import cached_property
 from typing import Text
 
 import numpy as np
@@ -77,10 +78,16 @@ class SpeechBrainPretrainedSpeakerEmbedding:
     def sample_rate(self) -> int:
         return self.classifier_.audio_normalizer.sample_rate
 
-    @property
+    @cached_property
     def dimension(self) -> int:
-        # TODO: find a way to read it from EncoderClassifier
-        return 192
+        dummy_waveforms = torch.rand(1, 16000)
+        *_, dimension = self.classifier_.encode_batch(dummy_waveforms).shape
+        return dimension
+
+    @cached_property
+    def min_num_samples(self) -> int:
+        # make it work for
+        return 640
 
     def __call__(
         self, waveforms: torch.Tensor, masks: torch.Tensor = None
@@ -91,26 +98,37 @@ class SpeechBrainPretrainedSpeakerEmbedding:
 
         waveforms = waveforms.squeeze(dim=1)
 
-        batch_size_masks, _ = masks.shape
-        assert batch_size == batch_size_masks
+        if masks is None:
+            signals = waveforms.squeeze(dim=1)
+            wav_lens = signals.shape[1] * torch.ones(batch_size)
 
-        imasks = F.interpolate(
-            masks.unsqueeze(dim=1), size=num_samples, mode="nearest"
-        ).squeeze(dim=1)
+        else:
 
-        imasks = imasks > 0.5
+            batch_size_masks, _ = masks.shape
+            assert batch_size == batch_size_masks
 
-        signals = pad_sequence(
-            [waveform[imask] for waveform, imask in zip(waveforms, imasks)],
-            batch_first=True,
-        )
+            imasks = F.interpolate(
+                masks.unsqueeze(dim=1), size=num_samples, mode="nearest"
+            ).squeeze(dim=1)
 
-        wav_lens = imasks.sum(dim=1)
-        wav_lens = wav_lens / wav_lens.max()
+            imasks = imasks > 0.5
 
-        # handle corner case where mask is too small
-        empty = wav_lens < 640
-        wav_lens[empty] == 1.0
+            signals = pad_sequence(
+                [waveform[imask] for waveform, imask in zip(waveforms, imasks)],
+                batch_first=True,
+            )
+
+            wav_lens = imasks.sum(dim=1)
+
+        max_len = wav_lens.max()
+
+        # corner case: every signal is too short
+        if max_len < self.min_num_samples:
+            return np.NAN * np.zeros((batch_size, self.dimension))
+
+        too_short = wav_lens < self.min_num_samples
+        wav_lens = wav_lens / max_len
+        wav_lens[too_short] = 1.0
 
         embeddings = (
             self.classifier_.encode_batch(signals, wav_lens=wav_lens)
@@ -119,7 +137,7 @@ class SpeechBrainPretrainedSpeakerEmbedding:
             .numpy()
         )
 
-        embeddings[empty] = np.NAN
+        embeddings[too_short] = np.NAN
 
         return embeddings
 
@@ -174,7 +192,12 @@ class PyannoteAudioPretrainedSpeakerEmbedding:
         self, waveforms: torch.Tensor, masks: torch.Tensor = None
     ) -> np.ndarray:
         with torch.no_grad():
-            embeddings = self.model_(waveforms, weights=masks)
+            if masks is None:
+                embeddings = self.model_(waveforms.to(self.device))
+            else:
+                embeddings = self.model_(
+                    waveforms.to(self.device), weights=masks.to(self.device)
+                )
         return embeddings.cpu().numpy()
 
 
