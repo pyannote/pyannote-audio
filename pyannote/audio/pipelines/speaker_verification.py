@@ -20,6 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import warnings
 from functools import cached_property
 from typing import Text
 
@@ -91,7 +92,7 @@ class SpeechBrainPretrainedSpeakerEmbedding:
 
     def __call__(
         self, waveforms: torch.Tensor, masks: torch.Tensor = None
-    ) -> np.ndarray:
+    ) -> torch.Tensor:
 
         batch_size, num_channels, num_samples = waveforms.shape
         assert num_channels == 1
@@ -130,11 +131,8 @@ class SpeechBrainPretrainedSpeakerEmbedding:
         wav_lens = wav_lens / max_len
         wav_lens[too_short] = 1.0
 
-        embeddings = (
-            self.classifier_.encode_batch(signals, wav_lens=wav_lens)
-            .squeeze(dim=1)
-            .cpu()
-            .numpy()
+        embeddings = self.classifier_.encode_batch(signals, wav_lens=wav_lens).squeeze(
+            dim=1
         )
 
         embeddings[too_short] = np.NAN
@@ -190,15 +188,15 @@ class PyannoteAudioPretrainedSpeakerEmbedding:
 
     def __call__(
         self, waveforms: torch.Tensor, masks: torch.Tensor = None
-    ) -> np.ndarray:
+    ) -> torch.Tensor:
         with torch.no_grad():
             if masks is None:
-                embeddings = self.model_(waveforms.to(self.device))
+                embeddings = self.model_(waveforms)
             else:
-                embeddings = self.model_(
-                    waveforms.to(self.device), weights=masks.to(self.device)
-                )
-        return embeddings.cpu().numpy()
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    embeddings = self.model_(waveforms, weights=masks)
+        return embeddings
 
 
 def PretrainedSpeakerEmbedding(embedding: PipelineModel, device: torch.device = None):
