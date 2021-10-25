@@ -433,14 +433,12 @@ class SpeakerDiarization(Pipeline):
                 )
 
             else:
-
                 waveforms: torch.Tensor = (
                     self.emb_audio_.crop(file, chunk)[0]
                     .unsqueeze(0)
                     .expand(local_num_speakers, -1, -1)
-                    .to(self.emb_model_.device)
                 )
-                masks = torch.tensor(masked_segmentation.T, dtype=torch.float32)
+                masks = torch.from_numpy(masked_segmentation).float().T
                 chunk_embeddings: np.ndarray = self.emb_model_(waveforms, masks=masks)
                 # (local_num_speakers, dimension)
 
