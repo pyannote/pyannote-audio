@@ -439,13 +439,10 @@ class SpeakerDiarization(Pipeline):
                     .expand(local_num_speakers, -1, -1)
                 )
                 masks = torch.from_numpy(masked_segmentation).float().T
-                chunk_embeddings: torch.Tensor = self.emb_model_(
-                    waveforms.to(self.emb_model_.device),
-                    masks=masks.to(self.emb_model_.device),
-                )
+                chunk_embeddings: np.ndarray = self.emb_model_(waveforms, masks=masks)
                 # (local_num_speakers, dimension)
 
-            embeddings.append(chunk_embeddings.cpu().numpy())
+            embeddings.append(chunk_embeddings)
 
         # stack and unit-normalized embeddings
         embeddings = np.stack(embeddings)
