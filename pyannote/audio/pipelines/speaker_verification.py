@@ -20,6 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import warnings
 from functools import cached_property
 from typing import Text
 
@@ -206,9 +207,11 @@ class PyannoteAudioPretrainedSpeakerEmbedding:
             if masks is None:
                 embeddings = self.model_(waveforms.to(self.device))
             else:
-                embeddings = self.model_(
-                    waveforms.to(self.device), weights=masks.to(self.device)
-                )
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    embeddings = self.model_(
+                        waveforms.to(self.device), weights=masks.to(self.device)
+                    )
         return embeddings.cpu().numpy()
 
 
