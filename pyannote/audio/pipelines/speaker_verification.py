@@ -26,13 +26,23 @@ from typing import Text
 import numpy as np
 import torch
 import torch.nn.functional as F
-from speechbrain.pretrained import EncoderClassifier
+import torchaudio
 from torch.nn.utils.rnn import pad_sequence
 
 from pyannote.audio import Inference, Model, Pipeline
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import CACHE_DIR
 from pyannote.audio.pipelines.utils import PipelineModel, get_devices, get_model
+
+backend = torchaudio.get_audio_backend()
+try:
+    from speechbrain.pretrained import EncoderClassifier
+
+    SPEECHBRAIN_IS_AVAILABLE = True
+except ImportError:
+    SPEECHBRAIN_IS_AVAILABLE = False
+finally:
+    torchaudio.set_audio_backend(backend)
 
 
 class SpeechBrainPretrainedSpeakerEmbedding:
@@ -68,6 +78,7 @@ class SpeechBrainPretrainedSpeakerEmbedding:
         super().__init__()
         self.embedding = embedding
         self.device = device
+
         self.classifier_ = EncoderClassifier.from_hparams(
             source=self.embedding,
             savedir=f"{CACHE_DIR}/speechbrain",
