@@ -60,11 +60,14 @@ def voice_activity_detection_stream(
         file["duration"] = duration
 
         if duration <= chunk:
-            speech: Annotation = pipeline(file)
+            if pipeline is not None:
+                speech: Annotation = pipeline(file)
+                task_audio_spans = to_audio_spans(speech)
+            else:
+                task_audio_spans = []
             waveform, sr = raw_audio.crop(file, Segment(0, duration))
             waveform = waveform.numpy().T
             task_audio = to_base64(normalize(waveform), sample_rate=SAMPLE_RATE)
-            task_audio_spans = to_audio_spans(speech)
 
             yield {
                 "path": path,
@@ -87,10 +90,15 @@ def voice_activity_detection_stream(
                         mode="constant",
                         value=0,
                     )
-                speech: Annotation = pipeline({"waveform": waveform, "sample_rate": sr})
+                if pipeline is not None:
+                    speech: Annotation = pipeline(
+                        {"waveform": waveform, "sample_rate": sr}
+                    )
+                    task_audio_spans = to_audio_spans(speech)
+                else:
+                    task_audio_spans = []
                 waveform = waveform.numpy().T
                 task_audio = to_base64(normalize(waveform), sample_rate=SAMPLE_RATE)
-                task_audio_spans = to_audio_spans(speech)
 
                 yield {
                     "path": path,
@@ -108,7 +116,7 @@ def voice_activity_detection_stream(
 
 
 @prodigy.recipe(
-    "pyannote.voice_activity_detection",
+    "audio.vad",
     dataset=("Dataset to save annotations to", "positional", None, str),
     source=(
         "Data to annotate (file path or '-' to read from standard input)",
@@ -122,64 +130,67 @@ def voice_activity_detection_stream(
         None,
         float,
     ),
-    path_pretrained_model=(
+    pipeline=(
         "Yaml configuration file from pretrained model",
         "option",
-        "cf",
+        None,
         str,
     ),
+    precision=("Cursor speed", "option", None, int),
 )
 def voice_activity_detection(
     dataset: str,
     source: Union[str, Iterable[dict]],
     chunk: float = 10.0,
-    path_pretrained_model: Optional[str] = None,
+    pipeline: Optional[str] = None,
+    precision: int = 40,
 ) -> Dict[str, Any]:
 
-    if path_pretrained_model is not None:
-        pipeline = Pipeline.from_pretrained(path_pretrained_model)
+    if pipeline is not None:
+        if pipeline in ["no", "NO", "none", "NONE", "None"]:
+            vad = None
+        else:
+            vad = Pipeline.from_pretrained(pipeline)
     else:
-        pipeline = VoiceActivityDetection(
-            segmentation="pyannote/segmentation", step=0.5
-        )
+        vad = VoiceActivityDetection(segmentation="pyannote/segmentation", step=0.5)
         HYPER_PARAMETERS = {
             "onset": 0.767,
             "offset": 0.377,
             "min_duration_on": 0.136,
             "min_duration_off": 0.067,
         }
-        pipeline.instantiate(HYPER_PARAMETERS)
+        vad.instantiate(HYPER_PARAMETERS)
 
-    realpath = os.path.dirname(os.path.realpath(__file__)) + "/wavesurferControler.js"
-    with open(realpath) as txt:
+    pathControler = (
+        os.path.dirname(os.path.realpath(__file__)) + "/wavesurferControler.js"
+    )
+    pathHtml = os.path.dirname(os.path.realpath(__file__)) + "/instructions.html"
+    with open(pathControler) as txt:
         script_text = txt.read()
-
-    """
-    Keys function	[Keys exemple]
-    ----------------------------------
-    SR : Start Right	[D]
-    SL : Start Left	[S]
-    ER : End Right	[K]
-    EL : End Left	[J]
-    N  : Next           [N]
-    R  : Remove         [R]
-    For D,S,K and J : Keypress code
-    For R and N : Keydown code
-    """
-    keys = {"SR": 100, "SL": 115, "ER": 107, "EL": 106, "N": 78, "R": 82}
 
     prodigy.log("RECIPE: Starting recipe voice_activity_detection", locals())
 
     return {
         "view_id": "audio_manual",
         "dataset": dataset,
-        "stream": voice_activity_detection_stream(pipeline, source, chunk=chunk),
+        "stream": voice_activity_detection_stream(vad, source, chunk=chunk),
         "before_db": remove_audio_before_db,
         "config": {
             "javascript": script_text,
+            "instructions": pathHtml,
             "labels": ["Speech"],
             "audio_autoplay": True,
             "show_audio_minimap": False,
-            "keys": keys,
+            "precision": precision,
+            "audio_bar_width": 0,
+            "audio_bar_height": 1,
+            "buttons": ["accept", "ignore", "undo"],
+            "keymap": {
+                "accept": ["enter"],
+                "ignore": ["i"],
+                "undo": ["u"],
+                "playpause": ["space"],
+            },
+            "show_flag": True,
         },
     }
