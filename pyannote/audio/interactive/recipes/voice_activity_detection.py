@@ -22,7 +22,10 @@ from ..utils import (
 
 
 def voice_activity_detection_stream(
-    pipeline: VoiceActivityDetection, source: Path, chunk: float = 10.0
+    pipeline: VoiceActivityDetection,
+    source: Path,
+    chunk: float = 10.0,
+    extend: float = 2.0,
 ) -> Iterable[Dict]:
     """
     Stream for pyannote.voice_activity_detection recipe
@@ -91,10 +94,33 @@ def voice_activity_detection_stream(
                         value=0,
                     )
                 if pipeline is not None:
+                    st = focus.start - extend
+                    ed = focus.end + extend
+                    if focus.start == 0:
+                        st = 0
+                    elif focus.duration < chunk:
+                        ed = focus.end
+                    longFocus = Segment(st, ed)
+                    longWaveform, sr = raw_audio.crop(file, longFocus)
                     speech: Annotation = pipeline(
-                        {"waveform": waveform, "sample_rate": sr}
+                        {"waveform": longWaveform, "sample_rate": sr}
                     )
-                    task_audio_spans = to_audio_spans(speech)
+                    task_audio_spans_before = to_audio_spans(speech)
+                    task_audio_spans = []
+                    for span in task_audio_spans_before:
+                        span["start"] -= extend
+                        span["end"] -= extend
+                        if span["start"] < 0:
+                            if span["end"] < 0:
+                                break
+                            else:
+                                span["start"] = 0
+                        if span["end"] > chunk:
+                            if span["start"] > chunk:
+                                break
+                            else:
+                                span["end"] = chunk
+                        task_audio_spans.append(span)
                 else:
                     task_audio_spans = []
                 waveform = waveform.numpy().T
@@ -173,7 +199,7 @@ def voice_activity_detection(
     return {
         "view_id": "audio_manual",
         "dataset": dataset,
-        "stream": voice_activity_detection_stream(vad, source, chunk=chunk),
+        "stream": voice_activity_detection_stream(vad, source, chunk=chunk, extend=2),
         "before_db": remove_audio_before_db,
         "config": {
             "javascript": script_text,
@@ -187,7 +213,7 @@ def voice_activity_detection(
             "buttons": ["accept", "ignore", "undo"],
             "keymap": {
                 "accept": ["enter"],
-                "ignore": ["i"],
+                "ignore": ["escape"],
                 "undo": ["u"],
                 "playpause": ["space"],
             },
