@@ -1,3 +1,4 @@
+import base64
 import os
 from copy import deepcopy
 from pathlib import Path
@@ -174,9 +175,25 @@ def voice_activity_detection(
     pathControler = (
         os.path.dirname(os.path.realpath(__file__)) + "/wavesurferControler.js"
     )
-    pathHtml = os.path.dirname(os.path.realpath(__file__)) + "/instructions.html"
+    pathInstructions = (
+        os.path.dirname(os.path.realpath(__file__)) + "/instructions.html"
+    )
     with open(pathControler) as txt:
         script_text = txt.read()
+
+    pathHtml = os.path.dirname(os.path.realpath(__file__)) + "/help.html"
+    with open(pathHtml, "w") as f:
+        with open(pathInstructions, "r") as i:
+            with open(
+                os.path.dirname(os.path.realpath(__file__)) + "/commands.png", "rb"
+            ) as img_file:
+                b64 = base64.b64encode(img_file.read()).decode("utf-8")
+                f.write(
+                    "<!DOCTYPE html><html><head><h1>Manual</h1></head><body>You have to mark the speech moments with bounding boxes.<br/><img src='data:image/png;base64,"
+                    + b64
+                    + "' width='812' height='284'>"
+                    + i.read()
+                )
 
     prodigy.log("RECIPE: Starting recipe voice_activity_detection", locals())
 
