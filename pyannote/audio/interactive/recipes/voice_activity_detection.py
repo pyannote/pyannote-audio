@@ -178,22 +178,19 @@ def voice_activity_detection(
     pathInstructions = (
         os.path.dirname(os.path.realpath(__file__)) + "/instructions.html"
     )
+    pathHtml = os.path.dirname(os.path.realpath(__file__)) + "/help.html"
     with open(pathControler) as txt:
         script_text = txt.read()
 
-    pathHtml = os.path.dirname(os.path.realpath(__file__)) + "/help.html"
-    with open(pathHtml, "w") as f:
+    with open(pathHtml, "w") as html:
         with open(pathInstructions, "r") as i:
             with open(
                 os.path.dirname(os.path.realpath(__file__)) + "/commands.png", "rb"
             ) as img_file:
                 b64 = base64.b64encode(img_file.read()).decode("utf-8")
-                f.write(
-                    "<!DOCTYPE html><html><head><h1>Manual</h1></head><body>You have to mark the speech moments with bounding boxes.<br/><img src='data:image/png;base64,"
-                    + b64
-                    + "' width='812' height='284'>"
-                    + i.read()
-                )
+                instruction = i.read()
+                instruction = instruction.replace("{IMAGE}", b64)
+                html.write(instruction)
 
     prodigy.log("RECIPE: Starting recipe voice_activity_detection", locals())
 
