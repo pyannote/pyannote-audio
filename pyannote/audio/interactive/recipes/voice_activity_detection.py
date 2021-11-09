@@ -25,7 +25,6 @@ def voice_activity_detection_stream(
     pipeline: VoiceActivityDetection,
     source: Path,
     chunk: float = 10.0,
-    extend: float = 2.0,
 ) -> Iterable[Dict]:
     """
     Stream for pyannote.voice_activity_detection recipe
@@ -51,6 +50,7 @@ def voice_activity_detection_stream(
         "audio_spans_original" : copy of "audio_spans"
         "meta" : additional meta-data displayed in Prodigy UI
     """
+    extend = 0.5 * pipeline.segmentation_inference_.duration
     raw_audio = Audio(sample_rate=SAMPLE_RATE, mono=True)
 
     for audio_source in AudioLoader(source):
@@ -94,33 +94,17 @@ def voice_activity_detection_stream(
                         value=0,
                     )
                 if pipeline is not None:
-                    st = focus.start - extend
-                    ed = focus.end + extend
-                    if focus.start == 0:
-                        st = 0
-                    elif focus.duration < chunk:
-                        ed = focus.end
-                    longFocus = Segment(st, ed)
+                    longFocus = Segment(
+                        max(0, focus.start - extend), min(focus.end + extend, duration)
+                    )
                     longWaveform, sr = raw_audio.crop(file, longFocus)
                     speech: Annotation = pipeline(
                         {"waveform": longWaveform, "sample_rate": sr}
                     )
-                    task_audio_spans_before = to_audio_spans(speech)
-                    task_audio_spans = []
-                    for span in task_audio_spans_before:
-                        span["start"] -= extend
-                        span["end"] -= extend
-                        if span["start"] < 0:
-                            if span["end"] < 0:
-                                break
-                            else:
-                                span["start"] = 0
-                        if span["end"] > chunk:
-                            if span["start"] > chunk:
-                                break
-                            else:
-                                span["end"] = chunk
-                        task_audio_spans.append(span)
+                    diffStart = focus.start - longFocus.start
+                    trueFocus = Segment(diffStart, diffStart + focus.duration)
+                    speech = speech.crop(trueFocus, mode="intersection")
+                    task_audio_spans = to_audio_spans(speech, focus=trueFocus)
                 else:
                     task_audio_spans = []
                 waveform = waveform.numpy().T
@@ -145,7 +129,7 @@ def voice_activity_detection_stream(
     "audio.vad",
     dataset=("Dataset to save annotations to", "positional", None, str),
     source=(
-        "Data to annotate (file path or '-' to read from standard input)",
+        "Path to directory containing audio files to annotate",
         "positional",
         None,
         str,
@@ -157,23 +141,23 @@ def voice_activity_detection_stream(
         float,
     ),
     pipeline=(
-        "Yaml configuration file from pretrained model",
+        "Path to YAML file of pretrained pipeline",
         "option",
         None,
         str,
     ),
-    precision=("Cursor speed", "option", None, int),
+    precision=("Temporal precision (in milliseconds)", "option", None, int),
 )
 def voice_activity_detection(
     dataset: str,
     source: Union[str, Iterable[dict]],
     chunk: float = 10.0,
     pipeline: Optional[str] = None,
-    precision: int = 40,
+    precision: int = 100,
 ) -> Dict[str, Any]:
 
     if pipeline is not None:
-        if pipeline in ["no", "NO", "none", "NONE", "None"]:
+        if pipeline.lower() in ["no", "none"]:
             vad = None
         else:
             vad = Pipeline.from_pretrained(pipeline)
@@ -199,7 +183,7 @@ def voice_activity_detection(
     return {
         "view_id": "audio_manual",
         "dataset": dataset,
-        "stream": voice_activity_detection_stream(vad, source, chunk=chunk, extend=2),
+        "stream": voice_activity_detection_stream(vad, source, chunk=chunk),
         "before_db": remove_audio_before_db,
         "config": {
             "javascript": script_text,

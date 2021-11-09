@@ -3,20 +3,24 @@ var regions = null;
 var ids = null;
 var refresh = true;
 
-const left = 'ArrowLeft';
-const right = 'ArrowRight';
-const startR = 'Shift';
-const endR = 'Control';
+var left = 'ArrowLeft';
+var right = 'ArrowRight';
+var startR = 'Shift';
+var endR = 'Control';
 
-const PRECISION = (prodigy.config.precision / 1000);
-const EXCERPT = 1;
+var PRECISION = (prodigy.config.precision / 1000);
+var EXCERPT = 1;
 
 var keysMap = {};
 
-const audioCtx = new(window.AudioContext || window.webkitAudioContext)();
+var audioCtx = new(window.AudioContext || window.webkitAudioContext)();
 
-if( document.readyState !== 'loading' ) {
-    waitForElement();
+if(document.readyState !== 'loading') {
+    if(typeof window.wavesurfer !== "undefined"){
+        setTimeout(waitForElement,25);
+    }else{
+        waitForElement();
+    }
 } else {
     document.addEventListener('DOMContentLoaded', function () {
         waitForElement();
