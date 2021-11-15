@@ -34,7 +34,7 @@ def ReduceLROnPlateau(
     min_lr: float = 1e-8,
     max_lr: float = 1e-3,
     factor: float = 0.5,
-    patience: int = 10,
+    patience: int = 50,
     **kwargs,
 ):
     """Wrapper around ReduceLROnPlateau learning rate scheduler
@@ -51,7 +51,7 @@ def ReduceLROnPlateau(
         Defaults to 0.5
     patience : int, optional
         Wait that many epochs with no improvement before reducing the learning rate.
-        Defaults to 10.
+        Defaults to 50.
     monitor : str, optional
         Value to monitor
     direction : {"min", "max"}, optional
