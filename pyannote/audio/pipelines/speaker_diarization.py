@@ -57,7 +57,7 @@ class SpeakerDiarization(Pipeline):
         `Inference` instance used to extract speaker embeddings. When `str`,
         assumes that file already contains a corresponding key with precomputed
         embeddings. Defaults to "emb".
-    clustering : {"AffinityPropagation", "DBSCAN", "OPTICS", "AgglomerativeClustering"}, optional
+    clustering : {"AgglomerativeClustering", "SpectralClustering"}, optional
         Defaults to "AgglomerativeClustering".
     expects_num_speakers : bool, optional
         Defaults to False.
@@ -445,6 +445,8 @@ class SpeakerDiarization(Pipeline):
 
         diarization = Binarize()(final_binarized)
         diarization.uri = file["uri"]
+
+        # TODO: map `diarization` labels to reference labels when the latter are available.
 
         return diarization
 
