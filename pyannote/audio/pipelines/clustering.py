@@ -228,7 +228,7 @@ class AgglomerativeClustering(Pipeline):
         else:
             distance_threshold = dendrogram[-num_clusters, 2]
 
-        return fcluster(dendrogram, distance_threshold, criterion="distance")
+        return fcluster(dendrogram, distance_threshold, criterion="distance") - 1
 
 
 class SpectralClustering(Pipeline):
