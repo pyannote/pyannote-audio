@@ -136,7 +136,7 @@ def voice_activity_detection_stream(
         str,
     ),
     chunk=(
-        "split long audio files into shorter chunks of that many seconds each",
+        "Split long audio files into shorter chunks of that many seconds each",
         "option",
         None,
         float,
@@ -148,13 +148,22 @@ def voice_activity_detection_stream(
         str,
     ),
     precision=("Temporal precision (in milliseconds)", "option", None, int),
+    beep=(
+        "Activate beep sound when the player reach the end of a segment",
+        "option",
+        None,
+        str,
+    ),
+    spectrogram=("Show audio spectrogram", "option", None, str),
 )
 def voice_activity_detection(
     dataset: str,
     source: Union[str, Iterable[dict]],
     chunk: float = 10.0,
     pipeline: Optional[str] = None,
-    precision: int = 100,
+    precision: int = 200,
+    beep: str = "true",
+    spectrogram: str = "false",
 ) -> Dict[str, Any]:
 
     if pipeline is not None:
@@ -172,6 +181,11 @@ def voice_activity_detection(
         }
         vad.instantiate(HYPER_PARAMETERS)
 
+    if spectrogram.lower() == "true":
+        global_css = ".prodigy-content{ text-align : left}"
+    else:
+        global_css = ""
+
     pathControler = (
         os.path.dirname(os.path.realpath(__file__)) + "/wavesurferControler.js"
     )
@@ -179,6 +193,7 @@ def voice_activity_detection(
         os.path.dirname(os.path.realpath(__file__)) + "/instructions.html"
     )
     pathHtml = os.path.dirname(os.path.realpath(__file__)) + "/help.html"
+
     with open(pathControler) as txt:
         script_text = txt.read()
 
@@ -202,12 +217,7 @@ def voice_activity_detection(
         "config": {
             "javascript": script_text,
             "instructions": pathHtml,
-            "labels": ["Speech"],
-            "audio_autoplay": True,
-            "show_audio_minimap": False,
-            "precision": precision,
-            "audio_bar_width": 0,
-            "audio_bar_height": 1,
+            "global_css": global_css,
             "buttons": ["accept", "ignore", "undo"],
             "keymap": {
                 "accept": ["enter"],
@@ -215,6 +225,14 @@ def voice_activity_detection(
                 "undo": ["u"],
                 "playpause": ["space"],
             },
+            "show_audio_minimap": False,
+            "audio_autoplay": True,
+            "audio_bar_width": 0,
+            "audio_bar_height": 1,
             "show_flag": True,
+            "labels": ["Speech"],
+            "precision": precision,
+            "beep": beep,
+            "spectrogram": spectrogram,
         },
     }

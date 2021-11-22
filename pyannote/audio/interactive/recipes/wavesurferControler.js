@@ -9,6 +9,8 @@ var startR = 'Shift';
 var endR = 'Control';
 
 var PRECISION = (prodigy.config.precision / 1000);
+var BEEP = (prodigy.config.beep === ('true'|| "True")) ;
+var SPECTRO = (prodigy.config.spectrogram === ('true'|| "True")) ;
 var EXCERPT = 1;
 
 var keysMap = {};
@@ -27,6 +29,32 @@ if(document.readyState !== 'loading') {
     });
 }
 
+function loadScript(url, callback){
+    var head = document.head;
+    var script = document.createElement('script');
+    script.type = 'text/javascript';
+    script.src = url;
+    script.onreadystatechange = callback;
+    script.onload = callback;
+    head.appendChild(script);
+}
+
+var loadSpectrogram = function(){
+    loadScript("https://unpkg.com/wavesurfer.js/dist/plugin/wavesurfer.spectrogram.js",createSpectro);
+}
+
+var createSpectro = function(){
+    window.wavesurfer.addPlugin(WaveSurfer.spectrogram.create({
+        wavesurfer: window.wavesurfer,
+        container: window.wavesurfer.container,
+        labels: true
+    })).initPlugin('spectrogram');
+}
+
+if(SPECTRO){
+  loadScript("https://unpkg.com/wavesurfer.js", loadSpectrogram);
+}
+
 function compare(region1, region2){
   if(region1.start < region2.start){
     return -1;
@@ -38,24 +66,26 @@ function compare(region1, region2){
 }
 
 function beep() {
-  var oscillator = audioCtx.createOscillator();
-  var gainNode = audioCtx.createGain();
+  if(BEEP){
+    var oscillator = audioCtx.createOscillator();
+    var gainNode = audioCtx.createGain();
 
-  oscillator.connect(gainNode);
-  gainNode.connect(audioCtx.destination);
+    oscillator.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
 
-  gainNode.gain.value = 0.1;
-  oscillator.frequency.value = 440;
-  oscillator.type = "square";
+    gainNode.gain.value = 0.1;
+    oscillator.frequency.value = 440;
+    oscillator.type = "square";
 
-  oscillator.start();
+    oscillator.start();
 
-  setTimeout(
-    function() {
-      oscillator.stop();
-    },
-    150
-  );
+    setTimeout(
+      function() {
+        oscillator.stop();
+      },
+      150
+    );
+  }
 }
 
 function reloadWave(){
