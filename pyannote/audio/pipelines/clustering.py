@@ -150,6 +150,8 @@ class SpectralClustering(Pipeline):
     ----------------
     laplacian : {"Affinity", "Unnormalized", "RandomWalk", "GraphCut"}
         Laplacian to use.
+    eigengap : {"Ratio", "NormalizedDiff"}
+        Eigengap approach to use.
 
     Notes
     -----
