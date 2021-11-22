@@ -104,7 +104,8 @@ class SpeakerDiarization(Pipeline):
                 f'clustering must be one of [{", ".join(list(Clustering.__members__))}]'
             )
         self.clustering = Klustering.value(
-            expects_num_clusters=self.expects_num_speakers
+            metric=self._embedding.metric,
+            expects_num_clusters=self.expects_num_speakers,
         )
 
         # hyper-parameters
@@ -266,6 +267,7 @@ class SpeakerDiarization(Pipeline):
 
         embeddings = []
 
+        # TODO: batchify this loop
         for c, ((chunk, masked_segmentation), status) in enumerate(
             zip(masked_segmentations, speaker_status)
         ):
@@ -342,13 +344,13 @@ class SpeakerDiarization(Pipeline):
 
             hook("@clustering/oracle", oracle)
 
-        # __ RAW AFFINITY ______________________________________________________________
+        # # __ RAW AFFINITY ______________________________________________________________
 
-        affinity = squareform(
-            1 - 0.5 * pdist(embeddings[speaker_status == LONG], metric="cosine")
-        )
-        np.fill_diagonal(affinity, 1.0)
-        hook("@clustering/affinity", affinity)
+        # affinity = squareform(
+        #     1 - 0.5 * pdist(embeddings[speaker_status == LONG], metric="cosine")
+        # )
+        # np.fill_diagonal(affinity, 1.0)
+        # hook("@clustering/affinity", affinity)
 
         # __ ACTIVE SPEAKER CLUSTERING _________________________________________________
         # clusters[chunk_id x local_num_speakers + speaker_id] = k
@@ -365,7 +367,7 @@ class SpeakerDiarization(Pipeline):
 
         else:
             clusters[speaker_status == LONG] = self.clustering(
-                affinity, num_clusters=num_speakers
+                embeddings[speaker_status == LONG], num_clusters=num_speakers
             )
             num_clusters = np.max(clusters) + 1
 

@@ -26,10 +26,12 @@
 from enum import Enum
 
 import numpy as np
+from scipy.cluster.hierarchy import fcluster
 from sklearn.cluster import DBSCAN as SKLearnDBSCAN
 from sklearn.cluster import OPTICS as SKLearnOPTICS
 from sklearn.cluster import AffinityPropagation as SKLearnAffinityPropagation
-from sklearn.cluster import AgglomerativeClustering as SKLearnAgglomerativeClustering
+
+# from sklearn.cluster import AgglomerativeClustering as SKLearnAgglomerativeClustering
 from sklearn_extra.cluster import KMedoids as SKKMedoids
 from spectralcluster import (
     AutoTune,
@@ -42,6 +44,7 @@ from spectralcluster import (
     ThresholdType,
 )
 
+from pyannote.core.utils.hierarchy import linkage
 from pyannote.pipeline import Pipeline
 from pyannote.pipeline.parameter import Categorical, Integer, Uniform
 
@@ -164,35 +167,68 @@ class OPTICS(Pipeline):
         return self._clustering.fit_predict(np.clip(1.0 - affinity, 0.0, 1.0))
 
 
+# class AgglomerativeClustering(Pipeline):
+#     def __init__(self, expects_num_clusters: bool = False):
+#         super().__init__()
+#         self.expects_num_clusters = expects_num_clusters
+#         self.linkage = Categorical(["complete", "average", "single"])
+#         if not self.expects_num_clusters:
+#             self.distance_threshold = Uniform(0.0, 1.0)
+
+#     def initialize(self):
+#         if not self.expects_num_clusters:
+#             self._clustering = SKLearnAgglomerativeClustering(
+#                 n_clusters=None,
+#                 affinity="precomputed",
+#                 linkage=self.linkage,
+#                 distance_threshold=self.distance_threshold,
+#             )
+
+#     def __call__(self, affinity: np.ndarray, num_clusters: int = None) -> np.ndarray:
+
+#         if num_clusters is None:
+#             return self._clustering.fit_predict(1.0 - affinity)
+
+#         else:
+#             clustering = SKLearnAgglomerativeClustering(
+#                 n_clusters=num_clusters, affinity="precomputed", linkage=self.linkage,
+#             )
+#             return clustering.fit_predict(1.0 - affinity)
+
+
 class AgglomerativeClustering(Pipeline):
-    def __init__(self, expects_num_clusters: bool = False):
+    def __init__(self, metric: str = "cosine", expects_num_clusters: bool = False):
         super().__init__()
+
+        self.metric = metric
+
         self.expects_num_clusters = expects_num_clusters
-        self.linkage = Categorical(["complete", "average", "single"])
         if not self.expects_num_clusters:
-            self.distance_threshold = Uniform(0.0, 1.0)
+            self.distance_threshold = Uniform(
+                0.0, 2.0
+            )  # assume unit-normalized embeddings
 
-    def initialize(self):
-        if not self.expects_num_clusters:
-            self._clustering = SKLearnAgglomerativeClustering(
-                n_clusters=None,
-                affinity="precomputed",
-                linkage=self.linkage,
-                distance_threshold=self.distance_threshold,
-            )
+        self.method = Categorical(
+            ["average", "centroid", "complete", "median", "pool", "single", "ward"]
+        )
 
-    def __call__(self, affinity: np.ndarray, num_clusters: int = None) -> np.ndarray:
+    def __call__(
+        self,
+        embeddings: np.ndarray,
+        num_clusters: int = None,
+    ) -> np.ndarray:
+
+        if self.expects_num_clusters and num_clusters is None:
+            raise ValueError()
+
+        dendrogram = linkage(embeddings, method=self.method, metric=self.metric)
 
         if num_clusters is None:
-            return self._clustering.fit_predict(1.0 - affinity)
-
+            distance_threshold = self.distance_threshold
         else:
-            clustering = SKLearnAgglomerativeClustering(
-                n_clusters=num_clusters,
-                affinity="precomputed",
-                linkage=self.linkage,
-            )
-            return clustering.fit_predict(1.0 - affinity)
+            distance_threshold = dendrogram[-num_clusters, 2]
+
+        return fcluster(dendrogram, distance_threshold, criterion="distance")
 
 
 class SpectralClustering(Pipeline):
