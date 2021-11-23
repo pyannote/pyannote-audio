@@ -50,9 +50,11 @@ def voice_activity_detection_stream(
     chunk: float = 10.0,
 ) -> Iterable[Dict]:
     """
-    Stream for pyannote.voice_activity_detection recipe
+    Stream for `audio.vad` recipe
+`
     Applies (pretrained) speech activity detection and sends the results for
     manual correction chunk by chunk.
+
     Parameters
     ----------
     pipeline : VoiceActivityDetection
@@ -61,6 +63,7 @@ def voice_activity_detection_stream(
         Directory containing audio files to process.
     chunk : float, optional
         Duration of chunks, in seconds. Defaults to 10s.
+
     Yields
     ------
     task : dict
@@ -164,19 +167,19 @@ def voice_activity_detection_stream(
         float,
     ),
     pipeline=(
-        "Path to YAML file of pretrained pipeline",
+        "Pretrained pipeline (name on Huggingface Hub, path to YAML file, or NONE)",
         "option",
         None,
         str,
     ),
-    precision=("Temporal precision (in milliseconds)", "option", None, int),
+    precision=("Keyboard temporal precision, in milliseconds.", "option", None, int),
     beep=(
-        "Activate beep sound when the player reach the end of a segment",
-        "option",
+        "Beep when the player reaches the end of a region.",
+        "flag",
         None,
-        str,
+        bool,
     ),
-    spectrogram=("Show audio spectrogram", "option", None, str),
+    spectrogram=("Display spectrogram", "flag", None, bool),
 )
 def voice_activity_detection(
     dataset: str,
@@ -184,52 +187,44 @@ def voice_activity_detection(
     chunk: float = 10.0,
     pipeline: Optional[str] = None,
     precision: int = 200,
-    beep: str = "true",
-    spectrogram: str = "false",
+    beep: bool = False,
+    spectrogram: bool = False,
 ) -> Dict[str, Any]:
 
-    if pipeline is not None:
-        if pipeline.lower() in ["no", "none"]:
-            vad = None
-        else:
-            vad = Pipeline.from_pretrained(pipeline)
-    else:
-        vad = VoiceActivityDetection(segmentation="pyannote/segmentation", step=0.5)
-        HYPER_PARAMETERS = {
+
+
+    if pipeline is None:
+        vad = VoiceActivityDetection(segmentation="pyannote/segmentation")
+        vad.instantiate({
             "onset": 0.767,
             "offset": 0.377,
             "min_duration_on": 0.136,
             "min_duration_off": 0.067,
         }
-        vad.instantiate(HYPER_PARAMETERS)
 
-    if spectrogram.lower() == "true":
-        global_css = ".prodigy-content{ text-align : left}"
+    elif pipeline.lower() == "NONE"
+        vad = None
     else:
-        global_css = ""
+        vad = Pipeline.from_pretrained(pipeline)
 
-    pathControler = (
-        os.path.dirname(os.path.realpath(__file__)) + "/wavesurferControler.js"
-    )
-    pathInstructions = (
-        os.path.dirname(os.path.realpath(__file__)) + "/instructions.html"
-    )
-    pathHtml = os.path.dirname(os.path.realpath(__file__)) + "/help.html"
+    # FIXME: changing every .prodigy-content might be too much
+    # FIXME: would it possible to only change the spectrogram container?
+    global_css = ".prodigy-content{ text-align : left}" if spectrogram else ""
 
-    with open(pathControler) as txt:
-        script_text = txt.read()
+    dirname = os.path.dirname(os.path.realpath(__file__))
 
-    with open(pathHtml, "w") as html:
-        with open(pathInstructions, "r") as i:
-            with open(
-                os.path.dirname(os.path.realpath(__file__)) + "/commands.png", "rb"
-            ) as img_file:
-                b64 = base64.b64encode(img_file.read()).decode("utf-8")
-                instruction = i.read()
-                instruction = instruction.replace("{IMAGE}", b64)
-                html.write(instruction)
+    controller_js = dirname + "/wavesurferControler.js"
+    with open(controller_js) as txt:
+        javascript = txt.read()
 
-    prodigy.log("RECIPE: Starting recipe voice_activity_detection", locals())
+    template = dirname + "/instructions.html"
+    png = dirname + "/commands.png"
+    html = dirname + "/help.html"
+
+    with open(html, "w") as fp, open(template, "r") as fp_tpl, open(
+                png, "rb") as fp_png:
+        b64 = base64.b64encode(fp_png.read()).decode("utf-8")
+        fp.write(fp_tpl.read().replace("{IMAGE}", b64))
 
     return {
         "view_id": "audio_manual",
@@ -237,8 +232,8 @@ def voice_activity_detection(
         "stream": voice_activity_detection_stream(vad, source, chunk=chunk),
         "before_db": remove_audio_before_db,
         "config": {
-            "javascript": script_text,
-            "instructions": pathHtml,
+            "javascript": javascript,
+            "instructions": html,
             "global_css": global_css,
             "buttons": ["accept", "ignore", "undo"],
             "keymap": {
@@ -252,7 +247,7 @@ def voice_activity_detection(
             "audio_bar_width": 0,
             "audio_bar_height": 1,
             "show_flag": True,
-            "labels": ["Speech"],
+            "labels": ["SPEECH"],
             "precision": precision,
             "beep": beep,
             "spectrogram": spectrogram,
