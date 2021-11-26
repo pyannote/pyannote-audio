@@ -64,4 +64,5 @@ if __name__ == "__main__":
                 "audio.vad = pyannote.audio.interactive.recipes.voice_activity_detection:voice_activity_detection",
             ],
         },
+        extras_require={"interactive": ["prodigy >= 1.11.0"]},
     )

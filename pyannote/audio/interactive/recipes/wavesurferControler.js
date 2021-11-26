@@ -33,7 +33,6 @@ var endR = 'Control';
 
 var PRECISION = (prodigy.config.precision / 1000);
 var BEEP = prodigy.config.beep;
-var SPECTRO = prodigy.config.spectrogram;
 var EXCERPT = 1;
 
 var keysMap = {};
@@ -50,36 +49,6 @@ if(document.readyState !== 'loading') {
     document.addEventListener('DOMContentLoaded', function () {
         waitForElement();
     });
-}
-
-function loadScript(url, callback){
-    var head = document.head;
-    var script = document.createElement('script');
-    script.type = 'text/javascript';
-    script.src = url;
-    script.onreadystatechange = callback;
-    script.onload = callback;
-    head.appendChild(script);
-}
-
-var loadSpectrogram = function(){
-    // FIXME: one cannot assume that the local machine has access to the internet
-    // FIXME: those js files should be somewhere in the Python package
-    loadScript("https://unpkg.com/wavesurfer.js/dist/plugin/wavesurfer.spectrogram.js",createSpectro);
-}
-
-var createSpectro = function(){
-    window.wavesurfer.addPlugin(WaveSurfer.spectrogram.create({
-        wavesurfer: window.wavesurfer,
-        container: window.wavesurfer.container,
-        labels: true
-    })).initPlugin('spectrogram');
-}
-
-if(SPECTRO){
-    // FIXME: one cannot assume that the local machine has access to the internet
-    // FIXME: those js files should be somewhere in the Python package
-    loadScript("https://unpkg.com/wavesurfer.js", loadSpectrogram);
 }
 
 function compare(region1, region2){

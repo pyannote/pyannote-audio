@@ -50,31 +50,31 @@ def voice_activity_detection_stream(
     chunk: float = 10.0,
 ) -> Iterable[Dict]:
     """
-    Stream for `audio.vad` recipe
-`
-    Applies (pretrained) speech activity detection and sends the results for
-    manual correction chunk by chunk.
+        Stream for `audio.vad` recipe
+    `
+        Applies (pretrained) speech activity detection and sends the results for
+        manual correction chunk by chunk.
 
-    Parameters
-    ----------
-    pipeline : VoiceActivityDetection
-        Pretrained speech activity detection pipeline.
-    source : Path
-        Directory containing audio files to process.
-    chunk : float, optional
-        Duration of chunks, in seconds. Defaults to 10s.
+        Parameters
+        ----------
+        pipeline : VoiceActivityDetection
+            Pretrained speech activity detection pipeline.
+        source : Path
+            Directory containing audio files to process.
+        chunk : float, optional
+            Duration of chunks, in seconds. Defaults to 10s.
 
-    Yields
-    ------
-    task : dict
-        Prodigy task with the following keys:
-        "path" : path to audio file
-        "text" : name of audio file
-        "chunk" : chunk start and end times
-        "audio" : base64 encoding of audio chunk
-        "audio_spans" : speech spans detected by pretrained SAD model
-        "audio_spans_original" : copy of "audio_spans"
-        "meta" : additional meta-data displayed in Prodigy UI
+        Yields
+        ------
+        task : dict
+            Prodigy task with the following keys:
+            "path" : path to audio file
+            "text" : name of audio file
+            "chunk" : chunk start and end times
+            "audio" : base64 encoding of audio chunk
+            "audio_spans" : speech spans detected by pretrained SAD model
+            "audio_spans_original" : copy of "audio_spans"
+            "meta" : additional meta-data displayed in Prodigy UI
     """
     extend = 0.5 * pipeline.segmentation_inference_.duration
     raw_audio = Audio(sample_rate=SAMPLE_RATE, mono=True)
@@ -179,7 +179,6 @@ def voice_activity_detection_stream(
         None,
         bool,
     ),
-    spectrogram=("Display spectrogram", "flag", None, bool),
 )
 def voice_activity_detection(
     dataset: str,
@@ -188,28 +187,23 @@ def voice_activity_detection(
     pipeline: Optional[str] = None,
     precision: int = 200,
     beep: bool = False,
-    spectrogram: bool = False,
 ) -> Dict[str, Any]:
-
-
 
     if pipeline is None:
         vad = VoiceActivityDetection(segmentation="pyannote/segmentation")
-        vad.instantiate({
-            "onset": 0.767,
-            "offset": 0.377,
-            "min_duration_on": 0.136,
-            "min_duration_off": 0.067,
-        }
+        vad.instantiate(
+            {
+                "onset": 0.767,
+                "offset": 0.377,
+                "min_duration_on": 0.136,
+                "min_duration_off": 0.067,
+            }
+        )
 
-    elif pipeline.lower() == "NONE"
+    elif pipeline.lower() == "NONE":
         vad = None
     else:
         vad = Pipeline.from_pretrained(pipeline)
-
-    # FIXME: changing every .prodigy-content might be too much
-    # FIXME: would it possible to only change the spectrogram container?
-    global_css = ".prodigy-content{ text-align : left}" if spectrogram else ""
 
     dirname = os.path.dirname(os.path.realpath(__file__))
 
@@ -222,7 +216,8 @@ def voice_activity_detection(
     html = dirname + "/help.html"
 
     with open(html, "w") as fp, open(template, "r") as fp_tpl, open(
-                png, "rb") as fp_png:
+        png, "rb"
+    ) as fp_png:
         b64 = base64.b64encode(fp_png.read()).decode("utf-8")
         fp.write(fp_tpl.read().replace("{IMAGE}", b64))
 
@@ -234,7 +229,6 @@ def voice_activity_detection(
         "config": {
             "javascript": javascript,
             "instructions": html,
-            "global_css": global_css,
             "buttons": ["accept", "ignore", "undo"],
             "keymap": {
                 "accept": ["enter"],
@@ -250,6 +244,5 @@ def voice_activity_detection(
             "labels": ["SPEECH"],
             "precision": precision,
             "beep": beep,
-            "spectrogram": spectrogram,
         },
     }

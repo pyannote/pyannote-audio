@@ -64,7 +64,7 @@ def to_audio_spans(annotation: Annotation, focus: Segment = None) -> Dict:
     shift = 0.0 if focus is None else focus.start
     # label
     return [
-        {"start": segment.start - shift, "end": segment.end - shift, "label": "Speech"}
+        {"start": segment.start - shift, "end": segment.end - shift, "label": "SPEECH"}
         for segment, _, label in annotation.itertracks(yield_label=True)
     ]
 
