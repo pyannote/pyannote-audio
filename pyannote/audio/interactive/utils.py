@@ -51,12 +51,14 @@ def to_base64(waveform: np.ndarray, sample_rate: int = SAMPLE_RATE) -> Text:
 
 def to_audio_spans(annotation: Annotation, focus: Segment = None) -> Dict:
     """Convert pyannote.core.Annotation to Prodigy's audio_spans
+    
     Parameters
     ----------
     annotation : Annotation
         Annotation with t=0s time origin.
     focus : Segment, optional
         When provided, use its start time as audio_spans time origin.
+    
     Returns
     -------
     audio_spans : list of dict
@@ -71,10 +73,12 @@ def to_audio_spans(annotation: Annotation, focus: Segment = None) -> Dict:
 
 def remove_audio_before_db(examples: List[Dict]) -> List[Dict]:
     """Remove (potentially heavy) 'audio' key from examples
+    
     Parameters
     ----------
     examples : list of dict
         Examples.
+    
     Returns
     -------
     examples : list of dict
@@ -91,6 +95,7 @@ def chunks(
     duration: float, chunk: float = 30, shuffle: bool = False
 ) -> Iterator[Segment]:
     """Partition [0, duration] time range into smaller chunks
+    
     Parameters
     ----------
     duration : float
@@ -99,6 +104,7 @@ def chunks(
         Chunk duration, in seconds. Defaults to 30.
     shuffle : bool, optional
         Yield chunks in random order. Defaults to chronological order.
+    
     Yields
     ------
     focus : Segment
