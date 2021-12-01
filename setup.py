@@ -59,9 +59,4 @@ if __name__ == "__main__":
             "Programming Language :: Python :: 3.8",
             "Topic :: Scientific/Engineering",
         ],
-        entry_points={
-            "prodigy_recipes": [
-                "audio.vad = pyannote.audio.interactive.recipes.voice_activity_detection:voice_activity_detection",
-            ],
-        },
     )
