@@ -49,32 +49,31 @@ def voice_activity_detection_stream(
     source: Path,
     chunk: float = 10.0,
 ) -> Iterable[Dict]:
-    """
-        Stream for `audio.vad` recipe
-    `
-        Applies (pretrained) speech activity detection and sends the results for
-        manual correction chunk by chunk.
+    """Stream for `audio.vad` recipe
 
-        Parameters
-        ----------
-        pipeline : VoiceActivityDetection
-            Pretrained speech activity detection pipeline.
-        source : Path
-            Directory containing audio files to process.
-        chunk : float, optional
-            Duration of chunks, in seconds. Defaults to 10s.
+    Applies (pretrained) speech activity detection and sends the results for
+    manual correction chunk by chunk.
 
-        Yields
-        ------
-        task : dict
-            Prodigy task with the following keys:
-            "path" : path to audio file
-            "text" : name of audio file
-            "chunk" : chunk start and end times
-            "audio" : base64 encoding of audio chunk
-            "audio_spans" : speech spans detected by pretrained SAD model
-            "audio_spans_original" : copy of "audio_spans"
-            "meta" : additional meta-data displayed in Prodigy UI
+    Parameters
+    ----------
+    pipeline : VoiceActivityDetection
+        Pretrained speech activity detection pipeline.
+    source : Path
+        Directory containing audio files to process.
+    chunk : float, optional
+        Duration of chunks, in seconds. Defaults to 10s.
+
+    Yields
+    ------
+    task : dict
+        Prodigy task with the following keys:
+        "path" : path to audio file
+        "text" : name of audio file
+        "chunk" : chunk start and end times
+        "audio" : base64 encoding of audio chunk
+        "audio_spans" : speech spans detected by pretrained SAD model
+        "audio_spans_original" : copy of "audio_spans"
+        "meta" : additional meta-data displayed in Prodigy UI
     """
     extend = 0.5 * pipeline.segmentation_inference_.duration
     raw_audio = Audio(sample_rate=SAMPLE_RATE, mono=True)
