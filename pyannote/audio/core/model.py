@@ -352,7 +352,10 @@ class Model(pl.LightningModule):
         before = set((name, id(module)) for name, module in self.named_modules())
 
         # add layers that depends on task specs (e.g. final classification layer)
+        state_dict = self.state_dict()
         self.build()
+        # load pre-trained task-dependent layers if they have compatible specs
+        self.load_state_dict(state_dict, strict=False)
 
         # move layers that were added by build() to same device as the rest of the model
         for name, module in self.named_modules():
