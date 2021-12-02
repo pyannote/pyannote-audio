@@ -355,7 +355,18 @@ class Model(pl.LightningModule):
         state_dict = self.state_dict()
         self.build()
         # load pre-trained task-dependent layers if they have compatible specs
-        self.load_state_dict(state_dict, strict=False)
+        try:
+            self.load_state_dict(state_dict, strict=False)
+        except RuntimeError as e:
+            if "size mismatch" in str(e):
+                msg = (
+                    "Model has been trained for a different task. For fine tuning or transfer learning, "
+                    "it is recommended to train task-dependent layers for a few epochs "
+                    f"before training the whole model: {self.task_dependent}."
+                )
+                warnings.warn(msg)
+            else:
+                raise e
 
         # move layers that were added by build() to same device as the rest of the model
         for name, module in self.named_modules():
