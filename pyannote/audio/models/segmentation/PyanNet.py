@@ -148,7 +148,14 @@ class PyanNet(Model):
                 2 if self.hparams.lstm["bidirectional"] else 1
             )
 
-        self.classifier = nn.Linear(in_features, len(self.specifications.classes))
+        num_classes = len(self.specifications.classes)
+        if (
+            not hasattr(self, "classifier")
+            or self.classifier.in_features != in_features
+            or self.classifier.out_features != num_classes
+        ):
+            self.classifier = nn.Linear(in_features, num_classes)
+
         self.activation = self.default_activation()
 
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
