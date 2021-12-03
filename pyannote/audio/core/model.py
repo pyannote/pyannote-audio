@@ -853,20 +853,4 @@ class Model(pl.LightningModule):
             model.task = task
             model.setup(stage="fit")
 
-            try:
-                missing_keys, unexpected_keys = model.load_state_dict(
-                    loaded_checkpoint["state_dict"], strict=strict
-                )
-            except RuntimeError as e:
-                if "size mismatch" in str(e):
-                    msg = (
-                        "Model has been trained for a different task. For fine tuning or transfer learning, "
-                        "it is recommended to train task-dependent layers for a few epochs "
-                        f"before training the whole model: {model.task_dependent}."
-                    )
-                    warnings.warn(msg)
-                    return model
-
-                raise e
-
         return model
