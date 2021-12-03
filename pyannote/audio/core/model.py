@@ -353,12 +353,14 @@ class Model(pl.LightningModule):
 
         # add task-dependent layers (e.g. final classification layer)
         # and re-use original weights when compatible
-        
+
         original_state_dict = self.state_dict()
         self.build()
-        
+
         try:
-            missing_keys, unexpected_keys = self.load_state_dict(original_state_dict, strict=False)
+            missing_keys, unexpected_keys = self.load_state_dict(
+                original_state_dict, strict=False
+            )
 
         except RuntimeError as e:
             if "size mismatch" in str(e):
@@ -533,7 +535,7 @@ class Model(pl.LightningModule):
         tokens = module_name.split(".")
         updated_modules = list()
 
-        for name, module in ModelSummary(self, mode="full").named_modules:
+        for name, module in ModelSummary(self, max_depth=-1).named_modules:
             name_tokens = name.split(".")
             matching_tokens = list(
                 token
@@ -625,7 +627,7 @@ class Model(pl.LightningModule):
         if isinstance(modules, str):
             modules = [modules]
 
-        for name, module in ModelSummary(self, mode="full").named_modules:
+        for name, module in ModelSummary(self, max_depth=-1).named_modules:
 
             if name not in modules:
                 continue
