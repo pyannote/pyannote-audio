@@ -351,12 +351,15 @@ class Model(pl.LightningModule):
         # list of layers before adding task-dependent layers
         before = set((name, id(module)) for name, module in self.named_modules())
 
-        # add layers that depends on task specs (e.g. final classification layer)
-        state_dict = self.state_dict()
+        # add task-dependent layers (e.g. final classification layer)
+        # and re-use original weights when compatible
+        
+        original_state_dict = self.state_dict()
         self.build()
-        # load pre-trained task-dependent layers if they have compatible specs
+        
         try:
-            self.load_state_dict(state_dict, strict=False)
+            missing_keys, unexpected_keys = self.load_state_dict(original_state_dict, strict=False)
+
         except RuntimeError as e:
             if "size mismatch" in str(e):
                 msg = (
