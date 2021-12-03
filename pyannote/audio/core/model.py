@@ -705,7 +705,6 @@ class Model(pl.LightningModule):
         map_location=None,
         hparams_file: Union[Path, Text] = None,
         strict: bool = True,
-        task: Task = None,
         use_auth_token: Union[Text, None] = None,
         cache_dir: Union[Path, Text] = CACHE_DIR,
         **kwargs,
@@ -733,8 +732,6 @@ class Model(pl.LightningModule):
         strict : bool, optional
             Whether to strictly enforce that the keys in checkpoint match
             the keys returned by this module’s state dict. Defaults to True.
-        task : Task, optional
-            Setup model for fine tuning (or transfer learning) on this task.
         use_auth_token : str, optional
             When loading a private huggingface.co model, set `use_auth_token`
             to True or to a string containing your hugginface.co authentication
@@ -826,15 +823,14 @@ class Model(pl.LightningModule):
                 path_for_pl,
                 map_location=map_location,
                 hparams_file=hparams_file,
-                strict=strict if task is None else False,
+                strict=strict,
                 **kwargs,
             )
         except RuntimeError as e:
             if "loss_func" in str(e):
                 msg = (
                     "Model has been trained with a task-dependent loss function. "
-                    "Either use the 'task' argument to force setting up the loss function "
-                    "or set 'strict' to False to load the model without its loss function "
+                    "Set 'strict' to False to load the model without its loss function "
                     "and prevent this warning from appearing. "
                 )
                 warnings.warn(msg)
@@ -848,9 +844,5 @@ class Model(pl.LightningModule):
                 return model
 
             raise e
-
-        if task is not None:
-            model.task = task
-            model.setup(stage="fit")
 
         return model
