@@ -3,7 +3,6 @@ _target_: pytorch_lightning.Trainer
 accelerator: auto
 accumulate_grad_batches: 1
 amp_backend: native
-amp_level: O2
 auto_lr_find: False
 auto_scale_batch_size: False
 auto_select_gpus: True
