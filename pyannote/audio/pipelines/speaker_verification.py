@@ -153,7 +153,7 @@ class SpeechBrainPretrainedSpeakerEmbedding:
             .numpy()
         )
 
-        embeddings[too_short] = np.NAN
+        embeddings[too_short.numpy()] = np.NAN
 
         return embeddings
 
