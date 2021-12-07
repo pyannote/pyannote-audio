@@ -3,7 +3,7 @@
 #
 # The MIT License (MIT)
 #
-# Copyright (c) 2016-2020 CNRS
+# Copyright (c) 2016-2021 CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -30,12 +30,175 @@
 # Signal processing
 """
 
+from functools import singledispatch
+from itertools import zip_longest
+from typing import Optional, Union
 
+import einops
 import numpy as np
 import scipy.signal
 
 from pyannote.core import Annotation, Segment, SlidingWindowFeature, Timeline
 from pyannote.core.utils.generators import pairwise
+
+
+@singledispatch
+def binarize(
+    scores,
+    onset: float = 0.5,
+    offset: float = 0.5,
+    initial_state: Optional[Union[bool, np.ndarray]] = None,
+):
+    """(Batch) hysteresis thresholding
+
+    Parameters
+    ----------
+    scores : numpy.ndarray or SlidingWindowFeature
+        (num_chunks, num_frames, num_classes)- or (num_frames, num_classes)-shaped scores.
+    onset : float, optional
+        Onset threshold
+    offset : float, optional
+        Offset threshold
+    initial_state : np.ndarray or bool, optional
+        Initial state.
+
+    Returns
+    -------
+    binarized : same as scores
+        Binarized scores with same shape and type as scores.
+
+    Reference
+    ---------
+    https://stackoverflow.com/questions/23289976/how-to-find-zero-crossings-with-hysteresis
+    """
+    raise NotImplementedError(
+        "scores must be of type numpy.ndarray or SlidingWindowFeatures"
+    )
+
+
+@binarize.register
+def binarize_ndarray(
+    scores: np.ndarray,
+    onset: float = 0.5,
+    offset: float = 0.5,
+    initial_state: Optional[Union[bool, np.ndarray]] = None,
+):
+    """(Batch) hysteresis thresholding
+
+    Parameters
+    ----------
+    scores : numpy.ndarray
+        (num_frames, num_classes)-shaped scores.
+    onset : float, optional
+        Onset threshold
+    offset : float, optional
+        Offset threshold
+    initial_state : np.ndarray or bool, optional
+        Initial state.
+
+    Returns
+    -------
+    binarized : same as scores
+        Binarized scores with same shape and type as scores.
+    """
+
+    batch_size, num_frames = scores.shape
+
+    scores = np.nan_to_num(scores)
+
+    if initial_state is None:
+        initial_state = scores[:, 0] >= 0.5 * (onset + offset)
+
+    elif isinstance(initial_state, bool):
+        initial_state = initial_state * np.ones((batch_size,), dtype=bool)
+
+    elif isinstance(initial_state, np.ndarray):
+        assert initial_state.shape == (batch_size,)
+        assert initial_state.dtype == bool
+
+    initial_state = np.tile(initial_state, (num_frames, 1)).T
+
+    on = scores > onset
+    off_or_on = (scores < offset) | on
+
+    # indices of frames for which the on/off state is well-defined
+    well_defined_idx = np.array(
+        list(zip_longest(*[np.nonzero(oon)[0] for oon in off_or_on], fillvalue=-1))
+    ).T
+
+    # corner case where well_defined_idx is empty
+    if not well_defined_idx.size:
+        return np.zeros_like(scores, dtype=bool) | initial_state
+
+    # points to the index of the previous well-defined frame
+    same_as = np.cumsum(off_or_on, axis=1)
+
+    samples = np.tile(np.arange(batch_size), (num_frames, 1)).T
+
+    return np.where(
+        same_as, on[samples, well_defined_idx[samples, same_as - 1]], initial_state
+    )
+
+
+@binarize.register
+def binarize_swf(
+    scores: SlidingWindowFeature,
+    onset: float = 0.5,
+    offset: float = 0.5,
+    initial_state: Optional[bool] = None,
+):
+    """(Batch) hysteresis thresholding
+
+    Parameters
+    ----------
+    scores : SlidingWindowFeature
+        (num_chunks, num_frames, num_classes)- or (num_frames, num_classes)-shaped scores.
+    onset : float, optional
+        Onset threshold
+    offset : float, optional
+        Offset threshold
+    initial_state : np.ndarray or bool, optional
+        Initial state.
+
+    Returns
+    -------
+    binarized : same as scores
+        Binarized scores with same shape and type as scores.
+
+    """
+
+    if scores.data.ndim == 2:
+        num_frames, num_classes = scores.data.shape
+        data = einops.rearrange(scores.data, "f k -> k f", f=num_frames, k=num_classes)
+        binarized = binarize(
+            data, onset=onset, offset=offset, initial_state=initial_state
+        )
+        return SlidingWindowFeature(
+            1.0
+            * einops.rearrange(binarized, "k f -> f k", f=num_frames, k=num_classes),
+            scores.sliding_window,
+        )
+
+    elif scores.data.ndim == 3:
+        num_chunks, num_frames, num_classes = scores.data.shape
+        data = einops.rearrange(
+            scores.data, "c f k -> (c k) f", c=num_chunks, f=num_frames, k=num_classes
+        )
+        binarized = binarize(
+            data, onset=onset, offset=offset, initial_state=initial_state
+        )
+        return SlidingWindowFeature(
+            1.0
+            * einops.rearrange(
+                binarized, "(c k) f -> c f k", c=num_chunks, f=num_frames, k=num_classes
+            ),
+            scores.sliding_window,
+        )
+
+    else:
+        raise ValueError(
+            "Shape of scores must be (num_chunks, num_frames, num_classes) or (num_frames, num_classes)."
+        )
 
 
 class Binarize:

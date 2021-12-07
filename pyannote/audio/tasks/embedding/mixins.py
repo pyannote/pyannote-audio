@@ -178,7 +178,7 @@ class SupervisedRepresentationLearningTaskMixin:
 
                     # if speech turn is too short, pad with zeros
                     if speech_turn.duration < batch_duration:
-                        X, _ = self.model.audio.crop(file, speech_turn, mode="center")
+                        X, _ = self.model.audio.crop(file, speech_turn)
                         num_missing_frames = (
                             math.floor(batch_duration * self.model.audio.sample_rate)
                             - X.shape[1]
@@ -196,8 +196,7 @@ class SupervisedRepresentationLearningTaskMixin:
                         X, _ = self.model.audio.crop(
                             file,
                             chunk,
-                            mode="center",
-                            fixed=batch_duration,
+                            duration=batch_duration,
                         )
 
                     yield {"X": X, "y": y}
@@ -242,9 +241,7 @@ class SupervisedRepresentationLearningTaskMixin:
                         0.5 * duration - 0.5 * self.duration,
                         0.5 * duration + 0.5 * self.duration,
                     )
-                    X, _ = self.model.audio.crop(
-                        file, middle, mode="center", fixed=self.duration
-                    )
+                    X, _ = self.model.audio.crop(file, middle, duration=self.duration)
                 else:
                     X, _ = self.model.audio(file)
                     num_missing_frames = (

@@ -351,8 +351,27 @@ class Model(pl.LightningModule):
         # list of layers before adding task-dependent layers
         before = set((name, id(module)) for name, module in self.named_modules())
 
-        # add layers that depends on task specs (e.g. final classification layer)
+        # add task-dependent layers (e.g. final classification layer)
+        # and re-use original weights when compatible
+
+        original_state_dict = self.state_dict()
         self.build()
+
+        try:
+            missing_keys, unexpected_keys = self.load_state_dict(
+                original_state_dict, strict=False
+            )
+
+        except RuntimeError as e:
+            if "size mismatch" in str(e):
+                msg = (
+                    "Model has been trained for a different task. For fine tuning or transfer learning, "
+                    "it is recommended to train task-dependent layers for a few epochs "
+                    f"before training the whole model: {self.task_dependent}."
+                )
+                warnings.warn(msg)
+            else:
+                raise e
 
         # move layers that were added by build() to same device as the rest of the model
         for name, module in self.named_modules():
@@ -516,7 +535,7 @@ class Model(pl.LightningModule):
         tokens = module_name.split(".")
         updated_modules = list()
 
-        for name, module in ModelSummary(self, mode="full").named_modules:
+        for name, module in ModelSummary(self, max_depth=-1).named_modules:
             name_tokens = name.split(".")
             matching_tokens = list(
                 token
@@ -608,7 +627,7 @@ class Model(pl.LightningModule):
         if isinstance(modules, str):
             modules = [modules]
 
-        for name, module in ModelSummary(self, mode="full").named_modules:
+        for name, module in ModelSummary(self, max_depth=-1).named_modules:
 
             if name not in modules:
                 continue
@@ -691,7 +710,6 @@ class Model(pl.LightningModule):
         map_location=None,
         hparams_file: Union[Path, Text] = None,
         strict: bool = True,
-        task: Task = None,
         use_auth_token: Union[Text, None] = None,
         cache_dir: Union[Path, Text] = CACHE_DIR,
         **kwargs,
@@ -719,8 +737,6 @@ class Model(pl.LightningModule):
         strict : bool, optional
             Whether to strictly enforce that the keys in checkpoint match
             the keys returned by this module’s state dict. Defaults to True.
-        task : Task, optional
-            Setup model for fine tuning (or transfer learning) on this task.
         use_auth_token : str, optional
             When loading a private huggingface.co model, set `use_auth_token`
             to True or to a string containing your hugginface.co authentication
@@ -812,15 +828,14 @@ class Model(pl.LightningModule):
                 path_for_pl,
                 map_location=map_location,
                 hparams_file=hparams_file,
-                strict=strict if task is None else False,
+                strict=strict,
                 **kwargs,
             )
         except RuntimeError as e:
             if "loss_func" in str(e):
                 msg = (
                     "Model has been trained with a task-dependent loss function. "
-                    "Either use the 'task' argument to force setting up the loss function "
-                    "or set 'strict' to False to load the model without its loss function "
+                    "Set 'strict' to False to load the model without its loss function "
                     "and prevent this warning from appearing. "
                 )
                 warnings.warn(msg)
@@ -834,25 +849,5 @@ class Model(pl.LightningModule):
                 return model
 
             raise e
-
-        if task is not None:
-            model.task = task
-            model.setup(stage="fit")
-
-            try:
-                missing_keys, unexpected_keys = model.load_state_dict(
-                    loaded_checkpoint["state_dict"], strict=strict
-                )
-            except RuntimeError as e:
-                if "size mismatch" in str(e):
-                    msg = (
-                        "Model has been trained for a different task. For fine tuning or transfer learning, "
-                        "it is recommended to train task-dependent layers for a few epochs "
-                        f"before training the whole model: {model.task_dependent}."
-                    )
-                    warnings.warn(msg)
-                    return model
-
-                raise e
 
         return model
