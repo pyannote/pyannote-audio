@@ -8,7 +8,7 @@ from scipy.optimize import linear_sum_assignment
 
 
 @singledispatch
-def permutate(y1, y2, cost_func: Optional[Callable] = None, returns_cost: bool = False):
+def permutate(y1, y2, cost_func: Optional[Callable] = None, return_cost: bool = False):
     """Find cost-minimizing permutation
 
     Parameters
@@ -20,7 +20,7 @@ def permutate(y1, y2, cost_func: Optional[Callable] = None, returns_cost: bool =
     cost_func : callable
         Takes two (num_samples, num_classes) sequences and returns (num_classes, ) pairwise cost.
         Defaults to computing mean squared error.
-    returns_cost : bool, optional
+    return_cost : bool, optional
         Whether to return cost matrix. Defaults to False.
 
     Returns
@@ -29,7 +29,8 @@ def permutate(y1, y2, cost_func: Optional[Callable] = None, returns_cost: bool =
         (batch_size, num_samples, num_classes_1)
     permutations : list of tuple
         List of permutations so that permutation[i] == j indicates that jth speaker of y2
-        should be mapped to ith speaker of y1.
+        should be mapped to ith speaker of y1.  permutation[i] == None when none of y2 speakers
+        is mapped to ith speaker of y1.
     cost : np.ndarray or torch.Tensor, optional
         (batch_size, num_classes_1, num_classes_2)
     """
@@ -37,7 +38,33 @@ def permutate(y1, y2, cost_func: Optional[Callable] = None, returns_cost: bool =
 
 
 def mse_cost_func(Y, y):
+    """Compute class-wise mean-squared error
+
+    Parameters
+    ----------
+    Y, y : (num_frames, num_classes) torch.tensor
+
+    Returns
+    -------
+    mse : (num_classes, ) torch.tensor
+        Mean-squared error
+    """
     return torch.mean(F.mse_loss(Y, y, reduction="none"), axis=0)
+
+
+def mae_cost_func(Y, y):
+    """Compute class-wise mean absolute difference error
+
+    Parameters
+    ----------
+    Y, y: (num_frames, num_classes) torch.tensor
+
+    Returns
+    -------
+    mae : (num_classes, ) torch.tensor
+        Mean absolute difference error
+    """
+    return torch.mean(torch.abs(Y - y), axis=0)
 
 
 @permutate.register
@@ -45,7 +72,7 @@ def permutate_torch(
     y1: torch.Tensor,
     y2: torch.Tensor,
     cost_func: Optional[Callable] = None,
-    returns_cost: bool = False,
+    return_cost: bool = False,
 ) -> Tuple[torch.Tensor, List[Tuple[int]]]:
 
     batch_size, num_samples, num_classes_1 = y1.shape
@@ -68,12 +95,14 @@ def permutate_torch(
     permutations = []
     permutated_y2 = []
 
-    if returns_cost:
+    if return_cost:
         costs = []
 
     permutated_y2 = torch.zeros(y1.shape, device=y2.device, dtype=y2.dtype)
 
     for b, (y1_, y2_) in enumerate(zip(y1, y2)):
+        # y1_ is (num_samples, num_classes_1)-shaped
+        # y2_ is (num_samples, num_classes_2)-shaped
         with torch.no_grad():
             cost = torch.stack(
                 [
@@ -99,10 +128,10 @@ def permutate_torch(
                 permutated_y2[b, :, k1] = y2_[:, k2]
         permutations.append(tuple(permutation))
 
-        if returns_cost:
+        if return_cost:
             costs.append(cost)
 
-    if returns_cost:
+    if return_cost:
         return permutated_y2, permutations, torch.stack(costs)
 
     return permutated_y2, permutations
@@ -113,17 +142,17 @@ def permutate_numpy(
     y1: np.ndarray,
     y2: np.ndarray,
     cost_func: Optional[Callable] = None,
-    returns_cost: bool = False,
+    return_cost: bool = False,
 ) -> Tuple[np.ndarray, List[Tuple[int]]]:
 
     output = permutate(
         torch.from_numpy(y1),
         torch.from_numpy(y2),
         cost_func=cost_func,
-        returns_cost=returns_cost,
+        return_cost=return_cost,
     )
 
-    if returns_cost:
+    if return_cost:
         permutated_y2, permutations, costs = output
         return permutated_y2.numpy(), permutations, costs.numpy()
 

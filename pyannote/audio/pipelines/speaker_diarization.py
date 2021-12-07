@@ -1,6 +1,6 @@
 # The MIT License (MIT)
 #
-# Copyright (c) 2017-2020 CNRS
+# Copyright (c) 2021 CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -8,10 +8,10 @@
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-
+#
 # The above copyright notice and this permission notice shall be included in
 # all copies or substantial portions of the Software.
-
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -20,22 +20,31 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import Mapping, Optional, Text, Union
+"""Speaker diarization pipelines"""
 
-from pyannote.audio import Inference
+import warnings
+from functools import partial
+from typing import Callable, Mapping, Optional, Text, Union
+
+import numpy as np
+import torch
+from scipy.spatial.distance import cdist, squareform
+
+from pyannote.audio import Audio, Inference, Model, Pipeline
 from pyannote.audio.core.io import AudioFile
-from pyannote.audio.core.pipeline import Pipeline
-from pyannote.core import Annotation
-from pyannote.database import get_annotated
+from pyannote.audio.pipelines.utils import PipelineModel, get_devices, get_model
+from pyannote.audio.utils.permutation import mae_cost_func, permutate
+from pyannote.audio.utils.signal import Binarize, binarize
+from pyannote.core import Annotation, Segment, SlidingWindow, SlidingWindowFeature
+from pyannote.core.utils.distance import pdist
 from pyannote.metrics.diarization import (
-    DiarizationPurityCoverageFMeasure,
+    DiarizationErrorRate,
     GreedyDiarizationErrorRate,
 )
 from pyannote.pipeline.parameter import Uniform
 
-from .segmentation import Segmentation
-from .speech_turn_assignment import SpeechTurnClosestAssignment
-from .speech_turn_clustering import SpeechTurnClustering
+from .clustering import Clustering
+from .speaker_verification import PretrainedSpeakerEmbedding
 
 
 class SpeakerDiarization(Pipeline):
@@ -51,77 +60,102 @@ class SpeakerDiarization(Pipeline):
         `Inference` instance used to extract speaker embeddings. When `str`,
         assumes that file already contains a corresponding key with precomputed
         embeddings. Defaults to "emb".
-    metric : {'euclidean', 'cosine', 'angular'}, optional
-        Metric used for comparing embeddings. Defaults to 'cosine'.
-    purity : float, optional
-        Optimize coverage for target purity.
-        Defaults to optimizing diarization error rate.
-    coverage : float, optional
-        Optimize purity for target coverage.
-        Defaults to optimizing diarization error rate.
-    fscore : bool, optional
-        Optimize for purity/coverage fscore.
-        Defaults to optimizing for diarization error rate.
-
-    # TODO: investigate the use of non-weighted fscore/purity/coverage
+    clustering : {"AgglomerativeClustering", "SpectralClustering"}, optional
+        Defaults to "AgglomerativeClustering".
+    expects_num_speakers : bool, optional
+        Defaults to False.
 
     Hyper-parameters
     ----------------
-    cluster_min_duration : float
-        Do not cluster speech turns shorter than `cluster_min_duration`.
-        Assign them to the closest cluster (of long speech turns) instead.
+
+    Usage
+    -----
+    >>> pipeline = SpeakerDiarization()
+    >>> diarization = pipeline("/path/to/audio.wav")
+    >>> diarization = pipeline("/path/to/audio.wav", num_speakers=2)
+
     """
 
     def __init__(
         self,
-        segmentation: Union[Inference, Text] = "seg",
-        embeddings: Union[Inference, Text] = "emb",
-        metric: Optional[str] = "cosine",
-        purity: Optional[float] = None,
-        coverage: Optional[float] = None,
-        fscore: bool = False,
+        segmentation: PipelineModel = "pyannote/segmentation",
+        embedding: PipelineModel = "pyannote/embedding",
+        clustering: Text = "AgglomerativeClustering",
+        expects_num_speakers: bool = False,
     ):
 
         super().__init__()
 
-        # temporary hack -- need to bring back old Wrapper/Wrappable logic
-        if isinstance(segmentation, Mapping):
-            segmentation = Inference(**segmentation)
-        if isinstance(embeddings, Mapping):
-            embeddings = Inference(**embeddings)
+        self.segmentation = segmentation
+        self.embedding = embedding
+        self.expects_num_speakers = expects_num_speakers
 
-        self.segmentation = Segmentation(scores=segmentation)
+        seg_device, emb_device = get_devices(needs=2)
 
-        self.embeddings = embeddings
-        self.metric = metric
+        model: Model = get_model(segmentation)
+        model.to(seg_device)
+        self._segmentation = Inference(model, skip_aggregation=True)
+        self._frames: SlidingWindow = self._segmentation.model.introspection.frames
 
-        self.clustering = SpeechTurnClustering(
-            embeddings=self.embeddings, metric=self.metric
-        )
+        self._embedding = PretrainedSpeakerEmbedding(self.embedding, device=emb_device)
+        self._audio = Audio(sample_rate=self._embedding.sample_rate, mono=True)
 
-        self.assignment = SpeechTurnClosestAssignment(
-            embeddings=self.embeddings, metric=self.metric
-        )
-
-        # hyper-parameter
-        self.cluster_min_duration = Uniform(0, 10)
-
-        if sum((purity is not None, coverage is not None, fscore)):
+        try:
+            Klustering = Clustering[clustering]
+        except KeyError:
             raise ValueError(
-                "One must choose between optimizing for f-score, target purity, or target coverage."
+                f'clustering must be one of [{", ".join(list(Clustering.__members__))}]'
             )
+        self.clustering = Klustering.value(
+            metric=self._embedding.metric,
+            expects_num_clusters=self.expects_num_speakers,
+        )
 
-        self.purity = purity
-        self.coverage = coverage
-        self.fscore = fscore
+        # hyper-parameters
 
-    def apply(self, file: AudioFile) -> Annotation:
+        # stitching
+        self.warm_up = 0.05
+        self.stitch_threshold = Uniform(0.0, 1.0)
+
+        # onset/offset hysteresis thresholding
+        self.onset = Uniform(0.01, 0.99)
+        self.offset = Uniform(0.01, 0.99)
+
+        # minimum amount of speech needed to use speaker in clustering
+        self.min_activity = Uniform(0.0, 10.0)
+
+    CACHED_SEGMENTATION = "@diarization/segmentation/raw"
+
+    @staticmethod
+    def hook_default(*args, **kwargs):
+        return
+
+    def stitch_match_func(
+        self, this: np.ndarray, that: np.ndarray, cost: float
+    ) -> bool:
+        return (
+            np.any(this > self.onset)
+            and np.any(that > self.onset)
+            and cost < self.stitch_threshold
+        )
+
+    def apply(
+        self,
+        file: AudioFile,
+        num_speakers: int = None,
+        hook: Optional[Callable] = None,
+    ) -> Annotation:
         """Apply speaker diarization
 
         Parameters
         ----------
         file : AudioFile
             Processed file.
+        num_speakers : int, optional
+            Expected number of speakers.
+        hook : callable, optional
+            Hook called after each major step of the pipeline with the following
+            signature: hook("step_name", step_artefact, file=file)
 
         Returns
         -------
@@ -129,166 +163,325 @@ class SpeakerDiarization(Pipeline):
             Speaker diarization
         """
 
-        # segmentation where speech turns are already clustered locally (with letters A/B/C/...)
-        segmentation = self.segmentation(file).rename_labels(generator="string")
+        if hook is None:
+            hook = self.hook_default
+            hook.missing = True
+        else:
+            hook = partial(hook, file=file)
+            hook.missing = False
 
-        # corner case where there is just one cluster already
-        if len(segmentation.labels()) < 2:
-            return segmentation
+        # __ HANDLE EXPECTED NUMBER OF SPEAKERS ________________________________________
+        if self.expects_num_speakers and num_speakers is None:
 
-        # split segmentation into two parts:
-        # - clean (i.e. non-overlapping) and long-enough clusters
-        # - the rest of it
+            if "annotation" in file:
+                num_speakers = len(file["annotation"].labels())
 
-        clean = segmentation.copy()
-        rest = segmentation.empty()
+                if not self.training:
+                    warnings.warn(
+                        f"This pipeline expects the number of speakers (num_speakers) to be given. "
+                        f"It has been automatically set to {num_speakers:d} based on reference annotation. "
+                    )
 
-        for (segment, track), (other_segment, other_track) in segmentation.co_iter(
-            segmentation
-        ):
-            if segment == other_segment and track == other_track:
-                continue
-
-            rest[segment, track] = segmentation[segment, track]
-            try:
-                del clean[segment, track]
-            except KeyError:
-                pass
-
-            rest[other_segment, other_track] = segmentation[other_segment, other_track]
-            try:
-                del clean[other_segment, other_track]
-            except KeyError:
-                pass
-
-        # TODO: consider removing all short segments instead of short clusters
-
-        long_enough_local_clusters = [
-            local_cluster
-            for local_cluster, duration in clean.chart()
-            if duration > self.cluster_min_duration
-        ]
-        # corner case where there is no clean, long enough local clusters
-        if not long_enough_local_clusters:
-            return segmentation
-
-        clean_long_enough = clean.subset(long_enough_local_clusters)
-
-        rest.update(clean.subset(long_enough_local_clusters, invert=True), copy=False)
-
-        # at this point, we have split "segmentation" into two parts:
-        # - "clean_long_enough" uses A/B/C labels
-        # - "rest" uses A/B/C labels as well
-
-        # we apply clustering on "clean_long_enough" and use A/B/C labels
-        clustered_clean_long_enough = self.clustering(
-            file, clean_long_enough
-        ).rename_labels(generator="string")
-
-        # this will contain the final result using a combination of
-        # - A/B/C labels coming from above "clean_long_enough" clusters)
-        # - 1/2/3 labels coming from un-assigned "rest" segments
-        global_hypothesis = clustered_clean_long_enough.copy()
-
-        rest_copy = rest.copy()
-        for local_cluster in rest_copy.labels():
-            try:
-                # for each local cluster remaining in "rest", we find which global cluster it has been assigned to
-                segment, track = next(
-                    clean_long_enough.subset([local_cluster]).itertracks()
+            else:
+                raise ValueError(
+                    "This pipeline expects the number of speakers (num_speakers) to be given."
                 )
-                global_cluster = clustered_clean_long_enough[segment, track]
 
-                # we move its left-aside segments back into the corresponding global cluster
-                # we also remove those segments from "rest" to remember they are now dealt with.
-                for segment, track in rest_copy.subset([local_cluster]).itertracks():
-                    global_hypothesis[segment, track] = global_cluster
-                    del rest[segment, track]
+        # __ SPEAKER SEGMENTATION ______________________________________________________
 
-            except StopIteration:
-                # this happens if the original local cluster was not present at all in clean_long_enough
-                # it will be passed over to the upcoming "assignment" step (see below).
-                continue
+        # apply segmentation model (only if needed)
+        # output shape is (num_chunks, num_frames, local_num_speakers)
+        if (not self.training) or (
+            self.training and self.CACHED_SEGMENTATION not in file
+        ):
+            file[self.CACHED_SEGMENTATION] = self._segmentation(file)
 
-        if len(rest) > 0:
-            rest.rename_labels(generator="int", copy=False)
-            assigned_rest = self.assignment(file, rest, global_hypothesis)
+        segmentations: SlidingWindowFeature = file[self.CACHED_SEGMENTATION]
+        hook("@segmentation/raw", segmentations)
 
-            # assigned_rest uses a combination of
-            # - A/B/C labels for speech turns assigned to global_hypothesis clusters
-            # - 1/2/3 labels for those that could not be assigned because they were too dissimlar
+        # trim warm-up regions
+        segmentations = Inference.trim(
+            segmentations, warm_up=(self.warm_up, self.warm_up)
+        )
+        hook("@segmentation/trim", segmentations)
 
-            global_hypothesis.update(assigned_rest, copy=False)
+        # stitch segmentations
+        segmentations = Inference.stitch(
+            segmentations,
+            frames=self._frames,
+            lookahead=None,  # TODO: make it an hyper-parameter?,
+            cost_func=mae_cost_func,
+            match_func=self.stitch_match_func,
+        )
+        hook("@segmentation/stitch", segmentations)
 
-        return global_hypothesis
+        chunk_duration: float = segmentations.sliding_window.duration
 
-    def loss(self, file: AudioFile, hypothesis: Annotation) -> float:
-        """Compute coverage at target purity (or vice versa)
+        # apply hysteresis thresholding on each chunk
+        binarized_segmentations: SlidingWindowFeature = binarize(
+            segmentations, onset=self.onset, offset=self.offset, initial_state=False
+        )
+
+        hook("@segmentation/binary", binarized_segmentations)
+
+        # mask overlapping speech regions
+        masked_segmentations = SlidingWindowFeature(
+            binarized_segmentations.data
+            * (np.sum(binarized_segmentations.data, axis=-1, keepdims=True) == 1.0),
+            binarized_segmentations.sliding_window,
+        )
+
+        hook("@segmentation/mask", masked_segmentations)
+
+        # estimate frame-level number of instantaneous speakers
+        speaker_count = Inference.aggregate(
+            np.sum(binarized_segmentations, axis=-1, keepdims=True),
+            frames=self._frames,
+            hamming=True,
+            missing=0.0,
+        )
+        speaker_count.data = np.round(speaker_count)
+
+        hook("@segmentation/count", speaker_count)
+
+        # shape
+        num_chunks, num_frames, local_num_speakers = segmentations.data.shape
+
+        # __ SPEAKER STATUS ____________________________________________________________
+
+        SKIP = 0  # SKIP this speaker because it is never active in current chunk
+        KEEP = 1  # KEEP this speaker because it is active at least once within current chunk
+        LONG = 2  # this speaker speaks LONG enough within current chunk to be used in clustering
+
+        speaker_status = np.full((num_chunks, local_num_speakers), SKIP, dtype=np.int)
+        speaker_status[np.any(binarized_segmentations.data, axis=1)] = KEEP
+        speaker_status[
+            np.mean(masked_segmentations, axis=1) * chunk_duration > self.min_activity
+        ] = LONG
+
+        if np.sum(speaker_status == LONG) == 0:
+            warnings.warn("Please decrease 'min_activity' threshold.")
+
+            return Annotation(uri=file["uri"])
+
+        # TODO: handle corner case where there is 0 or 1 LONG speaker
+
+        # __ SPEAKER EMBEDDING _________________________________________________________
+
+        embeddings = []
+
+        # TODO: batchify this loop
+        for c, ((chunk, masked_segmentation), status) in enumerate(
+            zip(masked_segmentations, speaker_status)
+        ):
+
+            if np.all(status == SKIP):
+                chunk_embeddings = np.zeros(
+                    (local_num_speakers, self._embedding.dimension), dtype=np.float32
+                )
+
+            else:
+                waveforms: torch.Tensor = (
+                    self._audio.crop(file, chunk, mode="pad")[0]
+                    .unsqueeze(0)
+                    .expand(local_num_speakers, -1, -1)
+                )
+
+                masks = torch.from_numpy(masked_segmentation).float().T
+                chunk_embeddings: np.ndarray = self._embedding(waveforms, masks=masks)
+                # (local_num_speakers, dimension)
+
+            embeddings.append(chunk_embeddings)
+
+        # stack and unit-normalized embeddings
+        embeddings = np.stack(embeddings)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            embeddings /= np.linalg.norm(embeddings, axis=-1, keepdims=True)
+        hook("@clustering/embedding", embeddings)
+
+        # skip speakers for which embedding extraction failed for some reason
+        speaker_status[np.any(np.isnan(embeddings), axis=-1)] = SKIP
+
+        if not hook.missing and "annotation" in file:
+
+            hook(
+                "@clustering/distance",
+                pdist(
+                    embeddings[speaker_status == LONG], metric=self._embedding.metric
+                ),
+            )
+
+            def oracle_cost_func(Y, y):
+                return torch.from_numpy(
+                    np.nanmean(np.abs(Y.numpy() - y.numpy()), axis=0)
+                )
+
+            reference = file["annotation"].discretize(
+                support=Segment(0.0, Audio().get_duration(file)),
+                resolution=self._frames,
+            )
+            oracle_clusters = []
+
+            for (
+                c,
+                (chunk, segmentation),
+            ) in enumerate(segmentations):
+
+                if np.all(speaker_status[c] != LONG):
+                    continue
+
+                segmentation = segmentation[np.newaxis, :, speaker_status[c] == LONG]
+
+                # FIXME: local_reference is too short when chunk.start < 0 or chunk.end > duration
+                local_reference = reference.crop(chunk)
+                _, (permutation,) = permutate(
+                    segmentation,
+                    local_reference[:num_frames],
+                    cost_func=oracle_cost_func,
+                )
+                active_reference = np.any(local_reference > 0, axis=0)
+                oracle_clusters.extend(
+                    [
+                        i if ((i is not None) and (active_reference[i])) else -1
+                        for i in permutation
+                    ]
+                )
+
+            oracle_clusters = np.array(oracle_clusters)
+            oracle = 1.0 * squareform(pdist(oracle_clusters, metric="equal"))
+            np.fill_diagonal(oracle, True)
+            oracle[oracle_clusters == -1] = -1
+            oracle[:, oracle_clusters == -1] = -1
+
+            hook("@clustering/oracle", oracle)
+
+        # __ ACTIVE SPEAKER CLUSTERING _________________________________________________
+        # clusters[chunk_id x local_num_speakers + speaker_id] = k
+        # * k=-2                if speaker is inactive
+        # * k=-1                if speaker is active but not assigned to any cluster
+        # * k in {0, ... K - 1} if speaker is active and is assigned to cluster k
+
+        clusters = np.full((num_chunks, local_num_speakers), -1, dtype=np.int)
+        clusters[speaker_status == SKIP] = -2
+
+        if num_speakers == 1 or np.sum(speaker_status == LONG) < 2:
+            clusters[speaker_status == LONG] = 0
+            num_clusters = 1
+
+        else:
+            clusters[speaker_status == LONG] = self.clustering(
+                embeddings[speaker_status == LONG],
+                num_clusters=num_speakers,
+            )
+            num_clusters = np.max(clusters) + 1
+
+            # corner case where clustering fails to converge and returns only -1 labels
+            if num_clusters == 0:
+                clusters[speaker_status == LONG] = 0
+                num_clusters = 1
+
+        hook("@clustering/clusters", clusters)
+
+        # __ FINAL SPEAKER ASSIGNMENT ___________________________________________________
+
+        centroids = np.vstack(
+            [np.mean(embeddings[clusters == k], axis=0) for k in range(num_clusters)]
+        )
+        unassigned = (speaker_status == KEEP) | (clusters == -1)
+        distances = cdist(
+            embeddings[unassigned],
+            centroids,
+            metric=self._embedding.metric,
+        )
+        clusters[unassigned] = np.argmin(distances, axis=1)
+
+        hook("@clustering/centroids", centroids)
+        hook("@clustering/assignment", clusters)
+
+        # __ CLUSTERING-BASED SEGMENTATION AGGREGATION _________________________________
+        # build final aggregated speaker activations
+
+        clustered_segmentations = np.NAN * np.zeros(
+            (num_chunks, num_frames, num_clusters)
+        )
+        for c, (cluster, (chunk, segmentation)) in enumerate(
+            zip(clusters, segmentations)
+        ):
+
+            # cluster is (local_num_speakers, )-shaped
+            # segmentation is (num_frames, local_num_speakers)-shaped
+            for k in np.unique(cluster):
+                if k == -2:
+                    continue
+
+                clustered_segmentations[c, :, k] = np.max(
+                    segmentation[:, cluster == k], axis=1
+                )
+
+        clustered_segmentations = SlidingWindowFeature(
+            clustered_segmentations, segmentations.sliding_window
+        )
+
+        hook("@segmentation/cluster", clustered_segmentations)
+
+        speaker_activations = Inference.aggregate(
+            clustered_segmentations,
+            frames=self._frames,
+            hamming=True,
+            missing=0.0,
+            skip_average=True,
+        )
+
+        hook("@diarization/raw", speaker_activations)
+
+        # __ FINAL BINARIZATION ________________________________________________________
+        sorted_speakers = np.argsort(-speaker_activations, axis=-1)
+        final_binarized = np.zeros_like(speaker_activations.data)
+        for t, ((_, count), speakers) in enumerate(zip(speaker_count, sorted_speakers)):
+            # TODO: find a way to stop clustering early enough to avoid num_clusters < count
+            count = min(num_clusters, int(count.item()))
+            for i in range(count):
+                final_binarized[t, speakers[i]] = 1.0
+
+        final_binarized = SlidingWindowFeature(
+            final_binarized, speaker_activations.sliding_window
+        )
+        hook("@diarization/binary", final_binarized)
+
+        diarization = Binarize()(final_binarized)
+        diarization.uri = file["uri"]
+
+        return diarization
+
+    @staticmethod
+    def optimal_mapping(
+        reference: Union[Mapping, Annotation], hypothesis: Annotation
+    ) -> Annotation:
+        """Find the optimal bijective mapping
 
         Parameters
         ----------
-        file : `dict`
-            File as provided by a pyannote.database protocol.
-        hypothesis : `pyannote.core.Annotation`
-            Speech turns.
+        reference : Annotation or Mapping
+            Reference annotation. Can be an Annotation instance or
+            a mapping with an "annotation" key.
+        hypothesis : Annotation
 
         Returns
         -------
-        coverage (or purity) : float
-            When optimizing for target purity:
-                If purity < target_purity, returns (purity - target_purity).
-                If purity > target_purity, returns coverage.
-            When optimizing for target coverage:
-                If coverage < target_coverage, returns (coverage - target_coverage).
-                If coverage > target_coverage, returns purity.
+        mapped : Annotation
+            Hypothesis mapped to reference speakers.
+
         """
-
-        fmeasure = DiarizationPurityCoverageFMeasure()
-
-        reference: Annotation = file["annotation"]
-        _ = fmeasure(reference, hypothesis, uem=get_annotated(file))
-        purity, coverage, _ = fmeasure.compute_metrics()
-
-        if self.purity is not None:
-            if purity > self.purity:
-                return purity - self.purity
-            else:
-                return coverage
-
-        elif self.coverage is not None:
-            if coverage > self.coverage:
-                return coverage - self.coverage
-            else:
-                return purity
-
-    def get_metric(
-        self,
-    ) -> Union[GreedyDiarizationErrorRate, DiarizationPurityCoverageFMeasure]:
-        """Return new instance of diarization metric"""
-
-        if (self.purity is not None) or (self.coverage is not None):
-            raise NotImplementedError(
-                "pyannote.pipeline will use `loss` method fallback."
-            )
-
-        if self.fscore:
-            return DiarizationPurityCoverageFMeasure(collar=0.0, skip_overlap=False)
-
-        # defaults to optimizing diarization error rate
-        return GreedyDiarizationErrorRate(collar=0.0, skip_overlap=False)
-
-    def get_direction(self):
-        """Optimization direction"""
-
-        if self.purity is not None:
-            # we maximize coverage at target purity
-            return "maximize"
-        elif self.coverage is not None:
-            # we maximize purity at target coverage
-            return "maximize"
-        elif self.fscore:
-            # we maximize purity/coverage f-score
-            return "maximize"
+        if isinstance(reference, Mapping):
+            reference = reference["annotation"]
+            annotated = reference["annotated"] if "annotated" in reference else None
         else:
-            # we minimize diarization error rate
-            return "minimize"
+            annotated = None
+
+        mapping = DiarizationErrorRate().optimal_mapping(
+            reference, hypothesis, uem=annotated
+        )
+        return hypothesis.rename_labels(mapping=mapping)
+
+    def get_metric(self) -> GreedyDiarizationErrorRate:
+        return GreedyDiarizationErrorRate(collar=0.0, skip_overlap=False)

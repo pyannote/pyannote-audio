@@ -162,11 +162,11 @@ class Pipeline(_Pipeline):
 
         return pipeline
 
-    def __call__(self, file: AudioFile):
+    def __call__(self, file: AudioFile, **kwargs):
 
         file = Audio.validate_file(file)
 
         if hasattr(self, "preprocessors"):
             file = ProtocolFile(file, lazy=self.preprocessors)
 
-        return self.apply(file)
+        return self.apply(file, **kwargs)
