@@ -72,13 +72,9 @@ def main(cfg: DictConfig) -> Optional[float]:
 
     # instantiate model
     pretrained = cfg.model["_target_"] == "pyannote.audio.cli.pretrained"
-    model = instantiate(cfg.model, task=task)
-
-    if not pretrained:
-        # add task-dependent layers so that later call to model.parameters()
-        # does return all layers (even task-dependent ones). this is already
-        # done for pretrained models (TODO: check that this is true)
-        model.setup(stage="fit")
+    model = instantiate(cfg.model)
+    model.task = task
+    model.setup(stage="fit")
 
     # number of batches in one epoch
     num_batches_per_epoch = model.task.train__len__() // model.task.batch_size
