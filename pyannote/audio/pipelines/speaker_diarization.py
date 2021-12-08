@@ -23,8 +23,7 @@
 """Speaker diarization pipelines"""
 
 import warnings
-from functools import partial
-from typing import Callable, Mapping, Optional, Text, Union
+from typing import Callable, Optional, Text
 
 import numpy as np
 import torch
@@ -32,22 +31,24 @@ from scipy.spatial.distance import cdist, squareform
 
 from pyannote.audio import Audio, Inference, Model, Pipeline
 from pyannote.audio.core.io import AudioFile
-from pyannote.audio.pipelines.utils import PipelineModel, get_devices, get_model
+from pyannote.audio.pipelines.utils import (
+    PipelineModel,
+    SpeakerDiarizationMixin,
+    get_devices,
+    get_model,
+)
 from pyannote.audio.utils.permutation import mae_cost_func, permutate
-from pyannote.audio.utils.signal import Binarize, binarize
+from pyannote.audio.utils.signal import binarize
 from pyannote.core import Annotation, Segment, SlidingWindow, SlidingWindowFeature
 from pyannote.core.utils.distance import pdist
-from pyannote.metrics.diarization import (
-    DiarizationErrorRate,
-    GreedyDiarizationErrorRate,
-)
+from pyannote.metrics.diarization import GreedyDiarizationErrorRate
 from pyannote.pipeline.parameter import Uniform
 
 from .clustering import Clustering
 from .speaker_verification import PretrainedSpeakerEmbedding
 
 
-class SpeakerDiarization(Pipeline):
+class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
     """Speaker diarization pipeline
 
     Parameters
@@ -117,18 +118,19 @@ class SpeakerDiarization(Pipeline):
         self.warm_up = 0.05
         self.stitch_threshold = Uniform(0.0, 1.0)
 
-        # onset/offset hysteresis thresholding
+        # hyper-parameters used for hysteresis thresholding
         self.onset = Uniform(0.01, 0.99)
         self.offset = Uniform(0.01, 0.99)
+
+        # hyper-parameters used for post-processing i.e. removing short speech turns
+        # or filling short gaps between speech turns of one speaker
+        self.min_duration_on = Uniform(0.0, 1.0)
+        self.min_duration_off = Uniform(0.0, 1.0)
 
         # minimum amount of speech needed to use speaker in clustering
         self.min_activity = Uniform(0.0, 10.0)
 
     CACHED_SEGMENTATION = "@diarization/segmentation/raw"
-
-    @staticmethod
-    def hook_default(*args, **kwargs):
-        return
 
     def stitch_match_func(
         self, this: np.ndarray, that: np.ndarray, cost: float
@@ -163,12 +165,7 @@ class SpeakerDiarization(Pipeline):
             Speaker diarization
         """
 
-        if hook is None:
-            hook = self.hook_default
-            hook.missing = True
-        else:
-            hook = partial(hook, file=file)
-            hook.missing = False
+        hook = self.setup_hook(file, hook=hook)
 
         # __ HANDLE EXPECTED NUMBER OF SPEAKERS ________________________________________
         if self.expects_num_speakers and num_speakers is None:
@@ -198,6 +195,16 @@ class SpeakerDiarization(Pipeline):
 
         segmentations: SlidingWindowFeature = file[self.CACHED_SEGMENTATION]
         hook("@segmentation/raw", segmentations)
+
+        # estimate frame-level number of instantaneous speakers
+        count = self.speaker_count(
+            segmentations,
+            onset=self.onset,
+            offset=self.offset,
+            warm_up=(self.warm_up, self.warm_up),
+            frames=self._frames,
+        )
+        hook("@segmentation/count", count)
 
         # trim warm-up regions
         segmentations = Inference.trim(
@@ -232,17 +239,6 @@ class SpeakerDiarization(Pipeline):
         )
 
         hook("@segmentation/mask", masked_segmentations)
-
-        # estimate frame-level number of instantaneous speakers
-        speaker_count = Inference.aggregate(
-            np.sum(binarized_segmentations, axis=-1, keepdims=True),
-            frames=self._frames,
-            hamming=True,
-            missing=0.0,
-        )
-        speaker_count.data = np.round(speaker_count)
-
-        hook("@segmentation/count", speaker_count)
 
         # shape
         num_chunks, num_frames, local_num_speakers = segmentations.data.shape
@@ -404,6 +400,7 @@ class SpeakerDiarization(Pipeline):
         clustered_segmentations = np.NAN * np.zeros(
             (num_chunks, num_frames, num_clusters)
         )
+
         for c, (cluster, (chunk, segmentation)) in enumerate(
             zip(clusters, segmentations)
         ):
@@ -424,64 +421,19 @@ class SpeakerDiarization(Pipeline):
 
         hook("@segmentation/cluster", clustered_segmentations)
 
-        speaker_activations = Inference.aggregate(
+        # reconstruct diarization
+        diarization = self.to_diarization(
             clustered_segmentations,
-            frames=self._frames,
-            hamming=True,
-            missing=0.0,
-            skip_average=True,
+            count,
+            min_duration_on=self.min_duration_on,
+            min_duration_off=self.min_duration_off,
         )
-
-        hook("@diarization/raw", speaker_activations)
-
-        # __ FINAL BINARIZATION ________________________________________________________
-        sorted_speakers = np.argsort(-speaker_activations, axis=-1)
-        final_binarized = np.zeros_like(speaker_activations.data)
-        for t, ((_, count), speakers) in enumerate(zip(speaker_count, sorted_speakers)):
-            # TODO: find a way to stop clustering early enough to avoid num_clusters < count
-            count = min(num_clusters, int(count.item()))
-            for i in range(count):
-                final_binarized[t, speakers[i]] = 1.0
-
-        final_binarized = SlidingWindowFeature(
-            final_binarized, speaker_activations.sliding_window
-        )
-        hook("@diarization/binary", final_binarized)
-
-        diarization = Binarize()(final_binarized)
         diarization.uri = file["uri"]
 
+        if "annotation" in file:
+            diarization = self.optimal_mapping(file["annotation"], diarization)
+
         return diarization
-
-    @staticmethod
-    def optimal_mapping(
-        reference: Union[Mapping, Annotation], hypothesis: Annotation
-    ) -> Annotation:
-        """Find the optimal bijective mapping
-
-        Parameters
-        ----------
-        reference : Annotation or Mapping
-            Reference annotation. Can be an Annotation instance or
-            a mapping with an "annotation" key.
-        hypothesis : Annotation
-
-        Returns
-        -------
-        mapped : Annotation
-            Hypothesis mapped to reference speakers.
-
-        """
-        if isinstance(reference, Mapping):
-            reference = reference["annotation"]
-            annotated = reference["annotated"] if "annotated" in reference else None
-        else:
-            annotated = None
-
-        mapping = DiarizationErrorRate().optimal_mapping(
-            reference, hypothesis, uem=annotated
-        )
-        return hypothesis.rename_labels(mapping=mapping)
 
     def get_metric(self) -> GreedyDiarizationErrorRate:
         return GreedyDiarizationErrorRate(collar=0.0, skip_overlap=False)
