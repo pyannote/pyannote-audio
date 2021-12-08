@@ -21,8 +21,9 @@
 # SOFTWARE.
 
 import os
+from functools import partial
 from pathlib import Path
-from typing import Text, Union
+from typing import Callable, Optional, Text, Union
 
 import torch
 import yaml
@@ -161,6 +162,21 @@ class Pipeline(_Pipeline):
             pipeline.preprocessors = preprocessors
 
         return pipeline
+
+    @staticmethod
+    def setup_hook(file: AudioFile, hook: Optional[Callable] = None) -> Callable:
+
+        if hook is None:
+
+            def hook(*args, **kwargs):
+                return
+
+            hook.missing = True
+        else:
+            hook = partial(hook, file=file)
+            hook.missing = False
+
+        return hook
 
     def __call__(self, file: AudioFile, **kwargs):
 
