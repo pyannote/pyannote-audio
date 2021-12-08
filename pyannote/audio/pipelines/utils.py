@@ -199,10 +199,6 @@ def logging_hook(key: Text, value: Any, file: Optional[Mapping] = None):
     file[key] = deepcopy(value)
 
 
-class PipelineHookException(Exception):
-    pass
-
-
 class SpeakerDiarizationMixin:
     """Defines a bunch of methods common to speaker diarization pipelines"""
 
