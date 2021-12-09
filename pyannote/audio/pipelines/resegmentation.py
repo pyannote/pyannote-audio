@@ -154,7 +154,9 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
         # output shape is (num_frames, num_speakers)
         diarization = diarization or file[self.diarization]
         diarization = diarization.discretize(
-            support=Segment(0.0, self._audio.get_duration(file)),
+            support=Segment(
+                0.0, self._audio.get_duration(file) + self._segmentation.step
+            ),
             resolution=self._frames,
         )
         hook("@resegmentation/original", diarization)
