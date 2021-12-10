@@ -89,6 +89,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
         self.segmentation = segmentation
         self.embedding = embedding
+        self.clustering = clustering
         self.expects_num_speakers = expects_num_speakers
 
         seg_device, emb_device = get_devices(needs=2)
@@ -107,7 +108,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             raise ValueError(
                 f'clustering must be one of [{", ".join(list(Clustering.__members__))}]'
             )
-        self.clustering = Klustering.value(
+        self.klustering = Klustering.value(
             metric=self._embedding.metric,
             expects_num_clusters=self.expects_num_speakers,
         )
@@ -129,6 +130,26 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
         # minimum amount of speech needed to use speaker in clustering
         self.min_activity = Uniform(0.0, 10.0)
+
+    def default_parameters(self):
+        # parameters optimized on DIHARD 3 development set
+        if (
+            self.segmentation == "pyannote/segmentation"
+            and self.embedding == "speechbrain/spkrec-ecapa-voxceleb"
+            and self.clustering == "AgglomerativeClustering"
+            and not self.expects_num_speakers
+        ):
+            return {
+                "onset": 0.810,
+                "offset": 0.481,
+                "min_duration_on": 0.055,
+                "min_duration_off": 0.098,
+                "min_activity": 6.073,
+                "stitch_threshold": 0.040,
+                "clustering": {"method": "average", "threshold": 0.595},
+            }
+
+        return NotImplementedError()
 
     CACHED_SEGMENTATION = "@diarization/segmentation/raw"
 
@@ -365,7 +386,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             num_clusters = 1
 
         else:
-            clusters[speaker_status == LONG] = self.clustering(
+            clusters[speaker_status == LONG] = self.klustering(
                 embeddings[speaker_status == LONG],
                 num_clusters=num_speakers,
             )

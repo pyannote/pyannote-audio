@@ -102,6 +102,17 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
         self.min_duration_on = Uniform(0.0, 1.0)
         self.min_duration_off = Uniform(0.0, 1.0)
 
+    def default_parameters(self):
+        # parameters optimized on DIHARD 3 development set
+        if self.segmentation == "pyannote/segmentation":
+            return {
+                "onset": 0.810,
+                "offset": 0.481,
+                "min_duration_on": 0.055,
+                "min_duration_off": 0.098,
+            }
+        return NotImplementedError()
+
     CACHED_SEGMENTATION = "@resegmentation/raw"
 
     def apply(

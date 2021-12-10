@@ -148,6 +148,17 @@ class OverlappedSpeechDetection(Pipeline):
         self.precision = precision
         self.recall = recall
 
+    def default_parameters(self):
+        # parameters optimized on DIHARD 3 development set
+        if self.segmentation == "pyannote/segmentation":
+            return {
+                "onset": 0.430,
+                "offset": 0.320,
+                "min_duration_on": 0.091,
+                "min_duration_off": 0.144,
+            }
+        return NotImplementedError()
+
     def initialize(self):
         """Initialize pipeline with current set of parameters"""
 
