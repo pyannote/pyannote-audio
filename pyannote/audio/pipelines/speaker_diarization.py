@@ -89,7 +89,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
         self.segmentation = segmentation
         self.embedding = embedding
-        self.clustering = clustering
+        self.klustering = clustering
         self.expects_num_speakers = expects_num_speakers
 
         seg_device, emb_device = get_devices(needs=2)
@@ -108,7 +108,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             raise ValueError(
                 f'clustering must be one of [{", ".join(list(Clustering.__members__))}]'
             )
-        self.klustering = Klustering.value(
+        self.clustering = Klustering.value(
             metric=self._embedding.metric,
             expects_num_clusters=self.expects_num_speakers,
         )
@@ -136,7 +136,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         if (
             self.segmentation == "pyannote/segmentation"
             and self.embedding == "speechbrain/spkrec-ecapa-voxceleb"
-            and self.clustering == "AgglomerativeClustering"
+            and self.klustering == "AgglomerativeClustering"
             and not self.expects_num_speakers
         ):
             return {
@@ -386,7 +386,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             num_clusters = 1
 
         else:
-            clusters[speaker_status == LONG] = self.klustering(
+            clusters[speaker_status == LONG] = self.clustering(
                 embeddings[speaker_status == LONG],
                 num_clusters=num_speakers,
             )
