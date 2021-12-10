@@ -143,7 +143,7 @@ class VoiceActivityDetection(Pipeline):
                 "min_duration_on": 0.136,
                 "min_duration_off": 0.067,
             }
-        return NotImplementedError()
+        raise NotImplementedError()
 
     def initialize(self):
         """Initialize pipeline with current set of parameters"""

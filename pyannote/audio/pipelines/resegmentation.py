@@ -111,7 +111,7 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
                 "min_duration_on": 0.055,
                 "min_duration_off": 0.098,
             }
-        return NotImplementedError()
+        raise NotImplementedError()
 
     CACHED_SEGMENTATION = "@resegmentation/raw"
 

@@ -149,7 +149,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                 "clustering": {"method": "average", "threshold": 0.595},
             }
 
-        return NotImplementedError()
+        raise NotImplementedError()
 
     CACHED_SEGMENTATION = "@diarization/segmentation/raw"
 

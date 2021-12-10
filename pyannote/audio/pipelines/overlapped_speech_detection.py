@@ -157,7 +157,7 @@ class OverlappedSpeechDetection(Pipeline):
                 "min_duration_on": 0.091,
                 "min_duration_off": 0.144,
             }
-        return NotImplementedError()
+        raise NotImplementedError()
 
     def initialize(self):
         """Initialize pipeline with current set of parameters"""
