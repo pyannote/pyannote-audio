@@ -21,6 +21,7 @@
 # SOFTWARE.
 
 import os
+import warnings
 from functools import partial
 from pathlib import Path
 from typing import Callable, Optional, Text, Union
@@ -178,7 +179,30 @@ class Pipeline(_Pipeline):
 
         return hook
 
+    def default_parameters(self):
+        raise NotImplementedError()
+
     def __call__(self, file: AudioFile, **kwargs):
+        if not self.instantiated:
+            # instantiate with default parameters when available
+            try:
+                default_parameters = self.default_parameters()
+            except NotImplementedError:
+                raise RuntimeError(
+                    "A pipeline must be instantiated with `pipeline.instantiate(parameters)` before it can be applied."
+                )
+
+            try:
+                self.instantiate(default_parameters)
+            except ValueError:
+                raise RuntimeError(
+                    "A pipeline must be instantiated with `pipeline.instantiate(paramaters)` before it can be applied. "
+                    "Tried to use parameters provided by `pipeline.default_parameters()` but those are not compatible. "
+                )
+
+            warnings.warn(
+                "The pipeline has been automatically instantiated with `pipeline.instantiate(pipeline.default_parameters())`."
+            )
 
         file = Audio.validate_file(file)
 
