@@ -298,58 +298,66 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         # skip speakers for which embedding extraction failed for some reason
         speaker_status[np.any(np.isnan(embeddings), axis=-1)] = SKIP
 
-        if not hook.missing and "annotation" in file:
+        try:
 
-            hook(
-                "@clustering/distance",
-                pdist(
-                    embeddings[speaker_status == LONG], metric=self._embedding.metric
-                ),
-            )
+            if not hook.missing and "annotation" in file:
 
-            def oracle_cost_func(Y, y):
-                return torch.from_numpy(
-                    np.nanmean(np.abs(Y.numpy() - y.numpy()), axis=0)
+                hook(
+                    "@clustering/distance",
+                    pdist(
+                        embeddings[speaker_status == LONG],
+                        metric=self._embedding.metric,
+                    ),
                 )
 
-            reference = file["annotation"].discretize(
-                support=Segment(0.0, Audio().get_duration(file)),
-                resolution=self._frames,
-            )
-            oracle_clusters = []
+                def oracle_cost_func(Y, y):
+                    return torch.from_numpy(
+                        np.nanmean(np.abs(Y.numpy() - y.numpy()), axis=0)
+                    )
 
-            for (
-                c,
-                (chunk, segmentation),
-            ) in enumerate(segmentations):
-
-                if np.all(speaker_status[c] != LONG):
-                    continue
-
-                segmentation = segmentation[np.newaxis, :, speaker_status[c] == LONG]
-
-                # FIXME: local_reference is too short when chunk.start < 0 or chunk.end > duration
-                local_reference = reference.crop(chunk)
-                _, (permutation,) = permutate(
-                    segmentation,
-                    local_reference[:num_frames],
-                    cost_func=oracle_cost_func,
+                reference = file["annotation"].discretize(
+                    support=Segment(0.0, Audio().get_duration(file)),
+                    resolution=self._frames,
                 )
-                active_reference = np.any(local_reference > 0, axis=0)
-                oracle_clusters.extend(
-                    [
-                        i if ((i is not None) and (active_reference[i])) else -1
-                        for i in permutation
+                oracle_clusters = []
+
+                for (
+                    c,
+                    (chunk, segmentation),
+                ) in enumerate(segmentations):
+
+                    if np.all(speaker_status[c] != LONG):
+                        continue
+
+                    segmentation = segmentation[
+                        np.newaxis, :, speaker_status[c] == LONG
                     ]
-                )
 
-            oracle_clusters = np.array(oracle_clusters)
-            oracle = 1.0 * squareform(pdist(oracle_clusters, metric="equal"))
-            np.fill_diagonal(oracle, True)
-            oracle[oracle_clusters == -1] = -1
-            oracle[:, oracle_clusters == -1] = -1
+                    # FIXME: local_reference is too short when chunk.start < 0 or chunk.end > duration
+                    local_reference = reference.crop(chunk)
+                    _, (permutation,) = permutate(
+                        segmentation,
+                        local_reference[:num_frames],
+                        cost_func=oracle_cost_func,
+                    )
+                    active_reference = np.any(local_reference > 0, axis=0)
+                    oracle_clusters.extend(
+                        [
+                            i if ((i is not None) and (active_reference[i])) else -1
+                            for i in permutation
+                        ]
+                    )
 
-            hook("@clustering/oracle", oracle)
+                oracle_clusters = np.array(oracle_clusters)
+                oracle = 1.0 * squareform(pdist(oracle_clusters, metric="equal"))
+                np.fill_diagonal(oracle, True)
+                oracle[oracle_clusters == -1] = -1
+                oracle[:, oracle_clusters == -1] = -1
+
+                hook("@clustering/oracle", oracle)
+
+        except Exception:
+            pass
 
         # __ ACTIVE SPEAKER CLUSTERING _________________________________________________
         # clusters[chunk_id x local_num_speakers + speaker_id] = k
