@@ -23,118 +23,11 @@
 import itertools
 from typing import Mapping, Text, Union
 
-import numpy as np
 import torch
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torch_audiomentations.utils.config import from_dict as augmentation_from_dict
 
 from pyannote.audio import Inference, Model
-from pyannote.audio.core.io import AudioFile
-from pyannote.core import Annotation, SlidingWindowFeature
-
-
-def assert_string_labels(annotation: Annotation, name: str):
-    """Check that annotation only contains string labels
-
-    Parameters
-    ----------
-    annotation : Annotation
-        Annotation.
-    name : str
-        Name of the annotation (used for user feedback in case of failure)
-    """
-
-    if any(not isinstance(label, str) for label in annotation.labels()):
-        msg = f"{name} must contain `str` labels only."
-        raise ValueError(msg)
-
-
-def assert_int_labels(annotation: Annotation, name: str):
-    """Check that annotation only contains integer labels
-
-    Parameters
-    ----------
-    annotation : Annotation
-        Annotation.
-    name : str
-        Name of the annotation (used for user feedback in case of failure)
-    """
-
-    if any(not isinstance(label, int) for label in annotation.labels()):
-        msg = f"{name} must contain `int` labels only."
-        raise ValueError(msg)
-
-
-def gather_label_embeddings(
-    annotation: Annotation,
-    embeddings: Union[SlidingWindowFeature, Inference],
-    file: AudioFile = None,
-):
-    """Extract one embedding per label
-
-    Parameters
-    ----------
-    annotation : Annotation
-        Annotation
-    embeddings : SlidingWindowFeature or Inference
-        Embeddings, either precomputed on a sliding window (SlidingWindowFeature)
-        or to be computed on the fly (Inference).
-    file : AudioFile, optional
-        Needed when `embeddings` is an `Inference` instance
-
-    Returns
-    -------
-    embeddings : ((len(embedded_labels), embedding_dimension) np.ndarray
-        Embeddings.
-    embedded_labels : list of labels
-        Labels for which an embedding has been computed.
-    skipped_labels : list of labels
-        Labels for which no embedding could be computed.
-    """
-
-    X, embedded_labels, skipped_labels = [], [], []
-
-    labels = annotation.labels()
-    for label in labels:
-
-        label_support = annotation.label_timeline(label, copy=False)
-
-        if isinstance(embeddings, SlidingWindowFeature):
-
-            # be more and more permissive until we have
-            # at least one embedding for current speech turn
-            for mode in ["strict", "center", "loose"]:
-                x = embeddings.crop(label_support, mode=mode)
-                if len(x) > 0:
-                    break
-
-            # skip labels so small we do not have any embedding for it
-            if len(x) < 1:
-                skipped_labels.append(label)
-                continue
-
-            embedded_labels.append(label)
-            X.append(np.mean(x, axis=0))
-
-        elif isinstance(embeddings, Inference):
-
-            try:
-                x = embeddings.crop(file, label_support)
-            except RuntimeError:
-                # skip labels so small that we cannot even extract embeddings
-                skipped_labels.append(label)
-                continue
-
-            if embeddings.window == "sliding":
-                X.append(np.mean(x, axis=0))
-
-            elif embeddings.window == "whole":
-                X.append(x)
-
-            embedded_labels.append(label)
-
-    return np.vstack(X), embedded_labels, skipped_labels
-
 
 PipelineModel = Union[Model, Text, Mapping]
 
@@ -172,7 +65,7 @@ def get_model(model: PipelineModel) -> Model:
         pass
 
     elif isinstance(model, Text):
-        model = Model.from_pretrained(model)
+        model = Model.from_pretrained(model, strict=False)
 
     elif isinstance(model, Mapping):
         model = Model.from_pretrained(**model)

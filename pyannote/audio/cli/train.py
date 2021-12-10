@@ -71,7 +71,7 @@ def main(cfg: DictConfig) -> Optional[float]:
     monitor, direction = task.val_monitor
 
     # instantiate model
-    pretrained = cfg.model["_target_"] == "pyannote.audio.cli.pretrained"
+    fine_tuning = cfg.model["_target_"] == "pyannote.audio.cli.pretrained"
     model = instantiate(cfg.model)
     model.task = task
     model.setup(stage="fit")
@@ -95,11 +95,11 @@ def main(cfg: DictConfig) -> Optional[float]:
 
     callbacks = []
 
-    # # TODO: replace by finetune_scheduler config
-    # if pretrained:
-    #     # for fine-tuning and/or transfer learning, we start by fitting
-    #     # task-dependent layers and gradully unfreeze more layers
-    #     callbacks.append(GraduallyUnfreeze(epochs_per_stage=1))
+    if fine_tuning:
+        # TODO: for fine-tuning and/or transfer learning, we start by fitting
+        # TODO: task-dependent layers and gradully unfreeze more layers
+        # TODO: callbacks.append(GraduallyUnfreeze(epochs_per_stage=1))
+        pass
 
     learning_rate_monitor = LearningRateMonitor()
     callbacks.append(learning_rate_monitor)
@@ -135,9 +135,13 @@ def main(cfg: DictConfig) -> Optional[float]:
         log_graph=False,  # TODO: fixes onnx error with asteroid-filterbanks
     )
 
-    # TODO: defaults to one-GPU training (one GPU is available)
-
     trainer = instantiate(cfg.trainer, callbacks=callbacks, logger=logger)
+
+    # in case of fine-tuning, validate the initial model to make sure
+    # that we actually improve over the initial performance
+    if fine_tuning:
+        trainer.validate(model)
+
     trainer.fit(model)
 
     # save paths to best models
