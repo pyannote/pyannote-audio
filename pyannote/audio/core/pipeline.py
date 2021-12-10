@@ -201,7 +201,7 @@ class Pipeline(_Pipeline):
                 )
 
             warnings.warn(
-                "The pipeline has been automatically instantiated with `pipeline.instantiate(pipeline.default_parameters())`."
+                f"The pipeline has been automatically instantiated with {default_parameters}."
             )
 
         file = Audio.validate_file(file)
