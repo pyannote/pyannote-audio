@@ -311,6 +311,11 @@ class SpeakerDiarizationMixin:
             skip_average=True,
         )
 
+        extent = activations.extent & count.extent
+
+        activations = activations.crop(extent, return_data=False)
+        count = count.crop(extent, return_data=False)
+
         sorted_speakers = np.argsort(-activations, axis=-1)
         binary = np.zeros_like(activations.data)
 
