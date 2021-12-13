@@ -166,6 +166,8 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         self,
         file: AudioFile,
         num_speakers: int = None,
+        min_speakers: int = None,
+        max_speakers: int = None,
         hook: Optional[Callable] = None,
     ) -> Annotation:
         """Apply speaker diarization
@@ -175,7 +177,11 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         file : AudioFile
             Processed file.
         num_speakers : int, optional
-            Expected number of speakers.
+            Number of speakers, when known.
+        min_speakers : int, optional
+            Minimum number of speakers. Has no effect when `num_speakers` is provided.
+        max_speakers : int, optional
+            Maximum number of speakers. Has no effect when `num_speakers` is provided.
         hook : callable, optional
             Hook called after each major step of the pipeline with the following
             signature: hook("step_name", step_artefact, file=file)
@@ -189,6 +195,13 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         hook = self.setup_hook(file, hook=hook)
 
         # __ HANDLE EXPECTED NUMBER OF SPEAKERS ________________________________________
+
+        num_speakers, min_speakers, max_speakers = self.set_num_speakers(
+            num_speakers=num_speakers,
+            min_speakers=min_speakers,
+            max_speakers=max_speakers,
+        )
+
         if self.expects_num_speakers and num_speakers is None:
 
             if "annotation" in file:
@@ -397,6 +410,8 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             clusters[speaker_status == LONG] = self.clustering(
                 embeddings[speaker_status == LONG],
                 num_clusters=num_speakers,
+                min_clusters=min_speakers,
+                max_clusters=max_speakers,
             )
             num_clusters = np.max(clusters) + 1
 

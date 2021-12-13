@@ -203,6 +203,43 @@ class SpeakerDiarizationMixin:
     """Defines a bunch of methods common to speaker diarization pipelines"""
 
     @staticmethod
+    def set_num_speakers(
+        num_speakers: int = None,
+        min_speakers: int = None,
+        max_speakers: int = None,
+    ):
+        """Validate number of speakers
+
+        Parameters
+        ----------
+        num_speakers : int, optional
+            Number of speakers.
+        min_speakers : int, optional
+            Minimum number of speakers.
+        max_speakers : int, optional
+            Maximum number of speakers.
+
+        Returns
+        -------
+        num_speakers : int or None
+        min_speakers : int
+        max_speakers : int or np.inf
+        """
+
+        # override {min|max}_num_speakers by num_speakers when available
+        min_speakers = num_speakers or min_speakers or 1
+        max_speakers = num_speakers or max_speakers or np.inf
+
+        if min_speakers > max_speakers:
+            raise ValueError(
+                f"min_speakers must be smaller than (or equal to) max_speakers (here: {min_speakers=} and {max_speakers=})."
+            )
+        if min_speakers == max_speakers:
+            num_speakers = min_speakers
+
+        return num_speakers, min_speakers, max_speakers
+
+    @staticmethod
     def optimal_mapping(
         reference: Union[Mapping, Annotation], hypothesis: Annotation
     ) -> Annotation:
