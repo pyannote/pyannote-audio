@@ -22,11 +22,13 @@
 
 """Speaker diarization pipelines"""
 
+import itertools
 import warnings
 from typing import Callable, Optional, Text
 
 import numpy as np
 import torch
+from einops import rearrange
 from scipy.spatial.distance import cdist, squareform
 
 from pyannote.audio import Audio, Inference, Model, Pipeline
@@ -48,23 +50,33 @@ from .clustering import Clustering
 from .speaker_verification import PretrainedSpeakerEmbedding
 
 
+def batchify(iterable, batch_size: int = 32, fillvalue=None):
+    """Batchify iterable"""
+    # batchify('ABCDEFG', 3) --> ['A', 'B', 'C']  ['D', 'E', 'F']  [G, ]
+    args = [iter(iterable)] * batch_size
+    return itertools.zip_longest(*args, fillvalue=fillvalue)
+
+
 class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
     """Speaker diarization pipeline
 
     Parameters
     ----------
-    segmentation : Inference or str, optional
-        `Inference` instance used to extract raw segmentation scores.
-        When `str`, assumes that file already contains a corresponding key with
-        precomputed scores. Defaults to "seg".
-    embeddings : Inference or str, optional
-        `Inference` instance used to extract speaker embeddings. When `str`,
-        assumes that file already contains a corresponding key with precomputed
-        embeddings. Defaults to "emb".
+    segmentation : Model, str, or dict, optional
+        Pretrained segmentation model. Defaults to "pyannote/segmentation".
+        See pyannote.audio.pipelines.utils.get_model for supported format.
+    embedding : Model, str, or dict, optional
+        Pretrained embedding model. Defaults to "pyannote/segmentation".
+        See pyannote.audio.pipelines.utils.get_model for supported format.
     clustering : {"AgglomerativeClustering", "SpectralClustering"}, optional
         Defaults to "AgglomerativeClustering".
     expects_num_speakers : bool, optional
         Defaults to False.
+    segmentation_batch_size : int, optional
+        Batch size used for speaker segmentation. Defaults to 32.
+    embedding_batch_size : int, optional
+        Batch size used for speaker embedding. Defaults to number of local speakers
+        returned by the segmentation model.
 
     Hyper-parameters
     ----------------
@@ -83,6 +95,8 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         embedding: PipelineModel = "pyannote/embedding",
         clustering: Text = "AgglomerativeClustering",
         expects_num_speakers: bool = False,
+        segmentation_batch_size: int = 32,
+        embedding_batch_size: int = None,
     ):
 
         super().__init__()
@@ -91,15 +105,22 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         self.embedding = embedding
         self.klustering = clustering
         self.expects_num_speakers = expects_num_speakers
+        self.segmentation_batch_size = segmentation_batch_size
 
         seg_device, emb_device = get_devices(needs=2)
 
         model: Model = get_model(segmentation)
         model.to(seg_device)
-        self._segmentation = Inference(model, skip_aggregation=True)
+        self._segmentation = Inference(
+            model, skip_aggregation=True, batch_size=self.segmentation_batch_size
+        )
         self._frames: SlidingWindow = self._segmentation.model.introspection.frames
 
         self._embedding = PretrainedSpeakerEmbedding(self.embedding, device=emb_device)
+        self.embedding_batch_size = embedding_batch_size or len(
+            model.specifications.classes
+        )
+
         self._audio = Audio(sample_rate=self._embedding.sample_rate, mono=True)
 
         try:
@@ -298,33 +319,37 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
         # __ SPEAKER EMBEDDING _________________________________________________________
 
-        embeddings = []
-
-        # TODO: batchify this loop
-        for c, ((chunk, masked_segmentation), status) in enumerate(
-            zip(masked_segmentations, speaker_status)
-        ):
-
-            if np.all(status == SKIP):
-                chunk_embeddings = np.zeros(
-                    (local_num_speakers, self._embedding.dimension), dtype=np.float32
-                )
-
-            else:
-                waveforms: torch.Tensor = (
+        def iter_waveform_and_mask():
+            for chunk, masked_segmentation in masked_segmentations:
+                waveform: torch.Tensor = (
                     self._audio.crop(file, chunk, mode="pad")[0]
                     .unsqueeze(0)
                     .expand(local_num_speakers, -1, -1)
                 )
+                mask = torch.from_numpy(masked_segmentation).float().T
+                yield waveform, mask
 
-                masks = torch.from_numpy(masked_segmentation).float().T
-                chunk_embeddings: np.ndarray = self._embedding(waveforms, masks=masks)
-                # (local_num_speakers, dimension)
+        batches = batchify(
+            iter_waveform_and_mask(),
+            batch_size=max(1, self.embedding_batch_size // local_num_speakers),
+            fillvalue=(None, None),
+        )
 
-            embeddings.append(chunk_embeddings)
+        embeddings = []
+
+        for batch in batches:
+            waveforms, masks = zip(*filter(lambda b: b[0] is not None, batch))
+            waveform_batch = torch.vstack(waveforms)
+            mask_batch = torch.vstack(masks)
+            embedding_batch: np.ndarray = self._embedding(
+                waveform_batch, masks=mask_batch
+            )
+            embeddings.append(embedding_batch)
 
         # stack and unit-normalized embeddings
-        embeddings = np.stack(embeddings)
+        embeddings = rearrange(
+            np.vstack(embeddings), "(c s) d -> c s d", s=local_num_speakers
+        )
         with np.errstate(divide="ignore", invalid="ignore"):
             embeddings /= np.linalg.norm(embeddings, axis=-1, keepdims=True)
         hook("@clustering/embedding", embeddings)
