@@ -27,9 +27,14 @@ conda install libsndfile=1.0.28 -c conda-forge
 pip install https://github.com/pyannote/pyannote-audio/archive/develop.zip
 ```
 
+
 ## pyannote.audio 101
 
 *For now, this is the closest you can get to an actual documentation.*
+
+### Tutorials
+
+Tutorials are available in the [tutorials](/tutorials) directory
 
 ### High-level API
 
