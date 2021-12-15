@@ -36,7 +36,35 @@ from pyannote.pipeline import Pipeline
 from pyannote.pipeline.parameter import Categorical, Uniform
 
 
-class AgglomerativeClustering(Pipeline):
+class ClusteringMixin:
+    def set_num_clusters(
+        self,
+        num_embeddings: int,
+        num_clusters: int = None,
+        min_clusters: int = None,
+        max_clusters: int = None,
+    ):
+
+        min_clusters = num_clusters or min_clusters or 1
+        min_clusters = max(1, min(num_embeddings, min_clusters))
+        max_clusters = num_clusters or max_clusters or num_embeddings
+        max_clusters = max(1, min(num_embeddings, max_clusters))
+
+        if min_clusters > max_clusters:
+            raise ValueError(
+                f"min_clusters must be smaller than (or equal to) max_clusters (here: {min_clusters=} and {max_clusters=})."
+            )
+
+        if min_clusters == max_clusters:
+            num_clusters = min_clusters
+
+        if self.expects_num_clusters and num_clusters is None:
+            raise ValueError("num_clusters must be provided.")
+
+        return num_clusters, min_clusters, max_clusters
+
+
+class AgglomerativeClustering(ClusteringMixin, Pipeline):
     """Agglomerative clustering
 
     Parameters
@@ -101,31 +129,34 @@ class AgglomerativeClustering(Pipeline):
         """
 
         num_embeddings, _ = embeddings.shape
-
-        if self.expects_num_clusters:
-            assert num_clusters is not None, "`num_clusters` must be provided."
-            num_clusters = min_clusters = max_clusters = min(
-                num_embeddings, max(1, num_clusters)
-            )
-        else:
-            min_clusters = max(1, num_clusters or min_clusters or 1)
-            max_clusters = min(
-                num_embeddings, num_clusters or max_clusters or num_embeddings
-            )
+        num_clusters, min_clusters, max_clusters = self.set_num_clusters(
+            num_embeddings,
+            num_clusters=num_clusters,
+            min_clusters=min_clusters,
+            max_clusters=max_clusters,
+        )
 
         dendrogram: np.ndarray = linkage(
             embeddings, method=self.method, metric=self.metric
         )
 
-        max_threshold: float = dendrogram[-min_clusters, 2]
-        min_threshold: float = (
-            dendrogram[-max_clusters, 2] if max_clusters < num_embeddings else -np.inf
-        )
-
         if num_clusters is None:
+
+            max_threshold: float = (
+                dendrogram[-min_clusters, 2]
+                if min_clusters < num_embeddings
+                else -np.inf
+            )
+            min_threshold: float = (
+                dendrogram[-max_clusters, 2]
+                if max_clusters < num_embeddings
+                else -np.inf
+            )
+
             threshold = min(max(self.threshold, min_threshold), max_threshold)
 
         else:
+
             threshold = (
                 dendrogram[-num_clusters, 2]
                 if num_clusters < num_embeddings
@@ -135,7 +166,7 @@ class AgglomerativeClustering(Pipeline):
         return fcluster(dendrogram, threshold, criterion="distance") - 1
 
 
-class SpectralClustering(Pipeline):
+class SpectralClustering(ClusteringMixin, Pipeline):
     """Spectral clustering
 
     Parameters
@@ -200,21 +231,16 @@ class SpectralClustering(Pipeline):
         """
 
         num_embeddings, _ = embeddings.shape
-
-        if self.expects_num_clusters:
-            assert num_clusters is not None, "`num_clusters` must be provided."
-            num_clusters = min_clusters = max_clusters = min(
-                num_embeddings, max(1, num_clusters)
-            )
-        else:
-            min_clusters = max(1, num_clusters or min_clusters or 1)
-            max_clusters = min(
-                num_embeddings, num_clusters or max_clusters or num_embeddings
-            )
+        num_clusters, min_clusters, max_clusters = self.set_num_clusters(
+            num_embeddings,
+            num_clusters=num_clusters,
+            min_clusters=min_clusters,
+            max_clusters=max_clusters,
+        )
 
         return SpectralClusterer(
-            min_clusters=num_clusters,
-            max_clusters=num_clusters,
+            min_clusters=min_clusters,
+            max_clusters=max_clusters,
             laplacian_type=LaplacianType[self.laplacian],
             eigengap_type=EigenGapType[self.eigengap],
             affinity_function=self._affinity_function,

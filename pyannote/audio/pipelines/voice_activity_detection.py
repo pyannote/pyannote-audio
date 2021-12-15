@@ -134,6 +134,17 @@ class VoiceActivityDetection(Pipeline):
         self.min_duration_on = Uniform(0.0, 1.0)
         self.min_duration_off = Uniform(0.0, 1.0)
 
+    def default_parameters(self):
+        # parameters optimized on DIHARD 3 development set
+        if self.segmentation == "pyannote/segmentation":
+            return {
+                "onset": 0.767,
+                "offset": 0.377,
+                "min_duration_on": 0.136,
+                "min_duration_off": 0.067,
+            }
+        raise NotImplementedError()
+
     def initialize(self):
         """Initialize pipeline with current set of parameters"""
 

@@ -21,8 +21,10 @@
 # SOFTWARE.
 
 import os
+import warnings
+from functools import partial
 from pathlib import Path
-from typing import Text, Union
+from typing import Callable, Optional, Text, Union
 
 import torch
 import yaml
@@ -162,7 +164,45 @@ class Pipeline(_Pipeline):
 
         return pipeline
 
+    @staticmethod
+    def setup_hook(file: AudioFile, hook: Optional[Callable] = None) -> Callable:
+
+        if hook is None:
+
+            def hook(*args, **kwargs):
+                return
+
+            hook.missing = True
+        else:
+            hook = partial(hook, file=file)
+            hook.missing = False
+
+        return hook
+
+    def default_parameters(self):
+        raise NotImplementedError()
+
     def __call__(self, file: AudioFile, **kwargs):
+        if not self.instantiated:
+            # instantiate with default parameters when available
+            try:
+                default_parameters = self.default_parameters()
+            except NotImplementedError:
+                raise RuntimeError(
+                    "A pipeline must be instantiated with `pipeline.instantiate(parameters)` before it can be applied."
+                )
+
+            try:
+                self.instantiate(default_parameters)
+            except ValueError:
+                raise RuntimeError(
+                    "A pipeline must be instantiated with `pipeline.instantiate(paramaters)` before it can be applied. "
+                    "Tried to use parameters provided by `pipeline.default_parameters()` but those are not compatible. "
+                )
+
+            warnings.warn(
+                f"The pipeline has been automatically instantiated with {default_parameters}."
+            )
 
         file = Audio.validate_file(file)
 

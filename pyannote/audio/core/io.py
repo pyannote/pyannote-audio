@@ -358,6 +358,7 @@ class Audio:
             pad_end = max(end_frame, frames) - frames
             start_frame = max(0, start_frame)
             end_frame = min(end_frame, frames)
+            num_frames = end_frame - start_frame
 
         if "waveform" in file:
             data = file["waveform"][:, start_frame:end_frame]
