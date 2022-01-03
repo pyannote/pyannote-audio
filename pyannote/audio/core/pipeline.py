@@ -22,9 +22,10 @@
 
 import os
 import warnings
+from collections.abc import Iterator
 from functools import partial
 from pathlib import Path
-from typing import Callable, Optional, Text, Union
+from typing import Callable, List, Optional, Text, Union
 
 import yaml
 from huggingface_hub import cached_download, hf_hub_url
@@ -156,6 +157,27 @@ class Pipeline(_Pipeline):
         return hook
 
     def default_parameters(self):
+        raise NotImplementedError()
+
+    def classes(self) -> Union[List, Iterator]:
+        """Classes returned by the pipeline
+
+        Returns
+        -------
+        classes : list of string or string iterator
+            Finite list of string when classes are known in advance
+            (e.g. ["MALE", "FEMALE"] for gender classification), or
+            infinite string iterator when they depend on the file
+            (e.g. ["SPEAKER_00", "SPEAKER_01", ...] for speaker diarization)
+
+        Usage
+        -----
+        >>> from collections.abc import Iterator
+        >>> classes = pipeline.classes()
+        >>> if isinstance(classes, Iterator):  # classes depend on the input file
+        >>> if isinstance(classes, list):      # classes are known in advance
+
+        """
         raise NotImplementedError()
 
     def __call__(self, file: AudioFile, **kwargs):

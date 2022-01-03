@@ -145,6 +145,9 @@ class VoiceActivityDetection(Pipeline):
             }
         raise NotImplementedError()
 
+    def classes(self):
+        return ["SPEECH"]
+
     def initialize(self):
         """Initialize pipeline with current set of parameters"""
 
@@ -177,9 +180,9 @@ class VoiceActivityDetection(Pipeline):
         else:
             file[self.CACHED_ACTIVATIONS] = self.segmentation_inference_(file)
 
-        speech = self._binarize(file[self.CACHED_ACTIVATIONS])
+        speech: Annotation = self._binarize(file[self.CACHED_ACTIVATIONS])
         speech.uri = file["uri"]
-        return speech
+        return speech.rename_labels({label: "SPEECH" for label in speech.labels()})
 
     def get_metric(self) -> Union[DetectionErrorRate, DetectionPrecisionRecallFMeasure]:
         """Return new instance of detection metric"""

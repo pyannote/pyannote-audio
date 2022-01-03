@@ -172,6 +172,12 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
         raise NotImplementedError()
 
+    def classes(self):
+        speaker = 0
+        while True:
+            yield f"SPEAKER_{speaker:02d}"
+            speaker += 1
+
     CACHED_SEGMENTATION = "@diarization/segmentation/raw"
 
     def stitch_match_func(
@@ -500,9 +506,14 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         diarization.uri = file["uri"]
 
         if "annotation" in file:
-            diarization = self.optimal_mapping(file["annotation"], diarization)
+            return self.optimal_mapping(file["annotation"], diarization)
 
-        return diarization
+        return diarization.rename_labels(
+            {
+                label: expected_label
+                for label, expected_label in zip(diarization.labels(), self.classes())
+            }
+        )
 
     def get_metric(self) -> GreedyDiarizationErrorRate:
         return GreedyDiarizationErrorRate(collar=0.0, skip_overlap=False)

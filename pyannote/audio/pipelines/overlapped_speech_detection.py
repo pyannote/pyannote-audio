@@ -159,6 +159,9 @@ class OverlappedSpeechDetection(Pipeline):
             }
         raise NotImplementedError()
 
+    def classes(self):
+        return ["OVERLAP"]
+
     def initialize(self):
         """Initialize pipeline with current set of parameters"""
 
@@ -193,7 +196,9 @@ class OverlappedSpeechDetection(Pipeline):
 
         overlapped_speech = self._binarize(file[self.CACHED_ACTIVATIONS])
         overlapped_speech.uri = file["uri"]
-        return overlapped_speech
+        return overlapped_speech.rename_labels(
+            {label: "OVERLAP" for label in overlapped_speech.labels()}
+        )
 
     def get_metric(self, **kwargs) -> DetectionPrecisionRecallFMeasure:
         """Get overlapped speech detection metric
