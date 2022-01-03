@@ -165,10 +165,10 @@ class Pipeline(_Pipeline):
         Returns
         -------
         classes : list of string or string iterator
-            Finite list of string when classes are known in advance
+            Finite list of strings when classes are known in advance
             (e.g. ["MALE", "FEMALE"] for gender classification), or
             infinite string iterator when they depend on the file
-            (e.g. ["SPEAKER_00", "SPEAKER_01", ...] for speaker diarization)
+            (e.g. "SPEAKER_00", "SPEAKER_01", ... for speaker diarization)
 
         Usage
         -----
