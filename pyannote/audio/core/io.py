@@ -37,12 +37,11 @@ from typing import Mapping, Optional, Text, Tuple, Union
 import librosa
 import numpy as np
 import torch
+import torch.nn.functional as F
 import torchaudio
 from torch import Tensor
 
 from pyannote.core import Segment
-from pyannote.core.utils.types import Alignment
-from pyannote.database import ProtocolFile
 
 torchaudio.set_audio_backend("soundfile")
 
@@ -275,8 +274,8 @@ class Audio:
         self,
         file: AudioFile,
         segment: Segment,
-        mode: Alignment = "center",
-        fixed: Optional[float] = None,
+        duration: Optional[float] = None,
+        mode="raise",
     ) -> Tuple[Tensor, int]:
         """Fast version of self(file).crop(segment, **kwargs)
 
@@ -286,17 +285,14 @@ class Audio:
             Audio file.
         segment : `pyannote.core.Segment`
             Temporal segment to load.
-        mode : {'loose', 'strict', 'center'}, optional
-            In 'strict' mode, only samples fully included in 'segment' are
-            returned. In 'loose' mode, any intersecting frames are returned. In
-            'center' mode, first and last frames are chosen to be the ones
-            whose centers are the closest to 'focus' start and end times.
-            Defaults to 'center'.
-        fixed : float, optional
+        duration : float, optional
             Overrides `Segment` 'focus' duration and ensures that the number of
             returned frames is fixed (which might otherwise not be the case
-            because of rounding errors). Has no effect in 'strict' or 'loose'
-            modes.
+            because of rounding errors).
+        mode : {'raise', 'pad'}, optional
+            Specifies how out-of-bounds segments will behave.
+            * 'raise' -- raise an error (default)
+            * 'pad' -- zero pad
 
         Returns
         -------
@@ -305,9 +301,7 @@ class Audio:
         sample_rate : int
             Sample rate
 
-        TODO: remove support for "mode" option. It is always "center" anyway.
         """
-
         file = self.validate_file(file)
 
         if "waveform" in file:
@@ -326,43 +320,43 @@ class Audio:
         channel = file.get("channel", None)
 
         # infer which samples to load from sample rate and requested chunk
-        start_frame = round(segment.start * sample_rate)
+        start_frame = math.floor(segment.start * sample_rate)
 
-        if fixed:
+        if duration:
+            num_frames = math.floor(duration * sample_rate)
+            end_frame = start_frame + num_frames
 
-            num_frames = math.floor(fixed * sample_rate)
+        else:
+            end_frame = math.floor(segment.end * sample_rate)
+            num_frames = end_frame - start_frame
+
+        if mode == "raise":
 
             if num_frames > frames:
                 raise ValueError(
-                    f"requested fixed duration ({fixed:6f}s, or {num_frames:d} frames) is longer "
+                    f"requested fixed duration ({duration:6f}s, or {num_frames:d} frames) is longer "
                     f"than file duration ({frames / sample_rate:.6f}s, or {frames:d} frames)."
                 )
 
-            end_frame = start_frame + num_frames
-
-            # raise an error if it "out-of-bounds" by more than precision
             if end_frame > frames + math.ceil(self.PRECISION * sample_rate):
                 raise ValueError(
                     f"requested chunk [{segment.start:.6f}, {segment.end:.6f}] ({start_frame:d}:{end_frame:d}) "
                     f"lies outside of file bounds [0., {frames / sample_rate:.6f}] (0:{frames:d})."
                 )
+            else:
+                end_frame = min(end_frame, frames)
+                start_frame = end_frame - num_frames
 
-            # shift chunk to the left if it "out-of-bounds" by less than precision
-            end_frame = min(end_frame, frames)
-            start_frame = end_frame - num_frames
-
-        else:
-
-            end_frame = math.floor(segment.end * sample_rate)
-
-            # raise an error if it "out-of-bounds" by more than precision
-            if end_frame > frames + math.ceil(self.PRECISION * sample_rate):
+            if start_frame < 0:
                 raise ValueError(
                     f"requested chunk [{segment.start:.6f}, {segment.end:.6f}] ({start_frame:d}:{end_frame:d}) "
-                    f"lies outside of file bounds [0., {frames / sample_rate:.6f}] (0:{frames:d})."
+                    f"lies outside of file bounds [0, {frames / sample_rate:.6f}] (0:{frames:d})."
                 )
 
-            # crop chunk if it "out-of-bounds" by less than precision
+        elif mode == "pad":
+            pad_start = -min(0, start_frame)
+            pad_end = max(end_frame, frames) - frames
+            start_frame = max(0, start_frame)
             end_frame = min(end_frame, frames)
             num_frames = end_frame - start_frame
 
@@ -399,5 +393,9 @@ class Audio:
 
         if channel is not None:
             data = data[channel - 1 : channel, :]
+
+        # pad with zeros
+        if mode == "pad":
+            data = F.pad(data, (pad_start, pad_end))
 
         return self.downmix_and_resample(data, sample_rate)

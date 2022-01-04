@@ -27,9 +27,98 @@ conda install libsndfile=1.0.28 -c conda-forge
 pip install https://github.com/pyannote/pyannote-audio/archive/develop.zip
 ```
 
+
 ## pyannote.audio 101
 
 *For now, this is the closest you can get to an actual documentation.*
+
+### Tutorials
+
+Tutorials are available in the [tutorials](/tutorials) directory
+
+### High-level API
+
+#### Speaker diarization
+
+```python
+from pyannote.audio.pipelines import SpeakerDiarization
+CONFIG = {
+    "segmentation": "pyannote/segmentation",
+    "embedding": "speechbrain/spkrec-ecapa-voxceleb",
+    "clustering": "AgglomerativeClustering"
+}
+PARAMS = {
+    "onset": 0.5, "offset": 0.5,
+    "stitch_threshold": 0.04, "min_activity": 6.0,
+    "clustering": {"method": "average", "threshold": 0.595}
+}
+
+pipeline = SpeakerDiarization(**CONFIG).instantiate(PARAMS)
+dia = pipeline("audio.wav")
+```
+
+`dia` is a [`pyannote.core.Annotation`](http://pyannote.github.io/pyannote-core/structure.html#annotation) instance.
+
+#### Voice activity detection
+
+```python
+from pyannote.audio.pipelines import VoiceActivityDetection
+pipeline = VoiceActivityDetection(segmentation="pyannote/segmentation")
+PARAMS = {
+    "onset": 0.5, "offset": 0.5,
+    "min_duration_on": 0.0, "min_duration_off": 0.0
+}
+pipeline.instantiate(PARAMS)
+vad = pipeline("audio.wav")
+```
+
+`vad` is a [`pyannote.core.Annotation`](http://pyannote.github.io/pyannote-core/structure.html#annotation) instance containing `speech` regions.
+
+
+#### Overlapped speech detection
+
+```python
+from pyannote.audio.pipelines import OverlappedSpeechDetection
+pipeline = OverlappedSpeechDetection(segmentation="pyannote/segmentation")
+PARAMS = {
+  "onset": 0.5, "offset": 0.5,
+  "min_duration_on": 0.0, "min_duration_off": 0.0
+}
+pipeline.instantiate(PARAMS)
+ovl = pipeline("audio.wav")
+```
+
+`ovl` is a [`pyannote.core.Annotation`](http://pyannote.github.io/pyannote-core/structure.html#annotation) instance containing `overlap` regions.
+
+#### Speaker verification
+
+```python
+import torch
+from pyannote.audio.pipelines.speaker_verification import PretrainedSpeakerEmbedding
+model = PretrainedSpeakerEmbedding(
+    "speechbrain/spkrec-ecapa-voxceleb",
+    device=torch.device("cuda"))
+
+from pyannote.audio import Audio
+from pyannote.core import Segment
+audio = Audio(sample_rate=16000, mono=True)
+
+# extract embedding for a speaker speaking between t=3s and t=6s
+speaker1 = Segment(3., 6.)
+waveform1, sample_rate = audio.crop("audio.wav", speaker1)
+embedding1 = model(waveform1[None])
+
+# extract embedding for a speaker speaking between t=7s and t=12s
+speaker2 = Segment(7., 12.)
+waveform2, sample_rate = audio.crop("audio.wav", speaker2)
+embedding2 = model(waveform2[None])
+
+# compare embeddings using "cosine" distance
+from scipy.spatial.distance import cdist
+distance = cdist(embedding1, embedding2, metric="cosine")
+```
+
+### Low-level API
 
 Experimental protocol is reproducible thanks to [`pyannote.database`](https://github.com/pyannote/pyannote-database).
 *Here, we use the [AMI](https://github.com/pyannote/AMI-diarization-setup) "only_words" speaker diarization protocol.*
