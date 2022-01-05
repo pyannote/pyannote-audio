@@ -1,11 +1,11 @@
 exclude: '^docs/conf.py'
 
 repos:
-    # Clean Notebooks
-    - repo: https://github.com/kynan/nbstripout
-      rev: master
-      hooks:
-        - id: nbstripout
+    # # Clean Notebooks
+    # - repo: https://github.com/kynan/nbstripout
+    #   rev: master
+    #   hooks:
+    #     - id: nbstripout
     # Format Code
     - repo: https://github.com/ambv/black
       rev: stable
