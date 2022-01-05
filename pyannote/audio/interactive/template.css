@@ -1,0 +1,30 @@
+.pyannote-region {
+    left: 1px;
+    color: #000;
+    bottom: 0;
+    display: block;
+    padding: 0 3px;
+    z-index: 10;
+    position: absolute;
+    font-size: 0.7em;
+    background: #ffe184;
+    font-weight: bold;
+    font-family: "Roboto Condensed", "Arial Narrow", sans-serif;
+    user-select: none;
+    text-transform: uppercase;
+}
+
+.title-wave {
+    left: 1px;
+    color: #000;
+    display: block;
+    padding: 0 3px;
+    z-index: 10;
+    position: absolute;
+    font-size: 0.7em;
+    background: #ddd;
+    font-weight: bold;
+    font-family: "Lato", "Trebuchet MS", Roboto, Helvetica, Arial, sans-serif;
+    user-select: none;
+    text-transform: uppercase;
+}

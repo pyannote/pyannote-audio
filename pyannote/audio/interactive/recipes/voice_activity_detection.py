@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Union
 
 import prodigy
+import torch.nn.functional as F
 from prodigy.components.loaders import Audio as AudioLoader
 
 from pyannote.audio import Pipeline
@@ -112,9 +113,9 @@ def voice_activity_detection_stream(
                 task_text = f"{text} [{focus.start:.1f}, {focus.end:.1f}]"
                 waveform, sr = raw_audio.crop(file, focus)
                 if waveform.shape[1] != SAMPLE_RATE * chunk:
-                    waveform = waveform.pad(
+                    waveform = F.pad(
                         input=waveform,
-                        pad=(0, SAMPLE_RATE * chunk - waveform.shape[1]),
+                        pad=(0, int(SAMPLE_RATE * chunk - waveform.shape[1])),
                         mode="constant",
                         value=0,
                     )
@@ -198,21 +199,24 @@ def voice_activity_detection(
                 "min_duration_off": 0.067,
             }
         )
+        labels = vad.classes()
 
     elif pipeline.lower() == "NONE":
         vad = None
+        labels = "SPEECH"
     else:
         vad = Pipeline.from_pretrained(pipeline)
+        labels = vad.classes()
 
     dirname = os.path.dirname(os.path.realpath(__file__))
 
-    controller_js = dirname + "/wavesurferControler.js"
+    controller_js = dirname + "/../wavesurferControler.js"
     with open(controller_js) as txt:
         javascript = txt.read()
 
-    template = dirname + "/instructions.html"
-    png = dirname + "/commands.png"
-    html = dirname + "/help.html"
+    template = dirname + "/../instructions.html"
+    png = dirname + "/../commands.png"
+    html = dirname + "/../help.html"
 
     with open(html, "w") as fp, open(template, "r") as fp_tpl, open(
         png, "rb"
@@ -240,7 +244,7 @@ def voice_activity_detection(
             "audio_bar_width": 0,
             "audio_bar_height": 1,
             "show_flag": True,
-            "labels": ["SPEECH"],
+            "labels": labels,
             "precision": precision,
             "beep": beep,
         },
