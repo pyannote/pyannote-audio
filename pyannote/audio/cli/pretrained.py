@@ -22,12 +22,10 @@
 
 
 from typing import Text
-
 from pyannote.audio import Model
-from pyannote.audio.core.task import Task
 
 
-def pretrained(checkpoint: Text, task: Task = None):
+def pretrained(checkpoint: Text):
     return Model.from_pretrained(
-        checkpoint, task=task, map_location=lambda storage, loc: storage
+        checkpoint, map_location=lambda storage, loc: storage
     )

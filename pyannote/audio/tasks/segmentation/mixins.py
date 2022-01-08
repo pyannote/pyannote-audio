@@ -192,8 +192,7 @@ class SegmentationTaskMixin:
         sample["X"], _ = self.model.audio.crop(
             file,
             chunk,
-            mode="center",
-            fixed=self.duration if duration is None else duration,
+            duration=self.duration if duration is None else duration,
         )
 
         # ==================================================================

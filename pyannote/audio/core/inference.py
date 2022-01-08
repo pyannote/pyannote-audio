@@ -20,9 +20,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import math
 import warnings
 from pathlib import Path
-from typing import Any, Callable, List, Optional, Text, Union
+from typing import Any, Callable, List, Optional, Text, Tuple, Union
 
 import numpy as np
 import torch
@@ -32,6 +33,7 @@ from pytorch_lightning.utilities.memory import is_oom_error
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Resolution
+from pyannote.audio.utils.permutation import mae_cost_func, permutate
 from pyannote.audio.utils.progress import InferenceProgressHook
 from pyannote.core import Segment, SlidingWindow, SlidingWindowFeature
 
@@ -289,54 +291,23 @@ class Inference:
 
         if self.pre_aggregation_hook is not None:
             outputs = self.pre_aggregation_hook(outputs)
-            _, _, dimension = outputs.shape
 
-        # Hamming window used for overlap-add aggregation
-        window = np.hamming(num_frames_per_chunk).reshape(-1, 1)
-
-        # anything before warm_up_left (and after num_frames_per_chunk - warm_up_right)
-        # will not be used in the final aggregation
-
-        # warm-up windows used for overlap-add aggregation
-        warm_up = np.ones((num_frames_per_chunk, 1))
-        # anything before warm_up_left will not contribute to aggregation
-        warm_up_left = round(self.warm_up[0] / self.duration * num_frames_per_chunk)
-        warm_up[:warm_up_left] = 1e-12
-        # anything after num_frames_per_chunk - warm_up_right either
-        warm_up_right = round(self.warm_up[1] / self.duration * num_frames_per_chunk)
-        warm_up[num_frames_per_chunk - warm_up_right :] = 1e-12
-
-        # aggregated_output[i] will be used to store the sum of all predictions
-        # for frame #i
-        num_frames = frames.closest_frame(self.duration + num_chunks * self.step) + 1
-        aggregated_output: np.ndarray = np.zeros(
-            (num_frames, dimension), dtype=np.float32
+        aggregated = self.aggregate(
+            SlidingWindowFeature(
+                outputs,
+                SlidingWindow(start=0.0, duration=self.duration, step=self.step),
+            ),
+            frames=frames,
+            warm_up=self.warm_up,
+            hamming=True,
+            missing=0.0,
         )
-
-        # overlapping_chunk_count[i] will be used to store the number of chunks
-        # that contributed to frame #i
-        overlapping_chunk_count: np.ndarray = np.zeros(
-            (num_frames, 1), dtype=np.float32
-        )
-
-        # loop on the outputs of sliding chunks
-        for c, output in enumerate(outputs):
-            start_frame = frames.closest_frame(c * self.step)
-            aggregated_output[start_frame : start_frame + num_frames_per_chunk] += (
-                output * window * warm_up
-            )
-
-            overlapping_chunk_count[
-                start_frame : start_frame + num_frames_per_chunk
-            ] += (window * warm_up)
 
         if has_last_chunk:
-            aggregated_output = aggregated_output[: num_frames - pad, :]
-            overlapping_chunk_count = overlapping_chunk_count[: num_frames - pad, :]
+            num_frames = aggregated.data.shape[0]
+            aggregated.data = aggregated.data[: num_frames - pad, :]
 
-        return SlidingWindowFeature(
-            aggregated_output / np.maximum(overlapping_chunk_count, 1e-12), frames
-        )
+        return aggregated
 
     def __call__(self, file: AudioFile) -> Union[SlidingWindowFeature, np.ndarray]:
         """Run inference on a whole file
@@ -365,7 +336,7 @@ class Inference:
         self,
         file: AudioFile,
         chunk: Union[Segment, List[Segment]],
-        fixed: Optional[float] = None,
+        duration: Optional[float] = None,
     ) -> Union[SlidingWindowFeature, np.ndarray]:
         """Run inference on a chunk or a list of chunks
 
@@ -379,12 +350,10 @@ class Inference:
             the smallest chunk that contains all chunks. In case window is set
             to "whole", this is equivalent to concatenating each chunk into one
             (artifical) chunk before processing it.
-        fixed : float, optional
+        duration : float, optional
             Enforce chunk duration (in seconds). This is a hack to avoid rounding
             errors that may result in a different number of audio samples for two
             chunks of the same duration.
-
-        # TODO: document "fixed" better in pyannote.audio.core.io.Audio
 
         Returns
         -------
@@ -409,7 +378,9 @@ class Inference:
                 end = max(c.end for c in chunk)
                 chunk = Segment(start=start, end=end)
 
-            waveform, sample_rate = self.model.audio.crop(file, chunk, fixed=fixed)
+            waveform, sample_rate = self.model.audio.crop(
+                file, chunk, duration=duration
+            )
             output = self.slide(waveform, sample_rate)
 
             frames = output.sliding_window
@@ -421,7 +392,9 @@ class Inference:
         elif self.window == "whole":
 
             if isinstance(chunk, Segment):
-                waveform, sample_rate = self.model.audio.crop(file, chunk, fixed=fixed)
+                waveform, sample_rate = self.model.audio.crop(
+                    file, chunk, duration=duration
+                )
             else:
                 waveform = torch.cat(
                     [self.model.audio.crop(file, c)[0] for c in chunk], dim=1
@@ -433,3 +406,304 @@ class Inference:
             raise NotImplementedError(
                 f"Unsupported window type '{self.window}': should be 'sliding' or 'whole'."
             )
+
+    @staticmethod
+    def aggregate(
+        scores: SlidingWindowFeature,
+        frames: SlidingWindow = None,
+        warm_up: Tuple[float, float] = (0.0, 0.0),
+        epsilon: float = 1e-12,
+        hamming: bool = False,
+        missing: float = np.NaN,
+        skip_average: bool = False,
+    ) -> SlidingWindowFeature:
+        """Aggregation
+
+        Parameters
+        ----------
+        scores : SlidingWindowFeature
+            Raw (unaggregated) scores. Shape is (num_chunks, num_frames_per_chunk, num_classes).
+        frames : SlidingWindow, optional
+            Frames resolution. Defaults to estimate it automatically based on `scores` shape
+            and chunk size. Providing the exact frame resolution (when known) leads to better
+            temporal precision.
+        warm_up : (float, float) tuple, optional
+            Left/right warm up duration (in seconds).
+        missing : float, optional
+            Value used to replace missing (ie all NaNs) values.
+        skip_average : bool, optional
+            Skip final averaging step.
+
+        Returns
+        -------
+        aggregated_scores : SlidingWindowFeature
+            Aggregated scores. Shape is (num_frames, num_classes)
+        """
+
+        num_chunks, num_frames_per_chunk, num_classes = scores.data.shape
+
+        chunks = scores.sliding_window
+        if frames is None:
+            duration = step = chunks.duration / num_frames_per_chunk
+            frames = SlidingWindow(start=chunks.start, duration=duration, step=step)
+        else:
+            frames = SlidingWindow(
+                start=chunks.start,
+                duration=frames.duration,
+                step=frames.step,
+            )
+
+        masks = 1 - np.isnan(scores)
+        scores.data = np.nan_to_num(scores.data, copy=True, nan=0.0)
+
+        # Hamming window used for overlap-add aggregation
+        hamming_window = (
+            np.hamming(num_frames_per_chunk).reshape(-1, 1)
+            if hamming
+            else np.ones((num_frames_per_chunk, 1))
+        )
+
+        # anything before warm_up_left (and after num_frames_per_chunk - warm_up_right)
+        # will not be used in the final aggregation
+
+        # warm-up windows used for overlap-add aggregation
+        warm_up_window = np.ones((num_frames_per_chunk, 1))
+        # anything before warm_up_left will not contribute to aggregation
+        warm_up_left = round(
+            warm_up[0] / scores.sliding_window.duration * num_frames_per_chunk
+        )
+        warm_up_window[:warm_up_left] = epsilon
+        # anything after num_frames_per_chunk - warm_up_right either
+        warm_up_right = round(
+            warm_up[1] / scores.sliding_window.duration * num_frames_per_chunk
+        )
+        warm_up_window[num_frames_per_chunk - warm_up_right :] = epsilon
+
+        # aggregated_output[i] will be used to store the sum of all predictions
+        # for frame #i
+        num_frames = (
+            frames.closest_frame(
+                scores.sliding_window.start
+                + scores.sliding_window.duration
+                + (num_chunks - 1) * scores.sliding_window.step
+            )
+            + 1
+        )
+        aggregated_output: np.ndarray = np.zeros(
+            (num_frames, num_classes), dtype=np.float32
+        )
+
+        # overlapping_chunk_count[i] will be used to store the number of chunks
+        # that contributed to frame #i
+        overlapping_chunk_count: np.ndarray = np.zeros(
+            (num_frames, num_classes), dtype=np.float32
+        )
+
+        # aggregated_mask[i] will be used to indicate whether
+        # at least one non-NAN frame contributed to frame #i
+        aggregated_mask: np.ndarray = np.zeros(
+            (num_frames, num_classes), dtype=np.float32
+        )
+
+        # loop on the scores of sliding chunks
+        for (chunk, score), (_, mask) in zip(scores, masks):
+            # chunk ~ Segment
+            # score ~ (num_frames_per_chunk, num_classes)-shaped np.ndarray
+            # mask ~ (num_frames_per_chunk, num_classes)-shaped np.ndarray
+
+            start_frame = frames.closest_frame(chunk.start)
+            aggregated_output[start_frame : start_frame + num_frames_per_chunk] += (
+                score * mask * hamming_window * warm_up_window
+            )
+
+            overlapping_chunk_count[
+                start_frame : start_frame + num_frames_per_chunk
+            ] += (mask * hamming_window * warm_up_window)
+
+            aggregated_mask[
+                start_frame : start_frame + num_frames_per_chunk
+            ] = np.maximum(
+                aggregated_mask[start_frame : start_frame + num_frames_per_chunk],
+                mask,
+            )
+
+        if skip_average:
+            average = aggregated_output
+        else:
+            average = aggregated_output / np.maximum(overlapping_chunk_count, epsilon)
+
+        average[aggregated_mask == 0.0] = missing
+
+        return SlidingWindowFeature(average, frames)
+
+    @staticmethod
+    def trim(
+        scores: SlidingWindowFeature,
+        warm_up: Tuple[float, float] = (0.1, 0.1),
+    ) -> SlidingWindowFeature:
+        """Trim left and right warm-up regions
+
+        Parameters
+        ----------
+        scores : SlidingWindowFeature
+            (num_chunks, num_frames, num_classes)-shaped scores.
+        warm_up : (float, float) tuple
+            Left/right warm up ratio of chunk duration.
+            Defaults to (0.1, 0.1), i.e. 10% on both sides.
+
+        Returns
+        -------
+        trimmed : SlidingWindowFeature
+            (num_chunks, trimmed_num_frames, num_speakers)-shaped scores
+        """
+
+        assert (
+            scores.data.ndim == 3
+        ), "Inference.trim expects (num_chunks, num_frames, num_classes)-shaped `scores`"
+        _, num_frames, _ = scores.data.shape
+
+        chunks = scores.sliding_window
+
+        num_frames_left = round(num_frames * warm_up[0])
+        num_frames_right = round(num_frames * warm_up[1])
+        num_frames_step = round(num_frames * chunks.step / chunks.duration)
+        assert (
+            num_frames - num_frames_left - num_frames_right > num_frames_step
+        ), f"Total `warm_up` is so large ({sum(warm_up) * 100:g}% of each chunk) that resulting trimmed scores does not cover a whole step ({chunks.step:g}s)"
+        new_data = scores.data[:, num_frames_left : num_frames - num_frames_right]
+
+        new_chunks = SlidingWindow(
+            start=chunks.start + warm_up[0] * chunks.duration,
+            step=chunks.step,
+            duration=(1 - warm_up[0] - warm_up[1]) * chunks.duration,
+        )
+
+        return SlidingWindowFeature(new_data, new_chunks)
+
+    @staticmethod
+    def stitch(
+        activations: SlidingWindowFeature,
+        frames: SlidingWindow = None,
+        lookahead: Optional[Tuple[int, int]] = None,
+        cost_func: Callable[[torch.Tensor, torch.Tensor], torch.Tensor] = None,
+        match_func: Callable[[np.ndarray, np.ndarray, float], bool] = None,
+    ) -> SlidingWindowFeature:
+        """
+
+        Parameters
+        ----------
+        activations : SlidingWindowFeature
+            (num_chunks, num_frames, num_classes)-shaped scores.
+        frames : SlidingWindow, optional
+            Frames resolution. Defaults to estimate it automatically based on `activations`
+            shape and chunk size. Providing the exact frame resolution (when known) leads to better
+            temporal precision.
+        lookahead : (int, int) tuple
+            Number of past and future adjacent chunks to use for stitching.
+            Defaults to (k, k) with k = chunk_duration / chunk_step - 1
+        cost_func : callable
+            Cost function used to find the optimal mapping between chunks.
+            Defaults to mean absolute error (utils.permutations.mae_cost_func)
+        match_func : callable
+        """
+
+        num_chunks, num_frames, num_classes = activations.data.shape
+
+        chunks: SlidingWindow = activations.sliding_window
+
+        if frames is None:
+            duration = step = chunks.duration / num_frames
+            frames = SlidingWindow(start=chunks.start, duration=duration, step=step)
+        else:
+            frames = SlidingWindow(
+                start=chunks.start,
+                duration=frames.duration,
+                step=frames.step,
+            )
+
+        max_lookahead = math.floor(chunks.duration / chunks.step - 1)
+        if lookahead is None:
+            lookahead = 2 * (max_lookahead,)
+
+        assert all(L <= max_lookahead for L in lookahead)
+
+        if cost_func is None:
+            cost_func = mae_cost_func
+
+        if match_func is None:
+
+            def always_match(this: np.ndarray, that: np.ndarray, cost: float):
+                return True
+
+            match_func = always_match
+
+        stitches = []
+        for C, (chunk, activation) in enumerate(activations):
+
+            local_stitch = np.NAN * np.zeros(
+                (sum(lookahead) + 1, num_frames, num_classes)
+            )
+
+            for c in range(
+                max(0, C - lookahead[0]), min(num_chunks, C + lookahead[1] + 1)
+            ):
+
+                # extract common temporal support
+                shift = round((C - c) * num_frames * chunks.step / chunks.duration)
+
+                if shift < 0:
+                    shift = -shift
+                    this_activations = activation[shift:]
+                    that_activations = activations[c, : num_frames - shift]
+                else:
+                    this_activations = activation[: num_frames - shift]
+                    that_activations = activations[c, shift:]
+
+                # find the optimal one-to-one mapping
+                _, (permutation,), (cost,) = permutate(
+                    this_activations[np.newaxis],
+                    that_activations,
+                    cost_func=cost_func,
+                    return_cost=True,
+                )
+
+                for this, that in enumerate(permutation):
+
+                    # only stitch under certain condiditions
+                    matching = (c == C) or (
+                        match_func(
+                            this_activations[:, this],
+                            that_activations[:, that],
+                            cost[this, that],
+                        )
+                    )
+
+                    if matching:
+                        local_stitch[c - C + lookahead[0], :, this] = activations[
+                            c, :, that
+                        ]
+
+                    # TODO: do not lookahead further once a mismatch is found
+
+            stitched_chunks = SlidingWindow(
+                start=chunk.start - lookahead[0] * chunks.step,
+                duration=chunks.duration,
+                step=chunks.step,
+            )
+
+            local_stitch = Inference.aggregate(
+                SlidingWindowFeature(local_stitch, stitched_chunks),
+                frames=frames,
+                hamming=True,
+            )
+
+            stitches.append(local_stitch.data)
+
+        stitches = np.stack(stitches)
+        stitched_chunks = SlidingWindow(
+            start=chunks.start - lookahead[0] * chunks.step,
+            duration=chunks.duration + sum(lookahead) * chunks.step,
+            step=chunks.step,
+        )
+
+        return SlidingWindowFeature(stitches, stitched_chunks)

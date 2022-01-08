@@ -134,6 +134,20 @@ class VoiceActivityDetection(Pipeline):
         self.min_duration_on = Uniform(0.0, 1.0)
         self.min_duration_off = Uniform(0.0, 1.0)
 
+    def default_parameters(self):
+        # parameters optimized on DIHARD 3 development set
+        if self.segmentation == "pyannote/segmentation":
+            return {
+                "onset": 0.767,
+                "offset": 0.377,
+                "min_duration_on": 0.136,
+                "min_duration_off": 0.067,
+            }
+        raise NotImplementedError()
+
+    def classes(self):
+        return ["SPEECH"]
+
     def initialize(self):
         """Initialize pipeline with current set of parameters"""
 
@@ -166,9 +180,9 @@ class VoiceActivityDetection(Pipeline):
         else:
             file[self.CACHED_ACTIVATIONS] = self.segmentation_inference_(file)
 
-        speech = self._binarize(file[self.CACHED_ACTIVATIONS])
+        speech: Annotation = self._binarize(file[self.CACHED_ACTIVATIONS])
         speech.uri = file["uri"]
-        return speech
+        return speech.rename_labels({label: "SPEECH" for label in speech.labels()})
 
     def get_metric(self) -> Union[DetectionErrorRate, DetectionPrecisionRecallFMeasure]:
         """Return new instance of detection metric"""
@@ -311,7 +325,7 @@ class AdaptiveVoiceActivityDetection(Pipeline):
                 max_epochs=self.num_epochs,
                 gpus=1,
                 callbacks=[GraduallyUnfreeze(epochs_per_stage=self.num_epochs + 1)],
-                checkpoint_callback=False,
+                enable_checkpointing=False,
                 default_root_dir=default_root_dir,
             )
             trainer.fit(vad_model)
