@@ -67,8 +67,8 @@ pip install https://github.com/pyannote/pyannote-audio/archive/develop.zip
     - Available tasks explained
     - [Training, fine-tuning, and transfer learning](tutorials/training_a_model.ipynb)
 - Contributing
-    - Adding a new model
-    - Adding a new task
+    - [Adding a new model](tutorials/add_your_own_model.ipynb)
+    - [Adding a new task](tutorials/add_your_own_task.ipynb)
     - Adding a new pipeline
     - Sharing pretrained models and pipelines
 - Miscellaneous
