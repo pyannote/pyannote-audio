@@ -56,13 +56,13 @@ pip install https://github.com/pyannote/pyannote-audio/archive/develop.zip
 ## Documentation
 
 - Models
-    - [Applying a pretrained model](tutorials/applying_a_model.ipynb)
     - Available tasks explained
+    - [Applying a pretrained model](tutorials/applying_a_model.ipynb)
     - [Training, fine-tuning, and transfer learning](tutorials/training_a_model.ipynb)
 - Pipelines
+    - Available pipelines explained
     - [Applying a pretrained pipeline](tutorials/applying_a_pipeline.ipynb)
     - [Training a pipeline](tutorials/voice_activity_detection.ipynb)
-    - Available pipelines explained
 - Contributing
     - [Adding a new model](tutorials/add_your_own_model.ipynb)
     - [Adding a new task](tutorials/add_your_own_task.ipynb)
