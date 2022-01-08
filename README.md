@@ -63,7 +63,7 @@ pip install https://github.com/pyannote/pyannote-audio/archive/develop.zip
     - Pipelines illustrated
     - Tuning a pretrained pipeline
 - Models
-    - Applying a pretrained model
+    - [Applying a pretrained model](tutorials/applying_a_model.ipynb)
     - Available tasks explained
     - [Training, fine-tuning, and transfer learning](tutorials/training_a_model.ipynb)
 - Contributing
