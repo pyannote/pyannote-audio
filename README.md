@@ -9,9 +9,6 @@
 
 ## TL;DR
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pyannote/pyannote-audio/blob/master/notebooks/introduction_to_pyannote_audio_speaker_diarization_toolkit.ipynb)
-
-
 ```python
 # instantiate pretrained speaker diarization pipeline
 from pyannote.audio import Pipeline
