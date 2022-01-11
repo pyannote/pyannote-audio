@@ -146,7 +146,9 @@ async function wait(){
 }
 
 document.addEventListener('prodigyanswer', async() => {
+  var objectURL = await createURL();
   for(var i=0; i < numberAnnotations;i++){
+      window['wavesurfer'+i].load(objectURL);
       window['wavesurfer'+i].clearRegions();
   }
   loadRegions();

@@ -1,9 +1,11 @@
 import base64
 import os
-from typing import Any, Dict, Iterable, List
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Union
 
 import prodigy
 import torch.nn.functional as F
+from prodigy.components.loaders import Audio as AudioLoader
 from prodigy.util import split_string
 
 from pyannote.audio.core.io import Audio
@@ -21,17 +23,19 @@ from ..utils import (
 
 
 def annotation_correction_stream(
+    source: Path,
     annotations: [dict],
     chunk: float = 10.0,
 ) -> Iterable[Dict]:
 
     raw_audio = Audio(sample_rate=SAMPLE_RATE, mono=True)
 
-    for annotation in annotations[0].keys():
+    for audio_source in AudioLoader(source):
 
-        path = annotation
-        text = annotation
-        file = {"uri": text, "audio": path}
+        path = audio_source["path"]
+        text = audio_source["text"]
+        name = audio_source["meta"]["file"]
+        file = {"uri": text, "audio": path, "database": source}
 
         duration = raw_audio.get_duration(file)
         file["duration"] = duration
@@ -43,9 +47,9 @@ def annotation_correction_stream(
             list_annotations = []
             labels = []
             for ann in annotations:
-                if annotation in annotations:
-                    list_annotations.append(to_audio_spans(ann[annotation]))
-                    labels += ann[annotation].labels()
+                if name in annotations:
+                    list_annotations.append(to_audio_spans(ann[name]))
+                    labels += ann[name].labels()
             labels = list(dict.fromkeys(labels))
 
             yield {
@@ -75,8 +79,8 @@ def annotation_correction_stream(
                 list_annotations = []
                 labels = []
                 for ann in annotations:
-                    if annotation in ann:
-                        sa = ann[annotation].crop(focus, mode="intersection")
+                    if name in ann:
+                        sa = ann[name].crop(focus, mode="intersection")
                         spans = to_audio_spans(sa, focus=focus)
                         list_annotations.append(spans)
                         labels += sa.labels()
@@ -100,6 +104,12 @@ def annotation_correction_stream(
 @prodigy.recipe(
     "audio.correction",
     dataset=("Dataset to save annotations to", "positional", None, str),
+    source=(
+        "Path to directory containing audio files whose annotation is to be checked",
+        "positional",
+        None,
+        str,
+    ),
     annotations=(
         "Comma-separated paths to annotation files ",
         "positional",
@@ -117,6 +127,7 @@ def annotation_correction_stream(
 )
 def annotation_correction(
     dataset: str,
+    source: Union[str, Iterable[dict]],
     annotations: [List[str]],
     chunk: float = 10.0,
     precision: int = 100,
@@ -160,7 +171,7 @@ def annotation_correction(
     return {
         "view_id": "blocks",
         "dataset": dataset,
-        "stream": annotation_correction_stream(list_annotations, chunk=chunk),
+        "stream": annotation_correction_stream(source, list_annotations, chunk=chunk),
         "before_db": remove_audio_before_db,
         "config": {
             "global_css": templateC,

@@ -30,6 +30,27 @@ if(document.readyState !== 'loading') {
     });
 }
 
+function colorErrors(r){
+    s = r.start;
+    e = r.end;
+    switch(r.label) {
+      case "missed detection":
+        color = "rgba(85, 0, 255, 0.2)"
+        break;
+      case "confusion":
+        color = "rgba(0, 255, 245, 0.2)"
+        break;
+      case "false alarm":
+        color = "rgba(255, 0, 0, 0.2)";
+        break;
+      default:
+        color = r.color;
+        break;
+    }
+    r.remove();
+    window.wavesurfer.addRegion({"start" : s, "end" :e, 'color' : color});
+}
+
 function loadRegions(){
     for(var i=0; i < numberAnnotations;i++){
         (i == 0)? (regions = window.prodigy.content.reference) : (regions = window.prodigy.content.hypothesis)
@@ -52,7 +73,6 @@ async function createURL(){
 
 async function loadWave(){
     var objectURL = await createURL();
-    //wavesurfer1 = WaveSurfer.create({
     var wdict = {
         container: window.wavesurfer.container,
         audioRate: 1,
@@ -93,10 +113,6 @@ async function loadWave(){
         window['wavesurfer'+i] = WaveSurfer.create(wdict);
         window['wavesurfer'+i].load(objectURL);
         window['wavesurfer'+i].setMute(true);
-        window['wavesurfer'+i].on('region-click',function(e){
-            var re = window.wavesurfer.addRegion({'start' : e.start,'end' : e.end,'color' : e.color});
-            window.wavesurfer.fireEvent('region-update-end',re);
-        });
     }
     var l = document.querySelector('wave').appendChild(document.createElement("span"));
     l.textContent= "Errors";
@@ -107,7 +123,6 @@ async function loadWave(){
       nodeList[i].style.backgroundColor = "#0000000a";
       l = nodeList[i].appendChild(document.createElement("span"));
       (i == 0)? (l.textContent = "Reference") : (l.textContent = "Hypothesis")
-      //l.textContent= "Input "+(i+1);
       l.className = "title-wave";
     }
 }
@@ -116,6 +131,12 @@ async function waitForElement(){
     if(document.querySelector('#track') !== null){
         await loadWave();
         loadRegions();
+        window.wavesurfer.on('region-created', function(e){
+          setTimeout(function(){
+            if("label" in e){
+              colorErrors(e);
+            }},5);
+        });
         window.wavesurfer.on('audioprocess', function(e){
           var time = e / window.wavesurfer.getDuration();
           for(var i=0; i < numberAnnotations;i++){
@@ -148,10 +169,13 @@ async function waitForElement(){
 }
 
 document.addEventListener('prodigyanswer', async() => {
+  var objectURL = await createURL();
   for(var i=0; i < numberAnnotations;i++){
+      window['wavesurfer'+i].load(objectURL);
       window['wavesurfer'+i].clearRegions();
   }
   loadRegions();
+  setTimeout(function(){ colorErrors();},100);
 });
 
 function addRegionLabelTest(e,t,n){
