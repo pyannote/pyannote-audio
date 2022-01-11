@@ -25,7 +25,7 @@ from .segmentation.speaker_change_detection import SpeakerChangeDetection  # iso
 from .segmentation.overlapped_speech_detection import (  # isort:skip
     OverlappedSpeechDetection,
 )
-from .segmentation.voice_type_classification import VoiceTypeClassification # isort:skip
+from .segmentation.voice_type_classification import VoiceTypeClassification  # isort:skip
 
 from .segmentation.speaker_tracking import SpeakerTracking  # isort:skip
 
