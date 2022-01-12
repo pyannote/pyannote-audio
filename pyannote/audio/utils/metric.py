@@ -35,18 +35,20 @@ def discrete_diarization_error_rate(reference: np.ndarray, hypothesis: np.ndarra
 
     Parameters
     ----------
-    reference, hypothesis : (num_frames, num_speakers) np.ndarray
-        Binary reference (and hypothesis) annotation.
+    reference : (num_frames, num_speakers) np.ndarray
+        Discretized reference diarization.
         reference[f, s] = 1 if sth speaker is active at frame f, 0 otherwise
     hypothesis : (num_frames, num_speakers) np.ndarray
-        Binary hypothesized diarization.
-
+        Discretized hypothesized diarization.
+       hypothesis[f, s] = 1 if sth speaker is active at frame f, 0 otherwise
+ 
     Returns
     -------
     der : float
         (false_alarm + missed_detection + confusion) / total
     components : dict
         Diarization error rate components, in number of frames.
+        Keys are "false alarm", "missed detection", "confusion", and "total".
     """
 
     reference = reference.astype(np.half)
