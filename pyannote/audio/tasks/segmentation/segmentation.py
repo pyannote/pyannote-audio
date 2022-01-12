@@ -140,6 +140,8 @@ class Segmentation(SegmentationTaskMixin, Task):
 
         if self.max_num_speakers is None:
 
+            # TODO: optimize this
+
             # slide a window (with 1s step) over the whole training set
             # and keep track of the number of speakers in each location
             num_speakers = []
@@ -377,138 +379,29 @@ class Segmentation(SegmentationTaskMixin, Task):
         permutated_y_pred, _ = permutate(y, y_pred)
         return permutated_y_pred
 
-    @classmethod
-    def test_metric(cls, reference: np.ndarray, hypothesis: np.ndarray):
-        """Discrete diarization error rate
 
-        Parameters
-        ----------
-        reference, hypothesis : (num_frames, num_speakers) np.ndarray
-            Binary reference (and hypothesis) annotation.
-            reference[f, s] = 1 if sth speaker is active at frame f, 0 otherwise
-        hypothesis : (num_frames, num_speakers) np.ndarray
-            Binary hypothesized diarization.
+def main(
+    protocol: str, subset: str = "test", segmentation: str = "pyannote/segmentation"
+):
+    """Evaluate a pretrained segmentation model on a given protocol"""
 
-        Returns
-        -------
-        der : float
-            (false_alarm + missed_detection + confusion) / total
-        false_alarm, missed_detection, confusion, total : float
-            Diarization error rate components, in number of frames.
-        """
+    from pyannote.audio.pipelines.segmentation import (
+        Segmentation as SegmentationPipeline,
+    )
+    from pyannote.audio.utils.metric import DiscreteDiarizationErrorRate
+    from pyannote.core import SlidingWindowFeature
 
-        # permutate hypothesis to maximize similarity to reference
-        (hypothesis,), _ = permutate(reference[np.newaxis], hypothesis)
+    pipeline = SegmentationPipeline(segmentation=segmentation, stitch=False)
+    metric = DiscreteDiarizationErrorRate()
 
-        # total speech duration (in number of frames)
-        total = 1.0 * np.sum(reference)
+    for file in getattr(protocol, subset)():
+        hypothesis: SlidingWindowFeature = pipeline(file)
+        _ = metric(file["annotation"], hypothesis)
 
-        # false alarm and missed detection (in number of frames)
-        detection_error = np.sum(hypothesis, axis=1) - np.sum(reference, axis=1)
-        false_alarm = np.maximum(0, detection_error)
-        missed_detection = np.maximum(0, -detection_error)
+    _ = metric.report(display=True)
 
-        # speaker confusion (in number of frames)
-        confusion = np.sum((hypothesis != reference) * hypothesis, axis=1) - false_alarm
 
-        false_alarm = np.sum(false_alarm)
-        missed_detection = np.sum(missed_detection)
-        confusion = np.sum(confusion)
+if __name__ == "__main__":
+    import typer
 
-        der = (false_alarm + missed_detection + confusion) / total
-
-        return der, false_alarm, missed_detection, confusion, total
-
-    def test(
-        self, model: Model, protocol: Protocol, subset: Subset = "test",
-    ):
-        """Evaluate a pretrained segmentation model 
-        
-        Computes and aggregates local diarization error rate
-
-        * slides a window over the whole test set (with a .5 x duration step)
-        * runs the model on each window
-        * binarizes its output (using arbitrary .5 onset/offset thresholds)
-        * computes false alarm, missed detection, speaker confusion (in number of frames)
-        * aggregates those numbers over the whole test set to compute the final DER
-
-        The returned number is not a **global** diarization error rate as it is computed 
-        locally to each window.
-
-        Parameters
-        ----------
-        model : Model
-            Pretrained segmentation model
-        protocol : Protocol
-            Speaker diarization protocol.
-        subset : {"train", "development", "test"}, optional
-            Subset to use for evaluation. Defaults to "test".
-
-        Returns
-        -------
-        der : float
-            Local diarization error rate
-        false_alarm : float
-            False alarm rate.
-        missed_detection : float
-            Missed detection rate
-        confusion : float
-            Speaker confusion rate
-        total : float
-            (Appromximated) total speech duration, in seconds.
-        """
-
-        duration = model.specifications.duration
-        resolution = model.introspection.frames
-        inference = Inference(model, duration=duration, step=0.5 * duration)
-
-        total, false_alarm, missed_detection, confusion = (
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-        )
-
-        for file in getattr(protocol, subset)():
-
-            hypotheses = binarize(inference(file), onset=0.5, offset=0.5)
-            num_chunks, num_frames, num_speakers = hypotheses.data.shape
-            support = Segment(
-                hypotheses.sliding_window[0].start,
-                hypotheses.sliding_window[num_chunks - 1].end,
-            )
-            references = file["annotation"].discretize(support, resolution=resolution)
-            _, num_speakers_ref = references.data.shape
-            if num_speakers_ref > num_speakers:
-                hypotheses.data = np.pad(
-                    hypotheses.data,
-                    ((0, 0), (0, 0), (0, num_speakers_ref - num_speakers)),
-                )
-            elif num_speakers > num_speakers_ref:
-                references.data = np.pad(
-                    references.data, ((0, 0), (0, num_speakers - num_speakers_ref))
-                )
-
-            for window, hypothesis in hypotheses:
-                reference = references.crop(window)[:num_frames]
-
-                (
-                    _,
-                    _false_alarm,
-                    _missed_detection,
-                    _confusion,
-                    _total,
-                ) = self.test_metric(reference, hypothesis,)
-
-                false_alarm += _false_alarm
-                missed_detection += _missed_detection
-                confusion += _confusion
-                total += _total
-
-        false_alarm /= total
-        missed_detection /= total
-        confusion /= total
-
-        der = false_alarm + missed_detection + confusion
-
-        return der, false_alarm, missed_detection, confusion, total * resolution.step
+    typer.run(main)
