@@ -6,7 +6,7 @@
 - data augmentation with [torch-audiomentations](https://github.com/asteroid-team/torch-audiomentations)
 - [huggingface](https://huggingface.co/pyannote) model hosting
 - [prodigy](https://prodi.gy) recipes for audio annotations
-- online [demo](https://huggingface.co/spaces/pyannote/segmentation) based on [streamlit](https://www.streamlit.io)
+- online [demo](https://huggingface.co/spaces/pyannote/pretrained-pipelines) based on [streamlit](https://www.streamlit.io)
 
 # Neural speaker diarization with `pyannote-audio`
 
