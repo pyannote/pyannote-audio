@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Any, Dict, Iterable, Union
+from typing import Any, Dict, Iterable, List, Union
 
 import prodigy
 import torch.nn.functional as F
@@ -8,7 +8,7 @@ from prodigy.components.loaders import Audio as AudioLoader
 
 from pyannote.audio.core.io import Audio
 from pyannote.audio.pipelines import SpeakerDiarization
-from pyannote.core import Annotation, Segment, Timeline
+from pyannote.core import Annotation, Segment
 from pyannote.database import util
 from pyannote.metrics.errors.identification import IdentificationErrorAnalysis
 
@@ -26,6 +26,7 @@ def annotation_errors_stream(
     source: Path,
     reference: dict,
     hypothesis: dict,
+    listerrors: List,
     diarization: bool = False,
     chunk: float = 30.0,
     minduration: int = 200,
@@ -34,19 +35,23 @@ def annotation_errors_stream(
     raw_audio = Audio(sample_rate=SAMPLE_RATE, mono=True)
 
     # TODO : loop on sorted chunk from all the wav files from source
-    # Source as one file
-    for audio_source in AudioLoader(source):
+    if os.path.isdir(source):
+        listFiles = AudioLoader(source)
+    else:
+        name = os.path.basename(source).rsplit(".", 1)[0]
+        listFiles = [{"path": source, "text": name, "meta": {"file": source}}]
+
+    for audio_source in listFiles:
 
         path = audio_source["path"]
         text = audio_source["text"]
-        name = audio_source["meta"]["file"]
         file = {"uri": text, "audio": path}
 
         duration = raw_audio.get_duration(file)
         file["duration"] = duration
 
-        ref = reference[name]
-        hyp = hypothesis[name]
+        ref = reference[text]
+        hyp = hypothesis[text]
 
         if diarization:
             hyp: Annotation = SpeakerDiarization.optimal_mapping(ref, hyp)
@@ -59,11 +64,21 @@ def annotation_errors_stream(
             newLabels[(a, b, c)] = a
         errors = errors.rename_labels(newLabels)
         errors = errors.subset(["correct"], invert=True)
-        t = Timeline()
-        for s in errors.itersegments():
-            if s.duration * 1000 <= minduration:
-                t.add(s)
-        errors = errors.extrude(t, "strict")
+
+        if listerrors[0] or listerrors[1] or listerrors[2]:
+            if not listerrors[0]:
+                errors = errors.subset(["false alarm"], invert=True)
+            if not listerrors[1]:
+                errors = errors.subset(["confusion"], invert=True)
+            if not listerrors[2]:
+                errors = errors.subset(["missed detection"], invert=True)
+
+        clean_errors = Annotation()
+        for segment, track, label in errors.itertracks(yield_label=True):
+            if segment.duration * 1000 > minduration:
+                clean_errors[segment, track] = label
+
+        errors = clean_errors
 
         if duration <= chunk:
             waveform, sr = raw_audio.crop(file, Segment(0, duration))
@@ -76,8 +91,8 @@ def annotation_errors_stream(
                 "text": text,
                 "audio": task_audio,
                 "audio_spans": audio_spans,
-                "reference": reference[name],
-                "hypothesis": hypothesis[name],
+                "reference": reference[text],
+                "hypothesis": hypothesis[text],
                 "chunk": {"start": 0, "end": duration},
                 "meta": {"file": text},
             }
@@ -108,18 +123,18 @@ def annotation_errors_stream(
                 waveform = waveform.numpy().T
                 task_audio = to_base64(normalize(waveform), sample_rate=SAMPLE_RATE)
                 audio_spans = to_audio_spans(seg[0], focus=focus)
-                ref = reference[name].crop(focus, mode="intersection")
-                ref = to_audio_spans(ref, focus=focus)
-                hyp = hypothesis[name].crop(focus, mode="intersection")
-                hyp = to_audio_spans(hyp, focus=focus)
+                refe = ref.crop(focus, mode="intersection")
+                refe = to_audio_spans(refe, focus=focus)
+                hypo = hyp.crop(focus, mode="intersection")
+                hypo = to_audio_spans(hypo, focus=focus)
 
                 yield {
                     "path": path,
                     "text": task_text,
                     "audio": task_audio,
                     "audio_spans": audio_spans,
-                    "reference": ref,
-                    "hypothesis": hyp,
+                    "reference": refe,
+                    "hypothesis": hypo,
                     "meta": {
                         "file": text,
                         "start": f"{focus.start:.1f}",
@@ -152,6 +167,9 @@ def annotation_errors_stream(
         None,
         bool,
     ),
+    falsealarm=("Display false alarm errors", "flag", None, bool),
+    confusion=("Display confusion errors", "flag", None, bool),
+    misseddetection=("Display missed detection errors", "flag", None, bool),
 )
 def annotation_errors(
     dataset: str,
@@ -161,6 +179,9 @@ def annotation_errors(
     chunk: float = 30.0,
     minduration=200,
     diarization: bool = False,
+    falsealarm: bool = False,
+    confusion: bool = False,
+    misseddetection: bool = False,
 ) -> Dict[str, Any]:
 
     dirname = os.path.dirname(os.path.realpath(__file__))
@@ -186,6 +207,7 @@ def annotation_errors(
 
     ref = util.load_rttm(reference)
     hyp = util.load_rttm(hypothesis)
+    listerrors = [falsealarm, confusion, misseddetection]
 
     return {
         "view_id": "blocks",
@@ -194,6 +216,7 @@ def annotation_errors(
             source,
             ref,
             hyp,
+            listerrors,
             diarization=diarization,
             chunk=chunk,
             minduration=minduration,
@@ -205,7 +228,26 @@ def annotation_errors(
             "show_audio_minimap": False,
             "audio_bar_width": 0,
             "audio_bar_height": 1,
-            "custom_theme": {"cardMinHeight": 400},
+            "custom_theme": {
+                "cardMinHeight": 400,
+                "labels": {
+                    "false alarm": "#9932cc",
+                    "confusion": "#ff6347",
+                    "missed detection": "#00ffff",
+                },
+                "palettes": {
+                    "audio": [
+                        "#ffd700",
+                        "#00ffff",
+                        "#ff00ff",
+                        "#00ff00",
+                        "#9932cc",
+                        "#00bfff",
+                        "#ff7f50",
+                        "#66cdaa",
+                    ],
+                },
+            },
             "blocks": [
                 {"view_id": "html", "html_template": legend},
                 {"view_id": "audio"},

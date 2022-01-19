@@ -21,6 +21,11 @@
 // SOFTWARE.
 
 var numberAnnotations = 2;
+var colorList = [[],[]];
+var hex2rgba = (hex, alpha = 0.2) => {
+  const [r, g, b] = hex.match(/\w\w/g).map(x => parseInt(x, 16));
+  return `rgba(${r},${g},${b},${alpha})`;
+};
 
 if(document.readyState !== 'loading') {
     waitForElement();
@@ -30,33 +35,27 @@ if(document.readyState !== 'loading') {
     });
 }
 
-function colorErrors(r){
+function removeLabel(r){
     s = r.start;
     e = r.end;
-    switch(r.label) {
-      case "missed detection":
-        color = "rgba(85, 0, 255, 0.2)"
-        break;
-      case "confusion":
-        color = "rgba(0, 255, 245, 0.2)"
-        break;
-      case "false alarm":
-        color = "rgba(255, 0, 0, 0.2)";
-        break;
-      default:
-        color = r.color;
-        break;
-    }
+    c = r.color;
     r.remove();
-    window.wavesurfer.addRegion({"start" : s, "end" :e, 'color' : color});
+    window.wavesurfer.addRegion({"start" : s, "end" :e, 'color' : c});
 }
 
 function loadRegions(){
     for(var i=0; i < numberAnnotations;i++){
         (i == 0)? (regions = window.prodigy.content.reference) : (regions = window.prodigy.content.hypothesis)
         for (region in regions){
-            var re = window['wavesurfer'+i].addRegion({'start' : regions[region]['start'],'end' : regions[region]['end'],'color' : "rgba(255, 215, 0, 0.2)", 'resize' : false, 'drag' : false, "attributes": {"label":regions[region]['label']}});
-            addRegionLabelTest(re,regions[region]['label'],true);
+            var label = regions[region]['label'];
+            if (!(label in colorList[i])){
+              colorList[i].push(label);
+            }
+            var id = colorList[i].indexOf(label) % prodigy.config.custom_theme.palettes.audio.length;
+            var color = prodigy.config.custom_theme.palettes.audio[id];
+            color = hex2rgba(color);
+            var re = window['wavesurfer'+i].addRegion({'start' : regions[region]['start'],'end' : regions[region]['end'],'color' : color, 'resize' : false, 'drag' : false, "attributes": {"label":regions[region]['label']}});
+            addRegionLabelTest(re,label,true);
         }
     }
 }
@@ -132,11 +131,11 @@ async function waitForElement(){
         await loadWave();
         loadRegions();
         window.wavesurfer.on('region-created', function(e){
-          setTimeout(function(){
+         setTimeout(function(){
             if("label" in e){
-              colorErrors(e);
+              removeLabel(e);
             }},5);
-        });
+        })
         window.wavesurfer.on('audioprocess', function(e){
           var time = e / window.wavesurfer.getDuration();
           for(var i=0; i < numberAnnotations;i++){
@@ -175,7 +174,6 @@ document.addEventListener('prodigyanswer', async() => {
       window['wavesurfer'+i].clearRegions();
   }
   loadRegions();
-  setTimeout(function(){ colorErrors();},100);
 });
 
 function addRegionLabelTest(e,t,n){

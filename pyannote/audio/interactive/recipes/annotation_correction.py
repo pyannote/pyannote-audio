@@ -9,6 +9,7 @@ from prodigy.components.loaders import Audio as AudioLoader
 from prodigy.util import split_string
 
 from pyannote.audio.core.io import Audio
+from pyannote.audio.pipelines import SpeakerDiarization
 from pyannote.core import Segment
 from pyannote.database import util
 
@@ -25,31 +26,41 @@ from ..utils import (
 def annotation_correction_stream(
     source: Path,
     annotations: [dict],
+    diarization: bool = False,
+    globallabels: bool = False,
     chunk: float = 10.0,
 ) -> Iterable[Dict]:
 
     raw_audio = Audio(sample_rate=SAMPLE_RATE, mono=True)
 
-    for audio_source in AudioLoader(source):
+    if os.path.isdir(source):
+        listFiles = AudioLoader(source)
+    else:
+        name = os.path.basename(source).rsplit(".", 1)[0]
+        listFiles = [{"path": source, "text": name, "meta": {"file": source}}]
+
+    for audio_source in listFiles:
 
         path = audio_source["path"]
         text = audio_source["text"]
-        name = audio_source["meta"]["file"]
         file = {"uri": text, "audio": path, "database": source}
 
         duration = raw_audio.get_duration(file)
         file["duration"] = duration
 
+        if diarization:
+            list_annotations = [annotations[0][text]] + [
+                SpeakerDiarization.optimal_mapping(annotations[0][text], ann[text])
+                for ann in annotations[1:]
+            ]
+        else:
+            list_annotations = [ann[text] for ann in annotations]
+
         if duration <= chunk:
             waveform, sr = raw_audio.crop(file, Segment(0, duration))
             waveform = waveform.numpy().T
             task_audio = to_base64(normalize(waveform), sample_rate=SAMPLE_RATE)
-            list_annotations = []
-            labels = []
-            for ann in annotations:
-                if name in annotations:
-                    list_annotations.append(to_audio_spans(ann[name]))
-                    labels += ann[name].labels()
+            labels = [label for ann in list_annotations for label in ann.labels()]
             labels = list(dict.fromkeys(labels))
 
             yield {
@@ -63,6 +74,10 @@ def annotation_correction_stream(
                 "meta": {"file": text},
             }
         else:
+            if globallabels:
+                labels = [label for ann in list_annotations for label in ann.labels()]
+                labels = list(dict.fromkeys(labels))
+
             for focus in chunks(duration, chunk=chunk, shuffle=False):
                 task_text = f"{text} [{focus.start:.1f}, {focus.end:.1f}]"
                 waveform, sr = raw_audio.crop(file, focus)
@@ -75,23 +90,23 @@ def annotation_correction_stream(
                     )
                 waveform = waveform.numpy().T
                 task_audio = to_base64(normalize(waveform), sample_rate=SAMPLE_RATE)
+                list_spans = []
+                label = []
+                for ann in list_annotations:
+                    sa = ann.crop(focus, mode="intersection")
+                    spans = to_audio_spans(sa, focus=focus)
+                    list_spans.append(spans)
+                    label += sa.labels()
 
-                list_annotations = []
-                labels = []
-                for ann in annotations:
-                    if name in ann:
-                        sa = ann[name].crop(focus, mode="intersection")
-                        spans = to_audio_spans(sa, focus=focus)
-                        list_annotations.append(spans)
-                        labels += sa.labels()
-                labels = list(dict.fromkeys(labels))
+                if not globallabels:
+                    labels = list(dict.fromkeys(label))
 
                 yield {
                     "path": path,
                     "text": task_text,
                     "audio": task_audio,
                     "audio_spans": [],
-                    "annotations": list_annotations,
+                    "annotations": list_spans,
                     "config": {"labels": labels},
                     "meta": {
                         "file": text,
@@ -122,6 +137,18 @@ def annotation_correction_stream(
         None,
         float,
     ),
+    diarization=(
+        "Optimal one-to-one mapping between reference and hypothesis",
+        "flag",
+        None,
+        bool,
+    ),
+    globallabels=(
+        "Shows the labels of the whole file (not chunk only)",
+        "flag",
+        None,
+        bool,
+    ),
     precision=("Cursor speed", "option", None, int),
     beep=("Beep when the player reaches the end of a region.", "flag", None, bool),
 )
@@ -130,6 +157,8 @@ def annotation_correction(
     source: Union[str, Iterable[dict]],
     annotations: [List[str]],
     chunk: float = 10.0,
+    diarization: bool = False,
+    globallabels: bool = False,
     precision: int = 100,
     beep: bool = False,
 ) -> Dict[str, Any]:
@@ -171,7 +200,13 @@ def annotation_correction(
     return {
         "view_id": "blocks",
         "dataset": dataset,
-        "stream": annotation_correction_stream(source, list_annotations, chunk=chunk),
+        "stream": annotation_correction_stream(
+            source,
+            list_annotations,
+            diarization=diarization,
+            globallabels=globallabels,
+            chunk=chunk,
+        ),
         "before_db": remove_audio_before_db,
         "config": {
             "global_css": templateC,
@@ -183,6 +218,20 @@ def annotation_correction(
             "audio_bar_width": 0,
             "audio_bar_height": 1,
             "number_annotations": len(annotations),
+            "custom_theme": {
+                "palettes": {
+                    "audio": [
+                        "#ffd700",
+                        "#00ffff",
+                        "#ff00ff",
+                        "#00ff00",
+                        "#9932cc",
+                        "#00bfff",
+                        "#ff7f50",
+                        "#66cdaa",
+                    ],
+                }
+            },
             "blocks": [
                 {
                     "view_id": "audio_manual",

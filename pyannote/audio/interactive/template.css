@@ -29,13 +29,13 @@
     text-transform: uppercase;
 }
 
-.c01139{ white-space: inherit}
+.prodigy-content{ white-space: inherit}
 
-/* basic positioning */
+wave{ overflow: hidden !important;}
+
 .legend { list-style: none; }
 .legend li { float: left; margin-right: 10px; }
 .legend span { border: 1px solid #ccc; float: left; width: 30px; height: 30px; margin: 2px; }
-/* your colors */
-.legend .falsealarm { background-color: #ff000033; }
-.legend .confusion { background-color: #00fff533; }
-.legend .misseddetection { background-color: #5500ff33; }
+.legend .falsealarm { background-color: #9932cc; }
+.legend .confusion { background-color: #ff6347; }
+.legend .misseddetection { background-color: #00ffff; }

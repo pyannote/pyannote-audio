@@ -22,6 +22,12 @@
 
 var numberAnnotations = prodigy.config.number_annotations;
 
+var colorList=[];
+var hex2rgba = (hex, alpha = 0.2) => {
+  const [r, g, b] = hex.match(/\w\w/g).map(x => parseInt(x, 16));
+  return `rgba(${r},${g},${b},${alpha})`;
+};
+
 if(document.readyState !== 'loading') {
     wait();
 } else {
@@ -34,8 +40,16 @@ function loadRegions(){
     for(var i=0; i < numberAnnotations;i++){
         var regions = window.prodigy.content.annotations[i];
         for (region in regions){
-            var re = window['wavesurfer'+i].addRegion({'start' : regions[region]['start'],'end' : regions[region]['end'],'color' : "rgba(255, 215, 0, 0.2)", 'resize' : false, 'drag' : false, "attributes": {"label":regions[region]['label']}});
-            addRegionLabelTest(re,regions[region]['label'],true);
+            var color;
+            var label = regions[region]['label'];
+            if(! colorList.includes(label)){
+                colorList.push(label);
+            }
+            var id = colorList.indexOf(label) % prodigy.config.custom_theme.palettes.audio.length;
+            var color = prodigy.config.custom_theme.palettes.audio[id];
+            color = hex2rgba(color);
+            var re = window['wavesurfer'+i].addRegion({'start' : regions[region]['start'],'end' : regions[region]['end'],'color' : color, 'resize' : false, 'drag' : false, "attributes": {"label":label}});
+            addRegionLabel(re,label,true);
         }
     }
 }
@@ -107,7 +121,19 @@ async function loadWave(){
       l = nodeList[i].appendChild(document.createElement("span"));
       l.textContent= "Input "+(i+1);
       l.className = "title-wave";
+      l.onclick=function(){test(i)};
+      l.setAttribute("onclick", "addAllRegions("+i+");");
     }
+}
+
+function addAllRegions(i){
+  var rs = window['wavesurfer'+i].regions.list;
+  num = Object.values(rs);
+  for (var i in num){
+    var region = num[i];
+    var re = window.wavesurfer.addRegion({'start' : region.start,'end' : region.end,'color': region.color});
+    window.wavesurfer.fireEvent('region-update-end',re);
+  }
 }
 
 async function wait(){
@@ -154,8 +180,7 @@ document.addEventListener('prodigyanswer', async() => {
   loadRegions();
 });
 
-
-function addRegionLabelTest(e,t,n){
+function addRegionLabel(e,t,n){
    var s = e.element
    var l = s.appendChild(document.createElement("span"))
    l.textContent = t,
