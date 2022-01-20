@@ -300,6 +300,11 @@ class SpeakerSegmentation(SpeakerDiarizationMixin, Pipeline):
         # build discrete diarization
         discrete_diarization = self.to_diarization(stitched_segmentations, count)
 
+        # remove inactive speakers
+        discrete_diarization.data = discrete_diarization.data[
+            :, np.nonzero(np.sum(discrete_diarization.data, axis=0))[0]
+        ]
+
         if self.skip_conversion:
             return discrete_diarization
 
