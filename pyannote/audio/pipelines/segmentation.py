@@ -124,7 +124,7 @@ class SpeakerSegmentation(SpeakerDiarizationMixin, Pipeline):
             if not self.skip_stitching:
                 parameters["stitch_threshold"] = 0.39
 
-            if not self.skip_conversion:
+            if not (self.skip_stitching or self.skip_conversion):
                 parameters.update(
                     {"min_duration_on": 0.0, "min_duration_off": 0.0,}
                 )
