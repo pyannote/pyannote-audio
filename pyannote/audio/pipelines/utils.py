@@ -204,9 +204,7 @@ class SpeakerDiarizationMixin:
 
     @staticmethod
     def set_num_speakers(
-        num_speakers: int = None,
-        min_speakers: int = None,
-        max_speakers: int = None,
+        num_speakers: int = None, min_speakers: int = None, max_speakers: int = None,
     ):
         """Validate number of speakers
 
@@ -315,11 +313,40 @@ class SpeakerDiarizationMixin:
         return count
 
     @staticmethod
-    def to_diarization(
-        segmentations: SlidingWindowFeature,
-        count: SlidingWindowFeature,
+    def to_annotation(
+        discrete_diarization: SlidingWindowFeature,
         min_duration_on: float = 0.0,
         min_duration_off: float = 0.0,
+    ) -> Annotation:
+        """
+        
+        Parameters
+        ----------
+        discrete_diarization : SlidingWindowFeature
+            (num_frames, num_speakers)-shaped discrete diarization
+        min_duration_on : float, optional
+            Defaults to 0.
+        min_duration_off : float, optional
+            Defaults to 0.
+
+        Returns
+        -------
+        continuous_diarization : Annotation
+            Continuous diarization
+        """
+
+        binarize = Binarize(
+            onset=0.5,
+            offset=0.5,
+            min_duration_on=min_duration_on,
+            min_duration_off=min_duration_off,
+        )
+
+        return binarize(discrete_diarization)
+
+    @staticmethod
+    def to_diarization(
+        segmentations: SlidingWindowFeature, count: SlidingWindowFeature,
     ) -> SlidingWindowFeature:
         """Build diarization out of preprocessed segmentation and precomputed speaker count
 
@@ -329,15 +356,11 @@ class SpeakerDiarizationMixin:
             (num_chunks, num_frames, num_speakers)-shaped segmentations
         count : SlidingWindow_feature
             (num_frames, 1)-shaped speaker count
-        min_duration_on : float, optional
-            Defaults to 0.
-        min_duration_off : float, optional
-            Defaults to 0.
 
         Returns
         -------
-        diarization : Annotation
-            Diarization.
+        discrete_diarization : SlidingWindowFeature
+            Discrete (0s and 1s) diarization.
         """
 
         activations = Inference.aggregate(
@@ -362,13 +385,5 @@ class SpeakerDiarizationMixin:
             for i in range(c.item()):
                 binary[t, speakers[i]] = 1.0
 
-        binary = SlidingWindowFeature(binary, activations.sliding_window)
+        return SlidingWindowFeature(binary, activations.sliding_window)
 
-        to_annotation = Binarize(
-            onset=0.5,
-            offset=0.5,
-            min_duration_on=min_duration_on,
-            min_duration_off=min_duration_off,
-        )
-
-        return to_annotation(binary)

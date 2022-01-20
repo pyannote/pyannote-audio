@@ -26,8 +26,15 @@ from typing import Optional
 import numpy as np
 
 from pyannote.audio.utils.permutation import permutate
-from pyannote.core import Annotation, Segment, SlidingWindowFeature, Timeline
+from pyannote.core import (
+    Annotation,
+    Segment,
+    SlidingWindow,
+    SlidingWindowFeature,
+    Timeline,
+)
 from pyannote.metrics.base import BaseMetric
+from pyannote.metrics.diarization import DiarizationErrorRate
 
 
 def discrete_diarization_error_rate(reference: np.ndarray, hypothesis: np.ndarray):
@@ -198,3 +205,43 @@ class DiscreteDiarizationErrorRate(BaseMetric):
             + components["confusion"]
         ) / components["total"]
 
+
+class SlidingDiarizationErrorRate(BaseMetric):
+    def __init__(self, window: float = 10.0):
+        super().__init__()
+        self.window = window
+
+    @classmethod
+    def metric_name(cls):
+        return "window diarization error rate"
+
+    @classmethod
+    def metric_components(cls):
+        return ["total", "false alarm", "missed detection", "confusion"]
+
+    def compute_components(
+        self, reference, hypothesis, uem: Optional[Timeline] = None,
+    ):
+
+        if uem is None:
+            raise ValueError(
+                "SlidingDiarizationErrorRate expects `uem` to be provided."
+            )
+
+        der = DiarizationErrorRate()
+
+        window = SlidingWindow(duration=self.window, step=0.5 * self.window)
+
+        for chunk in window(uem):
+            _ = der(
+                reference.crop(chunk), hypothesis.crop(chunk), uem=Timeline([chunk])
+            )
+
+        return der[:]
+
+    def compute_metric(self, components):
+        return (
+            components["false alarm"]
+            + components["missed detection"]
+            + components["confusion"]
+        ) / components["total"]
