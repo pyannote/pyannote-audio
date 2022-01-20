@@ -67,7 +67,7 @@ class SpeakerSegmentation(SpeakerDiarizationMixin, Pipeline):
     offset : float
         Offset speaker activation threshold
     stitch_threshold : float
-
+        Initial stitching threshold.
     min_duration_on : float
         Remove speaker turn shorter than that many seconds.
     min_duration_off : float
@@ -112,16 +112,24 @@ class SpeakerSegmentation(SpeakerDiarizationMixin, Pipeline):
         self.warm_up = 0.05
 
     def default_parameters(self):
-        # TODO: optimize those on DIHARD3
+        # parameters optimized on DIHARD 3 development set
 
-        parameters = {
-            "onset": 0.5,
-            "offset": 0.5,
-        }
-        if not (self.skip_stitching or self.skip_conversion):
-            parameters.update(
-                {"min_duration_on": 0.0, "min_duration_off": 0.0,}
-            )
+        if self.segmentation == "pyannote/segmentation":
+
+            parameters = {
+                "onset": 0.84,
+                "offset": 0.46,
+            }
+
+            if not self.skip_stitching:
+                parameters["stitch_threshold"] = 0.39
+
+            if not self.skip_conversion:
+                parameters.update(
+                    {"min_duration_on": 0.0, "min_duration_off": 0.0,}
+                )
+
+        raise NotImplementedError()
 
     CACHED_SEGMENTATION = "@segmentation/raw"
 
