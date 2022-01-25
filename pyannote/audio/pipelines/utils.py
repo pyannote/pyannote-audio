@@ -387,3 +387,8 @@ class SpeakerDiarizationMixin:
 
         return SlidingWindowFeature(binary, activations.sliding_window)
 
+    def classes(self):
+        speaker = 0
+        while True:
+            yield f"SPEAKER_{speaker:02d}"
+            speaker += 1

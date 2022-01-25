@@ -113,6 +113,9 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
             }
         raise NotImplementedError()
 
+    def classes(self):
+        raise NotImplementedError()
+
     CACHED_SEGMENTATION = "@resegmentation/raw"
 
     def apply(
