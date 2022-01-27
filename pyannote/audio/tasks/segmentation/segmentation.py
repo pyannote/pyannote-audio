@@ -385,13 +385,11 @@ def main(
 ):
     """Evaluate a pretrained segmentation model on a given protocol"""
 
-    from pyannote.audio.pipelines.segmentation import (
-        Segmentation as SegmentationPipeline,
-    )
+    from pyannote.audio.pipelines import SpeakerSegmentation
     from pyannote.audio.utils.metric import DiscreteDiarizationErrorRate
     from pyannote.core import SlidingWindowFeature
 
-    pipeline = SegmentationPipeline(segmentation=segmentation, stitch=False)
+    pipeline = SpeakerSegmentation(segmentation=segmentation, skip_stitching=True)
     metric = DiscreteDiarizationErrorRate()
 
     for file in getattr(protocol, subset)():
