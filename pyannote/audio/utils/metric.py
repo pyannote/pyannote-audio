@@ -48,7 +48,7 @@ def discrete_diarization_error_rate(reference: np.ndarray, hypothesis: np.ndarra
     hypothesis : (num_frames, num_speakers) np.ndarray
         Discretized hypothesized diarization.
        hypothesis[f, s] = 1 if sth speaker is active at frame f, 0 otherwise
- 
+
     Returns
     -------
     der : float
@@ -104,24 +104,36 @@ class DiscreteDiarizationErrorRate(BaseMetric):
         return ["total", "false alarm", "missed detection", "confusion"]
 
     def compute_components(
-        self, reference, hypothesis, uem: Optional[Timeline] = None,
+        self,
+        reference,
+        hypothesis,
+        uem: Optional[Timeline] = None,
     ):
-        return self.compute_components_helper(hypothesis, reference)
+        return self.compute_components_helper(hypothesis, reference, uem)
 
     @singledispatchmethod
-    def compute_components_helper(self, hypothesis, reference):
+    def compute_components_helper(self, hypothesis, reference, uem):
         klass = hypothesis.__class__.__name__
         raise NotImplementedError(
             f"Providing hypothesis as {klass} instances is not supported."
         )
 
     @compute_components_helper.register
-    def der_from_ndarray(self, hypothesis: np.ndarray, reference: np.ndarray, **kwargs):
+    def der_from_ndarray(
+        self,
+        hypothesis: np.ndarray,
+        reference: np.ndarray,
+        uem: Optional[Timeline] = None,
+        **kwargs,
+    ):
 
         if reference.ndim != 2:
             raise NotImplementedError(
                 "Only (num_frames, num_speakers)-shaped reference is supported."
             )
+
+        if uem is not None:
+            raise ValueError("Providing a UEM is not compatible with numpy arrays.")
 
         ref_num_frames, ref_num_speakers = reference.shape
 
@@ -150,7 +162,10 @@ class DiscreteDiarizationErrorRate(BaseMetric):
 
     @compute_components_helper.register
     def der_from_swf(
-        self, hypothesis: SlidingWindowFeature, reference: Annotation,
+        self,
+        hypothesis: SlidingWindowFeature,
+        reference: Annotation,
+        uem: Optional[Timeline] = None,
     ):
 
         ndim = hypothesis.data.ndim
@@ -177,13 +192,27 @@ class DiscreteDiarizationErrorRate(BaseMetric):
 
         # if (num_frames, num_speakers)-shaped, compute just one DER for the whole file
         if ndim == 2:
-            return self.compute_components_helper(hypothesis.data, reference.data)
+            if uem is not None:
+                components = self.init_components()
+                for segment in uem:
+                    h = hypothesis.crop(segment)
+                    r = reference.crop(segment)
+                    segment_component = self.compute_components_helper(h.data, r.data)
+                    for name in self.components_:
+                        components[name] += segment_component[name]
+                return components
+            else:
+                return self.compute_components_helper(hypothesis.data, reference.data)
 
         # if (num_chunks, num_frames, num_speakers)-shaed, compute one DER per chunk and aggregate
         elif ndim == 3:
 
             components = self.init_components()
             for window, hypothesis_window in hypothesis:
+
+                if uem is not None and not uem.covers(Timeline([window])):
+                    continue
+
                 reference_window = reference.crop(window, mode="center")
 
                 common_num_frames = min(num_frames, reference_window.shape[0])
@@ -220,7 +249,10 @@ class SlidingDiarizationErrorRate(BaseMetric):
         return ["total", "false alarm", "missed detection", "confusion"]
 
     def compute_components(
-        self, reference, hypothesis, uem: Optional[Timeline] = None,
+        self,
+        reference,
+        hypothesis,
+        uem: Optional[Timeline] = None,
     ):
 
         if uem is None:
