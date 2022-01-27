@@ -46,7 +46,7 @@ from pyannote.core.utils.distance import pdist
 from pyannote.metrics.diarization import GreedyDiarizationErrorRate
 from pyannote.pipeline.parameter import Uniform
 
-from .clustering import Clustering
+from .clustering import Clustering, NearestClusterAssignment
 from .speaker_verification import PretrainedSpeakerEmbedding
 
 
@@ -132,6 +132,9 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         self.clustering = Klustering.value(
             metric=self._embedding.metric,
             expects_num_clusters=self.expects_num_speakers,
+        )
+        self.assignment = NearestClusterAssignment(
+            metric=self._embedding.metric, allow_reassignment=True
         )
 
         # hyper-parameters
@@ -386,10 +389,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                 )
                 oracle_clusters = []
 
-                for (
-                    c,
-                    (chunk, segmentation),
-                ) in enumerate(segmentations):
+                for (c, (chunk, segmentation),) in enumerate(segmentations):
 
                     if np.all(speaker_status[c] != LONG):
                         continue
@@ -455,18 +455,9 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
         # __ FINAL SPEAKER ASSIGNMENT ___________________________________________________
 
-        centroids = np.vstack(
-            [np.mean(embeddings[clusters == k], axis=0) for k in range(num_clusters)]
+        clusters[speaker_status != SKIP] = self.assignment(
+            embeddings[speaker_status != SKIP], clusters[speaker_status != SKIP]
         )
-        unassigned = (speaker_status == KEEP) | (clusters == -1)
-        distances = cdist(
-            embeddings[unassigned],
-            centroids,
-            metric=self._embedding.metric,
-        )
-        clusters[unassigned] = np.argmin(distances, axis=1)
-
-        hook("@clustering/centroids", centroids)
         hook("@clustering/assignment", clusters)
 
         # __ CLUSTERING-BASED SEGMENTATION AGGREGATION _________________________________
