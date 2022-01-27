@@ -496,13 +496,16 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
         hook("@segmentation/cluster", clustered_segmentations)
 
-        # reconstruct diarization
-        diarization = self.to_diarization(
-            clustered_segmentations,
-            count,
+        # build (discrete) diarization
+        discrete_diarization = self.to_diarization(clustered_segmentations, count)
+
+        # convert to continuous diarization
+        diarization = self.to_annotation(
+            discrete_diarization,
             min_duration_on=self.min_duration_on,
             min_duration_off=self.min_duration_off,
         )
+
         diarization.uri = file["uri"]
 
         if "annotation" in file:

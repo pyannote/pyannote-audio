@@ -113,6 +113,9 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
             }
         raise NotImplementedError()
 
+    def classes(self):
+        raise NotImplementedError()
+
     CACHED_SEGMENTATION = "@resegmentation/raw"
 
     def apply(
@@ -197,22 +200,23 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
         for c, (chunk, segmentation) in enumerate(segmentations):
             local_diarization = diarization.crop(chunk)[np.newaxis, :num_frames]
             (permutated_segmentations[c],), _ = permutate(
-                local_diarization,
-                segmentation,
-                cost_func=mae_cost_func,
+                local_diarization, segmentation, cost_func=mae_cost_func,
             )
         permutated_segmentations = SlidingWindowFeature(
             permutated_segmentations, segmentations.sliding_window
         )
         hook("@resegmentation/permutated", permutated_segmentations)
 
-        # reconstruct diarization
-        diarization = self.to_diarization(
-            permutated_segmentations,
-            count,
+        # build discrete diarization
+        discrete_diarization = self.to_diarization(permutated_segmentations, count)
+
+        # convert to continuous diarization
+        diarization = self.to_annotation(
+            discrete_diarization,
             min_duration_on=self.min_duration_on,
             min_duration_off=self.min_duration_off,
         )
+
         diarization.uri = file["uri"]
 
         if "annotation" in file:
