@@ -193,19 +193,21 @@ class DiscreteDiarizationErrorRate(BaseMetric):
 
         # if (num_frames, num_speakers)-shaped, compute just one DER for the whole file
         if ndim == 2:
+
             if uem is None:
                 return self.compute_components_helper(hypothesis.data, reference.data)
-            elif not Timeline([support]).covers(uem):
+
+            if not Timeline([support]).covers(uem):
                 raise ValueError("`uem` must fully cover hypothesis extent.")
-            else:
-                components = self.init_components()
-                for segment in uem:
-                    h = hypothesis.crop(segment)
-                    r = reference.crop(segment)
-                    segment_component = self.compute_components_helper(h, r)
-                    for name in self.components_:
-                        components[name] += segment_component[name]
-                return components
+            
+            components = self.init_components()
+            for segment in uem:
+                h = hypothesis.crop(segment)
+                r = reference.crop(segment)
+                segment_component = self.compute_components_helper(h, r)
+                for name in self.components_:
+                    components[name] += segment_component[name]
+            return components
 
         # if (num_chunks, num_frames, num_speakers)-shaed, compute one DER per chunk and aggregate
         elif ndim == 3:
