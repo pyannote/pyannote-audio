@@ -112,7 +112,7 @@ class DiscreteDiarizationErrorRate(BaseMetric):
         return self.compute_components_helper(hypothesis, reference, uem=uem)
 
     @singledispatchmethod
-    def compute_components_helper(self, hypothesis, reference, uem=None):
+    def compute_components_helper(self, hypothesis, reference, uem: Optional[Timeline] = None):
         klass = hypothesis.__class__.__name__
         raise NotImplementedError(
             f"Providing hypothesis as {klass} instances is not supported."
