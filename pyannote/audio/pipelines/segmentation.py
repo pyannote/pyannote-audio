@@ -129,9 +129,11 @@ class SpeakerSegmentation(SpeakerDiarizationMixin, Pipeline):
                     {"min_duration_on": 0.0, "min_duration_off": 0.0,}
                 )
 
+            return parameters
+
         raise NotImplementedError()
 
-    CACHED_SEGMENTATION = "@segmentation/raw"
+    CACHED_SEGMENTATION = "@inference"
 
     @staticmethod
     def get_stitching_graph(
@@ -249,13 +251,16 @@ class SpeakerSegmentation(SpeakerDiarizationMixin, Pipeline):
 
         # apply segmentation model (only if needed)
         # output shape is (num_chunks, num_frames, local_num_speakers)
-        if (not self.training) or (
-            self.training and self.CACHED_SEGMENTATION not in file
-        ):
-            file[self.CACHED_SEGMENTATION] = self._segmentation(file)
+        if self.training:
+            if self.CACHED_SEGMENTATION in file:
+                segmentations = file[self.CACHED_SEGMENTATION]
+            else:
+                segmentations = self._segmentation(file)
+                file[self.CACHED_SEGMENTATION] = segmentations
+        else:
+            segmentations: SlidingWindowFeature = self._segmentation(file)
 
-        segmentations: SlidingWindowFeature = file[self.CACHED_SEGMENTATION]
-        hook(self.CACHED_SEGMENTATION, segmentations)
+        hook("inference", segmentations)
 
         if self.skip_stitching:
             return binarize(
@@ -270,13 +275,12 @@ class SpeakerSegmentation(SpeakerDiarizationMixin, Pipeline):
             warm_up=(self.warm_up, self.warm_up),
             frames=self._frames,
         )
-        hook("@segmentation/count", count)
+        hook("speaker_counting", count)
 
         # trim warm-up regions
         segmentations = Inference.trim(
             segmentations, warm_up=(self.warm_up, self.warm_up)
         )
-        hook("@segmentation/trim", segmentations)
 
         # build stitching graph
         stitching_graph = self.get_stitching_graph(segmentations, onset=self.onset)
@@ -303,7 +307,7 @@ class SpeakerSegmentation(SpeakerDiarizationMixin, Pipeline):
             stitched_segmentations, segmentations.sliding_window
         )
 
-        hook("@segmentation/stitch", stitched_segmentations)
+        hook("stitching", stitched_segmentations)
 
         # build discrete diarization
         discrete_diarization = self.to_diarization(stitched_segmentations, count)
@@ -316,7 +320,7 @@ class SpeakerSegmentation(SpeakerDiarizationMixin, Pipeline):
         if self.skip_conversion:
             return discrete_diarization
 
-        hook("@segmentation/diarization", discrete_diarization)
+        hook("aggregation", discrete_diarization)
 
         # convert to continuous diarization
         diarization = self.to_annotation(

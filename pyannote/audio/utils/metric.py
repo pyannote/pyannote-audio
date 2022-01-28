@@ -109,10 +109,10 @@ class DiscreteDiarizationErrorRate(BaseMetric):
         hypothesis,
         uem: Optional[Timeline] = None,
     ):
-        return self.compute_components_helper(hypothesis, reference, uem)
+        return self.compute_components_helper(hypothesis, reference, uem=uem)
 
     @singledispatchmethod
-    def compute_components_helper(self, hypothesis, reference, uem=None):
+    def compute_components_helper(self, hypothesis, reference, uem: Optional[Timeline] = None):
         klass = hypothesis.__class__.__name__
         raise NotImplementedError(
             f"Providing hypothesis as {klass} instances is not supported."
@@ -132,7 +132,7 @@ class DiscreteDiarizationErrorRate(BaseMetric):
             )
 
         if uem is not None:
-            raise ValueError("Providing a UEM is not compatible with numpy arrays.")
+            raise ValueError("`uem` is not supported with numpy arrays.")
 
         ref_num_frames, ref_num_speakers = reference.shape
 
