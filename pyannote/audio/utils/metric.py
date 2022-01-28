@@ -133,7 +133,7 @@ class DiscreteDiarizationErrorRate(BaseMetric):
             )
 
         if uem is not None:
-            raise ValueError("Providing a UEM is not compatible with numpy arrays.")
+            raise ValueError("`uem` is not supported with numpy arrays.")
 
         ref_num_frames, ref_num_speakers = reference.shape
 
