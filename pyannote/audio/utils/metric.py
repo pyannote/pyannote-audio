@@ -124,7 +124,6 @@ class DiscreteDiarizationErrorRate(BaseMetric):
         hypothesis: np.ndarray,
         reference: np.ndarray,
         uem: Optional[Timeline] = None,
-        **kwargs,
     ):
 
         if reference.ndim != 2:
@@ -192,7 +191,9 @@ class DiscreteDiarizationErrorRate(BaseMetric):
 
         # if (num_frames, num_speakers)-shaped, compute just one DER for the whole file
         if ndim == 2:
-            if uem is not None:
+            if uem is None:
+                return self.compute_components_helper(hypothesis.data, reference.data)
+            else:
                 components = self.init_components()
                 for segment in uem:
                     h = hypothesis.crop(segment)
@@ -203,8 +204,6 @@ class DiscreteDiarizationErrorRate(BaseMetric):
                     for name in self.components_:
                         components[name] += segment_component[name]
                 return components
-            else:
-                return self.compute_components_helper(hypothesis.data, reference.data)
 
         # if (num_chunks, num_frames, num_speakers)-shaed, compute one DER per chunk and aggregate
         elif ndim == 3:
@@ -212,6 +211,7 @@ class DiscreteDiarizationErrorRate(BaseMetric):
             components = self.init_components()
             for window, hypothesis_window in hypothesis:
 
+                # Skip any window not fully covered by a segment of the uem
                 if uem is not None and not uem.covers(Timeline([window])):
                     continue
 
