@@ -109,7 +109,7 @@ class DiscreteDiarizationErrorRate(BaseMetric):
         hypothesis,
         uem: Optional[Timeline] = None,
     ):
-        return self.compute_components_helper(hypothesis, reference, uem)
+        return self.compute_components_helper(hypothesis, reference, uem=uem)
 
     @singledispatchmethod
     def compute_components_helper(self, hypothesis, reference, uem=None):
