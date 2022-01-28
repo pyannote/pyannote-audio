@@ -129,6 +129,9 @@ class MultilabelFMeasure(BaseMetric):
 
     """
 
+    def metric_components(self):
+        return ["AVG[Fscore]"] + self.mtl_specs.all_classes
+
     @classmethod
     def metric_name(cls):
         return "AVG[Labels]"
@@ -138,12 +141,12 @@ class MultilabelFMeasure(BaseMetric):
                  beta=1., parallel=False, **kwargs):
         self.parallel = parallel
         self.metric_name_ = self.metric_name()
-        self.components_ = set(self.metric_components())
-        self.reset()
         self.collar = collar
         self.skip_overlap = skip_overlap
         self.beta = beta
         self.mtl_specs = mtl_specs
+        self.components_ = set(self.metric_components())
+
         self.submetrics: Dict[str, DetectionPrecisionRecallFMeasure] = {
             label: DetectionPrecisionRecallFMeasure(collar=collar,
                                                     skip_overlap=skip_overlap,
@@ -151,6 +154,8 @@ class MultilabelFMeasure(BaseMetric):
                                                     **kwargs)
             for label in self.mtl_specs.all_classes
         }
+
+        self.reset()
 
     def reset(self):
         super().reset()
@@ -169,7 +174,7 @@ class MultilabelFMeasure(BaseMetric):
         return details
 
     def compute_metric(self, detail: Dict[str, float]):
-        return np.mean(detail.values())
+        return np.mean(list(detail.values()))
 
     def __abs__(self):
         return np.mean([abs(submetric) for submetric in self.submetrics.values()])
@@ -262,10 +267,8 @@ class MultilabelDetection(Pipeline):
         speech : `pyannote.core.Annotation`
             Annotated classification.
         """
-        if self.training:
-            if self.CACHED_ACTIVATIONS not in file:
-                file[self.CACHED_ACTIVATIONS] = self.segmentation_inference_(file)
-        else:
+        if self.CACHED_ACTIVATIONS not in file:
+            print(f"computing activation for file {file['uri']}")
             file[self.CACHED_ACTIVATIONS] = self.segmentation_inference_(file)
 
         # for each class name, add
@@ -280,9 +283,10 @@ class MultilabelDetection(Pipeline):
             label_scores = SlidingWindowFeature(label_scores_array,
                                                 multilabel_scores.sliding_window)
             binarizer: Binarize = self._binarizers[class_name]
-            label_annot = binarizer(label_scores)
-            full_annot.update(label_annot)
-
+            class_annot = binarizer(label_scores)
+            class_tl = class_annot.support().get_timeline()
+            for seg in class_tl:
+                full_annot[seg] = class_name
         return full_annot
 
     def get_metric(self) -> Union[MultilabelFMeasure, IdentificationErrorRate]:
