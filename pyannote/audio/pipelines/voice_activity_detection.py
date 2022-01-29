@@ -178,6 +178,7 @@ class VoiceActivityDetection(Pipeline):
             if self.CACHED_ACTIVATIONS not in file:
                 file[self.CACHED_ACTIVATIONS] = self.segmentation_inference_(file)
         else:
+            # TODO : isn't this supposed to be a no-cache inference?
             file[self.CACHED_ACTIVATIONS] = self.segmentation_inference_(file)
 
         speech: Annotation = self._binarize(file[self.CACHED_ACTIVATIONS])

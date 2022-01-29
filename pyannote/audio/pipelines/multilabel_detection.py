@@ -26,6 +26,9 @@ from typing import Union, Optional, List, Dict, TYPE_CHECKING, Text
 
 import numpy as np
 from numba.typed import List
+from pyannote.audio import Inference
+from pyannote.audio.core.io import AudioFile
+from pyannote.audio.core.pipeline import Pipeline
 from pyannote.core import Annotation, SlidingWindowFeature
 from pyannote.metrics.base import BaseMetric
 from pyannote.metrics.detection import DetectionPrecisionRecallFMeasure
@@ -33,9 +36,6 @@ from pyannote.metrics.identification import IdentificationErrorRate
 from pyannote.pipeline.parameter import ParamDict, Uniform
 from sortedcontainers import SortedDict
 
-from pyannote.audio import Inference
-from pyannote.audio.core.io import AudioFile
-from pyannote.audio.core.pipeline import Pipeline
 from .utils import PipelineModel, get_devices, get_model
 from ..utils.signal import Binarize
 
@@ -130,7 +130,7 @@ class MultilabelFMeasure(BaseMetric):
     """
 
     def metric_components(self):
-        return ["AVG[Fscore]"] + self.mtl_specs.all_classes
+        return self.mtl_specs.all_classes
 
     @classmethod
     def metric_name(cls):
@@ -267,12 +267,17 @@ class MultilabelDetection(Pipeline):
         speech : `pyannote.core.Annotation`
             Annotated classification.
         """
-        if self.CACHED_ACTIVATIONS not in file:
-            print(f"computing activation for file {file['uri']}")
-            file[self.CACHED_ACTIVATIONS] = self.segmentation_inference_(file)
 
-        # for each class name, add
-        multilabel_scores: SlidingWindowFeature = file[self.CACHED_ACTIVATIONS]
+        multilabel_scores: SlidingWindowFeature
+        if self.training:
+            if self.CACHED_ACTIVATIONS not in file:
+                file[self.CACHED_ACTIVATIONS] = self.segmentation_inference_(file)
+
+            multilabel_scores = file[self.CACHED_ACTIVATIONS]
+        else:
+            multilabel_scores = self.segmentation_inference_(file)
+
+        # for each class name, add class-specific "VAD" pipeline
         full_annot = Annotation(uri=file["uri"])
         for class_idx, class_name in enumerate(self.labels):
             # selecting scores for only one label
@@ -284,9 +289,9 @@ class MultilabelDetection(Pipeline):
                                                 multilabel_scores.sliding_window)
             binarizer: Binarize = self._binarizers[class_name]
             class_annot = binarizer(label_scores)
-            class_tl = class_annot.support().get_timeline()
-            for seg in class_tl:
-                full_annot[seg] = class_name
+            class_annot.rename_labels({label: class_name for label in class_annot.labels()}, copy=False)
+            full_annot.update(class_annot)
+
         return full_annot
 
     def get_metric(self) -> Union[MultilabelFMeasure, IdentificationErrorRate]:
