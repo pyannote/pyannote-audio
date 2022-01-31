@@ -78,9 +78,9 @@ The pretrained speaker diarization pipeline with default parameters is expected 
 
 | [Diarization error rate](http://pyannote.github.io/pyannote-metrics/reference.html#diarization) (%) | v1.1 | v2.0 | ∆DER |
 | --------------------------------------------------------------------------------------------------- | ---- | ---- | ---- |
-| [AMI `only_words` evaluation set](https://github.com/BUTSpeechFIT/AMI-diarization-setup)            | 29.7 | 21.3 | -28% |
-| [DIHARD 3 evaluation set](https://arxiv.org/abs/2012.01477)                                         | 29.2 | 22.2 | -24% |
-| [VoxConverse 0.0.2 evaluation set](https://github.com/joonson/voxconverse)                          | 21.5 | 13.0 | -39% |
+| [AMI `only_words` evaluation set](https://github.com/BUTSpeechFIT/AMI-diarization-setup)            | 29.7 | 21.5 | -28% |
+| [DIHARD 3 evaluation set](https://arxiv.org/abs/2012.01477)                                         | 29.2 | 22.2 | -23% |
+| [VoxConverse 0.0.2 evaluation set](https://github.com/joonson/voxconverse)                          | 21.5 | 12.8 | -40% |
 
 Here is the (pseudo-)code used to obtain those numbers:
 
