@@ -26,6 +26,7 @@ from ..utils import (
 def annotation_correction_stream(
     source: Path,
     annotations: [dict],
+    labels: [dict],
     diarization: bool = False,
     globallabels: bool = False,
     chunk: float = 10.0,
@@ -53,6 +54,8 @@ def annotation_correction_stream(
                 SpeakerDiarization.optimal_mapping(annotations[0][text], ann[text])
                 for ann in annotations[1:]
             ]
+            labels = [label for ann in list_annotations for label in ann.labels()]
+            labels = list(dict.fromkeys(labels))
         else:
             list_annotations = [ann[text] for ann in annotations]
 
@@ -60,8 +63,6 @@ def annotation_correction_stream(
             waveform, sr = raw_audio.crop(file, Segment(0, duration))
             waveform = waveform.numpy().T
             task_audio = to_base64(normalize(waveform), sample_rate=SAMPLE_RATE)
-            labels = [label for ann in list_annotations for label in ann.labels()]
-            labels = list(dict.fromkeys(labels))
 
             yield {
                 "path": path,
@@ -74,9 +75,6 @@ def annotation_correction_stream(
                 "meta": {"file": text},
             }
         else:
-            if globallabels:
-                labels = [label for ann in list_annotations for label in ann.labels()]
-                labels = list(dict.fromkeys(labels))
 
             for focus in chunks(duration, chunk=chunk, shuffle=False):
                 task_text = f"{text} [{focus.start:.1f}, {focus.end:.1f}]"
@@ -91,15 +89,10 @@ def annotation_correction_stream(
                 waveform = waveform.numpy().T
                 task_audio = to_base64(normalize(waveform), sample_rate=SAMPLE_RATE)
                 list_spans = []
-                label = []
                 for ann in list_annotations:
                     sa = ann.crop(focus, mode="intersection")
                     spans = to_audio_spans(sa, focus=focus)
                     list_spans.append(spans)
-                    label += sa.labels()
-
-                if not globallabels:
-                    labels = list(dict.fromkeys(label))
 
                 yield {
                     "path": path,
@@ -197,12 +190,21 @@ def annotation_correction(
 
     list_annotations = [util.load_rttm(annotation) for annotation in annotations]
 
+    # mettre une option? -> là c'est tout le corpus
+    labels = [
+        label
+        for ann in list_annotations
+        for anno in list(ann.values())
+        for label in anno.labels()
+    ]
+
     return {
         "view_id": "blocks",
         "dataset": dataset,
         "stream": annotation_correction_stream(
             source,
             list_annotations,
+            labels,
             diarization=diarization,
             globallabels=globallabels,
             chunk=chunk,
@@ -218,6 +220,7 @@ def annotation_correction(
             "audio_bar_width": 0,
             "audio_bar_height": 1,
             "number_annotations": len(annotations),
+            "labels": labels,
             "custom_theme": {
                 "palettes": {
                     "audio": [

@@ -21,7 +21,7 @@
 // SOFTWARE.
 
 var numberAnnotations = 2;
-var colorList = [[],[]];
+var colorList = [];
 var hex2rgba = (hex, alpha = 0.2) => {
   const [r, g, b] = hex.match(/\w\w/g).map(x => parseInt(x, 16));
   return `rgba(${r},${g},${b},${alpha})`;
@@ -48,10 +48,10 @@ function loadRegions(){
         (i == 0)? (regions = window.prodigy.content.reference) : (regions = window.prodigy.content.hypothesis)
         for (region in regions){
             var label = regions[region]['label'];
-            if (!(label in colorList[i])){
-              colorList[i].push(label);
+            if (!(label in colorList)){
+              colorList.push(label);
             }
-            var id = colorList[i].indexOf(label) % prodigy.config.custom_theme.palettes.audio.length;
+            var id = colorList.indexOf(label) % prodigy.config.custom_theme.palettes.audio.length;
             var color = prodigy.config.custom_theme.palettes.audio[id];
             color = hex2rgba(color);
             var re = window['wavesurfer'+i].addRegion({'start' : regions[region]['start'],'end' : regions[region]['end'],'color' : color, 'resize' : false, 'drag' : false, "attributes": {"label":regions[region]['label']}});
@@ -127,9 +127,8 @@ async function loadWave(){
 }
 
 async function waitForElement(){
-    if(document.querySelector('#track') !== null){
-        await loadWave();
-        loadRegions();
+    if(typeof window.wavesurfer !== "undefined"){
+    //if(document.querySelector('#track') !== null){
         window.wavesurfer.on('region-created', function(e){
          setTimeout(function(){
             if("label" in e){
@@ -162,6 +161,8 @@ async function waitForElement(){
               window['wavesurfer'+i].pause();
           }
         });
+        await loadWave();
+        loadRegions();
     }else{
        setTimeout(waitForElement, 250);
     }

@@ -29,13 +29,13 @@
     text-transform: uppercase;
 }
 
-.prodigy-content{ white-space: inherit}
+.prodigy-content{ white-space: inherit }
 
 wave{ overflow: hidden !important;}
 
 .legend { list-style: none; }
 .legend li { float: left; margin-right: 10px; }
 .legend span { border: 1px solid #ccc; float: left; width: 30px; height: 30px; margin: 2px; }
-.legend .falsealarm { background-color: #9932cc; }
-.legend .confusion { background-color: #ff6347; }
-.legend .misseddetection { background-color: #00ffff; }
+.legend .falsealarm { background-color: #9932cc33; }
+.legend .confusion { background-color: #ff634733; }
+.legend .misseddetection { background-color: #00ffff33; }
