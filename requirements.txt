@@ -1,7 +1,6 @@
 asteroid-filterbanks >=0.4,<0.5
 einops >=0.3,<0.4.0
 huggingface_hub>=0.2,<0.3
-hydra-core >=1.1,<1.2
 librosa >=0.8,<0.9
 networkx >= 2.6,<3.0
 pyannote.core >=4.3,<5.0
