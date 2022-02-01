@@ -256,7 +256,7 @@ class Inference:
             batch: torch.Tensor = chunks[c : c + self.batch_size]
             outputs.append(self.infer(batch))
             if self.progress_hook is not None:
-                self.progress_hook(c + 1, num_chunks + has_last_chunk)
+                self.progress_hook(c + self.batch_size, num_chunks + has_last_chunk)
 
         # process orphan last chunk
         if has_last_chunk:
