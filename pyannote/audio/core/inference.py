@@ -602,9 +602,15 @@ class Inference:
             Number of past and future adjacent chunks to use for stitching.
             Defaults to (k, k) with k = chunk_duration / chunk_step - 1
         cost_func : callable
-            Cost function used to find the optimal mapping between chunks.
+            Cost function used to find the optimal mapping between two chunks.
+            Expects two (num_frames, num_classes) torch.tensor as input 
+            and returns cost as a (num_classes, ) torch.tensor 
             Defaults to mean absolute error (utils.permutations.mae_cost_func)
         match_func : callable
+            Function used to decide whether two speakers mapped by the optimal
+            mapping actually are a match. 
+            Expects two (num_frames, ) np.ndarray and the cost (from cost_func)
+            and returns a boolean. Defaults to always returning True.
         """
 
         num_chunks, num_frames, num_classes = activations.data.shape

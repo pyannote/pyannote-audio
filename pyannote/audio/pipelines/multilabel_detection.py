@@ -25,6 +25,10 @@ from itertools import chain
 from typing import Union, Optional, List, Dict, TYPE_CHECKING, Text
 
 import numpy as np
+from numba.typed import List
+from pyannote.audio import Inference
+from pyannote.audio.core.io import AudioFile
+from pyannote.audio.core.pipeline import Pipeline
 from pyannote.core import Annotation, SlidingWindowFeature
 from pyannote.metrics.base import BaseMetric
 from pyannote.metrics.detection import DetectionPrecisionRecallFMeasure
@@ -32,9 +36,6 @@ from pyannote.metrics.identification import IdentificationErrorRate
 from pyannote.pipeline.parameter import ParamDict, Uniform
 from sortedcontainers import SortedDict
 
-from pyannote.audio import Inference
-from pyannote.audio.core.io import AudioFile
-from pyannote.audio.core.pipeline import Pipeline
 from .utils import PipelineModel, get_devices, get_model
 from ..utils.signal import Binarize
 
@@ -128,6 +129,9 @@ class MultilabelFMeasure(BaseMetric):
 
     """
 
+    def metric_components(self):
+        return self.mtl_specs.all_classes
+
     @classmethod
     def metric_name(cls):
         return "AVG[Labels]"
@@ -137,12 +141,12 @@ class MultilabelFMeasure(BaseMetric):
                  beta=1., parallel=False, **kwargs):
         self.parallel = parallel
         self.metric_name_ = self.metric_name()
-        self.components_ = set(self.metric_components())
-        self.reset()
         self.collar = collar
         self.skip_overlap = skip_overlap
         self.beta = beta
         self.mtl_specs = mtl_specs
+        self.components_ = set(self.metric_components())
+
         self.submetrics: Dict[str, DetectionPrecisionRecallFMeasure] = {
             label: DetectionPrecisionRecallFMeasure(collar=collar,
                                                     skip_overlap=skip_overlap,
@@ -150,6 +154,8 @@ class MultilabelFMeasure(BaseMetric):
                                                     **kwargs)
             for label in self.mtl_specs.all_classes
         }
+
+        self.reset()
 
     def reset(self):
         super().reset()
@@ -168,7 +174,7 @@ class MultilabelFMeasure(BaseMetric):
         return details
 
     def compute_metric(self, detail: Dict[str, float]):
-        return np.mean(detail.values())
+        return np.mean(list(detail.values()))
 
     def __abs__(self):
         return np.mean([abs(submetric) for submetric in self.submetrics.values()])
@@ -261,14 +267,17 @@ class MultilabelDetection(Pipeline):
         speech : `pyannote.core.Annotation`
             Annotated classification.
         """
+
+        multilabel_scores: SlidingWindowFeature
         if self.training:
             if self.CACHED_ACTIVATIONS not in file:
                 file[self.CACHED_ACTIVATIONS] = self.segmentation_inference_(file)
-        else:
-            file[self.CACHED_ACTIVATIONS] = self.segmentation_inference_(file)
 
-        # for each class name, add
-        multilabel_scores: SlidingWindowFeature = file[self.CACHED_ACTIVATIONS]
+            multilabel_scores = file[self.CACHED_ACTIVATIONS]
+        else:
+            multilabel_scores = self.segmentation_inference_(file)
+
+        # for each class name, add class-specific "VAD" pipeline
         full_annot = Annotation(uri=file["uri"])
         for class_idx, class_name in enumerate(self.labels):
             # selecting scores for only one label
@@ -279,8 +288,9 @@ class MultilabelDetection(Pipeline):
             label_scores = SlidingWindowFeature(label_scores_array,
                                                 multilabel_scores.sliding_window)
             binarizer: Binarize = self._binarizers[class_name]
-            label_annot = binarizer(label_scores)
-            full_annot.update(label_annot)
+            class_annot = binarizer(label_scores)
+            class_annot.rename_labels({label: class_name for label in class_annot.labels()}, copy=False)
+            full_annot.update(class_annot)
 
         return full_annot
 

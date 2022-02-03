@@ -46,7 +46,7 @@ from pyannote.core.utils.distance import pdist
 from pyannote.metrics.diarization import GreedyDiarizationErrorRate
 from pyannote.pipeline.parameter import Uniform
 
-from .clustering import Clustering
+from .clustering import Clustering, NearestClusterAssignment
 from .speaker_verification import PretrainedSpeakerEmbedding
 
 
@@ -132,6 +132,9 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         self.clustering = Klustering.value(
             metric=self._embedding.metric,
             expects_num_clusters=self.expects_num_speakers,
+        )
+        self.assignment = NearestClusterAssignment(
+            metric=self._embedding.metric, allow_reassignment=True
         )
 
         # hyper-parameters
@@ -318,7 +321,6 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
         if np.sum(speaker_status == LONG) == 0:
             warnings.warn("Please decrease 'min_activity' threshold.")
-
             return Annotation(uri=file["uri"])
 
         # TODO: handle corner case where there is 0 or 1 LONG speaker
@@ -363,66 +365,74 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         # skip speakers for which embedding extraction failed for some reason
         speaker_status[np.any(np.isnan(embeddings), axis=-1)] = SKIP
 
-        try:
+        if not hook.missing and "annotation" in file:
 
-            if not hook.missing and "annotation" in file:
+            # log actual distance matrix
 
-                hook(
-                    "@clustering/distance",
+            hook(
+                "@clustering/distance",
+                squareform(
                     pdist(
                         embeddings[speaker_status == LONG],
                         metric=self._embedding.metric,
-                    ),
-                )
-
-                def oracle_cost_func(Y, y):
-                    return torch.from_numpy(
-                        np.nanmean(np.abs(Y.numpy() - y.numpy()), axis=0)
                     )
+                ),
+            )
 
-                reference = file["annotation"].discretize(
-                    support=Segment(0.0, Audio().get_duration(file)),
-                    resolution=self._frames,
+            # log oracle distance matrix (0 = same speaker / 1 = different speaker)
+            # oracle[i, j] = 0 if same speaker
+            #              = 1 otherwise
+            # same_chunk[i, j] = 1 if same chunk
+            #                  = 0 otherwise
+            def oracle_cost_func(Y, y):
+                return torch.from_numpy(
+                    np.nanmean(np.abs(Y.numpy() - y.numpy()), axis=0)
                 )
-                oracle_clusters = []
 
-                for (
-                    c,
-                    (chunk, segmentation),
-                ) in enumerate(segmentations):
+            chunks = segmentations.sliding_window
+            reference = file["annotation"].discretize(
+                support=Segment(chunks[0].start, chunks[num_chunks - 1].end + chunks.step), 
+                resolution=self._frames,
+            )
 
-                    if np.all(speaker_status[c] != LONG):
-                        continue
+            oracle_clusters = []
+            chunk_idx = []
+            for (c, (chunk, segmentation),) in enumerate(segmentations):
 
-                    segmentation = segmentation[
-                        np.newaxis, :, speaker_status[c] == LONG
+                if np.all(speaker_status[c] != LONG):
+                    continue
+
+                segmentation = segmentation[np.newaxis, :, speaker_status[c] == LONG]
+
+                local_reference = reference.crop(chunk)
+                _, (permutation,) = permutate(
+                    segmentation,
+                    local_reference[:num_frames],
+                    cost_func=oracle_cost_func,
+                )
+                active_reference = np.any(local_reference > 0, axis=0)
+                oracle_clusters.extend(
+                    [
+                        i if ((i is not None) and (active_reference[i])) else -1
+                        for i in permutation
                     ]
+                )
+                chunk_idx.extend([
+                        c if ((i is not None) and (active_reference[i])) else -1
+                        for i in permutation
+                ])
 
-                    # FIXME: local_reference is too short when chunk.start < 0 or chunk.end > duration
-                    local_reference = reference.crop(chunk)
-                    _, (permutation,) = permutate(
-                        segmentation,
-                        local_reference[:num_frames],
-                        cost_func=oracle_cost_func,
-                    )
-                    active_reference = np.any(local_reference > 0, axis=0)
-                    oracle_clusters.extend(
-                        [
-                            i if ((i is not None) and (active_reference[i])) else -1
-                            for i in permutation
-                        ]
-                    )
+            oracle_clusters = np.array(oracle_clusters)
+            oracle = 1.0 * squareform(pdist(oracle_clusters, metric="equal"))
+            np.fill_diagonal(oracle, True)
+            oracle[oracle_clusters == -1] = -1
+            oracle[:, oracle_clusters == -1] = -1
+            hook("@clustering/oracle", oracle)
 
-                oracle_clusters = np.array(oracle_clusters)
-                oracle = 1.0 * squareform(pdist(oracle_clusters, metric="equal"))
-                np.fill_diagonal(oracle, True)
-                oracle[oracle_clusters == -1] = -1
-                oracle[:, oracle_clusters == -1] = -1
-
-                hook("@clustering/oracle", oracle)
-
-        except Exception:
-            pass
+            chunk_idx = np.array(chunk_idx)
+            same_chunk = 1.0 * squareform(pdist(chunk_idx, metric="equal"))
+            np.fill_diagonal(same_chunk, True)
+            hook("@clustering/same_chunk", same_chunk)
 
         # __ ACTIVE SPEAKER CLUSTERING _________________________________________________
         # clusters[chunk_id x local_num_speakers + speaker_id] = k
@@ -455,18 +465,9 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
         # __ FINAL SPEAKER ASSIGNMENT ___________________________________________________
 
-        centroids = np.vstack(
-            [np.mean(embeddings[clusters == k], axis=0) for k in range(num_clusters)]
+        clusters[speaker_status != SKIP] = self.assignment(
+            embeddings[speaker_status != SKIP], clusters[speaker_status != SKIP]
         )
-        unassigned = (speaker_status == KEEP) | (clusters == -1)
-        distances = cdist(
-            embeddings[unassigned],
-            centroids,
-            metric=self._embedding.metric,
-        )
-        clusters[unassigned] = np.argmin(distances, axis=1)
-
-        hook("@clustering/centroids", centroids)
         hook("@clustering/assignment", clusters)
 
         # __ CLUSTERING-BASED SEGMENTATION AGGREGATION _________________________________
@@ -496,13 +497,16 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
         hook("@segmentation/cluster", clustered_segmentations)
 
-        # reconstruct diarization
-        diarization = self.to_diarization(
-            clustered_segmentations,
-            count,
+        # build (discrete) diarization
+        discrete_diarization = self.to_diarization(clustered_segmentations, count)
+
+        # convert to continuous diarization
+        diarization = self.to_annotation(
+            discrete_diarization,
             min_duration_on=self.min_duration_on,
             min_duration_off=self.min_duration_off,
         )
+
         diarization.uri = file["uri"]
 
         if "annotation" in file:

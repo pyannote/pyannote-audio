@@ -28,12 +28,15 @@ import torch
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from typing_extensions import Literal
 
+from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
 from pyannote.audio.utils.loss import binary_cross_entropy, mse_loss
 from pyannote.audio.utils.permutation import permutate
-from pyannote.core import SlidingWindow
-from pyannote.database import Protocol
+from pyannote.audio.utils.signal import binarize
+from pyannote.audio.core.inference import Inference
+from pyannote.core import Segment, SlidingWindow
+from pyannote.database import Protocol, Subset
 
 
 class Segmentation(SegmentationTaskMixin, Task):
@@ -137,6 +140,8 @@ class Segmentation(SegmentationTaskMixin, Task):
 
         if self.max_num_speakers is None:
 
+            # TODO: optimize this
+
             # slide a window (with 1s step) over the whole training set
             # and keep track of the number of speakers in each location
             num_speakers = []
@@ -144,10 +149,7 @@ class Segmentation(SegmentationTaskMixin, Task):
                 start = file["annotated"][0].start
                 end = file["annotated"][-1].end
                 window = SlidingWindow(
-                    start=start,
-                    end=end,
-                    duration=self.duration,
-                    step=1.0,
+                    start=start, end=end, duration=self.duration, step=1.0,
                 )
                 for chunk in window:
                     num_speakers.append(len(file["annotation"].crop(chunk).labels()))
@@ -323,8 +325,7 @@ class Segmentation(SegmentationTaskMixin, Task):
         # frames weight
         weight_key = getattr(self, "weight", None)
         weight = batch.get(
-            weight_key,
-            torch.ones(batch_size, num_frames, 1, device=self.model.device),
+            weight_key, torch.ones(batch_size, num_frames, 1, device=self.model.device),
         )
         # (batch_size, num_frames, 1)
 
@@ -377,3 +378,28 @@ class Segmentation(SegmentationTaskMixin, Task):
     def validation_postprocess(self, y, y_pred):
         permutated_y_pred, _ = permutate(y, y_pred)
         return permutated_y_pred
+
+
+def main(
+    protocol: str, subset: str = "test", segmentation: str = "pyannote/segmentation"
+):
+    """Evaluate a pretrained segmentation model on a given protocol"""
+
+    from pyannote.audio.pipelines import SpeakerSegmentation
+    from pyannote.audio.utils.metric import DiscreteDiarizationErrorRate
+    from pyannote.core import SlidingWindowFeature
+
+    pipeline = SpeakerSegmentation(segmentation=segmentation, skip_stitching=True)
+    metric = DiscreteDiarizationErrorRate()
+
+    for file in getattr(protocol, subset)():
+        hypothesis: SlidingWindowFeature = pipeline(file)
+        _ = metric(file["annotation"], hypothesis)
+
+    _ = metric.report(display=True)
+
+
+if __name__ == "__main__":
+    import typer
+
+    typer.run(main)
