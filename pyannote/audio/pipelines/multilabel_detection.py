@@ -25,7 +25,6 @@ from itertools import chain
 from typing import Union, Optional, List, Dict, TYPE_CHECKING, Text
 
 import numpy as np
-from numba.typed import List
 from pyannote.core import Annotation, SlidingWindowFeature
 from pyannote.metrics.base import BaseMetric
 from pyannote.metrics.detection import DetectionPrecisionRecallFMeasure
