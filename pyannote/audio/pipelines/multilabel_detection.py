@@ -25,10 +25,6 @@ from itertools import chain
 from typing import Union, Optional, List, Dict, TYPE_CHECKING, Text
 
 import numpy as np
-from numba.typed import List
-from pyannote.audio import Inference
-from pyannote.audio.core.io import AudioFile
-from pyannote.audio.core.pipeline import Pipeline
 from pyannote.core import Annotation, SlidingWindowFeature
 from pyannote.metrics.base import BaseMetric
 from pyannote.metrics.detection import DetectionPrecisionRecallFMeasure
@@ -36,6 +32,9 @@ from pyannote.metrics.identification import IdentificationErrorRate
 from pyannote.pipeline.parameter import ParamDict, Uniform
 from sortedcontainers import SortedDict
 
+from pyannote.audio import Inference
+from pyannote.audio.core.io import AudioFile
+from pyannote.audio.core.pipeline import Pipeline
 from .utils import PipelineModel, get_devices, get_model
 from ..utils.signal import Binarize
 
