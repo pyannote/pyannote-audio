@@ -73,7 +73,7 @@ def main(cfg: DictConfig) -> Optional[float]:
 
         optimizer = instantiate(cfg.optimizer, self.parameters())
         lr_scheduler = instantiate(
-            cfg.lr_scheduler,
+            cfg.scheduler,
             optimizer,
             monitor=monitor,
             direction=direction,
@@ -113,7 +113,7 @@ def main(cfg: DictConfig) -> Optional[float]:
             monitor=monitor,
             mode=direction,
             min_delta=0.0,
-            patience=cfg.lr_scheduler.patience * 2,
+            patience=cfg.scheduler.patience * 2,
             strict=True,
             verbose=False,
         )
