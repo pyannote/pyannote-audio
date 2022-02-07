@@ -40,14 +40,8 @@ from torch_audiomentations.utils.config import from_dict as get_augmentation
 from pyannote.database import FileFinder, get_protocol
 
 
-@hydra.main(config_path="train_config", config_name="config")
+@hydra.main(config_path="config", config_name="config")
 def main(cfg: DictConfig) -> Optional[float]:
-
-    if cfg.trainer.get("resume_from_checkpoint", None) is not None:
-        raise ValueError(
-            "trainer.resume_from_checkpoint is not supported. "
-            "use model=pretrained model.checkpoint=... instead."
-        )
 
     # make sure to set the random seed before the instantiation of Trainer
     # so that each model initializes with the same weights when using DDP.
@@ -56,10 +50,6 @@ def main(cfg: DictConfig) -> Optional[float]:
 
     protocol = get_protocol(cfg.protocol, preprocessors={"audio": FileFinder()})
 
-    # TODO: configure layer freezing
-
-    # TODO: remove this OmegaConf.to_container hack once bug is solved:
-    # https://github.com/omry/omegaconf/pull/443
     augmentation = (
         get_augmentation(OmegaConf.to_container(cfg.augmentation))
         if "augmentation" in cfg
@@ -96,6 +86,7 @@ def main(cfg: DictConfig) -> Optional[float]:
     callbacks = []
 
     if fine_tuning:
+        # TODO: configure layer freezing
         # TODO: for fine-tuning and/or transfer learning, we start by fitting
         # TODO: task-dependent layers and gradully unfreeze more layers
         # TODO: callbacks.append(GraduallyUnfreeze(epochs_per_stage=1))
@@ -159,3 +150,8 @@ def main(cfg: DictConfig) -> Optional[float]:
 
 if __name__ == "__main__":
     main()
+
+
+# pyannote-audio-train
+# pyannote-audio-train
+

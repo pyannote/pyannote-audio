@@ -1,0 +1,7 @@
+protocol: ???
+
+defaults:
+  - optimizer: Adam
+  - scheduler: ReduceLROnPlateau
+  - trainer: default
+  - hydra: default
