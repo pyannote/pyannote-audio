@@ -41,7 +41,7 @@ from pyannote.database import FileFinder, get_protocol
 
 
 @hydra.main(config_path="config", config_name="config")
-def main(cfg: DictConfig) -> Optional[float]:
+def train(cfg: DictConfig) -> Optional[float]:
 
     # make sure to set the random seed before the instantiation of Trainer
     # so that each model initializes with the same weights when using DDP.
@@ -149,9 +149,5 @@ def main(cfg: DictConfig) -> Optional[float]:
 
 
 if __name__ == "__main__":
-    main()
-
-
-# pyannote-audio-train
-# pyannote-audio-train
+    train()
 
