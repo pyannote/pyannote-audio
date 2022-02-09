@@ -31,7 +31,9 @@ from pytorch_lightning.callbacks import (
     EarlyStopping,
     LearningRateMonitor,
     ModelCheckpoint,
+    RichProgressBar,
 )
+
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.utilities.seed import seed_everything
 from torch_audiomentations.utils.config import from_dict as get_augmentation
@@ -83,7 +85,7 @@ def train(cfg: DictConfig) -> Optional[float]:
 
     model.configure_optimizers = MethodType(configure_optimizers, model)
 
-    callbacks = []
+    callbacks = [RichProgressBar(), LearningRateMonitor()]
 
     if fine_tuning:
         # TODO: configure layer freezing
@@ -91,9 +93,6 @@ def train(cfg: DictConfig) -> Optional[float]:
         # TODO: task-dependent layers and gradully unfreeze more layers
         # TODO: callbacks.append(GraduallyUnfreeze(epochs_per_stage=1))
         pass
-
-    learning_rate_monitor = LearningRateMonitor()
-    callbacks.append(learning_rate_monitor)
 
     checkpoint = ModelCheckpoint(
         monitor=monitor,
