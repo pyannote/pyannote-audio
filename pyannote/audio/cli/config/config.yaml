@@ -1,8 +1,8 @@
 protocol: ???
-task: ???
-model: ???
 
 defaults:
+  - task: SpeakerSegmentation
+  - model: PyanNet
   - optimizer: Adam
   - scheduler: ReduceLROnPlateau
   - trainer: default
