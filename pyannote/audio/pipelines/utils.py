@@ -230,7 +230,8 @@ class SpeakerDiarizationMixin:
 
         if min_speakers > max_speakers:
             raise ValueError(
-                f"min_speakers must be smaller than (or equal to) max_speakers (here: {min_speakers=} and {max_speakers=})."
+                f"min_speakers must be smaller than (or equal to) max_speakers "
+                f"(here: min_speakers={min_speakers:g} and max_speakers={max_speakers:g})."
             )
         if min_speakers == max_speakers:
             num_speakers = min_speakers

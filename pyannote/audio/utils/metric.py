@@ -20,7 +20,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from functools import singledispatchmethod
+try:
+    from functools import singledispatchmethod
+except ImportError:
+    from singledispatchmethod import singledispatchmethod
 from typing import Optional
 
 import numpy as np

@@ -53,7 +53,8 @@ class ClusteringMixin:
 
         if min_clusters > max_clusters:
             raise ValueError(
-                f"min_clusters must be smaller than (or equal to) max_clusters (here: {min_clusters=} and {max_clusters=})."
+                f"min_clusters must be smaller than (or equal to) max_clusters "
+                f"(here: min_clusters={min_clusters:g} and max_clusters={max_clusters:g})."
             )
 
         if min_clusters == max_clusters:

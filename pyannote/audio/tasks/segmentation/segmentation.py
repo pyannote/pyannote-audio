@@ -28,15 +28,12 @@ import torch
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from typing_extensions import Literal
 
-from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
 from pyannote.audio.utils.loss import binary_cross_entropy, mse_loss
 from pyannote.audio.utils.permutation import permutate
-from pyannote.audio.utils.signal import binarize
-from pyannote.audio.core.inference import Inference
-from pyannote.core import Segment, SlidingWindow
-from pyannote.database import Protocol, Subset
+from pyannote.core import SlidingWindow
+from pyannote.database import Protocol
 
 
 class Segmentation(SegmentationTaskMixin, Task):
@@ -380,21 +377,40 @@ class Segmentation(SegmentationTaskMixin, Task):
         return permutated_y_pred
 
 
-def main(
-    protocol: str, subset: str = "test", segmentation: str = "pyannote/segmentation"
-):
-    """Evaluate a pretrained segmentation model on a given protocol"""
+def main(protocol: str, subset: str = "test", model: str = "pyannote/segmentation"):
+    """Evaluate a segmentation model"""
 
-    from pyannote.audio.pipelines import SpeakerSegmentation
+    from pyannote.audio import Inference
+    from pyannote.audio.pipelines.utils import get_devices
+    from pyannote.audio.utils.signal import binarize
     from pyannote.audio.utils.metric import DiscreteDiarizationErrorRate
-    from pyannote.core import SlidingWindowFeature
+    from pyannote.database import get_protocol, FileFinder
+    from rich.progress import Progress
 
-    pipeline = SpeakerSegmentation(segmentation=segmentation, skip_stitching=True)
+    (device,) = get_devices(needs=1)
     metric = DiscreteDiarizationErrorRate()
+    protocol = get_protocol(protocol, preprocessors={"audio": FileFinder()})
+    files = list(getattr(protocol, subset)())
 
-    for file in getattr(protocol, subset)():
-        hypothesis: SlidingWindowFeature = pipeline(file)
-        _ = metric(file["annotation"], hypothesis)
+    with Progress() as progress:
+
+        main_task = progress.add_task(protocol.name, total=len(files))
+        file_task = progress.add_task("Processing", total=1.0)
+
+        def progress_hook(completed: int, total: int):
+            progress.update(file_task, completed=completed / total)
+
+        inference = Inference(
+            model, device=device, progress_hook=progress_hook
+        )
+
+        for file in files:
+            progress.update(file_task, description=file["uri"])
+            reference = file["annotation"]
+            hypothesis = binarize(inference(file))
+            uem = file["annotated"]
+            _ = metric(reference, hypothesis, uem=uem)
+            progress.advance(main_task)
 
     _ = metric.report(display=True)
 
