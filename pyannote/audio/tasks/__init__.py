@@ -27,7 +27,7 @@ from .segmentation.overlapped_speech_detection import (  # isort:skip
 )
 from .segmentation.voice_type_classification import VoiceTypeClassification  # isort:skip
 
-from .segmentation.speaker_tracking import SpeakerTracking  # isort:skip
+from .segmentation.speaker_tracking import MultilabelDetection  # isort:skip
 
 from .segmentation.segmentation import Segmentation  # isort:skip
 
@@ -40,6 +40,6 @@ __all__ = [
     "VoiceActivityDetection",
     "SpeakerChangeDetection",
     "OverlappedSpeechDetection",
-    "SpeakerTracking",
+    "MultilabelDetection",
     "SpeakerEmbedding",
 ]

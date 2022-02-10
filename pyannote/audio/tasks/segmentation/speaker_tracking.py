@@ -19,18 +19,60 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-
-from typing import List, Optional, Text, Tuple, Union
+import warnings
+from functools import reduce
+from itertools import chain
+from typing import List, Optional, Text, Tuple, Union, Dict
 
 import numpy as np
+from pyannote.core import Annotation
+from pyannote.database import Protocol, ProtocolFile
+from pyannote.database.protocol.protocol import Preprocessor
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 
 from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
-from pyannote.database import Protocol
 
 
-class SpeakerTracking(SegmentationTaskMixin, Task):
+class VoiceTypeClassifierPreprocessor(Preprocessor):
+
+    def __init__(self, classes: List[str],
+                 unions: Optional[Dict[str, List[str]]],
+                 intersections: Optional[Dict[str, List[str]]]):
+        self.classes = classes
+        if unions is not None:
+            assert set(chain.from_iterable(unions.values())).issubset(set(classes))
+
+        if intersections is not None:
+            assert set(chain.from_iterable(intersections.values())).issubset(set(classes))
+        self.unions = unions if unions is not None else dict()
+        self.intersections = intersections if intersections is not None else dict()
+
+    @property
+    def all_classes(self) -> List[str]:
+        return sorted(self.classes
+                      + list(self.unions.keys())
+                      + list(self.intersections.keys()))
+
+    def __call__(self, current_file: ProtocolFile) -> Annotation:
+        annotation = current_file["annotation"]
+        derived = annotation.subset(self.classes)
+        # Adding union labels
+        for union_label, subclasses in self.unions.items():
+            mapping = {k: union_label for k in subclasses}
+            metalabel_annot = annotation.subset(union_label).rename_labels(mapping=mapping)
+            derived.update(metalabel_annot.support())
+
+        # adding intersection labels
+        for intersect_label, subclasses in self.intersections.items():
+            subclasses_tl = [annotation.label_timeline(subclass) for subclass in subclasses]
+            overlap_tl = reduce(lambda x, y: x.crop(y), subclasses_tl)
+            derived.update(overlap_tl.to_annotation(intersect_label))
+
+        return derived
+
+
+class MultilabelDetection(SegmentationTaskMixin, Task):
     """Speaker tracking
 
     Speaker tracking is the process of determining if and when a (previously
@@ -72,21 +114,21 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
         during training.
     """
 
-    ACRONYM = "spk"
+    ACRONYM = "mlt"
 
     def __init__(
-        self,
-        protocol: Protocol,
-        duration: float = 2.0,
-        warm_up: Union[float, Tuple[float, float]] = 0.0,
-        balance: Text = None,
-        weight: Text = None,
-        batch_size: int = 32,
-        num_workers: int = None,
-        pin_memory: bool = False,
-        augmentation: BaseWaveformTransform = None,
+            self,
+            protocol: Protocol,
+            classes: Optional[List[str]] = None,
+            duration: float = 2.0,
+            warm_up: Union[float, Tuple[float, float]] = 0.0,
+            balance: Text = None,
+            weight: Text = None,
+            batch_size: int = 32,
+            num_workers: int = None,
+            pin_memory: bool = False,
+            augmentation: BaseWaveformTransform = None,
     ):
-
         super().__init__(
             protocol,
             duration=duration,
@@ -99,6 +141,7 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
 
         self.balance = balance
         self.weight = weight
+        self.classes = set(classes) if classes is not None else None
 
         # for speaker tracking, task specification depends
         # on the data: we do not know in advance which
@@ -106,12 +149,19 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
         # the definition of specifications.
 
     def setup(self, stage: Optional[str] = None):
-
         super().setup(stage=stage)
+        protocol_classes = set(self._train_metadata["annotation"])
+        if self.classes is not None:
+            if protocol_classes != self.classes:
+                warnings.warn("Mismatch between protocol classes and classes "
+                              f"passed to the task: {protocol_classes} != {self.classes}")
+            classes = sorted(self.classes)
+        else:
+            classes = sorted(protocol_classes)
 
         self.specifications = Specifications(
             # one class per speaker
-            classes=sorted(self._train_metadata["annotation"]),
+            classes=classes,
             # multiple speakers can be active at once
             problem=Problem.MULTI_LABEL_CLASSIFICATION,
             resolution=Resolution.FRAME,
