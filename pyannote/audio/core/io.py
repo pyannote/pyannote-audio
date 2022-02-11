@@ -161,6 +161,12 @@ class Audio:
                 raise ValueError(f"File {path} does not exist")
 
             file.setdefault("uri", path.stem)
+        
+        else:
+
+            raise ValueError(
+                "Neither 'waveform' nor 'audio' is available for this file."
+            )
 
         return file
 
