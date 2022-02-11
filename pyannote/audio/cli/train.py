@@ -50,14 +50,14 @@ def train(cfg: DictConfig) -> Optional[float]:
     seed = int(os.environ.get("PL_GLOBAL_SEED", "0"))
     seed_everything(seed=seed)
 
+    # instantiate training protocol with optional preprocessors
     preprocessors = {"audio": FileFinder()}
-
     if "preprocessor" in cfg:
         preprocessor = instantiate(cfg.preprocessor)
         preprocessors[preprocessor.preprocessed_key] = preprocessor
-
     protocol = get_protocol(cfg.protocol, preprocessors=preprocessors)
 
+    # instantiate data augmentation
     augmentation = (
         get_augmentation(OmegaConf.to_container(cfg.augmentation))
         if "augmentation" in cfg
@@ -66,6 +66,8 @@ def train(cfg: DictConfig) -> Optional[float]:
 
     # instantiate task and validation metric
     task = instantiate(cfg.task, protocol, augmentation=augmentation)
+
+    # validation metric to monitor (and its direction: min or max)
     monitor, direction = task.val_monitor
 
     # instantiate model
@@ -77,8 +79,8 @@ def train(cfg: DictConfig) -> Optional[float]:
     # number of batches in one epoch
     num_batches_per_epoch = model.task.train__len__() // model.task.batch_size
 
+    # configure optimizer and scheduler
     def configure_optimizers(self):
-
         optimizer = instantiate(cfg.optimizer, self.parameters())
         lr_scheduler = instantiate(
             cfg.scheduler,
@@ -88,7 +90,6 @@ def train(cfg: DictConfig) -> Optional[float]:
             num_batches_per_epoch=num_batches_per_epoch,
         )
         return {"optimizer": optimizer, "lr_scheduler": lr_scheduler}
-
     model.configure_optimizers = MethodType(configure_optimizers, model)
 
     callbacks = [RichProgressBar(), LearningRateMonitor()]
@@ -124,13 +125,10 @@ def train(cfg: DictConfig) -> Optional[float]:
         )
         callbacks.append(early_stopping)
 
-    logger = TensorBoardLogger(
-        ".",
-        name="",
-        version="",
-        log_graph=False,  # TODO: fixes onnx error with asteroid-filterbanks
-    )
+    # instantiate logger
+    logger = TensorBoardLogger(".", name="", version="", log_graph=False)
 
+    # instantiate trainer
     trainer = instantiate(cfg.trainer, callbacks=callbacks, logger=logger)
 
     # in case of fine-tuning, validate the initial model to make sure
@@ -138,6 +136,7 @@ def train(cfg: DictConfig) -> Optional[float]:
     if fine_tuning:
         trainer.validate(model)
 
+    # train the model
     trainer.fit(model)
 
     # save paths to best models
