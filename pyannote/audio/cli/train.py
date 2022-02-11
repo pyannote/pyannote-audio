@@ -50,7 +50,13 @@ def train(cfg: DictConfig) -> Optional[float]:
     seed = int(os.environ.get("PL_GLOBAL_SEED", "0"))
     seed_everything(seed=seed)
 
-    protocol = get_protocol(cfg.protocol, preprocessors={"audio": FileFinder()})
+    preprocessors = {"audio": FileFinder()}
+
+    if "preprocessor" in cfg:
+        preprocessor = instantiate(cfg.preprocessor)
+        preprocessors[preprocessor.preprocessed_key] = preprocessor
+
+    protocol = get_protocol(cfg.protocol, preprocessors=preprocessors)
 
     augmentation = (
         get_augmentation(OmegaConf.to_container(cfg.augmentation))
