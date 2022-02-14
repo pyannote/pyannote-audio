@@ -46,10 +46,7 @@ from ..utils import (
 
 
 def general_stream(
-    pipeline: Pipeline,
-    source: Path,
-    labels: [dict],
-    chunk: float = 10.0,
+    pipeline: Pipeline, source: Path, labels: [dict], chunk: float = 10.0,
 ) -> Iterable[Dict]:
     """Stream for `audio.gen` recipe
 
@@ -197,14 +194,9 @@ def general_stream(
         int,
     ),
     precision=("Keyboard temporal precision, in milliseconds.", "option", None, int),
-    beep=(
-        "Beep when the player reaches the end of a region.",
-        "flag",
-        None,
-        bool,
-    ),
+    beep=("Beep when the player reaches the end of a region.", "flag", None, bool,),
 )
-def general_recipe(
+def pipeline(
     dataset: str,
     source: Union[str, Iterable[dict]],
     pipeline: Union[str, Iterable[dict]],
