@@ -1,10 +1,9 @@
 protocol: ???
-patience: 5
 
 defaults:
-  - task: Segmentation
+  - task: SpeakerSegmentation
   - model: PyanNet
   - optimizer: Adam
-  - lr_scheduler: ReduceLROnPlateau
+  - scheduler: ReduceLROnPlateau
   - trainer: default
-  - hydra: train
+  - hydra: default

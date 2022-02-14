@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020-2021 CNRS
+# Copyright (c) 2020-2022 CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -31,7 +31,9 @@ from pytorch_lightning.callbacks import (
     EarlyStopping,
     LearningRateMonitor,
     ModelCheckpoint,
+    RichProgressBar,
 )
+
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.utilities.seed import seed_everything
 from torch_audiomentations.utils.config import from_dict as get_augmentation
@@ -41,25 +43,21 @@ from pyannote.database import FileFinder, get_protocol
 
 
 @hydra.main(config_path="train_config", config_name="config")
-def main(cfg: DictConfig) -> Optional[float]:
-
-    if cfg.trainer.get("resume_from_checkpoint", None) is not None:
-        raise ValueError(
-            "trainer.resume_from_checkpoint is not supported. "
-            "use model=pretrained model.checkpoint=... instead."
-        )
+def train(cfg: DictConfig) -> Optional[float]:
 
     # make sure to set the random seed before the instantiation of Trainer
     # so that each model initializes with the same weights when using DDP.
     seed = int(os.environ.get("PL_GLOBAL_SEED", "0"))
     seed_everything(seed=seed)
 
-    protocol = get_protocol(cfg.protocol, preprocessors={"audio": FileFinder()})
+    # instantiate training protocol with optional preprocessors
+    preprocessors = {"audio": FileFinder()}
+    if "preprocessor" in cfg:
+        preprocessor = instantiate(cfg.preprocessor)
+        preprocessors[preprocessor.preprocessed_key] = preprocessor
+    protocol = get_protocol(cfg.protocol, preprocessors=preprocessors)
 
-    # TODO: configure layer freezing
-
-    # TODO: remove this OmegaConf.to_container hack once bug is solved:
-    # https://github.com/omry/omegaconf/pull/443
+    # instantiate data augmentation
     augmentation = (
         get_augmentation(OmegaConf.to_container(cfg.augmentation))
         if "augmentation" in cfg
@@ -68,6 +66,8 @@ def main(cfg: DictConfig) -> Optional[float]:
 
     # instantiate task and validation metric
     task = instantiate(cfg.task, protocol, augmentation=augmentation)
+
+    # validation metric to monitor (and its direction: min or max)
     monitor, direction = task.val_monitor
 
     # instantiate model
@@ -79,30 +79,27 @@ def main(cfg: DictConfig) -> Optional[float]:
     # number of batches in one epoch
     num_batches_per_epoch = model.task.train__len__() // model.task.batch_size
 
+    # configure optimizer and scheduler
     def configure_optimizers(self):
-
         optimizer = instantiate(cfg.optimizer, self.parameters())
         lr_scheduler = instantiate(
-            cfg.lr_scheduler,
+            cfg.scheduler,
             optimizer,
             monitor=monitor,
             direction=direction,
             num_batches_per_epoch=num_batches_per_epoch,
         )
         return {"optimizer": optimizer, "lr_scheduler": lr_scheduler}
-
     model.configure_optimizers = MethodType(configure_optimizers, model)
 
-    callbacks = []
+    callbacks = [RichProgressBar(), LearningRateMonitor()]
 
     if fine_tuning:
+        # TODO: configure layer freezing
         # TODO: for fine-tuning and/or transfer learning, we start by fitting
         # TODO: task-dependent layers and gradully unfreeze more layers
         # TODO: callbacks.append(GraduallyUnfreeze(epochs_per_stage=1))
         pass
-
-    learning_rate_monitor = LearningRateMonitor()
-    callbacks.append(learning_rate_monitor)
 
     checkpoint = ModelCheckpoint(
         monitor=monitor,
@@ -122,19 +119,16 @@ def main(cfg: DictConfig) -> Optional[float]:
             monitor=monitor,
             mode=direction,
             min_delta=0.0,
-            patience=cfg.lr_scheduler.patience * 2,
+            patience=cfg.scheduler.patience * 2,
             strict=True,
             verbose=False,
         )
         callbacks.append(early_stopping)
 
-    logger = TensorBoardLogger(
-        ".",
-        name="",
-        version="",
-        log_graph=False,  # TODO: fixes onnx error with asteroid-filterbanks
-    )
+    # instantiate logger
+    logger = TensorBoardLogger(".", name="", version="", log_graph=False)
 
+    # instantiate trainer
     trainer = instantiate(cfg.trainer, callbacks=callbacks, logger=logger)
 
     # in case of fine-tuning, validate the initial model to make sure
@@ -142,6 +136,7 @@ def main(cfg: DictConfig) -> Optional[float]:
     if fine_tuning:
         trainer.validate(model)
 
+    # train the model
     trainer.fit(model)
 
     # save paths to best models
@@ -158,4 +153,5 @@ def main(cfg: DictConfig) -> Optional[float]:
 
 
 if __name__ == "__main__":
-    main()
+    train()
+

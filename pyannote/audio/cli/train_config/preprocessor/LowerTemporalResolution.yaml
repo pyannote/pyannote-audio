@@ -1,0 +1,3 @@
+# @package _group_
+_target_: pyannote.audio.utils.preprocessors.LowerTemporalResolution
+resolution: 0.1

@@ -1,0 +1,30 @@
+# @package _group_
+
+run:
+  dir: ${protocol}/${now:%Y-%m-%dT%H:%M:%S.%fZ}
+
+sweep:
+  dir: ${protocol}/${now:%Y-%m-%dT%H:%M:%S.%fZ}
+  subdir: ${hydra.job.num}
+
+output_subdir: ""
+
+help:
+  app_name: pyannote-audio-eval
+
+  # Help header, customize to describe your app to your users
+  header: == ${hydra.help.app_name} ==
+
+  footer: |-
+    Powered by Hydra (https://hydra.cc)
+    Use --hydra-help to view Hydra specific help
+
+  template: |-
+    ${hydra.help.header}
+
+    pyannote-audio-eval protocol={protocol_name} 
+                        subset={test | development | train}
+                        model={path_to_pretrained_model}
+                        warm_up={warm_up_duration_in_seconds}
+
+    ${hydra.help.footer}

@@ -1,0 +1,31 @@
+# @package _group_
+
+run:
+  dir: ${protocol}/${now:%Y-%m-%dT%H:%M:%S.%fZ}
+
+sweep:
+  dir: ${protocol}/${now:%Y-%m-%dT%H:%M:%S.%fZ}
+  subdir: ${hydra.job.num}
+
+output_subdir: ""
+
+help:
+  app_name: pyannote-audio-train
+
+  # Help header, customize to describe your app to your users
+  header: == ${hydra.help.app_name} ==
+
+  footer: |-
+    Powered by Hydra (https://hydra.cc)
+    Use --hydra-help to view Hydra specific help
+
+  template: |-
+    ${hydra.help.header}
+
+    pyannote-audio-train protocol={protocol_name} 
+                         +task={task} task.param=...
+                         +model={model} model.param=...
+                         optimizer={optimizer} optimizer.param=...
+                         scheduler={scheduler} scheduler.param=...
+
+    ${hydra.help.footer}

@@ -7,7 +7,8 @@
 </p>
 
 
-## TL;DR
+## TL;DR [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pyannote/pyannote-audio/blob/develop/tutorials/intro.ipynb)
+
 
 ```python
 # instantiate pretrained speaker diarization pipeline
@@ -28,7 +29,7 @@ for turn, _, speaker in diarization.itertracks(yield_label=True):
 
 ## What's new in `pyannote.audio` 2.0
 
-For version 2.x of `pyannote.audio`, [I](https://herve.niderb.fr) decided to rewrite almost everything from scratch.
+For version 2.0 of `pyannote.audio`, [I](https://herve.niderb.fr) decided to rewrite almost everything from scratch.
 Highlights of this release are:
 
 - :exploding_head: much better performance (see [Benchmark](#benchmark))
@@ -39,17 +40,12 @@ Highlights of this release are:
 
 ## Installation
 
+Only Python 3.8+ is officially supported (though it might work with Python 3.7)
+
 ```bash
-conda create -n pyannote python=3.8.5
+conda create -n pyannote python=3.8
 conda activate pyannote
 conda install pytorch torchaudio -c pytorch
-
-# pyannote.audio relies on torchaudio's soundfile backend,
-# itself relying on libsndfile, sometimes tricky to install.
-# This seems to work fine but is provided with no guarantee of success:
-conda install numpy cffi
-conda install libsndfile=1.0.28 -c conda-forge
-
 pip install https://github.com/pyannote/pyannote-audio/archive/develop.zip
 ```
 
@@ -69,6 +65,7 @@ pip install https://github.com/pyannote/pyannote-audio/archive/develop.zip
     - Adding a new pipeline
     - Sharing pretrained models and pipelines
 - Miscellaneous
+    - [Training with `pyannote-audio-train` command line tool](tutorials/training_with_cli.md)
     - [Speaker verification](tutorials/speaker_verification.ipynb)
     - Visualization and debugging
 
