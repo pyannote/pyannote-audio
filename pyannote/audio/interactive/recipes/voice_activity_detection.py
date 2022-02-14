@@ -189,8 +189,6 @@ def voice_activity_detection(
     beep: bool = False,
 ) -> Dict[str, Any]:
 
-    # Fusionner avec speaker_diarization en faisant une version générale
-
     if pipeline is None:
         vad = VoiceActivityDetection(segmentation="pyannote/segmentation")
         vad.instantiate(

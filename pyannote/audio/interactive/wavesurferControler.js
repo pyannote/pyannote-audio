@@ -122,6 +122,11 @@ function waitForElement(){
             }
           }, 5);
         });
+        window.wavesurfer.on('region-dblclick',function(e){
+          re = window.wavesurfer.addRegion({'start' : e.start,'end' : e.end});
+          window.wavesurfer.fireEvent('region-update-end',re);
+          e.remove();
+        });
         window.wavesurfer.on('region-click',function(e){
           switchCurrent(ids.indexOf(e));
         });
@@ -212,7 +217,7 @@ document.querySelector('#root').onkeydown = document.querySelector('#root').onke
     }else if (keysMap['ArrowUp'] && keysMap['Shift']){
       var fin = pos + 1;
       if(fin > audioEnd) fin = audioEnd;
-      re = window.wavesurfer.addRegion({'start' : pos,'end' : fin,'color' : "rgba(255, 215, 0, 0.2)"});
+      re = window.wavesurfer.addRegion({'start' : pos,'end' : fin});
       window.wavesurfer.fireEvent('region-update-end',re);
     }else if(keysMap['Backspace'] || (keysMap['ArrowDown'] && keysMap['Shift'])){
       ids[currentRegion].remove();
