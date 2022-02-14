@@ -185,13 +185,13 @@ def diff(
 ) -> Dict[str, Any]:
 
     dirname = os.path.dirname(os.path.realpath(__file__))
-    pathControler = dirname + "/../errorControler.js"
+    pathController = dirname + "/../diffController.js"
     pathWave = dirname + "/../wavesurfer.js"
     pathRegion = dirname + "/../regions.js"
     pathTemplate = dirname + "/../htmltemplate.html"
     pathLegend = dirname + "/../legend.html"
     pathCss = dirname + "/../template.css"
-    with open(pathControler) as txt, open(pathWave) as wave, open(
+    with open(pathController) as txt, open(pathWave) as wave, open(
         pathRegion
     ) as region, open(pathTemplate) as html, open(pathLegend) as legend, open(
         pathCss

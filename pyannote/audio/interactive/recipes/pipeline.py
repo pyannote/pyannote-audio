@@ -215,7 +215,7 @@ def pipeline(
 
     dirname = os.path.dirname(os.path.realpath(__file__))
 
-    controller_js = dirname + "/../wavesurferControler.js"
+    controller_js = dirname + "/../wavesurferController.js"
     with open(controller_js) as txt:
         javascript = txt.read()
 

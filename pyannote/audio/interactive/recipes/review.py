@@ -157,8 +157,8 @@ def review(
 ) -> Dict[str, Any]:
 
     dirname = os.path.dirname(os.path.realpath(__file__))
-    pathControler = dirname + "/../correctionControler.js"
-    pathShortcuts = dirname + "/../wavesurferControler.js"
+    pathController = dirname + "/../reviewController.js"
+    pathShortcuts = dirname + "/../wavesurferController.js"
     pathWave = dirname + "/../wavesurfer.js"
     pathRegion = dirname + "/../regions.js"
     pathHtml = dirname + "/../instructions.html"
@@ -166,7 +166,7 @@ def review(
     pathTemplate = dirname + "/../htmltemplate.html"
     pathCss = dirname + "/../template.css"
     help = dirname + "/../help.html"
-    with open(pathControler) as txt, open(pathWave) as wave, open(
+    with open(pathController) as txt, open(pathWave) as wave, open(
         pathRegion
     ) as region, open(pathTemplate) as html, open(pathCss) as css, open(
         pathShortcuts
