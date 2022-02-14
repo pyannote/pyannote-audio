@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020-2021 CNRS
+# Copyright (c) 2020-2022 CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -42,7 +42,7 @@ from torch_audiomentations.utils.config import from_dict as get_augmentation
 from pyannote.database import FileFinder, get_protocol
 
 
-@hydra.main(config_path="config", config_name="config")
+@hydra.main(config_path="train_config", config_name="config")
 def train(cfg: DictConfig) -> Optional[float]:
 
     # make sure to set the random seed before the instantiation of Trainer

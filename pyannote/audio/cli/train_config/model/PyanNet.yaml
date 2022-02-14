@@ -1,0 +1,13 @@
+# @package _group_
+_target_: pyannote.audio.models.segmentation.PyanNet
+sincnet:
+  stride: 10
+lstm:
+  hidden_size: 128
+  num_layers: 2
+  bidirectional: true
+  monolithic: true
+  dropout: 0.5
+linear:
+  hidden_size: 128
+  num_layers: 2
