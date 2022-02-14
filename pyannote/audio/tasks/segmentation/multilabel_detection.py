@@ -19,6 +19,7 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
+import logging
 import warnings
 from functools import reduce
 from itertools import chain
@@ -37,9 +38,9 @@ from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
 class VoiceTypeClassifierPreprocessor(Preprocessor):
 
     def __init__(self, classes: List[str],
-                 unions: Optional[Dict[str, List[str]]],
-                 intersections: Optional[Dict[str, List[str]]]):
-        self.classes = classes
+                 unions: Optional[Dict[str, List[str]]] = None,
+                 intersections: Optional[Dict[str, List[str]]] = None):
+        self.classes = set(classes)
         if unions is not None:
             assert set(chain.from_iterable(unions.values())).issubset(set(classes))
 
@@ -50,7 +51,7 @@ class VoiceTypeClassifierPreprocessor(Preprocessor):
 
     @property
     def all_classes(self) -> List[str]:
-        return sorted(self.classes
+        return sorted(list(self.classes)
                       + list(self.unions.keys())
                       + list(self.intersections.keys()))
 
@@ -60,32 +61,37 @@ class VoiceTypeClassifierPreprocessor(Preprocessor):
         # Adding union labels
         for union_label, subclasses in self.unions.items():
             mapping = {k: union_label for k in subclasses}
-            metalabel_annot = annotation.subset(union_label).rename_labels(mapping=mapping)
+            metalabel_annot = annotation.subset(subclasses).rename_labels(mapping=mapping)
             derived.update(metalabel_annot.support())
 
         # adding intersection labels
         for intersect_label, subclasses in self.intersections.items():
             subclasses_tl = [annotation.label_timeline(subclass) for subclass in subclasses]
             overlap_tl = reduce(lambda x, y: x.crop(y), subclasses_tl)
-            derived.update(overlap_tl.to_annotation(intersect_label))
+            for seg in overlap_tl:
+                derived[seg] = intersect_label
 
         return derived
 
 
 class MultilabelDetection(SegmentationTaskMixin, Task):
-    """Speaker tracking
+    """Multilabel Detection
 
-    Speaker tracking is the process of determining if and when a (previously
-    enrolled) person's voice can be heard in a given audio recording.
+    Multilabel detection is the process of detecting when a specific class
+    of speaker can be heard in the audio.
+    It can also be used for speaker tracking.
 
     Here, it is addressed with the same approach as voice activity detection,
-    except {"non-speech", "speech"} classes are replaced by {"speaker1", ...,
-    "speaker_N"} where N is the number of speakers in the training set.
+    except {"non-speech", "speech"} classes are replaced by {"class_1", ...,
+    "class_N"} where N is the number of classes in the training set.
 
     Parameters
     ----------
     protocol : Protocol
         pyannote.database protocol
+    classes : List[str], optional
+        list of classes that are to be detected. If unspecified, defaults to the
+        all the classes contained in the training set.
     duration : float, optional
         Chunks duration. Defaults to 2s.
     warm_up : float or (float, float), optional
@@ -143,9 +149,9 @@ class MultilabelDetection(SegmentationTaskMixin, Task):
         self.weight = weight
         self.classes = set(classes) if classes is not None else None
 
-        # for speaker tracking, task specification depends
+        # task specification depends
         # on the data: we do not know in advance which
-        # speakers should be tracked. therefore, we postpone
+        # classes should be detected. therefore, we postpone
         # the definition of specifications.
 
     def setup(self, stage: Optional[str] = None):
@@ -159,6 +165,7 @@ class MultilabelDetection(SegmentationTaskMixin, Task):
         else:
             classes = sorted(protocol_classes)
 
+        logging.info(f"Classes for model: {classes}")
         self.specifications = Specifications(
             # one class per speaker
             classes=classes,

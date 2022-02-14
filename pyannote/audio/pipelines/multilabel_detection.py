@@ -48,7 +48,7 @@ class MultilabelFMeasure(BaseMetric):
     def metric_name(cls):
         return "AVG[Labels]"
 
-    def __init__(self, classes: List[str], # noqa
+    def __init__(self, classes: List[str],  # noqa
                  collar=0.0, skip_overlap=False,
                  beta=1., parallel=False, **kwargs):
         self.parallel = parallel
@@ -89,7 +89,9 @@ class MultilabelFMeasure(BaseMetric):
 
     def report(self, display=False):
         df = super().report(display=False)
-        # TODO: normalize the average values for each component
+
+        # mean of all columns's totals instead of the sum
+        df.loc["TOTAL"] = df.loc["TOTAL"] / (len(df.index) - 1)
 
         if display:
             print(
@@ -102,7 +104,6 @@ class MultilabelFMeasure(BaseMetric):
             )
 
         return df
-
 
     def __abs__(self):
         return np.mean([abs(submetric) for submetric in self.submetrics.values()])
@@ -208,7 +209,7 @@ class MultilabelDetectionPipeline(Pipeline):
         """Return new instance of identification metric"""
 
         if self.fscore:
-            return MultilabelFMeasure(collar=0.0, skip_overlap=False)
+            return MultilabelFMeasure(classes=self.labels, collar=0.0, skip_overlap=False)
         else:
             return IdentificationErrorRate(collar=0.0, skip_overlap=False)
 
