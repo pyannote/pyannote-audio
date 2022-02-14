@@ -315,15 +315,17 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
         speaker_status = np.full((num_chunks, local_num_speakers), SKIP, dtype=np.int)
         speaker_status[np.any(binarized_segmentations.data, axis=1)] = KEEP
-        speaker_status[
-            np.mean(masked_segmentations, axis=1) * chunk_duration > self.min_activity
-        ] = LONG
 
-        if np.sum(speaker_status == LONG) == 0:
-            warnings.warn("Please decrease 'min_activity' threshold.")
+        if np.sum(speaker_status == KEEP) == 0:
             return Annotation(uri=file["uri"])
 
-        # TODO: handle corner case where there is 0 or 1 LONG speaker
+        # lower min_activity until at least one (chunk, speaker) passes the threshold
+        min_activity = self.min_activity
+        while np.sum(speaker_status == LONG) == 0:
+            speaker_status[
+                np.mean(masked_segmentations, axis=1) * chunk_duration > min_activity
+            ] = LONG
+            min_activity *= 0.9
 
         # __ SPEAKER EMBEDDING _________________________________________________________
 
