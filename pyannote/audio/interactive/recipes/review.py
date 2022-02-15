@@ -110,7 +110,7 @@ def review_stream(
 
 
 @prodigy.recipe(
-    "audio.correction",
+    "pyannote.review",
     dataset=("Dataset to save annotations to", "positional", None, str),
     source=(
         "Path to directory containing audio files whose annotation is to be checked",
@@ -236,7 +236,9 @@ def review(
                 }
             },
             "blocks": [
-                {"view_id": "audio_manual",},
+                {
+                    "view_id": "audio_manual",
+                },
                 {"view_id": "html", "html_template": templateH},
             ],
             "show_audio_timeline": True,

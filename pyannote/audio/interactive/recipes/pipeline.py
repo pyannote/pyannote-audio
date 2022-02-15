@@ -46,7 +46,10 @@ from ..utils import (
 
 
 def general_stream(
-    pipeline: Pipeline, source: Path, labels: [dict], chunk: float = 10.0,
+    pipeline: Pipeline,
+    source: Path,
+    labels: [dict],
+    chunk: float = 10.0,
 ) -> Iterable[Dict]:
     """Stream for `audio.gen` recipe
 
@@ -167,7 +170,7 @@ def general_stream(
 
 
 @prodigy.recipe(
-    "audio.gen",
+    "pyannote.audio",
     dataset=("Dataset to save annotations to", "positional", None, str),
     source=(
         "Path to directory containing audio files to annotate",
@@ -194,7 +197,12 @@ def general_stream(
         int,
     ),
     precision=("Keyboard temporal precision, in milliseconds.", "option", None, int),
-    beep=("Beep when the player reaches the end of a region.", "flag", None, bool,),
+    beep=(
+        "Beep when the player reaches the end of a region.",
+        "flag",
+        None,
+        bool,
+    ),
 )
 def pipeline(
     dataset: str,

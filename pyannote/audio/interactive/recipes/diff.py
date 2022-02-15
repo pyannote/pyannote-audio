@@ -144,7 +144,7 @@ def diff_stream(
 
 
 @prodigy.recipe(
-    "audio.errors",
+    "pyannote.review",
     dataset=("Dataset to save annotations to", "positional", None, str),
     source=(
         "Path to directory containing audio files whose annotation is to be checked",

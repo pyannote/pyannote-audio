@@ -84,21 +84,31 @@ function beep() {
   }
 }
 
+function activeRegion(e){
+  e.element.style.borderTop = "3px solid";
+  e.element.style.borderBottom = "3px solid";
+}
+
+function deactiveRegion(e){
+  e.element.style.borderTop = "";
+  e.element.style.borderBottom = "";
+}
+
 function reloadWave(){
   regions = window.wavesurfer.regions.list;
   ids = Object.values(regions);
   ids.sort(compare);
   if(ids.length > 0){
     currentRegion = 0;
-    ids[0].update({'color' : "rgba(0, 255, 0, 0.2)"});
+    activeRegion(ids[0]);
   }
 }
 
 function switchCurrent(newId){
   if(ids.length > 0){
-    ids[currentRegion].update({'color' : "rgba(255, 215, 0, 0.2)"});
+    deactiveRegion(ids[currentRegion]);
     currentRegion = newId;
-    ids[newId].update({'color' : "rgba(0, 255, 0, 0.2)"});
+    activeRegion(ids[newId])
     if(refresh){
        window.wavesurfer.seekTo(0);
     }else{
@@ -113,7 +123,7 @@ function waitForElement(){
         reloadWave();
         window.wavesurfer.on('region-created', function(e){
           setTimeout(function(){
-            if(ids.length > 0) ids[currentRegion].update({'color' : "rgba(255, 215, 0, 0.2)"});
+            if(ids.length > 0) deactiveRegion(ids[currentRegion]);
             reloadWave();
             if(refresh){
               switchCurrent(0);

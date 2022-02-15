@@ -55,7 +55,7 @@ function loadRegions(){
             var color = prodigy.config.custom_theme.palettes.audio[id];
             color = hex2rgba(color);
             var re = window['wavesurfer'+i].addRegion({'start' : regions[region]['start'],'end' : regions[region]['end'],'color' : color, 'resize' : false, 'drag' : false, "attributes": {"label":regions[region]['label']}});
-            addRegionLabelTest(re,label,true);
+            addRegionLabel(re,label,true);
         }
     }
 }
@@ -177,7 +177,7 @@ document.addEventListener('prodigyanswer', async() => {
   loadRegions();
 });
 
-function addRegionLabelTest(e,t,n){
+function addRegionLabel(e,t,n){
    var s = e.element
    var l = s.appendChild(document.createElement("span"))
    l.textContent = t,
