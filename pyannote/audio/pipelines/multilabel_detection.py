@@ -37,8 +37,8 @@ from ..utils.signal import Binarize
 
 
 class MultilabelFMeasure(BaseMetric):
-    # TODO: make it duration-based
-    """Compute the mean Fscore over all labels
+    """
+    Compute the mean Fscore over all labels
     """
 
     def metric_components(self):
@@ -90,8 +90,8 @@ class MultilabelFMeasure(BaseMetric):
     def report(self, display=False):
         df = super().report(display=False)
 
-        # mean of all columns's totals instead of the sum
-        df.loc["TOTAL"] = df.loc["TOTAL"] / (len(df.index) - 1)
+        for label, submetric in self.submetrics.items():
+            df.loc["TOTAL"][label] = abs(submetric)
 
         if display:
             print(
@@ -110,7 +110,33 @@ class MultilabelFMeasure(BaseMetric):
 
 
 class MultilabelDetectionPipeline(Pipeline):
-    """"""
+    """Multilabel detection pipeline
+
+    Parameters
+    ----------
+    segmentation : Model, str, or dict, optional
+        Pretrained segmentation (or multilabel detection) model.
+        Defaults to "pyannote/segmentation".
+        See pyannote.audio.pipelines.utils.get_model for supported format.
+    fscore : bool, optional
+        Optimize for average (precision/recall) fscore, over all classes.
+        Defaults to optimizing identification error rate.
+    inference_kwargs : dict, optional
+        Keywords arguments passed to Inference.
+
+    Hyper-parameters
+    ----------------
+
+    For each class the pipeline is trained to detect, it works exactly
+    like a VAD pipeline, and has the following hyper-parameters:
+
+    onset, offset : float
+        Onset/offset detection thresholds
+    min_duration_on : float
+        Remove speech regions shorter than that many seconds.
+    min_duration_off : float
+        Fill non-speech regions shorter than that many seconds.
+    """
 
     def __init__(self,
                  segmentation: PipelineModel = "pyannote/vtc",
@@ -200,6 +226,7 @@ class MultilabelDetectionPipeline(Pipeline):
                                                 multilabel_scores.sliding_window)
             binarizer: Binarize = self._binarizers[class_name]
             class_annot = binarizer(label_scores)
+            # cleaning up labels to the current detected label.
             class_annot.rename_labels({label: class_name for label in class_annot.labels()}, copy=False)
             full_annot.update(class_annot)
 
