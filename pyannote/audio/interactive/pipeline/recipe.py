@@ -35,7 +35,7 @@ from pyannote.audio import Pipeline
 from pyannote.audio.core.io import Audio
 from pyannote.core import Annotation, Segment
 
-from ..utils import (
+from ..common.utils import (
     SAMPLE_RATE,
     chunks,
     normalize,
@@ -46,12 +46,9 @@ from ..utils import (
 
 
 def general_stream(
-    pipeline: Pipeline,
-    source: Path,
-    labels: [dict],
-    chunk: float = 10.0,
+    pipeline: Pipeline, source: Path, labels: [dict], chunk: float = 10.0,
 ) -> Iterable[Dict]:
-    """Stream for `audio.gen` recipe
+    """Stream for `pyannote.audio` recipe
 
     Applies (pretrained) speech activity detection and sends the results for
     manual correction chunk by chunk.
@@ -197,12 +194,7 @@ def general_stream(
         int,
     ),
     precision=("Keyboard temporal precision, in milliseconds.", "option", None, int),
-    beep=(
-        "Beep when the player reaches the end of a region.",
-        "flag",
-        None,
-        bool,
-    ),
+    beep=("Beep when the player reaches the end of a region.", "flag", None, bool,),
 )
 def pipeline(
     dataset: str,
@@ -223,13 +215,13 @@ def pipeline(
 
     dirname = os.path.dirname(os.path.realpath(__file__))
 
-    controller_js = dirname + "/../wavesurferController.js"
+    controller_js = dirname + "/../common/controller.js"
     with open(controller_js) as txt:
         javascript = txt.read()
 
-    template = dirname + "/../instructions.html"
-    png = dirname + "/../commands.png"
-    html = dirname + "/../help.html"
+    template = dirname + "/../common/instructions.html"
+    png = dirname + "/../common/commands.png"
+    html = dirname + "/../common/help.html"
 
     with open(html, "w") as fp, open(template, "r") as fp_tpl, open(
         png, "rb"

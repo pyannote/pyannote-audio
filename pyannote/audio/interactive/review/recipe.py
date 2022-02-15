@@ -1,3 +1,4 @@
+import base64
 import os
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Union
@@ -5,14 +6,14 @@ from typing import Any, Dict, Iterable, List, Union
 import prodigy
 import torch.nn.functional as F
 from prodigy.components.loaders import Audio as AudioLoader
+from prodigy.util import split_string
 
 from pyannote.audio.core.io import Audio
 from pyannote.audio.pipelines import SpeakerDiarization
-from pyannote.core import Annotation, Segment
+from pyannote.core import Segment
 from pyannote.database import util
-from pyannote.metrics.errors.identification import IdentificationErrorAnalysis
 
-from ..utils import (
+from ..common.utils import (
     SAMPLE_RATE,
     chunks,
     normalize,
@@ -22,19 +23,17 @@ from ..utils import (
 )
 
 
-def diff_stream(
+def review_stream(
     source: Path,
-    reference: dict,
-    hypothesis: dict,
-    listerrors: List,
+    annotations: [dict],
+    labels: [dict],
     diarization: bool = False,
-    chunk: float = 30.0,
-    minduration: int = 200,
+    globallabels: bool = False,
+    chunk: float = 10.0,
 ) -> Iterable[Dict]:
 
     raw_audio = Audio(sample_rate=SAMPLE_RATE, mono=True)
 
-    # TODO : loop on sorted chunk from all the wav files from source
     if os.path.isdir(source):
         listFiles = AudioLoader(source)
     else:
@@ -45,72 +44,39 @@ def diff_stream(
 
         path = audio_source["path"]
         text = audio_source["text"]
-        file = {"uri": text, "audio": path}
+        file = {"uri": text, "audio": path, "database": source}
 
         duration = raw_audio.get_duration(file)
         file["duration"] = duration
 
-        ref = reference[text]
-        hyp = hypothesis[text]
-
         if diarization:
-            hyp: Annotation = SpeakerDiarization.optimal_mapping(ref, hyp)
-
-        identificationErrorAnalysis = IdentificationErrorAnalysis()
-        errors = identificationErrorAnalysis.difference(ref, hyp)
-        newLabels = {}
-        for labels in errors.labels():
-            a, b, c = labels
-            newLabels[(a, b, c)] = a
-        errors = errors.rename_labels(newLabels)
-        errors = errors.subset(["correct"], invert=True)
-
-        if listerrors[0] or listerrors[1] or listerrors[2]:
-            if not listerrors[0]:
-                errors = errors.subset(["false alarm"], invert=True)
-            if not listerrors[1]:
-                errors = errors.subset(["confusion"], invert=True)
-            if not listerrors[2]:
-                errors = errors.subset(["missed detection"], invert=True)
-
-        clean_errors = Annotation()
-        for segment, track, label in errors.itertracks(yield_label=True):
-            if segment.duration * 1000 > minduration:
-                clean_errors[segment, track] = label
-
-        errors = clean_errors
+            list_annotations = [annotations[0][text]] + [
+                SpeakerDiarization.optimal_mapping(annotations[0][text], ann[text])
+                for ann in annotations[1:]
+            ]
+            labels = [label for ann in list_annotations for label in ann.labels()]
+            labels = list(dict.fromkeys(labels))
+        else:
+            list_annotations = [ann[text] for ann in annotations]
 
         if duration <= chunk:
             waveform, sr = raw_audio.crop(file, Segment(0, duration))
             waveform = waveform.numpy().T
             task_audio = to_base64(normalize(waveform), sample_rate=SAMPLE_RATE)
-            audio_spans = to_audio_spans(errors)
 
             yield {
                 "path": path,
                 "text": text,
                 "audio": task_audio,
-                "audio_spans": audio_spans,
-                "reference": reference[text],
-                "hypothesis": hypothesis[text],
+                "audio_spans": [],
+                "annotations": list_annotations,
                 "chunk": {"start": 0, "end": duration},
+                "config": {"labels": labels},
                 "meta": {"file": text},
             }
         else:
-            list_focus = []
+
             for focus in chunks(duration, chunk=chunk, shuffle=False):
-                list_focus.append([errors.crop(focus, mode="intersection"), focus])
-
-            list_focus = sorted(
-                list_focus,
-                key=lambda k: max(
-                    (k[0].label_duration(e) for e in k[0].labels()), default=0
-                ),
-                reverse=True,
-            )
-
-            for seg in list_focus:
-                focus = seg[1]
                 task_text = f"{text} [{focus.start:.1f}, {focus.end:.1f}]"
                 waveform, sr = raw_audio.crop(file, focus)
                 if waveform.shape[1] != SAMPLE_RATE * chunk:
@@ -122,19 +88,19 @@ def diff_stream(
                     )
                 waveform = waveform.numpy().T
                 task_audio = to_base64(normalize(waveform), sample_rate=SAMPLE_RATE)
-                audio_spans = to_audio_spans(seg[0], focus=focus)
-                refe = ref.crop(focus, mode="intersection")
-                refe = to_audio_spans(refe, focus=focus)
-                hypo = hyp.crop(focus, mode="intersection")
-                hypo = to_audio_spans(hypo, focus=focus)
+                list_spans = []
+                for ann in list_annotations:
+                    sa = ann.crop(focus, mode="intersection")
+                    spans = to_audio_spans(sa, focus=focus)
+                    list_spans.append(spans)
 
                 yield {
                     "path": path,
                     "text": task_text,
                     "audio": task_audio,
-                    "audio_spans": audio_spans,
-                    "reference": refe,
-                    "hypothesis": hypo,
+                    "audio_spans": [],
+                    "annotations": list_spans,
+                    "config": {"labels": labels},
                     "meta": {
                         "file": text,
                         "start": f"{focus.start:.1f}",
@@ -152,89 +118,108 @@ def diff_stream(
         None,
         str,
     ),
-    reference=("Path to reference file", "positional", None, str),
-    hypothesis=("Path to hypothesis file ", "positional", None, str),
+    annotations=(
+        "Comma-separated paths to annotation files ",
+        "positional",
+        None,
+        split_string,
+    ),
     chunk=(
         "Split long audio files into shorter chunks of that many seconds each",
         "option",
         None,
         float,
     ),
-    minduration=("Minimum duration of errors in ms", "option", None, int),
     diarization=(
         "Optimal one-to-one mapping between reference and hypothesis",
         "flag",
         None,
         bool,
     ),
-    falsealarm=("Display false alarm errors", "flag", None, bool),
-    confusion=("Display confusion errors", "flag", None, bool),
-    misseddetection=("Display missed detection errors", "flag", None, bool),
+    globallabels=(
+        "Shows the labels of the whole file (not chunk only)",
+        "flag",
+        None,
+        bool,
+    ),
+    precision=("Cursor speed", "option", None, int),
+    beep=("Beep when the player reaches the end of a region.", "flag", None, bool),
 )
-def diff(
+def review(
     dataset: str,
     source: Union[str, Iterable[dict]],
-    reference: str,
-    hypothesis: str,
-    chunk: float = 30.0,
-    minduration=200,
+    annotations: [List[str]],
+    chunk: float = 10.0,
     diarization: bool = False,
-    falsealarm: bool = False,
-    confusion: bool = False,
-    misseddetection: bool = False,
+    globallabels: bool = False,
+    precision: int = 100,
+    beep: bool = False,
 ) -> Dict[str, Any]:
 
     dirname = os.path.dirname(os.path.realpath(__file__))
-    pathController = dirname + "/../diffController.js"
-    pathWave = dirname + "/../wavesurfer.js"
-    pathRegion = dirname + "/../regions.js"
-    pathTemplate = dirname + "/../htmltemplate.html"
-    pathLegend = dirname + "/../legend.html"
-    pathCss = dirname + "/../template.css"
+    pathController = dirname + "/controller.js"
+    pathShortcuts = dirname + "/../common/controller.js"
+    pathWave = dirname + "/../common/wavesurfer.js"
+    pathRegion = dirname + "/../common/regions.js"
+    pathHtml = dirname + "/../common/instructions.html"
+    png = dirname + "/../common/commands.png"
+    pathTemplate = dirname + "/../common/template.html"
+    pathCss = dirname + "/../common/template.css"
+    help = dirname + "/../common/help.html"
     with open(pathController) as txt, open(pathWave) as wave, open(
         pathRegion
-    ) as region, open(pathTemplate) as html, open(pathLegend) as legend, open(
-        pathCss
-    ) as css:
+    ) as region, open(pathTemplate) as html, open(pathCss) as css, open(
+        pathShortcuts
+    ) as sc, open(
+        png, "rb"
+    ) as fp_png, open(
+        help, "w"
+    ) as fp_help, open(
+        pathHtml
+    ) as fp_html:
         script_text = wave.read()
         script_text += "\n" + region.read()
         script_text += "\n" + txt.read()
+        script_text += "\n" + sc.read()
         templateH = html.read()
-        legend = legend.read()
         templateC = css.read()
+        b64 = base64.b64encode(fp_png.read()).decode("utf-8")
+        fp_help.write(fp_html.read().replace("{IMAGE}", b64))
 
-    prodigy.log("RECIPE: Starting recipe voice_activity_detection", locals())
+    list_annotations = [util.load_rttm(annotation) for annotation in annotations]
 
-    ref = util.load_rttm(reference)
-    hyp = util.load_rttm(hypothesis)
-    listerrors = [falsealarm, confusion, misseddetection]
+    # mettre une option? -> là c'est tout le corpus
+    labels = [
+        label
+        for ann in list_annotations
+        for anno in list(ann.values())
+        for label in anno.labels()
+    ]
 
     return {
         "view_id": "blocks",
         "dataset": dataset,
-        "stream": diff_stream(
+        "stream": review_stream(
             source,
-            ref,
-            hyp,
-            listerrors,
+            list_annotations,
+            labels,
             diarization=diarization,
+            globallabels=globallabels,
             chunk=chunk,
-            minduration=minduration,
         ),
         "before_db": remove_audio_before_db,
         "config": {
             "global_css": templateC,
             "javascript": script_text,
+            "instructions": help,
+            "precision": precision,
+            "beep": beep,
             "show_audio_minimap": False,
             "audio_bar_width": 0,
             "audio_bar_height": 1,
+            "number_annotations": len(annotations),
+            "labels": labels,
             "custom_theme": {
-                "cardMinHeight": 400,
-                "labels": {
-                    "false alarm": "#9932cc",
-                    "confusion": "#ff6347",
-                    "missed detection": "#00ffff",
-                },
                 "palettes": {
                     "audio": [
                         "#ffd700",
@@ -246,11 +231,10 @@ def diff(
                         "#ff7f50",
                         "#66cdaa",
                     ],
-                },
+                }
             },
             "blocks": [
-                {"view_id": "html", "html_template": legend},
-                {"view_id": "audio"},
+                {"view_id": "audio_manual",},
                 {"view_id": "html", "html_template": templateH},
             ],
             "show_audio_timeline": True,
