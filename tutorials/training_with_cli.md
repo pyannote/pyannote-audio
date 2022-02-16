@@ -138,4 +138,5 @@ hydra.launcher.qos=qos_gpu-dev                          # QOS
 hydra.launcher.gpus_per_task=1                          # number of GPUs
 hydra.launcher.cpus_per_gpu=10                          # number of CPUS per GPUs (10 is )
 hydra.launcher.timeout_min=120                          # --time option (in minutes)
+task.duration=2,5,10 hydra.sweep.subdir=\${task.duration}s_chunks
 ```
