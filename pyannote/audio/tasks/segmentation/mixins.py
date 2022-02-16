@@ -27,13 +27,14 @@ from typing import List, Optional, Text, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
+from pyannote.core import Annotation, Segment, SlidingWindow, SlidingWindowFeature
 from torchmetrics import AUROC
 from typing_extensions import Literal
 
 from pyannote.audio.core.io import Audio, AudioFile
 from pyannote.audio.core.task import Problem
 from pyannote.audio.utils.random import create_rng_for_worker
-from pyannote.core import Annotation, Segment, SlidingWindow, SlidingWindowFeature
 
 
 class SegmentationTaskMixin:
@@ -152,6 +153,72 @@ class SegmentationTaskMixin:
         """
         return None
 
+    def get_x_y_labels_from_file_chunk(
+        self, file: AudioFile, chunk: Segment, duration: float = None
+    ) -> Tuple[torch.Tensor, np.ndarray, List[Text]]:
+        """Extract audio chunk and corresponding frame-wise labels from a file
+
+        Parameters
+        ----------
+        file : AudioFile
+            Audio file.
+        chunk : Segment
+            Audio chunk.
+
+        Returns
+        -------
+        Tuple[torch.Tensor, np.ndarray, List[Text]]
+            - x, the cropped audio file
+            - y, the annotations for x
+            - labels, the labels for y
+        """
+
+        # ==================================================================
+        # X = "audio" crop
+        # ==================================================================
+
+        x, _ = self.model.audio.crop(
+            file,
+            chunk,
+            duration=self.duration if duration is None else duration,
+        )
+
+        # ==================================================================
+        # y = "annotation" crop (with corresponding "labels")
+        # ==================================================================
+
+        # use model introspection to predict how many frames it will output
+        num_samples = x.shape[1]
+        num_frames, _ = self.model.introspection(num_samples)
+
+        # crop "annotation" and keep track of corresponding list of labels if needed
+        annotation: Annotation = file["annotation"].crop(chunk)
+        labels = annotation.labels() if self.chunk_labels is None else self.chunk_labels
+
+        y = np.zeros((num_frames, len(labels)), dtype=np.int8)
+        frames = SlidingWindow(
+            start=chunk.start,
+            duration=self.duration / num_frames,
+            step=self.duration / num_frames,
+        )
+        for label in annotation.labels():
+            try:
+                k = labels.index(label)
+            except ValueError:
+                warnings.warn(
+                    f"File {file['uri']} contains unexpected label '{label}'."
+                )
+                continue
+
+            segments = annotation.label_timeline(label)
+            for start, stop in frames.crop(segments, mode="center", return_ranges=True):
+                y[start:stop, k] += 1
+
+        y = np.minimum(
+            y, 1
+        )  # handle corner case when the same label is active more than once
+        return x, y, labels
+
     def prepare_chunk(
         self,
         file: AudioFile,
@@ -184,51 +251,11 @@ class SegmentationTaskMixin:
         """
 
         sample = dict()
-
-        # ==================================================================
-        # X = "audio" crop
-        # ==================================================================
-
-        sample["X"], _ = self.model.audio.crop(
-            file,
-            chunk,
-            duration=self.duration if duration is None else duration,
-        )
-
-        # ==================================================================
-        # y = "annotation" crop (with corresponding "labels")
-        # ==================================================================
-
-        # use model introspection to predict how many frames it will output
-        num_samples = sample["X"].shape[1]
-        num_frames, _ = self.model.introspection(num_samples)
-
-        # crop "annotation" and keep track of corresponding list of labels if needed
-        annotation: Annotation = file["annotation"].crop(chunk)
-        labels = annotation.labels() if self.chunk_labels is None else self.chunk_labels
-
-        y = np.zeros((num_frames, len(labels)), dtype=np.int8)
-        frames = SlidingWindow(
-            start=chunk.start,
-            duration=self.duration / num_frames,
-            step=self.duration / num_frames,
-        )
-        for label in annotation.labels():
-            try:
-                k = labels.index(label)
-            except ValueError:
-                warnings.warn(
-                    f"File {file['uri']} contains unexpected label '{label}'."
-                )
-                continue
-
-            segments = annotation.label_timeline(label)
-            for start, stop in frames.crop(segments, mode="center", return_ranges=True):
-                y[start:stop, k] += 1
-
-        # handle corner case when the same label is active more than once
-        sample["y"] = np.minimum(y, 1, out=y)
-        sample["labels"] = labels
+        (
+            sample["X"],
+            sample["y"],
+            sample["labels"],
+        ) = self.get_x_y_labels_from_file_chunk(file, chunk, duration)
 
         # ==================================================================
         # additional metadata
