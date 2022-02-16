@@ -62,7 +62,7 @@ class UnsupervisedSegmentation(Segmentation, Task):
         if model is None:
             model = self.m0
 
-        y = self.m0(waveforms=waveforms)[0, :, :]
+        y = model(waveforms=waveforms)[0, :, :]
 
         # dirty float output to int output
         y = torch.round(y)
