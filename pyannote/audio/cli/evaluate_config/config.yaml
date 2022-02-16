@@ -1,0 +1,7 @@
+model: ???
+protocol: ???
+warm_up: 0.0
+subset: test
+
+defaults:
+  - hydra: default

@@ -1,10 +1,38 @@
-from functools import singledispatch
-from typing import Callable, List, Optional, Tuple
+# MIT License
+#
+# Copyright (c) 2020-2022 CNRS
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
 
+
+import math
+from typing import Callable, List, Optional, Tuple
+from functools import singledispatch, partial
+
+import networkx as nx
 import numpy as np
+from scipy.optimize import linear_sum_assignment
+
 import torch
 import torch.nn.functional as F
-from scipy.optimize import linear_sum_assignment
+
+from pyannote.core import SlidingWindowFeature
 
 
 @singledispatch
@@ -37,7 +65,7 @@ def permutate(y1, y2, cost_func: Optional[Callable] = None, return_cost: bool = 
     raise TypeError()
 
 
-def mse_cost_func(Y, y):
+def mse_cost_func(Y, y, **kwargs):
     """Compute class-wise mean-squared error
 
     Parameters
@@ -52,7 +80,7 @@ def mse_cost_func(Y, y):
     return torch.mean(F.mse_loss(Y, y, reduction="none"), axis=0)
 
 
-def mae_cost_func(Y, y):
+def mae_cost_func(Y, y, **kwargs):
     """Compute class-wise mean absolute difference error
 
     Parameters
@@ -158,3 +186,82 @@ def permutate_numpy(
 
     permutated_y2, permutations = output
     return permutated_y2.numpy(), permutations
+
+
+def build_permutation_graph(
+    segmentations: SlidingWindowFeature,
+    onset: float = 0.5,
+    cost_func: Callable[[torch.Tensor, torch.Tensor], torch.Tensor] = mae_cost_func,
+) -> nx.Graph:
+    """Build permutation graph
+    
+    Parameters
+    ----------
+    segmentations : (num_chunks, num_frames, local_num_speakers)-shaped SlidingWindowFeature
+        Raw output of segmentation model.
+    onset : float, optionan
+        Threshold above which a speaker is considered active. Defaults to 0.5
+    cost_func : callable
+        Cost function used to find the optimal bijective mapping between speaker activations
+        of two overlapping chunks. Expects two (num_frames, num_classes) torch.tensor as input 
+        and returns cost as a (num_classes, ) torch.tensor. Defaults to mae_cost_func.
+
+    Returns
+    -------
+    permutation_graph : nx.Graph
+        Nodes are (chunk_idx, speaker_idx) tuples.
+        An edge between two nodes indicate that those are likely to be the same speaker
+        (the lower the value of "cost" attribute, the more likely).
+    """
+
+    cost_func = partial(cost_func, onset=onset)
+
+    chunks = segmentations.sliding_window
+    num_chunks, num_frames, _ = segmentations.data.shape
+    max_lookahead = math.floor(chunks.duration / chunks.step - 1)
+    lookahead = 2 * (max_lookahead,)
+
+    permutation_graph = nx.Graph()
+
+    for C, (chunk, segmentation) in enumerate(segmentations):
+        for c in range(max(0, C - lookahead[0]), min(num_chunks, C + lookahead[1] + 1)):
+
+            if c == C:
+                continue
+
+            # extract common temporal support
+            shift = round((C - c) * num_frames * chunks.step / chunks.duration)
+
+            if shift < 0:
+                shift = -shift
+                this_segmentations = segmentation[shift:]
+                that_segmentations = segmentations[c, : num_frames - shift]
+            else:
+                this_segmentations = segmentation[: num_frames - shift]
+                that_segmentations = segmentations[c, shift:]
+
+            # find the optimal one-to-one mapping
+            _, (permutation,), (cost,) = permutate(
+                this_segmentations[np.newaxis],
+                that_segmentations,
+                cost_func=cost_func,
+                return_cost=True,
+            )
+
+            for this, that in enumerate(permutation):
+
+                this_is_active = np.any(this_segmentations[:, this] > onset)
+                that_is_active = np.any(that_segmentations[:, that] > onset)
+
+                if this_is_active:
+                    permutation_graph.add_node((C, this))
+
+                if that_is_active:
+                    permutation_graph.add_node((c, that))
+
+                if this_is_active and that_is_active:
+                    permutation_graph.add_edge(
+                        (C, this), (c, that), cost=cost[this, that]
+                    )
+
+    return permutation_graph
