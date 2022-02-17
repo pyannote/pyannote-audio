@@ -130,6 +130,8 @@ pyannote-audio-train
     protocol=AMI.SpeakerDiarization.only_words
 ```
 
+Known bugs: pytorch-lightning + hydra-submitit + multi-GPU do not play well together ([here](https://github.com/PyTorchLightning/pytorch-lightning/issues/2727), [here](https://github.com/PyTorchLightning/pytorch-lightning/issues/11300), and [here](https://github.com/PyTorchLightning/pytorch-lightning/pull/11617))
+
 ### Training on Jean Zay cluster
 
 ```bash
@@ -138,4 +140,5 @@ hydra.launcher.qos=qos_gpu-dev                          # QOS
 hydra.launcher.gpus_per_task=1                          # number of GPUs
 hydra.launcher.cpus_per_gpu=10                          # number of CPUS per GPUs (10 is )
 hydra.launcher.timeout_min=120                          # --time option (in minutes)
+task.duration=2,5,10 hydra.sweep.subdir=\${task.duration}s_chunks
 ```
