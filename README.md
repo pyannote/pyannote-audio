@@ -66,6 +66,7 @@ pip install https://github.com/pyannote/pyannote-audio/archive/develop.zip
     - Sharing pretrained models and pipelines
 - Miscellaneous
     - [Training with `pyannote-audio-train` command line tool](tutorials/training_with_cli.md)
+    - [Annotating your own data with Prodigy](tutorials/prodigy.md)
     - [Speaker verification](tutorials/speaker_verification.ipynb)
     - Visualization and debugging
 
