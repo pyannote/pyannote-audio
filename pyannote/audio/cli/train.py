@@ -134,6 +134,7 @@ def train(cfg: DictConfig) -> Optional[float]:
     # in case of fine-tuning, validate the initial model to make sure
     # that we actually improve over the initial performance
     if fine_tuning:
+        model.setup(stage="fit")
         trainer.validate(model)
 
     # train the model
