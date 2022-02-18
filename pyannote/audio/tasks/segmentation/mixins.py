@@ -23,7 +23,7 @@
 import math
 import random
 import warnings
-from typing import List, Optional, Text, Tuple
+from typing import List, Optional, Text
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -158,7 +158,7 @@ class SegmentationTaskMixin:
         chunk: Segment,
         duration: float = None,
         stage: Literal["train", "val"] = "train",
-    ) -> Tuple[np.ndarray, np.ndarray, List[Text]]:
+    ) -> dict:
         """Extract audio chunk and corresponding frame-wise labels
 
         Parameters
