@@ -34,8 +34,8 @@ import torch
 import torch.nn as nn
 import torch.optim
 from huggingface_hub import cached_download, hf_hub_url
-from pytorch_lightning.core.memory import ModelSummary
 from pytorch_lightning.utilities.cloud_io import load as pl_load
+from pytorch_lightning.utilities.model_summary import ModelSummary
 from semver import VersionInfo
 from torch.utils.data import DataLoader
 
