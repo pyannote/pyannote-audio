@@ -2,8 +2,9 @@ from typing import List, Text, Tuple, Union
 
 import numpy as np
 import torch
-from pyannote.core import Segment, SlidingWindowFeature
+from pyannote.core import Segment
 from pyannote.database import Protocol
+from torch.utils.data._utils.collate import default_collate
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from typing_extensions import Literal
 
@@ -20,6 +21,7 @@ class UnsupervisedSegmentation(Segmentation, Task):
         protocol: Protocol,
         fake_in_train=True,  # generate fake truth in training mode
         fake_in_val=True,  # generate fake truth in val mode
+        augmentation_model: BaseWaveformTransform = None,
         # supervised params
         duration: float = 2.0,
         max_num_speakers: int = None,
@@ -55,23 +57,26 @@ class UnsupervisedSegmentation(Segmentation, Task):
         self.m0 = model
         self.fake_in_train = fake_in_train
         self.fake_in_val = fake_in_val
+        self.augmentation_model = augmentation_model
 
-    def get_truth_from_model(
-        self, waveforms: torch.Tensor, model: Model = None
-    ) -> Tuple[np.ndarray, List[Text]]:
-        if model is None:
-            model = self.m0
+    def collate_fn(self, batch):
+        collated_batch = default_collate(batch)
 
-        y = model(waveforms=waveforms)[0, :, :]
+        # Generate annotations y with m0 if they are not provided
+        if "y" not in batch:
+            m0_input = collated_batch["X"]
+            if self.augmentation_model is not None:
+                m0_input = self.augmentation_model(
+                    collated_batch["X"], sample_rate=self.model.hparams.sample_rate
+                )
+            with torch.no_grad():  # grad causes problems when crossing process boundaries
+                collated_batch["y"] = self.m0(waveforms=m0_input)
 
-        # dirty float output to int output
-        y = torch.round(y)
-        y = y.type(torch.int8)
-
-        # Generate dummy labels
-        labels = [f"?{i}" for i in range(y.shape[-1])]  # ... ?
-
-        return y.numpy(), labels
+        if self.augmentation is not None:
+            collated_batch["X"] = self.augmentation(
+                collated_batch["X"], sample_rate=self.model.hparams.sample_rate
+            )
+        return collated_batch
 
     def prepare_chunk(
         self,
@@ -104,50 +109,10 @@ class UnsupervisedSegmentation(Segmentation, Task):
             ...
         """
 
-        sample = dict()
-
-        if (stage == "train" and self.fake_in_train) or (
-            stage == "val" and self.fake_in_val
-        ):
-            # X = "audio" crop
-            sample["X"], _ = self.model.audio.crop(
-                file,
-                chunk,
-                duration=self.duration if duration is None else duration,
-            )
-            # y and labels are generated from the model m0
-            sample["y"], sample["labels"] = self.get_truth_from_model(
-                sample["X"][None, :]
-            )
-        else:
-            (
-                sample["X"],
-                sample["y"],
-                sample["labels"],
-            ) = self.get_x_y_labels_from_file_chunk(file, chunk, duration)
-
-        # ==================================================================
-        # additional metadata
-        # ==================================================================
-
-        for key, value in file.items():
-
-            # those keys were already dealt with
-            if key in ["audio", "annotation", "annotated"]:
-                pass
-
-            # replace text-like entries by their integer index
-            elif isinstance(value, Text):
-                try:
-                    sample[key] = self._train_metadata[key].index(value)
-                except ValueError as e:
-                    if stage == "val":
-                        sample[key] = -1
-                    else:
-                        raise e
-
-            # crop score-like entries
-            elif isinstance(value, SlidingWindowFeature):
-                sample[key] = value.crop(chunk, fixed=duration, mode="center")
-
+        use_annotations = (stage == "train" and not self.fake_in_train) or (
+            stage == "val" and not self.fake_in_val
+        )
+        sample = super().prepare_chunk(
+            file, chunk, duration=duration, stage=stage, use_annotations=use_annotations
+        )
         return sample
