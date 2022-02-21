@@ -478,8 +478,9 @@ class SegmentationTaskMixin:
     def val__getitem__(self, idx):
         f, chunk = self._validation[idx]
         sample = self.prepare_chunk(f, chunk, duration=self.duration, stage="val")
-        sample["y"] = self.prepare_y(sample["y"])
-        _ = sample.pop("labels")
+        if "y" in sample:
+            sample["y"] = self.prepare_y(sample["y"])
+            _ = sample.pop("labels")
         return sample
 
     def val__len__(self):
