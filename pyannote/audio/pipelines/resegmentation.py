@@ -116,7 +116,7 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
     def classes(self):
         raise NotImplementedError()
 
-    CACHED_SEGMENTATION = "@resegmentation/raw"
+    CACHED_SEGMENTATION = "cache/segmentation/inference"
 
     def apply(
         self,
@@ -145,14 +145,17 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
         hook = self.setup_hook(file, hook=hook)
 
         # apply segmentation model (only if needed)
-        # output shape is (num_chunks, num_frames, num_speakers)
-        if (not self.training) or (
-            self.training and self.CACHED_SEGMENTATION not in file
-        ):
-            file[self.CACHED_SEGMENTATION] = self._segmentation(file)
+        # output shape is (num_chunks, num_frames, local_num_speakers)
+        if self.training:
+            if self.CACHED_SEGMENTATION in file:
+                segmentations = file[self.CACHED_SEGMENTATION]
+            else:
+                segmentations = self._segmentation(file)
+                file[self.CACHED_SEGMENTATION] = segmentations
+        else:
+            segmentations: SlidingWindowFeature = self._segmentation(file)
 
-        segmentations: SlidingWindowFeature = file[self.CACHED_SEGMENTATION]
-        hook("@resegmentation/raw", segmentations)
+        hook("segmentation", segmentations)
 
         # estimate frame-level number of instantaneous speakers
         count = self.speaker_count(
@@ -162,7 +165,7 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
             warm_up=(self.warm_up, self.warm_up),
             frames=self._frames,
         )
-        hook("@resegmentation/count", count)
+        hook("speaker_counting", count)
 
         # discretize original diarization
         # output shape is (num_frames, num_speakers)
