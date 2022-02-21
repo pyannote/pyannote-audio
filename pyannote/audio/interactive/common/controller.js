@@ -61,6 +61,12 @@ function compare(region1, region2){
   }
 }
 
+//SIMULATE CLICK ON PRODIGY'S LABEL RADIO BUTTON
+//TO CHECK IF PRODIGY INTERFACE HAS CHANGED
+function clickOnLabel(label){
+  document.querySelector("input[type=radio][value=\'"+label+"\']").click()
+}
+
 function beep() {
   if(BEEP){
     var oscillator = audioCtx.createOscillator();

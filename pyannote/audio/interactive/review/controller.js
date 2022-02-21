@@ -107,6 +107,8 @@ async function loadWave() {
         window['wavesurfer' + i].load(objectURL);
         window['wavesurfer' + i].setMute(true);
         window['wavesurfer' + i].on('region-click', function (e) {
+            var label = e.attributes.label;
+            clickOnLabel(label);
             var re = window.wavesurfer.addRegion({ 'start': e.start, 'end': e.end, 'color': e.color });
             window.wavesurfer.fireEvent('region-update-end', re);
         });
@@ -131,6 +133,8 @@ function addAllRegions(i) {
     num = Object.values(rs);
     for (var i in num) {
         var region = num[i];
+        var label = region.attributes.label;
+        clickOnLabel(label);
         var re = window.wavesurfer.addRegion({ 'start': region.start, 'end': region.end, 'color': region.color });
         window.wavesurfer.fireEvent('region-update-end', re);
     }

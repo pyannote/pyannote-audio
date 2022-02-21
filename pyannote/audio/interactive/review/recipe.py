@@ -1,10 +1,10 @@
 import base64
 import os
 from pathlib import Path
+from tempfile import mkstemp
 from typing import Any, Dict, Iterable, List, Union
 
 import prodigy
-import torch.nn.functional as F
 from prodigy.components.loaders import Audio as AudioLoader
 from prodigy.util import split_string
 
@@ -13,14 +13,7 @@ from pyannote.audio.pipelines import SpeakerDiarization
 from pyannote.core import Segment
 from pyannote.database import util
 
-from ..common.utils import (
-    SAMPLE_RATE,
-    chunks,
-    normalize,
-    remove_audio_before_db,
-    to_audio_spans,
-    to_base64,
-)
+from ..common.utils import AudioForProdigy, before_db, get_audio_spans, get_chunks
 
 
 def review_stream(
@@ -28,85 +21,65 @@ def review_stream(
     annotations: [dict],
     labels: [dict],
     diarization: bool = False,
-    globallabels: bool = False,
-    chunk: float = 10.0,
+    chunk: float = 30.0,
 ) -> Iterable[Dict]:
 
-    raw_audio = Audio(sample_rate=SAMPLE_RATE, mono=True)
-
     if os.path.isdir(source):
-        listFiles = AudioLoader(source)
+        files = AudioLoader(source)
     else:
         name = os.path.basename(source).rsplit(".", 1)[0]
-        listFiles = [{"path": source, "text": name, "meta": {"file": source}}]
+        files = [{"path": source, "text": name, "meta": {"file": source}}]
 
-    for audio_source in listFiles:
+    audio_for_prodigy = AudioForProdigy()
+    audio_for_pipeline = Audio(mono=True)
+    chunks = get_chunks(source, chunk_duration=chunk)
+    chunks = list(chunks)
 
-        path = audio_source["path"]
-        text = audio_source["text"]
-        file = {"uri": text, "audio": path, "database": source}
-
-        duration = raw_audio.get_duration(file)
-        file["duration"] = duration
-
+    files_annotations = {}
+    for file in files:
+        filename = file["text"]
         if diarization:
-            list_annotations = [annotations[0][text]] + [
-                SpeakerDiarization.optimal_mapping(annotations[0][text], ann[text])
+            list_annotations = [annotations[0][filename]] + [
+                SpeakerDiarization.optimal_mapping(
+                    annotations[0][filename], ann[filename]
+                )
                 for ann in annotations[1:]
             ]
             labels = [label for ann in list_annotations for label in ann.labels()]
             labels = list(dict.fromkeys(labels))
+            files_annotations[filename] = (list_annotations, labels)
         else:
-            list_annotations = [ann[text] for ann in annotations]
+            list_annotations = [ann[filename] for ann in annotations]
+            files_annotations[filename] = (list_annotations, labels)
 
-        if duration <= chunk:
-            waveform, sr = raw_audio.crop(file, Segment(0, duration))
-            waveform = waveform.numpy().T
-            task_audio = to_base64(normalize(waveform), sample_rate=SAMPLE_RATE)
+    for file, excerpt in chunks:
+        path = file["path"]
+        filename = file["text"]
+        text = f"{filename} [{excerpt.start:.1f} - {excerpt.end:.1f}]"
+        waveform, sample_rate = audio_for_pipeline.crop(path, excerpt, mode="pad")
+        audio = audio_for_prodigy.crop(path, excerpt)
+        duration = audio_for_pipeline.get_duration(path)
+        list_spans = []
+        for annotation in files_annotations[filename][0]:
+            spans = get_audio_spans(annotation, excerpt, Segment(0, duration))
+            list_spans.append(spans)
 
-            yield {
-                "path": path,
-                "text": text,
-                "audio": task_audio,
-                "audio_spans": [],
-                "annotations": list_annotations,
-                "chunk": {"start": 0, "end": duration},
-                "config": {"labels": labels},
-                "meta": {"file": text},
-            }
-        else:
+        labels = files_annotations[filename][1]
 
-            for focus in chunks(duration, chunk=chunk, shuffle=False):
-                task_text = f"{text} [{focus.start:.1f}, {focus.end:.1f}]"
-                waveform, sr = raw_audio.crop(file, focus)
-                if waveform.shape[1] != SAMPLE_RATE * chunk:
-                    waveform = F.pad(
-                        input=waveform,
-                        pad=(0, int(SAMPLE_RATE * chunk - waveform.shape[1])),
-                        mode="constant",
-                        value=0,
-                    )
-                waveform = waveform.numpy().T
-                task_audio = to_base64(normalize(waveform), sample_rate=SAMPLE_RATE)
-                list_spans = []
-                for ann in list_annotations:
-                    sa = ann.crop(focus, mode="intersection")
-                    spans = to_audio_spans(sa, focus=focus)
-                    list_spans.append(spans)
-
-                yield {
-                    "path": path,
-                    "text": task_text,
-                    "audio": task_audio,
-                    "audio_spans": [],
-                    "annotations": list_spans,
-                    "config": {"labels": labels},
-                    "meta": {
-                        "file": text,
-                        "start": f"{focus.start:.1f}",
-                        "end": f"{focus.end:.1f}",
-                    },
-                }
+        yield {
+            "path": path,
+            "text": text,
+            "audio": audio,
+            "audio_spans": [],
+            "annotations": list_spans,
+            "config": {"labels": labels},
+            "chunk": {"start": excerpt.start, "end": excerpt.end},
+            "meta": {
+                "file": filename,
+                "start": f"{excerpt.start:.1f}",
+                "end": f"{excerpt.end:.1f}",
+            },
+        }
 
 
 @prodigy.recipe(
@@ -136,12 +109,6 @@ def review_stream(
         None,
         bool,
     ),
-    globallabels=(
-        "Shows the labels of the whole file (not chunk only)",
-        "flag",
-        None,
-        bool,
-    ),
     precision=("Cursor speed", "option", None, int),
     beep=("Beep when the player reaches the end of a region.", "flag", None, bool),
 )
@@ -149,46 +116,47 @@ def review(
     dataset: str,
     source: Union[str, Iterable[dict]],
     annotations: [List[str]],
-    chunk: float = 10.0,
+    chunk: float = 30.0,
     diarization: bool = False,
-    globallabels: bool = False,
     precision: int = 100,
     beep: bool = False,
 ) -> Dict[str, Any]:
 
-    dirname = os.path.dirname(os.path.realpath(__file__))
-    pathController = dirname + "/controller.js"
-    pathShortcuts = dirname + "/../common/controller.js"
-    pathWave = dirname + "/../common/wavesurfer.js"
-    pathRegion = dirname + "/../common/regions.js"
-    pathHtml = dirname + "/../common/instructions.html"
-    png = dirname + "/../common/commands.png"
-    pathTemplate = dirname + "/../common/template.html"
-    pathCss = dirname + "/../common/template.css"
-    help = dirname + "/../common/help.html"
-    with open(pathController) as txt, open(pathWave) as wave, open(
-        pathRegion
-    ) as region, open(pathTemplate) as html, open(pathCss) as css, open(
-        pathShortcuts
+    recipe_dir = Path(__file__).resolve().parent
+    common_dir = recipe_dir.parent / "common"
+
+    controllerReview = recipe_dir / "controller.js"
+    controller = common_dir / "controller.js"
+    wavesurfer = common_dir / "wavesurfer.js"
+    regions = common_dir / "regions.js"
+    html = common_dir / "template.html"
+    css = common_dir / "template.css"
+
+    template = common_dir / "instructions.html"
+    png = common_dir / "commands.png"
+    _, instructions_html = mkstemp(text=True)
+    with open(controllerReview) as sc_review, open(wavesurfer) as s_wavesurfer, open(
+        regions
+    ) as s_regions, open(html) as f_html, open(css) as f_css, open(
+        controller
     ) as sc, open(
         png, "rb"
     ) as fp_png, open(
-        help, "w"
-    ) as fp_help, open(
-        pathHtml
-    ) as fp_html:
-        script_text = wave.read()
-        script_text += "\n" + region.read()
-        script_text += "\n" + txt.read()
+        instructions_html, "w"
+    ) as instructions_f, open(
+        template, "r"
+    ) as fp_tpl:
+        script_text = s_wavesurfer.read()
+        script_text += "\n" + s_regions.read()
+        script_text += "\n" + sc_review.read()
         script_text += "\n" + sc.read()
-        templateH = html.read()
-        templateC = css.read()
+        templateH = f_html.read()
+        templateC = f_css.read()
         b64 = base64.b64encode(fp_png.read()).decode("utf-8")
-        fp_help.write(fp_html.read().replace("{IMAGE}", b64))
+        instructions_f.write(fp_tpl.read().replace("{IMAGE}", b64))
 
     list_annotations = [util.load_rttm(annotation) for annotation in annotations]
 
-    # mettre une option? -> là c'est tout le corpus
     labels = [
         label
         for ann in list_annotations
@@ -204,14 +172,13 @@ def review(
             list_annotations,
             labels,
             diarization=diarization,
-            globallabels=globallabels,
             chunk=chunk,
         ),
-        "before_db": remove_audio_before_db,
+        "before_db": before_db,
         "config": {
             "global_css": templateC,
             "javascript": script_text,
-            "instructions": help,
+            "instructions": instructions_html,
             "precision": precision,
             "beep": beep,
             "show_audio_minimap": False,
@@ -234,7 +201,9 @@ def review(
                 }
             },
             "blocks": [
-                {"view_id": "audio_manual",},
+                {
+                    "view_id": "audio_manual",
+                },
                 {"view_id": "html", "html_template": templateH},
             ],
             "show_audio_timeline": True,

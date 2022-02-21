@@ -40,7 +40,7 @@ function removeLabel(r){
     e = r.end;
     c = r.color;
     r.remove();
-    window.wavesurfer.addRegion({"start" : s, "end" :e, 'color' : c});
+    window.wavesurfer.addRegion({"start" : s, "end" :e, 'color' : c, "resize": false, "drag": false});
 }
 
 function loadRegions(){
@@ -61,13 +61,12 @@ function loadRegions(){
 }
 
 async function createURL(){
-    var blob;
-    var track = document.querySelector('#track');
-    var src = track.children[0].src
-    var blob = await (await fetch(src)).blob()
-    var objectURL = URL.createObjectURL(blob);
-
-    return objectURL;
+      var blob;
+      var track = document.querySelector('#track');
+      var src = track.children[0].src
+      var blob = await (await fetch(src)).blob()
+      var objectURL = URL.createObjectURL(blob);
+      return objectURL;
 }
 
 async function loadWave(){
@@ -127,8 +126,7 @@ async function loadWave(){
 }
 
 async function waitForElement(){
-    if(typeof window.wavesurfer !== "undefined"){
-    //if(document.querySelector('#track') !== null){
+    if((typeof window.wavesurfer !== "undefined") && (document.querySelector('#track') !== null)){
         window.wavesurfer.on('region-created', function(e){
          setTimeout(function(){
             if("label" in e){
@@ -168,13 +166,21 @@ async function waitForElement(){
     }
 }
 
-document.addEventListener('prodigyanswer', async() => {
-  var objectURL = await createURL();
-  for(var i=0; i < numberAnnotations;i++){
+async function loadTrack(){
+  if(document.querySelector('#track') !== null){
+    var objectURL = await createURL();
+    for(var i=0; i < numberAnnotations;i++){
       window['wavesurfer'+i].load(objectURL);
       window['wavesurfer'+i].clearRegions();
+    }
+    loadRegions();
+  }else{
+    setTimeout(loadTrack, 250);
   }
-  loadRegions();
+}
+
+document.addEventListener('prodigyanswer', async() => {
+  loadTrack();
 });
 
 function addRegionLabel(e,t,n){
