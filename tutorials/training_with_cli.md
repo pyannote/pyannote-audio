@@ -130,6 +130,8 @@ pyannote-audio-train
     protocol=AMI.SpeakerDiarization.only_words
 ```
 
+Known bugs: pytorch-lightning + hydra-submitit + multi-GPU do not play well together ([here](https://github.com/PyTorchLightning/pytorch-lightning/issues/2727), [here](https://github.com/PyTorchLightning/pytorch-lightning/issues/11300), and [here](https://github.com/PyTorchLightning/pytorch-lightning/pull/11617))
+
 ### Training on Jean Zay cluster
 
 ```bash
