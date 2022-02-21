@@ -1,6 +1,6 @@
 # The MIT License (MIT)
 #
-# Copyright (c) 2018-2021 CNRS
+# Copyright (c) 2018- CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -22,7 +22,7 @@
 
 """Overlapped speech detection pipelines"""
 
-from typing import Optional
+from typing import Optional, Callable
 
 import numpy as np
 
@@ -31,7 +31,7 @@ from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.pipeline import Pipeline
 from pyannote.audio.pipelines.utils import PipelineModel, get_devices, get_model
 from pyannote.audio.utils.signal import Binarize
-from pyannote.core import Annotation, Timeline
+from pyannote.core import Annotation, Timeline, SlidingWindowFeature
 from pyannote.database import get_annotated
 from pyannote.metrics.detection import DetectionPrecisionRecallFMeasure
 from pyannote.pipeline.parameter import Uniform
@@ -129,7 +129,7 @@ class OverlappedSpeechDetection(Pipeline):
             inference_kwargs["pre_aggregation_hook"] = lambda scores: np.partition(
                 scores, -2, axis=-1
             )[:, :, -2, np.newaxis]
-        self.segmentation_inference_ = Inference(model, **inference_kwargs)
+        self._segmentation = Inference(model, **inference_kwargs)
 
         #  hyper-parameters used for hysteresis thresholding
         self.onset = Uniform(0.0, 1.0)
@@ -172,29 +172,42 @@ class OverlappedSpeechDetection(Pipeline):
             min_duration_off=self.min_duration_off,
         )
 
-    CACHED_ACTIVATIONS = "@overlapped_speech_detection/activations"
+    CACHED_SEGMENTATION = "cache/segmentation/inference"
 
-    def apply(self, file: AudioFile) -> Annotation:
+    def apply(self, file: AudioFile, hook: Optional[Callable] = None) -> Annotation:
         """Apply overlapped speech detection
 
         Parameters
         ----------
         file : AudioFile
             Processed file.
+        hook : callable, optional
+            Hook called after each major step of the pipeline with the following
+            signature: hook("step_name", step_artefact, file=file)
 
         Returns
         -------
-        overlapped_speech : `pyannote.core.Annotation`
+        overlapped_speech : Annotation
             Overlapped speech regions.
         """
 
-        if self.training:
-            if self.CACHED_ACTIVATIONS not in file:
-                file[self.CACHED_ACTIVATIONS] = self.segmentation_inference_(file)
-        else:
-            file[self.CACHED_ACTIVATIONS] = self.segmentation_inference_(file)
+        # setup hook (e.g. for debugging purposes)
+        hook = self.setup_hook(file, hook=hook)
 
-        overlapped_speech = self._binarize(file[self.CACHED_ACTIVATIONS])
+        # apply segmentation model (only if needed)
+        # output shape is (num_chunks, num_frames, 1)
+        if self.training:
+            if self.CACHED_SEGMENTATION in file:
+                segmentations = file[self.CACHED_SEGMENTATION]
+            else:
+                segmentations = self._segmentation(file)
+                file[self.CACHED_SEGMENTATION] = segmentations
+        else:
+            segmentations: SlidingWindowFeature = self._segmentation(file)
+
+        hook("segmentation", segmentations)
+
+        overlapped_speech = self._binarize(segmentations)
         overlapped_speech.uri = file["uri"]
         return overlapped_speech.rename_labels(
             {label: "OVERLAP" for label in overlapped_speech.labels()}

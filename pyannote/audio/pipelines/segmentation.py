@@ -133,7 +133,7 @@ class SpeakerSegmentation(SpeakerDiarizationMixin, Pipeline):
 
         raise NotImplementedError()
 
-    CACHED_SEGMENTATION = "@inference"
+    CACHED_SEGMENTATION = "cache/segmentation/inference"
 
     @staticmethod
     def get_stitching_graph(
@@ -260,7 +260,7 @@ class SpeakerSegmentation(SpeakerDiarizationMixin, Pipeline):
         else:
             segmentations: SlidingWindowFeature = self._segmentation(file)
 
-        hook("inference", segmentations)
+        hook("segmentation", segmentations)
 
         if self.skip_stitching:
             return binarize(
