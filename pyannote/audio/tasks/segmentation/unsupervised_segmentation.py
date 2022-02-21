@@ -1,16 +1,17 @@
-from typing import List, Text, Tuple, Union
+from typing import List, Optional, Text, Tuple, Union
 
 import numpy as np
 import torch
 from pyannote.core import Segment
 from pyannote.database import Protocol
+from torch.utils.data import DataLoader
 from torch.utils.data._utils.collate import default_collate
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from typing_extensions import Literal
 
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import Model
-from pyannote.audio.core.task import Task
+from pyannote.audio.core.task import Task, ValDataset
 from pyannote.audio.tasks import Segmentation
 
 
@@ -78,6 +79,19 @@ class UnsupervisedSegmentation(Segmentation, Task):
             )
         return collated_batch
 
+    def collate_fn_val(self, batch):
+        collated_batch = default_collate(batch)
+
+        # Generate annotations y with m0 if they are not provided
+        if "y" not in batch:
+            m0_input = collated_batch["X"]
+            with torch.no_grad():  # grad causes problems when crossing process boundaries
+                collated_batch["y"] = torch.round(self.m0(waveforms=m0_input)).type(
+                    torch.int8
+                )
+
+        return collated_batch
+
     def prepare_chunk(
         self,
         file: AudioFile,
@@ -116,3 +130,16 @@ class UnsupervisedSegmentation(Segmentation, Task):
             file, chunk, duration=duration, stage=stage, use_annotations=use_annotations
         )
         return sample
+
+    def val_dataloader(self) -> Optional[DataLoader]:
+        if self.has_validation:
+            return DataLoader(
+                ValDataset(self),
+                batch_size=self.batch_size,
+                num_workers=self.num_workers,
+                pin_memory=self.pin_memory,
+                drop_last=False,
+                collate_fn=self.collate_fn_val,
+            )
+        else:
+            return None
