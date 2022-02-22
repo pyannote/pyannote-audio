@@ -60,6 +60,18 @@ class UnsupervisedSegmentation(Segmentation, Task):
         self.fake_in_val = fake_in_val
         self.augmentation_model = augmentation_model
 
+        self.m0.eval()
+
+    def get_model_output(self, model: Model, waveforms: torch.Tensor):
+        result = None
+        # try inference mode ?
+        with torch.no_grad():  # grad causes problems when crossing process boundaries
+            result = model(
+                waveforms=waveforms
+            ).detach()  # detach is necessary to avoid memory leaks
+            result = torch.round(result).type(torch.int8)
+        return result
+
     def collate_fn(self, batch):
         collated_batch = default_collate(batch)
 
@@ -70,8 +82,7 @@ class UnsupervisedSegmentation(Segmentation, Task):
                 m0_input = self.augmentation_model(
                     collated_batch["X"], sample_rate=self.model.hparams.sample_rate
                 )
-            with torch.no_grad():  # grad causes problems when crossing process boundaries
-                collated_batch["y"] = self.m0(waveforms=m0_input)
+            collated_batch["y"] = self.get_model_output(self.m0, m0_input)
 
         if self.augmentation is not None:
             collated_batch["X"] = self.augmentation(
@@ -85,10 +96,7 @@ class UnsupervisedSegmentation(Segmentation, Task):
         # Generate annotations y with m0 if they are not provided
         if "y" not in batch:
             m0_input = collated_batch["X"]
-            with torch.no_grad():  # grad causes problems when crossing process boundaries
-                collated_batch["y"] = torch.round(self.m0(waveforms=m0_input)).type(
-                    torch.int8
-                )
+            collated_batch["y"] = self.get_model_output(self.m0, m0_input)
 
         return collated_batch
 
