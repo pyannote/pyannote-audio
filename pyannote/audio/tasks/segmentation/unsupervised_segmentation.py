@@ -76,7 +76,7 @@ class UnsupervisedSegmentation(Segmentation, Task):
         collated_batch = default_collate(batch)
 
         # Generate annotations y with m0 if they are not provided
-        if "y" not in batch:
+        if "y" not in collated_batch:
             m0_input = collated_batch["X"]
             if self.augmentation_model is not None:
                 m0_input = self.augmentation_model(
@@ -94,7 +94,7 @@ class UnsupervisedSegmentation(Segmentation, Task):
         collated_batch = default_collate(batch)
 
         # Generate annotations y with m0 if they are not provided
-        if "y" not in batch:
+        if "y" not in collated_batch:
             m0_input = collated_batch["X"]
             collated_batch["y"] = self.get_model_output(self.m0, m0_input)
 
