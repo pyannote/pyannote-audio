@@ -1,9 +1,12 @@
-from typing import List, Optional, Text, Tuple, Union
+from typing import Any, List, Optional, OrderedDict, Text, Tuple, Union
 
 import numpy as np
+import pytorch_lightning as pl
 import torch
 from pyannote.core import Segment
 from pyannote.database import Protocol
+from pytorch_lightning import Callback
+from pytorch_lightning.utilities.types import STEP_OUTPUT
 from torch.utils.data import DataLoader
 from torch.utils.data._utils.collate import default_collate
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
@@ -151,3 +154,96 @@ class UnsupervisedSegmentation(Segmentation, Task):
             )
         else:
             return None
+
+
+class TeacherUpdate(Callback):
+    def __init__(
+        self,
+        when: Literal["epoch", "batch"] = "epoch",
+        update_interval: int = 1,
+        weight_update_rate: float = 0.0,
+        average_of: int = 1,
+    ):
+        self.when = when
+        self.update_interval = update_interval
+        self.weight_update_rate = weight_update_rate
+        self.average_of = average_of
+
+        self.last_weights: List[OrderedDict[str, torch.Tensor]] = []
+        self.teacher_weights_cache: OrderedDict[str, torch.Tensor] = None
+
+    def enqueue_teacher(self, teacher: OrderedDict[str, torch.Tensor]):
+        if len(self.last_weights) >= self.average_of:
+            self.last_weights.pop(0)
+        self.last_weights.append(teacher)
+
+    def get_updated_weights(
+        self,
+        teacher_w: OrderedDict[str, torch.Tensor],
+        student_w: OrderedDict[str, torch.Tensor],
+    ):
+        with torch.no_grad():
+            return {
+                k: teacher_w[k].to("cpu") * self.weight_update_rate
+                + student_w[k].to("cpu") * (1 - self.weight_update_rate)
+                for k in student_w
+            }
+
+    def compute_teacher_weights(self) -> OrderedDict[str, torch.Tensor]:
+        if len(self.last_weights) == 1:
+            return self.last_weights[0]
+        else:
+            with torch.no_grad():
+                new_w = {
+                    k: torch.mean(torch.stack([w[k] for w in self.last_weights]), dim=0)
+                    for k in self.last_weights[0]
+                }
+                return new_w
+
+    def try_update_teacher(
+        self, progress: int, trainer: pl.Trainer, model: pl.LightningModule
+    ):
+        if (
+            self.update_interval > 0
+            and self.weight_update_rate < 1.0
+            and progress % self.update_interval == 0
+        ):
+            try:
+                # Get new teacher "candidate" (from decayed weights) and enqueue it in the teacher history
+                teacher_candidate_w = self.get_updated_weights(
+                    self.teacher_weights_cache, model.state_dict()
+                )
+                self.enqueue_teacher(teacher_candidate_w)
+
+                # Compute the real new teacher weights, cache it, and assign it
+                new_teacher_w = self.compute_teacher_weights()
+                self.teacher_weights_cache = new_teacher_w
+                model.task.teacher.load_state_dict(new_teacher_w)
+
+            except AttributeError as err:
+                print(f"TeacherUpdate callback can't be applied on this model : {err}")
+
+    def on_train_start(
+        self, trainer: pl.Trainer, pl_module: pl.LightningModule
+    ) -> None:
+        if len(self.last_weights) == 0:
+            self.last_weights.append(pl_module.task.teacher.state_dict())
+            self.teacher_weights_cache = pl_module.task.teacher.state_dict()
+
+    def on_train_batch_end(
+        self,
+        trainer: "pl.Trainer",
+        pl_module: "pl.LightningModule",
+        outputs: STEP_OUTPUT,
+        batch: Any,
+        batch_idx: int,
+        unused: Optional[int] = 0,
+    ) -> None:
+        if self.when == "batch":
+            self.try_update_teacher(batch_idx, trainer, pl_module)
+
+    def on_train_epoch_end(
+        self, trainer: pl.Trainer, pl_module: pl.LightningModule
+    ) -> None:
+        if self.when == "epoch":
+            self.try_update_teacher(trainer.current_epoch, trainer, pl_module)
