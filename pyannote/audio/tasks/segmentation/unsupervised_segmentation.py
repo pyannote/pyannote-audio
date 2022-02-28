@@ -55,12 +55,12 @@ class UnsupervisedSegmentation(Segmentation, Task):
             vad_loss=vad_loss,
         )
 
-        self.m0 = model
+        self.teacher = model
         self.fake_in_train = fake_in_train
         self.fake_in_val = fake_in_val
         self.augmentation_model = augmentation_model
 
-        self.m0.eval()
+        self.teacher.eval()
 
     def get_model_output(self, model: Model, waveforms: torch.Tensor):
         result = None
@@ -75,14 +75,14 @@ class UnsupervisedSegmentation(Segmentation, Task):
     def collate_fn(self, batch):
         collated_batch = default_collate(batch)
 
-        # Generate annotations y with m0 if they are not provided
+        # Generate annotations y with teacher if they are not provided
         if "y" not in collated_batch:
-            m0_input = collated_batch["X"]
+            teacher_input = collated_batch["X"]
             if self.augmentation_model is not None:
-                m0_input = self.augmentation_model(
+                teacher_input = self.augmentation_model(
                     collated_batch["X"], sample_rate=self.model.hparams.sample_rate
                 )
-            collated_batch["y"] = self.get_model_output(self.m0, m0_input)
+            collated_batch["y"] = self.get_model_output(self.teacher, teacher_input)
 
         if self.augmentation is not None:
             collated_batch["X"] = self.augmentation(
@@ -93,10 +93,10 @@ class UnsupervisedSegmentation(Segmentation, Task):
     def collate_fn_val(self, batch):
         collated_batch = default_collate(batch)
 
-        # Generate annotations y with m0 if they are not provided
+        # Generate annotations y with teacher if they are not provided
         if "y" not in collated_batch:
-            m0_input = collated_batch["X"]
-            collated_batch["y"] = self.get_model_output(self.m0, m0_input)
+            teacher_input = collated_batch["X"]
+            collated_batch["y"] = self.get_model_output(self.teacher, teacher_input)
 
         return collated_batch
 
