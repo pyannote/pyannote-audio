@@ -155,8 +155,7 @@ class MultilabelDetectionPipeline(Pipeline):
             (segmentation_device,) = get_devices(needs=1)
             model.to(segmentation_device)
 
-        task: 'MultilabelDetection' = model.task
-        self.labels = task.specifications.classes
+        self.labels = model.specifications.classes
         self.segmentation_inference_ = Inference(model, **inference_kwargs)
 
         self.binarize_hparams = ParamDict(**{
@@ -165,28 +164,30 @@ class MultilabelDetectionPipeline(Pipeline):
                 offset=Uniform(0., 1.),
                 min_duration_on=Uniform(0., 2.),
                 min_duration_off=Uniform(0., 2.),
-                pad_onset=Uniform(-1., 1.),
-                pad_offset=Uniform(-1., 1.)
             ) for class_name in self.labels
         })
 
     def initialize(self):
         """Initialize pipeline with current set of parameters"""
-        self.freeze({'binarize_hparams': {
-            class_name: {
-                "pad_onset": 0.0,
-                "pad_offset": 0.0
-            } for class_name in self.labels
-        }})
         self._binarizers = {
             class_name: Binarize(
                 onset=self.binarize_hparams[class_name]["onset"],
                 offset=self.binarize_hparams[class_name]["offset"],
                 min_duration_on=self.binarize_hparams[class_name]["min_duration_on"],
                 min_duration_off=self.binarize_hparams[class_name]["min_duration_off"],
-                pad_onset=self.binarize_hparams[class_name]["pad_onset"],
-                pad_offset=self.binarize_hparams[class_name]["pad_offset"])
+            )
             for class_name in self.labels
+        }
+
+    def default_parameters(self):
+        return {"binarize_hparams": {
+            class_name: {
+                "onset": 0.767,
+                "offset": 0.377,
+                "min_duration_on": 0.136,
+                "min_duration_off": 0.067,
+            } for class_name in self.labels
+        }
         }
 
     CACHED_ACTIVATIONS = "@multilabel_detection/activations"
