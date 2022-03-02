@@ -22,6 +22,7 @@
 
 from typing import Any, Callable, Optional
 
+import numpy as np
 import torch
 from torchmetrics import Metric
 
@@ -107,3 +108,50 @@ class DiscreteDiarizationErrorRate(SegmentationMetric):
 
     def compute(self):
         return (self.false_alarm + self.missed_detection + self.confusion) / self.total
+
+
+class AUDER(SegmentationMetric):
+    def __init__(self, threshold_min=0.0, threshold_max=1.0, steps=31):
+        super().__init__()
+
+        self.threshold_min = threshold_min
+        self.threshold_max = threshold_max
+        self.steps = steps
+        self.linspace = np.linspace(threshold_min, threshold_max, steps)
+
+        self.add_state(
+            "false_alarm",
+            default=torch.zeros(steps, dtype=torch.float),
+            dist_reduce_fx="sum",
+        )
+        self.add_state(
+            "missed_detection",
+            torch.zeros(steps, dtype=torch.float),
+            dist_reduce_fx="sum",
+        )
+        self.add_state(
+            "confusion", torch.zeros(steps, dtype=torch.float), dist_reduce_fx="sum"
+        )
+        self.add_state(
+            "total", torch.zeros(steps, dtype=torch.float), dist_reduce_fx="sum"
+        )
+
+    def update(self, preds: torch.Tensor, target: torch.Tensor):
+        der_dim_check(preds, target)
+
+        for i in range(self.steps):
+            threshold = self.linspace[i]
+
+            false_alarm, missed_detection, confusion, total = compute_der_values(
+                preds, target, threshold
+            )
+            self.false_alarm[i] += false_alarm
+            self.missed_detection[i] += missed_detection
+            self.confusion[i] += confusion
+            self.total[i] += total
+
+    def compute(self):
+        ders = (self.false_alarm + self.missed_detection + self.confusion) / self.total
+        dx = (self.threshold_max - self.threshold_min) / (self.steps - 1)
+        area = torch.trapezoid(ders, dx=dx)
+        return area
