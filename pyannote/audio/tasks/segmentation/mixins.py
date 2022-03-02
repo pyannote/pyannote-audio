@@ -33,6 +33,7 @@ from typing_extensions import Literal
 from pyannote.audio.core.io import Audio, AudioFile
 from pyannote.audio.core.task import Problem
 from pyannote.audio.utils.random import create_rng_for_worker
+from pyannote.audio.utils.torchmetric import SegmentationMetric
 from pyannote.core import Annotation, Segment, SlidingWindow, SlidingWindowFeature
 
 
@@ -495,7 +496,10 @@ class SegmentationTaskMixin:
             # target: shape (N,), type binary
             # preds:  shape (N,), type float
 
-            self.model.validation_metric(preds.reshape(-1), target.reshape(-1))
+            if isinstance(self.model.validation_metric, SegmentationMetric):
+                self.model.validation_metric(preds[:, :, None], target)
+            else:
+                self.model.validation_metric(preds.reshape(-1), target.reshape(-1))
 
         elif self.specifications.problem == Problem.MULTI_LABEL_CLASSIFICATION:
             # target: shape (batch_size, num_frames, num_classes), type binary
@@ -505,7 +509,10 @@ class SegmentationTaskMixin:
             # target: shape (N, ), type binary
             # preds:  shape (N, ), type float
 
-            self.model.validation_metric(preds.reshape(-1), target.reshape(-1))
+            if isinstance(self.model.validation_metric, SegmentationMetric):
+                self.model.validation_metric(preds, target)
+            else:
+                self.model.validation_metric(preds.reshape(-1), target.reshape(-1))
 
         elif self.specifications.problem == Problem.MONO_LABEL_CLASSIFICATION:
             # target: shape (batch_size, num_frames, num_classes), type binary
