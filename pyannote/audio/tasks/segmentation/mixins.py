@@ -31,7 +31,7 @@ from torchmetrics import AUROC, Metric
 from typing_extensions import Literal
 
 from pyannote.audio.core.io import Audio, AudioFile
-from pyannote.audio.core.task import Problem
+from pyannote.audio.core.task import Problem, Task
 from pyannote.audio.utils.random import create_rng_for_worker
 from pyannote.core import Annotation, Segment, SlidingWindow, SlidingWindowFeature
 
@@ -615,5 +615,7 @@ class SegmentationTaskMixin:
 
     @property
     def val_monitor(self):
-        """Maximize validation area under ROC curve"""
-        return f"{self.ACRONYM}@val_auroc", "max"
+        if self.has_validation and self.metrics is None:
+            return Task.get_default_metric_name(AUROC), "max"
+        else:
+            return None, "min"
