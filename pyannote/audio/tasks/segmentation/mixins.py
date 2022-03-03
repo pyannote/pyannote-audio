@@ -525,6 +525,8 @@ class SegmentationTaskMixin:
         # torchmetrics to be happy... more details can be found here:
         # https://torchmetrics.readthedocs.io/en/latest/references/modules.html#input-types
 
+        batch_size, num_frames2, num_classes = preds.shape
+
         if self.specifications.problem == Problem.BINARY_CLASSIFICATION:
             # target: shape (batch_size, num_frames), type binary
             # preds:  shape (batch_size, num_frames, 1), type float
@@ -533,7 +535,13 @@ class SegmentationTaskMixin:
             # target: shape (N,), type binary
             # preds:  shape (N,), type float
 
-            self.model.validation_metric(preds.reshape(-1), target.reshape(-1))
+            self.model.validation_metric(
+                preds.reshape(-1),
+                target.reshape(-1),
+                batch_size=batch_size,
+                num_frames=num_frames2,
+                num_classes=num_classes,
+            )
 
         elif self.specifications.problem == Problem.MULTI_LABEL_CLASSIFICATION:
             # target: shape (batch_size, num_frames, num_classes), type binary
@@ -543,7 +551,13 @@ class SegmentationTaskMixin:
             # target: shape (N, ), type binary
             # preds:  shape (N, ), type float
 
-            self.model.validation_metric(preds.reshape(-1), target.reshape(-1))
+            self.model.validation_metric(
+                preds.reshape(-1),
+                target.reshape(-1),
+                batch_size=batch_size,
+                num_frames=num_frames2,
+                num_classes=num_classes,
+            )
 
         elif self.specifications.problem == Problem.MONO_LABEL_CLASSIFICATION:
             # target: shape (batch_size, num_frames, num_classes), type binary
