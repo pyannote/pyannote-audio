@@ -20,8 +20,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import Any, Callable, Optional
-
 import numpy as np
 import torch
 from torchmetrics import Metric
@@ -65,22 +63,7 @@ def compute_der_values(preds: torch.Tensor, target: torch.Tensor, threshold: flo
     return false_alarm, missed_detection, confusion, total
 
 
-class SegmentationMetric(Metric):
-    """Implementing this class instead of Metric means (batch,frames,classes)-sized input tensors are expected."""
-
-    def __init__(
-        self,
-        compute_on_step: bool = True,
-        dist_sync_on_step: bool = False,
-        process_group: Optional[Any] = None,
-        dist_sync_fn: Callable = None,
-    ) -> None:
-        super().__init__(
-            compute_on_step, dist_sync_on_step, process_group, dist_sync_fn
-        )
-
-
-class DiscreteDiarizationErrorRate(SegmentationMetric):
+class DiscreteDiarizationErrorRate(Metric):
     """Compute diarization error rate on discretized annotations with torchmetrics"""
 
     def __init__(self, threshold: float = 0.5):
@@ -110,7 +93,7 @@ class DiscreteDiarizationErrorRate(SegmentationMetric):
         return (self.false_alarm + self.missed_detection + self.confusion) / self.total
 
 
-class AUDER(SegmentationMetric):
+class AUDER(Metric):
     def __init__(self, threshold_min=0.0, threshold_max=1.0, steps=31):
         super().__init__()
 
