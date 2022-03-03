@@ -615,5 +615,7 @@ class SegmentationTaskMixin:
 
     @property
     def val_monitor(self):
-        """Maximize validation area under ROC curve"""
-        return f"{self.ACRONYM}@val_auroc", "max"
+        if self.has_validation and self.metrics is None:
+            return self.get_default_val_metric_name(AUROC), "max"
+        else:
+            return None, "min"
