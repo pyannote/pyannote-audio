@@ -25,6 +25,8 @@ from typing import Optional, Text, Tuple, Union
 
 import numpy as np
 import torch
+from pyannote.core import SlidingWindow
+from pyannote.database import Protocol
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from typing_extensions import Literal
 
@@ -32,8 +34,6 @@ from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
 from pyannote.audio.utils.loss import binary_cross_entropy, mse_loss
 from pyannote.audio.utils.permutation import permutate
-from pyannote.core import SlidingWindow
-from pyannote.database import Protocol
 
 
 class Segmentation(SegmentationTaskMixin, Task):
@@ -146,7 +146,10 @@ class Segmentation(SegmentationTaskMixin, Task):
                 start = file["annotated"][0].start
                 end = file["annotated"][-1].end
                 window = SlidingWindow(
-                    start=start, end=end, duration=self.duration, step=1.0,
+                    start=start,
+                    end=end,
+                    duration=self.duration,
+                    step=1.0,
                 )
                 for chunk in window:
                     num_speakers.append(len(file["annotation"].crop(chunk).labels()))
@@ -211,16 +214,18 @@ class Segmentation(SegmentationTaskMixin, Task):
 
         f, chunk = self._validation[idx]
         sample = self.prepare_chunk(f, chunk, duration=self.duration, stage="val")
-        y, labels = sample["y"], sample.pop("labels")
 
-        # since number of speakers is estimated from the training set,
-        # we might encounter validation chunks that have more speakers.
-        # in that case, we arbitrarily remove last speakers
-        if y.shape[1] > self.max_num_speakers:
-            y = y[:, : self.max_num_speakers]
-            labels = labels[: self.max_num_speakers]
+        if "y" in sample:
+            y, labels = sample["y"], sample.pop("labels")
 
-        sample["y"] = self.prepare_y(y)
+            # since number of speakers is estimated from the training set,
+            # we might encounter validation chunks that have more speakers.
+            # in that case, we arbitrarily remove last speakers
+            if y.shape[1] > self.max_num_speakers:
+                y = y[:, : self.max_num_speakers]
+                labels = labels[: self.max_num_speakers]
+
+            sample["y"] = self.prepare_y(y)
         return sample
 
     def segmentation_loss(
@@ -322,7 +327,8 @@ class Segmentation(SegmentationTaskMixin, Task):
         # frames weight
         weight_key = getattr(self, "weight", None)
         weight = batch.get(
-            weight_key, torch.ones(batch_size, num_frames, 1, device=self.model.device),
+            weight_key,
+            torch.ones(batch_size, num_frames, 1, device=self.model.device),
         )
         # (batch_size, num_frames, 1)
 
@@ -380,12 +386,13 @@ class Segmentation(SegmentationTaskMixin, Task):
 def main(protocol: str, subset: str = "test", model: str = "pyannote/segmentation"):
     """Evaluate a segmentation model"""
 
+    from pyannote.database import FileFinder, get_protocol
+    from rich.progress import Progress
+
     from pyannote.audio import Inference
     from pyannote.audio.pipelines.utils import get_devices
-    from pyannote.audio.utils.signal import binarize
     from pyannote.audio.utils.metric import DiscreteDiarizationErrorRate
-    from pyannote.database import get_protocol, FileFinder
-    from rich.progress import Progress
+    from pyannote.audio.utils.signal import binarize
 
     (device,) = get_devices(needs=1)
     metric = DiscreteDiarizationErrorRate()
@@ -400,9 +407,7 @@ def main(protocol: str, subset: str = "test", model: str = "pyannote/segmentatio
         def progress_hook(completed: int, total: int):
             progress.update(file_task, completed=completed / total)
 
-        inference = Inference(
-            model, device=device, progress_hook=progress_hook
-        )
+        inference = Inference(model, device=device, progress_hook=progress_hook)
 
         for file in files:
             progress.update(file_task, description=file["uri"])

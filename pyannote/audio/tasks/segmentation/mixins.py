@@ -27,13 +27,13 @@ from typing import List, Optional, Text, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
+from pyannote.core import Annotation, Segment, SlidingWindow, SlidingWindowFeature
 from torchmetrics import AUROC
 from typing_extensions import Literal
 
 from pyannote.audio.core.io import Audio, AudioFile
 from pyannote.audio.core.task import Problem
 from pyannote.audio.utils.random import create_rng_for_worker
-from pyannote.core import Annotation, Segment, SlidingWindow, SlidingWindowFeature
 
 
 class SegmentationTaskMixin:
@@ -152,55 +152,32 @@ class SegmentationTaskMixin:
         """
         return None
 
-    def prepare_chunk(
-        self,
-        file: AudioFile,
-        chunk: Segment,
-        duration: float = None,
-        stage: Literal["train", "val"] = "train",
-    ) -> Tuple[np.ndarray, np.ndarray, List[Text]]:
-        """Extract audio chunk and corresponding frame-wise labels
+    def get_y_labels_from_x(
+        self, file: AudioFile, num_samples: int, chunk: Segment, duration: float = None
+    ) -> Tuple[np.ndarray, List[Text]]:
+        """Extract audio chunk and corresponding frame-wise labels from a file
 
         Parameters
         ----------
         file : AudioFile
             Audio file.
+        num_samples: int
+            Number of samples in the audio file.
         chunk : Segment
             Audio chunk.
-        duration : float, optional
-            Fix chunk duration to avoid rounding errors. Defaults to self.duration
-        stage : {"train", "val"}
-            "train" for training step, "val" for validation step
 
         Returns
         -------
-        sample : dict
-            Dictionary with the following keys:
-            X : np.ndarray
-                Audio chunk as (num_samples, num_channels) array.
-            y : np.ndarray
-                Frame-wise labels as (num_frames, num_labels) array.
-            ...
+        Tuple[np.ndarray, List[Text]]
+            - y, the annotations for x
+            - labels, the labels for y
         """
-
-        sample = dict()
-
-        # ==================================================================
-        # X = "audio" crop
-        # ==================================================================
-
-        sample["X"], _ = self.model.audio.crop(
-            file,
-            chunk,
-            duration=self.duration if duration is None else duration,
-        )
 
         # ==================================================================
         # y = "annotation" crop (with corresponding "labels")
         # ==================================================================
 
         # use model introspection to predict how many frames it will output
-        num_samples = sample["X"].shape[1]
         num_frames, _ = self.model.introspection(num_samples)
 
         # crop "annotation" and keep track of corresponding list of labels if needed
@@ -226,9 +203,63 @@ class SegmentationTaskMixin:
             for start, stop in frames.crop(segments, mode="center", return_ranges=True):
                 y[start:stop, k] += 1
 
-        # handle corner case when the same label is active more than once
-        sample["y"] = np.minimum(y, 1, out=y)
-        sample["labels"] = labels
+        y = np.minimum(
+            y, 1
+        )  # handle corner case when the same label is active more than once
+        return y, labels
+
+    def prepare_chunk(
+        self,
+        file: AudioFile,
+        chunk: Segment,
+        duration: float = None,
+        stage: Literal["train", "val"] = "train",
+        use_annotations: bool = True,
+    ) -> Tuple[np.ndarray, np.ndarray, List[Text]]:
+        """Extract audio chunk and corresponding frame-wise labels
+
+        Parameters
+        ----------
+        file : AudioFile
+            Audio file.
+        chunk : Segment
+            Audio chunk.
+        duration : float, optional
+            Fix chunk duration to avoid rounding errors. Defaults to self.duration
+        stage : {"train", "val"}
+            "train" for training step, "val" for validation step
+        use_annotations : bool
+            Provide the annotations (y and labels) from the source file in the result
+
+        Returns
+        -------
+        sample : dict
+            Dictionary with the following keys:
+            X : np.ndarray
+                Audio chunk as (num_samples, num_channels) array.
+            y : np.ndarray
+                Frame-wise labels as (num_frames, num_labels) array.
+            ...
+        """
+
+        sample = dict()
+
+        # ==================================================================
+        # X = "audio" crop
+        # ==================================================================
+
+        sample["X"], _ = self.model.audio.crop(
+            file,
+            chunk,
+            duration=self.duration if duration is None else duration,
+        )
+
+        # Compute cropped y if required
+        if use_annotations:
+            num_samples = sample["X"].shape[1]
+            sample["y"], sample["labels"] = self.get_y_labels_from_x(
+                file, num_samples, chunk, duration
+            )
 
         # ==================================================================
         # additional metadata
@@ -349,16 +380,18 @@ class SegmentationTaskMixin:
             sample = next(chunks)
 
             if rng.random() > overlap_probability:
-                try:
-                    sample["y"] = self.prepare_y(sample["y"])
-                except ValueError:
-                    # if a ValueError is raised by prepare_y, skip this sample.
+                # if the sample has y (and labels implicitly), prepare y and remove labels
+                if "y" in sample:
+                    try:
+                        sample["y"] = self.prepare_y(sample["y"])
+                    except ValueError:
+                        # if a ValueError is raised by prepare_y, skip this sample.
 
-                    # see pyannote.audio.tasks.segmentation.Segmentation.prepare_y
-                    # to understand why this might happen.
-                    continue
+                        # see pyannote.audio.tasks.segmentation.Segmentation.prepare_y
+                        # to understand why this might happen.
+                        continue
 
-                _ = sample.pop("labels")
+                    _ = sample.pop("labels")
                 yield sample
                 continue
 
@@ -374,43 +407,45 @@ class SegmentationTaskMixin:
                 sample["X"]
             ) + alpha * Audio.power_normalize(other_sample["X"])
 
-            # combine labels
-            y, labels = sample["y"], sample.pop("labels")
-            other_y, other_labels = other_sample["y"], other_sample.pop("labels")
-            y_mapping = {label: i for i, label in enumerate(labels)}
-            num_combined_labels = len(y_mapping)
-            for label in other_labels:
-                if label not in y_mapping:
-                    y_mapping[label] = num_combined_labels
-                    num_combined_labels += 1
-            # combined_labels = [
-            #     label
-            #     for label, _ in sorted(y_mapping.items(), key=lambda item: item[1])
-            # ]
-
-            # combine targets
-            combined_y = np.zeros_like(y, shape=(len(y), num_combined_labels))
-            for i, label in enumerate(labels):
-                combined_y[:, y_mapping[label]] += y[:, i]
-            for i, label in enumerate(other_labels):
-                combined_y[:, y_mapping[label]] += other_y[:, i]
-
-            # handle corner case when the same label is active at the same time in both chunks
-            combined_y = np.minimum(combined_y, 1, out=combined_y)
-
-            try:
-                combined_y = self.prepare_y(combined_y)
-            except ValueError:
-                # if a ValueError is raised by prepare_y, skip this sample.
-
-                # see pyannote.audio.tasks.segmentation.Segmentation.prepare_y
-                # to understand why this might happen.
-                continue
-
             combined_sample = {
                 "X": combined_X,
-                "y": combined_y,
             }
+
+            # combine labels if samples are labelled
+            if "y" in sample:
+                y, labels = sample["y"], sample.pop("labels")
+                other_y, other_labels = other_sample["y"], other_sample.pop("labels")
+                y_mapping = {label: i for i, label in enumerate(labels)}
+                num_combined_labels = len(y_mapping)
+                for label in other_labels:
+                    if label not in y_mapping:
+                        y_mapping[label] = num_combined_labels
+                        num_combined_labels += 1
+                # combined_labels = [
+                #     label
+                #     for label, _ in sorted(y_mapping.items(), key=lambda item: item[1])
+                # ]
+
+                # combine targets
+                combined_y = np.zeros_like(y, shape=(len(y), num_combined_labels))
+                for i, label in enumerate(labels):
+                    combined_y[:, y_mapping[label]] += y[:, i]
+                for i, label in enumerate(other_labels):
+                    combined_y[:, y_mapping[label]] += other_y[:, i]
+
+                # handle corner case when the same label is active at the same time in both chunks
+                combined_y = np.minimum(combined_y, 1, out=combined_y)
+
+                try:
+                    combined_y = self.prepare_y(combined_y)
+                except ValueError:
+                    # if a ValueError is raised by prepare_y, skip this sample.
+
+                    # see pyannote.audio.tasks.segmentation.Segmentation.prepare_y
+                    # to understand why this might happen.
+                    continue
+
+                combined_sample["y"] = combined_y
 
             for key, value in sample.items():
 
@@ -443,8 +478,9 @@ class SegmentationTaskMixin:
     def val__getitem__(self, idx):
         f, chunk = self._validation[idx]
         sample = self.prepare_chunk(f, chunk, duration=self.duration, stage="val")
-        sample["y"] = self.prepare_y(sample["y"])
-        _ = sample.pop("labels")
+        if "y" in sample:
+            sample["y"] = self.prepare_y(sample["y"])
+            _ = sample.pop("labels")
         return sample
 
     def val__len__(self):

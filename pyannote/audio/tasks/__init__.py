@@ -30,12 +30,17 @@ from .segmentation.speaker_tracking import SpeakerTracking  # isort:skip
 
 from .segmentation.segmentation import Segmentation  # isort:skip
 
+from .segmentation.unsupervised_segmentation import (  # isort:skip
+    UnsupervisedSegmentation,
+)
+
 from .embedding.arcface import SupervisedRepresentationLearningWithArcFace  # isort:skip
 
 SpeakerEmbedding = SupervisedRepresentationLearningWithArcFace
 
 __all__ = [
     "Segmentation",
+    "UnsupervisedSegmentation",
     "VoiceActivityDetection",
     "SpeakerChangeDetection",
     "OverlappedSpeechDetection",
