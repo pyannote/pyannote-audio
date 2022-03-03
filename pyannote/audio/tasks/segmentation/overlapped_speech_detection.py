@@ -21,10 +21,11 @@
 # SOFTWARE.
 
 
-from typing import Text, Tuple, Union
+from typing import Dict, Sequence, Text, Tuple, Union
 
 import numpy as np
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
+from torchmetrics import Metric
 
 from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
@@ -101,6 +102,7 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
         num_workers: int = None,
         pin_memory: bool = False,
         augmentation: BaseWaveformTransform = None,
+        metrics: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
     ):
 
         super().__init__(
@@ -111,6 +113,7 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
             num_workers=num_workers,
             pin_memory=pin_memory,
             augmentation=augmentation,
+            metrics=metrics,
         )
 
         self.specifications = Specifications(

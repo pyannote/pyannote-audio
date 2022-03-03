@@ -23,8 +23,11 @@
 
 from __future__ import annotations
 
+from typing import Dict, Sequence, Union
+
 import pytorch_metric_learning.losses
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
+from torchmetrics import Metric
 
 from pyannote.audio.core.task import Task
 from pyannote.database import Protocol
@@ -87,6 +90,7 @@ class SupervisedRepresentationLearningWithArcFace(
         num_workers: int = None,
         pin_memory: bool = False,
         augmentation: BaseWaveformTransform = None,
+        metrics: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
     ):
 
         self.num_chunks_per_class = num_chunks_per_class
@@ -103,6 +107,7 @@ class SupervisedRepresentationLearningWithArcFace(
             num_workers=num_workers,
             pin_memory=pin_memory,
             augmentation=augmentation,
+            metrics=metrics,
         )
 
     def setup_loss_func(self):

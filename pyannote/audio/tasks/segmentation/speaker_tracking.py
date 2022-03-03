@@ -20,10 +20,11 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import List, Optional, Text, Tuple, Union
+from typing import Dict, List, Optional, Sequence, Text, Tuple, Union
 
 import numpy as np
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
+from torchmetrics import Metric
 
 from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
@@ -85,6 +86,7 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
         num_workers: int = None,
         pin_memory: bool = False,
         augmentation: BaseWaveformTransform = None,
+        metrics: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
     ):
 
         super().__init__(
@@ -95,6 +97,7 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
             num_workers=num_workers,
             pin_memory=pin_memory,
             augmentation=augmentation,
+            metrics=metrics,
         )
 
         self.balance = balance

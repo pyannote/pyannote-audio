@@ -21,11 +21,12 @@
 # SOFTWARE.
 
 from collections import Counter
-from typing import Optional, Text, Tuple, Union
+from typing import Dict, Optional, Sequence, Text, Tuple, Union
 
 import numpy as np
 import torch
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
+from torchmetrics import Metric
 from typing_extensions import Literal
 
 from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
@@ -109,6 +110,7 @@ class Segmentation(SegmentationTaskMixin, Task):
         augmentation: BaseWaveformTransform = None,
         loss: Literal["bce", "mse"] = "bce",
         vad_loss: Literal["bce", "mse"] = None,
+        metrics: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
     ):
 
         super().__init__(
@@ -119,6 +121,7 @@ class Segmentation(SegmentationTaskMixin, Task):
             num_workers=num_workers,
             pin_memory=pin_memory,
             augmentation=augmentation,
+            metrics=metrics,
         )
 
         self.max_num_speakers = max_num_speakers
@@ -146,7 +149,10 @@ class Segmentation(SegmentationTaskMixin, Task):
                 start = file["annotated"][0].start
                 end = file["annotated"][-1].end
                 window = SlidingWindow(
-                    start=start, end=end, duration=self.duration, step=1.0,
+                    start=start,
+                    end=end,
+                    duration=self.duration,
+                    step=1.0,
                 )
                 for chunk in window:
                     num_speakers.append(len(file["annotation"].crop(chunk).labels()))
@@ -322,7 +328,8 @@ class Segmentation(SegmentationTaskMixin, Task):
         # frames weight
         weight_key = getattr(self, "weight", None)
         weight = batch.get(
-            weight_key, torch.ones(batch_size, num_frames, 1, device=self.model.device),
+            weight_key,
+            torch.ones(batch_size, num_frames, 1, device=self.model.device),
         )
         # (batch_size, num_frames, 1)
 
@@ -380,12 +387,13 @@ class Segmentation(SegmentationTaskMixin, Task):
 def main(protocol: str, subset: str = "test", model: str = "pyannote/segmentation"):
     """Evaluate a segmentation model"""
 
+    from rich.progress import Progress
+
     from pyannote.audio import Inference
     from pyannote.audio.pipelines.utils import get_devices
-    from pyannote.audio.utils.signal import binarize
     from pyannote.audio.utils.metric import DiscreteDiarizationErrorRate
-    from pyannote.database import get_protocol, FileFinder
-    from rich.progress import Progress
+    from pyannote.audio.utils.signal import binarize
+    from pyannote.database import FileFinder, get_protocol
 
     (device,) = get_devices(needs=1)
     metric = DiscreteDiarizationErrorRate()
@@ -400,9 +408,7 @@ def main(protocol: str, subset: str = "test", model: str = "pyannote/segmentatio
         def progress_hook(completed: int, total: int):
             progress.update(file_task, completed=completed / total)
 
-        inference = Inference(
-            model, device=device, progress_hook=progress_hook
-        )
+        inference = Inference(model, device=device, progress_hook=progress_hook)
 
         for file in files:
             progress.update(file_task, description=file["uri"])
