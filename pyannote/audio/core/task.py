@@ -33,6 +33,7 @@ from typing import Dict, List, Optional, Sequence, Text, Tuple, Type, Union
 
 import pytorch_lightning as pl
 import torch
+from pyannote.database import Protocol
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 from torch.utils.data._utils.collate import default_collate
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
@@ -41,7 +42,6 @@ from typing_extensions import Literal
 
 from pyannote.audio.utils.loss import binary_cross_entropy, nll_loss
 from pyannote.audio.utils.protocol import check_protocol
-from pyannote.database import Protocol
 
 
 # Type of machine learning problem
@@ -248,14 +248,22 @@ class Task(pl.LightningDataModule):
     def setup_loss_func(self):
         pass
 
+    def get_val_metric_prefix(self) -> str:
+        return f"{self.ACRONYM}@val_"
+
+    def get_default_val_metric_name(self, metric: Union[Metric, Type]) -> str:
+        prefix = self.get_val_metric_prefix()
+        mn = Task.get_metric_name(metric)
+        return f"{prefix}{mn}"
+
     @staticmethod
-    def get_default_metric_name(metric: Union[Metric, Type]):
+    def get_metric_name(metric: Union[Metric, Type]) -> str:
         if isinstance(metric, Metric):
             return type(metric).__name__.lower()
         elif isinstance(metric, Type):
             return metric.__name__.lower()
         else:
-            msg = "get_default_metric_name only accepts Metric and Type arguments."
+            msg = "get_metric_name only accepts Metric and Type arguments."
             raise ValueError(msg)
 
     def setup_validation_metric(self) -> Metric:
@@ -265,8 +273,8 @@ class Task(pl.LightningDataModule):
 
         # If the metrics' names are not given, generate automatically lowercase ones
         if not isinstance(metricsarg, dict):
-            metricsarg = {Task.get_default_metric_name(m): m for m in self.metrics}
-        return MetricCollection(metricsarg, prefix=f"{self.ACRONYM}@val_")
+            metricsarg = {Task.get_metric_name(m): m for m in self.metrics}
+        return MetricCollection(metricsarg, prefix=self.get_val_metric_prefix())
 
     def train__iter__(self):
         # will become train_dataset.__iter__ method

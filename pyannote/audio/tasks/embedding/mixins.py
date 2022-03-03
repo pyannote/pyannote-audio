@@ -25,16 +25,16 @@ from typing import Dict, Optional, Sequence, Union
 
 import torch
 import torch.nn.functional as F
-from torchmetrics import AUROC, Metric
-from tqdm import tqdm
-
-from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
-from pyannote.audio.utils.random import create_rng_for_worker
 from pyannote.core import Segment
 from pyannote.database.protocol import (
     SpeakerDiarizationProtocol,
     SpeakerVerificationProtocol,
 )
+from torchmetrics import AUROC, Metric
+from tqdm import tqdm
+
+from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
+from pyannote.audio.utils.random import create_rng_for_worker
 
 
 class SupervisedRepresentationLearningTaskMixin:
@@ -296,7 +296,7 @@ class SupervisedRepresentationLearningTaskMixin:
         if self.has_validation and self.metrics is None:
 
             if isinstance(self.protocol, SpeakerVerificationProtocol):
-                return Task.get_default_metric_name(AUROC), "max"
+                return Task.get_default_val_metric_name(AUROC), "max"
 
             elif isinstance(self.protocol, SpeakerDiarizationProtocol):
                 return None, "min"
