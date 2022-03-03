@@ -29,7 +29,7 @@ import warnings
 from dataclasses import dataclass
 from enum import Enum
 from numbers import Number
-from typing import Dict, List, Optional, Sequence, Text, Tuple, Union
+from typing import Dict, List, Optional, Sequence, Text, Tuple, Type, Union
 
 import pytorch_lightning as pl
 import torch
@@ -248,11 +248,33 @@ class Task(pl.LightningDataModule):
     def setup_loss_func(self):
         pass
 
-    def setup_validation_metric(self) -> Metric:
-        if self.metrics is None:
-            self.metrics = self.get_default_validation_metric()
+    def get_val_metric_prefix(self) -> str:
+        return f"{self.ACRONYM}@val_"
 
-        return MetricCollection(self.metrics, prefix=f"{self.ACRONYM}@val_")
+    def get_default_val_metric_name(self, metric: Union[Metric, Type]) -> str:
+        prefix = self.get_val_metric_prefix()
+        mn = Task.get_metric_name(metric)
+        return f"{prefix}{mn}"
+
+    @staticmethod
+    def get_metric_name(metric: Union[Metric, Type]) -> str:
+        if isinstance(metric, Metric):
+            return type(metric).__name__.lower()
+        elif isinstance(metric, Type):
+            return metric.__name__.lower()
+        else:
+            msg = "get_metric_name only accepts Metric and Type arguments."
+            raise ValueError(msg)
+
+    def setup_validation_metric(self) -> Metric:
+        metricsarg = self.metrics
+        if self.metrics is None:
+            metricsarg = self.get_default_validation_metric()
+
+        # If the metrics' names are not given, generate automatically lowercase ones
+        if not isinstance(metricsarg, dict):
+            metricsarg = {Task.get_metric_name(m): m for m in self.metrics}
+        return MetricCollection(metricsarg, prefix=self.get_val_metric_prefix())
 
     def train__iter__(self):
         # will become train_dataset.__iter__ method
