@@ -21,11 +21,11 @@
 # SOFTWARE.
 
 import math
-from typing import Optional
+from typing import Dict, Optional, Sequence, Union
 
 import torch
 import torch.nn.functional as F
-from torchmetrics import AUROC
+from torchmetrics import AUROC, Metric
 from tqdm import tqdm
 
 from pyannote.audio.core.task import Problem, Resolution, Specifications
@@ -124,7 +124,9 @@ class SupervisedRepresentationLearningTaskMixin:
         if isinstance(self.protocol, SpeakerVerificationProtocol):
             self._validation = list(self.protocol.development_trial())
 
-    def setup_validation_metric(self):
+    def get_default_validation_metric(
+        self,
+    ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
         return AUROC(compute_on_step=False)
 
     def train__iter__(self):
@@ -277,8 +279,7 @@ class SupervisedRepresentationLearningTaskMixin:
             y_true = batch["y"]
             self.model.validation_metric(y_pred, y_true)
 
-            self.model.log(
-                f"{self.ACRONYM}@val_auroc",
+            self.model.log_dict(
                 self.model.validation_metric,
                 on_step=False,
                 on_epoch=True,

@@ -29,13 +29,14 @@ import warnings
 from dataclasses import dataclass
 from enum import Enum
 from numbers import Number
-from typing import List, Optional, Text, Tuple, Union
+from typing import Dict, List, Optional, Sequence, Text, Tuple, Union
 
 import pytorch_lightning as pl
 import torch
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 from torch.utils.data._utils.collate import default_collate
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
+from torchmetrics import Metric, MetricCollection
 from typing_extensions import Literal
 
 from pyannote.audio.utils.loss import binary_cross_entropy, nll_loss
@@ -168,6 +169,7 @@ class Task(pl.LightningDataModule):
         num_workers: int = None,
         pin_memory: bool = False,
         augmentation: BaseWaveformTransform = None,
+        metrics: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
     ):
         super().__init__()
 
@@ -203,6 +205,19 @@ class Task(pl.LightningDataModule):
         self.num_workers = num_workers
         self.pin_memory = pin_memory
         self.augmentation = augmentation
+        self.metrics = metrics
+
+    def get_default_validation_metric(
+        self,
+    ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
+        """Used to get validation metrics when none is provided by the user
+
+        Returns
+        -------
+        Union[Metric, Sequence[Metric], Dict[str, Metric]]
+            The default validation metric(s) of this task (follow torchmetrics MetricCollection convention)
+        """
+        pass
 
     def prepare_data(self):
         """Use this to download and prepare data
@@ -233,8 +248,11 @@ class Task(pl.LightningDataModule):
     def setup_loss_func(self):
         pass
 
-    def setup_validation_metric(self):
-        pass
+    def setup_validation_metric(self) -> Metric:
+        if self.metrics is None:
+            self.metrics = self.get_default_validation_metric()
+
+        return MetricCollection(self.metrics, prefix=f"{self.ACRONYM}@val_")
 
     def train__iter__(self):
         # will become train_dataset.__iter__ method
