@@ -1,4 +1,4 @@
-from typing import Any, List, Optional, OrderedDict, Text, Tuple, Union
+from typing import Any, Dict, List, Optional, OrderedDict, Sequence, Text, Tuple, Union
 
 import numpy as np
 import pytorch_lightning as pl
@@ -10,6 +10,7 @@ from pytorch_lightning.utilities.types import STEP_OUTPUT
 from torch.utils.data import DataLoader
 from torch.utils.data._utils.collate import default_collate
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
+from torchmetrics import Metric
 from typing_extensions import Literal
 
 from pyannote.audio.core.io import AudioFile
@@ -39,6 +40,7 @@ class UnsupervisedSegmentation(Segmentation, Task):
         augmentation: BaseWaveformTransform = None,
         loss: Literal["bce", "mse"] = "bce",
         vad_loss: Literal["bce", "mse"] = None,
+        metrics: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
     ):
         super().__init__(
             # Mixin params
@@ -56,6 +58,7 @@ class UnsupervisedSegmentation(Segmentation, Task):
             weight=weight,
             loss=loss,
             vad_loss=vad_loss,
+            metrics=metrics,
         )
 
         self.teacher = model
