@@ -27,11 +27,28 @@ from torchmetrics import Metric
 from pyannote.audio.utils.permutation import permutate
 
 
-def der_dim_check(preds: torch.Tensor, target: torch.Tensor):
-    if len(preds.shape) != 3 or len(target.shape) != 3:
-        msg = "Incorrect shape: should be (batch_size, num_frames, num_classes)."
+def der_try_reshape(
+    preds: torch.Tensor,
+    target: torch.Tensor,
+    batch_size: int,
+    num_frames: int,
+    num_classes: int,
+):
+    if len(preds.shape) == 3 and len(target.shape) == 3:
+        return preds, target
+
+    # Preds or target do not have the correct size
+    if batch_size == -1 or num_frames == -1 or num_classes == -1:
+        msg = "Incorrect shape: should be (batch_size, num_frames, num_classes), pass batch_size, num_frames and num_classes as parameters to the update function if needed."
         raise ValueError(msg)
 
+    # Preds or target do not have the correct size AND can be resized
+    preds = preds.reshape(batch_size, num_frames, num_classes)
+    target = target.reshape(batch_size, num_frames, num_classes)
+    return preds, target
+
+
+def der_dim_check(preds: torch.Tensor, target: torch.Tensor):
     batch_size, num_samples, num_classes_1 = target.shape
     batch_size_, num_samples_, num_classes_2 = preds.shape
     if (
@@ -63,7 +80,7 @@ def compute_der_values(preds: torch.Tensor, target: torch.Tensor, threshold: flo
     return false_alarm, missed_detection, confusion, total
 
 
-class DiscreteDiarizationErrorRate(Metric):
+class DER(Metric):
     """Compute diarization error rate on discretized annotations with torchmetrics"""
 
     def __init__(self, threshold: float = 0.5):
@@ -78,7 +95,17 @@ class DiscreteDiarizationErrorRate(Metric):
         self.add_state("confusion", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("total", default=torch.tensor(0.0), dist_reduce_fx="sum")
 
-    def update(self, preds: torch.Tensor, target: torch.Tensor):
+    def update(
+        self,
+        preds: torch.Tensor,
+        target: torch.Tensor,
+        batch_size: int = -1,
+        num_frames: int = -1,
+        num_classes: int = -1,
+    ):
+        preds, target = der_try_reshape(
+            preds, target, batch_size, num_frames, num_classes
+        )
         der_dim_check(preds, target)
 
         false_alarm, missed_detection, confusion, total = compute_der_values(
@@ -119,7 +146,17 @@ class AUDER(Metric):
             "total", torch.zeros(steps, dtype=torch.float), dist_reduce_fx="sum"
         )
 
-    def update(self, preds: torch.Tensor, target: torch.Tensor):
+    def update(
+        self,
+        preds: torch.Tensor,
+        target: torch.Tensor,
+        batch_size: int = -1,
+        num_frames: int = -1,
+        num_classes: int = -1,
+    ):
+        preds, target = der_try_reshape(
+            preds, target, batch_size, num_frames, num_classes
+        )
         der_dim_check(preds, target)
 
         for i in range(self.steps):
