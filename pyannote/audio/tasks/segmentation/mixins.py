@@ -23,12 +23,12 @@
 import math
 import random
 import warnings
-from typing import List, Optional, Text, Tuple
+from typing import Dict, List, Optional, Sequence, Text, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
 from pyannote.core import Annotation, Segment, SlidingWindow, SlidingWindowFeature
-from torchmetrics import AUROC
+from torchmetrics import AUROC, Metric
 from typing_extensions import Literal
 
 from pyannote.audio.core.io import Audio, AudioFile
@@ -121,7 +121,9 @@ class SegmentationTaskMixin:
 
         random.shuffle(self._validation)
 
-    def setup_validation_metric(self):
+    def get_default_validation_metric(
+        self,
+    ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
         """Setup default validation metric
 
         Use macro-average of area under the ROC curve
@@ -561,8 +563,7 @@ class SegmentationTaskMixin:
             # TODO: implement when pyannote.audio gets its first mono-label segmentation task
             raise NotImplementedError()
 
-        self.model.log(
-            f"{self.ACRONYM}@val_auroc",
+        self.model.log_dict(
             self.model.validation_metric,
             on_step=False,
             on_epoch=True,

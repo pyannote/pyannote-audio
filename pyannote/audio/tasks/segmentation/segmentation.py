@@ -21,13 +21,14 @@
 # SOFTWARE.
 
 from collections import Counter
-from typing import Optional, Text, Tuple, Union
+from typing import Dict, Optional, Sequence, Text, Tuple, Union
 
 import numpy as np
 import torch
 from pyannote.core import SlidingWindow
 from pyannote.database import Protocol
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
+from torchmetrics import Metric
 from typing_extensions import Literal
 
 from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
@@ -109,6 +110,7 @@ class Segmentation(SegmentationTaskMixin, Task):
         augmentation: BaseWaveformTransform = None,
         loss: Literal["bce", "mse"] = "bce",
         vad_loss: Literal["bce", "mse"] = None,
+        metrics: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
     ):
 
         super().__init__(
@@ -119,6 +121,7 @@ class Segmentation(SegmentationTaskMixin, Task):
             num_workers=num_workers,
             pin_memory=pin_memory,
             augmentation=augmentation,
+            metrics=metrics,
         )
 
         self.max_num_speakers = max_num_speakers
