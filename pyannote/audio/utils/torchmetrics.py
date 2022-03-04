@@ -121,29 +121,47 @@ class DER(Metric):
 
 
 class AUDER(Metric):
-    def __init__(self, threshold_min=0.0, threshold_max=1.0, steps=31):
+    """Area Under the Diarization Error Rate.
+    Approximates the area under the curve of the DER when varying its threshold value.
+
+    Note that this is only a reliable metric if num_frames == the total number of frames of the diarized audio.
+    """
+
+    def __init__(
+        self, dx=0.0333, threshold_min=0.0, threshold_max=1.0, force_unit_area=True
+    ):
         super().__init__()
+
+        if threshold_max < threshold_min:
+            raise ValueError(
+                f"Illegal value : threshold_max ({threshold_max}) < threshold_min ({threshold_min})"
+            )
 
         self.threshold_min = threshold_min
         self.threshold_max = threshold_max
-        self.steps = steps
-        self.linspace = np.linspace(threshold_min, threshold_max, steps)
+        self.force_unit_area = force_unit_area
+        self.steps = int(threshold_max - threshold_min) / dx + 1
+        # dx used for area computation. If we want an area in [0,1], fake it.
+        self.area_dx = dx if not force_unit_area else 1.0 / (self.steps - 1)
+        self.linspace = np.linspace(threshold_min, threshold_max, self.steps)
 
         self.add_state(
             "false_alarm",
-            default=torch.zeros(steps, dtype=torch.float),
+            default=torch.zeros(self.steps, dtype=torch.float),
             dist_reduce_fx="sum",
         )
         self.add_state(
             "missed_detection",
-            torch.zeros(steps, dtype=torch.float),
+            torch.zeros(self.steps, dtype=torch.float),
             dist_reduce_fx="sum",
         )
         self.add_state(
-            "confusion", torch.zeros(steps, dtype=torch.float), dist_reduce_fx="sum"
+            "confusion",
+            torch.zeros(self.steps, dtype=torch.float),
+            dist_reduce_fx="sum",
         )
         self.add_state(
-            "total", torch.zeros(steps, dtype=torch.float), dist_reduce_fx="sum"
+            "total", torch.zeros(self.steps, dtype=torch.float), dist_reduce_fx="sum"
         )
 
     def update(
@@ -172,6 +190,5 @@ class AUDER(Metric):
 
     def compute(self):
         ders = (self.false_alarm + self.missed_detection + self.confusion) / self.total
-        dx = (self.threshold_max - self.threshold_min) / (self.steps - 1)
-        area = torch.trapezoid(ders, dx=dx)
+        area = torch.trapezoid(ders, dx=self.area_dx)
         return area
