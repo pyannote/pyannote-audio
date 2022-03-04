@@ -20,6 +20,8 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+from typing import Tuple
+
 import numpy as np
 import torch
 from torchmetrics import Metric
@@ -33,7 +35,34 @@ def der_try_reshape(
     batch_size: int,
     num_frames: int,
     num_classes: int,
-):
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Tries to reshape preds and target into their expected shape (batch_size, num_frames, num_classes).
+    Raises an error if it can't do it.
+
+    Parameters
+    ----------
+    preds : torch.Tensor
+        The update method preds parameter
+    target : torch.Tensor
+        The update method target parameter
+    batch_size : int
+        Batch size.
+    num_frames : int
+        Number of frames.
+    num_classes : int
+        Number of classes.
+
+    Returns
+    -------
+    Tuple[torch.Tensor, torch.Tensor]
+        The tuple (preds, target) in the expected shape.
+
+    Raises
+    ------
+    ValueError
+        Raised if there isn't enough information to reshape preds and target.
+    """
     if len(preds.shape) == 3 and len(target.shape) == 3:
         return preds, target
 
@@ -81,7 +110,11 @@ def compute_der_values(preds: torch.Tensor, target: torch.Tensor, threshold: flo
 
 
 class DER(Metric):
-    """Compute diarization error rate on discretized annotations with torchmetrics"""
+    """
+    Compute diarization error rate on discretized annotations with torchmetrics
+
+    Note that this is only a reliable metric if num_frames == the total number of frames of the diarized audio.
+    """
 
     def __init__(self, threshold: float = 0.5):
         super().__init__()
