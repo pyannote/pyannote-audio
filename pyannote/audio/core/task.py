@@ -215,7 +215,7 @@ class Task(pl.LightningDataModule):
         Returns
         -------
         Union[Metric, Sequence[Metric], Dict[str, Metric]]
-            The default validation metric(s) of this task (follow torchmetrics MetricCollection convention)
+            The default validation metric(s) of this task (something that can be plugged in a torchmetrics.MetricCollection).
         """
         pass
 
