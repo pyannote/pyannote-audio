@@ -153,6 +153,21 @@ class DER(Metric):
         return (self.false_alarm + self.missed_detection + self.confusion) / self.total
 
 
+class ConfusionMetric(DER):
+    def compute(self):
+        return self.confusion / self.total
+
+
+class FalseAlarmMetric(DER):
+    def compute(self):
+        return self.false_alarm / self.total
+
+
+class MissedDetectionMetric(DER):
+    def compute(self):
+        return self.missed_detection / self.total
+
+
 class AUDER(Metric):
     """Area Under the Diarization Error Rate.
     Approximates the area under the curve of the DER when varying its threshold value.
