@@ -161,7 +161,7 @@ class AUDER(Metric):
     """
 
     def __init__(
-        self, dx=0.0333, threshold_min=0.0, threshold_max=1.0, force_unit_area=True
+        self, steps=31, threshold_min=0.0, threshold_max=1.0, force_unit_area=True
     ):
         super().__init__()
 
@@ -173,10 +173,11 @@ class AUDER(Metric):
         self.threshold_min = threshold_min
         self.threshold_max = threshold_max
         self.force_unit_area = force_unit_area
-        self.steps = int(threshold_max - threshold_min) / dx + 1
-        # dx used for area computation. If we want an area in [0,1], fake it.
-        self.area_dx = dx if not force_unit_area else 1.0 / (self.steps - 1)
+        self.steps = steps
         self.linspace = np.linspace(threshold_min, threshold_max, self.steps)
+        # dx used for area computation. If we want an area in [0,1], fake it.
+        self.area_dx = (threshold_max - threshold_min) if not force_unit_area else 1.0
+        self.area_dx /= self.steps - 1
 
         self.add_state(
             "false_alarm",
