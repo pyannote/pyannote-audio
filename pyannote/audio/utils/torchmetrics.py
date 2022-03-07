@@ -20,6 +20,8 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+from typing import Tuple
+
 import numpy as np
 import torch
 from torchmetrics import Metric
@@ -33,7 +35,34 @@ def der_try_reshape(
     batch_size: int,
     num_frames: int,
     num_classes: int,
-):
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Tries to reshape preds and target into their expected shape (batch_size, num_frames, num_classes).
+    Raises an error if it can't do it.
+
+    Parameters
+    ----------
+    preds : torch.Tensor
+        The update method preds parameter
+    target : torch.Tensor
+        The update method target parameter
+    batch_size : int
+        Batch size.
+    num_frames : int
+        Number of frames.
+    num_classes : int
+        Number of classes.
+
+    Returns
+    -------
+    Tuple[torch.Tensor, torch.Tensor]
+        The tuple (preds, target) in the expected shape.
+
+    Raises
+    ------
+    ValueError
+        Raised if there isn't enough information to reshape preds and target.
+    """
     if len(preds.shape) == 3 and len(target.shape) == 3:
         return preds, target
 
@@ -81,7 +110,11 @@ def compute_der_values(preds: torch.Tensor, target: torch.Tensor, threshold: flo
 
 
 class DER(Metric):
-    """Compute diarization error rate on discretized annotations with torchmetrics"""
+    """
+    Compute diarization error rate on discretized annotations with torchmetrics
+
+    Note that this is only a reliable metric if num_frames == the total number of frames of the diarized audio.
+    """
 
     def __init__(self, threshold: float = 0.5):
         super().__init__()
@@ -121,29 +154,48 @@ class DER(Metric):
 
 
 class AUDER(Metric):
-    def __init__(self, threshold_min=0.0, threshold_max=1.0, steps=31):
+    """Area Under the Diarization Error Rate.
+    Approximates the area under the curve of the DER when varying its threshold value.
+
+    Note that this is only a reliable metric if num_frames == the total number of frames of the diarized audio.
+    """
+
+    def __init__(
+        self, steps=31, threshold_min=0.0, threshold_max=1.0, force_unit_area=True
+    ):
         super().__init__()
+
+        if threshold_max < threshold_min:
+            raise ValueError(
+                f"Illegal value : threshold_max ({threshold_max}) < threshold_min ({threshold_min})"
+            )
 
         self.threshold_min = threshold_min
         self.threshold_max = threshold_max
+        self.force_unit_area = force_unit_area
         self.steps = steps
-        self.linspace = np.linspace(threshold_min, threshold_max, steps)
+        self.linspace = np.linspace(threshold_min, threshold_max, self.steps)
+        # dx used for area computation. If we want an area in [0,1], fake it.
+        self.area_dx = (threshold_max - threshold_min) if not force_unit_area else 1.0
+        self.area_dx /= self.steps - 1
 
         self.add_state(
             "false_alarm",
-            default=torch.zeros(steps, dtype=torch.float),
+            default=torch.zeros(self.steps, dtype=torch.float),
             dist_reduce_fx="sum",
         )
         self.add_state(
             "missed_detection",
-            torch.zeros(steps, dtype=torch.float),
+            torch.zeros(self.steps, dtype=torch.float),
             dist_reduce_fx="sum",
         )
         self.add_state(
-            "confusion", torch.zeros(steps, dtype=torch.float), dist_reduce_fx="sum"
+            "confusion",
+            torch.zeros(self.steps, dtype=torch.float),
+            dist_reduce_fx="sum",
         )
         self.add_state(
-            "total", torch.zeros(steps, dtype=torch.float), dist_reduce_fx="sum"
+            "total", torch.zeros(self.steps, dtype=torch.float), dist_reduce_fx="sum"
         )
 
     def update(
@@ -172,6 +224,5 @@ class AUDER(Metric):
 
     def compute(self):
         ders = (self.false_alarm + self.missed_detection + self.confusion) / self.total
-        dx = (self.threshold_max - self.threshold_min) / (self.steps - 1)
-        area = torch.trapezoid(ders, dx=dx)
+        area = torch.trapezoid(ders, dx=self.area_dx)
         return area
