@@ -215,7 +215,7 @@ class Task(pl.LightningDataModule):
         Returns
         -------
         Union[Metric, Sequence[Metric], Dict[str, Metric]]
-            The default validation metric(s) of this task (follow torchmetrics MetricCollection convention)
+            The default validation metric(s) of this task (something that can be plugged in a torchmetrics.MetricCollection).
         """
         pass
 
@@ -271,7 +271,9 @@ class Task(pl.LightningDataModule):
         if self.metrics is None:
             metricsarg = self.get_default_validation_metric()
 
-        # If the metrics' names are not given, generate automatically lowercase ones
+        if isinstance(metricsarg, Metric):
+            metricsarg = [metricsarg]
+        # If the metrics' names are not given, generate them automatically
         if not isinstance(metricsarg, dict):
             metricsarg = {Task.get_metric_name(m): m for m in self.metrics}
         return MetricCollection(metricsarg, prefix=self.get_val_metric_prefix())
