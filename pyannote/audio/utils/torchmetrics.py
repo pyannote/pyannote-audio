@@ -29,55 +29,37 @@ from torchmetrics import Metric
 from pyannote.audio.utils.permutation import permutate
 
 
-def der_try_reshape(
-    preds: torch.Tensor,
-    target: torch.Tensor,
-    batch_size: int,
-    num_frames: int,
-    num_classes: int,
+def der_tensors_setup(
+    preds: torch.Tensor, target: torch.Tensor
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    """
-    Tries to reshape preds and target into their expected shape (batch_size, num_frames, num_classes).
-    Raises an error if it can't do it.
+    """Check for correct tensors shape and convert tensors to the Pyannote tensor shape.
+    TorchMetric ordering : (batch,class,...)
+    Pyannote ordering : (batch,frames,class)
 
     Parameters
     ----------
     preds : torch.Tensor
-        The update method preds parameter
+        Preds with shape (B,C,F)
     target : torch.Tensor
-        The update method target parameter
-    batch_size : int
-        Batch size.
-    num_frames : int
-        Number of frames.
-    num_classes : int
-        Number of classes.
+        Target with the shape (B,C,F)
 
     Returns
     -------
     Tuple[torch.Tensor, torch.Tensor]
-        The tuple (preds, target) in the expected shape.
+        preds with shape (B,F,C), target with the shape (B,F,C)
 
     Raises
     ------
     ValueError
-        Raised if there isn't enough information to reshape preds and target.
+        Raised when the tensors have different shapes or shape of length different than 3
     """
-    if len(preds.shape) == 3 and len(target.shape) == 3:
-        return preds, target
-
-    # Preds or target do not have the correct size
-    if batch_size == -1 or num_frames == -1 or num_classes == -1:
-        msg = "Incorrect shape: should be (batch_size, num_frames, num_classes), pass batch_size, num_frames and num_classes as parameters to the update function if needed."
+    if len(preds.shape) != 3 or len(target.shape) != 3:
+        msg = f"Wrong shape ({tuple(target.shape)} or {tuple(preds.shape)}), expected (NUM_BATCH, NUM_CLASSES, NUM_FRAMES)."
         raise ValueError(msg)
 
-    # Preds or target do not have the correct size AND can be resized
-    preds = preds.reshape(batch_size, num_frames, num_classes)
-    target = target.reshape(batch_size, num_frames, num_classes)
-    return preds, target
+    # convert to pyannote's tensor ordering : from (batch,class,...) to (batch,frames,class)
+    preds, target = torch.transpose(preds, 1, 2), torch.transpose(target, 1, 2)
 
-
-def der_dim_check(preds: torch.Tensor, target: torch.Tensor):
     batch_size, num_samples, num_classes_1 = target.shape
     batch_size_, num_samples_, num_classes_2 = preds.shape
     if (
@@ -87,9 +69,12 @@ def der_dim_check(preds: torch.Tensor, target: torch.Tensor):
     ):
         msg = f"Shape mismatch: {tuple(target.shape)} vs. {tuple(preds.shape)}."
         raise ValueError(msg)
+    return preds, target
 
 
-def compute_der_values(preds: torch.Tensor, target: torch.Tensor, threshold: float):
+def compute_der_values(
+    preds: torch.Tensor, target: torch.Tensor, threshold: float
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     preds_bin = (preds > threshold).float()
 
     hypothesis, _ = permutate(target, preds_bin)
@@ -106,6 +91,7 @@ def compute_der_values(preds: torch.Tensor, target: torch.Tensor, threshold: flo
     missed_detection = torch.sum(missed_detection)
     confusion = torch.sum(confusion)
     total = 1.0 * torch.sum(target)
+
     return false_alarm, missed_detection, confusion, total
 
 
@@ -132,14 +118,9 @@ class DER(Metric):
         self,
         preds: torch.Tensor,
         target: torch.Tensor,
-        batch_size: int = -1,
-        num_frames: int = -1,
-        num_classes: int = -1,
     ):
-        preds, target = der_try_reshape(
-            preds, target, batch_size, num_frames, num_classes
-        )
-        der_dim_check(preds, target)
+        # switch back to pyannote's tensor shape : from (batch,class,...) to (batch,frames,class)
+        preds, target = der_tensors_setup(preds, target)
 
         false_alarm, missed_detection, confusion, total = compute_der_values(
             preds, target, self.threshold
@@ -217,14 +198,9 @@ class AUDER(Metric):
         self,
         preds: torch.Tensor,
         target: torch.Tensor,
-        batch_size: int = -1,
-        num_frames: int = -1,
-        num_classes: int = -1,
     ):
-        preds, target = der_try_reshape(
-            preds, target, batch_size, num_frames, num_classes
-        )
-        der_dim_check(preds, target)
+        # switch back to pyannote's tensor shape : from (batch,class,...) to (batch,frames,class)
+        preds, target = der_tensors_setup(preds, target)
 
         for i in range(self.steps):
             threshold = self.linspace[i]
