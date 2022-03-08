@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020-2021 CNRS
+# Copyright (c) 2020- CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -23,9 +23,8 @@
 """
 # Audio IO
 
-pyannote.audio relies on torchaudio for reading and librosa for resampling.
+pyannote.audio relies on torchaudio for reading and resampling.
 
-We should switch torchaudio resampling as well at some point...
 """
 
 import math
@@ -34,7 +33,6 @@ from io import IOBase
 from pathlib import Path
 from typing import Mapping, Optional, Text, Tuple, Union
 
-import librosa
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -200,18 +198,8 @@ class Audio:
 
         # resample
         if (self.sample_rate is not None) and (self.sample_rate != sample_rate):
-            waveform = waveform.numpy()
-            if self.mono:
-                # librosa expects mono audio to be of shape (n,), but we have (1, n).
-                waveform = librosa.core.resample(
-                    waveform[0], sample_rate, self.sample_rate
-                )[None]
-            else:
-                waveform = librosa.core.resample(
-                    waveform.T, sample_rate, self.sample_rate
-                ).T
+            waveform = torchaudio.functional.resample(waveform, sample_rate, self.sample_rate)
             sample_rate = self.sample_rate
-            waveform = torch.tensor(waveform)
 
         return waveform, sample_rate
 
