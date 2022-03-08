@@ -27,6 +27,7 @@ from typing import Dict, List, Optional, Sequence, Text, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
 from pyannote.core import Annotation, Segment, SlidingWindow, SlidingWindowFeature
 from torchmetrics import AUROC, Metric
 from typing_extensions import Literal
@@ -536,11 +537,8 @@ class SegmentationTaskMixin:
             # preds:  shape (N,), type float
 
             self.model.validation_metric(
-                preds.reshape(-1),
-                target.reshape(-1),
-                batch_size=batch_size,
-                num_frames=num_frames2,
-                num_classes=num_classes,
+                torch.transpose(preds, 1, 2),
+                torch.transpose(target, 1, 2),
             )
 
         elif self.specifications.problem == Problem.MULTI_LABEL_CLASSIFICATION:
@@ -552,11 +550,8 @@ class SegmentationTaskMixin:
             # preds:  shape (N, ), type float
 
             self.model.validation_metric(
-                preds.reshape(-1),
-                target.reshape(-1),
-                batch_size=batch_size,
-                num_frames=num_frames2,
-                num_classes=num_classes,
+                torch.transpose(preds, 1, 2),
+                torch.transpose(target, 1, 2),
             )
 
         elif self.specifications.problem == Problem.MONO_LABEL_CLASSIFICATION:
