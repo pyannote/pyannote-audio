@@ -271,11 +271,13 @@ class Task(pl.LightningDataModule):
         if self.metrics is None:
             metricsarg = self.get_default_validation_metric()
 
+        # Convert metricargs to a list, if it is a single Metric
         if isinstance(metricsarg, Metric):
             metricsarg = [metricsarg]
+        # Convert metricsarg to a dict, now that it is a list
         # If the metrics' names are not given, generate them automatically
         if not isinstance(metricsarg, dict):
-            metricsarg = {Task.get_metric_name(m): m for m in self.metrics}
+            metricsarg = {Task.get_metric_name(m): m for m in metricsarg}
         return MetricCollection(metricsarg, prefix=self.get_val_metric_prefix())
 
     def train__iter__(self):
