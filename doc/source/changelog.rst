@@ -2,6 +2,22 @@
 Changelog
 #########
 
+Version 2.0 (2022-02-18)
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+  - BREAKING: complete rewrite
+  - feat: much better performance
+  - feat: Python-first API
+  - feat: pretrained pipelines (and models) on Huggingface model hub
+  - feat: multi-GPU training with pytorch-lightning
+  - feat: data augmentation with torch-audiomentations
+  - feat: Prodigy recipe for model-assisted audio annotation
+
+Version 1.1.2 (2021-01-28)
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  - fix: make sure master branch is used to load pretrained models (#599)
+
 Version 1.1 (2020-11-08)
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
