@@ -75,6 +75,23 @@ def der_tensors_setup(
 def compute_der_values(
     preds: torch.Tensor, target: torch.Tensor, threshold: float
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Compute the false alarm, missed detection, confusion and total values.
+
+    Parameters
+    ----------
+    preds : torch.Tensor
+        preds tensor of shape (B,F,C)
+    target : torch.Tensor
+        preds tensor of shape (B,F,C) (must only contain 0s and 1s)
+    threshold : float
+        threshold to discretize preds
+
+    Returns
+    -------
+    _type_
+        _description_
+    """
+
     preds_bin = (preds > threshold).float()
 
     hypothesis, _ = permutate(target, preds_bin)
@@ -97,7 +114,9 @@ def compute_der_values(
 
 class DER(Metric):
     """
-    Compute diarization error rate on discretized annotations with torchmetrics
+    Compute Diarization Error Rate on discretized annotations.
+
+    Expects preds and target tensors of the shape (NUM_BATCH, NUM_CLASSES, NUM_FRAMES) in its update.
 
     Note that this is only a reliable metric if num_frames == the total number of frames of the diarized audio.
     """
@@ -152,6 +171,8 @@ class MissedDetectionMetric(DER):
 class AUDER(Metric):
     """Area Under the Diarization Error Rate.
     Approximates the area under the curve of the DER when varying its threshold value.
+
+    Expects preds and target tensors of the shape (NUM_BATCH, NUM_CLASSES, NUM_FRAMES) in its update.
 
     Note that this is only a reliable metric if num_frames == the total number of frames of the diarized audio.
     """
