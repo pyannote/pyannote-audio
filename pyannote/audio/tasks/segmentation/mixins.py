@@ -121,7 +121,8 @@ class SegmentationTaskMixin:
 
         random.shuffle(self._validation)
 
-    def get_default_validation_metric(
+    @property
+    def default_validation_metric(
         self,
     ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
         """Setup default validation metric

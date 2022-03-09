@@ -124,7 +124,8 @@ class SupervisedRepresentationLearningTaskMixin:
         if isinstance(self.protocol, SpeakerVerificationProtocol):
             self._validation = list(self.protocol.development_trial())
 
-    def get_default_validation_metric(
+    @property
+    def default_validation_metric(
         self,
     ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
         return AUROC(compute_on_step=False)
