@@ -29,12 +29,8 @@ from torchmetrics import Metric
 from pyannote.audio.utils.permutation import permutate
 
 
-def der_tensors_setup(
-    preds: torch.Tensor, target: torch.Tensor
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Check for correct tensors shape and convert tensors to the Pyannote tensor shape.
-    TorchMetric ordering : (batch,class,...)
-    Pyannote ordering : (batch,frames,class)
+def der_check_tensors(preds: torch.Tensor, target: torch.Tensor):
+    """Check for correct tensors shape.
 
     Parameters
     ----------
@@ -43,33 +39,24 @@ def der_tensors_setup(
     target : torch.Tensor
         Target with the shape (B,C,F)
 
-    Returns
-    -------
-    Tuple[torch.Tensor, torch.Tensor]
-        preds with shape (B,F,C), target with the shape (B,F,C)
-
     Raises
     ------
     ValueError
         Raised when the tensors have different shapes or shape of length different than 3
     """
-    if len(preds.shape) != 3 or len(target.shape) != 3:
+    if len(preds.shape) < 3 or len(target.shape) < 3:
         msg = f"Wrong shape ({tuple(target.shape)} or {tuple(preds.shape)}), expected (NUM_BATCH, NUM_CLASSES, NUM_FRAMES)."
         raise ValueError(msg)
 
-    # convert to pyannote's tensor ordering : from (batch,class,...) to (batch,frames,class)
-    preds, target = torch.transpose(preds, 1, 2), torch.transpose(target, 1, 2)
-
-    batch_size, num_samples, num_classes_1 = target.shape
-    batch_size_, num_samples_, num_classes_2 = preds.shape
+    batch_size, num_classes, num_samples = target.shape
+    batch_size_, num_classes_, num_samples_ = preds.shape
     if (
         batch_size != batch_size_
+        or num_classes != num_classes_
         or num_samples != num_samples_
-        or num_classes_1 != num_classes_2
     ):
         msg = f"Shape mismatch: {tuple(target.shape)} vs. {tuple(preds.shape)}."
         raise ValueError(msg)
-    return preds, target
 
 
 def compute_der_values(
@@ -80,29 +67,33 @@ def compute_der_values(
     Parameters
     ----------
     preds : torch.Tensor
-        preds tensor of shape (B,F,C)
+        preds tensor of shape (B,C,F)
     target : torch.Tensor
-        preds tensor of shape (B,F,C) (must only contain 0s and 1s)
+        preds tensor of shape (B,C,F) (must only contain 0s and 1s)
     threshold : float
         threshold to discretize preds
 
     Returns
     -------
-    _type_
-        _description_
+    Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
+        Tensors with 1 item for false alarm, missed detection, confusion, and total
     """
 
     preds_bin = (preds > threshold).float()
 
-    hypothesis, _ = permutate(target, preds_bin)
+    # convert to/from pyannote's tensor ordering (batch,frames,class) (instead of (batch,class,frames))
+    hypothesis, _ = permutate(
+        torch.transpose(target, 1, 2), torch.transpose(preds_bin, 1, 2)
+    )
+    hypothesis = torch.transpose(hypothesis, 1, 2)
 
-    detection_error = torch.sum(hypothesis, 2) - torch.sum(target, 2)
+    detection_error = torch.sum(hypothesis, 1) - torch.sum(target, 1)
     false_alarm = torch.maximum(detection_error, torch.zeros_like(detection_error))
     missed_detection = torch.maximum(
         -detection_error, torch.zeros_like(detection_error)
     )
 
-    confusion = torch.sum((hypothesis != target) * hypothesis, 2) - false_alarm
+    confusion = torch.sum((hypothesis != target) * hypothesis, 1) - false_alarm
 
     false_alarm = torch.sum(false_alarm)
     missed_detection = torch.sum(missed_detection)
@@ -138,8 +129,7 @@ class DER(Metric):
         preds: torch.Tensor,
         target: torch.Tensor,
     ):
-        # switch back to pyannote's tensor shape : from (batch,class,...) to (batch,frames,class)
-        preds, target = der_tensors_setup(preds, target)
+        der_check_tensors(preds, target)
 
         false_alarm, missed_detection, confusion, total = compute_der_values(
             preds, target, self.threshold
@@ -220,8 +210,7 @@ class AUDER(Metric):
         preds: torch.Tensor,
         target: torch.Tensor,
     ):
-        # switch back to pyannote's tensor shape : from (batch,class,...) to (batch,frames,class)
-        preds, target = der_tensors_setup(preds, target)
+        der_check_tensors(preds, target)
 
         for i in range(self.steps):
             threshold = self.linspace[i]
