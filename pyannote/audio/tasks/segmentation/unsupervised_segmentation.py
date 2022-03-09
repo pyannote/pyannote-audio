@@ -9,6 +9,7 @@ from pytorch_lightning import Callback
 from pytorch_lightning.utilities.types import STEP_OUTPUT
 from torch.utils.data import DataLoader
 from torch.utils.data._utils.collate import default_collate
+from torch.utils.tensorboard import SummaryWriter
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchmetrics import Metric
 from typing_extensions import Literal
@@ -17,6 +18,7 @@ from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task, ValDataset
 from pyannote.audio.tasks import Segmentation
+from pyannote.audio.utils.torchmetrics import AUDER
 
 
 class UnsupervisedSegmentation(Segmentation, Task):
@@ -158,6 +160,42 @@ class UnsupervisedSegmentation(Segmentation, Task):
         else:
             return None
 
+    def validation_epoch_end(self, outputs):
+        super().validation_epoch_end(outputs)
+
+        # TODO : remove (temp debug)
+        for key, metric in self.model.validation_metric.items():
+            # print(key)
+            if isinstance(metric, AUDER):
+                ders = (
+                    metric.false_alarm + metric.missed_detection + metric.confusion
+                ) / metric.total
+                # print(ders)
+                # print(metric.linspace)
+                SAMPLE = 100
+                data = []
+                bins = [-0.0001]
+                for i in range(metric.steps):
+                    data += [metric.linspace[i]] * int(ders[i] * SAMPLE)
+                    if i > 0:
+                        bins += [(metric.linspace[i] + metric.linspace[i - 1]) / 2.0]
+                bins += [1.0001]
+                values = torch.tensor(data).reshape(-1)
+                # print(bins)
+                # print(data)
+                experiment: SummaryWriter = self.model.logger.experiment
+
+                experiment.add_histogram(
+                    "der_curve",
+                    global_step=self.model.current_epoch,
+                    values=values,
+                    bins=bins,
+                )
+
+                # fig, ax = plt.subplots()  # Create a figure containing a single axes.
+                # ax.plot(metric.linspace, ders.cpu())
+                # experiment.add_figure("testplot", fig, global_step=0)
+
 
 class TeacherUpdate(Callback):
     def __init__(
@@ -177,8 +215,7 @@ class TeacherUpdate(Callback):
 
     def enqueue_teacher(self, teacher: OrderedDict[str, torch.Tensor]):
         if len(self.last_weights) >= self.average_of:
-            self.last_weights.pop(0)
-        self.last_weights.append(teacher)
+            self.last_weights.append(teacher)
 
     def get_updated_weights(
         self,
