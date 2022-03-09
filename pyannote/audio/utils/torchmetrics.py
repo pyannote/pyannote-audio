@@ -48,13 +48,9 @@ def der_check_tensors(preds: torch.Tensor, target: torch.Tensor):
         msg = f"Wrong shape ({tuple(target.shape)} or {tuple(preds.shape)}), expected (NUM_BATCH, NUM_CLASSES, NUM_FRAMES)."
         raise ValueError(msg)
 
-    batch_size, num_classes, num_samples = target.shape
-    batch_size_, num_classes_, num_samples_ = preds.shape
-    if (
-        batch_size != batch_size_
-        or num_classes != num_classes_
-        or num_samples != num_samples_
-    ):
+    batch_size, _, num_samples = target.shape
+    batch_size_, _, num_samples_ = preds.shape
+    if batch_size != batch_size_ or num_samples != num_samples_:
         msg = f"Shape mismatch: {tuple(target.shape)} vs. {tuple(preds.shape)}."
         raise ValueError(msg)
 
