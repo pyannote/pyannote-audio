@@ -8,13 +8,13 @@ repos:
     #     - id: nbstripout
     # Format Code
     - repo: https://github.com/ambv/black
-      rev: stable
+      rev: 22.1.0
       hooks:
         - id: black
 
     # Sort imports
     - repo: https://github.com/PyCQA/isort
-      rev: 5.5.4
+      rev: 5.10.1
       hooks:
       - id: isort
         args: ["--profile", "black"]
