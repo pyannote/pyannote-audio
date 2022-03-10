@@ -28,6 +28,10 @@ from typing import Callable, Optional, Text
 
 import numpy as np
 import torch
+from pyannote.core import Annotation, Segment, SlidingWindow, SlidingWindowFeature
+from pyannote.core.utils.distance import pdist
+from pyannote.metrics.diarization import GreedyDiarizationErrorRate
+from pyannote.pipeline.parameter import Uniform
 from scipy.spatial.distance import squareform
 
 from pyannote.audio import Audio, Inference, Model, Pipeline
@@ -40,10 +44,6 @@ from pyannote.audio.pipelines.utils import (
 )
 from pyannote.audio.utils.permutation import mae_cost_func, permutate
 from pyannote.audio.utils.signal import binarize
-from pyannote.core import Annotation, Segment, SlidingWindow, SlidingWindowFeature
-from pyannote.core.utils.distance import pdist
-from pyannote.metrics.diarization import GreedyDiarizationErrorRate
-from pyannote.pipeline.parameter import Uniform
 
 from .clustering import Clustering, NearestClusterAssignment
 from .speaker_verification import PretrainedSpeakerEmbedding
@@ -368,6 +368,13 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         # skip speakers for which embedding extraction failed for some reason
         speaker_status[np.any(np.isnan(embeddings), axis=-1)] = SKIP
 
+        # # compute "cannot link" constraints
+        # chunk_idx = np.tile(np.arange(num_chunks), (local_num_speakers, 1)).T
+        # same_chunk = 1.0 * squareform(
+        #     pdist(rearrange(chunk_idx, "c s -> (c s)"), metric="equal")
+        # )
+        # # shape is (c s) x (c s)
+
         if not hook.missing and "annotation" in file:
 
             # log actual distance matrix
@@ -402,7 +409,10 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
             oracle_clusters = []
             chunk_idx = []
-            for (c, (chunk, segmentation),) in enumerate(segmentations):
+            for (
+                c,
+                (chunk, segmentation),
+            ) in enumerate(segmentations):
 
                 if np.all(speaker_status[c] != LONG):
                     continue
@@ -525,3 +535,49 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
     def get_metric(self) -> GreedyDiarizationErrorRate:
         return GreedyDiarizationErrorRate(collar=0.0, skip_overlap=False)
+
+
+class SpeakerDiarizationWithOracleSegmentation(SpeakerDiarization):
+    """Speaker diarization pipeline with oracle segmentation"""
+
+    def oracle_segmentation(self, file) -> SlidingWindowFeature:
+        file_duration: float = self._audio.get_duration(file)
+
+        reference: Annotation = file["annotation"]
+        labels = reference.labels()
+        if self._oracle_num_speakers > len(labels):
+            num_missing = self._oracle_num_speakers - len(labels)
+            labels += [
+                f"FakeSpeakerForOracleSegmentationInference{i:d}"
+                for i in range(num_missing)
+            ]
+
+        window = SlidingWindow(
+            start=0.0, duration=self._oracle_duration, step=self._oracle_step
+        )
+
+        segmentations = []
+        for chunk in window(Segment(0.0, file_duration)):
+            chunk_segmentation: SlidingWindowFeature = reference.discretize(
+                chunk,
+                resolution=self._frames,
+                labels=labels,
+                duration=self._oracle_duration,
+            )
+            # keep `self._oracle_num_speakers`` most talkative speakers
+            most_talkative_index = np.argsort(-np.sum(chunk_segmentation, axis=0))[
+                : self._oracle_num_speakers
+            ]
+
+            segmentations.append(chunk_segmentation[:, most_talkative_index])
+
+        return SlidingWindowFeature(np.float32(np.stack(segmentations)), window)
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._oracle_duration: float = self._segmentation.duration
+        self._oracle_step: float = self._segmentation.step
+        self._oracle_num_speakers: int = len(
+            self._segmentation.model.specifications.classes
+        )
+        self._segmentation = self.oracle_segmentation
