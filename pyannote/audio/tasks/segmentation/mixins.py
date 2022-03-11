@@ -121,7 +121,8 @@ class SegmentationTaskMixin:
 
         random.shuffle(self._validation)
 
-    def get_default_validation_metric(
+    @property
+    def default_validation_metric(
         self,
     ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
         """Setup default validation metric
@@ -129,14 +130,7 @@ class SegmentationTaskMixin:
         Use macro-average of area under the ROC curve
         """
 
-        if self.specifications.problem in [
-            Problem.BINARY_CLASSIFICATION,
-            Problem.MULTI_LABEL_CLASSIFICATION,
-        ]:
-            num_classes = 1
-        else:
-            num_classes = len(self.specifications.classes)
-
+        num_classes = len(self.specifications.classes)
         return AUROC(num_classes, pos_label=1, average="macro", compute_on_step=False)
 
     def prepare_y(self, one_hot_y: np.ndarray) -> np.ndarray:
@@ -526,8 +520,6 @@ class SegmentationTaskMixin:
         # torchmetrics to be happy... more details can be found here:
         # https://torchmetrics.readthedocs.io/en/latest/references/modules.html#input-types
 
-        batch_size, num_frames2, num_classes = preds.shape
-
         if self.specifications.problem == Problem.BINARY_CLASSIFICATION:
             # target: shape (batch_size, num_frames), type binary
             # preds:  shape (batch_size, num_frames, 1), type float
@@ -537,8 +529,8 @@ class SegmentationTaskMixin:
             # preds:  shape (N,), type float
 
             self.model.validation_metric(
-                torch.transpose(preds, 1, 2),
-                torch.transpose(target, 1, 2),
+                preds.reshape(-1),
+                target.reshape(-1),
             )
 
         elif self.specifications.problem == Problem.MULTI_LABEL_CLASSIFICATION:

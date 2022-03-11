@@ -207,7 +207,8 @@ class Task(pl.LightningDataModule):
         self.augmentation = augmentation
         self.metrics = metrics
 
-    def get_default_validation_metric(
+    @property
+    def default_validation_metric(
         self,
     ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
         """Used to get validation metrics when none is provided by the user
@@ -248,11 +249,12 @@ class Task(pl.LightningDataModule):
     def setup_loss_func(self):
         pass
 
-    def get_val_metric_prefix(self) -> str:
+    @property
+    def val_metric_prefix(self) -> str:
         return f"{self.ACRONYM}@val_"
 
     def get_default_val_metric_name(self, metric: Union[Metric, Type]) -> str:
-        prefix = self.get_val_metric_prefix()
+        prefix = self.get_val_metric_prefix
         mn = Task.get_metric_name(metric)
         return f"{prefix}{mn}"
 
@@ -269,14 +271,16 @@ class Task(pl.LightningDataModule):
     def setup_validation_metric(self) -> Metric:
         metricsarg = self.metrics
         if self.metrics is None:
-            metricsarg = self.get_default_validation_metric()
+            metricsarg = self.default_validation_metric
 
+        # Convert metricargs to a list, if it is a single Metric
         if isinstance(metricsarg, Metric):
             metricsarg = [metricsarg]
+        # Convert metricsarg to a dict, now that it is a list
         # If the metrics' names are not given, generate them automatically
         if not isinstance(metricsarg, dict):
-            metricsarg = {Task.get_metric_name(m): m for m in self.metrics}
-        return MetricCollection(metricsarg, prefix=self.get_val_metric_prefix())
+            metricsarg = {Task.get_metric_name(m): m for m in metricsarg}
+        return MetricCollection(metricsarg, prefix=self.val_metric_prefix)
 
     def train__iter__(self):
         # will become train_dataset.__iter__ method
