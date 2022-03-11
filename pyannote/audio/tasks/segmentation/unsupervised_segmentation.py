@@ -18,7 +18,7 @@ from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task, ValDataset
 from pyannote.audio.tasks import Segmentation
-from pyannote.audio.utils.torchmetrics import AUDER
+from pyannote.audio.torchmetrics import AUDER
 
 
 class UnsupervisedSegmentation(Segmentation, Task):
@@ -175,10 +175,13 @@ class UnsupervisedSegmentation(Segmentation, Task):
                 SAMPLE = 100
                 data = []
                 bins = [-0.0001]
+                linspace = np.linspace(
+                    metric.threshold_min, metric.threshold_max, metric.steps
+                )
                 for i in range(metric.steps):
-                    data += [metric.linspace[i]] * int(ders[i] * SAMPLE)
+                    data += [linspace[i]] * int(ders[i] * SAMPLE)
                     if i > 0:
-                        bins += [(metric.linspace[i] + metric.linspace[i - 1]) / 2.0]
+                        bins += [(linspace[i] + linspace[i - 1]) / 2.0]
                 bins += [1.0001]
                 values = torch.tensor(data).reshape(-1)
                 # print(bins)
