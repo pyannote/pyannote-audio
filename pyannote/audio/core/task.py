@@ -33,6 +33,7 @@ from typing import Dict, List, Optional, Sequence, Text, Tuple, Type, Union
 
 import pytorch_lightning as pl
 import torch
+from pyannote.database import Protocol
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 from torch.utils.data._utils.collate import default_collate
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
@@ -41,7 +42,6 @@ from typing_extensions import Literal
 
 from pyannote.audio.utils.loss import binary_cross_entropy, nll_loss
 from pyannote.audio.utils.protocol import check_protocol
-from pyannote.database import Protocol
 
 
 # Type of machine learning problem
@@ -254,7 +254,7 @@ class Task(pl.LightningDataModule):
         return f"{self.ACRONYM}@val_"
 
     def get_default_val_metric_name(self, metric: Union[Metric, Type]) -> str:
-        prefix = self.get_val_metric_prefix
+        prefix = self.val_metric_prefix
         mn = Task.get_metric_name(metric)
         return f"{prefix}{mn}"
 
