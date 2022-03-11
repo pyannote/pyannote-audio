@@ -13,6 +13,9 @@ class DER(Metric):
     Note that this is only a reliable metric if num_frames == the total number of frames of the diarized audio.
     """
 
+    higher_is_better = True
+    is_differentiable = False
+
     def __init__(self, threshold: float = 0.5):
         super().__init__()
 

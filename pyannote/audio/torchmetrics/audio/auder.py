@@ -17,6 +17,9 @@ class AUDER(Metric):
     Note that this is only a reliable metric if num_frames == the total number of frames of the diarized audio.
     """
 
+    higher_is_better = True
+    is_differentiable = False
+
     def __init__(self, steps=31, threshold_min=0.0, threshold_max=1.0, unit_area=True):
         super().__init__()
 
