@@ -254,7 +254,7 @@ class Task(pl.LightningDataModule):
         return f"{self.ACRONYM}@val_"
 
     def get_default_val_metric_name(self, metric: Union[Metric, Type]) -> str:
-        prefix = self.get_val_metric_prefix
+        prefix = self.val_metric_prefix
         mn = Task.get_metric_name(metric)
         return f"{prefix}{mn}"
 
