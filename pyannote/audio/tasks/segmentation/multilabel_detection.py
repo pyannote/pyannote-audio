@@ -36,6 +36,23 @@ from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
 
 
 class VoiceTypeClassifierPreprocessor(Preprocessor):
+    """
+    Voice Type Classifier preprocessor: filters out classes not defined in the `classes` list,
+    and synthesizes additional classes based on unions or intersection of classes.
+
+    Parameters
+    ----------
+    classes : List[str]
+        All the "base" classes that should be used in the protocol's annotation's
+    unions: Dict[str, List[str]], optional
+        Unions of classes. The keys are the name of the new union classes, and the values are the
+        list of classes that should used for these unions.
+    intersections: Dict[str, List[str]], optional
+        Intersections of classes. The keys are the name of the new intersections classes, and the values are the
+        list of classes that should used for these intersections.
+
+
+    """
 
     def __init__(self, classes: List[str],
                  unions: Optional[Dict[str, List[str]]] = None,
@@ -51,6 +68,8 @@ class VoiceTypeClassifierPreprocessor(Preprocessor):
 
     @property
     def all_classes(self) -> List[str]:
+        """A list of all the classes (base, union-based and intersection-based) that can be found
+        in output annotations from this preprocessor"""
         return sorted(list(self.classes)
                       + list(self.unions.keys())
                       + list(self.intersections.keys()))
@@ -60,6 +79,7 @@ class VoiceTypeClassifierPreprocessor(Preprocessor):
         derived = annotation.subset(self.classes)
         # Adding union labels
         for union_label, subclasses in self.unions.items():
+            # creates a subset of the original annotation, based
             mapping = {k: union_label for k in subclasses}
             metalabel_annot = annotation.subset(subclasses).rename_labels(mapping=mapping)
             derived.update(metalabel_annot.support())

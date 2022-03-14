@@ -38,7 +38,7 @@ from ..utils.signal import Binarize
 
 class MultilabelFMeasure(BaseMetric):
     """
-    Compute the mean Fscore over all labels
+    Computes the mean of fscores for a set of labels.
     """
 
     def metric_components(self):
@@ -116,7 +116,7 @@ class MultilabelDetectionPipeline(Pipeline):
     ----------
     segmentation : Model, str, or dict, optional
         Pretrained segmentation (or multilabel detection) model.
-        Defaults to "pyannote/segmentation".
+        Defaults to "pyannote/mlt".
         See pyannote.audio.pipelines.utils.get_model for supported format.
     fscore : bool, optional
         Optimize for average (precision/recall) fscore, over all classes.
@@ -139,7 +139,7 @@ class MultilabelDetectionPipeline(Pipeline):
     """
 
     def __init__(self,
-                 segmentation: PipelineModel = "pyannote/vtc",
+                 segmentation: PipelineModel = "pyannote/mlt",
                  fscore: bool = False,
                  **inference_kwargs,
                  ):
@@ -180,6 +180,7 @@ class MultilabelDetectionPipeline(Pipeline):
         }
 
     def default_parameters(self):
+        # taken from default VAD parameters
         return {"binarize_hparams": {
             class_name: {
                 "onset": 0.767,
