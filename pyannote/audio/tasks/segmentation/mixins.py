@@ -466,6 +466,7 @@ class SegmentationTaskMixin:
         # y_pred = (batch_size, num_frames, num_classes)
 
         # postprocess
+        # TODO: remove this because metrics should take care of postprocessing
         y_pred = self.validation_postprocess(y, y_pred)
 
         # - remove warm-up frames
