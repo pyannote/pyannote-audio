@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020-2021 CNRS
+# Copyright (c) 2020- CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -26,11 +26,11 @@ from __future__ import annotations
 from typing import Dict, Sequence, Union
 
 import pytorch_metric_learning.losses
+from pyannote.database import Protocol
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchmetrics import Metric
 
 from pyannote.audio.core.task import Task
-from pyannote.database import Protocol
 
 from .mixins import SupervisedRepresentationLearningTaskMixin
 
@@ -70,6 +70,9 @@ class SupervisedRepresentationLearningWithArcFace(
     augmentation : BaseWaveformTransform, optional
         torch_audiomentations waveform transform, used by dataloader
         during training.
+    metric : optional
+        Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
+        Defaults to AUROC (area under the ROC curve).
     """
 
     ACRONYM = "arcface"
@@ -90,7 +93,7 @@ class SupervisedRepresentationLearningWithArcFace(
         num_workers: int = None,
         pin_memory: bool = False,
         augmentation: BaseWaveformTransform = None,
-        metrics: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
+        metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
     ):
 
         self.num_chunks_per_class = num_chunks_per_class
@@ -107,7 +110,7 @@ class SupervisedRepresentationLearningWithArcFace(
             num_workers=num_workers,
             pin_memory=pin_memory,
             augmentation=augmentation,
-            metrics=metrics,
+            metric=metric,
         )
 
     def setup_loss_func(self):

@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020-2021 CNRS
+# Copyright (c) 2020- CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -81,8 +81,13 @@ class Segmentation(SegmentationTaskMixin, Task):
     augmentation : BaseWaveformTransform, optional
         torch_audiomentations waveform transform, used by dataloader
         during training.
+    loss : {"bce", "mse"}, optional
+        Permutation-invariant segmentation loss. Defaults to "bce".
     vad_loss : {"bce", "mse"}, optional
         Add voice activity detection loss.
+    metric : optional
+        Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
+        Defaults to AUROC (area under the ROC curve).
 
     Reference
     ----------
@@ -110,7 +115,7 @@ class Segmentation(SegmentationTaskMixin, Task):
         augmentation: BaseWaveformTransform = None,
         loss: Literal["bce", "mse"] = "bce",
         vad_loss: Literal["bce", "mse"] = None,
-        metrics: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
+        metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
     ):
 
         super().__init__(
@@ -121,7 +126,7 @@ class Segmentation(SegmentationTaskMixin, Task):
             num_workers=num_workers,
             pin_memory=pin_memory,
             augmentation=augmentation,
-            metrics=metrics,
+            metric=metric,
         )
 
         self.max_num_speakers = max_num_speakers
