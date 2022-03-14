@@ -265,7 +265,7 @@ def PretrainedSpeakerEmbedding(embedding: PipelineModel, device: torch.device = 
     >>> embeddings = get_embedding(waveforms, masks=masks)
     """
 
-    if isinstance(embedding, str) and embedding.split("/")[0] == "speechbrain":
+    if isinstance(embedding, str) and "speechbrain" in embedding:
         return SpeechBrainPretrainedSpeakerEmbedding(embedding, device=device)
     else:
         return PyannoteAudioPretrainedSpeakerEmbedding(embedding, device=device)
