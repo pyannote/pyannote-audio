@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020-2021 CNRS
+# Copyright (c) 2020- CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -25,16 +25,16 @@ from typing import Dict, Optional, Sequence, Union
 
 import torch
 import torch.nn.functional as F
-from torchmetrics import AUROC, Metric
-from tqdm import tqdm
-
-from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
-from pyannote.audio.utils.random import create_rng_for_worker
 from pyannote.core import Segment
 from pyannote.database.protocol import (
     SpeakerDiarizationProtocol,
     SpeakerVerificationProtocol,
 )
+from torchmetrics import AUROC, Metric
+from tqdm import tqdm
+
+from pyannote.audio.core.task import Problem, Resolution, Specifications
+from pyannote.audio.utils.random import create_rng_for_worker
 
 
 class SupervisedRepresentationLearningTaskMixin:
@@ -124,8 +124,7 @@ class SupervisedRepresentationLearningTaskMixin:
         if isinstance(self.protocol, SpeakerVerificationProtocol):
             self._validation = list(self.protocol.development_trial())
 
-    @property
-    def default_validation_metric(
+    def default_metric(
         self,
     ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
         return AUROC(compute_on_step=False)
@@ -290,17 +289,3 @@ class SupervisedRepresentationLearningTaskMixin:
 
         elif isinstance(self.protocol, SpeakerDiarizationProtocol):
             pass
-
-    @property
-    def val_monitor(self):
-
-        if self.has_validation and self.metrics is None:
-
-            if isinstance(self.protocol, SpeakerVerificationProtocol):
-                return Task.get_default_val_metric_name(AUROC), "max"
-
-            elif isinstance(self.protocol, SpeakerDiarizationProtocol):
-                return None, "min"
-
-        else:
-            return None, "min"

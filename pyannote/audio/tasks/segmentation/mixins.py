@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020-2021 CNRS
+# Copyright (c) 2020- CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -28,13 +28,13 @@ from typing import Dict, List, Optional, Sequence, Text, Tuple, Union
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from pyannote.core import Annotation, Segment, SlidingWindow, SlidingWindowFeature
 from torchmetrics import AUROC, Metric
 from typing_extensions import Literal
 
 from pyannote.audio.core.io import Audio, AudioFile
 from pyannote.audio.core.task import Problem
 from pyannote.audio.utils.random import create_rng_for_worker
-from pyannote.core import Annotation, Segment, SlidingWindow, SlidingWindowFeature
 
 
 class SegmentationTaskMixin:
@@ -121,14 +121,10 @@ class SegmentationTaskMixin:
 
         random.shuffle(self._validation)
 
-    @property
-    def default_validation_metric(
+    def default_metric(
         self,
     ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
-        """Setup default validation metric
-
-        Use macro-average of area under the ROC curve
-        """
+        """Returns macro-average of the area under the ROC curve"""
 
         num_classes = len(self.specifications.classes)
         return AUROC(num_classes, pos_label=1, average="macro", compute_on_step=False)
@@ -489,8 +485,8 @@ class SegmentationTaskMixin:
             # preds:  shape (batch_size, num_frames, 1), type float
 
             # torchmetrics expects:
-            # target: shape (N,), type binary
-            # preds:  shape (N,), type float
+            # target: shape (batch_size,), type binary
+            # preds:  shape (batch_size,), type float
 
             self.model.validation_metric(
                 preds.reshape(-1),
@@ -502,8 +498,8 @@ class SegmentationTaskMixin:
             # preds:  shape (batch_size, num_frames, num_classes), type float
 
             # torchmetrics expects
-            # target: shape (N, ), type binary
-            # preds:  shape (N, ), type float
+            # target: shape (batch_size, num_classes, ...), type binary
+            # preds:  shape (batch_size, num_classes, ...), type float
 
             self.model.validation_metric(
                 torch.transpose(preds, 1, 2),
@@ -511,13 +507,6 @@ class SegmentationTaskMixin:
             )
 
         elif self.specifications.problem == Problem.MONO_LABEL_CLASSIFICATION:
-            # target: shape (batch_size, num_frames, num_classes), type binary
-            # preds:  shape (batch_size, num_frames, num_classes), type float
-
-            # torchmetrics expects:
-            # target: shape (N, ), type int
-            # preds:  shape (N, num_classes), type float
-
             # TODO: implement when pyannote.audio gets its first mono-label segmentation task
             raise NotImplementedError()
 
@@ -599,10 +588,3 @@ class SegmentationTaskMixin:
         )
 
         plt.close(fig)
-
-    @property
-    def val_monitor(self):
-        if self.has_validation and self.metrics is None:
-            return self.get_default_val_metric_name(AUROC), "max"
-        else:
-            return None, "min"
