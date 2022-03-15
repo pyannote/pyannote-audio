@@ -1,6 +1,6 @@
 # The MIT License (MIT)
 #
-# Copyright (c) 2017-2020 CNRS
+# Copyright (c) 2022- CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -19,104 +19,34 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-from typing import Union, Dict, List
 
-import numpy as np
+# AUTHORS
+# Hadrien TITEUX - https://github.com/hadware
+# Hervé BREDIN - http://herve.niderb.fr
+
+
+from typing import Callable, Optional, Union
+
 from pyannote.core import Annotation, SlidingWindowFeature
-from pyannote.metrics.base import BaseMetric
-from pyannote.metrics.detection import DetectionPrecisionRecallFMeasure
 from pyannote.metrics.identification import IdentificationErrorRate
 from pyannote.pipeline.parameter import ParamDict, Uniform
 
 from pyannote.audio import Inference
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.pipeline import Pipeline
-from pyannote.audio.tasks import MultilabelDetection
-from .utils import PipelineModel, get_devices, get_model
+from pyannote.audio.utils.metric import MacroAverageFMeasure
+
 from ..utils.signal import Binarize
+from .utils import PipelineModel, get_devices, get_model
 
 
-class MultilabelFMeasure(BaseMetric):
-    """
-    Computes the mean of fscores for a set of labels.
-    """
-
-    def metric_components(self):
-        return self.classes
-
-    @classmethod
-    def metric_name(cls):
-        return "AVG[Labels]"
-
-    def __init__(self, classes: List[str],  # noqa
-                 collar=0.0, skip_overlap=False,
-                 beta=1., parallel=False, **kwargs):
-        self.parallel = parallel
-        self.metric_name_ = self.metric_name()
-        self.collar = collar
-        self.skip_overlap = skip_overlap
-        self.beta = beta
-        self.classes = classes
-        self.components_ = set(self.metric_components())
-
-        self.submetrics: Dict[str, DetectionPrecisionRecallFMeasure] = {
-            label: DetectionPrecisionRecallFMeasure(collar=collar,
-                                                    skip_overlap=skip_overlap,
-                                                    beta=beta,
-                                                    **kwargs)
-            for label in classes
-        }
-
-        self.reset()
-
-    def reset(self):
-        super().reset()
-        for submetric in self.submetrics.values():
-            submetric.reset()
-
-    def compute_components(self, reference: Annotation, hypothesis: Annotation, uem=None, **kwargs):
-
-        details = self.init_components()
-        for label, submetric in self.submetrics.items():
-            details[label] = submetric(reference=reference.subset([label]),
-                                       hypothesis=hypothesis.subset([label]),
-                                       uem=uem,
-                                       **kwargs)
-        return details
-
-    def compute_metric(self, detail: Dict[str, float]):
-        return np.mean(list(detail.values()))
-
-    def report(self, display=False):
-        df = super().report(display=False)
-
-        for label, submetric in self.submetrics.items():
-            df.loc["TOTAL"][label] = abs(submetric)
-
-        if display:
-            print(
-                df.to_string(
-                    index=True,
-                    sparsify=False,
-                    justify="right",
-                    float_format=lambda f: "{0:.2f}".format(f),
-                )
-            )
-
-        return df
-
-    def __abs__(self):
-        return np.mean([abs(submetric) for submetric in self.submetrics.values()])
-
-
-class MultilabelDetectionPipeline(Pipeline):
-    """Multilabel detection pipeline
+class MultilabelDetection(Pipeline):
+    """Multi-label detection
 
     Parameters
     ----------
-    segmentation : Model, str, or dict, optional
-        Pretrained segmentation (or multilabel detection) model.
-        Defaults to "pyannote/mlt".
+    segmentation : Model, str, or dict
+        Pretrained multilabel detection model.
         See pyannote.audio.pipelines.utils.get_model for supported format.
     fscore : bool, optional
         Optimize for average (precision/recall) fscore, over all classes.
@@ -126,25 +56,28 @@ class MultilabelDetectionPipeline(Pipeline):
 
     Hyper-parameters
     ----------------
-
-    For each class the pipeline is trained to detect, it works exactly
-    like a VAD pipeline, and has the following hyper-parameters:
-
+    Each {label} of the segmentation model is assigned four hyper-parameters:
     onset, offset : float
         Onset/offset detection thresholds
     min_duration_on : float
-        Remove speech regions shorter than that many seconds.
+        Remove {label} regions shorter than that many seconds.
     min_duration_off : float
-        Fill non-speech regions shorter than that many seconds.
+        Fill non-{label} regions shorter than that many seconds.
     """
 
-    def __init__(self,
-                 segmentation: PipelineModel = "pyannote/mlt",
-                 fscore: bool = False,
-                 **inference_kwargs,
-                 ):
+    def __init__(
+        self,
+        segmentation: PipelineModel = None,
+        fscore: bool = False,
+        **inference_kwargs,
+    ):
 
         super().__init__()
+
+        if segmentation is None:
+            raise ValueError(
+                "MultilabelDetection pipeline must be provided with a `segmentation` model."
+            )
 
         self.segmentation = segmentation
         self.fscore = fscore
@@ -155,95 +88,103 @@ class MultilabelDetectionPipeline(Pipeline):
             (segmentation_device,) = get_devices(needs=1)
             model.to(segmentation_device)
 
-        self.labels = model.specifications.classes
-        self.segmentation_inference_ = Inference(model, **inference_kwargs)
+        self._classes = model.specifications.classes
+        self._segmentation = Inference(model, **inference_kwargs)
 
-        self.binarize_hparams = ParamDict(**{
-            class_name: ParamDict(
-                onset=Uniform(0., 1.),
-                offset=Uniform(0., 1.),
-                min_duration_on=Uniform(0., 2.),
-                min_duration_off=Uniform(0., 2.),
-            ) for class_name in self.labels
-        })
+        # hyper-parameters used for hysteresis thresholding and postprocessing
+        self.thresholds = ParamDict(
+            **{
+                label: ParamDict(
+                    onset=Uniform(0.0, 1.0),
+                    offset=Uniform(0.0, 1.0),
+                    min_duration_on=Uniform(0.0, 2.0),
+                    min_duration_off=Uniform(0.0, 2.0),
+                )
+                for label in self._classes
+            }
+        )
+        # TODO: would it make sense to share min_duration_{on|off} between classes?
+
+    # needed by pyannote.audio Prodigy recipe
+    def classes(self):
+        return self._classes
 
     def initialize(self):
         """Initialize pipeline with current set of parameters"""
-        self._binarizers = {
-            class_name: Binarize(
-                onset=self.binarize_hparams[class_name]["onset"],
-                offset=self.binarize_hparams[class_name]["offset"],
-                min_duration_on=self.binarize_hparams[class_name]["min_duration_on"],
-                min_duration_off=self.binarize_hparams[class_name]["min_duration_off"],
+        self._binarize = {
+            label: Binarize(
+                onset=self.thresholds[label]["onset"],
+                offset=self.thresholds[label]["offset"],
+                min_duration_on=self.thresholds[label]["min_duration_on"],
+                min_duration_off=self.thresholds[label]["min_duration_off"],
             )
-            for class_name in self.labels
+            for label in self._classes
         }
 
-    def default_parameters(self):
-        # taken from default VAD parameters
-        return {"binarize_hparams": {
-            class_name: {
-                "onset": 0.767,
-                "offset": 0.377,
-                "min_duration_on": 0.136,
-                "min_duration_off": 0.067,
-            } for class_name in self.labels
-        }
-        }
+    CACHED_SEGMENTATION = "cache/segmentation/inference"
 
-    CACHED_ACTIVATIONS = "@multilabel_detection/activations"
-
-    def apply(self, file: AudioFile) -> Annotation:
-        """Apply voice type classification
+    def apply(self, file: AudioFile, hook: Optional[Callable] = None) -> Annotation:
+        """Apply multi-label detection
 
         Parameters
         ----------
         file : AudioFile
             Processed file.
+        hook : callable, optional
+            Hook called after each major step of the pipeline with the following
+            signature: hook("step_name", step_artefact, file=file)
 
         Returns
         -------
-        speech : `pyannote.core.Annotation`
-            Annotated classification.
+        detection : Annotation
+            Detected regions.
         """
 
-        multilabel_scores: SlidingWindowFeature
+        # setup hook (e.g. for debugging purposes)
+        hook = self.setup_hook(file, hook=hook)
+
+        # apply segmentation model (only if needed)
+        # output shape is (num_chunks, num_frames, num_classes)
         if self.training:
-            if self.CACHED_ACTIVATIONS not in file:
-                file[self.CACHED_ACTIVATIONS] = self.segmentation_inference_(file)
-
-            multilabel_scores = file[self.CACHED_ACTIVATIONS]
+            if self.CACHED_SEGMENTATION in file:
+                segmentations = file[self.CACHED_SEGMENTATION]
+            else:
+                segmentations = self._segmentation(file)
+                file[self.CACHED_SEGMENTATION] = segmentations
         else:
-            multilabel_scores = self.segmentation_inference_(file)
+            segmentations: SlidingWindowFeature = self._segmentation(file)
 
-        # for each class name, add class-specific "VAD" pipeline
-        full_annot = Annotation(uri=file["uri"])
-        for class_idx, class_name in enumerate(self.labels):
-            # selecting scores for only one label
-            label_scores_array: np.ndarray = multilabel_scores.data[:, class_idx]
-            # creating a fake "num_classes" dim
-            label_scores_array = np.expand_dims(label_scores_array, axis=1)
-            # creating a new sliding window for that label
-            label_scores = SlidingWindowFeature(label_scores_array,
-                                                multilabel_scores.sliding_window)
-            binarizer: Binarize = self._binarizers[class_name]
-            class_annot = binarizer(label_scores)
-            # cleaning up labels to the current detected label.
-            class_annot.rename_labels({label: class_name for label in class_annot.labels()}, copy=False)
-            full_annot.update(class_annot)
+        hook("segmentation", segmentations)
 
-        return full_annot
+        # apply hysteresis thresholding on each class separately
+        detection = Annotation(uri=file["uri"])
 
-    def get_metric(self) -> Union[MultilabelFMeasure, IdentificationErrorRate]:
+        for i, label in enumerate(self._classes):
+            # extract raw segmentation of current label
+            label_segmentation = SlidingWindowFeature(
+                segmentations.data[:, i : i + 1], segmentations.sliding_window
+            )
+            # obtain hard segments
+            label_annotation: Annotation = self._binarize[label](label_segmentation)
+
+            # add them to the pool of labels
+            detection.update(
+                label_annotation.rename_labels(
+                    dict.fromkeys(label_annotation.labels(), label), copy=False
+                )
+            )
+
+        return detection
+
+    def get_metric(self) -> Union[MacroAverageFMeasure, IdentificationErrorRate]:
         """Return new instance of identification metric"""
 
         if self.fscore:
-            return MultilabelFMeasure(classes=self.labels, collar=0.0, skip_overlap=False)
-        else:
-            return IdentificationErrorRate(collar=0.0, skip_overlap=False)
+            return MacroAverageFMeasure(classes=self._classes)
+
+        return IdentificationErrorRate()
 
     def get_direction(self):
         if self.fscore:
             return "maximize"
-        else:
-            return "minimize"
+        return "minimize"

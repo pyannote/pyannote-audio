@@ -19,99 +19,33 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-import logging
+
 import warnings
-from functools import reduce
-from itertools import chain
-from typing import List, Optional, Text, Tuple, Union, Dict
+from typing import List, Optional, Text, Tuple, Union
 
 import numpy as np
-from pyannote.core import Annotation
-from pyannote.database import Protocol, ProtocolFile
-from pyannote.database.protocol.protocol import Preprocessor
+from pyannote.database import Protocol
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 
 from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
 
 
-class VoiceTypeClassifierPreprocessor(Preprocessor):
-    """
-    Voice Type Classifier preprocessor: filters out classes not defined in the `classes` list,
-    and synthesizes additional classes based on unions or intersection of classes.
-
-    Parameters
-    ----------
-    classes : List[str]
-        All the "base" classes that should be used in the protocol's annotation's
-    unions: Dict[str, List[str]], optional
-        Unions of classes. The keys are the name of the new union classes, and the values are the
-        list of classes that should used for these unions.
-    intersections: Dict[str, List[str]], optional
-        Intersections of classes. The keys are the name of the new intersections classes, and the values are the
-        list of classes that should used for these intersections.
-
-
-    """
-
-    def __init__(self, classes: List[str],
-                 unions: Optional[Dict[str, List[str]]] = None,
-                 intersections: Optional[Dict[str, List[str]]] = None):
-        self.classes = set(classes)
-        if unions is not None:
-            assert set(chain.from_iterable(unions.values())).issubset(set(classes))
-
-        if intersections is not None:
-            assert set(chain.from_iterable(intersections.values())).issubset(set(classes))
-        self.unions = unions if unions is not None else dict()
-        self.intersections = intersections if intersections is not None else dict()
-
-    @property
-    def all_classes(self) -> List[str]:
-        """A list of all the classes (base, union-based and intersection-based) that can be found
-        in output annotations from this preprocessor"""
-        return sorted(list(self.classes)
-                      + list(self.unions.keys())
-                      + list(self.intersections.keys()))
-
-    def __call__(self, current_file: ProtocolFile) -> Annotation:
-        annotation = current_file["annotation"]
-        derived = annotation.subset(self.classes)
-        # Adding union labels
-        for union_label, subclasses in self.unions.items():
-            # creates a subset of the original annotation, based
-            mapping = {k: union_label for k in subclasses}
-            metalabel_annot = annotation.subset(subclasses).rename_labels(mapping=mapping)
-            derived.update(metalabel_annot.support())
-
-        # adding intersection labels
-        for intersect_label, subclasses in self.intersections.items():
-            subclasses_tl = [annotation.label_timeline(subclass) for subclass in subclasses]
-            overlap_tl = reduce(lambda x, y: x.crop(y), subclasses_tl)
-            for seg in overlap_tl:
-                derived[seg] = intersect_label
-
-        return derived
-
-
 class MultilabelDetection(SegmentationTaskMixin, Task):
     """Multilabel Detection
 
-    Multilabel detection is the process of detecting when a specific class
-    of speaker can be heard in the audio.
-    It can also be used for speaker tracking.
+    Multilabel detection is the process of detecting when a specific audio
+    class is active.
 
-    Here, it is addressed with the same approach as voice activity detection,
-    except {"non-speech", "speech"} classes are replaced by {"class_1", ...,
-    "class_N"} where N is the number of classes in the training set.
+    Example use cases include speaker tracking, gender (male/female)
+    classification, or audio event detection.
 
     Parameters
     ----------
     protocol : Protocol
         pyannote.database protocol
     classes : List[str], optional
-        list of classes that are to be detected. If unspecified, defaults to the
-        all the classes contained in the training set.
+        List of classes. Defaults to the list of classes available in the training set.
     duration : float, optional
         Chunks duration. Defaults to 2s.
     warm_up : float or (float, float), optional
@@ -140,20 +74,20 @@ class MultilabelDetection(SegmentationTaskMixin, Task):
         during training.
     """
 
-    ACRONYM = "mlt"
+    ACRONYM = "mld"
 
     def __init__(
-            self,
-            protocol: Protocol,
-            classes: Optional[List[str]] = None,
-            duration: float = 2.0,
-            warm_up: Union[float, Tuple[float, float]] = 0.0,
-            balance: Text = None,
-            weight: Text = None,
-            batch_size: int = 32,
-            num_workers: int = None,
-            pin_memory: bool = False,
-            augmentation: BaseWaveformTransform = None,
+        self,
+        protocol: Protocol,
+        classes: Optional[List[str]] = None,
+        duration: float = 2.0,
+        warm_up: Union[float, Tuple[float, float]] = 0.0,
+        balance: Text = None,
+        weight: Text = None,
+        batch_size: int = 32,
+        num_workers: int = None,
+        pin_memory: bool = False,
+        augmentation: BaseWaveformTransform = None,
     ):
         super().__init__(
             protocol,
@@ -167,7 +101,7 @@ class MultilabelDetection(SegmentationTaskMixin, Task):
 
         self.balance = balance
         self.weight = weight
-        self.classes = set(classes) if classes is not None else None
+        self.classes = classes
 
         # task specification depends
         # on the data: we do not know in advance which
@@ -175,21 +109,22 @@ class MultilabelDetection(SegmentationTaskMixin, Task):
         # the definition of specifications.
 
     def setup(self, stage: Optional[str] = None):
-        super().setup(stage=stage)
-        protocol_classes = set(self._train_metadata["annotation"])
-        if self.classes is not None:
-            if protocol_classes != self.classes:
-                warnings.warn("Mismatch between protocol classes and classes "
-                              f"passed to the task: {protocol_classes} != {self.classes}")
-            classes = sorted(self.classes)
-        else:
-            classes = sorted(protocol_classes)
 
-        logging.info(f"Classes for model: {classes}")
+        super().setup(stage=stage)
+
+        classes_from_training_set = sorted(self._train_metadata["annotation"])
+        if self.classes is None:
+            classes = classes_from_training_set
+        else:
+            if set(classes_from_training_set) != set(self.classes):
+                warnings.warn(
+                    f"Mismatch between classes passed to the task ({self.classes}) "
+                    f"and those of the training set ({classes_from_training_set})."
+                )
+            classes = self.classes
+
         self.specifications = Specifications(
-            # one class per speaker
             classes=classes,
-            # multiple speakers can be active at once
             problem=Problem.MULTI_LABEL_CLASSIFICATION,
             resolution=Resolution.FRAME,
             duration=self.duration,
@@ -197,10 +132,10 @@ class MultilabelDetection(SegmentationTaskMixin, Task):
         )
 
     @property
-    def chunk_labels(self) -> List[Text]:
+    def ordered_labels(self) -> List[Text]:
         """Ordered list of labels
 
-        Used by `prepare_chunk` so that y[:, k] corresponds to activity of kth speaker
+        Used by `prepare_chunk` so that y[:, k] corresponds to activity of kth class
         """
         return self.specifications.classes
 

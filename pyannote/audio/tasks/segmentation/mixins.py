@@ -27,13 +27,13 @@ from typing import List, Optional, Text, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
+from pyannote.core import Annotation, Segment, SlidingWindow, SlidingWindowFeature
 from torchmetrics import AUROC
 from typing_extensions import Literal
 
 from pyannote.audio.core.io import Audio, AudioFile
 from pyannote.audio.core.task import Problem
 from pyannote.audio.utils.random import create_rng_for_worker
-from pyannote.core import Annotation, Segment, SlidingWindow, SlidingWindowFeature
 
 
 class SegmentationTaskMixin:
@@ -142,7 +142,7 @@ class SegmentationTaskMixin:
         )
 
     @property
-    def chunk_labels(self) -> Optional[List[Text]]:
+    def ordered_labels(self) -> Optional[List[Text]]:
         """Ordered list of labels
 
         Override this method to make `prepare_chunk` use a specific
@@ -205,7 +205,7 @@ class SegmentationTaskMixin:
 
         # crop "annotation" and keep track of corresponding list of labels if needed
         annotation: Annotation = file["annotation"].crop(chunk)
-        labels = annotation.labels() if self.chunk_labels is None else self.chunk_labels
+        labels = self.ordered_labels or annotation.labels()
 
         y = np.zeros((num_frames, len(labels)), dtype=np.int8)
         frames = SlidingWindow(
