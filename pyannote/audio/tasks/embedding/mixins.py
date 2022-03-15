@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020-2021 CNRS
+# Copyright (c) 2020- CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -21,20 +21,20 @@
 # SOFTWARE.
 
 import math
-from typing import Optional
+from typing import Dict, Optional, Sequence, Union
 
 import torch
 import torch.nn.functional as F
-from torchmetrics import AUROC
-from tqdm import tqdm
-
-from pyannote.audio.core.task import Problem, Resolution, Specifications
-from pyannote.audio.utils.random import create_rng_for_worker
 from pyannote.core import Segment
 from pyannote.database.protocol import (
     SpeakerDiarizationProtocol,
     SpeakerVerificationProtocol,
 )
+from torchmetrics import AUROC, Metric
+from tqdm import tqdm
+
+from pyannote.audio.core.task import Problem, Resolution, Specifications
+from pyannote.audio.utils.random import create_rng_for_worker
 
 
 class SupervisedRepresentationLearningTaskMixin:
@@ -124,7 +124,9 @@ class SupervisedRepresentationLearningTaskMixin:
         if isinstance(self.protocol, SpeakerVerificationProtocol):
             self._validation = list(self.protocol.development_trial())
 
-    def setup_validation_metric(self):
+    def default_metric(
+        self,
+    ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
         return AUROC(compute_on_step=False)
 
     def train__iter__(self):
@@ -219,7 +221,7 @@ class SupervisedRepresentationLearningTaskMixin:
         loss = self.model.loss_func(self.model(X), y)
 
         self.model.log(
-            f"{self.ACRONYM}@train_loss",
+            f"{self.logging_prefix}TrainLoss",
             loss,
             on_step=False,
             on_epoch=True,
@@ -277,8 +279,7 @@ class SupervisedRepresentationLearningTaskMixin:
             y_true = batch["y"]
             self.model.validation_metric(y_pred, y_true)
 
-            self.model.log(
-                f"{self.ACRONYM}@val_auroc",
+            self.model.log_dict(
                 self.model.validation_metric,
                 on_step=False,
                 on_epoch=True,
@@ -288,17 +289,3 @@ class SupervisedRepresentationLearningTaskMixin:
 
         elif isinstance(self.protocol, SpeakerDiarizationProtocol):
             pass
-
-    @property
-    def val_monitor(self):
-
-        if self.has_validation:
-
-            if isinstance(self.protocol, SpeakerVerificationProtocol):
-                return f"{self.ACRONYM}@val_auroc", "max"
-
-            elif isinstance(self.protocol, SpeakerDiarizationProtocol):
-                return None, "min"
-
-        else:
-            return None, "min"
