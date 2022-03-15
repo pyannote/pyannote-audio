@@ -21,6 +21,7 @@
 # SOFTWARE.
 
 import warnings
+
 try:
     from functools import cached_property
 except ImportError:
@@ -133,6 +134,11 @@ class SpeechBrainPretrainedSpeakerEmbedding:
 
             batch_size_masks, _ = masks.shape
             assert batch_size == batch_size_masks
+
+            # TODO: speed up the creation of "signals"
+            # preliminary profiling experiments show
+            # that it accounts for 15% of __call__
+            # (the remaining 85% being the actual forward pass)
 
             imasks = F.interpolate(
                 masks.unsqueeze(dim=1), size=num_samples, mode="nearest"
@@ -344,7 +350,7 @@ class SpeakerEmbedding(Pipeline):
             weights = self.voice_activity_(file).data
             # HACK -- this should be fixed upstream
             weights[np.isnan(weights)] = 0.0
-            weights = torch.from_numpy(weights ** 3)[None, :, 0].to(device)
+            weights = torch.from_numpy(weights**3)[None, :, 0].to(device)
 
         # extract speaker embedding on parts of
         with torch.no_grad():
@@ -359,11 +365,10 @@ def main(
 ):
 
     import typer
-    from scipy.spatial.distance import cdist
-    from tqdm import tqdm
-
     from pyannote.database import FileFinder, get_protocol
     from pyannote.metrics.binary_classification import det_curve
+    from scipy.spatial.distance import cdist
+    from tqdm import tqdm
 
     pipeline = SpeakerEmbedding(embedding=embedding, segmentation=segmentation)
 
