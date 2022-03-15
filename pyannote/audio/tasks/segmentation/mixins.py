@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020-2021 CNRS
+# Copyright (c) 2020- CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -23,12 +23,13 @@
 import math
 import random
 import warnings
-from typing import List, Optional, Text, Tuple
+from typing import Dict, List, Optional, Sequence, Text, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
 from pyannote.core import Annotation, Segment, SlidingWindow, SlidingWindowFeature
-from torchmetrics import AUROC
+from torchmetrics import AUROC, Metric
 from typing_extensions import Literal
 
 from pyannote.audio.core.io import Audio, AudioFile
@@ -120,20 +121,12 @@ class SegmentationTaskMixin:
 
         random.shuffle(self._validation)
 
-    def setup_validation_metric(self):
-        """Setup default validation metric
+    def default_metric(
+            self,
+    ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
+        """Returns macro-average of the area under the ROC curve"""
 
-        Use macro-average of area under the ROC curve
-        """
-
-        if self.specifications.problem in [
-            Problem.BINARY_CLASSIFICATION,
-            Problem.MULTI_LABEL_CLASSIFICATION,
-        ]:
-            num_classes = 1
-        else:
-            num_classes = len(self.specifications.classes)
-
+        num_classes = len(self.specifications.classes)
         return AUROC(num_classes, pos_label=1, average="macro", compute_on_step=False)
 
     def prepare_y(self, one_hot_y: np.ndarray) -> np.ndarray:
@@ -153,12 +146,12 @@ class SegmentationTaskMixin:
         return None
 
     def prepare_chunk(
-        self,
-        file: AudioFile,
-        chunk: Segment,
-        duration: float = None,
-        stage: Literal["train", "val"] = "train",
-    ) -> Tuple[np.ndarray, np.ndarray, List[Text]]:
+            self,
+            file: AudioFile,
+            chunk: Segment,
+            duration: float = None,
+            stage: Literal["train", "val"] = "train",
+    ) -> dict:
         """Extract audio chunk and corresponding frame-wise labels
 
         Parameters
@@ -284,7 +277,6 @@ class SegmentationTaskMixin:
             train = [f for f in train if f[domain_key] == domain_value]
 
         while True:
-
             # select one file at random (with probability proportional to its annotated duration)
             file, *_ = rng.choices(
                 train,
@@ -367,8 +359,8 @@ class SegmentationTaskMixin:
 
             # sum both chunks with random SNR
             random_snr = (
-                overlap_snr_max - overlap_snr_min
-            ) * rng.random() + overlap_snr_min
+                                 overlap_snr_max - overlap_snr_min
+                         ) * rng.random() + overlap_snr_min
             alpha = np.exp(-np.log(10) * random_snr / 20)
             combined_X = Audio.power_normalize(
                 sample["X"]
@@ -423,14 +415,14 @@ class SegmentationTaskMixin:
                 # any conflict with pure i or pure j samples
                 elif isinstance(value, int):
                     combined_sample[key] = sample[key] + other_sample[key] * (
-                        len(self._train_metadata[key]) + 1
+                            len(self._train_metadata[key]) + 1
                     )
 
                 # score-like entries have been chunked into numpy array in prepare_chunk
                 # we (somewhat arbitrarily) average them using the same alpha as for X
                 elif isinstance(value, np.ndarray):
                     combined_sample[key] = (sample[key] + alpha * other_sample[key]) / (
-                        1 + alpha
+                            1 + alpha
                     )
 
             yield combined_sample
@@ -473,14 +465,15 @@ class SegmentationTaskMixin:
         # y_pred = (batch_size, num_frames, num_classes)
 
         # postprocess
+        # TODO: remove this because metrics should take care of postprocessing
         y_pred = self.validation_postprocess(y, y_pred)
 
         # - remove warm-up frames
         # - downsample remaining frames
         warm_up_left = round(self.warm_up[0] / self.duration * num_frames)
         warm_up_right = round(self.warm_up[1] / self.duration * num_frames)
-        preds = y_pred[:, warm_up_left : num_frames - warm_up_right : 10]
-        target = y[:, warm_up_left : num_frames - warm_up_right : 10]
+        preds = y_pred[:, warm_up_left: num_frames - warm_up_right: 10]
+        target = y[:, warm_up_left: num_frames - warm_up_right: 10]
 
         # torchmetrics tries to be smart about the type of machine learning problem
         # pyannote.audio is more explicit so we have to reshape target and preds for
@@ -492,34 +485,32 @@ class SegmentationTaskMixin:
             # preds:  shape (batch_size, num_frames, 1), type float
 
             # torchmetrics expects:
-            # target: shape (N,), type binary
-            # preds:  shape (N,), type float
+            # target: shape (batch_size,), type binary
+            # preds:  shape (batch_size,), type float
 
-            self.model.validation_metric(preds.reshape(-1), target.reshape(-1))
+            self.model.validation_metric(
+                preds.reshape(-1),
+                target.reshape(-1),
+            )
 
         elif self.specifications.problem == Problem.MULTI_LABEL_CLASSIFICATION:
             # target: shape (batch_size, num_frames, num_classes), type binary
             # preds:  shape (batch_size, num_frames, num_classes), type float
 
             # torchmetrics expects
-            # target: shape (N, ), type binary
-            # preds:  shape (N, ), type float
+            # target: shape (batch_size, num_classes, ...), type binary
+            # preds:  shape (batch_size, num_classes, ...), type float
 
-            self.model.validation_metric(preds.reshape(-1), target.reshape(-1))
+            self.model.validation_metric(
+                torch.transpose(preds, 1, 2),
+                torch.transpose(target, 1, 2),
+            )
 
         elif self.specifications.problem == Problem.MONO_LABEL_CLASSIFICATION:
-            # target: shape (batch_size, num_frames, num_classes), type binary
-            # preds:  shape (batch_size, num_frames, num_classes), type float
-
-            # torchmetrics expects:
-            # target: shape (N, ), type int
-            # preds:  shape (N, num_classes), type float
-
             # TODO: implement when pyannote.audio gets its first mono-label segmentation task
             raise NotImplementedError()
 
-        self.model.log(
-            f"{self.ACRONYM}@val_auroc",
+        self.model.log_dict(
             self.model.validation_metric,
             on_step=False,
             on_epoch=True,
@@ -529,9 +520,9 @@ class SegmentationTaskMixin:
 
         # log first batch visualization every 2^n epochs.
         if (
-            self.model.current_epoch == 0
-            or math.log2(self.model.current_epoch) % 1 > 0
-            or batch_idx > 0
+                self.model.current_epoch == 0
+                or math.log2(self.model.current_epoch) % 1 > 0
+                or batch_idx > 0
         ):
             return
 
@@ -556,7 +547,6 @@ class SegmentationTaskMixin:
 
         # plot each sample
         for sample_idx in range(num_samples):
-
             # find where in the grid it should be plotted
             row_idx = sample_idx // nrows
             col_idx = sample_idx % ncols
@@ -593,12 +583,7 @@ class SegmentationTaskMixin:
         plt.tight_layout()
 
         self.model.logger.experiment.add_figure(
-            f"{self.ACRONYM}@val_samples", fig, self.model.current_epoch
+            f"{self.logging_prefix}ValSamples", fig, self.model.current_epoch
         )
 
         plt.close(fig)
-
-    @property
-    def val_monitor(self):
-        """Maximize validation area under ROC curve"""
-        return f"{self.ACRONYM}@val_auroc", "max"

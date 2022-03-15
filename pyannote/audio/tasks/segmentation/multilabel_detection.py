@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020-2021 CNRS
+# Copyright (c) 2020- CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -21,11 +21,12 @@
 # SOFTWARE.
 
 import warnings
-from typing import List, Optional, Text, Tuple, Union
+from typing import Dict, List, Optional, Sequence, Text, Tuple, Union
 
 import numpy as np
 from pyannote.database import Protocol
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
+from torchmetrics import Metric
 
 from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
@@ -72,22 +73,26 @@ class MultilabelDetection(SegmentationTaskMixin, Task):
     augmentation : BaseWaveformTransform, optional
         torch_audiomentations waveform transform, used by dataloader
         during training.
+    metric : optional
+        Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
+        Defaults to AUROC (area under the ROC curve).
     """
 
     ACRONYM = "mld"
 
     def __init__(
-        self,
-        protocol: Protocol,
-        classes: Optional[List[str]] = None,
-        duration: float = 2.0,
-        warm_up: Union[float, Tuple[float, float]] = 0.0,
-        balance: Text = None,
-        weight: Text = None,
-        batch_size: int = 32,
-        num_workers: int = None,
-        pin_memory: bool = False,
-        augmentation: BaseWaveformTransform = None,
+            self,
+            protocol: Protocol,
+            classes: Optional[List[str]] = None,
+            duration: float = 2.0,
+            warm_up: Union[float, Tuple[float, float]] = 0.0,
+            balance: Text = None,
+            weight: Text = None,
+            batch_size: int = 32,
+            num_workers: int = None,
+            pin_memory: bool = False,
+            augmentation: BaseWaveformTransform = None,
+            metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
     ):
         super().__init__(
             protocol,
@@ -97,6 +102,7 @@ class MultilabelDetection(SegmentationTaskMixin, Task):
             num_workers=num_workers,
             pin_memory=pin_memory,
             augmentation=augmentation,
+            metric=metric,
         )
 
         self.balance = balance
