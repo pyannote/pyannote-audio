@@ -17,6 +17,16 @@ from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task, ValDataset
 from pyannote.audio.tasks import Segmentation
+from pyannote.audio.torchmetrics.functional.audio.diarization_error_rate import (
+    diarization_error_rate,
+)
+
+
+class PseudoLabelPostprocess:
+    def process(
+        self, pseudo_y: torch.Tensor, y: torch.Tensor, x: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        raise NotImplementedError()
 
 
 class UnsupervisedSegmentation(Segmentation, Task):
@@ -27,6 +37,9 @@ class UnsupervisedSegmentation(Segmentation, Task):
         fake_in_train=True,  # generate fake truth in training mode
         fake_in_val=True,  # generate fake truth in val mode
         augmentation_model: BaseWaveformTransform = None,
+        pl_postprocess: Union[
+            PseudoLabelPostprocess, List[PseudoLabelPostprocess]
+        ] = None,
         # supervised params
         duration: float = 2.0,
         max_num_speakers: int = None,
@@ -66,6 +79,11 @@ class UnsupervisedSegmentation(Segmentation, Task):
         self.fake_in_val = fake_in_val
         self.augmentation_model = augmentation_model
 
+        if isinstance(pl_postprocess, PseudoLabelPostprocess):
+            self.pl_postprocess = [pl_postprocess]
+        else:
+            self.pl_postprocess = pl_postprocess
+
         self.teacher.eval()
 
     def get_model_output(self, model: Model, waveforms: torch.Tensor):
@@ -88,12 +106,23 @@ class UnsupervisedSegmentation(Segmentation, Task):
 
         # Generate annotations y with teacher if they are not provided
         if self.use_pseudolabels("train"):
-            teacher_input = collated_batch["X"]
+            x = collated_batch["X"]
+            teacher_input = x
             if self.augmentation_model is not None:
                 teacher_input = self.augmentation_model(
                     collated_batch["X"], sample_rate=self.model.hparams.sample_rate
                 )
-            collated_batch["y"] = self.get_model_output(self.teacher, teacher_input)
+            pseudo_y = self.get_model_output(self.teacher, teacher_input)
+
+            y = None
+            if "y" in collated_batch:
+                y = collated_batch["y"]
+            if self.pl_postprocess is not None:
+                for pp in self.pl_postprocess:
+                    pseudo_y, x = pp.process(pseudo_y, y, x)
+
+            collated_batch["y"] = pseudo_y
+            collated_batch["X"] = x
 
         if self.augmentation is not None:
             collated_batch["X"] = self.augmentation(
@@ -159,6 +188,58 @@ class UnsupervisedSegmentation(Segmentation, Task):
             )
         else:
             return None
+
+
+def _compute_ders(
+    pseudo_y: torch.Tensor, y: torch.Tensor, x: torch.Tensor
+) -> Tuple[torch.Tensor]:
+    batch_size = pseudo_y.shape[0]
+    ders = torch.zeros(batch_size)
+
+    tm_pseudo_y = pseudo_y.swapaxes(1, 2)
+    tm_true_y = y.swapaxes(1, 2)
+    for i in range(batch_size):
+        ders[i] = diarization_error_rate(
+            tm_pseudo_y[i][None, :, :], tm_true_y[i][None, :, :]
+        )
+
+    return ders
+
+
+class DiscardPercentDer(PseudoLabelPostprocess):
+    def __init__(self, ratio_to_discard: float = 0.1) -> None:
+        self.ratio_to_discard = ratio_to_discard
+
+    def process(
+        self, pseudo_y: torch.Tensor, y: torch.Tensor, x: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        batch_size = pseudo_y.shape[0]
+        ders = _compute_ders(pseudo_y, y, x)
+        sorted_ders, sorted_indices = torch.sort(ders)
+
+        to_discard_count = min(
+            batch_size, max(1, round(batch_size * self.ratio_to_discard))
+        )
+        pseudo_y = pseudo_y[sorted_indices][:-to_discard_count, :, :]
+        x = x[sorted_indices][:-to_discard_count, :, :]
+
+        return pseudo_y, x
+
+
+class DiscardThresholdDer(PseudoLabelPostprocess):
+    def __init__(self, threshold: float = 0.5) -> None:
+        self.threshold = threshold
+
+    def process(
+        self, pseudo_y: torch.Tensor, y: torch.Tensor, x: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        ders = _compute_ders(pseudo_y, y, x)
+
+        filter = torch.where(ders < self.threshold)
+        pseudo_y = pseudo_y[filter]
+        x = x[filter]
+
+        return pseudo_y, x
 
 
 class TeacherUpdate(Callback):
