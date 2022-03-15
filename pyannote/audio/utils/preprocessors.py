@@ -28,7 +28,7 @@
 
 from functools import reduce
 from itertools import chain
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 
 from pyannote.core import Annotation, Segment
 from pyannote.database import ProtocolFile
@@ -88,7 +88,7 @@ class DeriveMetaLabels:
         unions: Optional[Dict[str, List[str]]] = None,
         intersections: Optional[Dict[str, List[str]]] = None,
     ):
-        self.classes = set(classes)
+        self.classes: Set[str] = set(classes)
         if unions is not None:
             assert set(chain.from_iterable(unions.values())).issubset(set(classes))
 
