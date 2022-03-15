@@ -75,8 +75,6 @@ class VoiceActivityDetection(SegmentationTaskMixin, Task):
         Defaults to AUROC (area under the ROC curve).
     """
 
-    ACRONYM = "vad"
-
     def __init__(
         self,
         protocol: Protocol,

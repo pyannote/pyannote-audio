@@ -272,6 +272,17 @@ class Task(pl.LightningDataModule):
             collate_fn=self.collate_fn,
         )
 
+    @cached_property
+    def logging_prefix(self):
+
+        prefix = f"{self.__class__.__name__}-"
+        if hasattr(self.protocol, "name"):
+            # "." has a special meaning for pytorch-lightning checkpointing
+            # so we replace any encountered "." by "_" in protocol names
+            prefix += f"{self.protocol.name.replace('.', '_')}-"
+
+        return prefix
+
     def default_loss(
         self, specifications: Specifications, target, prediction, weight=None
     ) -> torch.Tensor:
@@ -361,7 +372,7 @@ class Task(pl.LightningDataModule):
         # compute loss
         loss = self.default_loss(self.specifications, y, y_pred, weight=weight)
         self.model.log(
-            f"{self.ACRONYM}@{stage}_loss",
+            f"{self.logging_prefix}{stage}-loss",
             loss,
             on_step=False,
             on_epoch=True,
@@ -415,13 +426,7 @@ class Task(pl.LightningDataModule):
         if self._metric is None:
             self._metric = self.default_metric()
 
-        prefix = f"{self.__class__.__name__}-"
-        if hasattr(self.protocol, "name"):
-            # "." has a special meaning for pytorch-lightning checkpointing
-            # so we replace any encountered "." by "_" in protocol names
-            prefix += f"{self.protocol.name.replace('.', '_')}-"
-
-        return MetricCollection(self._metric, prefix=prefix)
+        return MetricCollection(self._metric, prefix=self.logging_prefix)
 
     @property
     def val_monitor(self):

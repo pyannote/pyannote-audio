@@ -102,8 +102,6 @@ class Segmentation(SegmentationTaskMixin, Task):
     Proc. Interspeech 2021
     """
 
-    ACRONYM = "seg"
-
     OVERLAP_DEFAULTS = {"probability": 0.5, "snr_min": 0.0, "snr_max": 10.0}
 
     def __init__(
@@ -355,7 +353,7 @@ class Segmentation(SegmentationTaskMixin, Task):
         seg_loss = self.segmentation_loss(permutated_prediction, target, weight=weight)
 
         self.model.log(
-            f"{self.ACRONYM}@train_seg_loss",
+            f"{self.logging_prefix}train-loss-seg",
             seg_loss,
             on_step=False,
             on_epoch=True,
@@ -372,7 +370,7 @@ class Segmentation(SegmentationTaskMixin, Task):
             )
 
             self.model.log(
-                f"{self.ACRONYM}@train_vad_loss",
+                f"{self.logging_prefix}train-loss-vad",
                 vad_loss,
                 on_step=False,
                 on_epoch=True,
@@ -383,13 +381,14 @@ class Segmentation(SegmentationTaskMixin, Task):
         loss = seg_loss + vad_loss
 
         self.model.log(
-            f"{self.ACRONYM}@train_loss",
+            f"{self.logging_prefix}train-loss",
             loss,
             on_step=False,
             on_epoch=True,
             prog_bar=True,
             logger=True,
         )
+
         return {"loss": loss}
 
     def default_metric(

@@ -89,8 +89,6 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
         Defaults to AUROC (area under the ROC curve).
     """
 
-    ACRONYM = "osd"
-
     OVERLAP_DEFAULTS = {"probability": 0.5, "snr_min": 0.0, "snr_max": 10.0}
 
     def __init__(
