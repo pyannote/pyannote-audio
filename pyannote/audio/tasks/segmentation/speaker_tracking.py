@@ -76,8 +76,6 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
         Defaults to AUROC (area under the ROC curve).
     """
 
-    ACRONYM = "spk"
-
     def __init__(
         self,
         protocol: Protocol,

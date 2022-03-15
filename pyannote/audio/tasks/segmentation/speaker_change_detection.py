@@ -82,8 +82,6 @@ class SpeakerChangeDetection(SegmentationTaskMixin, Task):
         Defaults to AUROC (area under the ROC curve).
     """
 
-    ACRONYM = "scd"
-
     def __init__(
         self,
         protocol: Protocol,
