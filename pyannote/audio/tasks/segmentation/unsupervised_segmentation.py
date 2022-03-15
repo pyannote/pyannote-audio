@@ -40,7 +40,7 @@ class UnsupervisedSegmentation(Segmentation, Task):
         augmentation: BaseWaveformTransform = None,
         loss: Literal["bce", "mse"] = "bce",
         vad_loss: Literal["bce", "mse"] = None,
-        metrics: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
+        metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
     ):
         super().__init__(
             # Mixin params
@@ -58,7 +58,7 @@ class UnsupervisedSegmentation(Segmentation, Task):
             weight=weight,
             loss=loss,
             vad_loss=vad_loss,
-            metrics=metrics,
+            metric=metric,
         )
 
         self.teacher = model
