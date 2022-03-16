@@ -208,8 +208,9 @@ class SegmentationTaskMixin:
         duration: float = None,
         stage: Literal["train", "val"] = "train",
         use_annotations: bool = True,
-    ) -> Tuple[np.ndarray, np.ndarray, List[Text]]:
+    ) -> dict:
         """Extract audio chunk and corresponding frame-wise labels
+
 
         Parameters
         ----------
