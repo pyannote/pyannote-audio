@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020-2021 CNRS
+# Copyright (c) 2020- CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -20,14 +20,15 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import Text, Tuple, Union
+from typing import Dict, Sequence, Text, Tuple, Union
 
 import numpy as np
+from pyannote.database import Protocol
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
+from torchmetrics import Metric
 
 from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
-from pyannote.database import Protocol
 
 
 class VoiceActivityDetection(SegmentationTaskMixin, Task):
@@ -69,9 +70,10 @@ class VoiceActivityDetection(SegmentationTaskMixin, Task):
     augmentation : BaseWaveformTransform, optional
         torch_audiomentations waveform transform, used by dataloader
         during training.
+    metric : optional
+        Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
+        Defaults to AUROC (area under the ROC curve).
     """
-
-    ACRONYM = "vad"
 
     def __init__(
         self,
@@ -84,6 +86,7 @@ class VoiceActivityDetection(SegmentationTaskMixin, Task):
         num_workers: int = None,
         pin_memory: bool = False,
         augmentation: BaseWaveformTransform = None,
+        metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
     ):
 
         super().__init__(
@@ -94,6 +97,7 @@ class VoiceActivityDetection(SegmentationTaskMixin, Task):
             num_workers=num_workers,
             pin_memory=pin_memory,
             augmentation=augmentation,
+            metric=metric,
         )
 
         self.balance = balance

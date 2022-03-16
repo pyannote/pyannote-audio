@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020-2021 CNRS
+# Copyright (c) 2020- CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -23,12 +23,13 @@
 import math
 import random
 import warnings
-from typing import List, Optional, Text, Tuple
+from typing import Dict, List, Optional, Sequence, Text, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
 from pyannote.core import Annotation, Segment, SlidingWindow, SlidingWindowFeature
-from torchmetrics import AUROC
+from torchmetrics import AUROC, Metric
 from typing_extensions import Literal
 
 from pyannote.audio.core.io import Audio, AudioFile
@@ -120,20 +121,12 @@ class SegmentationTaskMixin:
 
         random.shuffle(self._validation)
 
-    def setup_validation_metric(self):
-        """Setup default validation metric
+    def default_metric(
+        self,
+    ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
+        """Returns macro-average of the area under the ROC curve"""
 
-        Use macro-average of area under the ROC curve
-        """
-
-        if self.specifications.problem in [
-            Problem.BINARY_CLASSIFICATION,
-            Problem.MULTI_LABEL_CLASSIFICATION,
-        ]:
-            num_classes = 1
-        else:
-            num_classes = len(self.specifications.classes)
-
+        num_classes = len(self.specifications.classes)
         return AUROC(num_classes, pos_label=1, average="macro", compute_on_step=False)
 
     def prepare_y(self, one_hot_y: np.ndarray) -> np.ndarray:
@@ -215,7 +208,7 @@ class SegmentationTaskMixin:
         duration: float = None,
         stage: Literal["train", "val"] = "train",
         use_annotations: bool = True,
-    ) -> Tuple[np.ndarray, np.ndarray, List[Text]]:
+    ) -> dict:
         """Extract audio chunk and corresponding frame-wise labels
 
         Parameters
@@ -509,6 +502,7 @@ class SegmentationTaskMixin:
         # y_pred = (batch_size, num_frames, num_classes)
 
         # postprocess
+        # TODO: remove this because metrics should take care of postprocessing
         y_pred = self.validation_postprocess(y, y_pred)
 
         # - remove warm-up frames
@@ -528,34 +522,32 @@ class SegmentationTaskMixin:
             # preds:  shape (batch_size, num_frames, 1), type float
 
             # torchmetrics expects:
-            # target: shape (N,), type binary
-            # preds:  shape (N,), type float
+            # target: shape (batch_size,), type binary
+            # preds:  shape (batch_size,), type float
 
-            self.model.validation_metric(preds.reshape(-1), target.reshape(-1))
+            self.model.validation_metric(
+                preds.reshape(-1),
+                target.reshape(-1),
+            )
 
         elif self.specifications.problem == Problem.MULTI_LABEL_CLASSIFICATION:
             # target: shape (batch_size, num_frames, num_classes), type binary
             # preds:  shape (batch_size, num_frames, num_classes), type float
 
             # torchmetrics expects
-            # target: shape (N, ), type binary
-            # preds:  shape (N, ), type float
+            # target: shape (batch_size, num_classes, ...), type binary
+            # preds:  shape (batch_size, num_classes, ...), type float
 
-            self.model.validation_metric(preds.reshape(-1), target.reshape(-1))
+            self.model.validation_metric(
+                torch.transpose(preds, 1, 2),
+                torch.transpose(target, 1, 2),
+            )
 
         elif self.specifications.problem == Problem.MONO_LABEL_CLASSIFICATION:
-            # target: shape (batch_size, num_frames, num_classes), type binary
-            # preds:  shape (batch_size, num_frames, num_classes), type float
-
-            # torchmetrics expects:
-            # target: shape (N, ), type int
-            # preds:  shape (N, num_classes), type float
-
             # TODO: implement when pyannote.audio gets its first mono-label segmentation task
             raise NotImplementedError()
 
-        self.model.log(
-            f"{self.ACRONYM}@val_auroc",
+        self.model.log_dict(
             self.model.validation_metric,
             on_step=False,
             on_epoch=True,
@@ -629,12 +621,7 @@ class SegmentationTaskMixin:
         plt.tight_layout()
 
         self.model.logger.experiment.add_figure(
-            f"{self.ACRONYM}@val_samples", fig, self.model.current_epoch
+            f"{self.logging_prefix}ValSamples", fig, self.model.current_epoch
         )
 
         plt.close(fig)
-
-    @property
-    def val_monitor(self):
-        """Maximize validation area under ROC curve"""
-        return f"{self.ACRONYM}@val_auroc", "max"

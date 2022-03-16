@@ -25,7 +25,7 @@
 import tempfile
 from copy import deepcopy
 from types import MethodType
-from typing import Union
+from typing import Optional, Union, Callable
 
 import numpy as np
 from pytorch_lightning import Trainer
@@ -47,7 +47,7 @@ from pyannote.audio.pipelines.utils import (
 )
 from pyannote.audio.tasks import VoiceActivityDetection as VoiceActivityDetectionTask
 from pyannote.audio.utils.signal import Binarize
-from pyannote.core import Annotation
+from pyannote.core import Annotation, SlidingWindowFeature
 from pyannote.database.protocol import SpeakerDiarizationProtocol
 from pyannote.metrics.detection import (
     DetectionErrorRate,
@@ -123,7 +123,7 @@ class VoiceActivityDetection(Pipeline):
         inference_kwargs["pre_aggregation_hook"] = lambda scores: np.max(
             scores, axis=-1, keepdims=True
         )
-        self.segmentation_inference_ = Inference(model, **inference_kwargs)
+        self._segmentation = Inference(model, **inference_kwargs)
 
         #  hyper-parameters used for hysteresis thresholding
         self.onset = Uniform(0.0, 1.0)
@@ -158,29 +158,42 @@ class VoiceActivityDetection(Pipeline):
             min_duration_off=self.min_duration_off,
         )
 
-    CACHED_ACTIVATIONS = "@voice_activity_detection/activations"
+    CACHED_SEGMENTATION = "cache/segmentation/inference"
 
-    def apply(self, file: AudioFile) -> Annotation:
+    def apply(self, file: AudioFile, hook: Optional[Callable] = None) -> Annotation:
         """Apply voice activity detection
 
         Parameters
         ----------
         file : AudioFile
             Processed file.
+        hook : callable, optional
+            Hook called after each major step of the pipeline with the following
+            signature: hook("step_name", step_artefact, file=file)
 
         Returns
         -------
-        speech : `pyannote.core.Annotation`
+        speech : Annotation
             Speech regions.
         """
 
-        if self.training:
-            if self.CACHED_ACTIVATIONS not in file:
-                file[self.CACHED_ACTIVATIONS] = self.segmentation_inference_(file)
-        else:
-            file[self.CACHED_ACTIVATIONS] = self.segmentation_inference_(file)
+        # setup hook (e.g. for debugging purposes)
+        hook = self.setup_hook(file, hook=hook)
 
-        speech: Annotation = self._binarize(file[self.CACHED_ACTIVATIONS])
+        # apply segmentation model (only if needed)
+        # output shape is (num_chunks, num_frames, 1)
+        if self.training:
+            if self.CACHED_SEGMENTATION in file:
+                segmentations = file[self.CACHED_SEGMENTATION]
+            else:
+                segmentations = self._segmentation(file)
+                file[self.CACHED_SEGMENTATION] = segmentations
+        else:
+            segmentations: SlidingWindowFeature = self._segmentation(file)
+
+        hook("segmentation", segmentations)
+
+        speech: Annotation = self._binarize(segmentations)
         speech.uri = file["uri"]
         return speech.rename_labels({label: "SPEECH" for label in speech.labels()})
 

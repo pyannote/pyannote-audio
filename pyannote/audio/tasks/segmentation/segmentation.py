@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020-2021 CNRS
+# Copyright (c) 2020- CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -21,17 +21,24 @@
 # SOFTWARE.
 
 from collections import Counter
-from typing import Optional, Text, Tuple, Union
+from typing import Dict, Optional, Sequence, Text, Tuple, Union
 
 import numpy as np
 import torch
 from pyannote.core import SlidingWindow
 from pyannote.database import Protocol
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
+from torchmetrics import Metric
 from typing_extensions import Literal
 
 from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
+from pyannote.audio.torchmetrics import (
+    DiarizationErrorRate,
+    FalseAlarmRate,
+    MissedDetectionRate,
+    SpeakerConfusionRate,
+)
 from pyannote.audio.utils.loss import binary_cross_entropy, mse_loss
 from pyannote.audio.utils.permutation import permutate
 
@@ -80,8 +87,13 @@ class Segmentation(SegmentationTaskMixin, Task):
     augmentation : BaseWaveformTransform, optional
         torch_audiomentations waveform transform, used by dataloader
         during training.
+    loss : {"bce", "mse"}, optional
+        Permutation-invariant segmentation loss. Defaults to "bce".
     vad_loss : {"bce", "mse"}, optional
         Add voice activity detection loss.
+    metric : optional
+        Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
+        Defaults to AUROC (area under the ROC curve).
 
     Reference
     ----------
@@ -89,8 +101,6 @@ class Segmentation(SegmentationTaskMixin, Task):
     "End-To-End Speaker Segmentation for Overlap-Aware Resegmentation."
     Proc. Interspeech 2021
     """
-
-    ACRONYM = "seg"
 
     OVERLAP_DEFAULTS = {"probability": 0.5, "snr_min": 0.0, "snr_max": 10.0}
 
@@ -109,6 +119,7 @@ class Segmentation(SegmentationTaskMixin, Task):
         augmentation: BaseWaveformTransform = None,
         loss: Literal["bce", "mse"] = "bce",
         vad_loss: Literal["bce", "mse"] = None,
+        metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
     ):
 
         super().__init__(
@@ -119,6 +130,7 @@ class Segmentation(SegmentationTaskMixin, Task):
             num_workers=num_workers,
             pin_memory=pin_memory,
             augmentation=augmentation,
+            metric=metric,
         )
 
         self.max_num_speakers = max_num_speakers
@@ -341,7 +353,7 @@ class Segmentation(SegmentationTaskMixin, Task):
         seg_loss = self.segmentation_loss(permutated_prediction, target, weight=weight)
 
         self.model.log(
-            f"{self.ACRONYM}@train_seg_loss",
+            f"{self.logging_prefix}TrainSegLoss",
             seg_loss,
             on_step=False,
             on_epoch=True,
@@ -358,7 +370,7 @@ class Segmentation(SegmentationTaskMixin, Task):
             )
 
             self.model.log(
-                f"{self.ACRONYM}@train_vad_loss",
+                f"{self.logging_prefix}TrainVADLoss",
                 vad_loss,
                 on_step=False,
                 on_epoch=True,
@@ -369,18 +381,26 @@ class Segmentation(SegmentationTaskMixin, Task):
         loss = seg_loss + vad_loss
 
         self.model.log(
-            f"{self.ACRONYM}@train_loss",
+            f"{self.logging_prefix}TrainLoss",
             loss,
             on_step=False,
             on_epoch=True,
             prog_bar=True,
             logger=True,
         )
+
         return {"loss": loss}
 
-    def validation_postprocess(self, y, y_pred):
-        permutated_y_pred, _ = permutate(y, y_pred)
-        return permutated_y_pred
+    def default_metric(
+        self,
+    ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
+        """Returns diarization error rate and its components"""
+        return [
+            DiarizationErrorRate(),
+            SpeakerConfusionRate(),
+            MissedDetectionRate(),
+            FalseAlarmRate(),
+        ]
 
 
 def main(protocol: str, subset: str = "test", model: str = "pyannote/segmentation"):

@@ -27,19 +27,18 @@ from typing import Optional
 import hydra
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
+
+# from pyannote.audio.core.callback import GraduallyUnfreeze
+from pyannote.database import FileFinder, get_protocol
 from pytorch_lightning.callbacks import (
     EarlyStopping,
     LearningRateMonitor,
     ModelCheckpoint,
     RichProgressBar,
 )
-
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.utilities.seed import seed_everything
 from torch_audiomentations.utils.config import from_dict as get_augmentation
-
-# from pyannote.audio.core.callback import GraduallyUnfreeze
-from pyannote.database import FileFinder, get_protocol
 
 
 @hydra.main(config_path="train_config", config_name="config")
@@ -67,14 +66,14 @@ def train(cfg: DictConfig) -> Optional[float]:
     # instantiate task and validation metric
     task = instantiate(cfg.task, protocol, augmentation=augmentation)
 
-    # validation metric to monitor (and its direction: min or max)
-    monitor, direction = task.val_monitor
-
     # instantiate model
     fine_tuning = cfg.model["_target_"] == "pyannote.audio.cli.pretrained"
     model = instantiate(cfg.model)
     model.task = task
     model.setup(stage="fit")
+
+    # validation metric to monitor (and its direction: min or max)
+    monitor, direction = task.val_monitor
 
     # number of batches in one epoch
     num_batches_per_epoch = model.task.train__len__() // model.task.batch_size
@@ -90,6 +89,7 @@ def train(cfg: DictConfig) -> Optional[float]:
             num_batches_per_epoch=num_batches_per_epoch,
         )
         return {"optimizer": optimizer, "lr_scheduler": lr_scheduler}
+
     model.configure_optimizers = MethodType(configure_optimizers, model)
 
     callbacks = [RichProgressBar(), LearningRateMonitor()]
@@ -155,4 +155,3 @@ def train(cfg: DictConfig) -> Optional[float]:
 
 if __name__ == "__main__":
     train()
-
