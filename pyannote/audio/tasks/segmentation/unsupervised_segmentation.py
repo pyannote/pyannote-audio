@@ -17,6 +17,9 @@ from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task, ValDataset
 from pyannote.audio.tasks import Segmentation
+from pyannote.audio.torchmetrics.functional.audio.diarization_error_rate import (
+    diarization_error_rate,
+)
 
 
 class PseudoLabelPostprocess:
@@ -185,6 +188,58 @@ class UnsupervisedSegmentation(Segmentation, Task):
             )
         else:
             return None
+
+
+def _compute_ders(
+    pseudo_y: torch.Tensor, y: torch.Tensor, x: torch.Tensor
+) -> Tuple[torch.Tensor]:
+    batch_size = pseudo_y.shape[0]
+    ders = torch.zeros(batch_size)
+
+    tm_pseudo_y = pseudo_y.swapaxes(1, 2)
+    tm_true_y = y.swapaxes(1, 2)
+    for i in range(batch_size):
+        ders[i] = diarization_error_rate(
+            tm_pseudo_y[i][None, :, :], tm_true_y[i][None, :, :]
+        )
+
+    return ders
+
+
+class DiscardPercentDer(PseudoLabelPostprocess):
+    def __init__(self, ratio_to_discard: float = 0.1) -> None:
+        self.ratio_to_discard = ratio_to_discard
+
+    def process(
+        self, pseudo_y: torch.Tensor, y: torch.Tensor, x: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        batch_size = pseudo_y.shape[0]
+        ders = _compute_ders(pseudo_y, y, x)
+        sorted_ders, sorted_indices = torch.sort(ders)
+
+        to_discard_count = min(
+            batch_size, max(1, round(batch_size * self.ratio_to_discard))
+        )
+        pseudo_y = pseudo_y[sorted_indices][:-to_discard_count, :, :]
+        x = x[sorted_indices][:-to_discard_count, :, :]
+
+        return pseudo_y, x
+
+
+class DiscardThresholdDer(PseudoLabelPostprocess):
+    def __init__(self, threshold: float = 0.5) -> None:
+        self.threshold = threshold
+
+    def process(
+        self, pseudo_y: torch.Tensor, y: torch.Tensor, x: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        ders = _compute_ders(pseudo_y, y, x)
+
+        filter = torch.where(ders < self.threshold)
+        pseudo_y = pseudo_y[filter]
+        x = x[filter]
+
+        return pseudo_y, x
 
 
 class TeacherUpdate(Callback):
