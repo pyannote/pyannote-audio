@@ -75,11 +75,16 @@ class UnsupervisedSegmentation(Segmentation, Task):
             result = torch.round(result).type(torch.int8)
         return result
 
+    def use_pseudolabels(self, stage: Literal["train", "val"]):
+        return (stage == "train" and self.fake_in_train) or (
+            stage == "val" and self.fake_in_val
+        )
+
     def collate_fn(self, batch):
         collated_batch = default_collate(batch)
 
         # Generate annotations y with teacher if they are not provided
-        if "y" not in collated_batch:
+        if self.use_pseudolabels("train"):
             teacher_input = collated_batch["X"]
             if self.augmentation_model is not None:
                 teacher_input = self.augmentation_model(
@@ -97,7 +102,7 @@ class UnsupervisedSegmentation(Segmentation, Task):
         collated_batch = default_collate(batch)
 
         # Generate annotations y with teacher if they are not provided
-        if "y" not in collated_batch:
+        if self.use_pseudolabels("val"):
             teacher_input = collated_batch["X"]
             collated_batch["y"] = self.get_model_output(self.teacher, teacher_input)
 
@@ -134,11 +139,8 @@ class UnsupervisedSegmentation(Segmentation, Task):
             ...
         """
 
-        use_annotations = (stage == "train" and not self.fake_in_train) or (
-            stage == "val" and not self.fake_in_val
-        )
         sample = super().prepare_chunk(
-            file, chunk, duration=duration, stage=stage, use_annotations=use_annotations
+            file, chunk, duration=duration, stage=stage, use_annotations=True
         )
         return sample
 
