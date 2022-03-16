@@ -278,8 +278,9 @@ class Task(pl.LightningDataModule):
         prefix = f"{self.__class__.__name__}-"
         if hasattr(self.protocol, "name"):
             # "." has a special meaning for pytorch-lightning checkpointing
-            # so we replace any encountered "." by "_" in protocol names
-            prefix += f"{self.protocol.name.replace('.', '_')}-"
+            # so we remove dots from protocol names
+            name_without_dots = "".join(self.protocol.name.split("."))
+            prefix += f"{name_without_dots}-"
 
         return prefix
 
@@ -372,7 +373,7 @@ class Task(pl.LightningDataModule):
         # compute loss
         loss = self.default_loss(self.specifications, y, y_pred, weight=weight)
         self.model.log(
-            f"{self.logging_prefix}{stage}-loss",
+            f"{self.logging_prefix}{stage.capitalize()}Loss",
             loss,
             on_step=False,
             on_epoch=True,

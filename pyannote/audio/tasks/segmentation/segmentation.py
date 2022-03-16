@@ -353,7 +353,7 @@ class Segmentation(SegmentationTaskMixin, Task):
         seg_loss = self.segmentation_loss(permutated_prediction, target, weight=weight)
 
         self.model.log(
-            f"{self.logging_prefix}train-loss-seg",
+            f"{self.logging_prefix}TrainSegLoss",
             seg_loss,
             on_step=False,
             on_epoch=True,
@@ -370,7 +370,7 @@ class Segmentation(SegmentationTaskMixin, Task):
             )
 
             self.model.log(
-                f"{self.logging_prefix}train-loss-vad",
+                f"{self.logging_prefix}TrainVADLoss",
                 vad_loss,
                 on_step=False,
                 on_epoch=True,
@@ -381,7 +381,7 @@ class Segmentation(SegmentationTaskMixin, Task):
         loss = seg_loss + vad_loss
 
         self.model.log(
-            f"{self.logging_prefix}train-loss",
+            f"{self.logging_prefix}TrainLoss",
             loss,
             on_step=False,
             on_epoch=True,
