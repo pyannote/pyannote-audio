@@ -19,6 +19,13 @@ from pyannote.audio.core.task import Task, ValDataset
 from pyannote.audio.tasks import Segmentation
 
 
+class PseudoLabelPostprocess:
+    def process(
+        self, pseudo_y: torch.Tensor, y: torch.Tensor, x: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        raise NotImplementedError()
+
+
 class UnsupervisedSegmentation(Segmentation, Task):
     def __init__(
         self,
@@ -27,6 +34,9 @@ class UnsupervisedSegmentation(Segmentation, Task):
         fake_in_train=True,  # generate fake truth in training mode
         fake_in_val=True,  # generate fake truth in val mode
         augmentation_model: BaseWaveformTransform = None,
+        pl_postprocess: Union[
+            PseudoLabelPostprocess, List[PseudoLabelPostprocess]
+        ] = None,
         # supervised params
         duration: float = 2.0,
         max_num_speakers: int = None,
@@ -66,6 +76,11 @@ class UnsupervisedSegmentation(Segmentation, Task):
         self.fake_in_val = fake_in_val
         self.augmentation_model = augmentation_model
 
+        if isinstance(pl_postprocess, PseudoLabelPostprocess):
+            self.pl_postprocess = [pl_postprocess]
+        else:
+            self.pl_postprocess = pl_postprocess
+
         self.teacher.eval()
 
     def get_model_output(self, model: Model, waveforms: torch.Tensor):
@@ -88,12 +103,23 @@ class UnsupervisedSegmentation(Segmentation, Task):
 
         # Generate annotations y with teacher if they are not provided
         if self.use_pseudolabels("train"):
-            teacher_input = collated_batch["X"]
+            x = collated_batch["X"]
+            teacher_input = x
             if self.augmentation_model is not None:
                 teacher_input = self.augmentation_model(
                     collated_batch["X"], sample_rate=self.model.hparams.sample_rate
                 )
-            collated_batch["y"] = self.get_model_output(self.teacher, teacher_input)
+            pseudo_y = self.get_model_output(self.teacher, teacher_input)
+
+            y = None
+            if "y" in collated_batch:
+                y = collated_batch["y"]
+            if self.pl_postprocess is not None:
+                for pp in self.pl_postprocess:
+                    pseudo_y, x = pp.process(pseudo_y, y, x)
+
+            collated_batch["y"] = pseudo_y
+            collated_batch["X"] = x
 
         if self.augmentation is not None:
             collated_batch["X"] = self.augmentation(
