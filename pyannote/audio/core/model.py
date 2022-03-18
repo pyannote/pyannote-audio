@@ -34,6 +34,7 @@ import torch
 import torch.nn as nn
 import torch.optim
 from huggingface_hub import cached_download, hf_hub_url
+from pyannote.core import SlidingWindow
 from pytorch_lightning.utilities.cloud_io import load as pl_load
 from pytorch_lightning.utilities.model_summary import ModelSummary
 from semver import VersionInfo
@@ -42,7 +43,6 @@ from torch.utils.data import DataLoader
 from pyannote.audio import __version__
 from pyannote.audio.core.io import Audio
 from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
-from pyannote.core import SlidingWindow
 
 CACHE_DIR = os.getenv(
     "PYANNOTE_CACHE",
@@ -385,7 +385,7 @@ class Model(pl.LightningModule):
             # setup custom loss function
             self.task.setup_loss_func()
             # setup custom validation metrics
-            validation_metric = self.task.setup_validation_metric()
+            validation_metric = self.task.metric
             if validation_metric is not None:
                 self.validation_metric = validation_metric
                 self.validation_metric.to(self.device)
