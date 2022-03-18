@@ -34,12 +34,10 @@ from pathlib import Path
 from typing import Mapping, Optional, Text, Tuple, Union
 
 import numpy as np
-import torch
 import torch.nn.functional as F
 import torchaudio
-from torch import Tensor
-
 from pyannote.core import Segment
+from torch import Tensor
 
 torchaudio.set_audio_backend("soundfile")
 
@@ -159,7 +157,7 @@ class Audio:
                 raise ValueError(f"File {path} does not exist")
 
             file.setdefault("uri", path.stem)
-        
+
         else:
 
             raise ValueError(
@@ -198,7 +196,9 @@ class Audio:
 
         # resample
         if (self.sample_rate is not None) and (self.sample_rate != sample_rate):
-            waveform = torchaudio.functional.resample(waveform, sample_rate, self.sample_rate)
+            waveform = torchaudio.functional.resample(
+                waveform, sample_rate, self.sample_rate
+            )
             sample_rate = self.sample_rate
 
         return waveform, sample_rate
@@ -220,14 +220,28 @@ class Audio:
         file = self.validate_file(file)
 
         if "waveform" in file:
-            return len(file["waveform"].T / file["sample_rate"])
+            frames = len(file["waveform"].T)
+            sample_rate = file["sample_rate"]
 
-        info = torchaudio.info(file["audio"])
+        elif "torchaudio.info" in file:
+            frames = file["torchaudio.info"]["frames"]
+            sample_rate = file["torchaudio.info"]["sample_rate"]
 
-        if isinstance(file["audio"], IOBase):
-            file["audio"].seek(0)
+        else:
+            info = torchaudio.info(file["audio"])
 
-        return info.num_frames / info.sample_rate
+            # rewind if needed
+            if isinstance(file["audio"], IOBase):
+                file["audio"].seek(0)
+
+            sample_rate = info.sample_rate
+            frames = info.num_frames
+
+            # cache output of torchaudio.info (useful to speed future random access
+            # to this file, e.g. in dataloaders using Audio.crop a lot...)
+            file["torchaudio.info"] = {"sample_rate": sample_rate, "frames": frames}
+
+        return frames / sample_rate
 
     def __call__(self, file: AudioFile) -> Tuple[Tensor, int]:
         """Obtain waveform
@@ -303,13 +317,24 @@ class Audio:
             sample_rate = file["sample_rate"]
             frames = waveform.shape[1]
 
+        elif "torchaudio.info" in file:
+            info = file["torchaudio.info"]
+            sample_rate = info["sample_rate"]
+            frames = info["frames"]
+
         else:
             info = torchaudio.info(file["audio"])
+
+            # rewind if needed
+            if isinstance(file["audio"], IOBase):
+                file["audio"].seek(0)
+
             sample_rate = info.sample_rate
             frames = info.num_frames
 
-            if isinstance(file["audio"], IOBase):
-                file["audio"].seek(0)
+            # cache output of torchaudio.info (useful to speed future random access
+            # to this file, e.g. in dataloaders using Audio.crop a lot...)
+            file["torchaudio.info"] = {"sample_rate": sample_rate, "frames": frames}
 
         channel = file.get("channel", None)
 
