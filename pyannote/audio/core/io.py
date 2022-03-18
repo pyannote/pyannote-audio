@@ -220,7 +220,7 @@ class Audio:
         file = self.validate_file(file)
 
         if "waveform" in file:
-            return len(file["waveform"].T / file["sample_rate"])
+            return len(file["waveform"].T) / file["sample_rate"]
 
         info = torchaudio.info(file["audio"])
 
