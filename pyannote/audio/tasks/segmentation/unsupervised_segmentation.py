@@ -260,6 +260,7 @@ class TeacherUpdate(Callback):
 
     def enqueue_teacher(self, teacher: OrderedDict[str, torch.Tensor]):
         if len(self.last_weights) >= self.average_of:
+            self.last_weights.pop(0)
             self.last_weights.append(teacher)
 
     def get_updated_weights(
