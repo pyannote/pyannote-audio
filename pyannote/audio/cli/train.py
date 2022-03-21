@@ -40,6 +40,8 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.utilities.seed import seed_everything
 from torch_audiomentations.utils.config import from_dict as get_augmentation
 
+from pyannote.audio.core.io import get_torchaudio_info
+
 
 @hydra.main(config_path="train_config", config_name="config")
 def train(cfg: DictConfig) -> Optional[float]:
@@ -50,7 +52,7 @@ def train(cfg: DictConfig) -> Optional[float]:
     seed_everything(seed=seed)
 
     # instantiate training protocol with optional preprocessors
-    preprocessors = {"audio": FileFinder()}
+    preprocessors = {"audio": FileFinder(), "torchaudio.info": get_torchaudio_info}
     if "preprocessor" in cfg:
         preprocessor = instantiate(cfg.preprocessor)
         preprocessors[preprocessor.preprocessed_key] = preprocessor
