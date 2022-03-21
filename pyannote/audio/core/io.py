@@ -56,6 +56,22 @@ integer to load a specific channel: {"audio": "stereo.wav", "channel": 0}
 """
 
 
+def get_torchaudio_info(file: AudioFile):
+    """Protocol preprocessor used to cache output of torchaudio.info
+
+    This is useful to speed future random access to this file, e.g.
+    in dataloaders using Audio.crop a lot....
+    """
+
+    info = torchaudio.info(file["audio"])
+
+    # rewind if needed
+    if isinstance(file["audio"], IOBase):
+        file["audio"].seek(0)
+
+    return info
+
+
 class Audio:
     """Audio IO
 
@@ -223,23 +239,14 @@ class Audio:
             frames = len(file["waveform"].T)
             sample_rate = file["sample_rate"]
 
-        elif "torchaudio.info" in file:
-            frames = file["torchaudio.info"]["frames"]
-            sample_rate = file["torchaudio.info"]["sample_rate"]
-
         else:
-            info = torchaudio.info(file["audio"])
+            if "torchaudio.info" in file:
+                info = file["torchaudio.info"]
+            else:
+                info = get_torchaudio_info(file)
 
-            # rewind if needed
-            if isinstance(file["audio"], IOBase):
-                file["audio"].seek(0)
-
-            sample_rate = info.sample_rate
             frames = info.num_frames
-
-            # cache output of torchaudio.info (useful to speed future random access
-            # to this file, e.g. in dataloaders using Audio.crop a lot...)
-            file["torchaudio.info"] = {"sample_rate": sample_rate, "frames": frames}
+            sample_rate = info.sample_rate
 
         return frames / sample_rate
 
@@ -314,27 +321,18 @@ class Audio:
 
         if "waveform" in file:
             waveform = file["waveform"]
-            sample_rate = file["sample_rate"]
             frames = waveform.shape[1]
+            sample_rate = file["sample_rate"]
 
         elif "torchaudio.info" in file:
             info = file["torchaudio.info"]
-            sample_rate = info["sample_rate"]
-            frames = info["frames"]
+            frames = info.num_frames
+            sample_rate = info.sample_rate
 
         else:
-            info = torchaudio.info(file["audio"])
-
-            # rewind if needed
-            if isinstance(file["audio"], IOBase):
-                file["audio"].seek(0)
-
-            sample_rate = info.sample_rate
+            info = get_torchaudio_info(file)
             frames = info.num_frames
-
-            # cache output of torchaudio.info (useful to speed future random access
-            # to this file, e.g. in dataloaders using Audio.crop a lot...)
-            file["torchaudio.info"] = {"sample_rate": sample_rate, "frames": frames}
+            sample_rate = info.sample_rate
 
         channel = file.get("channel", None)
 
