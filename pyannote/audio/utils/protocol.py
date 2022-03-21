@@ -21,8 +21,6 @@
 # SOFTWARE.
 
 
-import warnings
-
 from pyannote.database import FileFinder, Protocol, get_annotated
 from pyannote.database.protocol import SpeakerVerificationProtocol
 
@@ -84,7 +82,7 @@ def check_protocol(protocol: Protocol) -> Protocol:
                     f"adding an 'audio' preprocessor for you. See pyannote.database documentation "
                     f"on how to do that yourself."
                 )
-                warnings.warn(msg)
+                print(msg)
 
     if "waveform" not in file and "torchaudio.info" not in file:
 
@@ -94,7 +92,7 @@ def check_protocol(protocol: Protocol) -> Protocol:
             f"adding a 'torchaudio.info' preprocessor for you to speed up dataloaders. "
             f"See pyannote.database documentation on how to do that yourself."
         )
-        warnings.warn(msg)
+        print(msg)
 
     if "annotated" not in file:
 
@@ -108,7 +106,7 @@ def check_protocol(protocol: Protocol) -> Protocol:
             f"adding an 'annotated' preprocessor for you. See pyannote.database documentation "
             f"on how to do that yourself."
         )
-        warnings.warn(msg)
+        print(msg)
 
     # does protocol define a validation set?
     if isinstance(protocol, SpeakerVerificationProtocol):
