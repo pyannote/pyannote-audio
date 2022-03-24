@@ -1,8 +1,30 @@
-import warnings
+# MIT License
+#
+# Copyright (c) 2020- CNRS
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
 
-from pyannote.audio.core.io import Audio
+
 from pyannote.database import FileFinder, Protocol, get_annotated
 from pyannote.database.protocol import SpeakerVerificationProtocol
+
+from pyannote.audio.core.io import Audio, get_torchaudio_info
 
 get_duration = Audio().get_duration
 
@@ -35,14 +57,18 @@ def check_protocol(protocol: Protocol) -> Protocol:
 
     # does protocol provide audio keys?
     if "audio" not in file:
+
         if "waveform" in file:
             if "sample_rate" not in file:
                 msg = f'Protocol {protocol.name} provides audio with "waveform" key but is missing a "sample_rate" key.'
                 raise ValueError(msg)
+
         else:
+
             file_finder = FileFinder()
             try:
                 _ = file_finder(file)
+
             except (KeyError, FileNotFoundError):
                 msg = (
                     f"Protocol {protocol.name} does not provide the path to audio files. "
@@ -56,7 +82,17 @@ def check_protocol(protocol: Protocol) -> Protocol:
                     f"adding an 'audio' preprocessor for you. See pyannote.database documentation "
                     f"on how to do that yourself."
                 )
-                warnings.warn(msg)
+                print(msg)
+
+    if "waveform" not in file and "torchaudio.info" not in file:
+
+        protocol.preprocessors["torchaudio.info"] = get_torchaudio_info
+        msg = (
+            f"Protocol {protocol.name} does not precompute the output of torchaudio.info(): "
+            f"adding a 'torchaudio.info' preprocessor for you to speed up dataloaders. "
+            f"See pyannote.database documentation on how to do that yourself."
+        )
+        print(msg)
 
     if "annotated" not in file:
 
@@ -70,7 +106,7 @@ def check_protocol(protocol: Protocol) -> Protocol:
             f"adding an 'annotated' preprocessor for you. See pyannote.database documentation "
             f"on how to do that yourself."
         )
-        warnings.warn(msg)
+        print(msg)
 
     # does protocol define a validation set?
     if isinstance(protocol, SpeakerVerificationProtocol):
