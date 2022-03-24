@@ -89,13 +89,6 @@ class DeriveMetaLabels:
         intersections: Optional[Dict[str, List[str]]] = None,
     ):
         self.classes: Set[str] = set(classes)
-        if unions is not None:
-            assert set(chain.from_iterable(unions.values())).issubset(set(classes))
-
-        if intersections is not None:
-            assert set(chain.from_iterable(intersections.values())).issubset(
-                set(classes)
-            )
         self.unions = unions if unions is not None else dict()
         self.intersections = intersections if intersections is not None else dict()
 
@@ -110,7 +103,7 @@ class DeriveMetaLabels:
         )
 
     def __call__(self, current_file: ProtocolFile) -> Annotation:
-        annotation = current_file["annotation"]
+        annotation: Annotation = current_file["annotation"]
         derived = annotation.subset(self.classes)
         # Adding union labels
         for union_label, subclasses in self.unions.items():
@@ -123,9 +116,13 @@ class DeriveMetaLabels:
 
         # adding intersection labels
         for intersect_label, subclasses in self.intersections.items():
+            # a bit trickier: for each intersection meta-class's subclass,
+            # we retrieve its timeline
             subclasses_tl = [
                 annotation.label_timeline(subclass) for subclass in subclasses
             ]
+            # then we iteratively re-crop each of the timelines one onto
+            # the other
             overlap_tl = reduce(lambda x, y: x.crop(y), subclasses_tl)
             for seg in overlap_tl:
                 derived[seg] = intersect_label
