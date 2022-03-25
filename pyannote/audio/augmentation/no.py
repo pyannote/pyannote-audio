@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020 CNRS
+# Copyright (c) 2020- CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -21,6 +21,20 @@
 # SOFTWARE.
 
 
-from .no import NoAugmentation
+from typing import Optional
 
-__all__ = ["NoAugmentation"]
+from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
+
+
+class NoAugmentation(BaseWaveformTransform):
+    def apply_transform(
+        self,
+        selected_samples,
+        sample_rate: Optional[int] = None,
+        targets=None,
+        target_rate: Optional[int] = None,
+    ):
+        if targets is None:
+            return selected_samples
+        else:
+            return selected_samples, targets
