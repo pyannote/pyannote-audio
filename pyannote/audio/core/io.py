@@ -34,12 +34,10 @@ from pathlib import Path
 from typing import Mapping, Optional, Text, Tuple, Union
 
 import numpy as np
-import torch
 import torch.nn.functional as F
 import torchaudio
-from torch import Tensor
-
 from pyannote.core import Segment
+from torch import Tensor
 
 torchaudio.set_audio_backend("soundfile")
 
@@ -88,17 +86,16 @@ class Audio:
 
         Parameters
         ----------
-        waveform : (channel, time) Tensor
-            Single or multichannel waveform
-
+        waveform : (..., time) Tensor
+            Waveform(s)
 
         Returns
         -------
-        waveform: (channel, time) Tensor
-            Power-normalized waveform
+        waveform: (..., time) Tensor
+            Power-normalized waveform(s)
         """
-        rms = waveform.square().mean(dim=1).sqrt()
-        return (waveform.t() / (rms + 1e-8)).t()
+        rms = waveform.square().mean(dim=-1, keepdim=True).sqrt()
+        return waveform / (rms + 1e-8)
 
     @staticmethod
     def validate_file(file: AudioFile) -> Mapping:
@@ -159,7 +156,7 @@ class Audio:
                 raise ValueError(f"File {path} does not exist")
 
             file.setdefault("uri", path.stem)
-        
+
         else:
 
             raise ValueError(
@@ -198,7 +195,9 @@ class Audio:
 
         # resample
         if (self.sample_rate is not None) and (self.sample_rate != sample_rate):
-            waveform = torchaudio.functional.resample(waveform, sample_rate, self.sample_rate)
+            waveform = torchaudio.functional.resample(
+                waveform, sample_rate, self.sample_rate
+            )
             sample_rate = self.sample_rate
 
         return waveform, sample_rate
