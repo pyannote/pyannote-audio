@@ -42,6 +42,7 @@ class UnsupervisedSegmentation(Segmentation, Task):
         pl_postprocess: Union[
             PseudoLabelPostprocess, List[PseudoLabelPostprocess]
         ] = None,
+        pl_fw_passes: int = 1,  # how many forward passes to average to get the pseudolabels
         # supervised params
         duration: float = 2.0,
         max_num_speakers: int = None,
@@ -80,6 +81,12 @@ class UnsupervisedSegmentation(Segmentation, Task):
         self.fake_in_train = fake_in_train
         self.fake_in_val = fake_in_val
         self.augmentation_model = augmentation_model
+        self.pl_fw_passes = pl_fw_passes
+
+        if pl_fw_passes > 1 and augmentation_model is None:
+            raise ValueError(
+                "There is no reason to do multiple forward passes to generate pseudolabels if there is no augmentation applied to the input."
+            )
 
         if isinstance(pl_postprocess, PseudoLabelPostprocess):
             self.pl_postprocess = [pl_postprocess]
@@ -88,15 +95,27 @@ class UnsupervisedSegmentation(Segmentation, Task):
 
         self.teacher.eval()
 
-    def get_model_output(self, model: Model, waveforms: torch.Tensor):
-        result = None
-        # try inference mode ?
+    def get_teacher_output(
+        self, x: torch.Tensor, aug: BaseWaveformTransform, fw_passes: int = 1
+    ):
+        out_fw_passes = []
         with torch.no_grad():  # grad causes problems when crossing process boundaries
-            result = model(
-                waveforms=waveforms
-            ).detach()  # detach is necessary to avoid memory leaks
-            result = torch.round(result).type(torch.int8)
-        return result
+            for i in range(fw_passes):
+                teacher_input = x
+
+                if aug is not None:
+                    teacher_input = aug(
+                        teacher_input, sample_rate=self.model.hparams.sample_rate
+                    )
+
+                    # detach is necessary to avoid memory leaks
+                    pl = self.teacher(waveforms=x).detach()
+                out_fw_passes.append(pl)
+
+            out = torch.mean(torch.stack(out_fw_passes), dim=0)
+            out = torch.round(out).type(torch.int8)
+
+        return out
 
     def use_pseudolabels(self, stage: Literal["train", "val"]):
         return (stage == "train" and self.fake_in_train) or (
@@ -109,12 +128,10 @@ class UnsupervisedSegmentation(Segmentation, Task):
         # Generate annotations y with teacher if they are not provided
         if self.use_pseudolabels("train"):
             x = collated_batch["X"]
-            teacher_input = x
-            if self.augmentation_model is not None:
-                teacher_input = self.augmentation_model(
-                    collated_batch["X"], sample_rate=self.model.hparams.sample_rate
-                )
-            pseudo_y = self.get_model_output(self.teacher, teacher_input)
+
+            pseudo_y = self.get_teacher_output(
+                x=x, aug=self.augmentation_model, fw_passes=self.pl_fw_passes
+            )
 
             y = None
             if "y" in collated_batch:
@@ -138,7 +155,8 @@ class UnsupervisedSegmentation(Segmentation, Task):
         # Generate annotations y with teacher if they are not provided
         if self.use_pseudolabels("val"):
             teacher_input = collated_batch["X"]
-            collated_batch["y"] = self.get_model_output(self.teacher, teacher_input)
+            collated_batch["y"] = self.get_teacher_output(x=teacher_input)
+            collated_batch = torch.round(collated_batch).type(torch.int8)
 
         return collated_batch
 
