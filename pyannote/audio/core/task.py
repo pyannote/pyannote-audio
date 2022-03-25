@@ -45,6 +45,7 @@ from torch_audiomentations.core.transforms_interface import BaseWaveformTransfor
 from torchmetrics import Metric, MetricCollection
 from typing_extensions import Literal
 
+from pyannote.audio.augmentation import NoAugmentation
 from pyannote.audio.utils.loss import binary_cross_entropy, nll_loss
 from pyannote.audio.utils.protocol import check_protocol
 
@@ -212,7 +213,7 @@ class Task(pl.LightningDataModule):
 
         self.num_workers = num_workers
         self.pin_memory = pin_memory
-        self.augmentation = augmentation
+        self.augmentation = augmentation or NoAugmentation()
         self._metric = metric
 
     def prepare_data(self):
