@@ -30,6 +30,8 @@ class PseudoLabelPostprocess:
 
 
 class UnsupervisedSegmentation(Segmentation, Task):
+    OVERLAP_DEFAULTS = {"probability": 0.0, "snr_min": 0.0, "snr_max": 10.0}
+
     def __init__(
         self,
         model: Model,  # unsupervised param: model to use to generate truth
@@ -44,7 +46,7 @@ class UnsupervisedSegmentation(Segmentation, Task):
         duration: float = 2.0,
         max_num_speakers: int = None,
         warm_up: Union[float, Tuple[float, float]] = 0.0,
-        overlap: dict = Segmentation.OVERLAP_DEFAULTS,
+        overlap: dict = OVERLAP_DEFAULTS,
         balance: Text = None,
         weight: Text = None,
         batch_size: int = 32,
