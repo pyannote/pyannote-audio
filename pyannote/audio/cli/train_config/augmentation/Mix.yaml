@@ -1,0 +1,8 @@
+# @package _group_
+transform: Mix
+params:
+    min_snr_in_db: 0.
+    max_snr_in_db: 10.
+    mix_target: union
+    mode: per_example
+    p: 0.5

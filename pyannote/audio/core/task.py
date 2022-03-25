@@ -23,6 +23,8 @@
 
 from __future__ import annotations
 
+from functools import partial
+
 try:
     from functools import cached_property
 except ImportError:
@@ -40,7 +42,6 @@ import pytorch_lightning as pl
 import torch
 from pyannote.database import Protocol
 from torch.utils.data import DataLoader, Dataset, IterableDataset
-from torch.utils.data._utils.collate import default_collate
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchmetrics import Metric, MetricCollection
 from typing_extensions import Literal
@@ -255,13 +256,9 @@ class Task(pl.LightningDataModule):
         msg = f"Missing '{self.__class__.__name__}.train__len__' method."
         raise NotImplementedError(msg)
 
-    def collate_fn(self, batch):
-        collated_batch = default_collate(batch)
-        if self.augmentation is not None:
-            collated_batch["X"] = self.augmentation(
-                collated_batch["X"], sample_rate=self.model.hparams.sample_rate
-            )
-        return collated_batch
+    def collate_fn(self, batch, stage="train"):
+        msg = f"Missing '{self.__class__.__name__}.collate_fn' method."
+        raise NotImplementedError(msg)
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(
@@ -270,7 +267,7 @@ class Task(pl.LightningDataModule):
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
             drop_last=True,
-            collate_fn=self.collate_fn,
+            collate_fn=partial(self.collate_fn, stage="train"),
         )
 
     @cached_property
@@ -406,6 +403,7 @@ class Task(pl.LightningDataModule):
                 num_workers=self.num_workers,
                 pin_memory=self.pin_memory,
                 drop_last=False,
+                collate_fn=partial(self.collate_fn, stage="val"),
             )
         else:
             return None

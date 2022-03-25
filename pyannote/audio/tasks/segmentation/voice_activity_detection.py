@@ -22,7 +22,7 @@
 
 from typing import Dict, Sequence, Text, Tuple, Union
 
-import numpy as np
+import torch
 from pyannote.database import Protocol
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchmetrics import Metric
@@ -113,19 +113,20 @@ class VoiceActivityDetection(SegmentationTaskMixin, Task):
             ],
         )
 
-    def prepare_y(self, one_hot_y: np.ndarray) -> np.ndarray:
+    def adapt_y(self, collated_y: torch.Tensor) -> torch.Tensor:
         """Get voice activity detection targets
 
         Parameters
         ----------
-        one_hot_y : (num_frames, num_speakers) np.ndarray
+        collated_y : (batch_size, num_frames, num_speakers) tensor
             One-hot-encoding of current chunk speaker activity:
-                * one_hot_y[t, k] = 1 if kth speaker is active at tth frame
-                * one_hot_y[t, k] = 0 otherwise.
+                * one_hot_y[b, f, s] = 1 if sth speaker is active at fth frame
+                * one_hot_y[b, f, s] = 0 otherwise.
 
         Returns
         -------
-        y : (num_frames, ) np.ndarray
-            y[t] = 1 if at least one speaker is active at tth frame, 0 otherwise.
+        y : (batch_size, num_frames, ) tensor
+            y[b, f] = 1 if at least one speaker is active at fth frame, 0 otherwise.
         """
-        return np.int64(np.sum(one_hot_y, axis=1) > 0)
+
+        return 1 * (torch.sum(collated_y, dim=2, keepdims=False) > 0)
