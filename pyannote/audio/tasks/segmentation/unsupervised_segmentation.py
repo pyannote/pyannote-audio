@@ -24,7 +24,7 @@ from pyannote.audio.torchmetrics.functional.audio.diarization_error_rate import 
 
 class PseudoLabelPostprocess:
     def process(
-        self, pseudo_y: torch.Tensor, y: torch.Tensor, x: torch.Tensor
+        self, pseudo_y: torch.Tensor, y: torch.Tensor, x: torch.Tensor, ys: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         raise NotImplementedError()
 
@@ -95,7 +95,7 @@ class UnsupervisedSegmentation(Segmentation, Task):
 
         self.teacher.eval()
 
-    def get_teacher_output(
+    def get_teacher_outputs(
         self, x: torch.Tensor, aug: BaseWaveformTransform, fw_passes: int = 1
     ):
         out_fw_passes = []
@@ -115,6 +115,12 @@ class UnsupervisedSegmentation(Segmentation, Task):
             out = torch.mean(torch.stack(out_fw_passes), dim=0)
             out = torch.round(out).type(torch.int8)
 
+        return out, torch.stack(out_fw_passes)
+
+    def get_teacher_output(
+        self, x: torch.Tensor, aug: BaseWaveformTransform, fw_passes: int = 1
+    ):
+        out, _ = self.get_teacher_outputs(x, aug, fw_passes)
         return out
 
     def use_pseudolabels(self, stage: Literal["train", "val"]):
@@ -129,7 +135,7 @@ class UnsupervisedSegmentation(Segmentation, Task):
         if self.use_pseudolabels("train"):
             x = collated_batch["X"]
 
-            pseudo_y = self.get_teacher_output(
+            pseudo_y, computed_ys = self.get_teacher_outputs(
                 x=x, aug=self.augmentation_model, fw_passes=self.pl_fw_passes
             )
 
@@ -138,7 +144,7 @@ class UnsupervisedSegmentation(Segmentation, Task):
                 y = collated_batch["y"]
             if self.pl_postprocess is not None:
                 for pp in self.pl_postprocess:
-                    pseudo_y, x = pp.process(pseudo_y, y, x)
+                    pseudo_y, x = pp.process(pseudo_y, y, x, computed_ys)
 
             collated_batch["y"] = pseudo_y
             collated_batch["X"] = x
@@ -231,7 +237,7 @@ class DiscardPercentDer(PseudoLabelPostprocess):
         self.ratio_to_discard = ratio_to_discard
 
     def process(
-        self, pseudo_y: torch.Tensor, y: torch.Tensor, x: torch.Tensor
+        self, pseudo_y: torch.Tensor, y: torch.Tensor, x: torch.Tensor, ys: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         batch_size = pseudo_y.shape[0]
         ders = _compute_ders(pseudo_y, y, x)
@@ -251,7 +257,7 @@ class DiscardThresholdDer(PseudoLabelPostprocess):
         self.threshold = threshold
 
     def process(
-        self, pseudo_y: torch.Tensor, y: torch.Tensor, x: torch.Tensor
+        self, pseudo_y: torch.Tensor, y: torch.Tensor, x: torch.Tensor, ys: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         ders = _compute_ders(pseudo_y, y, x)
 
