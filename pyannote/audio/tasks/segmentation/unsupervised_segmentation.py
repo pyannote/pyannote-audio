@@ -232,6 +232,31 @@ def _compute_ders(
     return ders
 
 
+class DiscardConfidence(PseudoLabelPostprocess):
+    def __init__(self, threshold=0.75) -> None:
+        super().__init__()
+        self.threshold = threshold
+
+    def process(
+        self, pseudo_y: torch.Tensor, y: torch.Tensor, x: torch.Tensor, ys: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        # ys is (fw_passes, batch_size, num_frames, num_speakers)-shaped
+        fw_passes, batch_size, num_frames, num_speakers = ys.shape
+
+        # ys_confidence is of shape (batch_size)
+        ys_confidence = torch.mean(
+            torch.abs(
+                torch.mean(ys, dim=0).reshape(batch_size, num_frames * num_speakers)
+                - 0.5
+            )
+            / 0.5,
+            dim=1,
+        )
+
+        filter = ys_confidence > self.threshold
+        return pseudo_y[filter], x[filter]
+
+
 class DiscardPercentDer(PseudoLabelPostprocess):
     def __init__(self, ratio_to_discard: float = 0.1) -> None:
         self.ratio_to_discard = ratio_to_discard
