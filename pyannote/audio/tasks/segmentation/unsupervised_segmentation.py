@@ -20,6 +20,7 @@ from pyannote.audio.tasks import Segmentation
 from pyannote.audio.torchmetrics.functional.audio.diarization_error_rate import (
     diarization_error_rate,
 )
+from pyannote.audio.utils.permutation import permutate
 
 
 class PseudoLabelPostprocess:
@@ -43,6 +44,8 @@ class UnsupervisedSegmentation(Segmentation, Task):
             PseudoLabelPostprocess, List[PseudoLabelPostprocess]
         ] = None,
         pl_fw_passes: int = 1,  # how many forward passes to average to get the pseudolabels
+        val_fw_passes: int = 1,  # how many forward passes to average to get the validation uncertainty
+        val_augmentation: BaseWaveformTransform = None,
         # supervised params
         duration: float = 2.0,
         max_num_speakers: int = None,
@@ -82,10 +85,17 @@ class UnsupervisedSegmentation(Segmentation, Task):
         self.fake_in_val = fake_in_val
         self.augmentation_model = augmentation_model
         self.pl_fw_passes = pl_fw_passes
+        self.val_fw_passes = val_fw_passes
+        self.val_augmentation = val_augmentation
 
         if pl_fw_passes > 1 and augmentation_model is None:
             raise ValueError(
                 "There is no reason to do multiple forward passes to generate pseudolabels if there is no augmentation applied to the input."
+            )
+
+        if val_augmentation is None and val_fw_passes > 1:
+            raise ValueError(
+                f"You need to specify a validation augmentation if you want to do {val_fw_passes} val forward passes."
             )
 
         if isinstance(pl_postprocess, PseudoLabelPostprocess):
@@ -214,6 +224,91 @@ class UnsupervisedSegmentation(Segmentation, Task):
             )
         else:
             return None
+
+    def validation_step(self, batch, batch_idx: int):
+        super().validation_step(batch, batch_idx)
+
+        x = batch["X"]
+
+        torch.set_grad_enabled(True)
+        self.model.train()
+        self.model.zero_grad()
+        prediction = self.model(x)
+        teacher_prediction = self.teacher(x.to(self.teacher.device)).to(
+            self.model.device
+        )
+        teacher_prediction = (teacher_prediction > 0.5).float()
+        permutated_prediction, _ = permutate(teacher_prediction, prediction)
+        loss = self.segmentation_loss(permutated_prediction, teacher_prediction)
+        loss.backward()
+
+        summed_grad_norm = 0
+        for p in self.model.parameters():
+            summed_grad_norm += torch.norm(p.grad)
+
+        self.model.zero_grad()
+        self.teacher.zero_grad()
+        self.model.eval()
+        torch.set_grad_enabled(False)
+        self.model.log(
+            f"{self.logging_prefix}GradientsSummedNorm",
+            summed_grad_norm,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+        )
+
+        outputs = []
+        if self.val_augmentation is not None:
+            for i in range(self.val_fw_passes):
+                pred = self.model(
+                    self.val_augmentation(x, sample_rate=self.model.hparams.sample_rate)
+                )
+                outputs.append(pred)
+        else:
+            outputs.append(prediction)
+        outputs = torch.stack(outputs)
+
+        # Compute ang log uncertainty
+        std = torch.std(outputs, dim=0)
+        self.model.log(
+            f"{self.logging_prefix}Uncertainty",
+            std.flatten(),
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+        )
+
+        # Compute and log confidence
+        outputs_mean = torch.mean(outputs, dim=0)
+        CONFIDENCE_CENTER = 0.5
+        confidence = 1 - torch.abs(CONFIDENCE_CENTER - outputs_mean) / torch.where(
+            outputs_mean > CONFIDENCE_CENTER, 1 - CONFIDENCE_CENTER, CONFIDENCE_CENTER
+        )
+        self.model.log(
+            f"{self.logging_prefix}Confidence",
+            confidence.flatten(),
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+        )
+
+        CONFIDENCE_CENTER = 0.25
+        confidence = 1 - torch.abs(CONFIDENCE_CENTER - outputs_mean) / torch.where(
+            outputs_mean > CONFIDENCE_CENTER, 1 - CONFIDENCE_CENTER, CONFIDENCE_CENTER
+        )
+
+        self.model.log(
+            f"{self.logging_prefix}Confidence25",
+            confidence.flatten(),
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+        )
 
 
 def _compute_ders(
