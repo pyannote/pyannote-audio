@@ -5,7 +5,7 @@ import pytorch_lightning as pl
 import torch
 from pyannote.core import Segment
 from pyannote.database import Protocol
-from pytorch_lightning import Callback
+from pytorch_lightning import Callback, LightningModule
 from pytorch_lightning.utilities.types import STEP_OUTPUT
 from torch.utils.data import DataLoader
 from torch.utils.data._utils.collate import default_collate
@@ -35,7 +35,8 @@ class UnsupervisedSegmentation(Segmentation, Task):
 
     def __init__(
         self,
-        model: Model,  # unsupervised param: model to use to generate truth
+        teacher: Model,  # unsupervised param: model to use to generate truth
+        val_model: Model,  # model used to generate truths during validation
         protocol: Protocol,
         fake_in_train=True,  # generate fake truth in training mode
         fake_in_val=True,  # generate fake truth in val mode
@@ -80,7 +81,8 @@ class UnsupervisedSegmentation(Segmentation, Task):
             metric=metric,
         )
 
-        self.teacher = model
+        self.teacher = teacher
+        self.val_model = val_model
         self.fake_in_train = fake_in_train
         self.fake_in_val = fake_in_val
         self.augmentation_model = augmentation_model
@@ -225,34 +227,69 @@ class UnsupervisedSegmentation(Segmentation, Task):
         else:
             return None
 
-    def validation_step(self, batch, batch_idx: int):
-        super().validation_step(batch, batch_idx)
-
-        x = batch["X"]
-
+    def get_summed_gradients(
+        self, model_hyp: LightningModule, model_ref: LightningModule, x: torch.Tensor
+    ):
         torch.set_grad_enabled(True)
-        self.model.train()
-        self.model.zero_grad()
-        prediction = self.model(x)
-        teacher_prediction = self.teacher(x.to(self.teacher.device)).to(
-            self.model.device
-        )
-        teacher_prediction = (teacher_prediction > 0.5).float()
-        permutated_prediction, _ = permutate(teacher_prediction, prediction)
-        loss = self.segmentation_loss(permutated_prediction, teacher_prediction)
+        model_hyp.train()
+        model_hyp.zero_grad()
+        model_ref.zero_grad()
+        prediction = model_hyp(x)
+        ref_prediction = model_ref(x.to(model_ref.device)).to(model_hyp.device)
+        ref_prediction = (ref_prediction > 0.5).float()
+        permutated_prediction, _ = permutate(ref_prediction, prediction)
+        loss = self.segmentation_loss(permutated_prediction, ref_prediction)
         loss.backward()
 
         summed_grad_norm = 0
-        for p in self.model.parameters():
+        for p in model_hyp.parameters():
             summed_grad_norm += torch.norm(p.grad)
 
-        self.model.zero_grad()
-        self.teacher.zero_grad()
-        self.model.eval()
+        model_hyp.zero_grad()
+        model_ref.zero_grad()
+        model_hyp.eval()
         torch.set_grad_enabled(False)
+        return summed_grad_norm, prediction, loss
+
+    def validation_step(self, batch, batch_idx: int):
+        super().validation_step(batch, batch_idx)
+
+        X = batch["X"]
+
+        teacher_sgn, prediction, loss_teacher = self.get_summed_gradients(
+            self.model, self.teacher, X
+        )
         self.model.log(
-            f"{self.logging_prefix}GradientsSummedNorm",
-            summed_grad_norm,
+            f"{self.logging_prefix}GradientsTeacher",
+            teacher_sgn,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+        )
+        self.model.log(
+            f"{self.logging_prefix}LossTeacher",
+            loss_teacher,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+        )
+
+        val_model_sgn, prediction, loss_val_model = self.get_summed_gradients(
+            self.model, self.val_model, X
+        )
+        self.model.log(
+            f"{self.logging_prefix}GradientsValModel",
+            val_model_sgn,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+        )
+        self.model.log(
+            f"{self.logging_prefix}LossValModel",
+            loss_val_model,
             on_step=False,
             on_epoch=True,
             prog_bar=True,
@@ -263,7 +300,7 @@ class UnsupervisedSegmentation(Segmentation, Task):
         if self.val_augmentation is not None:
             for i in range(self.val_fw_passes):
                 pred = self.model(
-                    self.val_augmentation(x, sample_rate=self.model.hparams.sample_rate)
+                    self.val_augmentation(X, sample_rate=self.model.hparams.sample_rate)
                 )
                 outputs.append(pred)
         else:
@@ -284,9 +321,7 @@ class UnsupervisedSegmentation(Segmentation, Task):
         # Compute and log confidence
         outputs_mean = torch.mean(outputs, dim=0)
         CONFIDENCE_CENTER = 0.5
-        confidence = 1 - torch.abs(CONFIDENCE_CENTER - outputs_mean) / torch.where(
-            outputs_mean > CONFIDENCE_CENTER, 1 - CONFIDENCE_CENTER, CONFIDENCE_CENTER
-        )
+        confidence = 1 - torch.abs(CONFIDENCE_CENTER - outputs_mean) / 0.5
         self.model.log(
             f"{self.logging_prefix}Confidence",
             confidence.flatten(),
