@@ -23,18 +23,23 @@
 
 from typing import Optional
 
+from torch import Tensor
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
+from torch_audiomentations.utils.object_dict import ObjectDict
 
 
 class NoAugmentation(BaseWaveformTransform):
     def apply_transform(
         self,
-        selected_samples,
+        samples: Tensor = None,
         sample_rate: Optional[int] = None,
-        targets=None,
+        targets: Optional[Tensor] = None,
         target_rate: Optional[int] = None,
-    ):
-        if targets is None:
-            return selected_samples
-        else:
-            return selected_samples, targets
+    ) -> ObjectDict:
+
+        return ObjectDict(
+            samples=samples,
+            sample_rate=sample_rate,
+            targets=targets,
+            target_rate=target_rate,
+        )

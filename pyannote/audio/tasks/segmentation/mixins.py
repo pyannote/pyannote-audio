@@ -322,14 +322,13 @@ class SegmentationTaskMixin:
 
         # apply augmentation
         if stage == "train":
-            output = self.augmentation(
-                collated_X,
+            augmented = self.augmentation(
+                samples=collated_X,
                 sample_rate=self.model.hparams.sample_rate,
                 targets=collated_y.unsqueeze(1),
             )
-            augmented_X, augmented_y = output
-
-            augmented_y = augmented_y.squeeze(1)
+            augmented_X = augmented.samples
+            augmented_y = augmented.targets.squeeze(1)
         else:
             augmented_X, augmented_y = collated_X, collated_y
 
