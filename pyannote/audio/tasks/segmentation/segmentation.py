@@ -303,14 +303,40 @@ class Segmentation(SegmentationTaskMixin, Task):
             {"loss": loss}
         """
 
+        # target
+        target = batch["y"]
+        # (batch_size, num_frames, num_speakers)
+
+        waveform = batch["X"]
+        # (batch_size, num_channels, num_samples)
+
+        # drop samples that contain too many speakers
+        num_speakers: torch.Tensor = torch.sum(torch.any(target, dim=1), dim=1)
+        keep: torch.Tensor = num_speakers <= self.max_num_speakers
+        target = target[keep]
+        waveform = waveform[keep]
+
+        # log effective batch size
+        self.model.log(
+            f"{self.logging_prefix}BatchSize",
+            keep.sum(),
+            prog_bar=False,
+            logger=True,
+            on_step=False,
+            on_epoch=True,
+            reduce_fx="mean",
+        )
+
+        # corner case
+        if not keep.any():
+            return {"loss": 0.0}
+
         # forward pass
-        prediction = self.model(batch["X"])
+        prediction = self.model(waveform)
         batch_size, num_frames, _ = prediction.shape
         # (batch_size, num_frames, num_classes)
 
-        # target
-        target = batch["y"]
-
+        # find optimal permutation
         permutated_prediction, _ = permutate(target, prediction)
 
         # frames weight
