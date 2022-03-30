@@ -348,9 +348,6 @@ class SegmentationTaskMixin:
     def val__len__(self):
         return len(self._validation)
 
-    def validation_postprocess(self, y, y_pred):
-        return y_pred
-
     def validation_step(self, batch, batch_idx: int):
         """Compute validation area under the ROC curve
 
@@ -369,10 +366,6 @@ class SegmentationTaskMixin:
         y_pred = self.model(X)
         _, num_frames, _ = y_pred.shape
         # y_pred = (batch_size, num_frames, num_classes)
-
-        # postprocess
-        # TODO: remove this because metrics should take care of postprocessing
-        y_pred = self.validation_postprocess(y, y_pred)
 
         # - remove warm-up frames
         # - downsample remaining frames
