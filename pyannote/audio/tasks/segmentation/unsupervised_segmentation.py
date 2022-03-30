@@ -10,13 +10,19 @@ from pytorch_lightning.utilities.types import STEP_OUTPUT
 from torch.utils.data import DataLoader
 from torch.utils.data._utils.collate import default_collate
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
-from torchmetrics import Metric
+from torchmetrics import Metric, MetricCollection
 from typing_extensions import Literal
 
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task, ValDataset
 from pyannote.audio.tasks import Segmentation
+from pyannote.audio.torchmetrics.audio.diarization_error_rate import (
+    DiarizationErrorRate,
+    FalseAlarmRate,
+    MissedDetectionRate,
+    SpeakerConfusionRate,
+)
 from pyannote.audio.torchmetrics.functional.audio.diarization_error_rate import (
     diarization_error_rate,
 )
@@ -106,6 +112,32 @@ class UnsupervisedSegmentation(Segmentation, Task):
             self.pl_postprocess = pl_postprocess
 
         self.teacher.eval()
+
+    def setup_loss_func(self):
+        # very strange and bad code placement, to replace/move (but it works)
+        self.model.teacher_metrics = MetricCollection(
+            [
+                DiarizationErrorRate(),
+                SpeakerConfusionRate(),
+                MissedDetectionRate(),
+                FalseAlarmRate(),
+            ],
+            prefix=f"{self.logging_prefix}-Teacher",
+        )
+        self.model.teacher_metrics.to(self.model.device)
+
+        self.model.val_model_metrics = MetricCollection(
+            [
+                DiarizationErrorRate(),
+                SpeakerConfusionRate(),
+                MissedDetectionRate(),
+                FalseAlarmRate(),
+            ],
+            prefix=f"{self.logging_prefix}-ValModel",
+        )
+        self.model.val_model_metrics.to(self.model.device)
+
+        return super().setup_loss_func()
 
     def get_teacher_outputs(
         self, x: torch.Tensor, aug: BaseWaveformTransform, fw_passes: int = 1
@@ -249,16 +281,19 @@ class UnsupervisedSegmentation(Segmentation, Task):
         model_ref.zero_grad()
         model_hyp.eval()
         torch.set_grad_enabled(False)
-        return summed_grad_norm, prediction, loss
+        return summed_grad_norm, prediction, loss, ref_prediction
 
     def validation_step(self, batch, batch_idx: int):
         super().validation_step(batch, batch_idx)
 
         X = batch["X"]
 
-        teacher_sgn, prediction, loss_teacher = self.get_summed_gradients(
-            self.model, self.teacher, X
-        )
+        (
+            teacher_sgn,
+            prediction,
+            loss_teacher,
+            teacher_prediction,
+        ) = self.get_summed_gradients(self.model, self.teacher, X)
         self.model.log(
             f"{self.logging_prefix}GradientsTeacher",
             teacher_sgn,
@@ -276,9 +311,12 @@ class UnsupervisedSegmentation(Segmentation, Task):
             logger=True,
         )
 
-        val_model_sgn, prediction, loss_val_model = self.get_summed_gradients(
-            self.model, self.val_model, X
-        )
+        (
+            val_model_sgn,
+            prediction,
+            loss_val_model,
+            val_model_prediction,
+        ) = self.get_summed_gradients(self.model, self.val_model, X)
         self.model.log(
             f"{self.logging_prefix}GradientsValModel",
             val_model_sgn,
@@ -339,6 +377,42 @@ class UnsupervisedSegmentation(Segmentation, Task):
         self.model.log(
             f"{self.logging_prefix}Confidence25",
             confidence.flatten(),
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+        )
+
+        _, num_frames, _ = prediction.shape
+        warm_up_left = round(self.warm_up[0] / self.duration * num_frames)
+        warm_up_right = round(self.warm_up[1] / self.duration * num_frames)
+        preds = prediction[:, warm_up_left : num_frames - warm_up_right : 10]
+
+        target_teacher = teacher_prediction[
+            :, warm_up_left : num_frames - warm_up_right : 10
+        ]
+        target_val_model = val_model_prediction[
+            :, warm_up_left : num_frames - warm_up_right : 10
+        ]
+
+        self.model.teacher_metrics(
+            torch.transpose(preds, 1, 2),
+            torch.transpose(target_teacher, 1, 2),
+        )
+        self.model.val_model_metrics(
+            torch.transpose(preds, 1, 2),
+            torch.transpose(target_val_model, 1, 2),
+        )
+
+        self.model.log_dict(
+            self.model.teacher_metrics,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+        )
+        self.model.log_dict(
+            self.model.val_model_metrics,
             on_step=False,
             on_epoch=True,
             prog_bar=True,
