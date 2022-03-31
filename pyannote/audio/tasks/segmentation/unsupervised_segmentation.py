@@ -283,33 +283,27 @@ class UnsupervisedSegmentation(Segmentation, Task):
         torch.set_grad_enabled(False)
         return summed_grad_norm, prediction, loss, ref_prediction
 
+    def training_step(self, batch, batch_idx: int):
+        loss = super().training_step(batch, batch_idx)
+
+        sgn = 0
+        for p in self.model.parameters():
+            sgn += torch.norm(p.grad)
+        self.model.log(
+            f"{self.logging_prefix}Gradients",
+            sgn,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=False,
+            logger=True,
+        )
+
+        return loss
+
     def validation_step(self, batch, batch_idx: int):
         super().validation_step(batch, batch_idx)
 
         X = batch["X"]
-
-        (
-            teacher_sgn,
-            prediction,
-            loss_teacher,
-            teacher_prediction,
-        ) = self.get_summed_gradients(self.model, self.teacher, X)
-        self.model.log(
-            f"{self.logging_prefix}GradientsTeacher",
-            teacher_sgn,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-            logger=True,
-        )
-        self.model.log(
-            f"{self.logging_prefix}LossTeacher",
-            loss_teacher,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-            logger=True,
-        )
 
         (
             val_model_sgn,
@@ -388,6 +382,10 @@ class UnsupervisedSegmentation(Segmentation, Task):
         warm_up_right = round(self.warm_up[1] / self.duration * num_frames)
         preds = prediction[:, warm_up_left : num_frames - warm_up_right : 10]
 
+        teacher_prediction = self.teacher(X.to(self.teacher.device)).to(
+            val_model_prediction.device
+        )
+        teacher_prediction = (teacher_prediction > 0.5).float()
         target_teacher = teacher_prediction[
             :, warm_up_left : num_frames - warm_up_right : 10
         ]
