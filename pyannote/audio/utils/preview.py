@@ -265,11 +265,11 @@ def preview_training_samples(
     video_ext: str = "webm",
     display: bool = True,
 ) -> Union[IPythonVideo, str]:
-    """Preview training samples of a given task
+    """Preview training samples of a given model
 
     Parameters
     ----------
-    Model : Task
+    Model : Model
         Model, already setup for training (i.e. call model.setup(stage="fit") first).
     blank : float, optional
         Add blank of that many seconds between each sample. Defaults to 1.0
