@@ -37,6 +37,7 @@ from pyannote.audio.torchmetrics import (
     DiarizationErrorRate,
     FalseAlarmRate,
     MissedDetectionRate,
+    OptimalDiarizationErrorRate,
     SpeakerConfusionRate,
 )
 from pyannote.audio.utils.loss import binary_cross_entropy, mse_loss
@@ -394,6 +395,7 @@ class Segmentation(SegmentationTaskMixin, Task):
     ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
         """Returns diarization error rate and its components"""
         return [
+            OptimalDiarizationErrorRate(),
             DiarizationErrorRate(),
             SpeakerConfusionRate(),
             MissedDetectionRate(),
