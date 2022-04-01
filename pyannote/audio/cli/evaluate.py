@@ -22,17 +22,16 @@
 
 
 from typing import Optional
-from pyannote.audio import Inference, Model
-from pyannote.audio.pipelines.utils import get_devices
-from pyannote.audio.utils.signal import binarize
-from pyannote.audio.utils.metric import DiscreteDiarizationErrorRate
-from pyannote.database import get_protocol, FileFinder
-from rich.progress import Progress
 
 import hydra
 from omegaconf import DictConfig
+from pyannote.database import FileFinder, ProtocolFile, get_protocol
+from rich.progress import Progress
 
-from pyannote.database import FileFinder, get_protocol, ProtocolFile
+from pyannote.audio import Inference, Model
+from pyannote.audio.pipelines.utils import get_devices
+from pyannote.audio.utils.metric import DiscreteDiarizationErrorRate
+from pyannote.audio.utils.signal import binarize
 
 
 @hydra.main(config_path="evaluate_config", config_name="config")
@@ -72,9 +71,22 @@ def evaluate(cfg: DictConfig) -> Optional[float]:
             _ = metric(reference, hypothesis(file), uem=uem)
             progress.advance(main_task)
 
-    _ = metric.report(display=True)
+    report = metric.report(display=False)
+
+    with open("report.txt", "w") as f:
+
+        f.write(f"# Model:    {cfg.model}\n")
+        f.write(f"# Protocol: {protocol.name}\n")
+        f.write(f"# Subset:   {cfg.subset}\n")
+        f.write("\n")
+        report = report.to_string(
+            index=True,
+            sparsify=False,
+            justify="right",
+            float_format=lambda f: "{0:.2f}".format(f),
+        )
+        f.write(f"{report}")
 
 
 if __name__ == "__main__":
     evaluate()
-

@@ -1,3 +1,28 @@
+# MIT License
+#
+# Copyright (c) 2020- CNRS
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+
+from typing import Union
+
 try:
     from IPython.display import Audio as IPythonAudio
     from IPython.display import Video as IPythonVideo
@@ -24,7 +49,7 @@ except ImportError:
 
 from typing import Mapping
 
-from pyannote.audio.core.io import Audio, AudioFile
+import torch
 from pyannote.core import (
     Annotation,
     Segment,
@@ -33,6 +58,10 @@ from pyannote.core import (
     Timeline,
     notebook,
 )
+
+from pyannote.audio.core.io import Audio, AudioFile
+from pyannote.audio.core.model import Model
+from pyannote.audio.utils.signal import Binarize
 
 
 def listen(audio_file: AudioFile, segment: Segment = None) -> None:
@@ -227,3 +256,70 @@ def preview(
         return video_path
 
     return IPythonVideo(video_path, embed=True)
+
+
+def preview_training_samples(
+    model: Model,
+    blank: float = 1.0,
+    video_fps: int = 5,
+    video_ext: str = "webm",
+    display: bool = True,
+) -> Union[IPythonVideo, str]:
+    """Preview training samples of a given model
+
+    Parameters
+    ----------
+    Model : Model
+        Model, already setup for training (i.e. call model.setup(stage="fit") first).
+    blank : float, optional
+        Add blank of that many seconds between each sample. Defaults to 1.0
+    video_fps : int, optional
+        Video frame rate. Defaults to 5. Higher frame rate leads
+        to a smoother video but longer processing time.
+    video_ext : str, optional
+        One of {"webm", "mp4", "ogv"} according to what your
+        browser supports. Defaults to "webm" as it seems to
+        be supported by most browsers (see caniuse.com/webm)/
+    display : bool, optional
+        Wrap the video in a IPython.display.Video instance for
+        visualization in notebooks (default). Set to False if
+        you are only interested in saving the video preview to
+        disk.
+
+    Returns
+    -------
+    * IPython.display.Video instance if `display` is True (default)
+    * path to video preview file if `display` is False
+    """
+
+    batch = next(iter(model.train_dataloader()))
+    batch_size, num_channels, num_samples = batch["X"].shape
+    batch_size, num_frames, num_speakers = batch["y"].shape
+    sample_rate = model.audio.sample_rate
+
+    batch_num_samples = int(batch_size * (num_samples + blank * sample_rate))
+    batch_num_frames = int(model.introspection(batch_num_samples)[0])
+
+    waveform = torch.zeros((1, batch_num_samples))
+    reference = torch.zeros((batch_num_frames, num_speakers))
+    for b, (X, y) in enumerate(zip(batch["X"], batch["y"])):
+        X_idx = int(b * (num_samples + blank * sample_rate))
+        waveform[:, X_idx : X_idx + num_samples] = X
+        y_idx, _ = model.introspection(X_idx)
+        reference[y_idx : y_idx + num_frames, :] = y
+
+    reference = Binarize()(SlidingWindowFeature(reference, model.introspection.frames))
+
+    audio_file = {
+        "waveform": waveform,
+        "sample_rate": sample_rate,
+        "uri": model.task.logging_prefix + "TrainingSamples",
+    }
+
+    return preview(
+        audio_file,
+        video_fps=video_fps,
+        video_ext=video_ext,
+        display=display,
+        reference=reference,
+    )
