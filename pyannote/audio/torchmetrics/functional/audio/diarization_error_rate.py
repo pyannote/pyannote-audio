@@ -51,15 +51,14 @@ def _der_update(
         Diarization error rate components accumulated over the whole batch.
     """
 
-    # TODO: consider doing the permutation before the binarization
-    # in order to improve robustness to mis-calibration.
-    preds_bin = (preds > threshold).float()
-
-    # convert to/from "permutate" expected shapes
-    hypothesis, _ = permutate(
-        torch.transpose(target, 1, 2), torch.transpose(preds_bin, 1, 2)
+    # find the optimal mapping between target and (soft) predictions
+    permutated_preds, _ = permutate(
+        torch.transpose(target, 1, 2), torch.transpose(preds, 1, 2)
     )
-    hypothesis = torch.transpose(hypothesis, 1, 2)
+    permutated_preds = torch.transpose(permutated_preds, 1, 2)
+
+    # turn continuous [0, 1] predictions into binary {0, 1} decisions
+    hypothesis = (permutated_preds > threshold).float()
 
     detection_error = torch.sum(hypothesis, 1) - torch.sum(target, 1)
     false_alarm = torch.maximum(detection_error, torch.zeros_like(detection_error))
