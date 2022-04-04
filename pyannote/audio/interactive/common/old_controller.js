@@ -61,23 +61,11 @@ function compare(region1, region2){
   }
 }
 
-//TO CHECK IF PRODIGY INTERFACE HAS CHANGED
 //SIMULATE CLICK ON PRODIGY'S LABEL RADIO BUTTON
+//TO CHECK IF PRODIGY INTERFACE HAS CHANGED
 function clickOnLabel(label){
   document.querySelector("input[type=radio][value=\'"+label+"\']").click()
 }
-
-
-function updateContent(){
-  var regions = window.wavesurfer.regions.list;
-  var content = [];
-  for (var id in regions){
-    var region = regions[id];
-    content.push({start : region.start, end : region.end, label : region.label, id : region.id, color : region.color});
-  }
-  window.prodigy.update({audio_spans : content});
-}
-
 
 function beep() {
   if(BEEP){
@@ -152,8 +140,8 @@ function waitForElement(){
         });
         window.wavesurfer.on('region-dblclick',function(e){
           re = window.wavesurfer.addRegion({'start' : e.start,'end' : e.end});
-          e.remove();
           window.wavesurfer.fireEvent('region-update-end',re);
+          e.remove();
         });
         window.wavesurfer.on('region-click',function(e){
           switchCurrent(ids.indexOf(e));
@@ -161,12 +149,7 @@ function waitForElement(){
         window.wavesurfer.on('region-out',function(e){
           beep();
         });
-        window.wavesurfer.on('region-update-end', function(e){
-          updateContent();
-        });
-        window.wavesurfer.on('region-removed',function(e){
-          //window.prodigy.content.audio_spans = prodigy.content.audio_spans.filter(value => value['id'] != e.id );
-          updateContent();
+        window.wavesurfer.on('region-removed',function(){
           if(currentRegion == (ids.length - 1)){
             var newId = 0;
           }else{
@@ -196,11 +179,9 @@ document.querySelector('#root').onkeydown = document.querySelector('#root').onke
       if(keysMap[startR] && !keysMap[endR]){
         if((region.start - PRECISION) <= 0){
           region.update({'start' : 0});
-          window.wavesurfer.fireEvent('region-update-end',region);
           window.wavesurfer.play(0, region.end);
        }else{
           region.update({'start' : region.start - PRECISION });
-          window.wavesurfer.fireEvent('region-update-end',region);
           window.wavesurfer.play(region.start, region.end);
         }
       }else if(keysMap[endR] && !keysMap[startR]){
@@ -208,7 +189,6 @@ document.querySelector('#root').onkeydown = document.querySelector('#root').onke
         if(startTime < region.start) startTime = region.start;
         if((region.end - PRECISION) > region.start){
           region.update({'end' : region.end - PRECISION });
-          window.wavesurfer.fireEvent('region-update-end',region);
           window.wavesurfer.play(startTime, region.end);
         }
       }else{
@@ -225,7 +205,6 @@ document.querySelector('#root').onkeydown = document.querySelector('#root').onke
       if(keysMap[startR] && !keysMap[endR]){
         if(region.start + PRECISION < region.end){
           region.update({'start' : region.start + PRECISION });
-          window.wavesurfer.fireEvent('region-update-end',region);
           window.wavesurfer.play(region.start, region.end);
         }
       }else if(keysMap[endR] && !keysMap[startR]){
@@ -237,10 +216,8 @@ document.querySelector('#root').onkeydown = document.querySelector('#root').onke
         }
         if((region.end + PRECISION) >= audioEnd){
            region.update({'end' : audioEnd });
-           window.wavesurfer.fireEvent('region-update-end',region);
         }else{
           region.update({'end' : region.end + PRECISION });
-          window.wavesurfer.fireEvent('region-update-end',region);
         }
         window.wavesurfer.play(startTime, region.end);
       }else{
@@ -258,8 +235,7 @@ document.querySelector('#root').onkeydown = document.querySelector('#root').onke
       if(fin > audioEnd) fin = audioEnd;
       re = window.wavesurfer.addRegion({'start' : pos,'end' : fin});
       window.wavesurfer.fireEvent('region-update-end',re);
-    //if(keysMap['Backspace'] || (keysMap['ArrowDown'] && keysMap['Shift'])) ---> J'enlève backspace pour edit diarization
-    }else if(keysMap['ArrowDown'] && keysMap['Shift']){
+    }else if(keysMap['Backspace'] || (keysMap['ArrowDown'] && keysMap['Shift'])){
       ids[currentRegion].remove();
     }else if(keysMap['ArrowUp']){
       if(currentRegion == (ids.length - 1)){
