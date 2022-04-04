@@ -34,10 +34,11 @@ from typing_extensions import Literal
 from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
 from pyannote.audio.torchmetrics import (
-    DiarizationErrorRate,
-    FalseAlarmRate,
-    MissedDetectionRate,
-    SpeakerConfusionRate,
+    OptimalDiarizationErrorRate,
+    OptimalDiarizationErrorRateThreshold,
+    OptimalFalseAlarmRate,
+    OptimalMissedDetectionRate,
+    OptimalSpeakerConfusionRate,
 )
 from pyannote.audio.utils.loss import binary_cross_entropy, mse_loss
 from pyannote.audio.utils.permutation import permutate
@@ -399,10 +400,11 @@ class Segmentation(SegmentationTaskMixin, Task):
     ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
         """Returns diarization error rate and its components"""
         return [
-            DiarizationErrorRate(),
-            SpeakerConfusionRate(),
-            MissedDetectionRate(),
-            FalseAlarmRate(),
+            OptimalDiarizationErrorRate(),
+            OptimalDiarizationErrorRateThreshold(),
+            OptimalSpeakerConfusionRate(),
+            OptimalMissedDetectionRate(),
+            OptimalFalseAlarmRate(),
         ]
 
 
