@@ -26,6 +26,10 @@ from .audio.diarization_error_rate import (
     FalseAlarmRate,
     MissedDetectionRate,
     OptimalDiarizationErrorRate,
+    OptimalDiarizationErrorRateThreshold,
+    OptimalFalseAlarmRate,
+    OptimalMissedDetectionRate,
+    OptimalSpeakerConfusionRate,
     SpeakerConfusionRate,
 )
 
@@ -35,4 +39,8 @@ __all__ = [
     "MissedDetectionRate",
     "SpeakerConfusionRate",
     "OptimalDiarizationErrorRate",
+    "OptimalFalseAlarmRate",
+    "OptimalMissedDetectionRate",
+    "OptimalSpeakerConfusionRate",
+    "OptimalDiarizationErrorRateThreshold",
 ]

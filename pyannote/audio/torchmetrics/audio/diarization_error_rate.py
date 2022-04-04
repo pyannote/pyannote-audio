@@ -146,18 +146,22 @@ class OptimalDiarizationErrorRate(Metric):
         self.threshold = threshold or torch.linspace(0.0, 1.0, 51)
         (num_thresholds,) = self.threshold.shape
 
+        # note that CamelCase is used to indicate that those states contain values for multiple thresholds
+        # this is for torchmetrics to know that these states are different from those of DiarizationErrorRate
+        # for which only one threshold is used.
+
         self.add_state(
-            "false_alarm",
+            "FalseAlarm",
             default=torch.zeros((num_thresholds,)),
             dist_reduce_fx="sum",
         )
         self.add_state(
-            "missed_detection",
+            "MissedDetection",
             default=torch.zeros((num_thresholds,)),
             dist_reduce_fx="sum",
         )
         self.add_state(
-            "speaker_confusion",
+            "SpeakerConfusion",
             default=torch.zeros((num_thresholds,)),
             dist_reduce_fx="sum",
         )
@@ -189,19 +193,68 @@ class OptimalDiarizationErrorRate(Metric):
         false_alarm, missed_detection, speaker_confusion, speech_total = _der_update(
             preds, target, threshold=self.threshold
         )
-        self.false_alarm += false_alarm
-        self.missed_detection += missed_detection
-        self.speaker_confusion += speaker_confusion
+        self.FalseAlarm += false_alarm
+        self.MissedDetection += missed_detection
+        self.SpeakerConfusion += speaker_confusion
         self.speech_total += speech_total
 
     def compute(self):
         der = _der_compute(
-            self.false_alarm,
-            self.missed_detection,
-            self.speaker_confusion,
+            self.FalseAlarm,
+            self.MissedDetection,
+            self.SpeakerConfusion,
             self.speech_total,
         )
-        opt_der, opt_threshold_idx = torch.min(der, dim=0)
-        # opt_threshold = self.threshold[opt_threshold_idx]
+        opt_der, _ = torch.min(der, dim=0)
 
         return opt_der
+
+
+class OptimalDiarizationErrorRateThreshold(OptimalDiarizationErrorRate):
+    def compute(self):
+        der = _der_compute(
+            self.FalseAlarm,
+            self.MissedDetection,
+            self.SpeakerConfusion,
+            self.speech_total,
+        )
+        _, opt_threshold_idx = torch.min(der, dim=0)
+        opt_threshold = self.threshold[opt_threshold_idx]
+
+        return opt_threshold
+
+
+class OptimalSpeakerConfusionRate(OptimalDiarizationErrorRate):
+    def compute(self):
+        der = _der_compute(
+            self.FalseAlarm,
+            self.MissedDetection,
+            self.SpeakerConfusion,
+            self.speech_total,
+        )
+        _, opt_threshold_idx = torch.min(der, dim=0)
+        return self.SpeakerConfusion[opt_threshold_idx] / self.speech_total
+
+
+class OptimalFalseAlarmRate(OptimalDiarizationErrorRate):
+    def compute(self):
+        der = _der_compute(
+            self.FalseAlarm,
+            self.MissedDetection,
+            self.SpeakerConfusion,
+            self.speech_total,
+        )
+        _, opt_threshold_idx = torch.min(der, dim=0)
+        return self.FalseAlarm[opt_threshold_idx] / self.speech_total
+
+
+class OptimalMissedDetectionRate(OptimalDiarizationErrorRate):
+    def compute(self):
+        der = _der_compute(
+            self.FalseAlarm,
+            self.MissedDetection,
+            self.SpeakerConfusion,
+            self.speech_total,
+        )
+        _, opt_threshold_idx = torch.min(der, dim=0)
+        return self.MissedDetection[opt_threshold_idx] / self.speech_total

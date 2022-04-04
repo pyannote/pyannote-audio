@@ -26,6 +26,10 @@ from .diarization_error_rate import (
     FalseAlarmRate,
     MissedDetectionRate,
     OptimalDiarizationErrorRate,
+    OptimalDiarizationErrorRateThreshold,
+    OptimalFalseAlarmRate,
+    OptimalMissedDetectionRate,
+    OptimalSpeakerConfusionRate,
     SpeakerConfusionRate,
 )
 
@@ -35,4 +39,8 @@ __all__ = [
     "MissedDetectionRate",
     "FalseAlarmRate",
     "OptimalDiarizationErrorRate",
+    "OptimalSpeakerConfusionRate",
+    "OptimalMissedDetectionRate",
+    "OptimalFalseAlarmRate",
+    "OptimalDiarizationErrorRateThreshold",
 ]
