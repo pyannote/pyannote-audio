@@ -512,9 +512,9 @@ class TeacherUpdate(Callback):
         self.teacher_weights_cache: OrderedDict[str, torch.Tensor] = None
 
     def enqueue_teacher(self, teacher: OrderedDict[str, torch.Tensor]):
+        self.last_weights.append(teacher)
         if len(self.last_weights) >= self.average_of:
             self.last_weights.pop(0)
-            self.last_weights.append(teacher)
 
     def get_updated_weights(
         self,
