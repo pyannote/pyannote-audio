@@ -143,8 +143,9 @@ class OptimalDiarizationErrorRate(Metric):
     def __init__(self, threshold: Optional[torch.Tensor] = None):
         super().__init__()
 
-        self.threshold = threshold or torch.linspace(0.0, 1.0, 51)
-        (num_thresholds,) = self.threshold.shape
+        threshold = threshold or torch.linspace(0.0, 1.0, 51)
+        self.register_buffer("threshold", threshold)
+        (num_thresholds,) = threshold.shape
 
         # note that CamelCase is used to indicate that those states contain values for multiple thresholds
         # this is for torchmetrics to know that these states are different from those of DiarizationErrorRate
