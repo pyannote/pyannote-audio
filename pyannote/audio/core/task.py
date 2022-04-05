@@ -214,7 +214,7 @@ class Task(pl.LightningDataModule):
 
         self.num_workers = num_workers
         self.pin_memory = pin_memory
-        self.augmentation = augmentation or NoAugmentation()
+        self.augmentation = augmentation or NoAugmentation(output_type="dict")
         self._metric = metric
 
     def prepare_data(self):
