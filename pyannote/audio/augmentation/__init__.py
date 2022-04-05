@@ -21,6 +21,6 @@
 # SOFTWARE.
 
 
-from .no import NoAugmentation
+from .mix import MixSpeakerDiarization
 
-__all__ = ["NoAugmentation"]
+__all__ = ["MixSpeakerDiarization"]

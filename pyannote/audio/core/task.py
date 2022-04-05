@@ -42,11 +42,11 @@ import pytorch_lightning as pl
 import torch
 from pyannote.database import Protocol
 from torch.utils.data import DataLoader, Dataset, IterableDataset
+from torch_audiomentations import Identity
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchmetrics import Metric, MetricCollection
 from typing_extensions import Literal
 
-from pyannote.audio.augmentation import NoAugmentation
 from pyannote.audio.utils.loss import binary_cross_entropy, nll_loss
 from pyannote.audio.utils.protocol import check_protocol
 
@@ -214,7 +214,7 @@ class Task(pl.LightningDataModule):
 
         self.num_workers = num_workers
         self.pin_memory = pin_memory
-        self.augmentation = augmentation or NoAugmentation(output_type="dict")
+        self.augmentation = augmentation or Identity(output_type="dict")
         self._metric = metric
 
     def prepare_data(self):
