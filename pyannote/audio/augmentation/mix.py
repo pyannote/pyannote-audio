@@ -64,6 +64,7 @@ class MixSpeakerDiarization(Mix):
         sample_rate: int = None,
         target_rate: int = None,
         max_num_speakers: int = None,
+        output_type: str = "tensor",
     ):
         super().__init__(
             min_snr_in_db=min_snr_in_db,
@@ -73,6 +74,7 @@ class MixSpeakerDiarization(Mix):
             p_mode=p_mode,
             sample_rate=sample_rate,
             target_rate=target_rate,
+            output_type=output_type,
         )
         self.max_num_speakers = max_num_speakers
 
