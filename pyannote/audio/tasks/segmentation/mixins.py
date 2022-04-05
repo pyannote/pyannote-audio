@@ -320,21 +320,15 @@ class SegmentationTaskMixin:
         # collate y
         collated_y = self.collate_y(batch)
 
-        # apply augmentation
-        if stage == "train":
-            augmented = self.augmentation(
-                samples=collated_X,
-                sample_rate=self.model.hparams.sample_rate,
-                targets=collated_y.unsqueeze(1),
-            )
-            augmented_X = augmented.samples
-            augmented_y = augmented.targets.squeeze(1)
-        else:
-            augmented_X, augmented_y = collated_X, collated_y
+        # apply augmentation (only in "train" stage)
+        self.augmentation.train(mode=(stage == "train"))
+        augmented = self.augmentation(
+            samples=collated_X,
+            sample_rate=self.model.hparams.sample_rate,
+            targets=collated_y.unsqueeze(1),
+        )
 
-        adapted_y = self.adapt_y(augmented_y)
-
-        return {"X": augmented_X, "y": adapted_y}
+        return {"X": augmented.samples, "y": self.adapt_y(augmented.targets.squeeze(1))}
 
     def train__len__(self):
         # Number of training samples in one epoch
