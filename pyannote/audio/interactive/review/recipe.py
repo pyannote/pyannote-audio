@@ -5,13 +5,14 @@ from tempfile import mkstemp
 from typing import Any, Dict, Iterable, List, Union
 
 import prodigy
+from prodigy import set_hashes
 from prodigy.components.loaders import Audio as AudioLoader
 from prodigy.util import split_string
+from pyannote.core import Segment
+from pyannote.database import util
 
 from pyannote.audio.core.io import Audio
 from pyannote.audio.pipelines import SpeakerDiarization
-from pyannote.core import Segment
-from pyannote.database import util
 
 from ..common.utils import AudioForProdigy, before_db, get_audio_spans, get_chunks
 
@@ -164,16 +165,17 @@ def review(
         for label in anno.labels()
     ]
 
+    hstream = (
+        set_hashes(eg, input_keys=("path", "chunk"))
+        for eg in review_stream(
+            source, list_annotations, labels, diarization=diarization, chunk=chunk
+        )
+    )
+
     return {
         "view_id": "blocks",
         "dataset": dataset,
-        "stream": review_stream(
-            source,
-            list_annotations,
-            labels,
-            diarization=diarization,
-            chunk=chunk,
-        ),
+        "stream": hstream,
         "before_db": before_db,
         "config": {
             "global_css": templateC,

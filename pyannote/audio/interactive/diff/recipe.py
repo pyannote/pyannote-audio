@@ -3,13 +3,14 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Union
 
 import prodigy
+from prodigy import set_hashes
 from prodigy.components.loaders import Audio as AudioLoader
-
-from pyannote.audio import Audio
-from pyannote.audio.pipelines import SpeakerDiarization
 from pyannote.core import Annotation, Segment
 from pyannote.database import util
 from pyannote.metrics.errors.identification import IdentificationErrorAnalysis
+
+from pyannote.audio import Audio
+from pyannote.audio.pipelines import SpeakerDiarization
 
 from ..common.utils import AudioForProdigy, before_db, get_audio_spans, get_chunks
 
@@ -176,10 +177,9 @@ def diff(
     hyp = util.load_rttm(hypothesis)
     listerrors = [falsealarm, confusion, misseddetection]
 
-    return {
-        "view_id": "blocks",
-        "dataset": dataset,
-        "stream": diff_stream(
+    hstream = (
+        set_hashes(eg, input_keys=("path", "chunk"))
+        for eg in diff_stream(
             source,
             ref,
             hyp,
@@ -187,7 +187,13 @@ def diff(
             diarization=diarization,
             chunk=chunk,
             minduration=minduration,
-        ),
+        )
+    )
+
+    return {
+        "view_id": "blocks",
+        "dataset": dataset,
+        "stream": hstream,
         "before_db": before_db,
         "config": {
             "global_css": templateC,

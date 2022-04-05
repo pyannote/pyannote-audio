@@ -29,9 +29,9 @@ from typing import Dict, List, Optional, Text
 import numpy as np
 import scipy.io.wavfile
 from prodigy.components.loaders import Audio as ProdigyAudioLoader
+from pyannote.core import Annotation, Segment, SlidingWindow
 
 from pyannote.audio import Audio
-from pyannote.core import Annotation, Segment, SlidingWindow
 
 
 class AudioForProdigy(Audio):
@@ -139,6 +139,7 @@ def before_db(examples):
 
     1. Remove "audio" key as it is very heavy and can easily be retrieved from other keys
     2. Shift Prodigy/wavesurfer chunk-based audio spans so that their timing are file-based.
+    3. Diarization --> change span name ?
     """
 
     for eg in examples:
@@ -159,5 +160,10 @@ def before_db(examples):
                 }
                 for span in eg[key]
             ]
+
+        # 3. Change label span name (for diarization recipe)
+        for span in eg["audio_spans"]:
+            if span["label"] in eg:
+                span["label"] = eg[span["label"]]
 
     return examples
