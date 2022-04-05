@@ -22,6 +22,7 @@
 
 from typing import Dict, Optional, Sequence, Text, Tuple, Union
 
+import numpy as np
 import torch
 from pyannote.database import Protocol
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
@@ -128,18 +129,18 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
         labels = self.specifications.classes
 
         batch_size, num_frames, num_labels = (
-            len(batch["y"]),
-            len(batch["y"][0]),
+            len(batch),
+            len(batch[0]["y"]),
             len(labels),
         )
-        Y = torch.zeros((batch_size, num_frames, num_labels), dtype=torch.int64)
+        Y = np.zeros((batch_size, num_frames, num_labels), dtype=np.int64)
 
-        for i, y in enumerate(batch["y"]):
-            for local_idx, label in enumerate(y.labels):
+        for i, b in enumerate(batch):
+            for local_idx, label in enumerate(b["y"].labels):
                 global_idx = labels.index(label)
-                Y[i, :, global_idx] = y.data[:, local_idx]
+                Y[i, :, global_idx] = b["y"].data[:, local_idx]
 
-        return Y
+        return torch.from_numpy(Y)
 
     # TODO: add option to give more weights to smaller classes
     # TODO: add option to balance training samples between classes
