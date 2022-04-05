@@ -32,10 +32,3 @@ from .core.model import Model
 from .core.pipeline import Pipeline
 
 __all__ = ["Audio", "Model", "Inference", "Pipeline"]
-
-
-import torch_audiomentations
-
-from .augmentation.mix import MixSpeakerDiarization
-
-torch_audiomentations.MixSpeakerDiarization = MixSpeakerDiarization
