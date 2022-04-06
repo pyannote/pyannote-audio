@@ -429,10 +429,10 @@ class SegmentationTaskMixin:
         nrows = math.ceil(math.sqrt(num_samples))
         ncols = math.ceil(num_samples / nrows)
         fig, axes = plt.subplots(
-            nrows=3 * nrows, ncols=ncols, figsize=(15, 10), squeeze=False
+            nrows=2 * nrows, ncols=ncols, figsize=(8, 5), squeeze=False
         )
 
-        # reshape target so that there is one line per class when plottingit
+        # reshape target so that there is one line per class when plotting it
         y[y == 0] = np.NaN
         if len(y.shape) == 2:
             y = y[:, :, np.newaxis]
@@ -445,16 +445,8 @@ class SegmentationTaskMixin:
             row_idx = sample_idx // nrows
             col_idx = sample_idx % ncols
 
-            # plot waveform
-            ax_wav = axes[row_idx * 3 + 0, col_idx]
-            sample_X = np.mean(X[sample_idx], axis=0)
-            ax_wav.plot(sample_X)
-            ax_wav.set_xlim(0, len(sample_X))
-            ax_wav.get_xaxis().set_visible(False)
-            ax_wav.get_yaxis().set_visible(False)
-
             # plot target
-            ax_ref = axes[row_idx * 3 + 1, col_idx]
+            ax_ref = axes[row_idx * 2 + 0, col_idx]
             sample_y = y[sample_idx]
             ax_ref.plot(sample_y)
             ax_ref.set_xlim(0, len(sample_y))
@@ -462,8 +454,8 @@ class SegmentationTaskMixin:
             ax_ref.get_xaxis().set_visible(False)
             ax_ref.get_yaxis().set_visible(False)
 
-            # plot prediction
-            ax_hyp = axes[row_idx * 3 + 2, col_idx]
+            # plot predictions
+            ax_hyp = axes[row_idx * 2 + 1, col_idx]
             sample_y_pred = y_pred[sample_idx]
             ax_hyp.axvspan(0, warm_up_left, color="k", alpha=0.5, lw=0)
             ax_hyp.axvspan(
