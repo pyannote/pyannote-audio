@@ -277,10 +277,10 @@ class SupervisedRepresentationLearningTaskMixin:
                 y_pred = F.cosine_similarity(emb1, emb2)
 
             y_true = batch["y"]
-            self.validation_metric(y_pred, y_true)
+            self.model.validation_metric(y_pred, y_true)
 
             self.model.log_dict(
-                self.validation_metric,
+                self.model.validation_metric,
                 on_step=False,
                 on_epoch=True,
                 prog_bar=True,
