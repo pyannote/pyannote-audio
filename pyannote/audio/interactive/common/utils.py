@@ -113,7 +113,7 @@ def source_to_files(source: Path) -> List[Dict]:
     if source.is_dir():
         files = ProdigyAudioLoader(source)
     else:
-        name = source.name.rsplit(".", 1)[0]
+        name = source.stem
         files = [{"path": source, "text": name, "meta": {"file": source}}]
 
     return files
