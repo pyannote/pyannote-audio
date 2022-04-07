@@ -45,7 +45,7 @@ var audioCtx = new(window.AudioContext || window.webkitAudioContext)();
 
 /**
 * Makes sure that the document is loaded before executing waitForElement()
-* Add a small timeout if wavesurfer is already defined (useful when a new batch is comming),
+* Add a small timeout if wavesurfer is already defined (useful when a new batch is coming),
 * the time for prodigy to update wavesurfer.
 * @see waitForElement()
 */
