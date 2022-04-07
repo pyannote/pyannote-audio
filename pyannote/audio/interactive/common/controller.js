@@ -45,7 +45,7 @@ var audioCtx = new(window.AudioContext || window.webkitAudioContext)();
 
 /**
 * Makes sure that the document is loaded before executing waitForElement()
-* Add a small timeout if wavesurfer is already defined (useful when a new batch is comming),
+* Add a small timeout if wavesurfer is already defined (useful when a new batch is coming),
 * the time for prodigy to update wavesurfer.
 * @see waitForElement()
 */
@@ -82,7 +82,7 @@ function compare(region1, region2){
 /**
 * Simulate a click on prodigy's label radio button
 * Only useful for "review recipe"
-* To check if prodigy interface has changed
+* Note: might break with future versions of Prodigy
 * @param {label} Label to click on
 */
 function clickOnLabel(label){
