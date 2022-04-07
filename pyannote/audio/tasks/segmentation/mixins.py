@@ -381,7 +381,7 @@ class SegmentationTaskMixin:
             # target: shape (batch_size,), type binary
             # preds:  shape (batch_size,), type float
 
-            self.model.validation_metric(
+            self.validation_metric(
                 preds.reshape(-1),
                 target.reshape(-1),
             )
@@ -394,7 +394,7 @@ class SegmentationTaskMixin:
             # target: shape (batch_size, num_classes, ...), type binary
             # preds:  shape (batch_size, num_classes, ...), type float
 
-            self.model.validation_metric(
+            self.validation_metric(
                 torch.transpose(preds, 1, 2),
                 torch.transpose(target, 1, 2),
             )
@@ -404,7 +404,7 @@ class SegmentationTaskMixin:
             raise NotImplementedError()
 
         self.model.log_dict(
-            self.model.validation_metric,
+            self.validation_metric,
             on_step=False,
             on_epoch=True,
             prog_bar=True,

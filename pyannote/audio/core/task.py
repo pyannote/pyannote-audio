@@ -428,6 +428,12 @@ class Task(pl.LightningDataModule):
 
         return MetricCollection(self._metric, prefix=self.logging_prefix)
 
+    def setup_validation_metric(self):
+        validation_metric = self.metric
+        if validation_metric is not None:
+            self.validation_metric = validation_metric
+            self.validation_metric.to(self.model.device)
+
     @property
     def val_monitor(self):
         """Quantity (and direction) to monitor
