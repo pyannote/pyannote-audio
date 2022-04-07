@@ -111,16 +111,14 @@ def diff_stream(
         }
 
 
-"""
-RTTM files contain one line per speech turn, using the following convention:
-SPEAKER {uri} 1 {start_time} {duration} <NA> <NA> {speaker_id} <NA> <NA>
-* uri: file identifier (as given by pyannote.database protocols)
-* start_time: speech turn start time in seconds
-* duration: speech turn duration in seconds
-* confidence: confidence score (can be anything, not used for now)
-* gender: speaker gender (can be anything, not used for now)
-* speaker_id: speaker identifier
-"""
+# RTTM files contain one line per speech turn, using the following convention:
+# SPEAKER {uri} 1 {start_time} {duration} <NA> <NA> {speaker_id} <NA> <NA>
+# * uri: file identifier (as given by pyannote.database protocols)
+# * start_time: speech turn start time in seconds
+# * duration: speech turn duration in seconds
+# * confidence: confidence score (can be anything, not used for now)
+# * gender: speaker gender (can be anything, not used for now)
+# * speaker_id: speaker identifier
 
 
 @prodigy.recipe(
