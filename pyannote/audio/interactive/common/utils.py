@@ -22,7 +22,6 @@
 
 import base64
 import io
-import os
 from pathlib import Path
 from typing import Dict, List, Optional, Text
 
@@ -107,15 +106,22 @@ def remove_audio_before_db(examples: List[Dict]) -> List[Dict]:
     return examples
 
 
-def get_chunks(source: Path, chunk_duration: Optional[float] = None):
-
-    # Diff and review recipes can give only one file as source
-    if os.path.isdir(source):
+def source_to_files(source: Path) -> List[Dict]:
+    """
+    Convert a directory or a file path to a list of files object for prodigy
+    """
+    if source.is_dir():
         files = ProdigyAudioLoader(source)
     else:
-        name = os.path.basename(source).rsplit(".", 1)[0]
+        name = source.name.rsplit(".", 1)[0]
         files = [{"path": source, "text": name, "meta": {"file": source}}]
 
+    return files
+
+
+def get_chunks(source: Path, chunk_duration: Optional[float] = None):
+
+    files = source_to_files(source)
     audio = Audio()
 
     for file in files:
@@ -139,7 +145,6 @@ def before_db(examples):
 
     1. Remove "audio" key as it is very heavy and can easily be retrieved from other keys
     2. Shift Prodigy/wavesurfer chunk-based audio spans so that their timing are file-based.
-    3. Diarization --> change span name ?
     """
 
     for eg in examples:
@@ -160,10 +165,5 @@ def before_db(examples):
                 }
                 for span in eg[key]
             ]
-
-        # 3. Change label span name (for diarization recipe)
-        for span in eg["audio_spans"]:
-            if span["label"] in eg:
-                span["label"] = eg[span["label"]]
 
     return examples

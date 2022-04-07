@@ -1,12 +1,10 @@
 import base64
-import os
 from pathlib import Path
 from tempfile import mkstemp
-from typing import Any, Dict, Iterable, List, Union
+from typing import Any, Dict, Iterable, List
 
 import prodigy
 from prodigy import set_hashes
-from prodigy.components.loaders import Audio as AudioLoader
 from prodigy.util import split_string
 from pyannote.core import Segment
 from pyannote.database import util
@@ -14,7 +12,13 @@ from pyannote.database import util
 from pyannote.audio.core.io import Audio
 from pyannote.audio.pipelines import SpeakerDiarization
 
-from ..common.utils import AudioForProdigy, before_db, get_audio_spans, get_chunks
+from ..common.utils import (
+    AudioForProdigy,
+    before_db,
+    get_audio_spans,
+    get_chunks,
+    source_to_files,
+)
 
 
 def review_stream(
@@ -25,12 +29,7 @@ def review_stream(
     chunk: float = 30.0,
 ) -> Iterable[Dict]:
 
-    if os.path.isdir(source):
-        files = AudioLoader(source)
-    else:
-        name = os.path.basename(source).rsplit(".", 1)[0]
-        files = [{"path": source, "text": name, "meta": {"file": source}}]
-
+    files = source_to_files(source)
     audio_for_prodigy = AudioForProdigy()
     audio_for_pipeline = Audio(mono=True)
     chunks = get_chunks(source, chunk_duration=chunk)
@@ -90,7 +89,7 @@ def review_stream(
         "Path to directory containing audio files whose annotation is to be checked",
         "positional",
         None,
-        str,
+        Path,
     ),
     annotations=(
         "Comma-separated paths to annotation files ",
@@ -115,7 +114,7 @@ def review_stream(
 )
 def review(
     dataset: str,
-    source: Union[str, Iterable[dict]],
+    source: Path,
     annotations: [List[str]],
     chunk: float = 30.0,
     diarization: bool = False,
@@ -165,7 +164,7 @@ def review(
         for label in anno.labels()
     ]
 
-    hstream = (
+    hashed_stream = (
         set_hashes(eg, input_keys=("path", "chunk"))
         for eg in review_stream(
             source, list_annotations, labels, diarization=diarization, chunk=chunk
@@ -175,7 +174,7 @@ def review(
     return {
         "view_id": "blocks",
         "dataset": dataset,
-        "stream": hstream,
+        "stream": hashed_stream,
         "before_db": before_db,
         "config": {
             "global_css": templateC,

@@ -137,7 +137,7 @@ def stream(
         "Path to directory containing audio files to annotate",
         "positional",
         None,
-        str,
+        Path,
     ),
     pipeline=(
         "Pretrained pipeline (name on Huggingface Hub, path to YAML file)",
@@ -167,7 +167,7 @@ def stream(
 )
 def pipeline(
     dataset: str,
-    source: Union[str, Iterable[dict]],
+    source: Path,
     pipeline: Union[str, Iterable[dict]],
     chunk: float = 10.0,
     num_classes: int = 4,
@@ -199,7 +199,7 @@ def pipeline(
         b64 = base64.b64encode(fp_png.read()).decode("utf-8")
         instructions_f.write(fp_tpl.read().replace("{IMAGE}", b64))
 
-    hstream = (
+    hashed_stream = (
         set_hashes(eg, input_keys=("path", "chunk"))
         for eg in stream(pipeline, source, labels, chunk=chunk, randomize=False)
     )
@@ -207,7 +207,7 @@ def pipeline(
     return {
         "view_id": "audio_manual",
         "dataset": dataset,
-        "stream": hstream,
+        "stream": hashed_stream,
         "before_db": before_db,
         "config": {
             "javascript": javascript,

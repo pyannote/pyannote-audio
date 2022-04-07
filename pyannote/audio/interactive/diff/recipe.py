@@ -1,10 +1,8 @@
-import os
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Union
+from typing import Any, Dict, Iterable, List
 
 import prodigy
 from prodigy import set_hashes
-from prodigy.components.loaders import Audio as AudioLoader
 from pyannote.core import Annotation, Segment
 from pyannote.database import util
 from pyannote.metrics.errors.identification import IdentificationErrorAnalysis
@@ -12,25 +10,26 @@ from pyannote.metrics.errors.identification import IdentificationErrorAnalysis
 from pyannote.audio import Audio
 from pyannote.audio.pipelines import SpeakerDiarization
 
-from ..common.utils import AudioForProdigy, before_db, get_audio_spans, get_chunks
+from ..common.utils import (
+    AudioForProdigy,
+    before_db,
+    get_audio_spans,
+    get_chunks,
+    source_to_files,
+)
 
 
 def diff_stream(
     source: Path,
     reference: dict,
     hypothesis: dict,
-    listerrors: List,
+    list_errors: List,
     diarization: bool = False,
     chunk: float = 30.0,
-    minduration: int = 200,
+    min_duration: int = 200,
 ) -> Iterable[Dict]:
 
-    if os.path.isdir(source):
-        files = AudioLoader(source)
-    else:
-        name = os.path.basename(source).rsplit(".", 1)[0]
-        files = [{"path": source, "text": name, "meta": {"file": source}}]
-
+    files = source_to_files(source)
     files_errors = {}
     for file in files:
         filename = file["text"]
@@ -46,16 +45,16 @@ def diff_stream(
             newLabels[(a, b, c)] = a
         errors = errors.rename_labels(newLabels)
         errors = errors.subset(["correct"], invert=True)
-        if listerrors[0] or listerrors[1] or listerrors[2]:
-            if not listerrors[0]:
+        if list_errors[0] or list_errors[1] or list_errors[2]:
+            if not list_errors[0]:
                 errors = errors.subset(["false alarm"], invert=True)
-            if not listerrors[1]:
+            if not list_errors[1]:
                 errors = errors.subset(["confusion"], invert=True)
-            if not listerrors[2]:
+            if not list_errors[2]:
                 errors = errors.subset(["missed detection"], invert=True)
         clean_errors = Annotation()
         for segment, track, label in errors.itertracks(yield_label=True):
-            if segment.duration * 1000 > minduration:
+            if segment.duration * 1000 > min_duration:
                 clean_errors[segment, track] = label
         errors = clean_errors
         files_errors[filename] = errors
@@ -112,6 +111,18 @@ def diff_stream(
         }
 
 
+"""
+RTTM files contain one line per speech turn, using the following convention:
+SPEAKER {uri} 1 {start_time} {duration} <NA> <NA> {speaker_id} <NA> <NA>
+* uri: file identifier (as given by pyannote.database protocols)
+* start_time: speech turn start time in seconds
+* duration: speech turn duration in seconds
+* confidence: confidence score (can be anything, not used for now)
+* gender: speaker gender (can be anything, not used for now)
+* speaker_id: speaker identifier
+"""
+
+
 @prodigy.recipe(
     "pyannote.diff",
     dataset=("Dataset to save annotations to", "positional", None, str),
@@ -119,38 +130,48 @@ def diff_stream(
         "Path to directory containing audio files whose annotation is to be checked",
         "positional",
         None,
+        Path,
+    ),
+    reference=(
+        "Path to reference file using the RTTM file format",
+        "positional",
+        None,
         str,
     ),
-    reference=("Path to reference file", "positional", None, str),
-    hypothesis=("Path to hypothesis file ", "positional", None, str),
+    hypothesis=(
+        "Path to hypothesis file using the RTTM file format",
+        "positional",
+        None,
+        str,
+    ),
     chunk=(
         "Split long audio files into shorter chunks of that many seconds each",
         "option",
         None,
         float,
     ),
-    minduration=("Minimum duration of errors in ms", "option", None, int),
+    min_duration=("Minimum duration of errors in ms", "option", None, int),
     diarization=(
         "Optimal one-to-one mapping between reference and hypothesis",
         "flag",
         None,
         bool,
     ),
-    falsealarm=("Display false alarm errors", "flag", None, bool),
-    confusion=("Display confusion errors", "flag", None, bool),
-    misseddetection=("Display missed detection errors", "flag", None, bool),
+    false_alarm=("Display false alarm errors", "flag", None, bool),
+    speaker_confusion=("Display confusion errors", "flag", None, bool),
+    missed_detection=("Display missed detection errors", "flag", None, bool),
 )
 def diff(
     dataset: str,
-    source: Union[str, Iterable[dict]],
+    source: Path,
     reference: str,
     hypothesis: str,
     chunk: float = 30.0,
-    minduration=200,
+    min_duration=200,
     diarization: bool = False,
-    falsealarm: bool = False,
-    confusion: bool = False,
-    misseddetection: bool = False,
+    false_alarm: bool = False,
+    speaker_confusion: bool = False,
+    missed_detection: bool = False,
 ) -> Dict[str, Any]:
 
     recipe_dir = Path(__file__).resolve().parent
@@ -175,25 +196,25 @@ def diff(
 
     ref = util.load_rttm(reference)
     hyp = util.load_rttm(hypothesis)
-    listerrors = [falsealarm, confusion, misseddetection]
+    list_errors = [false_alarm, speaker_confusion, missed_detection]
 
-    hstream = (
+    hashed_stream = (
         set_hashes(eg, input_keys=("path", "chunk"))
         for eg in diff_stream(
             source,
             ref,
             hyp,
-            listerrors,
+            list_errors,
             diarization=diarization,
             chunk=chunk,
-            minduration=minduration,
+            min_duration=min_duration,
         )
     )
 
     return {
         "view_id": "blocks",
         "dataset": dataset,
-        "stream": hstream,
+        "stream": hashed_stream,
         "before_db": before_db,
         "config": {
             "global_css": templateC,

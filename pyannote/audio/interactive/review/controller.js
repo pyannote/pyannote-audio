@@ -28,6 +28,9 @@ var hex2rgba = (hex, alpha = 0.2) => {
     return `rgba(${r},${g},${b},${alpha})`;
 };
 
+/**
+* Makes sure that the document is loaded before executing wait()
+*/
 if (document.readyState !== 'loading') {
     wait();
 } else {
@@ -36,6 +39,9 @@ if (document.readyState !== 'loading') {
     });
 }
 
+/**
+* Add regions for all annotations on their corresponding wavesurfer instance
+*/
 function loadRegions() {
     for (var i = 0; i < numberAnnotations; i++) {
         var regions = window.prodigy.content.annotations[i];
@@ -49,11 +55,16 @@ function loadRegions() {
             var color = prodigy.config.custom_theme.palettes.audio[id];
             color = hex2rgba(color);
             var re = window['wavesurfer' + i].addRegion({ 'start': regions[region]['start'], 'end': regions[region]['end'], 'color': color, 'resize': false, 'drag': false, "attributes": { "label": label } });
-            addRegionLabel(re, label, true);
+            addRegionLabel(re, label);
         }
     }
 }
 
+/**
+* Create audio url
+* @see loadWave()
+* @see prodigyanswer
+*/
 async function createURL() {
     var blob;
     var track = document.querySelector('#track');
@@ -64,6 +75,10 @@ async function createURL() {
     return objectURL;
 }
 
+/**
+* Create the same wavesurfer object as on Prodigy interface for all annotations
+* Those objects are muted
+*/
 async function loadWave() {
     var objectURL = await createURL();
     var wdict = {
@@ -128,6 +143,11 @@ async function loadWave() {
     }
 }
 
+/**
+* Handle click on annotation label
+* Add all regions of the clicked annotation on the main wavesurfer instance (the prodigy's one)
+* @param(i) indice of annotation (wavesurfer instance)
+*/
 function addAllRegions(i) {
     var rs = window['wavesurfer' + i].regions.list;
     num = Object.values(rs);
@@ -140,6 +160,10 @@ function addAllRegions(i) {
     }
 }
 
+/**
+* Handle wavesurfer
+* Tracking audio playback for all annotations
+*/
 async function wait() {
     if (document.querySelector('#track') !== null) {
         await loadWave();
@@ -175,6 +199,9 @@ async function wait() {
     }
 }
 
+/**
+* Load new audio and clear regions for all annotations wavesurfer when there is a new task
+*/
 document.addEventListener('prodigyanswer', async () => {
     var objectURL = await createURL();
     for (var i = 0; i < numberAnnotations; i++) {
@@ -184,12 +211,18 @@ document.addEventListener('prodigyanswer', async () => {
     loadRegions();
 });
 
-function addRegionLabel(e, t, n) {
-    var s = e.element
+/**
+* Add CSS label to reference and hypothesis region
+* @see loadRegions()
+* @param(r) region object
+* @param(l) label
+*/
+function addRegionLabel(r, label) {
+    var s = r.element
     var l = s.appendChild(document.createElement("span"))
-    l.textContent = t,
-        l.className = "pyannote-region",
-        l.style.color = "rgb(0, 0, 0)",
-        l.style.background = e.color,
-        e.label = t;
+    l.textContent = label,
+    l.className = "pyannote-region",
+    l.style.color = "rgb(0, 0, 0)",
+    l.style.background = r.color,
+    r.label = label;
 }

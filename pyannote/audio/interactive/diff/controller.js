@@ -27,6 +27,11 @@ var hex2rgba = (hex, alpha = 0.2) => {
   return `rgba(${r},${g},${b},${alpha})`;
 };
 
+
+/**
+* Makes sure that the document is loaded before executing waitForElement()
+* @see waitForElement()
+*/
 if(document.readyState !== 'loading') {
     waitForElement();
 } else {
@@ -35,6 +40,11 @@ if(document.readyState !== 'loading') {
     });
 }
 
+/**
+* Remove label on region (created by prodigy)
+* @param(r) region object
+* @see waitForElement()
+*/
 function removeLabel(r){
     s = r.start;
     e = r.end;
@@ -43,6 +53,9 @@ function removeLabel(r){
     window.wavesurfer.addRegion({"start" : s, "end" :e, 'color' : c, "resize": false, "drag": false});
 }
 
+/**
+* Add reference and hypothesis regions on the corresponding wavesurfer instance
+*/
 function loadRegions(){
     for(var i=0; i < numberAnnotations;i++){
         (i == 0)? (regions = window.prodigy.content.reference) : (regions = window.prodigy.content.hypothesis)
@@ -55,11 +68,16 @@ function loadRegions(){
             var color = prodigy.config.custom_theme.palettes.audio[id];
             color = hex2rgba(color);
             var re = window['wavesurfer'+i].addRegion({'start' : regions[region]['start'],'end' : regions[region]['end'],'color' : color, 'resize' : false, 'drag' : false, "attributes": {"label":regions[region]['label']}});
-            addRegionLabel(re,label,true);
+            addRegionLabel(re,label);
         }
     }
 }
 
+/**
+* Create audio url for reference and hypothesis wavesurfer instance
+* @see loadWave()
+* @see LoadTrack()
+*/
 async function createURL(){
       var blob;
       var track = document.querySelector('#track');
@@ -69,6 +87,10 @@ async function createURL(){
       return objectURL;
 }
 
+/**
+* Create the same wavesurfer object as on Prodigy interface for reference and hypothesis
+* Those objects are muted
+*/
 async function loadWave(){
     var objectURL = await createURL();
     var wdict = {
@@ -125,6 +147,10 @@ async function loadWave(){
     }
 }
 
+/**
+* Handle wavesurfer
+* Tracking audio playback for reference and hypothesis wavesurfer
+*/
 async function waitForElement(){
     if((typeof window.wavesurfer !== "undefined") && (document.querySelector('#track') !== null)){
         window.wavesurfer.on('region-created', function(e){
@@ -166,6 +192,10 @@ async function waitForElement(){
     }
 }
 
+/**
+* Reload audio (when there is a new task)
+* @see prodigyanswer
+*/
 async function loadTrack(){
   if(document.querySelector('#track') !== null){
     var objectURL = await createURL();
@@ -179,16 +209,23 @@ async function loadTrack(){
   }
 }
 
+// Check if it's a new prodigy task
 document.addEventListener('prodigyanswer', async() => {
   loadTrack();
 });
 
-function addRegionLabel(e,t,n){
-   var s = e.element
+/**
+* Add CSS label to reference and hypothesis region
+* @see loadRegions()
+* @param(r) region object
+* @param(l) label
+*/
+function addRegionLabel(r,label){
+   var s = r.element
    var l = s.appendChild(document.createElement("span"))
-   l.textContent = t,
+   l.textContent = label,
    l.className = "pyannote-region",
    l.style.color = "rgb(0, 0, 0)",
-   l.style.background = e.color,
-   e.label = t;
+   l.style.background = r.color,
+   r.label = label;
 }
