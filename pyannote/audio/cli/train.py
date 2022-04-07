@@ -64,6 +64,8 @@ def train(cfg: DictConfig) -> Optional[float]:
         if "augmentation" in cfg
         else None
     )
+    if augmentation is not None:
+        augmentation.output_type = "dict"
 
     # instantiate task and validation metric
     task = instantiate(cfg.task, protocol, augmentation=augmentation)

@@ -102,17 +102,16 @@ class Audio:
 
         Parameters
         ----------
-        waveform : (channel, time) Tensor
-            Single or multichannel waveform
-
+        waveform : (..., time) Tensor
+            Waveform(s)
 
         Returns
         -------
-        waveform: (channel, time) Tensor
-            Power-normalized waveform
+        waveform: (..., time) Tensor
+            Power-normalized waveform(s)
         """
-        rms = waveform.square().mean(dim=1).sqrt()
-        return (waveform.t() / (rms + 1e-8)).t()
+        rms = waveform.square().mean(dim=-1, keepdim=True).sqrt()
+        return waveform / (rms + 1e-8)
 
     @staticmethod
     def validate_file(file: AudioFile) -> Mapping:
