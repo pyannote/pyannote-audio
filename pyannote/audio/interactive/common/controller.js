@@ -344,9 +344,9 @@ document.querySelector('#root').onkeydown = document.querySelector('#root').onke
       if(fin > audioEnd) fin = audioEnd;
       re = window.wavesurfer.addRegion({'start' : pos,'end' : fin});
       window.wavesurfer.fireEvent('region-update-end',re);
-    // Id Down and Shift : delete region
-    // if(keysMap['Backspace'] || (keysMap['ArrowDown'] && keysMap['Shift'])) ---> No more backspace for edit diarization
-    }else if(keysMap['ArrowDown'] && keysMap['Shift']){
+    // If Down and Shift or Backspace: delete region
+    // Check backspace for diarization text field
+    }else if(keysMap['Backspace'] || (keysMap['ArrowDown'] && keysMap['Shift'])){
       ids[currentRegion].remove();
     // If Up/Down @see switchCurrent
     }else if(keysMap['ArrowUp']){

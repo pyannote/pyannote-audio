@@ -92,7 +92,7 @@ def review_stream(
         Path,
     ),
     annotations=(
-        "Comma-separated paths to annotation files ",
+        "Comma-separated paths to annotation files",
         "positional",
         None,
         split_string,
@@ -104,7 +104,7 @@ def review_stream(
         float,
     ),
     diarization=(
-        "Optimal one-to-one mapping between reference and hypothesis",
+        "Optimal one-to-one mapping between the first annotation and the others",
         "flag",
         None,
         bool,
@@ -118,7 +118,7 @@ def review(
     annotations: [List[str]],
     chunk: float = 30.0,
     diarization: bool = False,
-    precision: int = 100,
+    precision: int = 200,
     beep: bool = False,
 ) -> Dict[str, Any]:
 
