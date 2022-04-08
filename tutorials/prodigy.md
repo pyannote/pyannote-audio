@@ -1,11 +1,24 @@
-# Annotating your own data with Prodigy
+# Annotating your own data with 💥 Prodigy
 
-Manually annotating audio data is time consuming.
-`pyannote.audio` comes with a bunch of [Prodigy](https://prodi.gy) recipes that should speed things up a bit.
+Manually segmenting and labeling audio data is time consuming.  For speaker diarization, depending on the required level of precision, it may take more than 10 times the duration of a recording to annotate it. 
 
-## Pre-annotate with a pretrained pipeline
+## Table of content
 
-`pyannote.audio` recipe will stream in `.wav` files in chunks and apply [a pretrained pipeline](https://huggingface.co/models?other=pyannote-audio-pipeline). You can then adjust the regions manually if needed.
+* [Recipes](#recipes)
+* [Keyboard shortcuts](#keyboard-shortcuts)
+
+## Recipes
+
+`pyannote.audio` comes with a bunch of [💥 Prodigy](https://prodi.gy) recipes designed to speed things up a bit.
+
+|   Recipe              | Usage                                                 |
+|-----------------------|-------------------------------------------------------|
+ 🦻 `pyannote.audio`    | Annotate with a [pretrained pipeline](https://huggingface.co/models?other=pyannote-audio-pipeline) in the loop   
+ 🧐 `pyannote.review`   | Merge multiple annotations  
+ 🤲 `pyannote.diff`     | Show differences between two annotations   
+ 🗄 `pyannote.database` | Dump annotations as [`pyannote.database`](https://github.com/pyannote/pyannote-database/) protocols 
+
+### 🦻 `pyannote.audio` | Annotate with a pretrained pipeline in the loop
 
 ```bash
 prodigy pyannote.audio dataset /path/to/audio/directory pyannote/speaker-segmentation
@@ -13,23 +26,54 @@ prodigy pyannote.audio dataset /path/to/audio/directory pyannote/speaker-segment
 
 ![pyannote.audio screenshot](./assets/prodigy-pyannote.audio.png)
 
-## Merge multiple annotations
+`pyannote.audio` recipe will stream in `.wav` files in chunks and apply [a pretrained pipeline](https://huggingface.co/models?other=pyannote-audio-pipeline). You can then adjust the regions manually if needed.
+
+
+<details>
+<summary>More options</summary>
+
+```
+prodigy pyannote.audio [options] dataset source pipeline
+
+  dataset           Prodigy dataset to save annotations to
+  source            Path to directory containing audio files to annotate
+  pipeline          Name of pretrained pipeline on huggingface.co (e.g. 
+                    pyannote/speaker-segmentation) or path to local YAML file.
+  -chunk DURATION   Split audio files into shorter chunks of that many seconds.
+                    Defaults to 10s.
+  -precision STEP   Temporal precision of keyboard controls, in milliseconds.
+                    Defaults to 200ms.
+  -beep             Produce a beep when the player reaches the end of a region.
+```
+
+</details>
+
+
+### 🧐 `pyannote.review` | Merge multiple annotations
+
+```bash
+prodigy pyannote.review dataset /path/to/audio/directory input1.rttm,input2.rttm
+```
+
+![pyannote.review screenshot](./assets/pyannote.review.PNG)
 
 `pyannote.review` recipe take as many annotation files, using the RTTM file format, as you want and let you compare and choose which ones are best within the same stream as `pyannote.audio` recipe.
 Click on a segment of the annotation files to add it to the ouput audio, or on "Input X" to add all segments at once.
 There is a "diarization" option to make a optimal one-to-one mapping between the first annotation and all others.
 
-```bash
-prodigy pyannote.review dataset /path/to/audio/directory /path/to/annotations/1.rttm,/path/to/annotations/2.rttm,/path/to/annotations/3.rttm
+<details>
+<summary>More options</summary>
+
+```
+prodigy pyannote.review [options] ...
+
+TODO
 ```
 
-![pyannote.review screenshot](./assets/pyannote.review.PNG)
+</details>
 
-## Compare reference and hypothesis annotations
 
-`pyannote.diff` recipe take one reference file and one hypothesis file, using the RTTM file format, and focus where there are the most errors among missed detections, false alarms and confusions.
-You can filter on one or more error types and their minimum duration with the corresponding options.
-There is also a "diarization" option to make a optimal one-to-one mapping between reference and hypothesis.
+### 🤲 `pyannote.diff` | Show differences between two annotations
 
 ```bash
 prodigy pyannote.diff dataset /path/to/audio/directory /path/to/reference.rttm /path/to/hypothesis.rttm
@@ -37,7 +81,40 @@ prodigy pyannote.diff dataset /path/to/audio/directory /path/to/reference.rttm /
 
 ![pyannote.diff screenshot](./assets/pyannote.diff.PNG)
 
-## RTTM file
+`pyannote.diff` recipe take one reference file and one hypothesis file, using the RTTM file format, and focus where there are the most errors among missed detections, false alarms and confusions.
+You can filter on one or more error types and their minimum duration with the corresponding options.
+There is also a "diarization" option to make a optimal one-to-one mapping between reference and hypothesis.
+
+
+<details>
+<summary>More options</summary>
+
+```
+prodigy pyannote.diff [options] ...
+
+TODO
+```
+
+</details>
+
+### 🗄 `pyannote.database` | Dump annotations as `pyannote.database` protocols
+
+Work in progress
+
+
+## Keyboard shortcuts
+
+Though `pyannote.audio` recipes are built on top of the Prodigy [audio interface](https://prodi.gy/docs/api-interfaces#audio), they provide a bunch of handy additional keyboard shortcuts.
+
+| Shortcut                          | Description                                      |
+|-----------------------------------|--------------------------------------------------|
+|  `left` / `right`                 | Shift player cursor                              |
+|  `up` / `down`                    |                                                  |
+|  `ctrl + left` / `ctrl + right`   | Shift active region start time                   |
+|  `shift + left` / `shift + right` | Shift active region end time                     |
+|  `backspace`                      | Remove active region                             |
+
+## RTTM file format
 
 RTTM files contain one line per speech turn, using the following convention:
 
