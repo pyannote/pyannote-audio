@@ -4,6 +4,6 @@ defaults:
   - task: SpeakerSegmentation
   - model: PyanNet
   - optimizer: Adam
-  - scheduler: ReduceLROnPlateau
+  - scheduler: CosineAnnealingWarmRestarts
   - trainer: default
   - hydra: default

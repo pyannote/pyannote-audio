@@ -96,7 +96,7 @@ def train(cfg: DictConfig) -> Optional[float]:
 
     model.configure_optimizers = MethodType(configure_optimizers, model)
 
-    callbacks = [RichProgressBar(), LearningRateMonitor()]
+    callbacks = [RichProgressBar(), LearningRateMonitor(logging_interval="step")]
 
     if fine_tuning:
         # TODO: configure layer freezing
@@ -123,7 +123,7 @@ def train(cfg: DictConfig) -> Optional[float]:
             monitor=monitor,
             mode=direction,
             min_delta=0.0,
-            patience=cfg.scheduler.patience * 2,
+            patience=100,
             strict=True,
             verbose=False,
         )

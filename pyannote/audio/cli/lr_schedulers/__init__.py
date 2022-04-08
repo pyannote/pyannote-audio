@@ -21,7 +21,8 @@
 # SOFTWARE.
 
 
+from .CosineAnnealingWarmRestarts import CosineAnnealingWarmRestarts
 from .CyclicLR import CyclicLR
 from .ReduceLROnPlateau import ReduceLROnPlateau
 
-__all__ = ["ReduceLROnPlateau", "CyclicLR"]
+__all__ = ["ReduceLROnPlateau", "CyclicLR", "CosineAnnealingWarmRestarts"]
