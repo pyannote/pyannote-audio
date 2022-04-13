@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020-2021 CNRS
+# Copyright (c) 2022 CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -20,23 +20,46 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from .segmentation.voice_activity_detection import VoiceActivityDetection  # isort:skip
-from .segmentation.overlapped_speech_detection import (  # isort:skip
-    OverlappedSpeechDetection,
+
+from torch.optim import Optimizer
+from torch.optim.lr_scheduler import (
+    CosineAnnealingWarmRestarts as _CosineAnnealingWarmRestarts,
 )
 
-from .segmentation.speaker_tracking import SpeakerTracking  # isort:skip
 
-from .segmentation.segmentation import Segmentation  # isort:skip
+def CosineAnnealingWarmRestarts(
+    optimizer: Optimizer,
+    min_lr: float = 1e-8,
+    max_lr: float = 1e-3,
+    patience: int = 1,
+    num_batches_per_epoch: int = None,
+    **kwargs,
+):
+    """Wrapper around CosineAnnealingWarmRestarts
 
-from .embedding.arcface import SupervisedRepresentationLearningWithArcFace  # isort:skip
+    Parameters
+    ----------
+    optimizer : Optimizer
+        Optimizer
+    min_lr : float, optional
+        Defaults to 1e-8.
+    max_lr : float, optional
+        Defaults to 1e-3
+    patience : int, optional
+        Number of epochs per cycle. Defaults to 1.
+    num_batches_per_epoch : int, optional
+        Number of batches per epoch.
+    """
 
-SpeakerEmbedding = SupervisedRepresentationLearningWithArcFace
+    # initialize optimizer lr to max_lr
+    for g in optimizer.param_groups:
+        g["lr"] = max_lr
 
-__all__ = [
-    "Segmentation",
-    "VoiceActivityDetection",
-    "OverlappedSpeechDetection",
-    "SpeakerTracking",
-    "SpeakerEmbedding",
-]
+    num_steps = patience * num_batches_per_epoch
+
+    return {
+        "scheduler": _CosineAnnealingWarmRestarts(
+            optimizer, num_steps, eta_min=min_lr, T_mult=2
+        ),
+        "interval": "step",
+    }

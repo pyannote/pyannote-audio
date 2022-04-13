@@ -34,10 +34,11 @@ from typing_extensions import Literal
 from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
 from pyannote.audio.torchmetrics import (
-    DiarizationErrorRate,
-    FalseAlarmRate,
-    MissedDetectionRate,
-    SpeakerConfusionRate,
+    OptimalDiarizationErrorRate,
+    OptimalDiarizationErrorRateThreshold,
+    OptimalFalseAlarmRate,
+    OptimalMissedDetectionRate,
+    OptimalSpeakerConfusionRate,
 )
 from pyannote.audio.utils.loss import binary_cross_entropy, mse_loss
 from pyannote.audio.utils.permutation import permutate
@@ -65,14 +66,6 @@ class Segmentation(SegmentationTaskMixin, Task):
         When provided, training samples are sampled uniformly with respect to that key.
         For instance, setting `balance` to "uri" will make sure that each file will be
         equally represented in the training samples.
-    overlap: dict, optional
-        Controls how artificial chunks with overlapping speech are generated:
-        - "probability" key is the probability of artificial overlapping chunks. Setting
-          "probability" to 0.6 means that, on average, 40% of training chunks are "real"
-          chunks, while 60% are artifical chunks made out of the (weighted) sum of two
-          chunks. Defaults to 0.5.
-        - "snr_min" and "snr_max" keys control the minimum and maximum signal-to-noise
-          ratio between summed chunks, in dB. Default to 0.0 and 10.
     weight: str, optional
         When provided, use this key to as frame-wise weight in loss function.
     batch_size : int, optional
@@ -102,15 +95,12 @@ class Segmentation(SegmentationTaskMixin, Task):
     Proc. Interspeech 2021
     """
 
-    OVERLAP_DEFAULTS = {"probability": 0.5, "snr_min": 0.0, "snr_max": 10.0}
-
     def __init__(
         self,
         protocol: Protocol,
         duration: float = 2.0,
         max_num_speakers: int = None,
         warm_up: Union[float, Tuple[float, float]] = 0.0,
-        overlap: dict = OVERLAP_DEFAULTS,
         balance: Text = None,
         weight: Text = None,
         batch_size: int = 32,
@@ -134,7 +124,6 @@ class Segmentation(SegmentationTaskMixin, Task):
         )
 
         self.max_num_speakers = max_num_speakers
-        self.overlap = overlap
         self.balance = balance
         self.weight = weight
 
@@ -192,51 +181,42 @@ class Segmentation(SegmentationTaskMixin, Task):
             permutation_invariant=True,
         )
 
-    def prepare_y(self, one_hot_y: np.ndarray):
-        """Zero-pad segmentation targets
+    def adapt_y(self, collated_y: torch.Tensor) -> torch.Tensor:
+        """Get speaker diarization targets
 
         Parameters
         ----------
-        one_hot_y : (num_frames, num_speakers) np.ndarray
+        collated_y : (batch_size, num_frames, num_speakers) tensor
             One-hot-encoding of current chunk speaker activity:
-                * one_hot_y[t, k] = 1 if kth speaker is active at tth frame
-                * one_hot_y[t, k] = 0 otherwise.
+                * one_hot_y[b, f, s] = 1 if sth speaker is active at fth frame
+                * one_hot_y[b, f, s] = 0 otherwise.
 
         Returns
         -------
-        padded_one_hot_y : (num_frames, self.max_num_speakers) np.ndarray
-            One-hot-encoding of current chunk speaker activity:
-                * one_hot_y[t, k] = 1 if kth speaker is active at tth frame
-                * one_hot_y[t, k] = 0 otherwise.
+        y : (batch_size, num_frames, max_num_speakers) tensor
+            Same as collated_y, except we only keep ``max_num_speakers`` most
+            talkative speakers (per sample).
         """
 
-        num_frames, num_speakers = one_hot_y.shape
+        batch_size, num_frames, num_speakers = collated_y.shape
 
-        if num_speakers > self.max_num_speakers:
-            raise ValueError()
+        # maximum number of active speakers in a chunk
+        max_num_speakers = torch.max(
+            torch.sum(torch.sum(collated_y, dim=1) > 0.0, dim=1)
+        )
 
-        if num_speakers < self.max_num_speakers:
-            one_hot_y = np.pad(
-                one_hot_y, ((0, 0), (0, self.max_num_speakers - num_speakers))
-            )
+        # sort speakers in descending talkativeness order
+        indices = torch.argsort(torch.sum(collated_y, dim=1), dim=1, descending=True)
 
-        return one_hot_y
+        # keep max_num_speakers most talkative speakers, for each chunk
+        y = torch.zeros(
+            (batch_size, num_frames, max_num_speakers), dtype=collated_y.dtype
+        )
+        for b, index in enumerate(indices):
+            for k, i in zip(range(max_num_speakers), index):
+                y[b, :, k] = collated_y[b, :, i.item()]
 
-    def val__getitem__(self, idx):
-
-        f, chunk = self._validation[idx]
-        sample = self.prepare_chunk(f, chunk, duration=self.duration, stage="val")
-        y, labels = sample["y"], sample.pop("labels")
-
-        # since number of speakers is estimated from the training set,
-        # we might encounter validation chunks that have more speakers.
-        # in that case, we arbitrarily remove last speakers
-        if y.shape[1] > self.max_num_speakers:
-            y = y[:, : self.max_num_speakers]
-            labels = labels[: self.max_num_speakers]
-
-        sample["y"] = self.prepare_y(y)
-        return sample
+        return y
 
     def segmentation_loss(
         self,
@@ -324,14 +304,40 @@ class Segmentation(SegmentationTaskMixin, Task):
             {"loss": loss}
         """
 
+        # target
+        target = batch["y"]
+        # (batch_size, num_frames, num_speakers)
+
+        waveform = batch["X"]
+        # (batch_size, num_channels, num_samples)
+
+        # drop samples that contain too many speakers
+        num_speakers: torch.Tensor = torch.sum(torch.any(target, dim=1), dim=1)
+        keep: torch.Tensor = num_speakers <= self.max_num_speakers
+        target = target[keep]
+        waveform = waveform[keep]
+
+        # log effective batch size
+        self.model.log(
+            f"{self.logging_prefix}BatchSize",
+            keep.sum(),
+            prog_bar=False,
+            logger=True,
+            on_step=False,
+            on_epoch=True,
+            reduce_fx="mean",
+        )
+
+        # corner case
+        if not keep.any():
+            return {"loss": 0.0}
+
         # forward pass
-        prediction = self.model(batch["X"])
+        prediction = self.model(waveform)
         batch_size, num_frames, _ = prediction.shape
         # (batch_size, num_frames, num_classes)
 
-        # target
-        target = batch["y"]
-
+        # find optimal permutation
         permutated_prediction, _ = permutate(target, prediction)
 
         # frames weight
@@ -394,10 +400,11 @@ class Segmentation(SegmentationTaskMixin, Task):
     ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
         """Returns diarization error rate and its components"""
         return [
-            DiarizationErrorRate(),
-            SpeakerConfusionRate(),
-            MissedDetectionRate(),
-            FalseAlarmRate(),
+            OptimalDiarizationErrorRate(),
+            OptimalDiarizationErrorRateThreshold(),
+            OptimalSpeakerConfusionRate(),
+            OptimalMissedDetectionRate(),
+            OptimalFalseAlarmRate(),
         ]
 
 
