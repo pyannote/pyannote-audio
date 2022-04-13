@@ -156,7 +156,7 @@ def validate_answer(eg):
 def getEmb(wav, sample_rate):
     try:
         embedding = inference({"waveform": wav, "sample_rate": sample_rate})
-    except ValueError:
+    except RuntimeError:
         embedding = [float("nan")]
     return embedding
 
