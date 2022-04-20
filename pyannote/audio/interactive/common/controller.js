@@ -256,6 +256,10 @@ document.addEventListener('prodigyanswer', e => {
 * | Backspace         |                    | Remove current segment                           |
 */
 document.querySelector('#root').onkeydown = document.querySelector('#root').onkeyup = function(e){
+    // Exist if the focus is on a text field
+    if (document.activeElement.type == 'text'){
+      return;
+    }
     e = e || event;
     keysMap[e.key] = e.type == 'keydown';
     var pos = window.wavesurfer.getCurrentTime();
