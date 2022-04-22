@@ -137,6 +137,7 @@ def diarization(
         "config": {
             "exclude_by": "input",
             "instant_submit": True,
+            "batch_size": 1,
             "javascript": javascript,
             "instructions": instructions_html,
             "blocks": [
