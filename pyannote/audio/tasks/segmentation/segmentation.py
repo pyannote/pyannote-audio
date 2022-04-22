@@ -226,18 +226,16 @@ class Segmentation(SegmentationTaskMixin, Task):
 
         f, chunk = self._validation[idx]
         sample = self.prepare_chunk(f, chunk, duration=self.duration, stage="val")
+        y, labels = sample["y"], sample.pop("labels")
 
-        if "y" in sample:
-            y, labels = sample["y"], sample.pop("labels")
+        # since number of speakers is estimated from the training set,
+        # we might encounter validation chunks that have more speakers.
+        # in that case, we arbitrarily remove last speakers
+        if y.shape[1] > self.max_num_speakers:
+            y = y[:, : self.max_num_speakers]
+            labels = labels[: self.max_num_speakers]
 
-            # since number of speakers is estimated from the training set,
-            # we might encounter validation chunks that have more speakers.
-            # in that case, we arbitrarily remove last speakers
-            if y.shape[1] > self.max_num_speakers:
-                y = y[:, : self.max_num_speakers]
-                labels = labels[: self.max_num_speakers]
-
-            sample["y"] = self.prepare_y(y)
+        sample["y"] = self.prepare_y(y)
         return sample
 
     def segmentation_loss(

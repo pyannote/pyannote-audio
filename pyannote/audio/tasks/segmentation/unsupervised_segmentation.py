@@ -1,9 +1,7 @@
 from typing import Any, Dict, List, Optional, OrderedDict, Sequence, Text, Tuple, Union
 
-import numpy as np
 import pytorch_lightning as pl
 import torch
-from pyannote.core import Segment
 from pyannote.database import Protocol
 from pytorch_lightning import Callback
 from pytorch_lightning.utilities.types import STEP_OUTPUT
@@ -13,7 +11,6 @@ from torch_audiomentations.core.transforms_interface import BaseWaveformTransfor
 from torchmetrics import Metric
 from typing_extensions import Literal
 
-from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task, ValDataset
 from pyannote.audio.tasks import Segmentation
@@ -134,42 +131,6 @@ class UnsupervisedSegmentation(Segmentation, Task):
             collated_batch = torch.round(collated_batch).type(torch.int8)
 
         return collated_batch
-
-    def prepare_chunk(
-        self,
-        file: AudioFile,
-        chunk: Segment,
-        duration: float = None,
-        stage: Literal["train", "val"] = "train",
-    ) -> Tuple[np.ndarray, np.ndarray, List[Text]]:
-        """Extract audio chunk and corresponding frame-wise labels
-
-        Parameters
-        ----------
-        file : AudioFile
-            Audio file.
-        chunk : Segment
-            Audio chunk.
-        duration : float, optional
-            Fix chunk duration to avoid rounding errors. Defaults to self.duration
-        stage : {"train", "val"}
-            "train" for training step, "val" for validation step
-
-        Returns
-        -------
-        sample : dict
-            Dictionary with the following keys:
-            X : np.ndarray
-                Audio chunk as (num_samples, num_channels) array.
-            y : np.ndarray
-                Frame-wise labels as (num_frames, num_labels) array.
-            ...
-        """
-
-        sample = super().prepare_chunk(
-            file, chunk, duration=duration, stage=stage, use_annotations=True
-        )
-        return sample
 
     def val_dataloader(self) -> Optional[DataLoader]:
         if self.has_validation:
