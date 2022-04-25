@@ -57,7 +57,7 @@ def _der_update(
     # make threshold a (num_thresholds,) tensor
     scalar_threshold = isinstance(threshold, Number)
     if scalar_threshold:
-        threshold = torch.tensor([threshold], dtype=preds.dtype)
+        threshold = torch.tensor([threshold], dtype=preds.dtype, device=preds.device)
 
     # find the optimal mapping between target and (soft) predictions
     permutated_preds, _ = permutate(
