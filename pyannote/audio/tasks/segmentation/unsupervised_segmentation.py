@@ -6,7 +6,6 @@ from pyannote.database import Protocol
 from pytorch_lightning import Callback
 from pytorch_lightning.utilities.types import STEP_OUTPUT
 from torch.utils.data import DataLoader
-from torch.utils.data._utils.collate import default_collate
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchmetrics import Metric
 from typing_extensions import Literal
@@ -17,8 +16,6 @@ from pyannote.audio.tasks import Segmentation
 
 
 class UnsupervisedSegmentation(Segmentation, Task):
-    OVERLAP_DEFAULTS = {"probability": 0.0, "snr_min": 0.0, "snr_max": 10.0}
-
     def __init__(
         self,
         model: Model,  # unsupervised param: model to use to generate truth
@@ -31,7 +28,6 @@ class UnsupervisedSegmentation(Segmentation, Task):
         duration: float = 2.0,
         max_num_speakers: int = None,
         warm_up: Union[float, Tuple[float, float]] = 0.0,
-        overlap: dict = OVERLAP_DEFAULTS,
         balance: Text = None,
         weight: Text = None,
         batch_size: int = 32,
@@ -53,7 +49,6 @@ class UnsupervisedSegmentation(Segmentation, Task):
             augmentation=augmentation,
             # Segmentation params
             max_num_speakers=max_num_speakers,
-            overlap=overlap,
             balance=balance,
             weight=weight,
             loss=loss,
@@ -67,6 +62,11 @@ class UnsupervisedSegmentation(Segmentation, Task):
         self.augmentation_model = augmentation_model
         self.pl_fw_passes = pl_fw_passes
 
+        if fake_in_val:
+            raise ValueError(
+                "Fake validation (fake_in_val) is not supported, please disable it."
+            )
+
         if pl_fw_passes > 1 and augmentation_model is None:
             raise ValueError(
                 "There is no reason to do multiple forward passes to generate pseudolabels if there is no augmentation applied to the input."
@@ -74,26 +74,35 @@ class UnsupervisedSegmentation(Segmentation, Task):
 
         self.teacher.eval()
 
-    def get_teacher_output(
+    def get_teacher_outputs(
         self, x: torch.Tensor, aug: BaseWaveformTransform, fw_passes: int = 1
     ):
         out_fw_passes = []
         with torch.no_grad():  # grad causes problems when crossing process boundaries
+            # for each forward pass
             for i in range(fw_passes):
                 teacher_input = x
 
+                # Augment input if necessary
                 if aug is not None:
-                    teacher_input = aug(
-                        teacher_input, sample_rate=self.model.hparams.sample_rate
+                    augmented = aug(
+                        samples=teacher_input,
+                        sample_rate=self.model.hparams.sample_rate,
                     )
-
-                    # detach is necessary to avoid memory leaks
-                    pl = self.teacher(waveforms=x).detach()
+                    teacher_input = augmented.samples
+                # Compute pseudolabels and detach to avoid "memory leaks"
+                pl = self.teacher(waveforms=teacher_input).detach()
                 out_fw_passes.append(pl)
-
+            # compute mean of forward passes
             out = torch.mean(torch.stack(out_fw_passes), dim=0)
             out = torch.round(out).type(torch.int8)
 
+        return out, torch.stack(out_fw_passes)
+
+    def get_teacher_output(
+        self, x: torch.Tensor, aug: BaseWaveformTransform, fw_passes: int = 1
+    ):
+        out, _ = self.get_teacher_outputs(x, aug, fw_passes)
         return out
 
     def use_pseudolabels(self, stage: Literal["train", "val"]):
@@ -101,34 +110,48 @@ class UnsupervisedSegmentation(Segmentation, Task):
             stage == "val" and self.fake_in_val
         )
 
-    def collate_fn(self, batch):
-        collated_batch = default_collate(batch)
+    def collate_fn(self, batch, stage="train"):
 
-        # Generate annotations y with teacher if they are not provided
+        collated_X = self.collate_X(batch)
+        collated_y = self.collate_y(batch)
+        collated_batch = {"X": collated_X, "y": collated_y}
+
+        if stage != "train":
+            raise RuntimeError(f"Unexpected stage in collate_fn (stage={stage})")
+
+        # Generate annotations y with teacher if necessary
         if self.use_pseudolabels("train"):
-            x = collated_batch["X"]
-
-            pseudo_y = self.get_teacher_output(
+            x = collated_X
+            # compute pseudo labels
+            pseudo_y, computed_ys = self.get_teacher_outputs(
                 x=x, aug=self.augmentation_model, fw_passes=self.pl_fw_passes
             )
 
             collated_batch["y"] = pseudo_y
             collated_batch["X"] = x
 
+        # Augment x/pseudo y if an augmentation is specified
         if self.augmentation is not None:
-            collated_batch["X"] = self.augmentation(
-                collated_batch["X"], sample_rate=self.model.hparams.sample_rate
+            augmented = self.augmentation(
+                samples=collated_batch["X"],
+                sample_rate=self.model.hparams.sample_rate,
+                targets=collated_batch["y"].unsqueeze(1),
             )
+            collated_batch["X"] = augmented.samples
+            collated_batch["y"] = augmented.targets.squeeze(1)
+
         return collated_batch
 
     def collate_fn_val(self, batch):
-        collated_batch = default_collate(batch)
+        collated_X = self.collate_X(batch)
+        collated_y = self.collate_y(batch)
+
+        collated_batch = {"X": collated_X, "y": collated_y}
 
         # Generate annotations y with teacher if they are not provided
+        # TODO: reimplement or discard fake validation
         if self.use_pseudolabels("val"):
-            teacher_input = collated_batch["X"]
-            collated_batch["y"] = self.get_teacher_output(x=teacher_input)
-            collated_batch = torch.round(collated_batch).type(torch.int8)
+            pass
 
         return collated_batch
 
