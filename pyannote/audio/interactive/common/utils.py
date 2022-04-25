@@ -22,17 +22,15 @@
 
 import base64
 import io
-from typing import Dict, List, Text
+from pathlib import Path
+from typing import Dict, List, Optional, Text
 
 import numpy as np
 import scipy.io.wavfile
-
-from pyannote.core import Annotation, Segment, SlidingWindow
-from pyannote.audio import Audio
-
-from pathlib import Path
-from typing import Optional
 from prodigy.components.loaders import Audio as ProdigyAudioLoader
+from pyannote.core import Annotation, Segment, SlidingWindow
+
+from pyannote.audio import Audio
 
 
 class AudioForProdigy(Audio):
@@ -108,9 +106,22 @@ def remove_audio_before_db(examples: List[Dict]) -> List[Dict]:
     return examples
 
 
+def source_to_files(source: Path) -> List[Dict]:
+    """
+    Convert a directory or a file path to a list of files object for prodigy
+    """
+    if source.is_dir():
+        files = ProdigyAudioLoader(source)
+    else:
+        name = source.stem
+        files = [{"path": source, "text": name, "meta": {"file": source}}]
+
+    return files
+
+
 def get_chunks(source: Path, chunk_duration: Optional[float] = None):
 
-    files = ProdigyAudioLoader(source)
+    files = source_to_files(source)
     audio = Audio()
 
     for file in files:
@@ -131,7 +142,7 @@ def get_chunks(source: Path, chunk_duration: Optional[float] = None):
 
 def before_db(examples):
     """Post-process examples before sending them to the database
-    
+
     1. Remove "audio" key as it is very heavy and can easily be retrieved from other keys
     2. Shift Prodigy/wavesurfer chunk-based audio spans so that their timing are file-based.
     """

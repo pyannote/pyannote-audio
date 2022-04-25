@@ -20,9 +20,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import Dict, List, Optional, Sequence, Text, Tuple, Union
+from typing import Dict, Optional, Sequence, Text, Tuple, Union
 
 import numpy as np
+import torch
 from pyannote.database import Protocol
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchmetrics import Metric
@@ -123,17 +124,23 @@ class SpeakerTracking(SegmentationTaskMixin, Task):
             warm_up=self.warm_up,
         )
 
-    @property
-    def chunk_labels(self) -> List[Text]:
-        """Ordered list of labels
+    def collate_y(self, batch) -> torch.Tensor:
 
-        Used by `prepare_chunk` so that y[:, k] corresponds to activity of kth speaker
-        """
-        return self.specifications.classes
+        labels = self.specifications.classes
 
-    def prepare_y(self, y: np.ndarray) -> np.ndarray:
-        """Get speaker tracking targets"""
-        return y
+        batch_size, num_frames, num_labels = (
+            len(batch),
+            len(batch[0]["y"]),
+            len(labels),
+        )
+        Y = np.zeros((batch_size, num_frames, num_labels), dtype=np.int64)
+
+        for i, b in enumerate(batch):
+            for local_idx, label in enumerate(b["y"].labels):
+                global_idx = labels.index(label)
+                Y[i, :, global_idx] = b["y"].data[:, local_idx]
+
+        return torch.from_numpy(Y)
 
     # TODO: add option to give more weights to smaller classes
     # TODO: add option to balance training samples between classes

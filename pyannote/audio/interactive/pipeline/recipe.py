@@ -25,25 +25,20 @@
 # Hervé Bredin
 
 import base64
-import os
-from tempfile import mkstemp
+import random
 from collections.abc import Iterator
 from copy import deepcopy
 from pathlib import Path
+from tempfile import mkstemp
 from typing import Any, Dict, Iterable, List, Union
-import random
 
 import prodigy
-
-from pyannote.audio import Audio, Pipeline
+from prodigy import set_hashes
 from pyannote.core import Annotation, Segment
 
-from ..common.utils import (
-    get_chunks,
-    before_db,
-    get_audio_spans,
-    AudioForProdigy,
-)
+from pyannote.audio import Audio, Pipeline
+
+from ..common.utils import AudioForProdigy, before_db, get_audio_spans, get_chunks
 
 
 def stream(
@@ -142,7 +137,7 @@ def stream(
         "Path to directory containing audio files to annotate",
         "positional",
         None,
-        str,
+        Path,
     ),
     pipeline=(
         "Pretrained pipeline (name on Huggingface Hub, path to YAML file)",
@@ -163,11 +158,16 @@ def stream(
         int,
     ),
     precision=("Keyboard temporal precision, in milliseconds.", "option", None, int),
-    beep=("Beep when the player reaches the end of a region.", "flag", None, bool,),
+    beep=(
+        "Beep when the player reaches the end of a region.",
+        "flag",
+        None,
+        bool,
+    ),
 )
 def pipeline(
     dataset: str,
-    source: Union[str, Iterable[dict]],
+    source: Path,
     pipeline: Union[str, Iterable[dict]],
     chunk: float = 10.0,
     num_classes: int = 4,
@@ -199,10 +199,15 @@ def pipeline(
         b64 = base64.b64encode(fp_png.read()).decode("utf-8")
         instructions_f.write(fp_tpl.read().replace("{IMAGE}", b64))
 
+    hashed_stream = (
+        set_hashes(eg, input_keys=("path", "chunk"))
+        for eg in stream(pipeline, source, labels, chunk=chunk, randomize=False)
+    )
+
     return {
         "view_id": "audio_manual",
         "dataset": dataset,
-        "stream": stream(pipeline, source, labels, chunk=chunk, randomize=False),
+        "stream": hashed_stream,
         "before_db": before_db,
         "config": {
             "javascript": javascript,

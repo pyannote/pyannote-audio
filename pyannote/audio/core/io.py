@@ -34,12 +34,10 @@ from pathlib import Path
 from typing import Mapping, Optional, Text, Tuple, Union
 
 import numpy as np
-import torch
 import torch.nn.functional as F
 import torchaudio
-from torch import Tensor
-
 from pyannote.core import Segment
+from torch import Tensor
 
 torchaudio.set_audio_backend("soundfile")
 
@@ -56,6 +54,22 @@ Audio files can be provided to the Audio class using different types:
 For last two options, an additional "channel" key can be provided as a zero-indexed
 integer to load a specific channel: {"audio": "stereo.wav", "channel": 0}
 """
+
+
+def get_torchaudio_info(file: AudioFile):
+    """Protocol preprocessor used to cache output of torchaudio.info
+
+    This is useful to speed future random access to this file, e.g.
+    in dataloaders using Audio.crop a lot....
+    """
+
+    info = torchaudio.info(file["audio"])
+
+    # rewind if needed
+    if isinstance(file["audio"], IOBase):
+        file["audio"].seek(0)
+
+    return info
 
 
 class Audio:
@@ -88,17 +102,16 @@ class Audio:
 
         Parameters
         ----------
-        waveform : (channel, time) Tensor
-            Single or multichannel waveform
-
+        waveform : (..., time) Tensor
+            Waveform(s)
 
         Returns
         -------
-        waveform: (channel, time) Tensor
-            Power-normalized waveform
+        waveform: (..., time) Tensor
+            Power-normalized waveform(s)
         """
-        rms = waveform.square().mean(dim=1).sqrt()
-        return (waveform.t() / (rms + 1e-8)).t()
+        rms = waveform.square().mean(dim=-1, keepdim=True).sqrt()
+        return waveform / (rms + 1e-8)
 
     @staticmethod
     def validate_file(file: AudioFile) -> Mapping:
@@ -159,7 +172,7 @@ class Audio:
                 raise ValueError(f"File {path} does not exist")
 
             file.setdefault("uri", path.stem)
-        
+
         else:
 
             raise ValueError(
@@ -198,7 +211,9 @@ class Audio:
 
         # resample
         if (self.sample_rate is not None) and (self.sample_rate != sample_rate):
-            waveform = torchaudio.functional.resample(waveform, sample_rate, self.sample_rate)
+            waveform = torchaudio.functional.resample(
+                waveform, sample_rate, self.sample_rate
+            )
             sample_rate = self.sample_rate
 
         return waveform, sample_rate
@@ -220,14 +235,19 @@ class Audio:
         file = self.validate_file(file)
 
         if "waveform" in file:
-            return len(file["waveform"].T / file["sample_rate"])
+            frames = len(file["waveform"].T)
+            sample_rate = file["sample_rate"]
 
-        info = torchaudio.info(file["audio"])
+        else:
+            if "torchaudio.info" in file:
+                info = file["torchaudio.info"]
+            else:
+                info = get_torchaudio_info(file)
 
-        if isinstance(file["audio"], IOBase):
-            file["audio"].seek(0)
+            frames = info.num_frames
+            sample_rate = info.sample_rate
 
-        return info.num_frames / info.sample_rate
+        return frames / sample_rate
 
     def __call__(self, file: AudioFile) -> Tuple[Tensor, int]:
         """Obtain waveform
@@ -300,16 +320,18 @@ class Audio:
 
         if "waveform" in file:
             waveform = file["waveform"]
-            sample_rate = file["sample_rate"]
             frames = waveform.shape[1]
+            sample_rate = file["sample_rate"]
+
+        elif "torchaudio.info" in file:
+            info = file["torchaudio.info"]
+            frames = info.num_frames
+            sample_rate = info.sample_rate
 
         else:
-            info = torchaudio.info(file["audio"])
-            sample_rate = info.sample_rate
+            info = get_torchaudio_info(file)
             frames = info.num_frames
-
-            if isinstance(file["audio"], IOBase):
-                file["audio"].seek(0)
+            sample_rate = info.sample_rate
 
         channel = file.get("channel", None)
 

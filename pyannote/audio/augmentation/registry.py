@@ -181,7 +181,9 @@ class TorchAudiomentationsWaveformTransformWrapper(nn.Module):
         self.sample_rate_ = model.audio.sample_rate
 
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
-        return self.augmentation(waveforms, self.sample_rate_)
+        return self.augmentation(
+            samples=waveforms, sample_rate=self.sample_rate_
+        ).samples
 
 
 @wrap_augmentation.register
