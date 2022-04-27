@@ -11,29 +11,42 @@ Manually segmenting and labeling audio data is time consuming.  For speaker diar
 
 `pyannote.audio` comes with a bunch of [💥 Prodigy](https://prodi.gy) recipes designed to speed things up a bit.
 
-|   Recipe              | Usage                                                 |
-|-----------------------|-------------------------------------------------------|
- 🦻 `pyannote.audio`    | Annotate with a [pretrained pipeline](https://huggingface.co/models?other=pyannote-audio-pipeline) in the loop
- 🧐 `pyannote.review`   | Merge multiple annotations
- 🤲 `pyannote.diff`     | Show differences between two annotations
- 🗄 `pyannote.database` | Dump annotations as [`pyannote.database`](https://github.com/pyannote/pyannote-database/) protocols
+| Recipe                | Usage                                                                                                            |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| 💬 `pyannote.audio`    | Annotate conversations interactively with model in the loop                                                      |
+| 🦻 `pyannote.pipeline` | Annotate with any [pretrained pipeline](https://huggingface.co/models?other=pyannote-audio-pipeline) in the loop |
+| 🧐 `pyannote.review`   | Merge multiple annotations                                                                                       |
+| 🤲 `pyannote.diff`     | Show differences between two annotations                                                                         |
+| 🗄 `pyannote.database` | Dump annotations as [`pyannote.database`](https://github.com/pyannote/pyannote-database/) protocols              |
 
-### 🦻 `pyannote.audio` | Annotate with a pretrained pipeline in the loop
+
+### 💬 `pyannote.audio` | Interactive speaker diarization
 
 ```bash
-prodigy pyannote.audio dataset /path/to/audio/directory pyannote/speaker-segmentation
+prodigy pyannote.audio dataset /path/to/audio.wav
+```
+
+
+TODO
+
+
+
+### 🦻 `pyannote.pipeline` | Annotate with a pretrained pipeline in the loop
+
+```bash
+prodigy pyannote.pipeline dataset /path/to/audio/directory pyannote/speaker-segmentation
 ```
 
 ![pyannote.audio screenshot](./assets/prodigy-pyannote.audio.png)
 
-`pyannote.audio` recipe will stream in `.wav` files in chunks and apply [a pretrained pipeline](https://huggingface.co/models?other=pyannote-audio-pipeline). You can then adjust the regions manually if needed.
+`pyannote.pipeline` recipe will stream `.wav` files in chunks and apply [a pretrained pipeline](https://huggingface.co/models?other=pyannote-audio-pipeline). You can then adjust the regions manually if needed.
 
 
 <details>
 <summary>More options</summary>
 
 ```
-prodigy pyannote.audio [options] dataset source pipeline
+prodigy pyannote.pipeline [options] dataset source pipeline
 
   dataset           Prodigy dataset to save annotations to.
   source            Path to directory containing audio files to annotate.
@@ -123,17 +136,17 @@ Work in progress
 
 Though `pyannote.audio` recipes are built on top of the Prodigy [audio interface](https://prodi.gy/docs/api-interfaces#audio), they provide a bunch of handy additional keyboard shortcuts.
 
-| Shortcut                          | Description                                      |
-|-----------------------------------|--------------------------------------------------|
-|  `left` / `right` (+ `w`)         | Shift player cursor (speed up)                   |
-|  `up` / `down`                    | Switch active region                             |
-|  `shift + left` / `shift + right` | Shift active region start time                   |
-|  `ctrl + left` / `ctrl + right`   | Shift active region end time                     |
-|  `shift + up`                     | Create a new region                              |
-|  `shift + down` / `backspace`     | Remove active region                             |
-|  `spacebar`                       | Play/pause player                                |
-|  `escape`                         | Ignore this sample                               |
-|  `enter`                          | Validate annotation                              |
+| Shortcut                         | Description                    |
+| -------------------------------- | ------------------------------ |
+| `left` / `right` (+ `w`)         | Shift player cursor (speed up) |
+| `up` / `down`                    | Switch active region           |
+| `shift + left` / `shift + right` | Shift active region start time |
+| `ctrl + left` / `ctrl + right`   | Shift active region end time   |
+| `shift + up`                     | Create a new region            |
+| `shift + down` / `backspace`     | Remove active region           |
+| `spacebar`                       | Play/pause player              |
+| `escape`                         | Ignore this sample             |
+| `enter`                          | Validate annotation            |
 
 
 ## RTTM file format
