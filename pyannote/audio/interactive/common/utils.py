@@ -37,8 +37,8 @@ class AudioForProdigy(Audio):
     def __init__(self):
         super().__init__(sample_rate=16000, mono=True)
 
-    def crop(self, path: Path, excerpt: Segment) -> Text:
-        waveform, _ = super().crop(path, excerpt)
+    def to_base64(self, waveform: np.ndarray) -> Text:
+        """Convert waveform to base64 data"""
         waveform = waveform.numpy().T
         waveform /= np.max(np.abs(waveform)) + 1e-8
         with io.BytesIO() as content:
@@ -46,6 +46,11 @@ class AudioForProdigy(Audio):
             content.seek(0)
             b64 = base64.b64encode(content.read()).decode()
             b64 = f"data:audio/x-wav;base64,{b64}"
+        return b64
+
+    def crop(self, path: Path, excerpt: Segment) -> Text:
+        waveform, _ = super().crop(path, excerpt)
+        b64 = self.to_base64(waveform)
         return b64
 
 
