@@ -82,6 +82,7 @@ class RecipeHelper:
                         speaker = self.validate_generator.pop()
                     else:
                         speaker = label
+
                 speaker = speaker.strip()
 
                 combine_waveform = torch.Tensor([])
@@ -145,6 +146,9 @@ class RecipeHelper:
                     self.validate_generator.insert(0, speaker)
                 else:
                     speaker = label
+            if speaker.isspace():
+                assert False, "You can't name a speaker with an empty name."
+
             speaker = speaker.strip()
 
             if speaker not in self.buffer:
@@ -294,7 +298,7 @@ class RecipeHelper:
             all_labels = global_labels + labels
 
             sounds = {spk[0]: spk[3] for spk in self.speakers}
-
+            # "field_placeholder": label
             for label in labels:
                 blocks.append(
                     {
@@ -302,7 +306,7 @@ class RecipeHelper:
                         "field_id": label,
                         "field_label": label,
                         "field_rows": 1,
-                        "field_placeholder": label,
+                        "field_placeholder": "Assign a global tag",
                         "field_suggestions": list(self.speakers["name"]),
                     }
                 )

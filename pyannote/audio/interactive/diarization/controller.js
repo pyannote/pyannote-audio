@@ -92,7 +92,7 @@ function addSounds(){
       var sounds = window.prodigy.content.sounds;
       clearSpan();
       for (var label of labels) {
-          var i = window.prodigy.content.config.labels.indexOf(label.dataset.prodigyLabel);
+          var i = (window.prodigy.content.config.labels.indexOf(label.dataset.prodigyLabel) % window.prodigy.config.custom_theme.palettes.audio.length);
           var color = window.prodigy.config.custom_theme.palettes.audio[i];
           label.style.color = color;
           changePlaceholderColor(label.dataset.prodigyLabel, color);
