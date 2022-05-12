@@ -68,7 +68,7 @@ function handleWavesurfer(){
         window.wavesurfer.on('region-created', function(e){
             setTimeout(function (){
                 changeDisplayPlaceholder(e.label, false);
-                //Overkill, update only the new one
+                //TODO : Overkill, update only the new one
                 clearSpan();
             }, 5);
         });
