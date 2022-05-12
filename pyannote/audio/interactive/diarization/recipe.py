@@ -36,7 +36,7 @@ from prodigy import set_hashes
 
 from pyannote.audio import Pipeline
 
-from ..common.utils import before_db
+from ..common.utils import before_db_diarization
 from .recipehelper import RecipeHelper
 
 
@@ -132,7 +132,7 @@ def diarization(
         "view_id": "blocks",
         "dataset": dataset,
         "stream": hashed_stream,
-        "before_db": before_db,
+        "before_db": before_db_diarization,
         "validate_answer": helper.validate_answer,
         "update": helper.update,
         "on_exit": helper.on_exit,
