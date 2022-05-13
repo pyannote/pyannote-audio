@@ -50,7 +50,34 @@ function displayPlaceholder(){
     }
 }
 
+
+function createEmojiSound(label){
+    var span = label.children[0];
+    span.innerHTML = "\ud83d\udd0a";
+    span.style.fontSize = "20px";
+
+    span.onmouseover = (e) => {
+        var sounds = window.prodigy.content.sounds;
+        var val = e.srcElement.parentElement.dataset.prodigyLabel;
+        snd.pause();
+        clearInterval(idTimer);
+        snd = new Audio(sounds[val]);
+        snd.play();
+        idTimer = setInterval(function () {
+            ele = e.srcElement;
+            ele.style.visibility = (ele.style.visibility == "" ? "hidden" : "");
+        }, 200);
+    }
+    span.onmouseleave = (e) => {
+        snd.pause();
+        clearInterval(idTimer);
+        e.srcElement.style.visibility = "";
+    }
+}
+
+
 function clearSpan(){
+    //TODO: Check span class in other browsers
     var spans = document.querySelectorAll("span[class='c01140']");
     for(var span in spans){
         if(typeof spans[span].innerHTML !== "undefined"){
@@ -95,29 +122,10 @@ function addSounds(){
           var i = (window.prodigy.content.config.labels.indexOf(label.dataset.prodigyLabel) % window.prodigy.config.custom_theme.palettes.audio.length);
           var color = window.prodigy.config.custom_theme.palettes.audio[i];
           label.style.color = color;
-          changePlaceholderColor(label.dataset.prodigyLabel, color);
-          changeDisplayPlaceholder(label.dataset.prodigyLabel, true);
-
-          label.onmouseover = (e) => {
-              var val = e.srcElement.dataset.prodigyLabel;
-              if(val in sounds){
-                  snd.pause();
-                  clearInterval(idTimer);
-                  snd = new Audio(sounds[val]);
-                  snd.play();
-                  idTimer = setInterval(function () {
-                      ele = e.srcElement;
-                      i = (window.prodigy.content.config.labels.indexOf(val) % window.prodigy.config.custom_theme.palettes.audio.length);
-                      color = window.prodigy.config.custom_theme.palettes.audio[i];
-                      ele.style.backgroundColor = (ele.style.backgroundColor == '' ? color : '');
-                  }, 200);
-              }
-          }
-          label.onmouseleave = (e) => {
-              snd.pause();
-              clearInterval(idTimer);
-              e.srcElement.style.backgroundColor = '';
-          }
+          var name = label.dataset.prodigyLabel;
+          changePlaceholderColor(name, color);
+          changeDisplayPlaceholder(name, true);
+          if (name in sounds) createEmojiSound(label);
       }
       displayPlaceholder();
     }else{
