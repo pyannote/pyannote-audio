@@ -37,8 +37,8 @@ class AudioForProdigy(Audio):
     def __init__(self):
         super().__init__(sample_rate=16000, mono=True)
 
-    def crop(self, path: Path, excerpt: Segment) -> Text:
-        waveform, _ = super().crop(path, excerpt)
+    def to_base64(self, waveform: np.ndarray) -> Text:
+        """Convert waveform to base64 data"""
         waveform = waveform.numpy().T
         waveform /= np.max(np.abs(waveform)) + 1e-8
         with io.BytesIO() as content:
@@ -46,6 +46,11 @@ class AudioForProdigy(Audio):
             content.seek(0)
             b64 = base64.b64encode(content.read()).decode()
             b64 = f"data:audio/x-wav;base64,{b64}"
+        return b64
+
+    def crop(self, path: Path, excerpt: Segment) -> Text:
+        waveform, _ = super().crop(path, excerpt)
+        b64 = self.to_base64(waveform)
         return b64
 
 
@@ -165,5 +170,38 @@ def before_db(examples):
                 }
                 for span in eg[key]
             ]
+
+    return examples
+
+
+def before_db_diarization(examples):
+    """Post-process examples before sending them to the database
+    1. Remove "audio" and "sounds" key as it is very heavy and can easily be retrieved from other keys
+    2. Shift Prodigy/wavesurfer chunk-based audio spans so that their timing are file-based.
+    3. Change span name if a global tag is provided
+    """
+    for eg in examples:
+        # 1. remove "audio" and "sounds" keys
+        if "audio" in eg:
+            del eg["audio"]
+        if "sounds" in eg:
+            del eg["sounds"]
+        # 2. shift audio spans
+        chunk_start = eg["chunk"]["start"]
+        audio_spans_keys = [key for key in eg if "audio_spans" in key]
+        for key in audio_spans_keys:
+            eg[key] = [
+                {
+                    "start": span["start"] + chunk_start,
+                    "end": span["end"] + chunk_start,
+                    "label": span["label"],
+                }
+                for span in eg[key]
+            ]
+
+        # 3. Change label span name
+        for span in eg["audio_spans"]:
+            if span["label"] in eg:
+                span["label"] = eg[span["label"]]
 
     return examples

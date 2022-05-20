@@ -34,6 +34,7 @@ from typing import Dict, Iterable, List
 import numpy as np
 import torch
 from pyannote.core import Annotation, Segment
+from pyannote.core.utils.generators import string_generator
 from scipy.spatial.distance import cdist
 
 from pyannote.audio import Audio, Inference, Pipeline
@@ -46,9 +47,17 @@ class RecipeHelper:
         self.inference = Inference(embedding, window="whole")
         dim = self.inference.model.introspection.dimension
         self.speakers = np.array(
-            [], dtype=[("name", "U100"), ("embedding", "f4", dim), ("nb", "i4")]
+            [],
+            dtype=[
+                ("name", "U100"),
+                ("embedding", "f4", dim),
+                ("nb", "i4"),
+                ("excerpt", "U1000000"),
+            ],
         )
         self.buffer = {}
+        self.generator = string_generator()
+        self.validate_generator = []
 
     def on_exit(self, controller):
         now = datetime.now()
@@ -57,66 +66,113 @@ class RecipeHelper:
         np.save(name, self.speakers)
 
     def update(self, answers):
-        eg = answers[0]
-        for span in eg["audio_spans"]:
-            if span["label"] in eg:
-                speaker = eg[span["label"]]
-                span["label"] = eg[span["label"]]
-            else:
-                if span["label"].startswith("SPEAKER_"):
-                    speaker = "G" + span["label"]
+        for eg in answers:
+
+            if eg["answer"] != "accept":
+                return
+
+            audio_spans = eg["audio_spans"]
+            audio_spans = sorted(audio_spans, key=lambda x: x["label"])
+
+            for label, segments in groupby(audio_spans, key=lambda x: x["label"]):
+                if label in eg:
+                    speaker = eg[label]
                 else:
-                    speaker = span["label"]
+                    if label.startswith("SPEAKER_"):
+                        speaker = self.validate_generator.pop()
+                    else:
+                        speaker = label
+
+                speaker = speaker.strip()
+
+                combine_waveform = torch.Tensor([])
+                audio_for_pipeline = Audio(mono=True)
+                audio_for_prodigy = AudioForProdigy()
+                duration = 0
+
+                for segment in list(segments):
+                    file_segment = Segment(
+                        segment["start"] + eg["chunk"]["start"],
+                        segment["end"] + eg["chunk"]["start"],
+                    )
+                    waveform, sample_rate = audio_for_pipeline.crop(
+                        eg["path"], file_segment, mode="pad"
+                    )
+                    combine_waveform = torch.cat((combine_waveform, waveform), dim=1)
+                    duration += file_segment.duration
+
+                i = np.where(self.speakers["name"] == speaker)
+                i = i[0][0]
+                combine_waveform = torch.cat(
+                    (combine_waveform, self.buffer[speaker][0]), dim=1
+                )
+                audio = audio_for_prodigy.to_base64(combine_waveform)
+
+                if (self.speakers[i]["nb"] > 0) and (
+                    self.buffer[speaker][1] + duration >= 5
+                ):
+                    empty_waveform = torch.Tensor([])
+                    self.buffer[speaker] = [empty_waveform, 0]
+
+                    embedding = self.getEmb(combine_waveform, sample_rate)
+
+                    self.speakers[i]["embedding"] = (
+                        (self.speakers[i]["nb"] * self.speakers[i]["embedding"])
+                        + embedding
+                    ) / (self.speakers[i]["nb"] + 1)
+                    self.speakers[i]["nb"] += 1
+                    self.speakers[i]["excerpt"] = audio
+
+                else:
+                    duration = self.buffer[speaker][1] + duration
+                    self.buffer[speaker] = [combine_waveform, duration]
+                    self.speakers[i]["excerpt"] = audio
+                    if self.speakers[i]["nb"] == 0:
+                        self.speakers[i]["nb"] = 1
+
+    def validate_answer(self, eg):
+        if eg["answer"] != "accept":
+            return
+
+        audio_spans = eg["audio_spans"]
+        audio_spans = sorted(audio_spans, key=lambda x: x["label"])
+
+        for label, segments in groupby(audio_spans, key=lambda x: x["label"]):
+            if label in eg:
+                speaker = eg[label]
+            else:
+                if label.startswith("SPEAKER_"):
+                    speaker = next(self.generator)
+                    self.validate_generator.insert(0, speaker)
+                else:
+                    speaker = label
+            if speaker.isspace():
+                assert False, "You can't name a speaker with an empty name."
 
             speaker = speaker.strip()
-            segment = Segment(
-                span["start"] + eg["chunk"]["start"], span["end"] + eg["chunk"]["start"]
-            )
-            audio_for_pipeline = Audio(mono=True)
-            wav, sample_rate = audio_for_pipeline.crop(eg["path"], segment, mode="pad")
 
             if speaker not in self.buffer:
                 empty_waveform = torch.Tensor([])
                 self.buffer[speaker] = [empty_waveform, 0]
+                combine_waveform = torch.Tensor([])
+                audio_for_pipeline = Audio(mono=True)
 
-            if self.buffer[speaker][1] + segment.duration >= 5:
-
-                combine_waveform = torch.cat((wav, self.buffer[speaker][0]), dim=1)
+                for segment in list(segments):
+                    file_segment = Segment(
+                        segment["start"] + eg["chunk"]["start"],
+                        segment["end"] + eg["chunk"]["start"],
+                    )
+                    waveform, sample_rate = audio_for_pipeline.crop(
+                        eg["path"], file_segment, mode="pad"
+                    )
+                    combine_waveform = torch.cat((combine_waveform, waveform), dim=1)
 
                 embedding = self.getEmb(combine_waveform, sample_rate)
-
-                empty_waveform = torch.Tensor([])
-                self.buffer[speaker] = [empty_waveform, 0]
-
-                if not np.isnan(embedding).any():
-                    if speaker in self.speakers["name"]:
-                        i = np.where(self.speakers["name"] == speaker)
-                        i = i[0][0]
-                        self.speakers[i]["embedding"] = (
-                            (self.speakers[i]["nb"] * self.speakers[i]["embedding"])
-                            + embedding
-                        ) / (self.speakers[i]["nb"] + 1)
-                        self.speakers[i]["nb"] += 1
-                    else:
-                        size = self.speakers.size + 1
-                        self.speakers.resize(size, refcheck=False)
-                        self.speakers[self.speakers.size - 1] = (speaker, embedding, 1)
-            else:
-                combine_waveform = torch.cat((wav, self.buffer[speaker][0]), dim=1)
-                duration = self.buffer[speaker][1] + segment.duration
-                self.buffer[speaker] = [combine_waveform, duration]
-
-    def validate_answer(self, eg):
-        for field in eg["config"]["blocks"]:
-            if "field_id" in field:
-                speaker = field["field_id"]
-                if speaker in eg and eg[speaker] != "":
-                    flag = False
-                    for span in eg["audio_spans"]:
-                        if span["label"] == speaker:
-                            flag = True
-                            break
-                    assert flag, "You have named a speaker not present in the audio"
+                audio_for_prodigy = AudioForProdigy()
+                audio = audio_for_prodigy.to_base64(combine_waveform)
+                size = self.speakers.size + 1
+                self.speakers.resize(size, refcheck=False)
+                self.speakers[self.speakers.size - 1] = (speaker, embedding, 0, audio)
 
     def getEmb(self, wav, sample_rate):
         try:
@@ -161,7 +217,6 @@ class RecipeHelper:
             "meta" : metadata displayed in Prodigy UI {"file": ..., "start": ..., "end": ...}
             "config": {"labels": list of labels}
         """
-
         context = getattr(pipeline, "context", 2.5)
 
         audio_for_prodigy = AudioForProdigy()
@@ -173,7 +228,6 @@ class RecipeHelper:
             random.shuffle(chunks)
 
         for file, excerpt in chunks:
-
             path = file["path"]
             filename = file["text"]
             text = f"{filename} [{excerpt.start:.1f} - {excerpt.end:.1f}]"
@@ -200,10 +254,10 @@ class RecipeHelper:
             audio = audio_for_prodigy.crop(path, excerpt)
 
             labels = sorted(set(labels) | set(output.labels()))
-            new_labels = []
 
             # group by label
             audio_spans = sorted(audio_spans, key=lambda x: x["label"])
+
             for label, segments in groupby(audio_spans, key=lambda x: x["label"]):
 
                 combine_waveform = torch.Tensor([])
@@ -235,31 +289,32 @@ class RecipeHelper:
                     # TODO update thresold according to the result
                     if distances[index_min] < 0.5:
                         genlabel = self.speakers[index_min]["name"]
-                        if genlabel not in new_labels:
-                            new_labels.append(genlabel)
                         for span in audio_spans:
                             if span["label"] == label:
                                 span.update({"label": genlabel})
 
             blocks = [{"view_id": "audio_manual"}]
-            new_labels = sorted(new_labels)
-            all_labels = new_labels + labels
-            for label in all_labels:
+            global_labels = sorted(self.speakers["name"])
+            all_labels = global_labels + labels
+
+            sounds = {spk[0]: spk[3] for spk in self.speakers}
+            # "field_placeholder": label
+            for label in labels:
                 blocks.append(
                     {
                         "view_id": "text_input",
                         "field_id": label,
                         "field_label": label,
                         "field_rows": 1,
-                        "field_placeholder": label,
+                        "field_placeholder": "Assign a global tag",
                         "field_suggestions": list(self.speakers["name"]),
                     }
                 )
-
             yield {
                 "path": path,
                 "text": text,
                 "audio": audio,
+                "sounds": sounds,
                 "audio_spans": audio_spans,
                 "audio_spans_original": deepcopy(audio_spans),
                 "chunk": {"start": excerpt.start, "end": excerpt.end},

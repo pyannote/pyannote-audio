@@ -201,6 +201,7 @@ function waitForElement(){
               switchCurrent(0);
             }else{
               switchCurrent(ids.indexOf(e));
+              window.wavesurfer.play(e.start);
             }
           }, 5);
         });

@@ -54,7 +54,7 @@ def database(
         uem = nf + ".uem"
         info["Protocols"][nd] = {
             "SpeakerDiarization": {
-                nf: {"Train": {"annotation": rttm, "uri": lst, "annotated": uem}}
+                nf: {"train": {"annotation": rttm, "uri": lst, "annotated": uem}}
             }
         }
 

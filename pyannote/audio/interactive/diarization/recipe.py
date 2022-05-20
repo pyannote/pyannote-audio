@@ -36,7 +36,7 @@ from prodigy import set_hashes
 
 from pyannote.audio import Pipeline
 
-from ..common.utils import before_db
+from ..common.utils import before_db_diarization
 from .recipehelper import RecipeHelper
 
 
@@ -98,6 +98,7 @@ def diarization(
 
     if isinstance(classes, Iterator):
         labels = [x for _, x in zip(range(num_classes), classes)]
+        # labels = [re.search(r'\d+', str).group() for str in labels]
     else:
         labels = classes
 
@@ -107,9 +108,10 @@ def diarization(
     recipe_dir = Path(__file__).resolve().parent
     common_dir = recipe_dir.parent / "common"
     controller_js = common_dir / "controller.js"
+    controllerDiarization = recipe_dir / "controller.js"
 
-    with open(controller_js) as txt:
-        javascript = txt.read()
+    with open(controller_js) as c, open(controllerDiarization) as c_dia:
+        javascript = c.read() + "\n" + c_dia.read()
 
     # TODO: improve this part
     template = common_dir / "instructions.html"
@@ -130,7 +132,7 @@ def diarization(
         "view_id": "blocks",
         "dataset": dataset,
         "stream": hashed_stream,
-        "before_db": before_db,
+        "before_db": before_db_diarization,
         "validate_answer": helper.validate_answer,
         "update": helper.update,
         "on_exit": helper.on_exit,
@@ -140,6 +142,20 @@ def diarization(
             "batch_size": 1,
             "javascript": javascript,
             "instructions": instructions_html,
+            "custom_theme": {
+                "palettes": {
+                    "audio": [
+                        "#ffd700",
+                        "#00ffff",
+                        "#ff00ff",
+                        "#00ff00",
+                        "#9932cc",
+                        "#00bfff",
+                        "#ff7f50",
+                        "#66cdaa",
+                    ]
+                }
+            },
             "blocks": [
                 {"view_id": "audio_manual"},
                 {"view_id": "text_input", "field_id": "user_input_a", "field_rows": 1},
