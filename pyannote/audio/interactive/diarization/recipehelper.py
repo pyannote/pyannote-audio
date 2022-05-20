@@ -75,7 +75,7 @@ class RecipeHelper:
             audio_spans = sorted(audio_spans, key=lambda x: x["label"])
 
             for label, segments in groupby(audio_spans, key=lambda x: x["label"]):
-                if label in eg:
+                if (label in eg) and (eg[label] != ""):
                     speaker = eg[label]
                 else:
                     if label.startswith("SPEAKER_"):
@@ -138,7 +138,7 @@ class RecipeHelper:
         audio_spans = sorted(audio_spans, key=lambda x: x["label"])
 
         for label, segments in groupby(audio_spans, key=lambda x: x["label"]):
-            if label in eg:
+            if (label in eg) and (eg[label] != ""):
                 speaker = eg[label]
             else:
                 if label.startswith("SPEAKER_"):
@@ -146,6 +146,7 @@ class RecipeHelper:
                     self.validate_generator.insert(0, speaker)
                 else:
                     speaker = label
+
             if speaker.isspace():
                 assert False, "You can't name a speaker with an empty name."
 
@@ -294,11 +295,11 @@ class RecipeHelper:
                                 span.update({"label": genlabel})
 
             blocks = [{"view_id": "audio_manual"}]
-            global_labels = sorted(self.speakers["name"])
-            all_labels = global_labels + labels
+            # global_labels = sorted(self.speakers["name"])
+            # all_labels = global_labels + labels
+            all_labels = list(self.speakers["name"]) + labels
 
             sounds = {spk[0]: spk[3] for spk in self.speakers}
-            # "field_placeholder": label
             for label in labels:
                 blocks.append(
                     {
