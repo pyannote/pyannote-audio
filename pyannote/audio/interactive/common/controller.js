@@ -257,16 +257,23 @@ document.addEventListener('prodigyanswer', e => {
 * | Backspace         |                    | Remove current segment                           |
 */
 document.querySelector('#root').onkeydown = document.querySelector('#root').onkeyup = function(e){
-    // Exist if the focus is on a text field
-    if (document.activeElement.type == 'text'){
-      return;
-    }
     e = e || event;
     keysMap[e.key] = e.type == 'keydown';
     var pos = window.wavesurfer.getCurrentTime();
     var audioEnd = window.wavesurfer.getDuration();
     var region = ids[currentRegion];
     refresh = false;
+
+    // If the focus is on a text field
+    if (document.activeElement.type == 'text'){
+      // Active main element if Enter is pressed
+      if(keysMap['Enter']){
+        var main = document.querySelector('main');
+        main.focus();
+      }else{
+        return;
+      }
+    }
 
     // If Left is pressed
     if(keysMap[left] && !keysMap[right]){
