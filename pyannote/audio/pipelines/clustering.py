@@ -29,12 +29,12 @@ from enum import Enum
 import numpy as np
 from scipy.cluster.hierarchy import fcluster
 from scipy.spatial.distance import squareform
-from spectralcluster import EigenGapType, LaplacianType, SpectralClusterer
+from spectralcluster import AutoTune, EigenGapType, LaplacianType, RefinementName, RefinementOptions, SpectralClusterer, SymmetrizeType, ThresholdType
 
 from pyannote.core.utils.distance import pdist
 from pyannote.core.utils.hierarchy import linkage
 from pyannote.pipeline import Pipeline
-from pyannote.pipeline.parameter import Categorical, Uniform
+from pyannote.pipeline.parameter import Categorical, Uniform, Parameter
 
 
 class ClusteringMixin:
@@ -185,6 +185,22 @@ class SpectralClustering(ClusteringMixin, Pipeline):
         Laplacian to use.
     eigengap : {"Ratio", "NormalizedDiff"}
         Eigengap approach to use.
+    refinement_sequence : sequence of names of refinement operations
+    gaussian_blur_sigma : float in range (0, 10000)
+        sigma value of the Gaussian blur operation
+    p_percentile: float in range (0, 1)
+        the p-percentile for the row wise thresholding
+    symmetrize_type : {"Max", "Average"}
+        how do we symmetrize the matrix
+    thresholding_with_binarization : boolean
+        if true, we set values larger than the threshold to 1
+    thresholding_preserve_diagonal : boolean
+        if true, in the row wise thresholding operation, we firstly set diagonals of the
+        affinity matrix to 0, and set the diagonals back to 1 in the end
+    thresholding_type : {"RowMax", "Percentile"}
+        the type of thresholding operation
+    use_autotune : boolean
+        whether to use autotune to find optimal p_percentile
 
     Notes
     -----
@@ -200,6 +216,16 @@ class SpectralClustering(ClusteringMixin, Pipeline):
             ["Affinity", "Unnormalized", "RandomWalk", "GraphCut"]
         )
         self.eigengap = Categorical(["Ratio", "NormalizedDiff"])
+
+        # Hyperparameters for refinement operations.
+        self.refinement_sequence = Parameter()
+        self.gaussian_blur_sigma = Uniform(0, 10000)
+        self.p_percentile = Uniform(0, 1)
+        self.symmetrize_type = Categorical(["Max", "Average"])
+        self.thresholding_with_binarization = Categorical([True, False])
+        self.thresholding_preserve_diagonal = Categorical([True, False])
+        self.thresholding_type = Categorical(["RowMax", "Percentile"])
+        self.use_autotune = Categorical([True, False])
 
     def _affinity_function(self, embeddings: np.ndarray) -> np.ndarray:
         return squareform(1.0 - 0.5 * pdist(embeddings, metric=self.metric))
@@ -240,9 +266,31 @@ class SpectralClustering(ClusteringMixin, Pipeline):
             max_clusters=max_clusters,
         )
 
+        # Autotune options.
+        default_autotune = AutoTune(
+            p_percentile_min=0.40,
+            p_percentile_max=0.95,
+            init_search_step=0.05,
+            search_level=1)
+
+        # Sequence of refinement operations.
+        refinement_sequence = [
+            RefinementName[refinement_name] for refinement_name in self.refinement_sequence]
+
+        # Refinement options.
+        refinement_options = RefinementOptions(
+            thresholding_soft_multiplier=0.01,
+            thresholding_type=ThresholdType[self.thresholding_type],
+            thresholding_with_binarization=self.thresholding_with_binarization,
+            thresholding_preserve_diagonal=self.thresholding_preserve_diagonal,
+            symmetrize_type=SymmetrizeType[self.symmetrize_type],
+            refinement_sequence=refinement_sequence)
+
         return SpectralClusterer(
             min_clusters=min_clusters,
             max_clusters=max_clusters,
+            refinement_options=refinement_options,
+            autotune = default_autotune if self.use_autotune else None,
             laplacian_type=LaplacianType[self.laplacian],
             eigengap_type=EigenGapType[self.eigengap],
             affinity_function=self._affinity_function,

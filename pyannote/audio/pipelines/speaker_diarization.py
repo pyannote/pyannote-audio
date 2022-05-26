@@ -170,6 +170,33 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                 "stitch_threshold": 0.040,
                 "clustering": {"method": "average", "threshold": 0.595},
             }
+        elif (
+            self.segmentation == "pyannote/segmentation"
+            and self.embedding == "speechbrain/spkrec-ecapa-voxceleb"
+            and self.klustering == "SpectralClustering"
+            and not self.expects_num_speakers
+        ):
+            # SpectralClustering has not been optimized.
+            return {
+                "onset": 0.810,
+                "offset": 0.481,
+                "min_duration_on": 0.055,
+                "min_duration_off": 0.098,
+                "min_activity": 6.073,
+                "stitch_threshold": 0.040,
+                "clustering": {
+                    "laplacian": "GraphCut",
+                    "eigengap": "Ratio",
+                    "gaussian_blur_sigma": 1,
+                    "p_percentile": 0.95,
+                    "refinement_sequence": ["GaussianBlur", "RowWiseThreshold", "Symmetrize"],
+                    "symmetrize_type": "Average",
+                    "thresholding_with_binarization": False,
+                    "thresholding_preserve_diagonal": False,
+                    "thresholding_type": "RowMax",
+                    "use_autotune": True,
+                },
+            }
 
         raise NotImplementedError()
 
