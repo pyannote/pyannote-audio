@@ -56,6 +56,7 @@ class RecipeHelper:
             ],
         )
         self.buffer = {}
+        self.audiobuffer = {}
         self.generator = string_generator()
         self.validate_generator = []
 
@@ -64,6 +65,28 @@ class RecipeHelper:
         date_time = now.strftime("%d-%m-%Y")
         name = "embeddings_" + date_time
         np.save(name, self.speakers)
+
+    def remove_overlaps(self, audio_spans):
+        annotation = Annotation()
+        for segment in audio_spans:
+            annotation[Segment(segment["start"], segment["end"])] = segment["label"]
+        overlap = annotation.get_overlap()
+        annotation = annotation.extrude(overlap)
+
+        return annotation
+
+    def get_audio(self, audio_spans, label, path, focus):
+        combine_waveform = torch.Tensor([[]])
+        audio_for_pipeline = Audio(mono=True)
+        annotation = self.remove_overlaps(audio_spans)
+
+        for segment in annotation.label_timeline(label):
+            waveform, sample_rate = audio_for_pipeline.crop(
+                path, Segment(segment.start + focus, segment.end + focus), mode="pad"
+            )
+            combine_waveform = torch.cat((combine_waveform, waveform), dim=1)
+
+        return combine_waveform
 
     def update(self, answers):
         for eg in answers:
@@ -106,7 +129,23 @@ class RecipeHelper:
                 combine_waveform = torch.cat(
                     (combine_waveform, self.buffer[speaker][0]), dim=1
                 )
-                audio = audio_for_prodigy.to_base64(combine_waveform)
+
+                audio_waveform = self.get_audio(
+                    audio_spans, label, eg["path"], eg["chunk"]["start"]
+                )
+                audio_waveform = torch.cat(
+                    (audio_waveform, self.audiobuffer[speaker]), dim=1
+                )
+
+                if (len(audio_waveform[0]) / sample_rate) > 5:
+                    split_audio = torch.split(audio_waveform, 5 * sample_rate, dim=1)
+                    audio_waveform = split_audio[0]
+                if len(audio_waveform[0]) > 0:
+                    audio = audio_for_prodigy.to_base64(audio_waveform)
+                else:
+                    audio = "data:audio/x-wav;base64,"
+
+                self.audiobuffer[speaker] = audio_waveform
 
                 if (self.speakers[i]["nb"] > 0) and (
                     self.buffer[speaker][1] + duration >= 5
@@ -114,7 +153,7 @@ class RecipeHelper:
                     empty_waveform = torch.Tensor([])
                     self.buffer[speaker] = [empty_waveform, 0]
 
-                    embedding = self.getEmb(combine_waveform, sample_rate)
+                    embedding = self.get_embedding(combine_waveform, sample_rate)
 
                     self.speakers[i]["embedding"] = (
                         (self.speakers[i]["nb"] * self.speakers[i]["embedding"])
@@ -155,6 +194,7 @@ class RecipeHelper:
             if speaker not in self.buffer:
                 empty_waveform = torch.Tensor([])
                 self.buffer[speaker] = [empty_waveform, 0]
+                self.audiobuffer[speaker] = empty_waveform
                 combine_waveform = torch.Tensor([])
                 audio_for_pipeline = Audio(mono=True)
 
@@ -168,14 +208,20 @@ class RecipeHelper:
                     )
                     combine_waveform = torch.cat((combine_waveform, waveform), dim=1)
 
-                embedding = self.getEmb(combine_waveform, sample_rate)
-                audio_for_prodigy = AudioForProdigy()
-                audio = audio_for_prodigy.to_base64(combine_waveform)
+                embedding = self.get_embedding(combine_waveform, sample_rate)
+                audio_waveform = self.get_audio(
+                    audio_spans, label, eg["path"], eg["chunk"]["start"]
+                )
+                if len(audio_waveform[0]) > 0:
+                    audio_for_prodigy = AudioForProdigy()
+                    audio = audio_for_prodigy.to_base64(audio_waveform)
+                else:
+                    audio = "data:audio/x-wav;base64,"
                 size = self.speakers.size + 1
                 self.speakers.resize(size, refcheck=False)
                 self.speakers[self.speakers.size - 1] = (speaker, embedding, 0, audio)
 
-    def getEmb(self, wav, sample_rate):
+    def get_embedding(self, wav, sample_rate):
         try:
             embedding = self.inference({"waveform": wav, "sample_rate": sample_rate})
         except (RuntimeError, ValueError):
@@ -272,7 +318,7 @@ class RecipeHelper:
                     )
                     combine_waveform = torch.cat((combine_waveform, waveform), dim=1)
 
-                embedding = self.getEmb(combine_waveform, sample_rate)
+                embedding = self.get_embedding(combine_waveform, sample_rate)
 
                 if not np.isnan(embedding).any():
                     try:
