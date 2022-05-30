@@ -62,11 +62,11 @@ function createEmojiSound(label){
         snd.pause();
         clearInterval(idTimer);
         snd = new Audio(sounds[val]);
-        snd.play();
+        snd.play();/*
         idTimer = setInterval(function () {
             ele = e.srcElement;
             ele.style.visibility = (ele.style.visibility == "" ? "hidden" : "");
-        }, 200);
+        }, 200);*/
     }
     span.onmouseleave = (e) => {
         snd.pause();

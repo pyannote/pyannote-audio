@@ -9,6 +9,24 @@ from prodigy.components.db import connect
 from .answers2file import answers2file
 
 
+def comparePath(array_path):
+    minimum_path = list(array_path[0].parts)
+    for path in array_path[1:]:
+        list_path = list(path.parts)
+        for i, p in enumerate(minimum_path):
+            if minimum_path[i] != list_path[i]:
+                minimum_path = minimum_path[0:i]
+                break
+    return Path(*minimum_path)
+
+
+def getUri(p1, p2):
+    for dir in p2:
+        p1.remove(dir)
+
+    return Path(*p1)
+
+
 @prodigy.recipe(
     "pyannote.database",
     dataset=("Dataset where the annotations are", "positional", None, str),
@@ -28,62 +46,69 @@ def database(
     filter: Optional[str] = "accept",
 ) -> Dict[str, Any]:
 
+    path = path + "/" + dataset + "/"
+    Path(path).mkdir(parents=True, exist_ok=True)
+
     db = connect("sqlite", {})
     annotations = db.get_dataset(dataset)
     validation_file = answers2file(annotations, filter)
     now = datetime.now()
-    date_time = now.strftime("%d-%m-%Y_%H-%M-%S")
-    name = "upTo_" + date_time
+    name = now.strftime("%Y-%m-%d-%H%M%S")
     path_dtb = set()
     info = {"Databases": {}, "Protocols": {}}
+    all_suffix = set()
 
     for file in validation_file:
         audio = Path(file["audio"])
         p = str(audio.parent) + "/{uri}" + audio.suffix
-        path_dtb.add(p)
+        path_dtb.add(Path(p))
+        all_suffix.add(audio.suffix)
 
-    for i, p in enumerate(path_dtb):
-        nd = database
-        nf = name
-        if i > 0:
-            nd = database + str(i)
-            nf = name + "_" + str(i)
-        info["Databases"][nd] = p
-        rttm = nf + ".rttm"
-        lst = nf + ".lst"
-        uem = nf + ".uem"
-        info["Protocols"][nd] = {
-            "SpeakerDiarization": {
-                nf: {"train": {"annotation": rttm, "uri": lst, "annotated": uem}}
-            }
+    main_path = comparePath(list(path_dtb))
+
+    info["Databases"][database] = [
+        str(main_path) + "/{uri}" + suffix for suffix in all_suffix
+    ]
+    rttm = name + ".rttm"
+    lst = name + ".lst"
+    uem = name + ".uem"
+    info["Protocols"][database] = {
+        "SpeakerDiarization": {
+            name: {"train": {"annotation": rttm, "uri": lst, "annotated": uem}}
         }
+    }
 
-        with open(path + "/" + rttm, "w") as rttmfile, open(
-            path + "/" + uem, "w"
-        ) as uemfile, open(path + "/" + lst, "w") as urifile:
-            for file in validation_file:
-                audio = Path(file["audio"])
-                fp = str(audio.parent) + "/{uri}" + audio.suffix
-                if fp == p:
-                    fname = file["uri"]
-                    for seg in file["annotated"]:
-                        uemfile.write(
-                            fname + " NA " + str(seg.start) + " " + str(seg.end) + "\n"
-                        )
-                    annotation = file["annotation"]
-                    for seg in annotation.get_timeline():
-                        rttmfile.write(
-                            "SPEAKER "
-                            + fname
-                            + " NA "
-                            + str(seg.start)
-                            + " "
-                            + str(seg.end - seg.start)
-                            + " <NA> <NA> "
-                            + "".join([label for label in annotation.get_labels(seg)])
-                            + " <NA> <NA> \n"
-                        )
-                    urifile.write(fname + "\n")
+    with open(path + rttm, "w") as rttmfile, open(path + uem, "w") as uemfile, open(
+        path + lst, "w"
+    ) as urifile:
+        for file in validation_file:
+            audio = Path(file["audio"])
 
-    with open(path + "configuration.yml", "w") as conffile:
+            uri_path = getUri(list(audio.parent.parts), list(main_path.parts))
+
+            if uri_path != Path("."):
+                fname = str(uri_path) + "/" + file["uri"]
+            else:
+                fname = file["uri"]
+
+            for seg in file["annotated"]:
+                uemfile.write(
+                    fname + " NA " + str(seg.start) + " " + str(seg.end) + "\n"
+                )
+            annotation = file["annotation"]
+            for seg in annotation.get_timeline():
+                rttmfile.write(
+                    "SPEAKER "
+                    + fname
+                    + " NA "
+                    + str(seg.start)
+                    + " "
+                    + str(seg.end - seg.start)
+                    + " <NA> <NA> "
+                    + "".join([label for label in annotation.get_labels(seg)])
+                    + " <NA> <NA> \n"
+                )
+            urifile.write(fname + "\n")
+
+    with open(path + "database.yml", "w") as conffile:
         yaml.dump(info, conffile)
