@@ -356,8 +356,8 @@ class Audio:
 
             if end_frame > frames + math.ceil(self.PRECISION * sample_rate):
                 raise ValueError(
-                    f"requested chunk [{segment.start:.6f}, {segment.end:.6f}] ({start_frame:d}:{end_frame:d}) "
-                    f"lies outside of file bounds [0., {frames / sample_rate:.6f}] (0:{frames:d})."
+                    f"requested chunk [{segment.start:.6f}s, {segment.end:.6f}s] (frames #{start_frame:d} to #{end_frame:d}) "
+                    f"lies outside of {file.get('uri', 'in-memory')} file bounds [0., {frames / sample_rate:.6f}s] ({frames:d} frames)."
                 )
             else:
                 end_frame = min(end_frame, frames)
@@ -365,8 +365,8 @@ class Audio:
 
             if start_frame < 0:
                 raise ValueError(
-                    f"requested chunk [{segment.start:.6f}, {segment.end:.6f}] ({start_frame:d}:{end_frame:d}) "
-                    f"lies outside of file bounds [0, {frames / sample_rate:.6f}] (0:{frames:d})."
+                    f"requested chunk [{segment.start:.6f}s, {segment.end:.6f}s] (frames #{start_frame:d} to #{end_frame:d}) "
+                    f"lies outside of {file.get('uri', 'in-memory')} file bounds [0, {frames / sample_rate:.6f}s] ({frames:d} frames)."
                 )
 
         elif mode == "pad":
