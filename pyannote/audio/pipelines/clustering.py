@@ -23,18 +23,27 @@
 """Clustering pipelines"""
 
 
-from typing import Optional
 from enum import Enum
+from typing import Optional
 
 import numpy as np
-from scipy.cluster.hierarchy import fcluster
-from scipy.spatial.distance import squareform
-from spectralcluster import AutoTune, FallbackOptions, EigenGapType, LaplacianType, RefinementName, RefinementOptions, SpectralClusterer, SymmetrizeType, ThresholdType
-
 from pyannote.core.utils.distance import pdist
 from pyannote.core.utils.hierarchy import linkage
 from pyannote.pipeline import Pipeline
-from pyannote.pipeline.parameter import Categorical, Uniform, Parameter
+from pyannote.pipeline.parameter import Categorical, Parameter, Uniform
+from scipy.cluster.hierarchy import fcluster
+from scipy.spatial.distance import squareform
+from spectralcluster import (
+    AutoTune,
+    FallbackOptions,
+    EigenGapType,
+    LaplacianType,
+    RefinementName,
+    RefinementOptions,
+    SpectralClusterer,
+    SymmetrizeType,
+    ThresholdType,
+)
 
 
 class ClusteringMixin:
@@ -279,11 +288,14 @@ class SpectralClustering(ClusteringMixin, Pipeline):
             p_percentile_min=0.40,
             p_percentile_max=0.95,
             init_search_step=0.05,
-            search_level=1)
+            search_level=1,
+        )
 
         # Sequence of refinement operations.
         refinement_sequence = [
-            RefinementName[refinement_name] for refinement_name in self.refinement_sequence]
+            RefinementName[refinement_name]
+            for refinement_name in self.refinement_sequence
+        ]
 
         # Refinement options.
         refinement_options = RefinementOptions(
@@ -292,13 +304,14 @@ class SpectralClustering(ClusteringMixin, Pipeline):
             thresholding_with_binarization=self.thresholding_with_binarization,
             thresholding_preserve_diagonal=self.thresholding_preserve_diagonal,
             symmetrize_type=SymmetrizeType[self.symmetrize_type],
-            refinement_sequence=refinement_sequence)
+            refinement_sequence=refinement_sequence,
+        )
 
         return SpectralClusterer(
             min_clusters=min_clusters,
             max_clusters=max_clusters,
             refinement_options=refinement_options,
-            autotune = default_autotune if self.use_autotune else None,
+            autotune=default_autotune if self.use_autotune else None,
             fallback_options=fallback_options,
             laplacian_type=LaplacianType[self.laplacian],
             eigengap_type=EigenGapType[self.eigengap],
@@ -313,7 +326,7 @@ class Clustering(Enum):
 
 class NearestClusterAssignment:
     """
-    
+
     Parameters
     ----------
     metric : {"cosine", "euclidean", ...}, optional
@@ -322,7 +335,7 @@ class NearestClusterAssignment:
         Allow already assigned embeddings to be reassigned to a new cluster
         in case it is closer than the original one. Defaults to stick with
         the original cluster.
-    
+
     """
 
     def __init__(self, metric: str = "cosine", allow_reassignment: bool = False):
@@ -337,18 +350,18 @@ class NearestClusterAssignment:
         cannot_link: Optional[np.ndarray] = None,
     ):
         """
-        
+
         Parameters
         ----------
         embeddings : (num_embeddings, dimension) np.ndarray
-            Speaker embeddings. NaN embeddings indicate that cluster prior 
+            Speaker embeddings. NaN embeddings indicate that cluster prior
             probability must be used to assign them.
         clusters : (num_embeddings, ) np.ndarray
-            Clustering output, where 
-            * clusters[e] == k  means eth embedding has already been assigned to kth cluster. 
+            Clustering output, where
+            * clusters[e] == k  means eth embedding has already been assigned to kth cluster.
             * clusters[e] == -1 means eth embedding as yet to be assigned.
         cannot_link : (num_embeddings, num_embeddings) np.ndarray
-            "cannot link" constraints.  
+            "cannot link" constraints.
 
         Returns
         -------
@@ -396,4 +409,3 @@ class NearestClusterAssignment:
             return new_clusters
         else:
             return np.where(clusters == -1, new_clusters, clusters)
-
