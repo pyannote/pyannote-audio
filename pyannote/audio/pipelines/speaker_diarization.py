@@ -187,6 +187,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                 "clustering": {
                     "laplacian": "GraphCut",
                     "eigengap": "Ratio",
+                    "spectral_min_embeddings": 5,
                     "gaussian_blur_sigma": 1,
                     "p_percentile": 0.95,
                     "refinement_sequence": ["GaussianBlur", "RowWiseThreshold", "Symmetrize"],

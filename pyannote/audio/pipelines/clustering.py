@@ -29,7 +29,7 @@ from enum import Enum
 import numpy as np
 from scipy.cluster.hierarchy import fcluster
 from scipy.spatial.distance import squareform
-from spectralcluster import AutoTune, EigenGapType, LaplacianType, RefinementName, RefinementOptions, SpectralClusterer, SymmetrizeType, ThresholdType
+from spectralcluster import AutoTune, FallbackOptions, EigenGapType, LaplacianType, RefinementName, RefinementOptions, SpectralClusterer, SymmetrizeType, ThresholdType
 
 from pyannote.core.utils.distance import pdist
 from pyannote.core.utils.hierarchy import linkage
@@ -185,6 +185,8 @@ class SpectralClustering(ClusteringMixin, Pipeline):
         Laplacian to use.
     eigengap : {"Ratio", "NormalizedDiff"}
         Eigengap approach to use.
+    spectral_min_embeddings : we only use spectral clusterer if we have at least these
+        many embeddings; otherwise use the fallback clusterer
     refinement_sequence : sequence of names of refinement operations
     gaussian_blur_sigma : float in range (0, 10000)
         sigma value of the Gaussian blur operation
@@ -216,6 +218,7 @@ class SpectralClustering(ClusteringMixin, Pipeline):
             ["Affinity", "Unnormalized", "RandomWalk", "GraphCut"]
         )
         self.eigengap = Categorical(["Ratio", "NormalizedDiff"])
+        self.spectral_min_embeddings = Uniform(1, 10000)
 
         # Hyperparameters for refinement operations.
         self.refinement_sequence = Parameter()
@@ -266,6 +269,11 @@ class SpectralClustering(ClusteringMixin, Pipeline):
             max_clusters=max_clusters,
         )
 
+        # Fallback options.
+        fallback_options = FallbackOptions(
+            spectral_min_embeddings=self.spectral_min_embeddings,
+        )
+
         # Autotune options.
         default_autotune = AutoTune(
             p_percentile_min=0.40,
@@ -291,6 +299,7 @@ class SpectralClustering(ClusteringMixin, Pipeline):
             max_clusters=max_clusters,
             refinement_options=refinement_options,
             autotune = default_autotune if self.use_autotune else None,
+            fallback_options=fallback_options,
             laplacian_type=LaplacianType[self.laplacian],
             eigengap_type=EigenGapType[self.eigengap],
             affinity_function=self._affinity_function,
