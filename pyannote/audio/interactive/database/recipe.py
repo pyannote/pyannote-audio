@@ -1,3 +1,4 @@
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -10,21 +11,16 @@ from .answers2file import answers2file
 
 
 def comparePath(array_path):
-    minimum_path = list(array_path[0].parts)
-    for path in array_path[1:]:
-        list_path = list(path.parts)
-        for i, p in enumerate(minimum_path):
-            if minimum_path[i] != list_path[i]:
-                minimum_path = minimum_path[0:i]
+    minimum_path = min(array_path, key=lambda x: len(x.parts))
+    for i, dir in enumerate(minimum_path.parts):
+        for path in array_path:
+            if not path.parts[i] == dir:
+                i = i - 1
                 break
-    return Path(*minimum_path)
-
-
-def getUri(p1, p2):
-    for dir in p2:
-        p1.remove(dir)
-
-    return Path(*p1)
+        else:
+            continue
+        break
+    return Path(*minimum_path.parts[0 : i + 1])
 
 
 @prodigy.recipe(
@@ -46,11 +42,14 @@ def database(
     filter: Optional[str] = "accept",
 ) -> Dict[str, Any]:
 
-    path = path + "/" + dataset + "/"
-    Path(path).mkdir(parents=True, exist_ok=True)
-
     db = connect("sqlite", {})
     annotations = db.get_dataset(dataset)
+
+    if annotations is None:
+        sys.exit("'" + dataset + "' dataset not found")
+
+    path = path + "/" + dataset + "/"
+    Path(path).mkdir(parents=True, exist_ok=True)
     validation_file = answers2file(annotations, filter)
     now = datetime.now()
     name = now.strftime("%Y-%m-%d-%H%M%S")
@@ -60,8 +59,7 @@ def database(
 
     for file in validation_file:
         audio = Path(file["audio"])
-        p = str(audio.parent) + "/{uri}" + audio.suffix
-        path_dtb.add(Path(p))
+        path_dtb.add(audio.parent)
         all_suffix.add(audio.suffix)
 
     main_path = comparePath(list(path_dtb))
@@ -80,35 +78,17 @@ def database(
 
     with open(path + rttm, "w") as rttmfile, open(path + uem, "w") as uemfile, open(
         path + lst, "w"
-    ) as urifile:
+    ) as lstfile:
         for file in validation_file:
             audio = Path(file["audio"])
-
-            uri_path = getUri(list(audio.parent.parts), list(main_path.parts))
-
-            if uri_path != Path("."):
-                fname = str(uri_path) + "/" + file["uri"]
-            else:
-                fname = file["uri"]
-
-            for seg in file["annotated"]:
-                uemfile.write(
-                    fname + " NA " + str(seg.start) + " " + str(seg.end) + "\n"
-                )
+            uri = audio.relative_to(main_path)
             annotation = file["annotation"]
-            for seg in annotation.get_timeline():
-                rttmfile.write(
-                    "SPEAKER "
-                    + fname
-                    + " NA "
-                    + str(seg.start)
-                    + " "
-                    + str(seg.end - seg.start)
-                    + " <NA> <NA> "
-                    + "".join([label for label in annotation.get_labels(seg)])
-                    + " <NA> <NA> \n"
-                )
-            urifile.write(fname + "\n")
+            annotation.uri = uri
+            annotation.write_rttm(rttmfile)
+            annotated = file["annotated"]
+            annotated.uri = uri
+            annotated.write_uem(uemfile)
+            lstfile.write(str(uri) + "\n")
 
     with open(path + "database.yml", "w") as conffile:
         yaml.dump(info, conffile)
