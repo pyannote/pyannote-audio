@@ -28,8 +28,8 @@ var refresh = true;
 
 var left = 'ArrowLeft';
 var right = 'ArrowRight';
-var startR = 'Shift';
-var endR = 'Control';
+var startR = prodigy.config.left || 'Shift';
+var endR = prodigy.config.right || 'Control';
 
 var PRECISION = (prodigy.config.precision / 1000);
 var BEEP = prodigy.config.beep;
@@ -171,7 +171,7 @@ function reloadWave(){
 * @see activeRegion() / deactiveRegion()
 * @param {ids} Ids of the region to be selected
 */
-function switchCurrent(newId){
+function switchCurrent(newId, seek=true){
   if(ids.length > 0){
     deactiveRegion(ids[currentRegion]);
     currentRegion = newId;
@@ -180,7 +180,7 @@ function switchCurrent(newId){
        window.wavesurfer.seekTo(0);
     }else{
       var time = (ids[currentRegion].start) / (window.wavesurfer.getDuration());
-      window.wavesurfer.seekTo(time);
+      if(seek) window.wavesurfer.seekTo(time);
     }
   }
 }
@@ -207,13 +207,15 @@ function waitForElement(){
         });
         // Change region label (by remove the old one and create a new one with proper label)
         window.wavesurfer.on('region-dblclick',function(e){
+          refresh = false;
           re = window.wavesurfer.addRegion({'start' : e.start,'end' : e.end});
           e.remove();
           window.wavesurfer.fireEvent('region-update-end',re);
         });
         // Select region on click
         window.wavesurfer.on('region-click',function(e){
-          switchCurrent(ids.indexOf(e));
+          refresh = false;
+          switchCurrent(ids.indexOf(e), false);
         });
         // Beep when region end
         window.wavesurfer.on('region-out',function(e){
@@ -226,6 +228,7 @@ function waitForElement(){
         // @see updateContent()
         // Switch selected region when deleted
         window.wavesurfer.on('region-removed',function(e){
+          refresh = false;
           updateContent();
           if(currentRegion == (ids.length - 1)){
             var newId = 0;
@@ -233,7 +236,7 @@ function waitForElement(){
             var newId = currentRegion;
           }
           reloadWave();
-          if(ids.length > 0) switchCurrent(newId);
+          if(ids.length > 0) switchCurrent(newId, false);
         });
     }else{
        setTimeout(waitForElement, 250);

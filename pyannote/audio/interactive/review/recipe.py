@@ -165,7 +165,7 @@ def review(
     ]
 
     hashed_stream = (
-        set_hashes(eg, input_keys=("path", "chunk"))
+        set_hashes(eg, input_keys=("path", "chunk", "text"))
         for eg in review_stream(
             source, list_annotations, labels, diarization=diarization, chunk=chunk
         )
@@ -212,7 +212,7 @@ def review(
             "keymap": {
                 "accept": ["enter"],
                 "ignore": ["escape"],
-                "undo": ["u"],
+                "reset": ["u"],
                 "playpause": ["space"],
             },
             "show_flag": True,

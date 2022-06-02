@@ -39,7 +39,7 @@ function changePlaceholderColor(label, color){
 function changeDisplayPlaceholder(label, hide){
     var labels = document.querySelectorAll("label[for="+label+"]");
     if(labels.length > 0){
-        labels[0].parentElement.hidden = hide;
+        labels[0].parentElement.parentElement.style.display = (hide ? "none" : "")
     }
 }
 
@@ -62,11 +62,7 @@ function createEmojiSound(label){
         snd.pause();
         clearInterval(idTimer);
         snd = new Audio(sounds[val]);
-        snd.play();/*
-        idTimer = setInterval(function () {
-            ele = e.srcElement;
-            ele.style.visibility = (ele.style.visibility == "" ? "hidden" : "");
-        }, 200);*/
+        snd.play();
     }
     span.onmouseleave = (e) => {
         snd.pause();

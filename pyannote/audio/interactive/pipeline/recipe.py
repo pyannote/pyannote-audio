@@ -200,7 +200,7 @@ def pipeline(
         instructions_f.write(fp_tpl.read().replace("{IMAGE}", b64))
 
     hashed_stream = (
-        set_hashes(eg, input_keys=("path", "chunk"))
+        set_hashes(eg, input_keys=("path", "chunk", "text"))
         for eg in stream(pipeline, source, labels, chunk=chunk, randomize=False)
     )
 
@@ -216,7 +216,7 @@ def pipeline(
             "keymap": {
                 "accept": ["enter"],
                 "ignore": ["escape"],
-                "undo": ["u"],
+                "reset": ["u"],
                 "playpause": ["space"],
             },
             "show_audio_minimap": False,

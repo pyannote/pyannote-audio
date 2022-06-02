@@ -197,7 +197,7 @@ def diff(
     list_errors = [false_alarm, speaker_confusion, missed_detection]
 
     hashed_stream = (
-        set_hashes(eg, input_keys=("path", "chunk"))
+        set_hashes(eg, input_keys=("path", "chunk", "text"))
         for eg in diff_stream(
             source,
             ref,
@@ -250,7 +250,7 @@ def diff(
             "keymap": {
                 "accept": ["enter"],
                 "ignore": ["escape"],
-                "undo": ["u"],
+                "reset": ["u"],
                 "playpause": ["space"],
             },
             "show_flag": True,

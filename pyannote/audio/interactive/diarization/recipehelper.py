@@ -27,6 +27,7 @@
 import random
 from copy import deepcopy
 from datetime import datetime
+from functools import cmp_to_key
 from itertools import groupby
 from pathlib import Path
 from typing import Dict, Iterable, List
@@ -228,6 +229,16 @@ class RecipeHelper:
             embedding = [float("nan")]
         return embedding
 
+    def compareOverlap(self, region1, region2):
+        if (region1["start"] > region2["start"]) and (region1["end"] < region2["end"]):
+            return 1
+        elif (region1["start"] < region2["start"]) and (
+            region1["end"] > region2["end"]
+        ):
+            return -1
+        else:
+            return 0
+
     def stream(
         self,
         pipeline: Pipeline,
@@ -341,11 +352,11 @@ class RecipeHelper:
                                 span.update({"label": genlabel})
 
             blocks = [{"view_id": "audio_manual"}]
-            # global_labels = sorted(self.speakers["name"])
-            # all_labels = global_labels + labels
             all_labels = list(self.speakers["name"]) + labels
 
             sounds = {spk[0]: spk[3] for spk in self.speakers}
+            # sort regions that are inside other regions to avoid unclickable issues
+            audio_spans = sorted(audio_spans, key=cmp_to_key(self.compareOverlap))
             for label in labels:
                 blocks.append(
                     {

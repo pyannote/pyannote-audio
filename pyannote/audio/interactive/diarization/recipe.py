@@ -80,6 +80,7 @@ from .recipehelper import RecipeHelper
         None,
         bool,
     ),
+    qwerty=("QWERTY keyboard", "flag", None, bool),
 )
 def diarization(
     dataset: str,
@@ -90,6 +91,7 @@ def diarization(
     embeddings: str = "",
     precision: int = 200,
     beep: bool = False,
+    qwerty: bool = False,
 ) -> Dict[str, Any]:
 
     helper = RecipeHelper()
@@ -124,9 +126,14 @@ def diarization(
         instructions_f.write(fp_tpl.read().replace("{IMAGE}", b64))
 
     hashed_stream = (
-        set_hashes(eg, input_keys=("path", "chunk"))
+        set_hashes(eg, input_keys=("path", "chunk", "text"))
         for eg in helper.stream(pipeline, source, labels, chunk=chunk, randomize=False)
     )
+
+    if qwerty:
+        left = "a"
+    else:
+        left = "q"
 
     return {
         "view_id": "blocks",
@@ -164,7 +171,7 @@ def diarization(
             "keymap": {
                 "accept": ["enter"],
                 "ignore": ["escape"],
-                "undo": ["u"],
+                "reset": ["u"],
                 "playpause": ["space"],
             },
             "show_audio_minimap": False,
@@ -175,5 +182,7 @@ def diarization(
             "labels": labels,
             "precision": precision,
             "beep": beep,
+            "left": left,
+            "right": "d",
         },
     }
