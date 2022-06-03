@@ -179,6 +179,7 @@ class SupervisedRepresentationLearningTaskMixin:
                     )
 
                     # if speech turn is too short, pad with zeros
+                    # TODO: handle this corner case with recently added mode="pad" option to audio.crop
                     if speech_turn.duration < batch_duration:
                         X, _ = self.model.audio.crop(file, speech_turn)
                         num_missing_frames = (
