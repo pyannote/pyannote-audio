@@ -26,7 +26,6 @@ def comparePath(array_path):
 @prodigy.recipe(
     "pyannote.database",
     dataset=("Dataset where the annotations are", "positional", None, str),
-    database=("Database name", "positional", None, str),
     path=("Where to save files", "positional", None, str),
     filter=(
         "Filter on specific answers",
@@ -37,7 +36,6 @@ def comparePath(array_path):
 )
 def database(
     dataset: str,
-    database: str,
     path: str,
     filter: Optional[str] = "accept",
 ) -> Dict[str, Any]:
@@ -64,13 +62,13 @@ def database(
 
     main_path = comparePath(list(path_dtb))
 
-    info["Databases"][database] = [
+    info["Databases"][dataset] = [
         str(main_path) + "/{uri}" + suffix for suffix in all_suffix
     ]
     rttm = name + ".rttm"
     lst = name + ".lst"
     uem = name + ".uem"
-    info["Protocols"][database] = {
+    info["Protocols"][dataset] = {
         "SpeakerDiarization": {
             name: {"train": {"annotation": rttm, "uri": lst, "annotated": uem}}
         }
