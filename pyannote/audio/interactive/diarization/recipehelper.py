@@ -230,11 +230,11 @@ class RecipeHelper:
         return embedding
 
     def compareOverlap(self, region1, region2):
-        if (region1["start"] > region2["start"]) and (region1["end"] < region2["end"]):
+        s1 = Segment(region1["start"], region1["end"])
+        s2 = Segment(region2["start"], region2["end"])
+        if s1 in s2:
             return 1
-        elif (region1["start"] < region2["start"]) and (
-            region1["end"] > region2["end"]
-        ):
+        elif s2 in s1:
             return -1
         else:
             return 0
