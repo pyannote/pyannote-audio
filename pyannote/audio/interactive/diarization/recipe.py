@@ -100,7 +100,6 @@ def diarization(
 
     if isinstance(classes, Iterator):
         labels = [x for _, x in zip(range(num_classes), classes)]
-        # labels = [re.search(r'\d+', str).group() for str in labels]
     else:
         labels = classes
 
@@ -126,14 +125,11 @@ def diarization(
         instructions_f.write(fp_tpl.read().replace("{IMAGE}", b64))
 
     hashed_stream = (
-        set_hashes(eg, input_keys=("path", "chunk", "text"))
+        set_hashes(eg, input_keys=("path", "chunk"), ignore=[])
         for eg in helper.stream(pipeline, source, labels, chunk=chunk, randomize=False)
     )
 
-    if qwerty:
-        left = "a"
-    else:
-        left = "q"
+    left = "a" if qwerty else "q"
 
     return {
         "view_id": "blocks",

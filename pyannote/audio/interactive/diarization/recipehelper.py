@@ -357,6 +357,7 @@ class RecipeHelper:
             sounds = {spk[0]: spk[3] for spk in self.speakers}
             # sort regions that are inside other regions to avoid unclickable issues
             audio_spans = sorted(audio_spans, key=cmp_to_key(self.compareOverlap))
+
             for label in labels:
                 blocks.append(
                     {
@@ -369,7 +370,7 @@ class RecipeHelper:
                     }
                 )
             yield {
-                "path": path,
+                "path": str(path),
                 "text": text,
                 "audio": audio,
                 "sounds": sounds,

@@ -111,6 +111,7 @@ def review_stream(
     ),
     precision=("Cursor speed", "option", None, int),
     beep=("Beep when the player reaches the end of a region.", "flag", None, bool),
+    qwerty=("QWERTY keyboard", "flag", None, bool),
 )
 def review(
     dataset: str,
@@ -120,6 +121,7 @@ def review(
     diarization: bool = False,
     precision: int = 200,
     beep: bool = False,
+    qwerty: bool = False,
 ) -> Dict[str, Any]:
 
     recipe_dir = Path(__file__).resolve().parent
@@ -165,11 +167,13 @@ def review(
     ]
 
     hashed_stream = (
-        set_hashes(eg, input_keys=("path", "chunk", "text"))
+        set_hashes(eg, input_keys=("path", "chunk"), ignore=[])
         for eg in review_stream(
             source, list_annotations, labels, diarization=diarization, chunk=chunk
         )
     )
+
+    left = "a" if qwerty else "q"
 
     return {
         "view_id": "blocks",
@@ -215,6 +219,8 @@ def review(
                 "reset": ["u"],
                 "playpause": ["space"],
             },
+            "left": left,
+            "right": "d",
             "show_flag": True,
         },
     }

@@ -164,6 +164,7 @@ def stream(
         None,
         bool,
     ),
+    qwerty=("QWERTY keyboard", "flag", None, bool),
 )
 def pipeline(
     dataset: str,
@@ -173,6 +174,7 @@ def pipeline(
     num_classes: int = 4,
     precision: int = 200,
     beep: bool = False,
+    qwerty: bool = False,
 ) -> Dict[str, Any]:
 
     pipeline = Pipeline.from_pretrained(pipeline)
@@ -200,9 +202,11 @@ def pipeline(
         instructions_f.write(fp_tpl.read().replace("{IMAGE}", b64))
 
     hashed_stream = (
-        set_hashes(eg, input_keys=("path", "chunk", "text"))
+        set_hashes(eg, input_keys=("path", "chunk"), ignore=[])
         for eg in stream(pipeline, source, labels, chunk=chunk, randomize=False)
     )
+
+    left = "a" if qwerty else "q"
 
     return {
         "view_id": "audio_manual",
@@ -227,5 +231,7 @@ def pipeline(
             "labels": labels,
             "precision": precision,
             "beep": beep,
+            "left": left,
+            "right": "d",
         },
     }

@@ -197,7 +197,7 @@ def diff(
     list_errors = [false_alarm, speaker_confusion, missed_detection]
 
     hashed_stream = (
-        set_hashes(eg, input_keys=("path", "chunk", "text"))
+        set_hashes(eg, input_keys=("path", "chunk"), ignore=[])
         for eg in diff_stream(
             source,
             ref,
