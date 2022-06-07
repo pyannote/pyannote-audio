@@ -30,7 +30,7 @@ import numpy as np
 from pyannote.core.utils.distance import pdist
 from pyannote.core.utils.hierarchy import linkage
 from pyannote.pipeline import Pipeline
-from pyannote.pipeline.parameter import Categorical, Parameter, Uniform
+from pyannote.pipeline.parameter import Categorical, LogUniform, Uniform
 from scipy.cluster.hierarchy import fcluster
 from scipy.spatial.distance import squareform
 from spectralcluster import (
@@ -196,8 +196,13 @@ class SpectralClustering(ClusteringMixin, Pipeline):
         Eigengap approach to use.
     spectral_min_embeddings : we only use spectral clusterer if we have at least these
         many embeddings; otherwise use the fallback clusterer
-    refinement_sequence : sequence of names of refinement operations
-    gaussian_blur_sigma : float in range (0, 10000)
+    refinement_sequence : a string
+        it represents the sequence of refinement operations;
+        each character in the string represents one operation,
+        O: Omit, C: CropDiagonal, G: GaussianBlur, T: RowWiseThreshold,
+        S: Symmetrize, D: Diffuse, N: RowWiseNormalize.
+        Use "O" if we don't want an empty refinement sequence
+    gaussian_blur_sigma : integer
         sigma value of the Gaussian blur operation
     p_percentile: float in range (0, 1)
         the p-percentile for the row wise thresholding
@@ -227,11 +232,13 @@ class SpectralClustering(ClusteringMixin, Pipeline):
             ["Affinity", "Unnormalized", "RandomWalk", "GraphCut"]
         )
         self.eigengap = Categorical(["Ratio", "NormalizedDiff"])
-        self.spectral_min_embeddings = Uniform(1, 10000)
+        self.spectral_min_embeddings = LogUniform(1, 100)
 
         # Hyperparameters for refinement operations.
-        self.refinement_sequence = Parameter()
-        self.gaussian_blur_sigma = Uniform(0, 10000)
+        self.refinement_sequence = Categorical(
+            ["O", "G", "TS", "GTS", "TSD", "GTSD", "TSDN", "GTSDN",
+             "TSN", "GTSN", "CTSDN", "CGTSDN"])
+        self.gaussian_blur_sigma = Categorical([0, 1, 2, 3])
         self.p_percentile = Uniform(0, 1)
         self.symmetrize_type = Categorical(["Max", "Average"])
         self.thresholding_with_binarization = Categorical([True, False])
@@ -292,10 +299,25 @@ class SpectralClustering(ClusteringMixin, Pipeline):
         )
 
         # Sequence of refinement operations.
-        refinement_sequence = [
-            RefinementName[refinement_name]
-            for refinement_name in self.refinement_sequence
-        ]
+        refinement_sequence = []
+        for refinement_char in self.refinement_sequence:
+            refinement_char = refinement_char.upper()
+            if refinement_char == "O":
+                pass
+            elif refinement_char == "C":
+                refinement_sequence.append(RefinementName.CropDiagonal)
+            elif refinement_char == "G":
+                refinement_sequence.append(RefinementName.GaussianBlur)
+            elif refinement_char == "T":
+                refinement_sequence.append(RefinementName.RowWiseThreshold)
+            elif refinement_char == "S":
+                refinement_sequence.append(RefinementName.Symmetrize)
+            elif refinement_char == "D":
+                refinement_sequence.append(RefinementName.Diffuse)
+            elif refinement_char == "N":
+                refinement_sequence.append(RefinementName.RowWiseNormalize)
+            else:
+                raise ValueError("Unsupported refinement: " +  refinement_char)
 
         # Refinement options.
         refinement_options = RefinementOptions(
