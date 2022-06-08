@@ -232,13 +232,12 @@ class SpectralClustering(ClusteringMixin, Pipeline):
             ["Affinity", "Unnormalized", "RandomWalk", "GraphCut"]
         )
         self.eigengap = Categorical(["Ratio", "NormalizedDiff"])
-        self.spectral_min_embeddings = LogUniform(1, 100)
+        self.spectral_min_embeddings = Categorical([5, 10])
 
         # Hyperparameters for refinement operations.
         self.refinement_sequence = Categorical(
-            ["O", "G", "TS", "GTS", "TSD", "GTSD", "TSDN", "GTSDN",
-             "TSN", "GTSN", "CTSDN", "CGTSDN"])
-        self.gaussian_blur_sigma = Categorical([0, 1, 2, 3])
+            ["O", "TS", "GTS", "CGTSDN"])
+        self.gaussian_blur_sigma = Uniform(0, 3)
         self.p_percentile = Uniform(0, 1)
         self.symmetrize_type = Categorical(["Max", "Average"])
         self.thresholding_with_binarization = Categorical([True, False])
