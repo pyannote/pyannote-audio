@@ -194,29 +194,29 @@ class SpectralClustering(ClusteringMixin, Pipeline):
         Laplacian to use.
     eigengap : {"Ratio", "NormalizedDiff"}
         Eigengap approach to use.
-    spectral_min_embeddings : we only use spectral clusterer if we have at least these
-        many embeddings; otherwise use the fallback clusterer
-    refinement_sequence : a string
-        it represents the sequence of refinement operations;
-        each character in the string represents one operation,
-        O: Omit, C: CropDiagonal, G: GaussianBlur, T: RowWiseThreshold,
-        S: Symmetrize, D: Diffuse, N: RowWiseNormalize.
-        Use "O" if we don't want an empty refinement sequence
-    gaussian_blur_sigma : integer
-        sigma value of the Gaussian blur operation
-    p_percentile: float in range (0, 1)
-        the p-percentile for the row wise thresholding
+    spectral_min_embeddings : int 
+        Fallback to agglomerative clustering when clustering less than that 
+        many embeddings. 
+    refinement_sequence : str 
+        Sequence of refinement operations (e.g. "CGTSDN"). 
+        Each character represents one operation ("C" for CropDiagonal, "G" for GaussianBlur, 
+        "T" for RowWiseThreshold, "S" for Symmetrize, "D" for Diffuse, and "N" for RowWiseNormalize. 
+        Use "O" (for Omit) to not use any refinement. 
+    gaussian_blur_sigma : float
+        Sigma value for the Gaussian blur operation
+    p_percentile: [0, 1] float 
+        p-percentile for the row wise thresholding
     symmetrize_type : {"Max", "Average"}
-        how do we symmetrize the matrix
+        How to symmetrize the matrix
     thresholding_with_binarization : boolean
-        if true, we set values larger than the threshold to 1
+        Set values larger than the threshold to 1.
     thresholding_preserve_diagonal : boolean
-        if true, in the row wise thresholding operation, we firstly set diagonals of the
-        affinity matrix to 0, and set the diagonals back to 1 in the end
+        In the row wise thresholding operation, set diagonals of the
+        affinity matrix to 0 at the beginning, and back to 1 in the end
     thresholding_type : {"RowMax", "Percentile"}
-        the type of thresholding operation
+        Type of thresholding operation
     use_autotune : boolean
-        whether to use autotune to find optimal p_percentile
+        Use autotune to find optimal p_percentile
 
     Notes
     -----
