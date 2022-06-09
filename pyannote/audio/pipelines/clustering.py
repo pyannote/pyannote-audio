@@ -194,17 +194,17 @@ class SpectralClustering(ClusteringMixin, Pipeline):
         Laplacian to use.
     eigengap : {"Ratio", "NormalizedDiff"}
         Eigengap approach to use.
-    spectral_min_embeddings : int 
-        Fallback to agglomerative clustering when clustering less than that 
-        many embeddings. 
-    refinement_sequence : str 
-        Sequence of refinement operations (e.g. "CGTSDN"). 
-        Each character represents one operation ("C" for CropDiagonal, "G" for GaussianBlur, 
-        "T" for RowWiseThreshold, "S" for Symmetrize, "D" for Diffuse, and "N" for RowWiseNormalize. 
-        Use empty string to not use any refinement. 
+    spectral_min_embeddings : int
+        Fallback to agglomerative clustering when clustering less than that
+        many embeddings.
+    refinement_sequence : str
+        Sequence of refinement operations (e.g. "CGTSDN").
+        Each character represents one operation ("C" for CropDiagonal, "G" for GaussianBlur,
+        "T" for RowWiseThreshold, "S" for Symmetrize, "D" for Diffuse, and "N" for RowWiseNormalize.
+        Use empty string to not use any refinement.
     gaussian_blur_sigma : float
         Sigma value for the Gaussian blur operation
-    p_percentile: [0, 1] float 
+    p_percentile: [0, 1] float
         p-percentile for the row wise thresholding
     symmetrize_type : {"Max", "Average"}
         How to symmetrize the matrix
@@ -328,11 +328,16 @@ class SpectralClustering(ClusteringMixin, Pipeline):
             refinement_sequence=refinement_sequence,
         )
 
+        if self.user_autotune and (RefinementName.RowWiseThreshold in refinement_sequence):
+            autotune_options = default_autotune
+        else:
+            autotune_options = None
+
         return SpectralClusterer(
             min_clusters=min_clusters,
             max_clusters=max_clusters,
             refinement_options=refinement_options,
-            autotune=default_autotune if self.use_autotune else None,
+            autotune=autotune_options,
             fallback_options=fallback_options,
             laplacian_type=LaplacianType[self.laplacian],
             eigengap_type=EigenGapType[self.eigengap],
