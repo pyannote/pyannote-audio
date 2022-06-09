@@ -142,7 +142,7 @@ class RecipeHelper:
                     split_audio = torch.split(audio_waveform, 5 * sample_rate, dim=1)
                     audio_waveform = split_audio[0]
                 if len(audio_waveform[0]) > 0:
-                    audio = audio_for_prodigy.to_base64(audio_waveform)
+                    audio = audio_for_prodigy.to_base64(audio_waveform, sample_rate)
                 else:
                     audio = "data:audio/x-wav;base64,"
 
@@ -215,7 +215,7 @@ class RecipeHelper:
                 )
                 if len(audio_waveform[0]) > 0:
                     audio_for_prodigy = AudioForProdigy()
-                    audio = audio_for_prodigy.to_base64(audio_waveform)
+                    audio = audio_for_prodigy.to_base64(audio_waveform, sample_rate)
                 else:
                     audio = "data:audio/x-wav;base64,"
                 size = self.speakers.size + 1
