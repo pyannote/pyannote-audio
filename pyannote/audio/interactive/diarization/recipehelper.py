@@ -365,7 +365,7 @@ class RecipeHelper:
                         "field_id": label,
                         "field_label": label,
                         "field_rows": 1,
-                        "field_placeholder": "Assign a global tag",
+                        "field_placeholder": "Choose a name for the rest of the recording",
                         "field_suggestions": list(self.speakers["name"]),
                     }
                 )

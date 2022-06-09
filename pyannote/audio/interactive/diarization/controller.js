@@ -53,8 +53,10 @@ function displayPlaceholder(){
 
 function createEmojiSound(label){
     var span = label.children[0];
+    var cloneSpan = span.cloneNode(true);
     span.innerHTML = "\ud83d\udd0a";
     span.style.fontSize = "20px";
+    label.appendChild(cloneSpan);
 
     span.onmouseover = (e) => {
         var sounds = window.prodigy.content.sounds;
@@ -100,6 +102,7 @@ function handleWavesurfer(){
             setTimeout(changeDisplayPlaceholder, 5, e.label, false);
         });
         window.wavesurfer.on('region-removed',function(e){
+            console.log('removed');
             if(!checkRegion(e.label)){
                 changeDisplayPlaceholder(e.label, true);
             }
@@ -129,6 +132,10 @@ function addSounds(){
     }
 }
 
+// We suppose that batch_size = 1
+// Some change is needed otherwise
+/*
 document.addEventListener('prodigyanswer', e => {
   addSounds();
 });
+*/
