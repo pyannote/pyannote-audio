@@ -201,7 +201,7 @@ class SpectralClustering(ClusteringMixin, Pipeline):
         Sequence of refinement operations (e.g. "CGTSDN"). 
         Each character represents one operation ("C" for CropDiagonal, "G" for GaussianBlur, 
         "T" for RowWiseThreshold, "S" for Symmetrize, "D" for Diffuse, and "N" for RowWiseNormalize. 
-        Use "O" (for Omit) to not use any refinement. 
+        Use empty string to not use any refinement. 
     gaussian_blur_sigma : float
         Sigma value for the Gaussian blur operation
     p_percentile: [0, 1] float 
@@ -236,7 +236,7 @@ class SpectralClustering(ClusteringMixin, Pipeline):
 
         # Hyperparameters for refinement operations.
         self.refinement_sequence = Categorical(
-            ["O", "TS", "GTS", "CGTSDN"])
+            ["", "TS", "GTS", "CGTSDN"])
         self.gaussian_blur_sigma = Uniform(0, 3)
         self.p_percentile = Uniform(0, 1)
         self.symmetrize_type = Categorical(["Max", "Average"])
@@ -301,9 +301,7 @@ class SpectralClustering(ClusteringMixin, Pipeline):
         refinement_sequence = []
         for refinement_char in self.refinement_sequence:
             refinement_char = refinement_char.upper()
-            if refinement_char == "O":
-                pass
-            elif refinement_char == "C":
+            if refinement_char == "C":
                 refinement_sequence.append(RefinementName.CropDiagonal)
             elif refinement_char == "G":
                 refinement_sequence.append(RefinementName.GaussianBlur)
