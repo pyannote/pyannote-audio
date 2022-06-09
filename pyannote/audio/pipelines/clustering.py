@@ -328,7 +328,7 @@ class SpectralClustering(ClusteringMixin, Pipeline):
             refinement_sequence=refinement_sequence,
         )
 
-        if self.user_autotune and (RefinementName.RowWiseThreshold in refinement_sequence):
+        if self.use_autotune and (RefinementName.RowWiseThreshold in refinement_sequence):
             autotune_options = default_autotune
         else:
             autotune_options = None
