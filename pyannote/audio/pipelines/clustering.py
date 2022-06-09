@@ -318,6 +318,8 @@ class SpectralClustering(ClusteringMixin, Pipeline):
 
         # Refinement options.
         refinement_options = RefinementOptions(
+            gaussian_blur_sigma=self.gaussian_blur_sigma,
+            p_percentile=self.p_percentile,
             thresholding_soft_multiplier=0.01,
             thresholding_type=ThresholdType[self.thresholding_type],
             thresholding_with_binarization=self.thresholding_with_binarization,
