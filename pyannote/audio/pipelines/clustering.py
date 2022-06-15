@@ -23,18 +23,27 @@
 """Clustering pipelines"""
 
 
-from typing import Optional
 from enum import Enum
+from typing import Optional
 
 import numpy as np
-from scipy.cluster.hierarchy import fcluster
-from scipy.spatial.distance import squareform
-from spectralcluster import EigenGapType, LaplacianType, SpectralClusterer
-
 from pyannote.core.utils.distance import pdist
 from pyannote.core.utils.hierarchy import linkage
 from pyannote.pipeline import Pipeline
-from pyannote.pipeline.parameter import Categorical, Uniform
+from pyannote.pipeline.parameter import Categorical, LogUniform, Uniform
+from scipy.cluster.hierarchy import fcluster
+from scipy.spatial.distance import squareform
+from spectralcluster import (
+    AutoTune,
+    FallbackOptions,
+    EigenGapType,
+    LaplacianType,
+    RefinementName,
+    RefinementOptions,
+    SpectralClusterer,
+    SymmetrizeType,
+    ThresholdType,
+)
 
 
 class ClusteringMixin:
@@ -185,6 +194,29 @@ class SpectralClustering(ClusteringMixin, Pipeline):
         Laplacian to use.
     eigengap : {"Ratio", "NormalizedDiff"}
         Eigengap approach to use.
+    spectral_min_embeddings : int 
+        Fallback to agglomerative clustering when clustering less than that 
+        many embeddings. 
+    refinement_sequence : str 
+        Sequence of refinement operations (e.g. "CGTSDN"). 
+        Each character represents one operation ("C" for CropDiagonal, "G" for GaussianBlur, 
+        "T" for RowWiseThreshold, "S" for Symmetrize, "D" for Diffuse, and "N" for RowWiseNormalize. 
+        Use empty string to not use any refinement. 
+    gaussian_blur_sigma : float
+        Sigma value for the Gaussian blur operation
+    p_percentile: [0, 1] float 
+        p-percentile for the row wise thresholding
+    symmetrize_type : {"Max", "Average"}
+        How to symmetrize the matrix
+    thresholding_with_binarization : boolean
+        Set values larger than the threshold to 1.
+    thresholding_preserve_diagonal : boolean
+        In the row wise thresholding operation, set diagonals of the
+        affinity matrix to 0 at the beginning, and back to 1 in the end
+    thresholding_type : {"RowMax", "Percentile"}
+        Type of thresholding operation
+    use_autotune : boolean
+        Use autotune to find optimal p_percentile
 
     Notes
     -----
@@ -200,6 +232,18 @@ class SpectralClustering(ClusteringMixin, Pipeline):
             ["Affinity", "Unnormalized", "RandomWalk", "GraphCut"]
         )
         self.eigengap = Categorical(["Ratio", "NormalizedDiff"])
+        self.spectral_min_embeddings = Categorical([5, 10])
+
+        # Hyperparameters for refinement operations.
+        self.refinement_sequence = Categorical(
+            ["", "TS", "GTS", "CGTSDN"])
+        self.gaussian_blur_sigma = Uniform(0, 3)
+        self.p_percentile = Uniform(0, 1)
+        self.symmetrize_type = Categorical(["Max", "Average"])
+        self.thresholding_with_binarization = Categorical([True, False])
+        self.thresholding_preserve_diagonal = Categorical([True, False])
+        self.thresholding_type = Categorical(["RowMax", "Percentile"])
+        self.use_autotune = Categorical([True, False])
 
     def _affinity_function(self, embeddings: np.ndarray) -> np.ndarray:
         return squareform(1.0 - 0.5 * pdist(embeddings, metric=self.metric))
@@ -240,9 +284,56 @@ class SpectralClustering(ClusteringMixin, Pipeline):
             max_clusters=max_clusters,
         )
 
+        # Fallback options.
+        fallback_options = FallbackOptions(
+            spectral_min_embeddings=self.spectral_min_embeddings,
+        )
+
+        # Autotune options.
+        default_autotune = AutoTune(
+            p_percentile_min=0.40,
+            p_percentile_max=0.95,
+            init_search_step=0.05,
+            search_level=1,
+        )
+
+        # Sequence of refinement operations.
+        refinement_sequence = []
+        for refinement_char in self.refinement_sequence:
+            refinement_char = refinement_char.upper()
+            if refinement_char == "C":
+                refinement_sequence.append(RefinementName.CropDiagonal)
+            elif refinement_char == "G":
+                refinement_sequence.append(RefinementName.GaussianBlur)
+            elif refinement_char == "T":
+                refinement_sequence.append(RefinementName.RowWiseThreshold)
+            elif refinement_char == "S":
+                refinement_sequence.append(RefinementName.Symmetrize)
+            elif refinement_char == "D":
+                refinement_sequence.append(RefinementName.Diffuse)
+            elif refinement_char == "N":
+                refinement_sequence.append(RefinementName.RowWiseNormalize)
+            else:
+                raise ValueError("Unsupported refinement: " +  refinement_char)
+
+        # Refinement options.
+        refinement_options = RefinementOptions(
+            gaussian_blur_sigma=self.gaussian_blur_sigma,
+            p_percentile=self.p_percentile,
+            thresholding_soft_multiplier=0.01,
+            thresholding_type=ThresholdType[self.thresholding_type],
+            thresholding_with_binarization=self.thresholding_with_binarization,
+            thresholding_preserve_diagonal=self.thresholding_preserve_diagonal,
+            symmetrize_type=SymmetrizeType[self.symmetrize_type],
+            refinement_sequence=refinement_sequence,
+        )
+
         return SpectralClusterer(
             min_clusters=min_clusters,
             max_clusters=max_clusters,
+            refinement_options=refinement_options,
+            autotune=default_autotune if self.use_autotune else None,
+            fallback_options=fallback_options,
             laplacian_type=LaplacianType[self.laplacian],
             eigengap_type=EigenGapType[self.eigengap],
             affinity_function=self._affinity_function,
@@ -256,7 +347,7 @@ class Clustering(Enum):
 
 class NearestClusterAssignment:
     """
-    
+
     Parameters
     ----------
     metric : {"cosine", "euclidean", ...}, optional
@@ -265,7 +356,7 @@ class NearestClusterAssignment:
         Allow already assigned embeddings to be reassigned to a new cluster
         in case it is closer than the original one. Defaults to stick with
         the original cluster.
-    
+
     """
 
     def __init__(self, metric: str = "cosine", allow_reassignment: bool = False):
@@ -280,18 +371,18 @@ class NearestClusterAssignment:
         cannot_link: Optional[np.ndarray] = None,
     ):
         """
-        
+
         Parameters
         ----------
         embeddings : (num_embeddings, dimension) np.ndarray
-            Speaker embeddings. NaN embeddings indicate that cluster prior 
+            Speaker embeddings. NaN embeddings indicate that cluster prior
             probability must be used to assign them.
         clusters : (num_embeddings, ) np.ndarray
-            Clustering output, where 
-            * clusters[e] == k  means eth embedding has already been assigned to kth cluster. 
+            Clustering output, where
+            * clusters[e] == k  means eth embedding has already been assigned to kth cluster.
             * clusters[e] == -1 means eth embedding as yet to be assigned.
         cannot_link : (num_embeddings, num_embeddings) np.ndarray
-            "cannot link" constraints.  
+            "cannot link" constraints.
 
         Returns
         -------
@@ -339,4 +430,3 @@ class NearestClusterAssignment:
             return new_clusters
         else:
             return np.where(clusters == -1, new_clusters, clusters)
-
