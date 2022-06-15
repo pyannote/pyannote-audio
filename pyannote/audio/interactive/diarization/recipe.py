@@ -94,7 +94,7 @@ def diarization(
     qwerty: bool = False,
 ) -> Dict[str, Any]:
 
-    helper = RecipeHelper()
+    helper = RecipeHelper(chunk)
     pipeline = Pipeline.from_pretrained(pipeline)
     classes = pipeline.classes()
 
@@ -126,7 +126,7 @@ def diarization(
 
     hashed_stream = (
         set_hashes(eg, input_keys=("path", "chunk"), ignore=[])
-        for eg in helper.stream(pipeline, source, labels, chunk=chunk, randomize=False)
+        for eg in helper.stream(pipeline, source, labels, randomize=False)
     )
 
     left = "a" if qwerty else "q"

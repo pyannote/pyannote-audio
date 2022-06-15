@@ -174,6 +174,17 @@ def before_db(examples):
     return examples
 
 
+def remove_context(eg):
+    annotation = Annotation()
+    for segment in eg["audio_spans"]:
+        annotation[Segment(segment["start"], segment["end"])] = segment["label"]
+    annotation = annotation.crop(
+        Segment(eg["chunk_crop"]["start"], eg["chunk_crop"]["end"])
+    )
+
+    return annotation
+
+
 def before_db_diarization(examples):
     """Post-process examples before sending them to the database
     1. Remove "audio" and "sounds" key as it is very heavy and can easily be retrieved from other keys
@@ -186,7 +197,10 @@ def before_db_diarization(examples):
             del eg["audio"]
         if "sounds" in eg:
             del eg["sounds"]
-        # 2. shift audio spans
+        # 2. remove context and shift audio spans
+        annotation_without_context = remove_context(eg)
+        eg["audio_spans"] = to_audio_spans(annotation_without_context)
+
         chunk_start = eg["chunk"]["start"]
         audio_spans_keys = [key for key in eg if "audio_spans" in key]
         for key in audio_spans_keys:

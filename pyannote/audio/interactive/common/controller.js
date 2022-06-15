@@ -36,8 +36,7 @@ var BEEP = prodigy.config.beep;
 var EXCERPT = 1;
 
 var keysMap = {};
-var logsInfo = {"leftChange" : [], "rightChange" : [], "create" : [],
-"delete" : [], "labelChange" : [], "mouseUpdate"  : []}
+var logsInfo = [];
 
 /**
 * Handle web audio for beep
@@ -196,8 +195,10 @@ function waitForElement(){
         reloadWave();
         // Select created region or the first one if it's a new task
         window.wavesurfer.on('region-created', function(e){
-          logsInfo["create"].push({"timestamp"  : Date.now(), "type" : "mouse"});
-          window.prodigy.update({logs : logsInfo});
+          if(!refresh){
+              logsInfo.push({"action" : "create", "timestamp"  : Date.now(), "type" : "mouse"});
+              window.prodigy.update({logs : logsInfo});
+          }
           setTimeout(function(){
             if(ids.length > 0) deactiveRegion(ids[currentRegion]);
             reloadWave();
@@ -211,14 +212,15 @@ function waitForElement(){
         });
         // Change region label (by remove the old one and create a new one with proper label)
         window.wavesurfer.on('region-dblclick',function(e){
-          logsInfo["labelChange"].push({"timestamp"  : Date.now()});
+          logsInfo.push({"action" : "label change", "timestamp"  : Date.now()});
           refresh = false;
           re = window.wavesurfer.addRegion({'start' : e.start,'end' : e.end});
           e.remove();
           window.wavesurfer.fireEvent('region-update-end',re);
-          logsInfo["create"].pop();
-          logsInfo["delete"].pop();
-          logsInfo["mouseUpdate"].pop();
+          // Remove "create", "delete" and "mouse change" action created by addregion, remove and region-update-end
+          logsInfo.pop();
+          logsInfo.pop();
+          logsInfo.pop();
         });
         // Select region on click
         window.wavesurfer.on('region-click',function(e){
@@ -231,14 +233,14 @@ function waitForElement(){
         });
         // @see updateContent()
         window.wavesurfer.on('region-update-end', function(e){
-          logsInfo["mouseUpdate"].push({"timestamp"  : Date.now()});
+          logsInfo.push({"action" : "mouse change", "timestamp"  : Date.now()});
           window.prodigy.update({logs : logsInfo});
           updateContent();
         });
         // @see updateContent()
         // Switch selected region when deleted
         window.wavesurfer.on('region-removed',function(e){
-          logsInfo["delete"].push({"timestamp"  : Date.now(), "type" : "mouse"});
+          logsInfo.push({"action" : "delete", "timestamp"  : Date.now(), "type" : "mouse"});
           window.prodigy.update({logs : logsInfo});
           refresh = false;
           updateContent();
@@ -257,6 +259,7 @@ function waitForElement(){
 
 // Check if it's a new prodigy task
 document.addEventListener('prodigyanswer', e => {
+  logsInfo = [];
   refresh = true;
 })
 
@@ -295,7 +298,7 @@ document.querySelector('#root').onkeydown = document.querySelector('#root').onke
       // If Shift is pressed
       if(keysMap[startR] && !keysMap[endR]){
         // Shortens start if possible
-        logsInfo["leftChange"].push({"timestamp"  : Date.now()});
+        logsInfo.push({"action" : "left change", "timestamp"  : Date.now()});
         if((region.start - PRECISION) <= 0){
           region.update({'start' : 0});
           window.wavesurfer.fireEvent('region-update-end',region);
@@ -305,19 +308,21 @@ document.querySelector('#root').onkeydown = document.querySelector('#root').onke
           window.wavesurfer.fireEvent('region-update-end',region);
           window.wavesurfer.play(region.start, region.end);
         }
-        logsInfo["mouseUpdate"].pop();
+        // Remove "mouse change" log
+        logsInfo.pop();
         window.prodigy.update({logs : logsInfo});
       // If Ctrl is pressed
       }else if(keysMap[endR] && !keysMap[startR]){
         var startTime = region.end - EXCERPT;
         if(startTime < region.start) startTime = region.start;
         // Shortens end if possible
-        logsInfo["rightChange"].push({"timestamp"  : Date.now()});
+        logsInfo.push({"action" : "right change", "timestamp"  : Date.now()});
         if((region.end - PRECISION) > region.start){
           region.update({'end' : region.end - PRECISION });
           window.wavesurfer.fireEvent('region-update-end',region);
           window.wavesurfer.play(startTime, region.end);
-          logsInfo["mouseUpdate"].pop();
+          // Remove "mouse change" log
+          logsInfo.pop();
         }
         window.prodigy.update({logs : logsInfo});
       }else{
@@ -337,18 +342,19 @@ document.querySelector('#root').onkeydown = document.querySelector('#root').onke
       // If Shift is pressed
       if(keysMap[startR] && !keysMap[endR]){
         // Extend start if possible
-        logsInfo["leftChange"].push({"timestamp"  : Date.now()});
+        logsInfo.push({"action" : "leftChange", "timestamp"  : Date.now()});
         if(region.start + PRECISION < region.end){
           region.update({'start' : region.start + PRECISION });
           window.wavesurfer.fireEvent('region-update-end',region);
           window.wavesurfer.play(region.start, region.end);
-          logsInfo["mouseUpdate"].pop();
+          // Remove "mouse change" log
+          logsInfo.pop();
         }
         window.prodigy.update({logs : logsInfo});
       // If Ctrl is pressed
       }else if(keysMap[endR] && !keysMap[startR]){
         // Extend end if possible (while keep playing the audio)
-        logsInfo["rightChange"].push({"timestamp"  : Date.now()});
+        logsInfo.push({"action" : "right change", "timestamp"  : Date.now()});
         if(!window.wavesurfer.isPlaying()){
           var startTime = region.end - EXCERPT;
           if(startTime < region.start) startTime = region.start;
@@ -358,11 +364,13 @@ document.querySelector('#root').onkeydown = document.querySelector('#root').onke
         if((region.end + PRECISION) >= audioEnd){
            region.update({'end' : audioEnd });
            window.wavesurfer.fireEvent('region-update-end',region);
-           logsInfo["mouseUpdate"].pop();
+           // Remove "mouse change" log
+           logsInfo.pop();
         }else{
           region.update({'end' : region.end + PRECISION });
           window.wavesurfer.fireEvent('region-update-end',region);
-          logsInfo["mouseUpdate"].pop();
+          // Remove "mouse change" log
+          logsInfo.pop();
         }
         window.wavesurfer.play(startTime, region.end);
         window.prodigy.update({logs : logsInfo});
@@ -384,15 +392,18 @@ document.querySelector('#root').onkeydown = document.querySelector('#root').onke
       if(fin > audioEnd) fin = audioEnd;
       re = window.wavesurfer.addRegion({'start' : pos,'end' : fin});
       window.wavesurfer.fireEvent('region-update-end',re);
-      logsInfo["create"].pop();
-      logsInfo["create"].push({"timestamp"  : Date.now(), "type" : "keyboard"});
+      // Remove "mouse change" and "create - mouse" log
+      logsInfo.pop();
+      logsInfo.pop();
+      logsInfo.push({"action" : "create", "timestamp"  : Date.now(), "type" : "keyboard"});
       window.prodigy.update({logs : logsInfo});
     // If Down and Shift or Backspace: delete region
     // Check backspace for diarization text field
     }else if(keysMap['Backspace'] || (keysMap['ArrowDown'] && keysMap['Shift'])){
       ids[currentRegion].remove();
-      logsInfo["delete"].pop();
-      logsInfo["delete"].push({"timestamp"  : Date.now(), "type" : "keyboard"});
+      // Remove "delete - mouse" log
+      logsInfo.pop();
+      logsInfo.push({"action" : "delete", "timestamp"  : Date.now(), "type" : "keyboard"});
       window.prodigy.update({logs : logsInfo});
     // If Up/Down @see switchCurrent
     }else if(keysMap['ArrowUp']){

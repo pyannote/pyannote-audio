@@ -40,11 +40,17 @@ from scipy.spatial.distance import cdist
 
 from pyannote.audio import Audio, Inference, Pipeline
 
-from ..common.utils import AudioForProdigy, get_audio_spans, get_chunks
+from ..common.utils import (
+    AudioForProdigy,
+    get_audio_spans,
+    get_chunks,
+    remove_context,
+    to_audio_spans,
+)
 
 
 class RecipeHelper:
-    def __init__(self, embedding="pyannote/embedding"):
+    def __init__(self, chunk, embedding="pyannote/embedding"):
         self.inference = Inference(embedding, window="whole")
         dim = self.inference.model.introspection.dimension
         self.speakers = np.array(
@@ -56,10 +62,12 @@ class RecipeHelper:
                 ("excerpt", "U1000000"),
             ],
         )
+        self.chunk = chunk
         self.buffer = {}
         self.audiobuffer = {}
         self.generator = string_generator()
         self.validate_generator = []
+        self.context = 1
 
     def on_exit(self, controller):
         now = datetime.now()
@@ -67,19 +75,11 @@ class RecipeHelper:
         name = "embeddings_" + date_time
         np.save(name, self.speakers)
 
-    def remove_overlaps(self, audio_spans):
-        annotation = Annotation()
-        for segment in audio_spans:
-            annotation[Segment(segment["start"], segment["end"])] = segment["label"]
-        overlap = annotation.get_overlap()
-        annotation = annotation.extrude(overlap)
-
-        return annotation
-
-    def get_audio(self, audio_spans, label, path, focus):
+    def get_audio(self, annotation, label, path, focus):
         combine_waveform = torch.Tensor([[]])
         audio_for_pipeline = Audio(mono=True)
-        annotation = self.remove_overlaps(audio_spans)
+        overlap = annotation.get_overlap()
+        annotation = annotation.extrude(overlap)
 
         for segment in annotation.label_timeline(label):
             waveform, sample_rate = audio_for_pipeline.crop(
@@ -96,6 +96,9 @@ class RecipeHelper:
                 return
 
             audio_spans = eg["audio_spans"]
+            annotation = remove_context(eg)
+            audio_spans = to_audio_spans(annotation)
+
             audio_spans = sorted(audio_spans, key=lambda x: x["label"])
 
             for label, segments in groupby(audio_spans, key=lambda x: x["label"]):
@@ -132,7 +135,7 @@ class RecipeHelper:
                 )
 
                 audio_waveform = self.get_audio(
-                    audio_spans, label, eg["path"], eg["chunk"]["start"]
+                    annotation, label, eg["path"], eg["chunk"]["start"]
                 )
                 audio_waveform = torch.cat(
                     (audio_waveform, self.audiobuffer[speaker]), dim=1
@@ -175,6 +178,9 @@ class RecipeHelper:
             return
 
         audio_spans = eg["audio_spans"]
+        annotation = remove_context(eg)
+        audio_spans = to_audio_spans(annotation)
+
         audio_spans = sorted(audio_spans, key=lambda x: x["label"])
 
         for label, segments in groupby(audio_spans, key=lambda x: x["label"]):
@@ -211,7 +217,7 @@ class RecipeHelper:
 
                 embedding = self.get_embedding(combine_waveform, sample_rate)
                 audio_waveform = self.get_audio(
-                    audio_spans, label, eg["path"], eg["chunk"]["start"]
+                    annotation, label, eg["path"], eg["chunk"]["start"]
                 )
                 if len(audio_waveform[0]) > 0:
                     audio_for_prodigy = AudioForProdigy()
@@ -244,7 +250,6 @@ class RecipeHelper:
         pipeline: Pipeline,
         source: Path,
         labels: List[str],
-        chunk: float = 30.0,
         randomize: bool = False,
     ) -> Iterable[Dict]:
         """Stream for `pyannote.audio` recipe
@@ -275,7 +280,8 @@ class RecipeHelper:
             "meta" : metadata displayed in Prodigy UI {"file": ..., "start": ..., "end": ...}
             "config": {"labels": list of labels}
         """
-        context = getattr(pipeline, "context", 2.5)
+        context = getattr(pipeline, "context", self.context)
+        chunk = self.chunk
 
         audio_for_prodigy = AudioForProdigy()
         audio_for_pipeline = Audio(mono=True)
@@ -291,9 +297,17 @@ class RecipeHelper:
             text = f"{filename} [{excerpt.start:.1f} - {excerpt.end:.1f}]"
 
             # load contextualized audio excerpt
-            excerpt_with_context = Segment(
-                start=excerpt.start - context, end=excerpt.end + context
+            start = (
+                (excerpt.start - context)
+                if (excerpt.start > self.context)
+                else excerpt.start
             )
+            end = (
+                (excerpt.end + context)
+                if ((excerpt.end - excerpt.start) == chunk)
+                else excerpt.end
+            )
+            excerpt_with_context = Segment(start=start, end=end)
             waveform_with_context, sample_rate = audio_for_pipeline.crop(
                 path, excerpt_with_context, mode="pad"
             )
@@ -304,14 +318,16 @@ class RecipeHelper:
             )
 
             # crop, shift, and format output for visualization in Prodigy
-            audio_spans = get_audio_spans(
-                output, excerpt, excerpt_with_context=excerpt_with_context
-            )
+            # audio_spans = get_audio_spans(
+            #    output, excerpt, excerpt_with_context=excerpt_with_context
+            # )
+            audio_spans = get_audio_spans(output, excerpt_with_context)
 
             # load audio excerpt for visualization in Prodigy
-            audio = audio_for_prodigy.crop(path, excerpt)
+            audio = audio_for_prodigy.crop(path, excerpt_with_context)
 
             labels = sorted(set(labels) | set(output.labels()))
+            # labels = sorted(set(labels) | set([l["label"] for l in audio_spans]))
 
             # group by label
             audio_spans = sorted(audio_spans, key=lambda x: x["label"])
@@ -323,8 +339,8 @@ class RecipeHelper:
                     waveform, sample_rate = audio_for_pipeline.crop(
                         path,
                         Segment(
-                            segment["start"] + excerpt.start,
-                            segment["end"] + excerpt.start,
+                            segment["start"] + excerpt_with_context.start,
+                            segment["end"] + excerpt_with_context.start,
                         ),
                     )
                     combine_waveform = torch.cat((combine_waveform, waveform), dim=1)
@@ -377,10 +393,18 @@ class RecipeHelper:
                 "audio_spans": audio_spans,
                 "audio_spans_original": deepcopy(audio_spans),
                 "chunk": {"start": excerpt.start, "end": excerpt.end},
+                "chunk_crop": {
+                    "start": excerpt.start - start,
+                    "end": excerpt.start - start + chunk,
+                },
                 "config": {"labels": all_labels, "blocks": blocks},
                 "meta": {
                     "file": filename,
                     "start": f"{excerpt.start:.1f}",
                     "end": f"{excerpt.end:.1f}",
+                    "context": str(excerpt.start - start)
+                    + "s - "
+                    + str(end - excerpt.end)
+                    + "s",
                 },
             }
