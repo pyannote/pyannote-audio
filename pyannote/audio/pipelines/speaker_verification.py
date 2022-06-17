@@ -104,7 +104,7 @@ class SpeechBrainPretrainedSpeakerEmbedding:
 
     @cached_property
     def dimension(self) -> int:
-        dummy_waveforms = torch.rand(1, 16000)
+        dummy_waveforms = torch.rand(1, 16000).to(self.device)
         *_, dimension = self.classifier_.encode_batch(dummy_waveforms).shape
         return dimension
 
