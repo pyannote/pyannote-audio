@@ -51,6 +51,8 @@ class MultilabelDetection(Pipeline):
     fscore : bool, optional
         Optimize for average (precision/recall) fscore, over all classes.
         Defaults to optimizing identification error rate.
+    share_min_duration : bool, optional
+        If True, min_duration_on and min_duration_on are shared among labels.
     inference_kwargs : dict, optional
         Keywords arguments passed to Inference.
 
@@ -61,15 +63,18 @@ class MultilabelDetection(Pipeline):
         Onset/offset detection thresholds
     min_duration_on : float
         Remove {label} regions shorter than that many seconds.
+        Shared between labels if ``share_min_duration`` is ``True``.
     min_duration_off : float
         Fill non-{label} regions shorter than that many seconds.
+        Shared between labels if ``share_min_duration`` is ``True``.
     """
 
     def __init__(
-        self,
-        segmentation: PipelineModel = None,
-        fscore: bool = False,
-        **inference_kwargs,
+            self,
+            segmentation: PipelineModel = None,
+            fscore: bool = False,
+            share_min_duration: bool = False,
+            **inference_kwargs,
     ):
 
         super().__init__()
@@ -90,20 +95,34 @@ class MultilabelDetection(Pipeline):
 
         self._classes = model.specifications.classes
         self._segmentation = Inference(model, **inference_kwargs)
+        self._share_min_duration = share_min_duration
 
         # hyper-parameters used for hysteresis thresholding and postprocessing
-        self.thresholds = ParamDict(
-            **{
-                label: ParamDict(
-                    onset=Uniform(0.0, 1.0),
-                    offset=Uniform(0.0, 1.0),
-                    min_duration_on=Uniform(0.0, 2.0),
-                    min_duration_off=Uniform(0.0, 2.0),
-                )
-                for label in self._classes
-            }
-        )
-        # TODO: would it make sense to share min_duration_{on|off} between classes?
+        if share_min_duration:
+            self.min_duration_on = Uniform(0.0, 2.0)
+            self.min_duration_off = Uniform(0.0, 2.0)
+
+            self.thresholds = ParamDict(
+                **{
+                    label: ParamDict(
+                        onset=Uniform(0.0, 1.0),
+                        offset=Uniform(0.0, 1.0),
+                    )
+                    for label in self._classes
+                }
+            )
+        else:
+            self.thresholds = ParamDict(
+                **{
+                    label: ParamDict(
+                        onset=Uniform(0.0, 1.0),
+                        offset=Uniform(0.0, 1.0),
+                        min_duration_on=Uniform(0.0, 2.0),
+                        min_duration_off=Uniform(0.0, 2.0),
+                    )
+                    for label in self._classes
+                }
+            )
 
     # needed by pyannote.audio Prodigy recipe
     def classes(self):
@@ -115,8 +134,12 @@ class MultilabelDetection(Pipeline):
             label: Binarize(
                 onset=self.thresholds[label]["onset"],
                 offset=self.thresholds[label]["offset"],
-                min_duration_on=self.thresholds[label]["min_duration_on"],
-                min_duration_off=self.thresholds[label]["min_duration_off"],
+                min_duration_on=(self.thresholds[label]["min_duration_on"]
+                                 if not self._share_min_duration
+                                 else self.min_duration_on), # noqa
+                min_duration_off=(self.thresholds[label]["min_duration_off"]
+                                  if not self._share_min_duration
+                                  else self.min_duration_off) , # noqa
             )
             for label in self._classes
         }
@@ -162,7 +185,7 @@ class MultilabelDetection(Pipeline):
         for i, label in enumerate(self._classes):
             # extract raw segmentation of current label
             label_segmentation = SlidingWindowFeature(
-                segmentations.data[:, i : i + 1], segmentations.sliding_window
+                segmentations.data[:, i: i + 1], segmentations.sliding_window
             )
             # obtain hard segments
             label_annotation: Annotation = self._binarize[label](label_segmentation)
