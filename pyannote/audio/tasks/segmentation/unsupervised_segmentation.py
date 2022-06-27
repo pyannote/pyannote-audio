@@ -207,11 +207,6 @@ class UnsupervisedSegmentation(Segmentation, Task):
 
         collated_batch = {"X": collated_X, "y": collated_y}
 
-        # Generate annotations y with teacher if they are not provided
-        # TODO: reimplement or discard fake validation
-        if self.use_pseudolabels:
-            pass
-
         return collated_batch
 
     def val_dataloader(self) -> Optional[DataLoader]:
