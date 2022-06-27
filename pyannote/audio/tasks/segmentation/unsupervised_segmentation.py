@@ -14,9 +14,6 @@ from typing_extensions import Literal
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task, ValDataset
 from pyannote.audio.tasks import Segmentation
-from pyannote.audio.torchmetrics.functional.audio.diarization_error_rate import (
-    diarization_error_rate,
-)
 
 
 class UnsupervisedSegmentation(Segmentation, Task):
@@ -229,22 +226,6 @@ class UnsupervisedSegmentation(Segmentation, Task):
             )
         else:
             return None
-
-
-def _compute_ders(
-    pseudo_y: torch.Tensor, y: torch.Tensor, x: torch.Tensor
-) -> Tuple[torch.Tensor]:
-    batch_size = pseudo_y.shape[0]
-    ders = torch.zeros(batch_size)
-
-    tm_pseudo_y = pseudo_y.swapaxes(1, 2)
-    tm_true_y = y.swapaxes(1, 2)
-    for i in range(batch_size):
-        ders[i] = diarization_error_rate(
-            tm_pseudo_y[i][None, :, :], tm_true_y[i][None, :, :]
-        )
-
-    return ders
 
 
 class TeacherUpdate(Callback):
