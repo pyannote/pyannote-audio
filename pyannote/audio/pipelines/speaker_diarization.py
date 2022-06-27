@@ -331,9 +331,9 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                 if np.sum(active) == 0:
                     continue
 
-                waveform: torch.Tensor = self._audio.crop(file, chunk, mode="pad")[
-                    0
-                ].unsqueeze(0)
+                waveform: torch.Tensor = self._audio.crop(
+                    file, chunk, duration=stitched_chunk_duration, mode="pad"
+                )[0].unsqueeze(0)
                 for s in np.where(active)[0]:
                     mask = torch.from_numpy(ms[:, s]).float()
                     yield waveform, mask

@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2018-2021 CNRS
+# Copyright (c) 2018-2022 CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -25,6 +25,9 @@
 from typing import Callable, Optional, Text
 
 import numpy as np
+from pyannote.core import Annotation, Segment, SlidingWindowFeature
+from pyannote.metrics.diarization import GreedyDiarizationErrorRate
+from pyannote.pipeline.parameter import Uniform
 
 from pyannote.audio import Inference, Model
 from pyannote.audio.core.io import AudioFile
@@ -36,9 +39,6 @@ from pyannote.audio.pipelines.utils import (
     get_model,
 )
 from pyannote.audio.utils.permutation import mae_cost_func, permutate
-from pyannote.core import Annotation, Segment, SlidingWindowFeature
-from pyannote.metrics.diarization import GreedyDiarizationErrorRate
-from pyannote.pipeline.parameter import Uniform
 
 
 class Resegmentation(SpeakerDiarizationMixin, Pipeline):
@@ -50,6 +50,10 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
     diarization and the output of the segmentation model and permutate the latter accordingly.
     Permutated local segmentations scores are then aggregated over time and postprocessed using
     hysteresis thresholding.
+
+    It can also be used with `diarization` set to "annotation" to find a good estimate of optimal
+    values for `onset`, `offset`, `min_duration_on`, and `min_duration_off` for any speaker
+    diarization pipeline based on the `segmentation` model.
 
     Parameters
     ----------
@@ -203,7 +207,9 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
         for c, (chunk, segmentation) in enumerate(segmentations):
             local_diarization = diarization.crop(chunk)[np.newaxis, :num_frames]
             (permutated_segmentations[c],), _ = permutate(
-                local_diarization, segmentation, cost_func=mae_cost_func,
+                local_diarization,
+                segmentation,
+                cost_func=mae_cost_func,
             )
         permutated_segmentations = SlidingWindowFeature(
             permutated_segmentations, segmentations.sliding_window
