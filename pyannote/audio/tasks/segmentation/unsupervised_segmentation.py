@@ -6,13 +6,12 @@ import torch
 from pyannote.database import Protocol
 from pytorch_lightning import Callback
 from pytorch_lightning.utilities.types import STEP_OUTPUT
-from torch.utils.data import DataLoader
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchmetrics import Metric
 from typing_extensions import Literal
 
 from pyannote.audio.core.model import Model
-from pyannote.audio.core.task import Task, ValDataset
+from pyannote.audio.core.task import Task
 from pyannote.audio.tasks import Segmentation
 
 
@@ -172,7 +171,7 @@ class UnsupervisedSegmentation(Segmentation, Task):
 
     def get_teacher_output(
         self, x: torch.Tensor, aug: BaseWaveformTransform, fw_passes: int = 1
-    ):
+    ) -> torch.Tensor:
         out, _ = self.get_teacher_outputs_passes(x, aug, fw_passes)
         return out
 
@@ -181,14 +180,14 @@ class UnsupervisedSegmentation(Segmentation, Task):
         collated_y = self.collate_y(batch)
         collated_batch = {"X": collated_X, "y": collated_y}
 
-        if stage != "train":
-            raise RuntimeError(f"Unexpected stage in collate_fn (stage={stage})")
+        if stage == "val":
+            return collated_batch
 
         # Generate pseudolabels with teacher if necessary
         if self.use_pseudolabels:
             x = collated_X
             # compute pseudo labels
-            pseudo_y, computed_y_passes = self.get_teacher_outputs_passes(
+            pseudo_y = self.get_teacher_output(
                 x=x, aug=self.augmentation_teacher, fw_passes=self.pl_fw_passes
             )
             collated_batch["y"] = pseudo_y
@@ -204,27 +203,6 @@ class UnsupervisedSegmentation(Segmentation, Task):
             collated_batch["y"] = augmented.targets.squeeze(1)
 
         return collated_batch
-
-    def collate_fn_val(self, batch):
-        collated_X = self.collate_X(batch)
-        collated_y = self.collate_y(batch)
-
-        collated_batch = {"X": collated_X, "y": collated_y}
-
-        return collated_batch
-
-    def val_dataloader(self) -> Optional[DataLoader]:
-        if self.has_validation:
-            return DataLoader(
-                ValDataset(self),
-                batch_size=self.batch_size,
-                num_workers=self.num_workers,
-                pin_memory=self.pin_memory,
-                drop_last=False,
-                collate_fn=self.collate_fn_val,
-            )
-        else:
-            return None
 
 
 class TeacherEmaUpdate(Callback):
