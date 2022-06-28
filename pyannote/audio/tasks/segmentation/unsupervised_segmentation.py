@@ -20,7 +20,7 @@ class UnsupervisedSegmentation(Segmentation, Task):
     def __init__(
         self,
         protocol: Protocol,
-        teacher: Model = None,  # unsupervised param: model to use to generate truth
+        teacher: Model,  # unsupervised param: model to use to generate truth
         use_pseudolabels: bool = True,  # generate pseudolabels in training mode
         augmentation_teacher: BaseWaveformTransform = None,
         pl_fw_passes: int = 1,  # how many forward passes to average to get the pseudolabels
@@ -160,11 +160,15 @@ class UnsupervisedSegmentation(Segmentation, Task):
                 # Compute pseudolabels and detach to avoid "memory leaks"
                 pl = self.teacher(waveforms=teacher_input).detach()
                 out_fw_passes.append(pl)
-            # compute mean of forward passes
-            out = torch.mean(torch.stack(out_fw_passes), dim=0)
+            # compute mean of forward passes if needed, and round to make pseudolabels
+            stacked_passes = torch.stack(out_fw_passes)
+            if fw_passes == 1:
+                out = out_fw_passes[0]
+            else:
+                out = torch.mean(stacked_passes, dim=0)
             out = torch.round(out).type(torch.int8)
 
-        return out, torch.stack(out_fw_passes)
+        return out, stacked_passes
 
     def get_teacher_output(
         self, x: torch.Tensor, aug: BaseWaveformTransform, fw_passes: int = 1
@@ -443,9 +447,9 @@ class TeacherEmaUpdate(TeacherUpdate):
         self,
         when: Literal["epoch", "batch"] = "epoch",
         update_interval: int = 1,
-        update_rate: float = 0.999,
+        update_rate: float = 0.99,
     ):
-        """Instant weights copy.
+        """Exponential moving average of weights.
 
         Parameters
         ----------
@@ -454,7 +458,7 @@ class TeacherEmaUpdate(TeacherUpdate):
         update_interval : int, optional
             Update will happen every 'update_interval' epochs/batches, by default 1
         update_rate : float, optional
-            How much to keep of the old weights each update. 0=instant copy, 1=never update weights.
+            How much to keep of the old weights each update. 0=instant copy, 1=never update weights. By default 0.99.
         """
 
         super().__init__(when=when)
