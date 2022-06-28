@@ -1,4 +1,3 @@
-import warnings
 from typing import Any, Dict, Optional, OrderedDict, Sequence, Text, Tuple, Union
 
 import pytorch_lightning as pl
@@ -236,14 +235,24 @@ class TeacherEmaUpdate(Callback):
             raise ValueError(
                 f"Illegal update rate value ({update_rate}), it should be in [0.0,1.0]"
             )
-        if update_rate == 0.0:
-            warnings.warn(
-                "You are using an EMA update with 0.0 update rate, consider using a TeacherCopyUpdate instead."
-            )
 
         self.update_interval = update_interval
         self.update_rate = update_rate
         self.teacher_weights = None
+
+    @staticmethod
+    def get_decayed_weights(
+        teacher_w: OrderedDict[str, torch.Tensor],
+        student_w: OrderedDict[str, torch.Tensor],
+        tau: float,
+    ):
+        with torch.no_grad():
+            return {
+                k: teacher_w[k] * tau + student_w[k].to(teacher_w[k].device) * (1 - tau)
+                for k in student_w.keys()
+            }
+
+    # --- Methods that get called when necessary
 
     def _setup_initial(self, initial_model_w: OrderedDict[str, torch.Tensor]):
         self.teacher_weights = initial_model_w
@@ -263,6 +272,8 @@ class TeacherEmaUpdate(Callback):
             tau=self.update_rate,
         )
         return True
+
+    # --- Callback hooks
 
     def on_train_batch_end(
         self,
@@ -286,6 +297,8 @@ class TeacherEmaUpdate(Callback):
         initial_teacher_w = pl_module.task.teacher.state_dict()
         self._setup_initial(initial_teacher_w)
 
+    # --- Generic logic called from hooks
+
     def update_teacher_and_cache(
         self, progress: int, trainer: pl.Trainer, model: pl.LightningModule
     ):
@@ -301,15 +314,3 @@ class TeacherEmaUpdate(Callback):
                 raise AttributeError(
                     f"TeacherUpdate callback can't be applied on this model : {err}"
                 )
-
-    @staticmethod
-    def get_decayed_weights(
-        teacher_w: OrderedDict[str, torch.Tensor],
-        student_w: OrderedDict[str, torch.Tensor],
-        tau: float,
-    ):
-        with torch.no_grad():
-            return {
-                k: teacher_w[k] * tau + student_w[k].to(teacher_w[k].device) * (1 - tau)
-                for k in student_w.keys()
-            }
