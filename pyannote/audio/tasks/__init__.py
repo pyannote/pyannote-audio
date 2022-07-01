@@ -32,7 +32,6 @@ SpeakerEmbedding = SupervisedRepresentationLearningWithArcFace
 
 __all__ = [
     "Segmentation",
-    "UnsupervisedSegmentation",
     "VoiceActivityDetection",
     "OverlappedSpeechDetection",
     "MultiLabelSegmentation",
