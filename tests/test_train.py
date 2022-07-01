@@ -6,8 +6,10 @@ from pyannote.audio.models.segmentation.debug import SimpleSegmentationModel
 from pyannote.audio.tasks import (
     OverlappedSpeechDetection,
     Segmentation,
-    UnsupervisedSegmentation,
     VoiceActivityDetection,
+)
+from pyannote.audio.tasks.segmentation.unsupervised_segmentation import (  # TODO: fix with proper import when better name is found
+    UnsupervisedSegmentation,
 )
 
 
