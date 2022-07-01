@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from .multilabel_detection import MultilabelDetection
+from .multilabel import MultilabelSegmentation
 from .overlapped_speech_detection import OverlappedSpeechDetection
 from .resegmentation import Resegmentation
 from .segmentation import SpeakerSegmentation
@@ -33,5 +33,5 @@ __all__ = [
     "SpeakerSegmentation",
     "SpeakerDiarization",
     "Resegmentation",
-    "MultilabelDetection",
+    "MultilabelSegmentation",
 ]
