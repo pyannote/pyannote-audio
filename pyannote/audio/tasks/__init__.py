@@ -25,16 +25,9 @@ from .segmentation.overlapped_speech_detection import (  # isort:skip
     OverlappedSpeechDetection,
 )
 
-from .segmentation.speaker_tracking import SpeakerTracking  # isort:skip
-
+from .segmentation.multilabel import MultiLabelSegmentation   # isort:skip
 from .segmentation.segmentation import Segmentation  # isort:skip
-
-from .segmentation.unsupervised_segmentation import (  # isort:skip
-    UnsupervisedSegmentation,
-)
-
 from .embedding.arcface import SupervisedRepresentationLearningWithArcFace  # isort:skip
-
 SpeakerEmbedding = SupervisedRepresentationLearningWithArcFace
 
 __all__ = [
@@ -42,6 +35,6 @@ __all__ = [
     "UnsupervisedSegmentation",
     "VoiceActivityDetection",
     "OverlappedSpeechDetection",
-    "SpeakerTracking",
+    "MultiLabelSegmentation",
     "SpeakerEmbedding",
 ]
