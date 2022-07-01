@@ -40,19 +40,19 @@ from ..utils.signal import Binarize
 from .utils import PipelineModel, get_devices, get_model
 
 
-class MultilabelDetection(Pipeline):
-    """Multi-label detection
+class MultiLabelSegmentation(Pipeline):
+    """Generic multi-label segmentation
 
     Parameters
     ----------
     segmentation : Model, str, or dict
-        Pretrained multilabel detection model.
+        Pretrained multi-label segmentation model.
         See pyannote.audio.pipelines.utils.get_model for supported format.
     fscore : bool, optional
         Optimize for average (precision/recall) fscore, over all classes.
         Defaults to optimizing identification error rate.
     share_min_duration : bool, optional
-        If True, min_duration_on and min_duration_on are shared among labels.
+        If True, `min_duration_on` and `min_duration_off` are shared among labels.
     inference_kwargs : dict, optional
         Keywords arguments passed to Inference.
 
@@ -63,10 +63,10 @@ class MultilabelDetection(Pipeline):
         Onset/offset detection thresholds
     min_duration_on : float
         Remove {label} regions shorter than that many seconds.
-        Shared between labels if ``share_min_duration`` is ``True``.
+        Shared between labels if `share_min_duration` is `True`.
     min_duration_off : float
         Fill non-{label} regions shorter than that many seconds.
-        Shared between labels if ``share_min_duration`` is ``True``.
+        Shared between labels if `share_min_duration` is `True`.
     """
 
     def __init__(
@@ -81,12 +81,13 @@ class MultilabelDetection(Pipeline):
 
         if segmentation is None:
             raise ValueError(
-                "MultilabelDetection pipeline must be provided with a `segmentation` model."
+                "MultiLabelSegmentation pipeline must be provided with a `segmentation` model."
             )
 
         self.segmentation = segmentation
         self.fscore = fscore
-
+        self.share_min_duration = share_min_duration
+        
         # load model and send it to GPU (when available and not already on GPU)
         model = get_model(segmentation)
         if model.device.type == "cpu":
@@ -95,10 +96,9 @@ class MultilabelDetection(Pipeline):
 
         self._classes = model.specifications.classes
         self._segmentation = Inference(model, **inference_kwargs)
-        self._share_min_duration = share_min_duration
 
         # hyper-parameters used for hysteresis thresholding and postprocessing
-        if share_min_duration:
+        if self.share_min_duration:
             self.min_duration_on = Uniform(0.0, 2.0)
             self.min_duration_off = Uniform(0.0, 2.0)
 
@@ -124,7 +124,7 @@ class MultilabelDetection(Pipeline):
                 }
             )
 
-    # needed by pyannote.audio Prodigy recipe
+    # needed by pyannote.audio Prodigy recipes
     def classes(self):
         return self._classes
 
@@ -135,16 +135,16 @@ class MultilabelDetection(Pipeline):
                 onset=self.thresholds[label]["onset"],
                 offset=self.thresholds[label]["offset"],
                 min_duration_on=(self.thresholds[label]["min_duration_on"]
-                                 if not self._share_min_duration
+                                 if not self.share_min_duration
                                  else self.min_duration_on), # noqa
                 min_duration_off=(self.thresholds[label]["min_duration_off"]
-                                  if not self._share_min_duration
+                                  if not self.share_min_duration
                                   else self.min_duration_off) , # noqa
             )
             for label in self._classes
         }
 
-    CACHED_SEGMENTATION = "cache/segmentation/inference"
+    CACHED_SEGMENTATION = "cache/segmentation"
 
     def apply(self, file: AudioFile, hook: Optional[Callable] = None) -> Annotation:
         """Apply multi-label detection
