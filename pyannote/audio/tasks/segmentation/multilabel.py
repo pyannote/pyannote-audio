@@ -33,11 +33,11 @@ from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
 
 
-class MultilabelDetection(SegmentationTaskMixin, Task):
-    """Multilabel Detection
+class MultiLabelSegmentation(SegmentationTaskMixin, Task):
+    """Generic multi-label segmentation
 
-    Multilabel detection is the process of detecting when a specific audio
-    class is active.
+    Multi-label segmentation is the process of detecting temporal intervals 
+    when a specific audio class is active.
 
     Example use cases include speaker tracking, gender (male/female)
     classification, or audio event detection.
@@ -108,10 +108,9 @@ class MultilabelDetection(SegmentationTaskMixin, Task):
         self.weight = weight
         self.classes = classes
 
-        # task specification depends
-        # on the data: we do not know in advance which
-        # classes should be detected. therefore, we postpone
-        # the definition of specifications.
+        # task specification depends on the data: we do not know in advance which
+        # classes should be detected. therefore, we postpone the definition of 
+        # specifications to setup()
 
     def setup(self, stage: Optional[str] = None):
 
