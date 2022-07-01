@@ -69,7 +69,7 @@ pip install https://github.com/pyannote/pyannote-audio/archive/develop.zip
     - [Training with `pyannote-audio-train` command line tool](tutorials/training_with_cli.md)
     - [Annotating your own data with Prodigy](tutorials/prodigy.md)
     - [Speaker verification](tutorials/speaker_verification.ipynb)
-    - [Multilabel Detection](tutorials/multilabel_detection.ipynb) (To be run on a colab notebook)
+    - [Generic multi-label segmentation](tutorials/multilabel_detection.ipynb)
     - Visualization and debugging
 
 ## Frequently asked questions
