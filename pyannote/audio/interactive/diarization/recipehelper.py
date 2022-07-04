@@ -26,7 +26,6 @@
 
 import random
 from copy import deepcopy
-from datetime import datetime
 from functools import cmp_to_key
 from itertools import groupby
 from pathlib import Path
@@ -50,7 +49,7 @@ from ..common.utils import (
 
 
 class RecipeHelper:
-    def __init__(self, chunk, embedding="pyannote/embedding"):
+    def __init__(self, chunk, speakers_dir, embedding="pyannote/embedding"):
         self.inference = Inference(embedding, window="whole")
         dim = self.inference.model.introspection.dimension
         self.speakers = np.array(
@@ -63,6 +62,7 @@ class RecipeHelper:
             ],
         )
         self.chunk = chunk
+        self.speakers_dir = speakers_dir
         self.buffer = {}
         self.audiobuffer = {}
         self.generator = string_generator()
@@ -70,10 +70,7 @@ class RecipeHelper:
         self.context = 1
 
     def on_exit(self, controller):
-        now = datetime.now()
-        date_time = now.strftime("%d-%m-%Y")
-        name = "embeddings_" + date_time
-        np.save(name, self.speakers)
+        np.save(self.speakers_dir / "speakers.npy", self.speakers)
 
     def get_audio(self, annotation, label, path, focus):
         combine_waveform = torch.Tensor([[]])

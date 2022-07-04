@@ -25,6 +25,7 @@
 # Hervé Bredin
 
 import base64
+import hashlib
 from collections.abc import Iterator
 from pathlib import Path
 from tempfile import mkstemp
@@ -67,12 +68,6 @@ from .recipehelper import RecipeHelper
         None,
         int,
     ),
-    embeddings=(
-        "Path to already created embeddings in a structured np.array with dtype=[('name', 'U100'), ('embedding', 'f4', dim), ('nb','i4')]",
-        "option",
-        None,
-        str,
-    ),
     precision=("Keyboard temporal precision, in milliseconds.", "option", None, int),
     beep=(
         "Beep when the player reaches the end of a region.",
@@ -88,13 +83,11 @@ def diarization(
     pipeline: Union[str, Iterable[dict]] = "pyannote/speaker-segmentation",
     chunk: float = 20.0,
     num_classes: int = 4,
-    embeddings: str = "",
     precision: int = 200,
     beep: bool = False,
     qwerty: bool = False,
 ) -> Dict[str, Any]:
 
-    helper = RecipeHelper(chunk)
     pipeline = Pipeline.from_pretrained(pipeline)
     classes = pipeline.classes()
 
@@ -103,8 +96,17 @@ def diarization(
     else:
         labels = classes
 
-    if embeddings != "":
-        helper.speaker = np.load(embeddings)
+    prodigy_path = prodigy.components.db.get_prodigy_path()
+    hashed_source = hashlib.sha256(str(source).encode("utf-8")).hexdigest()
+    speakers_dir = Path(prodigy_path + "/" + hashed_source)
+    helper = RecipeHelper(chunk, speakers_dir)
+
+    if speakers_dir.exists():
+        npy = speakers_dir / "speakers.npy"
+        if npy.exists():
+            helper.speakers = np.load(npy)
+    else:
+        speakers_dir.mkdir()
 
     recipe_dir = Path(__file__).resolve().parent
     common_dir = recipe_dir.parent / "common"

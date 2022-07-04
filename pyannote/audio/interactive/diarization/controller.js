@@ -1,6 +1,10 @@
 var snd = new Audio();
 var idTimer = 0;
 
+/**
+* Make sure that the document is loaded before executing handleWavesurfer
+* @see handleWavesurfer()
+*/
 if(document.readyState !== 'loading') {
     if(typeof window.wavesurfer !== "undefined"){
         setTimeout(handleWavesurfer,25);
@@ -13,6 +17,11 @@ if(document.readyState !== 'loading') {
     });
 }
 
+/**
+* Check if there is at least one region with this label
+* @see handleWavesurfer()
+* @param {label} label to check
+*/
 function checkRegion(label){
     for(var idr in window.wavesurfer.regions.list){
         var region = window.wavesurfer.regions.list[idr];
@@ -23,6 +32,12 @@ function checkRegion(label){
     return false;
 }
 
+/**
+* Change the color of textfield's title
+* @see addSounds()
+* @param {label}
+* @param {color}
+*/
 function changePlaceholderColor(label, color){
     var labels = document.querySelectorAll("label[for="+label+"]");
     if(labels.length > 0){
@@ -35,7 +50,14 @@ function changePlaceholderColor(label, color){
     }
 }
 
-
+/**
+* Hide or display textfield
+* @see displayPlaceholder()
+* @see handleWavesurfer()
+* @see addSounds()
+* @param {label} - label of textfield
+* @param {hide} - boolean
+*/
 function changeDisplayPlaceholder(label, hide){
     var labels = document.querySelectorAll("label[for="+label+"]");
     if(labels.length > 0){
@@ -43,6 +65,10 @@ function changeDisplayPlaceholder(label, hide){
     }
 }
 
+/**
+* Display textfields for all wavesurfer's regions label
+* @see addSounds()
+*/
 function displayPlaceholder(){
     for(var idr in window.wavesurfer.regions.list){
         var region = window.wavesurfer.regions.list[idr];
@@ -51,6 +77,12 @@ function displayPlaceholder(){
 }
 
 
+/**
+* Create "sound" emoji next to the prodigy labels
+* Start the corresponding audio excerpt when the mouse is over
+* @see addSounds()
+* @param {label}
+*/
 function createEmojiSound(label){
     var span = label.children[0];
     var cloneSpan = span.cloneNode(true);
@@ -73,7 +105,11 @@ function createEmojiSound(label){
     }
 }
 
-
+/**
+* Change the regions label from "SPEAKER_XX" to "XX"
+* Support only on Chrome from now
+* !! use class='c01140' check if prodigy change
+*/
 function clearSpan(){
     //TODO: Check span class in other browsers
     var spans = document.querySelectorAll("span[class='c01140']");
@@ -87,9 +123,13 @@ function clearSpan(){
     }
 }
 
+/**
+* Add event listener to some wavesurfer event
+*/
 function handleWavesurfer(){
     if(typeof window.wavesurfer !== "undefined"){
         addSounds();
+        //Display textfield if region is created
         window.wavesurfer.on('region-created', function(e){
             setTimeout(function (){
                 changeDisplayPlaceholder(e.label, false);
@@ -97,12 +137,13 @@ function handleWavesurfer(){
                 clearSpan();
             }, 5);
         });
+        //Check textfield if region is rename
         window.wavesurfer.on('region-update-end', function(e){
             setTimeout(clearSpan, 5);
             setTimeout(changeDisplayPlaceholder, 5, e.label, false);
         });
+        //Hide textfield if region is removed
         window.wavesurfer.on('region-removed',function(e){
-            console.log('removed');
             if(!checkRegion(e.label)){
                 changeDisplayPlaceholder(e.label, true);
             }
@@ -112,6 +153,12 @@ function handleWavesurfer(){
     }
 }
 
+/**
+* Add sounds to Prodigy's label (they are in window.prodigy.content.sounds)
+* And the same time change their colors and the color of their corresponding textfield
+* @see changePlaceholderColor()
+* @see changeDisplayPlaceholder()
+*/
 function addSounds(){
     var labels = document.querySelectorAll('label.prodigy-label');
     if(labels.length > 0){
