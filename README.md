@@ -46,7 +46,8 @@ Only Python 3.8+ is officially supported (though it might work with Python 3.7)
 ```bash
 conda create -n pyannote python=3.8
 conda activate pyannote
-conda install pytorch torchaudio -c pytorch
+# Pytorch 1.11 is required for speechbrain compatibility. See https://pytorch.org/get-started/previous-versions/#v1110
+conda install pytorch==1.11.0 torchvision==0.12.0 torchaudio==0.11.0 cudatoolkit=11.3 -c pytorch
 pip install https://github.com/pyannote/pyannote-audio/archive/develop.zip
 ```
 
