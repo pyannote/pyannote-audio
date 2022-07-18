@@ -645,7 +645,10 @@ class HiddenMarkovModelClustering(BaseClustering):
             for n_components in range(min_clusters, max_clusters + 1):
 
                 hmm = self.fit_hmm(n_components, euclidean_embeddings)
-                train_clusters = hmm.predict(euclidean_embeddings)
+                try:
+                    train_clusters = hmm.predict(euclidean_embeddings)
+                except ValueError:
+                    break
 
                 # compute distance between centroids
                 centroids = np.vstack(
