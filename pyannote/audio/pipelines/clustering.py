@@ -365,10 +365,6 @@ class AgglomerativeClustering(BaseClustering):
         Linkage method.
     threshold : float in range [0.0, 2.0]
         Clustering threshold. Only when `expects_num_clusters` is False.
-
-    Notes
-    -----
-    Embeddings are expected to be unit-normalized.
     """
 
     def __init__(
@@ -791,7 +787,8 @@ class HiddenMarkovModelClustering(BaseClustering):
         num_embeddings = len(embeddings)
 
         # FIXME
-        max_clusters = 20
+        if max_clusters == num_embeddings:
+            max_clusters = min(max_clusters, 20)
 
         if min_clusters < 2:
             return np.zeros((num_embeddings,), dtype=np.int8)
@@ -831,8 +828,6 @@ class HiddenMarkovModelClustering(BaseClustering):
                 centroids_pdist = pdist(centroids, metric=self.metric)
                 current_criterion = np.min(centroids_pdist)
 
-                # print(f"{n_components=} {current_criterion:.3f}")
-
                 # stop adding states when distance between two closest states
                 #  * no longer increases
                 #  * no longer goes above {threshold}
@@ -851,8 +846,6 @@ class HiddenMarkovModelClustering(BaseClustering):
                     break
 
                 history.append(current_criterion)
-
-            # print(f"{num_clusters=}")
 
         if num_clusters == 1:
             return np.zeros((num_embeddings,), dtype=np.int8)
