@@ -32,7 +32,7 @@ from einops import rearrange
 from hmmlearn.hmm import GaussianHMM
 from pyannote.core import SlidingWindow, SlidingWindowFeature
 from pyannote.pipeline import Pipeline
-from pyannote.pipeline.parameter import Categorical, Uniform
+from pyannote.pipeline.parameter import Categorical, LogUniform, ParamDict, Uniform
 from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.optimize import linear_sum_assignment
 from scipy.spatial.distance import cdist, pdist
@@ -48,14 +48,12 @@ class BaseClustering(Pipeline):
         self,
         metric: str = "cosine",
         max_num_embeddings: int = 1000,
-        expects_num_clusters: bool = False,
         constrained_assignment: bool = False,
     ):
 
         super().__init__()
         self.metric = metric
         self.max_num_embeddings = max_num_embeddings
-        self.expects_num_clusters = expects_num_clusters
         self.constrained_assignment = constrained_assignment
 
     def set_num_clusters(
@@ -79,9 +77,6 @@ class BaseClustering(Pipeline):
 
         if min_clusters == max_clusters:
             num_clusters = min_clusters
-
-        if self.expects_num_clusters and num_clusters is None:
-            raise ValueError("num_clusters must be provided.")
 
         return num_clusters, min_clusters, max_clusters
 
@@ -344,35 +339,29 @@ class AgglomerativeClustering(BaseClustering):
     ----------
     metric : {"cosine", "euclidean", ...}, optional
         Distance metric to use. Defaults to "cosine".
-    expects_num_clusters : bool, optional
-        Whether the number of clusters should be provided.
-        Defaults to False.
 
     Hyper-parameters
     ----------------
     method : {"average", "centroid", "complete", "median", "single", "ward"}
         Linkage method.
     threshold : float in range [0.0, 2.0]
-        Clustering threshold. Only when `expects_num_clusters` is False.
+        Clustering threshold.
     """
 
     def __init__(
         self,
         metric: str = "cosine",
         max_num_embeddings: int = 1000,
-        expects_num_clusters: bool = False,
         constrained_assignment: bool = False,
     ):
 
         super().__init__(
             metric=metric,
             max_num_embeddings=max_num_embeddings,
-            expects_num_clusters=expects_num_clusters,
             constrained_assignment=constrained_assignment,
         )
 
-        if not self.expects_num_clusters:
-            self.threshold = Uniform(0.0, 2.0)  # assume unit-normalized embeddings
+        self.threshold = Uniform(0.0, 2.0)  # assume unit-normalized embeddings
         self.method = Categorical(
             ["average", "centroid", "complete", "median", "single", "ward", "weighted"]
         )
@@ -450,9 +439,6 @@ class AgglomerativeClustering(BaseClustering):
 class OracleClustering(BaseClustering):
     """Oracle clustering"""
 
-    def __init__(self, metric: str = "cosine", expects_num_clusters: bool = False):
-        super().__init__()
-
     def __call__(
         self,
         segmentations: SlidingWindowFeature = None,
@@ -515,7 +501,6 @@ class HiddenMarkovModelClustering(BaseClustering):
     def __init__(
         self,
         metric: str = "cosine",
-        expects_num_clusters: bool = False,
         constrained_assignment: bool = False,
     ):
 
@@ -524,13 +509,16 @@ class HiddenMarkovModelClustering(BaseClustering):
 
         super().__init__(
             metric=metric,
-            expects_num_clusters=expects_num_clusters,
             constrained_assignment=constrained_assignment,
         )
 
+        self.single_cluster_detection = ParamDict(
+            quantile=LogUniform(1e-3, 1e-1),
+            threshold=Uniform(0.0, 2.0),
+        )
+
         self.covariance_type = Categorical(["spherical", "diag", "full", "tied"])
-        if not self.expects_num_clusters:
-            self.threshold = Uniform(0.0, 2.0)
+        self.threshold = Uniform(0.0, 2.0)
 
     def filter_embeddings(
         self, embeddings: np.ndarray, segmentations: SlidingWindowFeature
@@ -631,61 +619,84 @@ class HiddenMarkovModelClustering(BaseClustering):
         elif self.metric == "euclidean":
             euclidean_embeddings = embeddings
 
-        if num_clusters is None:
+        # when the number of clusters is provided, fit a HMM with
+        # that many states and return the decoded sequence of states
+        if num_clusters is not None:
+            hmm = self.fit_hmm(num_clusters, euclidean_embeddings)
 
-            history = [
-                -np.inf,
-            ]
+            try:
+                train_clusters = hmm.predict(euclidean_embeddings)
+            except ValueError:
+                # ValueError: startprob_ must sum to 1 (got nan)
+                # TODO: display a warning that something went wrong
+                train_clusters = np.zeros((num_embeddings,), dtype=np.int8)
 
-            patience = min(3, max_clusters - min_clusters)
+            return train_clusters
 
-            num_clusters = min_clusters - 1
-            best_criterion = -np.inf
+        # heuristic for detecting cases where there is just one large cluster
+        # (and a few meaningless outliers)
+        if min_clusters == 1:
 
-            for n_components in range(min_clusters, max_clusters + 1):
-
-                hmm = self.fit_hmm(n_components, euclidean_embeddings)
-                try:
-                    train_clusters = hmm.predict(euclidean_embeddings)
-                except ValueError:
-                    break
-
-                # compute distance between centroids
-                centroids = np.vstack(
-                    [
-                        np.mean(embeddings[train_clusters == k], axis=0)
-                        for k in range(n_components)
-                    ]
+            # Example with quantile = 1% and threshold = 0.4:
+            # if 99% (100% - 1%) of pairwise distance are smaller than 0.4,
+            # then we assume that the others are outliers and return one cluster
+            if (
+                np.quantile(
+                    pdist(euclidean_embeddings, metric="euclidean"),
+                    1.0 - self.single_cluster_detection["quantile"],
                 )
-                centroids_pdist = pdist(centroids, metric=self.metric)
-                current_criterion = np.min(centroids_pdist)
+                < self.single_cluster_detection["threshold"]
+            ):
 
-                # stop adding states when distance between two closest states
-                #  * no longer increases
-                #  * no longer goes above {threshold}
+                return np.zeros((num_embeddings,), dtype=np.int8)
 
-                # final number of states is the last one for which the criterion
-                # goes above {threshold}.
+            # otherwise, we make sure to return at least 2 clusters
+            min_clusters = max(2, min_clusters)
+            max_clusters = max(2, max_clusters)
 
-                # THIS IS A TERRIBLE CRITERION THAT NEEDS TO BE FIXED
-                best_criterion = max(history)
-                increasing = current_criterion > best_criterion
-                big_enough = current_criterion > self.threshold
-                if increasing or big_enough:
-                    num_clusters = n_components
-                    best_criterion = max(best_criterion, current_criterion)
-                elif n_components == num_clusters + patience:
-                    break
+        # fit a HMM with increasing number of states and stop adding
+        # when the distance between the two closest states
+        #  - either no longer increases
+        #  - or no longer goes above a threshold
+        # the selected number of states is the last one for which the
+        # criterion goes above {threshold}.
 
-                history.append(current_criterion)
+        # THIS IS A TERRIBLE CRITERION THAT NEEDS TO BE FIXED
 
-        if num_clusters == 1:
-            return np.zeros((num_embeddings,), dtype=np.int8)
+        history = [-np.inf]
+        patience = min(3, max_clusters - min_clusters)
+        for n_components in range(min_clusters, max_clusters + 1):
 
-        # once num_clusters is estimated, fit the HMM several times
-        # and keep the one that best fits the data
+            hmm = self.fit_hmm(n_components, euclidean_embeddings)
+            try:
+                train_clusters = hmm.predict(euclidean_embeddings)
+            except ValueError:  # ValueError: startprob_ must sum to 1 (got nan)
+                # stop adding states as there too many and not enough
+                # training data to train it in a reliable manner.
+                break
+
+            # compute distance between the two closest centroids
+            centroids = np.vstack(
+                [
+                    np.mean(embeddings[train_clusters == k], axis=0)
+                    for k in range(n_components)
+                ]
+            )
+            centroids_pdist = pdist(centroids, metric=self.metric)
+            current_criterion = np.min(centroids_pdist)
+
+            increasing = current_criterion > max(history)
+            big_enough = current_criterion > self.threshold
+
+            if increasing or big_enough:
+                num_clusters = n_components
+
+            elif n_components == num_clusters + patience:
+                break
+
+            history.append(current_criterion)
+
         hmm = self.fit_hmm(num_clusters, euclidean_embeddings)
-
         try:
             train_clusters = hmm.predict(euclidean_embeddings)
         except ValueError:
