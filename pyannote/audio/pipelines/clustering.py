@@ -24,7 +24,6 @@
 
 
 import random
-import warnings
 from enum import Enum
 from typing import Tuple
 
@@ -33,20 +32,10 @@ from einops import rearrange
 from hmmlearn.hmm import GaussianHMM
 from pyannote.core import SlidingWindow, SlidingWindowFeature
 from pyannote.pipeline import Pipeline
-from pyannote.pipeline.parameter import Categorical, ParamDict, Uniform
+from pyannote.pipeline.parameter import Categorical, Uniform
 from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.optimize import linear_sum_assignment
 from scipy.spatial.distance import cdist, pdist
-from spectralcluster import (
-    AutoTune,
-    EigenGapType,
-    LaplacianType,
-    RefinementName,
-    RefinementOptions,
-    SpectralClusterer,
-    SymmetrizeType,
-    ThresholdType,
-)
 
 from pyannote.audio import Inference
 from pyannote.audio.core.io import AudioFile
@@ -520,166 +509,6 @@ class OracleClustering(BaseClustering):
         return hard_clusters, soft_clusters
 
 
-class SpectralClustering(BaseClustering):
-    """Spectral clustering
-
-    Parameters
-    ----------
-    metric : {"cosine", "euclidean", ...}, optional
-        Distance metric to use. Defaults to "cosine".
-        Only "cosine" is currenty supported.
-    expects_num_clusters : bool, optional
-        Whether the number of clusters should be provided.
-        Defaults to False.
-
-    Hyper-parameters
-    ----------------
-    laplacian : {"Affinity", "Unnormalized", "RandomWalk", "GraphCut"}
-        Laplacian to use.
-    eigengap : {"Ratio", "NormalizedDiff"}
-        Eigengap approach to use.
-    refinement : dict
-        Sequence of refinement operations
-    refinement["CropDiagonal"] : boolean
-    refinement["Symmetrize"] : boolean
-    refinement["Diffuse"] : boolean
-    refinement["RowWiseNormalized"] : boolean
-    symmetrize_type : {"Max", "Average"}
-        How to symmetrize the matrix (when refinement["Symmetrize"] is True)
-    thresholding_type : {"RowMax", "Percentile"}
-        Type of thresholding operation.
-    thresholding_with_binarization : boolean
-        Set values larger than the threshold to 1.
-    thresholding_preserve_diagonal : boolean
-        In the row wise thresholding operation, set diagonals of the
-        affinity matrix to 0 at the beginning, and back to 1 in the end
-
-    Notes
-    -----
-    Embeddings are expected to be unit-normalized.
-    """
-
-    def __init__(
-        self,
-        metric: str = "cosine",
-        max_num_embeddings: int = 1000,
-        expects_num_clusters: bool = False,
-        constrained_assignment: bool = False,
-    ):
-
-        if metric != "cosine":
-            raise ValueError(
-                f"Only 'cosine' metric is currently supported in by spectral clustering (you passed {metric=})"
-            )
-
-        super().__init__(
-            metric=metric,
-            max_num_embeddings=max_num_embeddings,
-            expects_num_clusters=expects_num_clusters,
-            constrained_assignment=constrained_assignment,
-        )
-
-        self.laplacian = Categorical(
-            ["Affinity", "Unnormalized", "RandomWalk", "GraphCut"]
-        )
-
-        # define sequence of refinement operations
-        self.refinement = ParamDict(
-            CropDiagonal=Categorical([True, False]),
-            # gaussian blur does not make sense here because
-            # embeddings are not ordered chronologically
-            GaussianBlur=False,
-            # row-wise threshold is needed by "autotune"
-            RowWiseThreshold=True,
-            Symmetrize=Categorical([True, False]),
-            Diffuse=Categorical([True, False]),
-            RowWiseNormalize=Categorical([True, False]),
-        )
-
-        self.symmetrize_type = Categorical(["Max", "Average"])
-
-        # for row-wise thresholding
-        self.thresholding_type = Categorical(["RowMax", "Percentile"])
-        self.thresholding_with_binarization = Categorical([True, False])
-        self.thresholding_preserve_diagonal = Categorical([True, False])
-
-        if not self.expects_num_clusters:
-            self.eigengap = Categorical(["Ratio", "NormalizedDiff"])
-
-    def cluster(
-        self,
-        embeddings: np.ndarray,
-        min_clusters: int,
-        max_clusters: int,
-        **kwargs,
-    ):
-        """
-
-        Parameters
-        ----------
-        embeddings : (num_embeddings, dimension) array
-            Embeddings
-        min_clusters : int
-            Minimum number of clusters
-        max_clusters : int
-            Maximum number of clusters
-
-        Returns
-        -------
-        clusters : (num_embeddings, ) array
-            0-indexed cluster indices.
-        """
-
-        # see https://github.com/wq2012/SpectralCluster/issues/40
-        num_embeddings, _ = embeddings.shape
-        if num_embeddings < 20:
-            warnings.warn(
-                f"Not enough embeddings ({num_embeddings}) to perform reliable spectral clustering."
-            )
-            return np.zeros((num_embeddings,), dtype=np.int8)
-
-        # Refinements
-        refinement_sequence = [
-            RefinementName[name] for name, active in self.refinement.items() if active
-        ]
-        refinement_options = RefinementOptions(
-            refinement_sequence=refinement_sequence,
-            thresholding_soft_multiplier=0.01,
-            thresholding_type=ThresholdType[self.thresholding_type],
-            thresholding_with_binarization=self.thresholding_with_binarization,
-            thresholding_preserve_diagonal=self.thresholding_preserve_diagonal,
-            symmetrize_type=SymmetrizeType[self.symmetrize_type],
-        )
-
-        # Laplacian
-        laplacian_type = LaplacianType[self.laplacian]
-
-        # Autotune
-        if self.expects_num_clusters:
-            autotune = None
-            eigengap_type = EigenGapType.Ratio
-        else:
-            autotune = AutoTune(
-                p_percentile_min=0.40,
-                p_percentile_max=0.95,
-                init_search_step=0.05,
-                search_level=1,
-            )
-            eigengap_type = EigenGapType[self.eigengap]
-
-        # Clustering
-        clusters = SpectralClusterer(
-            min_clusters=min_clusters,
-            max_clusters=max_clusters,
-            refinement_options=refinement_options,
-            autotune=autotune,
-            laplacian_type=laplacian_type,
-            eigengap_type=eigengap_type,
-        ).predict(embeddings)
-
-        return clusters
-
-
 class HiddenMarkovModelClustering(BaseClustering):
     """Hidden Markov Model with Gaussian states"""
 
@@ -865,6 +694,5 @@ class HiddenMarkovModelClustering(BaseClustering):
 
 class Clustering(Enum):
     AgglomerativeClustering = AgglomerativeClustering
-    SpectralClustering = SpectralClustering
     HiddenMarkovModelClustering = HiddenMarkovModelClustering
     OracleClustering = OracleClustering

@@ -14,7 +14,6 @@ pytorch_metric_learning >=1.0.0,<2.0
 semver >=2.10.2,<3.0
 singledispatchmethod
 soundfile >=0.10.2,<0.11
-spectralcluster >= 0.2.11,<0.3
 torch >=1.9
 torch_audiomentations @ git+https://github.com/asteroid-team/torch-audiomentations@master#egg=torch_audiomentations
 torchaudio >=0.10,<1.0
