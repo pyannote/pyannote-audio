@@ -607,9 +607,6 @@ class HiddenMarkovModelClustering(BaseClustering):
         if max_clusters == num_embeddings:
             max_clusters = min(max_clusters, 20)
 
-        if min_clusters < 2:
-            return np.zeros((num_embeddings,), dtype=np.int8)
-
         if self.metric == "cosine":
             # unit-normalize embeddings to somehow make them "euclidean"
             with np.errstate(divide="ignore", invalid="ignore"):
