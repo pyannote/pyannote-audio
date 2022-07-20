@@ -92,7 +92,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         self,
         segmentation: PipelineModel = "pyannote/segmentation@2022.07",
         segmentation_step: float = 0.1,
-        embedding: PipelineModel = "pyannote/embedding@2022.07",
+        embedding: PipelineModel = "speechbrain/spkrec-ecapa-voxceleb@5c0be3875fda05e81f3c004ed8c7c06be308de1e",
         embedding_exclude_overlap: bool = False,
         clustering: str = "HiddenMarkovModelClustering",
         embedding_batch_size: int = 32,
@@ -146,26 +146,6 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
     def default_parameters(self):
 
-        # parameters optimized on DIHARD 3 development set
-        if (
-            self.segmentation == "pyannote/segmentation@2022.07"
-            and self.segmentation_step == 0.1
-            and self.embedding == "pyannote/embedding@2022.07"
-            and self.embedding_exclude_overlap == True
-            and self.clustering == "HiddenMarkovModelClustering"
-        ):
-            return {
-                "segmentation_onset": 0.579007359975702,
-                "single_speaker_detection": {
-                    "chunk_ratio": 0.03644981507741857,
-                    "frame_ratio": 0.0009903258765122393,
-                },
-                "clustering": {
-                    "covariance_type": "diag",
-                    "threshold": "???",
-                },
-            }
-
         if (
             self.segmentation == "pyannote/segmentation@2022.07"
             and self.segmentation_step == 0.1
@@ -175,14 +155,14 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             and self.clustering == "HiddenMarkovModelClustering"
         ):
             return {
-                "segmentation_onset": 0.579007359975702,
-                "single_speaker_detection": {
-                    "chunk_ratio": 0.03644981507741857,
-                    "frame_ratio": 0.0009903258765122393,
-                },
+                "segmentation_onset": 0.58,
                 "clustering": {
+                    "single_cluster_detection": {
+                        "quantile": 0.05,
+                        "threshold": 1.15,
+                    },
                     "covariance_type": "diag",
-                    "threshold": 0.3223503688089519,
+                    "threshold": 0.35,
                 },
             }
 
