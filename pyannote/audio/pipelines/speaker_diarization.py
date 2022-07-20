@@ -142,7 +142,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             raise ValueError(
                 f'clustering must be one of [{", ".join(list(Clustering.__members__))}]'
             )
-        self.clustering = Klustering.value(metric=metric, constrained_assignment=True)
+        self.clustering = Klustering.value(metric=metric)
 
     def default_parameters(self):
 
