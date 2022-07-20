@@ -20,7 +20,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from .constraint import SegmentationConstraints
 from .diarization import SpeakerDiarizationMixin
 from .getter import (
     PipelineAugmentation,
@@ -35,7 +34,6 @@ from .oracle import oracle_segmentation
 
 __all__ = [
     "SpeakerDiarizationMixin",
-    "SegmentationConstraints",
     "oracle_segmentation",
     "get_augmentation",
     "PipelineAugmentation",
