@@ -46,7 +46,8 @@ Only Python 3.8+ is officially supported (though it might work with Python 3.7)
 ```bash
 conda create -n pyannote python=3.8
 conda activate pyannote
-conda install pytorch torchaudio -c pytorch
+# Pytorch 1.11 is required for speechbrain compatibility. See https://pytorch.org/get-started/previous-versions/#v1110
+conda install pytorch==1.11.0 torchvision==0.12.0 torchaudio==0.11.0 -c pytorch
 pip install https://github.com/pyannote/pyannote-audio/archive/develop.zip
 ```
 
@@ -73,6 +74,12 @@ pip install https://github.com/pyannote/pyannote-audio/archive/develop.zip
 
 ## Frequently asked questions
 
+#### How does one capitalize and pronounce the name of this awesome library?
+
+📝 Written in lower case: `pyannote.audio` (or `pyannote` if you are lazy).  Not `PyAnnote` nor `PyAnnotate` (*sic*).    
+📢 [Pronounced](https://www.howtopronounce.com/french/pianote) like the french verb *pianoter*.  *pi* like in **pi**ano, not *py* like in **py**thon.   
+🎹 *pianoter* means *to play the piano* (hence the logo 🤯).
+
 #### **[Pretrained pipelines](https://huggingface.co/models?other=pyannote-audio-pipeline) do not produce good results on my data. What can I do?**
 
 1. [Annotate](https://github.com/pyannote/pyannote-audio/blob/develop/tutorials/prodigy.md) dozens of conversations manually and separate them into development and test subsets in [`pyannote.database`](https://github.com/pyannote/pyannote-database#speaker-diarization).
@@ -94,10 +101,31 @@ Out of the box, `pyannote.audio` default speaker diarization pipeline is expecte
 
 A more detailed benchmark is available [here]((https://hf.co/pyannote/speaker-diarization)).
 
+## Citations
+
+If you use `pyannote.audio` please use the following citations:
+
+```bibtex
+@inproceedings{Bredin2020,
+  Title = {{pyannote.audio: neural building blocks for speaker diarization}},
+  Author = {{Bredin}, Herv{\'e} and {Yin}, Ruiqing and {Coria}, Juan Manuel and {Gelly}, Gregory and {Korshunov}, Pavel and {Lavechin}, Marvin and {Fustes}, Diego and {Titeux}, Hadrien and {Bouaziz}, Wassim and {Gill}, Marie-Philippe},
+  Booktitle = {ICASSP 2020, IEEE International Conference on Acoustics, Speech, and Signal Processing},
+  Year = {2020},
+}
+```
+
+```bibtex
+@inproceedings{Bredin2021,
+  Title = {{End-to-end speaker segmentation for overlap-aware resegmentation}},
+  Author = {{Bredin}, Herv{\'e} and {Laurent}, Antoine},
+  Booktitle = {Proc. Interspeech 2021},
+  Year = {2021},
+}
+```
+
 ## Support
 
 For commercial enquiries and scientific consulting, please contact [me](mailto:herve@niderb.fr).
-
 
 ## Development
 

@@ -24,11 +24,10 @@ try:
     from functools import singledispatchmethod
 except ImportError:
     from singledispatchmethod import singledispatchmethod
-from typing import Optional
+
+from typing import Dict, List, Optional
 
 import numpy as np
-
-from pyannote.audio.utils.permutation import permutate
 from pyannote.core import (
     Annotation,
     Segment,
@@ -37,7 +36,10 @@ from pyannote.core import (
     Timeline,
 )
 from pyannote.metrics.base import BaseMetric
+from pyannote.metrics.detection import DetectionPrecisionRecallFMeasure
 from pyannote.metrics.diarization import DiarizationErrorRate
+
+from pyannote.audio.utils.permutation import permutate
 
 
 def discrete_diarization_error_rate(reference: np.ndarray, hypothesis: np.ndarray):
@@ -202,7 +204,7 @@ class DiscreteDiarizationErrorRate(BaseMetric):
 
             if not Timeline([support]).covers(uem):
                 raise ValueError("`uem` must fully cover hypothesis extent.")
-            
+
             components = self.init_components()
             for segment in uem:
                 h = hypothesis.crop(segment)
@@ -286,3 +288,94 @@ class SlidingDiarizationErrorRate(BaseMetric):
             + components["missed detection"]
             + components["confusion"]
         ) / components["total"]
+
+
+class MacroAverageFMeasure(BaseMetric):
+    """Compute macro-average F-measure
+
+    Parameters
+    ----------
+    collar : float, optional
+        Duration (in seconds) of collars removed from evaluation around
+        boundaries of reference segments (one half before, one half after).
+    beta : float, optional
+        When beta > 1, greater importance is given to recall.
+        When beta < 1, greater importance is given to precision.
+        Defaults to 1.
+
+    See also
+    --------
+    pyannote.metrics.detection.DetectionPrecisionRecallFMeasure
+    """
+
+    def metric_components(self):
+        return self.classes
+
+    @classmethod
+    def metric_name(cls):
+        return "Macro F-measure"
+
+    def __init__(
+        self,
+        classes: List[str],  # noqa
+        collar: float = 0.0,
+        beta: float = 1.0,
+        **kwargs,
+    ):
+        self.metric_name_ = self.metric_name()
+
+        self.classes = classes
+        self.components_ = set(self.metric_components())
+
+        self.collar = collar
+        self.beta = beta
+
+        self._sub_metrics: Dict[str, DetectionPrecisionRecallFMeasure] = {
+            label: DetectionPrecisionRecallFMeasure(collar=collar, beta=beta, **kwargs)
+            for label in self.classes
+        }
+
+        self.reset()
+
+    def reset(self):
+        super().reset()
+        for sub_metric in self._sub_metrics.values():
+            sub_metric.reset()
+
+    def compute_components(
+        self, reference: Annotation, hypothesis: Annotation, uem=None, **kwargs
+    ):
+
+        details = self.init_components()
+        for label, sub_metric in self._sub_metrics.items():
+            details[label] = sub_metric(
+                reference=reference.subset([label]),
+                hypothesis=hypothesis.subset([label]),
+                uem=uem,
+                **kwargs,
+            )
+        return details
+
+    def compute_metric(self, detail: Dict[str, float]):
+        return np.mean(list(detail.values()))
+
+    def report(self, display=False):
+        df = super().report(display=False)
+
+        for label, sub_metric in self._sub_metrics.items():
+            df.loc["TOTAL"][label] = abs(sub_metric)
+
+        if display:
+            print(
+                df.to_string(
+                    index=True,
+                    sparsify=False,
+                    justify="right",
+                    float_format=lambda f: "{0:.2f}".format(f),
+                )
+            )
+
+        return df
+
+    def __abs__(self):
+        return np.mean([abs(sub_metric) for sub_metric in self._sub_metrics.values()])

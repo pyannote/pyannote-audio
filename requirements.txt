@@ -15,7 +15,7 @@ semver >=2.10.2,<3.0
 singledispatchmethod
 soundfile >=0.10.2,<0.11
 torch >=1.9
-torch_audiomentations @ git+https://github.com/asteroid-team/torch-audiomentations@master#egg=torch_audiomentations
+torch_audiomentations >= 0.11.0
 torchaudio >=0.10,<1.0
 torchmetrics >=0.6,<1.0
 typing_extensions
