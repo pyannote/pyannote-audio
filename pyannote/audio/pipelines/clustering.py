@@ -207,7 +207,7 @@ class BaseClustering(Pipeline):
         max_clusters: int = None,
         **kwargs,
     ) -> np.ndarray:
-        """Apply HMM clustering
+        """Apply clustering
 
         Parameters
         ----------
@@ -386,7 +386,7 @@ class OracleClustering(BaseClustering):
         frames: SlidingWindow = None,
         **kwargs,
     ) -> np.ndarray:
-        """Apply agglomerative clustering
+        """Apply oracle clustering
 
         Parameters
         ----------
