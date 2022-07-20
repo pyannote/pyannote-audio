@@ -99,7 +99,7 @@ Out of the box, `pyannote.audio` default speaker diarization pipeline is expecte
 | DIHARD      | 29.2%          | 21.0%          | 28%                  |
 | VoxConverse | 21.5%          | 12.8%          | 40%                  |
 
-A more detailed benchmark is available [here]((https://hf.co/pyannote/speaker-diarization)).
+A more detailed benchmark is available [here](https://hf.co/pyannote/speaker-diarization).
 
 ## Citations
 
