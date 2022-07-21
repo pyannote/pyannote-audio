@@ -25,9 +25,16 @@
 import tempfile
 from copy import deepcopy
 from types import MethodType
-from typing import Optional, Union, Callable
+from typing import Callable, Optional, Text, Union
 
 import numpy as np
+from pyannote.core import Annotation, SlidingWindowFeature
+from pyannote.database.protocol import SpeakerDiarizationProtocol
+from pyannote.metrics.detection import (
+    DetectionErrorRate,
+    DetectionPrecisionRecallFMeasure,
+)
+from pyannote.pipeline.parameter import Categorical, Integer, LogUniform, Uniform
 from pytorch_lightning import Trainer
 from torch.optim import SGD
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
@@ -47,13 +54,6 @@ from pyannote.audio.pipelines.utils import (
 )
 from pyannote.audio.tasks import VoiceActivityDetection as VoiceActivityDetectionTask
 from pyannote.audio.utils.signal import Binarize
-from pyannote.core import Annotation, SlidingWindowFeature
-from pyannote.database.protocol import SpeakerDiarizationProtocol
-from pyannote.metrics.detection import (
-    DetectionErrorRate,
-    DetectionPrecisionRecallFMeasure,
-)
-from pyannote.pipeline.parameter import Categorical, Integer, LogUniform, Uniform
 
 
 class OracleVoiceActivityDetection(Pipeline):
@@ -90,6 +90,10 @@ class VoiceActivityDetection(Pipeline):
     fscore : bool, optional
         Optimize (precision/recall) fscore. Defaults to optimizing detection
         error rate.
+    use_auth_token : str, optional
+        When loading private huggingface.co models, set `use_auth_token`
+        to True or to a string containing your hugginface.co authentication
+        token that can be obtained by running `huggingface-cli login`
     inference_kwargs : dict, optional
         Keywords arguments passed to Inference.
 
@@ -107,6 +111,7 @@ class VoiceActivityDetection(Pipeline):
         self,
         segmentation: PipelineModel = "pyannote/segmentation",
         fscore: bool = False,
+        use_auth_token: Union[Text, None] = None,
         **inference_kwargs,
     ):
         super().__init__()
@@ -115,7 +120,7 @@ class VoiceActivityDetection(Pipeline):
         self.fscore = fscore
 
         # load model and send it to GPU (when available and not already on GPU)
-        model = get_model(segmentation)
+        model = get_model(segmentation, use_auth_token=use_auth_token)
         if model.device.type == "cpu":
             (segmentation_device,) = get_devices(needs=1)
             model.to(segmentation_device)

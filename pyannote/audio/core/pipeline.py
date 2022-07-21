@@ -29,13 +29,13 @@ from typing import Callable, List, Optional, Text, Union
 
 import yaml
 from huggingface_hub import cached_download, hf_hub_url
+from pyannote.core.utils.helper import get_class_by_name
+from pyannote.database import FileFinder, ProtocolFile
+from pyannote.pipeline import Pipeline as _Pipeline
 
 from pyannote.audio import Audio, __version__
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import CACHE_DIR
-from pyannote.core.utils.helper import get_class_by_name
-from pyannote.database import FileFinder, ProtocolFile
-from pyannote.pipeline import Pipeline as _Pipeline
 
 PIPELINE_PARAMS_NAME = "config.yaml"
 
@@ -95,7 +95,9 @@ class Pipeline(_Pipeline):
         Klass = get_class_by_name(
             pipeline_name, default_module_name="pyannote.pipeline.blocks"
         )
-        pipeline = Klass(**config["pipeline"].get("params", {}))
+        params = config["pipeline"].get("params", {})
+        params.setdefault("use_auth_token", use_auth_token)
+        pipeline = Klass(**params)
 
         # freeze  parameters
         if "freeze" in config:

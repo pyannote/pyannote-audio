@@ -22,7 +22,7 @@
 
 """Resegmentation pipeline"""
 
-from typing import Callable, Optional, Text
+from typing import Callable, Optional, Text, Union
 
 import numpy as np
 from pyannote.core import Annotation, Segment, SlidingWindowFeature
@@ -62,6 +62,12 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
         See pyannote.audio.pipelines.utils.get_model for supported format.
     diarization : str, optional
         File key to use as input diarization. Defaults to "diarization".
+    use_auth_token : str, optional
+        When loading private huggingface.co models, set `use_auth_token`
+        to True or to a string containing your hugginface.co authentication
+        token that can be obtained by running `huggingface-cli login`
+
+
 
     Hyper-parameters
     ----------------
@@ -77,6 +83,7 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
         self,
         segmentation: PipelineModel = "pyannote/segmentation",
         diarization: Text = "diarization",
+        use_auth_token: Union[Text, None] = None,
     ):
 
         super().__init__()
@@ -84,7 +91,7 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
         self.segmentation = segmentation
         self.diarization = diarization
 
-        model: Model = get_model(segmentation)
+        model: Model = get_model(segmentation, use_auth_token=use_auth_token)
         (device,) = get_devices(needs=1)
         model.to(device)
         self._segmentation = Inference(model)

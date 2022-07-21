@@ -25,7 +25,7 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 
-from typing import Callable, Optional, Union
+from typing import Callable, Optional, Text, Union
 
 from pyannote.core import Annotation, SlidingWindowFeature
 from pyannote.metrics.identification import IdentificationErrorRate
@@ -53,6 +53,10 @@ class MultiLabelSegmentation(Pipeline):
         Defaults to optimizing identification error rate.
     share_min_duration : bool, optional
         If True, `min_duration_on` and `min_duration_off` are shared among labels.
+    use_auth_token : str, optional
+        When loading private huggingface.co models, set `use_auth_token`
+        to True or to a string containing your hugginface.co authentication
+        token that can be obtained by running `huggingface-cli login`
     inference_kwargs : dict, optional
         Keywords arguments passed to Inference.
 
@@ -70,11 +74,12 @@ class MultiLabelSegmentation(Pipeline):
     """
 
     def __init__(
-            self,
-            segmentation: PipelineModel = None,
-            fscore: bool = False,
-            share_min_duration: bool = False,
-            **inference_kwargs,
+        self,
+        segmentation: PipelineModel = None,
+        fscore: bool = False,
+        share_min_duration: bool = False,
+        use_auth_token: Union[Text, None] = None,
+        **inference_kwargs,
     ):
 
         super().__init__()
@@ -87,9 +92,9 @@ class MultiLabelSegmentation(Pipeline):
         self.segmentation = segmentation
         self.fscore = fscore
         self.share_min_duration = share_min_duration
-        
+
         # load model and send it to GPU (when available and not already on GPU)
-        model = get_model(segmentation)
+        model = get_model(segmentation, use_auth_token=use_auth_token)
         if model.device.type == "cpu":
             (segmentation_device,) = get_devices(needs=1)
             model.to(segmentation_device)
@@ -134,12 +139,16 @@ class MultiLabelSegmentation(Pipeline):
             label: Binarize(
                 onset=self.thresholds[label]["onset"],
                 offset=self.thresholds[label]["offset"],
-                min_duration_on=(self.thresholds[label]["min_duration_on"]
-                                 if not self.share_min_duration
-                                 else self.min_duration_on), # noqa
-                min_duration_off=(self.thresholds[label]["min_duration_off"]
-                                  if not self.share_min_duration
-                                  else self.min_duration_off) , # noqa
+                min_duration_on=(
+                    self.thresholds[label]["min_duration_on"]
+                    if not self.share_min_duration
+                    else self.min_duration_on
+                ),  # noqa
+                min_duration_off=(
+                    self.thresholds[label]["min_duration_off"]
+                    if not self.share_min_duration
+                    else self.min_duration_off
+                ),  # noqa
             )
             for label in self._classes
         }
@@ -185,7 +194,7 @@ class MultiLabelSegmentation(Pipeline):
         for i, label in enumerate(self._classes):
             # extract raw segmentation of current label
             label_segmentation = SlidingWindowFeature(
-                segmentations.data[:, i: i + 1], segmentations.sliding_window
+                segmentations.data[:, i : i + 1], segmentations.sliding_window
             )
             # obtain hard segments
             label_annotation: Annotation = self._binarize[label](label_segmentation)
