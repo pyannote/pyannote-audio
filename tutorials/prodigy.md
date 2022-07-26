@@ -13,33 +13,54 @@ Manually segmenting and labeling audio data is time consuming.  For speaker diar
 
 | Recipe                | Usage                                                                                                            |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| 💬 `pyannote.audio`    | Annotate conversations interactively with model in the loop                                                      |
-| 🦻 `pyannote.pipeline` | Annotate with any [pretrained pipeline](https://huggingface.co/models?other=pyannote-audio-pipeline) in the loop |
-| 🧐 `pyannote.review`   | Merge multiple annotations                                                                                       |
-| 🤲 `pyannote.diff`     | Show differences between two annotations                                                                         |
-| 🗄 `pyannote.database` | Dump annotations as [`pyannote.database`](https://github.com/pyannote/pyannote-database/) protocols              |
+| 💬 `pyannote.diarization`   | Interactive speaker diarization                                                                                  |
+| 🦻 `pyannote.audio`          | Annotate with any [pretrained pipeline](https://huggingface.co/models?other=pyannote-audio-pipeline) in the loop |
+| 🧐 `pyannote.review`         | Merge multiple annotations                                                                                       |
+| 🤲 `pyannote.diff`           | Show differences between two annotations                                                                         |
+| 🗄 `pyannote.database`       | Dump annotations as [`pyannote.database`](https://github.com/pyannote/pyannote-database/) protocols              |
 
 
 ### 💬 `pyannote.audio` | Interactive speaker diarization
 
 ```bash
-prodigy pyannote.audio dataset /path/to/audio.wav
+prodigy pyannote.diarization dataset /path/to/audio.wav
 ```
 
 
-TODO
+![pyannote.diarization screenshot](./assets/pyannote.diarization.PNG)
 
+`pyannote.diarization` recipe will stream `.wav` files in chunks and apply [a pretrained pipeline](https://huggingface.co/models?other=pyannote-audio-pipeline). You can name speakers and each speaker you name will be represented by the average of the embeddings extracted from the regions you named. The regions of the following chunks will be pre-named if their embedding is close enough to that of a known speaker.
+The dictionary of embeddings created in this way is saved in the prodigy home when the recipe is exited. You can therefore resume a previously stopped annotation by starting again with the saved embeddings.
+The chunks are shown with some context at the beginning and end (default to 1s before the start and after the end of each chunks, if possible). This part is not stored in the annotations.
 
+<details>
+<summary>More options</summary>
 
-### 🦻 `pyannote.pipeline` | Annotate with a pretrained pipeline in the loop
+```
+prodigy pyannote.pipeline [options] dataset source
+
+  dataset           Prodigy dataset to save annotations to.
+  source            Path to directory containing audio files to annotate.
+  -pipeline         Name of pretrained pipeline on huggingface.co
+  -chunk DURATION   Split audio files into shorter chunks of that many seconds.
+                    Defaults to 20s.
+  -num_classes      Maximum number of classes for pipelines whose number of classes is not predefined (e.g. pyannote/speaker-diarization).
+  -precision STEP   Temporal precision of keyboard controls, in milliseconds.
+                    Defaults to 200ms.
+  -beep             Produce a beep when the player reaches the end of a region.
+  -qwerty           Change the shortcut with "Q" key to "A".
+
+</details>
+
+### 🦻 `pyannote.audio` | Annotate with a pretrained pipeline in the loop
 
 ```bash
-prodigy pyannote.pipeline dataset /path/to/audio/directory pyannote/speaker-segmentation
+prodigy pyannote.audio dataset /path/to/audio/directory pyannote/speaker-segmentation
 ```
 
 ![pyannote.audio screenshot](./assets/prodigy-pyannote.audio.png)
 
-`pyannote.pipeline` recipe will stream `.wav` files in chunks and apply [a pretrained pipeline](https://huggingface.co/models?other=pyannote-audio-pipeline). You can then adjust the regions manually if needed.
+`pyannote.audio` recipe will stream `.wav` files in chunks and apply [a pretrained pipeline](https://huggingface.co/models?other=pyannote-audio-pipeline). You can then adjust the regions manually if needed.
 
 
 <details>
@@ -57,6 +78,7 @@ prodigy pyannote.pipeline [options] dataset source pipeline
   -precision STEP   Temporal precision of keyboard controls, in milliseconds.
                     Defaults to 200ms.
   -beep             Produce a beep when the player reaches the end of a region.
+  -qwerty           Change the shortcut with "Q" key to "A".
 ```
 
 </details>
@@ -88,6 +110,7 @@ prodigy pyannote.review [options] dataset source annotations
   -precision STEP   Temporal precision of keyboard controls, in milliseconds.
                     Defaults to 200ms.
   -beep             Produce a beep when the player reaches the end of a region.
+  -qwerty           Change the shortcut with "Q" key to "A".
 ```
 
 </details>
@@ -140,12 +163,13 @@ Though `pyannote.audio` recipes are built on top of the Prodigy [audio interface
 | -------------------------------- | ------------------------------ |
 | `left` / `right` (+ `w`)         | Shift player cursor (speed up) |
 | `up` / `down`                    | Switch active region           |
-| `shift + left` / `shift + right` | Shift active region start time |
-| `ctrl + left` / `ctrl + right`   | Shift active region end time   |
+| `Q + left` / `Q + right`         | Shift active region start time |
+| `D + left` / `D + right`         | Shift active region end time   |
 | `shift + up`                     | Create a new region            |
 | `shift + down` / `backspace`     | Remove active region           |
 | `spacebar`                       | Play/pause player              |
 | `escape`                         | Ignore this sample             |
+| `U`                              | Undo actions                   |
 | `enter`                          | Validate annotation            |
 
 
