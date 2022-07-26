@@ -28,6 +28,7 @@ from typing import Any, Callable, List, Optional, Text, Tuple, Union
 import numpy as np
 import torch
 from einops import rearrange
+from pyannote.core import Segment, SlidingWindow, SlidingWindowFeature
 from pytorch_lightning.utilities.memory import is_oom_error
 
 from pyannote.audio.core.io import AudioFile
@@ -35,7 +36,6 @@ from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Resolution
 from pyannote.audio.utils.permutation import mae_cost_func, permutate
 from pyannote.audio.utils.progress import InferenceProgressHook
-from pyannote.core import Segment, SlidingWindow, SlidingWindowFeature
 
 TaskName = Union[Text, None]
 
@@ -566,10 +566,13 @@ class Inference:
 
         num_frames_left = round(num_frames * warm_up[0])
         num_frames_right = round(num_frames * warm_up[1])
+
         num_frames_step = round(num_frames * chunks.step / chunks.duration)
-        assert (
-            num_frames - num_frames_left - num_frames_right > num_frames_step
-        ), f"Total `warm_up` is so large ({sum(warm_up) * 100:g}% of each chunk) that resulting trimmed scores does not cover a whole step ({chunks.step:g}s)"
+        if num_frames - num_frames_left - num_frames_right < num_frames_step:
+            warnings.warn(
+                f"Total `warm_up` is so large ({sum(warm_up) * 100:g}% of each chunk) "
+                f"that resulting trimmed scores does not cover a whole step ({chunks.step:g}s)"
+            )
         new_data = scores.data[:, num_frames_left : num_frames - num_frames_right]
 
         new_chunks = SlidingWindow(
@@ -603,12 +606,12 @@ class Inference:
             Defaults to (k, k) with k = chunk_duration / chunk_step - 1
         cost_func : callable
             Cost function used to find the optimal mapping between two chunks.
-            Expects two (num_frames, num_classes) torch.tensor as input 
-            and returns cost as a (num_classes, ) torch.tensor 
+            Expects two (num_frames, num_classes) torch.tensor as input
+            and returns cost as a (num_classes, ) torch.tensor
             Defaults to mean absolute error (utils.permutations.mae_cost_func)
         match_func : callable
             Function used to decide whether two speakers mapped by the optimal
-            mapping actually are a match. 
+            mapping actually are a match.
             Expects two (num_frames, ) np.ndarray and the cost (from cost_func)
             and returns a boolean. Defaults to always returning True.
         """

@@ -114,12 +114,38 @@ class SpeechBrainPretrainedSpeakerEmbedding:
 
     @cached_property
     def min_num_samples(self) -> int:
-        # make it work for
-        return 640
+
+        lower, upper = 2, round(0.5 * self.sample_rate)
+        middle = (lower + upper) // 2
+        while lower + 1 < upper:
+            try:
+                _ = self.classifier_.encode_batch(
+                    torch.randn(1, middle).to(self.device)
+                )
+                upper = middle
+            except RuntimeError:
+                lower = middle
+
+            middle = (lower + upper) // 2
+
+        return upper
 
     def __call__(
         self, waveforms: torch.Tensor, masks: torch.Tensor = None
     ) -> np.ndarray:
+        """
+
+        Parameters
+        ----------
+        waveforms : (batch_size, num_channels, num_samples)
+            Only num_channels == 1 is supported.
+        masks : (batch_size, num_samples), optional
+
+        Returns
+        -------
+        embeddings : (batch_size, dimension)
+
+        """
 
         batch_size, num_channels, num_samples = waveforms.shape
         assert num_channels == 1

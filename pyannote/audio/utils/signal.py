@@ -37,7 +37,6 @@ from typing import Optional, Union
 import einops
 import numpy as np
 import scipy.signal
-
 from pyannote.core import Annotation, Segment, SlidingWindowFeature, Timeline
 from pyannote.core.utils.generators import pairwise
 
@@ -46,7 +45,7 @@ from pyannote.core.utils.generators import pairwise
 def binarize(
     scores,
     onset: float = 0.5,
-    offset: float = 0.5,
+    offset: Optional[float] = None,
     initial_state: Optional[Union[bool, np.ndarray]] = None,
 ):
     """(Batch) hysteresis thresholding
@@ -56,9 +55,9 @@ def binarize(
     scores : numpy.ndarray or SlidingWindowFeature
         (num_chunks, num_frames, num_classes)- or (num_frames, num_classes)-shaped scores.
     onset : float, optional
-        Onset threshold
+        Onset threshold. Defaults to 0.5.
     offset : float, optional
-        Offset threshold
+        Offset threshold. Defaults to `onset`.
     initial_state : np.ndarray or bool, optional
         Initial state.
 
@@ -80,7 +79,7 @@ def binarize(
 def binarize_ndarray(
     scores: np.ndarray,
     onset: float = 0.5,
-    offset: float = 0.5,
+    offset: Optional[float] = None,
     initial_state: Optional[Union[bool, np.ndarray]] = None,
 ):
     """(Batch) hysteresis thresholding
@@ -90,9 +89,9 @@ def binarize_ndarray(
     scores : numpy.ndarray
         (num_frames, num_classes)-shaped scores.
     onset : float, optional
-        Onset threshold
+        Onset threshold. Defaults to 0.5.
     offset : float, optional
-        Offset threshold
+        Offset threshold. Defaults to `onset`.
     initial_state : np.ndarray or bool, optional
         Initial state.
 
@@ -101,6 +100,8 @@ def binarize_ndarray(
     binarized : same as scores
         Binarized scores with same shape and type as scores.
     """
+
+    offset = offset or onset
 
     batch_size, num_frames = scores.shape
 
@@ -144,7 +145,7 @@ def binarize_ndarray(
 def binarize_swf(
     scores: SlidingWindowFeature,
     onset: float = 0.5,
-    offset: float = 0.5,
+    offset: Optional[float] = None,
     initial_state: Optional[bool] = None,
 ):
     """(Batch) hysteresis thresholding
@@ -154,9 +155,9 @@ def binarize_swf(
     scores : SlidingWindowFeature
         (num_chunks, num_frames, num_classes)- or (num_frames, num_classes)-shaped scores.
     onset : float, optional
-        Onset threshold
+        Onset threshold. Defaults to 0.5.
     offset : float, optional
-        Offset threshold
+        Offset threshold. Defaults to `onset`.
     initial_state : np.ndarray or bool, optional
         Initial state.
 
@@ -166,6 +167,8 @@ def binarize_swf(
         Binarized scores with same shape and type as scores.
 
     """
+
+    offset = offset or onset
 
     if scores.data.ndim == 2:
         num_frames, num_classes = scores.data.shape
@@ -209,7 +212,7 @@ class Binarize:
     onset : float, optional
         Onset threshold. Defaults to 0.5.
     offset : float, optional
-        Offset threshold. Defaults to 0.5.
+        Offset threshold. Defaults to `onset`.
     min_duration_on : float, optional
         Remove active regions shorter than that many seconds. Defaults to 0s.
     min_duration_off : float, optional
@@ -230,7 +233,7 @@ class Binarize:
     def __init__(
         self,
         onset: float = 0.5,
-        offset: float = 0.5,
+        offset: Optional[float] = None,
         min_duration_on: float = 0.0,
         min_duration_off: float = 0.0,
         pad_onset: float = 0.0,
@@ -240,7 +243,7 @@ class Binarize:
         super().__init__()
 
         self.onset = onset
-        self.offset = offset
+        self.offset = offset or onset
 
         self.pad_onset = pad_onset
         self.pad_offset = pad_offset

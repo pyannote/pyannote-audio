@@ -23,30 +23,27 @@
 """Speaker diarization pipelines"""
 
 import itertools
-import warnings
-from typing import Callable, Optional, Text
+import math
+from typing import Callable, Optional
 
 import numpy as np
 import torch
-from pyannote.core import Annotation, Segment, SlidingWindow, SlidingWindowFeature
-from pyannote.core.utils.distance import pdist
+from einops import rearrange
+from pyannote.core import Annotation, SlidingWindow, SlidingWindowFeature
 from pyannote.metrics.diarization import GreedyDiarizationErrorRate
 from pyannote.pipeline.parameter import Uniform
-from scipy.spatial.distance import squareform
 
 from pyannote.audio import Audio, Inference, Model, Pipeline
 from pyannote.audio.core.io import AudioFile
+from pyannote.audio.pipelines.clustering import Clustering
+from pyannote.audio.pipelines.speaker_verification import PretrainedSpeakerEmbedding
 from pyannote.audio.pipelines.utils import (
     PipelineModel,
     SpeakerDiarizationMixin,
     get_devices,
     get_model,
 )
-from pyannote.audio.utils.permutation import mae_cost_func, permutate
 from pyannote.audio.utils.signal import binarize
-
-from .clustering import Clustering, NearestClusterAssignment
-from .speaker_verification import PretrainedSpeakerEmbedding
 
 
 def batchify(iterable, batch_size: int = 32, fillvalue=None):
@@ -62,64 +59,82 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
     Parameters
     ----------
     segmentation : Model, str, or dict, optional
-        Pretrained segmentation model. Defaults to "pyannote/segmentation".
+        Pretrained segmentation model. Defaults to "pyannote/segmentation@2022.07".
         See pyannote.audio.pipelines.utils.get_model for supported format.
+    segmentation_step: float, optional
+        The segmentation model is applied on a window sliding over the whole audio file.
+        `segmentation_step` controls the step of this window, provided as a ratio of its
+        duration. Defaults to 0.1 (i.e. 90% overlap between two consecuive windows).
     embedding : Model, str, or dict, optional
-        Pretrained embedding model. Defaults to "pyannote/segmentation".
+        Pretrained embedding model. Defaults to "pyannote/embedding@2022.07".
         See pyannote.audio.pipelines.utils.get_model for supported format.
-    clustering : {"AgglomerativeClustering", "SpectralClustering"}, optional
-        Defaults to "AgglomerativeClustering".
-    expects_num_speakers : bool, optional
-        Defaults to False.
+    embedding_exclude_overlap : bool, optional
+        Exclude overlapping speech regions when extracting embeddings.
+        Defaults (False) to use the whole speech.
+    clustering : str, optional
+        Clustering algorithm. See pyannote.audio.pipelines.clustering.Clustering
+        for available options. Defaults to "HiddenMarkovModelClustering".
     segmentation_batch_size : int, optional
         Batch size used for speaker segmentation. Defaults to 32.
     embedding_batch_size : int, optional
         Batch size used for speaker embedding. Defaults to 32.
 
-    Hyper-parameters
-    ----------------
-
     Usage
     -----
     >>> pipeline = SpeakerDiarization()
     >>> diarization = pipeline("/path/to/audio.wav")
-    >>> diarization = pipeline("/path/to/audio.wav", num_speakers=2)
+    >>> diarization = pipeline("/path/to/audio.wav", num_speakers=4)
+    >>> diarization = pipeline("/path/to/audio.wav", min_speakers=2, max_speakers=10)
 
     """
 
     def __init__(
         self,
-        segmentation: PipelineModel = "pyannote/segmentation",
-        embedding: PipelineModel = "pyannote/embedding",
-        clustering: Text = "AgglomerativeClustering",
-        expects_num_speakers: bool = False,
-        segmentation_batch_size: int = 32,
+        segmentation: PipelineModel = "pyannote/segmentation@2022.07",
+        segmentation_step: float = 0.1,
+        embedding: PipelineModel = "speechbrain/spkrec-ecapa-voxceleb@5c0be3875fda05e81f3c004ed8c7c06be308de1e",
+        embedding_exclude_overlap: bool = False,
+        clustering: str = "HiddenMarkovModelClustering",
         embedding_batch_size: int = 32,
+        segmentation_batch_size: int = 32,
     ):
 
         super().__init__()
 
         self.segmentation = segmentation
-        self.embedding = embedding
-        self.klustering = clustering
-        self.expects_num_speakers = expects_num_speakers
         self.segmentation_batch_size = segmentation_batch_size
+        self.segmentation_step = segmentation_step
+
+        self.embedding = embedding
+        self.embedding_batch_size = embedding_batch_size
+        self.embedding_exclude_overlap = embedding_exclude_overlap
+
+        self.klustering = clustering
 
         seg_device, emb_device = get_devices(needs=2)
 
         model: Model = get_model(segmentation)
         model.to(seg_device)
+
         self._segmentation = Inference(
-            model, skip_aggregation=True, batch_size=self.segmentation_batch_size
+            model,
+            duration=model.specifications.duration,
+            step=self.segmentation_step * model.specifications.duration,
+            skip_aggregation=True,
+            batch_size=self.segmentation_batch_size,
         )
         self._frames: SlidingWindow = self._segmentation.model.introspection.frames
+        self.segmentation_onset = Uniform(0.1, 0.9)
 
-        self._embedding = PretrainedSpeakerEmbedding(self.embedding, device=emb_device)
-        self.embedding_batch_size = embedding_batch_size or len(
-            model.specifications.classes
-        )
+        if self.klustering == "OracleClustering":
+            metric = "not_applicable"
 
-        self._audio = Audio(sample_rate=self._embedding.sample_rate, mono=True)
+        else:
+            self._embedding = PretrainedSpeakerEmbedding(
+                self.embedding, device=emb_device
+            )
+            self._audio = Audio(sample_rate=self._embedding.sample_rate, mono=True)
+            metric = self._embedding.metric
 
         try:
             Klustering = Clustering[clustering]
@@ -127,48 +142,28 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             raise ValueError(
                 f'clustering must be one of [{", ".join(list(Clustering.__members__))}]'
             )
-        self.clustering = Klustering.value(
-            metric=self._embedding.metric,
-            expects_num_clusters=self.expects_num_speakers,
-        )
-        self.assignment = NearestClusterAssignment(
-            metric=self._embedding.metric, allow_reassignment=True
-        )
-
-        # hyper-parameters
-
-        # stitching
-        self.warm_up = 0.05
-        self.stitch_threshold = Uniform(0.0, 1.0)
-
-        # hyper-parameters used for hysteresis thresholding
-        self.onset = Uniform(0.01, 0.99)
-        self.offset = Uniform(0.01, 0.99)
-
-        # hyper-parameters used for post-processing i.e. removing short speech turns
-        # or filling short gaps between speech turns of one speaker
-        self.min_duration_on = Uniform(0.0, 1.0)
-        self.min_duration_off = Uniform(0.0, 1.0)
-
-        # minimum amount of speech needed to use speaker in clustering
-        self.min_activity = Uniform(0.0, 10.0)
+        self.clustering = Klustering.value(metric=metric)
 
     def default_parameters(self):
-        # parameters optimized on DIHARD 3 development set
+
         if (
-            self.segmentation == "pyannote/segmentation"
-            and self.embedding == "speechbrain/spkrec-ecapa-voxceleb"
-            and self.klustering == "AgglomerativeClustering"
-            and not self.expects_num_speakers
+            self.segmentation == "pyannote/segmentation@2022.07"
+            and self.segmentation_step == 0.1
+            and self.embedding
+            == "speechbrain/spkrec-ecapa-voxceleb@5c0be3875fda05e81f3c004ed8c7c06be308de1e"
+            and self.embedding_exclude_overlap == True
+            and self.clustering == "HiddenMarkovModelClustering"
         ):
             return {
-                "onset": 0.810,
-                "offset": 0.481,
-                "min_duration_on": 0.055,
-                "min_duration_off": 0.098,
-                "min_activity": 6.073,
-                "stitch_threshold": 0.040,
-                "clustering": {"method": "average", "threshold": 0.595},
+                "segmentation_onset": 0.58,
+                "clustering": {
+                    "single_cluster_detection": {
+                        "quantile": 0.05,
+                        "threshold": 1.15,
+                    },
+                    "covariance_type": "diag",
+                    "threshold": 0.35,
+                },
             }
 
         raise NotImplementedError()
@@ -179,16 +174,216 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             yield f"SPEAKER_{speaker:02d}"
             speaker += 1
 
-    CACHED_SEGMENTATION = "cache/segmentation/inference"
+    @property
+    def CACHED_SEGMENTATION(self):
+        return "training_cache/segmentation"
 
-    def stitch_match_func(
-        self, this: np.ndarray, that: np.ndarray, cost: float
-    ) -> bool:
-        return (
-            np.any(this > self.onset)
-            and np.any(that > self.onset)
-            and cost < self.stitch_threshold
+    def get_segmentations(self, file) -> SlidingWindowFeature:
+        """Apply segmentation model
+
+        Parameter
+        ---------
+        file : AudioFile
+
+        Returns
+        -------
+        segmentations : (num_chunks, num_frames, num_speakers) SlidingWindowFeature
+        """
+        if self.training:
+            if self.CACHED_SEGMENTATION in file:
+                segmentations = file[self.CACHED_SEGMENTATION]
+            else:
+                segmentations = self._segmentation(file)
+                file[self.CACHED_SEGMENTATION] = segmentations
+        else:
+            segmentations: SlidingWindowFeature = self._segmentation(file)
+
+        return segmentations
+
+    def get_embeddings(
+        self,
+        file,
+        binary_segmentations: SlidingWindowFeature,
+        exclude_overlap: bool = False,
+    ):
+        """Extract embeddings for each (chunk, speaker) pair
+
+        Parameters
+        ----------
+        file : AudioFile
+        binary_segmentations : (num_chunks, num_frames, num_speakers) SlidingWindowFeature
+            Binarized segmentation.
+        exclude_overlap : bool, optional
+            Exclude overlapping speech regions when extracting embeddings.
+            In case non-overlapping speech is too short, use the whole speech.
+
+        Returns
+        -------
+        embeddings : (num_chunks, num_speakers, dimension) array
+        """
+
+        # when optimizing the hyper-parameters of this pipeline with frozen "segmentation_onset",
+        # one can reuse the embeddings from the first trial, bringing a massive speed up to
+        # the optimization process (and hence allowing to use a larger search space).
+        if self.training:
+
+            # we only re-use embeddings if they were extracted based on the same value of the
+            # "segmentation_onset" hyperparameter and "embedding_exclude_overlap" parameter.
+            cache = file.get("training_cache/embeddings", dict())
+            if (
+                cache.get("segmentation_onset", None) == self.segmentation_onset
+                and cache.get("embedding_exclude_overlap", None)
+                == self.embedding_exclude_overlap
+            ):
+                return cache["embeddings"]
+
+        duration = binary_segmentations.sliding_window.duration
+        num_chunks, num_frames, _ = binary_segmentations.data.shape
+
+        if exclude_overlap:
+            # minimum number of samples needed to extract an embedding
+            # (a lower number of samples would result in an error)
+            min_num_samples = self._embedding.min_num_samples
+
+            # corresponding minimum number of frames
+            num_samples = duration * self._embedding.sample_rate
+            min_num_frames = math.ceil(num_frames * min_num_samples / num_samples)
+
+            # zero-out frames with overlapping speech
+            clean_frames = 1.0 * (
+                np.sum(binary_segmentations.data, axis=2, keepdims=True) < 2
+            )
+            clean_segmentations = SlidingWindowFeature(
+                binary_segmentations.data * clean_frames,
+                binary_segmentations.sliding_window,
+            )
+
+        else:
+            min_num_frames = -1
+            clean_segmentations = SlidingWindowFeature(
+                binary_segmentations.data, binary_segmentations.sliding_window
+            )
+
+        def iter_waveform_and_mask():
+            for (chunk, masks), (_, clean_masks) in zip(
+                binary_segmentations, clean_segmentations
+            ):
+                # chunk: Segment(t, t + duration)
+                # masks: (num_frames, local_num_speakers) np.ndarray
+
+                waveform, _ = self._audio.crop(
+                    file,
+                    chunk,
+                    duration=duration,
+                    mode="pad",
+                )
+                # waveform: (1, num_samples) torch.Tensor
+
+                # mask may contain NaN (in case of partial stitching)
+                masks = np.nan_to_num(masks, nan=0.0).astype(np.float32)
+                clean_masks = np.nan_to_num(clean_masks, nan=0.0).astype(np.float32)
+
+                for mask, clean_mask in zip(masks.T, clean_masks.T):
+                    # mask: (num_frames, ) np.ndarray
+
+                    if np.sum(clean_mask) > min_num_frames:
+                        used_mask = clean_mask
+                    else:
+                        used_mask = mask
+
+                    yield waveform[None], torch.from_numpy(used_mask)[None]
+                    # w: (1, 1, num_samples) torch.Tensor
+                    # m: (1, num_frames) torch.Tensor
+
+        batches = batchify(
+            iter_waveform_and_mask(),
+            batch_size=self.embedding_batch_size,
+            fillvalue=(None, None),
         )
+
+        embedding_batches = []
+
+        for batch in batches:
+            waveforms, masks = zip(*filter(lambda b: b[0] is not None, batch))
+
+            waveform_batch = torch.vstack(waveforms)
+            # (batch_size, 1, num_samples) torch.Tensor
+
+            mask_batch = torch.vstack(masks)
+            # (batch_size, num_frames) torch.Tensor
+
+            embedding_batch: np.ndarray = self._embedding(
+                waveform_batch, masks=mask_batch
+            )
+            # (batch_size, dimension) np.ndarray
+
+            embedding_batches.append(embedding_batch)
+
+        embedding_batches = np.vstack(embedding_batches)
+
+        embeddings = rearrange(embedding_batches, "(c s) d -> c s d", c=num_chunks)
+
+        # caching embeddings for subsequent trials
+        # (see comments at the top of this method for more details)
+        if self.training:
+            file["training_cache/embeddings"] = {
+                "segmentation_onset": self.segmentation_onset,
+                "embedding_exclude_overlap": self.embedding_exclude_overlap,
+                "embeddings": embeddings,
+            }
+
+        return embeddings
+
+    def reconstruct(
+        self,
+        segmentations: SlidingWindowFeature,
+        hard_clusters: np.ndarray,
+        count: SlidingWindowFeature,
+    ) -> SlidingWindowFeature:
+        """Build final discrete diarization out of clustered segmentation
+
+        Parameters
+        ----------
+        segmentations : (num_chunks, num_frames, num_speakers) SlidingWindowFeature
+            Raw speaker segmentation.
+        hard_clusters : (num_chunks, num_speakers) array
+            Output of clustering step.
+        count : (total_num_frames, 1) SlidingWindowFeature
+            Instantaneous number of active speakers.
+
+        Returns
+        -------
+        discrete_diarization : SlidingWindowFeature
+            Discrete (0s and 1s) diarization.
+        """
+
+        num_chunks, num_frames, local_num_speakers = segmentations.data.shape
+
+        num_clusters = np.max(hard_clusters) + 1
+        clustered_segmentations = np.NAN * np.zeros(
+            (num_chunks, num_frames, num_clusters)
+        )
+
+        for c, (cluster, (chunk, segmentation)) in enumerate(
+            zip(hard_clusters, segmentations)
+        ):
+
+            # cluster is (local_num_speakers, )-shaped
+            # segmentation is (num_frames, local_num_speakers)-shaped
+            for k in np.unique(cluster):
+                if k == -2:
+                    continue
+
+                # TODO: can we do better than this max here?
+                clustered_segmentations[c, :, k] = np.max(
+                    segmentation[:, cluster == k], axis=1
+                )
+
+        clustered_segmentations = SlidingWindowFeature(
+            clustered_segmentations, segmentations.sliding_window
+        )
+
+        return self.to_diarization(clustered_segmentations, count)
 
     def apply(
         self,
@@ -229,303 +424,80 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             max_speakers=max_speakers,
         )
 
-        if self.expects_num_speakers and num_speakers is None:
-
-            if "annotation" in file:
-                num_speakers = len(file["annotation"].labels())
-
-                if not self.training:
-                    warnings.warn(
-                        f"This pipeline expects the number of speakers (num_speakers) to be given. "
-                        f"It has been automatically set to {num_speakers:d} based on reference annotation. "
-                    )
-
-            else:
-                raise ValueError(
-                    "This pipeline expects the number of speakers (num_speakers) to be given."
-                )
-
-        # apply segmentation model (only if needed)
-        # output shape is (num_chunks, num_frames, local_num_speakers)
-        if self.training:
-            if self.CACHED_SEGMENTATION in file:
-                segmentations = file[self.CACHED_SEGMENTATION]
-            else:
-                segmentations = self._segmentation(file)
-                file[self.CACHED_SEGMENTATION] = segmentations
-        else:
-            segmentations: SlidingWindowFeature = self._segmentation(file)
-
+        segmentations = self.get_segmentations(file)
         hook("segmentation", segmentations)
+        #   shape: (num_chunks, num_frames, local_num_speakers)
 
         # estimate frame-level number of instantaneous speakers
         count = self.speaker_count(
             segmentations,
-            onset=self.onset,
-            offset=self.offset,
-            warm_up=(self.warm_up, self.warm_up),
+            onset=self.segmentation_onset,
             frames=self._frames,
         )
         hook("speaker_counting", count)
+        #   shape: (num_frames, 1)
+        #   dtype: int
 
-        # trim warm-up regions and stitch
-        segmentations = Inference.stitch(
-            Inference.trim(segmentations, warm_up=(self.warm_up, self.warm_up)),
-            frames=self._frames,
-            lookahead=None,  # TODO: make it an hyper-parameter?,
-            cost_func=mae_cost_func,
-            match_func=self.stitch_match_func,
-        )
-        hook("local_stitching", segmentations)
-
-        # stitched chunks are longer than original chunks
-        stitched_chunk_duration: float = segmentations.sliding_window.duration
-        num_chunks, num_frames, local_num_speakers = segmentations.data.shape
-
-        # apply hysteresis thresholding on each (stitched) chunk
-        # bs[c, f, s] = 1 iff speaker s is active at frame f of chunk c
+        # binarize segmentation
         binarized_segmentations: SlidingWindowFeature = binarize(
-            segmentations, onset=self.onset, offset=self.offset, initial_state=False
-        )
-        hook("speaker_activation", binarized_segmentations)
-
-        # mask overlapping speech regions
-        # ms[c, f, s] = 1 iff speaker s is the only active speaker at frame f of chunk c
-        masked_segmentations = SlidingWindowFeature(
-            binarized_segmentations.data
-            * (np.sum(binarized_segmentations.data, axis=-1, keepdims=True) == 1.0),
-            binarized_segmentations.sliding_window,
-        )
-        hook("single_speaker_activation", masked_segmentations)
-
-        # skip speakers that are not active
-        SKIP = 0
-        speaker_status = np.full((num_chunks, local_num_speakers), SKIP, dtype=np.int)
-
-        # keep speakers that are active in at least one frame
-        KEEP = 1
-        speaker_status[np.any(binarized_segmentations.data, axis=1)] = KEEP
-
-        # return empty annotation in the (corner) case where no speaker is ever active
-        if np.sum(speaker_status == KEEP) == 0:
-            return Annotation(uri=file["uri"])
-
-        # mark speakers who speaker long enough as usable for clustering
-        # (handle corner case where no speaker speaks long enough by lowering
-        # value of min_activity until at least one speaker passes the threshold)
-        LONG = 2
-        min_activity = self.min_activity
-        while np.sum(speaker_status == LONG) == 0:
-            speaker_status[
-                np.mean(masked_segmentations, axis=1) * stitched_chunk_duration
-                > min_activity
-            ] = LONG
-            min_activity *= 0.9
-
-        hook("speaker_status", speaker_status)
-
-        # compute speaker embeddings
-        def iter_waveform_and_mask():
-            for status, (chunk, ms) in zip(speaker_status, masked_segmentations):
-                active = status > SKIP
-                if np.sum(active) == 0:
-                    continue
-
-                waveform: torch.Tensor = self._audio.crop(
-                    file, chunk, duration=stitched_chunk_duration, mode="pad"
-                )[0].unsqueeze(0)
-                for s in np.where(active)[0]:
-                    mask = torch.from_numpy(ms[:, s]).float()
-                    yield waveform, mask
-
-        batches = batchify(
-            iter_waveform_and_mask(),
-            batch_size=self.embedding_batch_size,
-            fillvalue=(None, None),
+            segmentations,
+            onset=self.segmentation_onset,
+            initial_state=False,
         )
 
-        embedding_batches = []
-
-        for batch in batches:
-            waveforms, masks = zip(*filter(lambda b: b[0] is not None, batch))
-            waveform_batch = torch.vstack(waveforms)
-            mask_batch = torch.vstack(masks)
-            embedding_batch: np.ndarray = self._embedding(
-                waveform_batch, masks=mask_batch
-            )
-            embedding_batches.append(embedding_batch)
-
-        # stack and unit-normalized embeddings
-        embeddings = np.zeros(
-            (num_chunks, local_num_speakers, self._embedding.dimension)
-        )
-        embeddings[speaker_status > SKIP] = np.vstack(embedding_batches)
-
-        with np.errstate(divide="ignore", invalid="ignore"):
-            embeddings /= np.linalg.norm(embeddings, axis=-1, keepdims=True)
-        hook("speaker_embedding", embeddings)
-
-        # skip speakers for which embedding extraction failed for some reason
-        speaker_status[np.any(np.isnan(embeddings), axis=-1)] = SKIP
-
-        # # compute "cannot link" constraints
-        # chunk_idx = np.tile(np.arange(num_chunks), (local_num_speakers, 1)).T
-        # same_chunk = 1.0 * squareform(
-        #     pdist(rearrange(chunk_idx, "c s -> (c s)"), metric="equal")
-        # )
-        # # shape is (c s) x (c s)
-
-        if not hook.missing and "annotation" in file:
-
-            # log actual distance matrix
-
-            hook(
-                "@clustering/distance",
-                squareform(
-                    pdist(
-                        embeddings[speaker_status == LONG],
-                        metric=self._embedding.metric,
-                    )
-                ),
-            )
-
-            # log oracle distance matrix (0 = same speaker / 1 = different speaker)
-            # oracle[i, j] = 0 if same speaker
-            #              = 1 otherwise
-            # same_chunk[i, j] = 1 if same chunk
-            #                  = 0 otherwise
-            def oracle_cost_func(Y, y):
-                return torch.from_numpy(
-                    np.nanmean(np.abs(Y.numpy() - y.numpy()), axis=0)
-                )
-
-            chunks = segmentations.sliding_window
-            reference = file["annotation"].discretize(
-                support=Segment(
-                    chunks[0].start, chunks[num_chunks - 1].end + chunks.step
-                ),
-                resolution=self._frames,
-            )
-
-            oracle_clusters = []
-            chunk_idx = []
-            for (
-                c,
-                (chunk, segmentation),
-            ) in enumerate(segmentations):
-
-                if np.all(speaker_status[c] != LONG):
-                    continue
-
-                segmentation = segmentation[np.newaxis, :, speaker_status[c] == LONG]
-
-                local_reference = reference.crop(chunk)
-                _, (permutation,) = permutate(
-                    segmentation,
-                    local_reference[:num_frames],
-                    cost_func=oracle_cost_func,
-                )
-                active_reference = np.any(local_reference > 0, axis=0)
-                oracle_clusters.extend(
-                    [
-                        i if ((i is not None) and (active_reference[i])) else -1
-                        for i in permutation
-                    ]
-                )
-                chunk_idx.extend(
-                    [
-                        c if ((i is not None) and (active_reference[i])) else -1
-                        for i in permutation
-                    ]
-                )
-
-            oracle_clusters = np.array(oracle_clusters)
-            oracle = 1.0 * squareform(pdist(oracle_clusters, metric="equal"))
-            np.fill_diagonal(oracle, True)
-            oracle[oracle_clusters == -1] = -1
-            oracle[:, oracle_clusters == -1] = -1
-            hook("@clustering/oracle", oracle)
-
-            chunk_idx = np.array(chunk_idx)
-            same_chunk = 1.0 * squareform(pdist(chunk_idx, metric="equal"))
-            np.fill_diagonal(same_chunk, True)
-            hook("@clustering/same_chunk", same_chunk)
-
-        # perform clustering on (LONG) speaker embedding
-        # clusters[chunk_id x local_num_speakers + speaker_id] = k
-        # * k=-2                if speaker is inactive
-        # * k=-1                if speaker is active but not assigned to any cluster
-        # * k in {0, ... K - 1} if speaker is active and is assigned to cluster k
-
-        clusters = np.full((num_chunks, local_num_speakers), -1, dtype=np.int)
-        clusters[speaker_status == SKIP] = -2
-
-        if num_speakers == 1 or np.sum(speaker_status == LONG) < 2:
-            clusters[speaker_status == LONG] = 0
-            num_clusters = 1
-
+        if self.klustering == "OracleClustering":
+            embeddings = None
         else:
-            clusters[speaker_status == LONG] = self.clustering(
-                embeddings[speaker_status == LONG],
-                num_clusters=num_speakers,
-                min_clusters=min_speakers,
-                max_clusters=max_speakers,
+
+            embeddings = self.get_embeddings(
+                file,
+                binarized_segmentations,
+                exclude_overlap=self.embedding_exclude_overlap,
             )
-            num_clusters = np.max(clusters) + 1
+            hook("embeddings", embeddings)
+            #   shape: (num_chunks, local_num_speakers, dimension)
 
-            # corner case where clustering fails to converge and returns only -1 labels
-            if num_clusters == 0:
-                clusters[speaker_status == LONG] = 0
-                num_clusters = 1
-
-        hook("clustering", clusters)
-
-        # assign (active) speakers to clusters
-
-        clusters[speaker_status != SKIP] = self.assignment(
-            embeddings[speaker_status != SKIP], clusters[speaker_status != SKIP]
+        hard_clusters, _ = self.clustering(
+            embeddings=embeddings,
+            segmentations=binarized_segmentations,
+            num_clusters=num_speakers,
+            min_clusters=min_speakers,
+            max_clusters=max_speakers,
+            file=file,  # <== for oracle clustering
+            frames=self._frames,  # <== for oracle clustering
         )
-        hook("assignment", clusters)
+        #   hard_clusters: (num_chunks, num_speakers)
 
-        # build final aggregated speaker activations
+        # reconstruct discrete diarization from raw hard clusters
 
-        clustered_segmentations = np.NAN * np.zeros(
-            (num_chunks, num_frames, num_clusters)
+        # keep track of inactive speakers
+        inactive_speakers = np.sum(binarized_segmentations.data, axis=1) == 0
+        #   shape: (num_chunks, num_speakers)
+
+        hard_clusters[inactive_speakers] = -2
+        discrete_diarization = self.reconstruct(
+            segmentations,
+            hard_clusters,
+            count,
         )
-
-        for c, (cluster, (chunk, segmentation)) in enumerate(
-            zip(clusters, segmentations)
-        ):
-
-            # cluster is (local_num_speakers, )-shaped
-            # segmentation is (num_frames, local_num_speakers)-shaped
-            for k in np.unique(cluster):
-                if k == -2:
-                    continue
-
-                clustered_segmentations[c, :, k] = np.max(
-                    segmentation[:, cluster == k], axis=1
-                )
-
-        clustered_segmentations = SlidingWindowFeature(
-            clustered_segmentations, segmentations.sliding_window
-        )
-        discrete_diarization = self.to_diarization(clustered_segmentations, count)
-
-        hook("global_stitching", discrete_diarization)
+        hook("discrete_diarization", discrete_diarization)
 
         # convert to continuous diarization
         diarization = self.to_annotation(
             discrete_diarization,
-            min_duration_on=self.min_duration_on,
-            min_duration_off=self.min_duration_off,
+            min_duration_on=0.0,
+            min_duration_off=0.0,
         )
-
         diarization.uri = file["uri"]
 
+        # when reference is available, use it to map hypothesized speakers
+        # to reference speakers (this makes later error analysis easier
+        # but does not modify the actual output of the diarization pipeline)
         if "annotation" in file:
             return self.optimal_mapping(file["annotation"], diarization)
 
+        # when reference is not available, rename hypothesized speakers
+        # to human-readable SPEAKER_00, SPEAKER_01, ...
         return diarization.rename_labels(
             {
                 label: expected_label
@@ -535,49 +507,3 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
     def get_metric(self) -> GreedyDiarizationErrorRate:
         return GreedyDiarizationErrorRate(collar=0.0, skip_overlap=False)
-
-
-class SpeakerDiarizationWithOracleSegmentation(SpeakerDiarization):
-    """Speaker diarization pipeline with oracle segmentation"""
-
-    def oracle_segmentation(self, file) -> SlidingWindowFeature:
-        file_duration: float = self._audio.get_duration(file)
-
-        reference: Annotation = file["annotation"]
-        labels = reference.labels()
-        if self._oracle_num_speakers > len(labels):
-            num_missing = self._oracle_num_speakers - len(labels)
-            labels += [
-                f"FakeSpeakerForOracleSegmentationInference{i:d}"
-                for i in range(num_missing)
-            ]
-
-        window = SlidingWindow(
-            start=0.0, duration=self._oracle_duration, step=self._oracle_step
-        )
-
-        segmentations = []
-        for chunk in window(Segment(0.0, file_duration)):
-            chunk_segmentation: SlidingWindowFeature = reference.discretize(
-                chunk,
-                resolution=self._frames,
-                labels=labels,
-                duration=self._oracle_duration,
-            )
-            # keep `self._oracle_num_speakers`` most talkative speakers
-            most_talkative_index = np.argsort(-np.sum(chunk_segmentation, axis=0))[
-                : self._oracle_num_speakers
-            ]
-
-            segmentations.append(chunk_segmentation[:, most_talkative_index])
-
-        return SlidingWindowFeature(np.float32(np.stack(segmentations)), window)
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self._oracle_duration: float = self._segmentation.duration
-        self._oracle_step: float = self._segmentation.step
-        self._oracle_num_speakers: int = len(
-            self._segmentation.model.specifications.classes
-        )
-        self._segmentation = self.oracle_segmentation
