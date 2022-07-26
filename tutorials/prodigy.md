@@ -49,6 +49,7 @@ prodigy pyannote.pipeline [options] dataset source
                     Defaults to 200ms.
   -beep             Produce a beep when the player reaches the end of a region.
   -qwerty           Change the shortcut with "Q" key to "A".
+```
 
 </details>
 
