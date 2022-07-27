@@ -96,7 +96,7 @@ def diff_stream(
         hyp = get_audio_spans(hypothesis[filename], excerpt, Segment(0, duration))
 
         yield {
-            "path": path,
+            "path": str(path),
             "text": text,
             "audio": audio,
             "audio_spans": audio_spans,

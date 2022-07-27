@@ -115,7 +115,7 @@ def stream(
         audio = audio_for_prodigy.crop(path, excerpt)
 
         yield {
-            "path": path,
+            "path": str(path),
             "text": text,
             "audio": audio,
             "audio_spans": audio_spans,
@@ -215,7 +215,22 @@ def pipeline(
         "before_db": before_db,
         "config": {
             "javascript": javascript,
+            "batch_size": 3,
             "instructions": instructions_html,
+            "custom_theme": {
+                "palettes": {
+                    "audio": [
+                        "#ffd700",
+                        "#00ffff",
+                        "#ff00ff",
+                        "#00ff00",
+                        "#9932cc",
+                        "#00bfff",
+                        "#ff7f50",
+                        "#66cdaa",
+                    ]
+                }
+            },
             "buttons": ["accept", "ignore", "undo"],
             "keymap": {
                 "accept": ["enter"],

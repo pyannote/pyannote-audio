@@ -117,15 +117,15 @@ def diarization(
         javascript = c.read() + "\n" + c_dia.read()
 
     # TODO: improve this part
-    template = common_dir / "instructions.html"
-    png = common_dir / "commands.png"
+    template = common_dir / "instructionsDiarization.html"
+    png = common_dir / "commandsDiarization.png"
     _, instructions_html = mkstemp(text=True)
     with open(instructions_html, "w") as instructions_f, open(
         template, "r"
     ) as fp_tpl, open(png, "rb") as fp_png:
         b64 = base64.b64encode(fp_png.read()).decode("utf-8")
         instructions_f.write(fp_tpl.read().replace("{IMAGE}", b64))
-
+    print("Labels recipe : ", labels)
     hashed_stream = (
         set_hashes(eg, input_keys=("path", "chunk"), ignore=[])
         for eg in helper.stream(pipeline, source, labels, randomize=False)

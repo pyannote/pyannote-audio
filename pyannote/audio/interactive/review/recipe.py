@@ -67,7 +67,7 @@ def review_stream(
         labels = files_annotations[filename][1]
 
         yield {
-            "path": path,
+            "path": str(path),
             "text": text,
             "audio": audio,
             "audio_spans": [],

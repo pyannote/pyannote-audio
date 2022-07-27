@@ -32,12 +32,14 @@ function checkRegion(label){
     return false;
 }
 
+//THIS FUNCTION IS NOW ON THE MAIN CONTROLLER JS
 /**
 * Change the color of textfield's title
 * @see addSounds()
 * @param {label}
 * @param {color}
 */
+/*
 function changePlaceholderColor(label, color){
     var labels = document.querySelectorAll("label[for="+label+"]");
     if(labels.length > 0){
@@ -46,9 +48,10 @@ function changePlaceholderColor(label, color){
           color = color[0];
           color = color+'1)';
         }
-        labels[0].style.color = color
+        labels[0].style.color = color;
     }
 }
+*/
 
 /**
 * Hide or display textfield
@@ -169,7 +172,7 @@ function addSounds(){
           var color = window.prodigy.config.custom_theme.palettes.audio[i];
           label.style.color = color;
           var name = label.dataset.prodigyLabel;
-          changePlaceholderColor(name, color);
+          //changePlaceholderColor(name, color);
           changeDisplayPlaceholder(name, true);
           if (name in sounds) createEmojiSound(label);
       }

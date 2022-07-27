@@ -21,21 +21,51 @@
 // SOFTWARE.
 
 // Can't create constant because prodigy reload this file every batch
+//
+
+// Index of the active region in the array "ids"
 var currentRegion = 0;
+
+// Array of all regions (window.wavesurfer.regions.list)
 var regions = null;
+
+// Array of all regions ids
 var ids = null;
+
+/*
+* Boolean allowing to know if the interface has just been refreshed.
+* When a new chunk arrives, wavesurfer triggers the region-created events but
+* its event listener must not do exactly the same as when a user triggered it.
+* It must leave the first region as an active region (and not the last one created)
+* and the cursor must not be set to the beginning of the region but to the beginning
+* of the audio file, at 0s.
+*
+* Refresh is put to false whenever it can be assumed that an action has been taken by a user.
+*/
 var refresh = true;
 
+// Keyboard configuration
 var left = 'ArrowLeft';
 var right = 'ArrowRight';
 var startR = prodigy.config.left || 'Shift';
 var endR = prodigy.config.right || 'Control';
 
+// Cursor precision
 var PRECISION = (prodigy.config.precision / 1000);
+
+// Beep when the player reaches the end of a region.
 var BEEP = prodigy.config.beep;
+
+// How many seconds before the cursor will be played when the end of a region is changed
 var EXCERPT = 1;
 
+/*
+* Since the computer only passes one keystroke at a time, an array is created to keep track
+* of multiple keys. The array can then be used to check for one or more keys at once.
+*/
 var keysMap = {};
+
+// Beta version for logging user interaction...
 var logsInfo = [];
 
 /**
@@ -171,6 +201,8 @@ function reloadWave(){
 * Place wavesurfer cursor at the beginning of the new region or the beginning of the file if it's a new prodigy task
 * @see activeRegion() / deactiveRegion()
 * @param {ids} Ids of the region to be selected
+* @param {seek} Boolean, true if we want the cursor to be at the start of the new active region
+*               False otherwise (region-click, region-removed)
 */
 function switchCurrent(newId, seek=true){
   if(ids.length > 0){
@@ -186,6 +218,19 @@ function switchCurrent(newId, seek=true){
   }
 }
 
+function changePlaceholderColor(label, color){
+    var labels = document.querySelectorAll("label[for="+label+"]");
+    if(labels.length > 0){
+        if(color.includes("rgb")){
+            color = color.split('0.2)');
+            color = color[0];
+            color = color+'1)';
+        }
+        labels[0].style.color = color;
+    }
+}
+
+
 /**
 * Handle wavesurfer regions
 * Add event listener to some wavesurfer event
@@ -193,6 +238,17 @@ function switchCurrent(newId, seek=true){
 function waitForElement(){
     if(typeof window.wavesurfer !== "undefined"){
         reloadWave();
+        // Change Color of placeholders
+        var labels = document.querySelectorAll('label.prodigy-label');
+        if(labels.length > 0){
+          for (var label of labels) {
+            var i = (window.prodigy.content.config.labels.indexOf(label.dataset.prodigyLabel) % window.prodigy.config.custom_theme.palettes.audio.length);
+            var color = window.prodigy.config.custom_theme.palettes.audio[i];
+            label.style.color = color;
+            var name = label.dataset.prodigyLabel;
+            changePlaceholderColor(name, color);
+          }
+        }
         // Select created region or the first one if it's a new task
         window.wavesurfer.on('region-created', function(e){
           if(!refresh){
@@ -242,7 +298,6 @@ function waitForElement(){
         window.wavesurfer.on('region-removed',function(e){
           logsInfo.push({"action" : "delete", "timestamp"  : Date.now(), "type" : "mouse"});
           window.prodigy.update({logs : logsInfo});
-          refresh = false;
           updateContent();
           if(currentRegion == (ids.length - 1)){
             var newId = 0;

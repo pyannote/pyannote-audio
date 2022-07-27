@@ -38,7 +38,20 @@ class AudioForProdigy(Audio):
         super().__init__(sample_rate=16000, mono=True)
 
     def to_base64(self, waveform: np.ndarray, sample_rate: int) -> Text:
-        """Convert waveform to base64 data"""
+        """Convert waveform to base64 data
+
+        Parameters
+        ----------
+        waveform : numpy.ndarray
+            Numpy array representing the waveform
+        sample_rate : int
+            Sample rate of the waveform
+
+        Returns
+        -------
+        b64 : str
+            Waveform in b64 format
+        """
         waveform = waveform.numpy().T
         waveform /= np.max(np.abs(waveform)) + 1e-8
         with io.BytesIO() as content:
@@ -49,6 +62,20 @@ class AudioForProdigy(Audio):
         return b64
 
     def crop(self, path: Path, excerpt: Segment) -> Text:
+        """Crop file according to excerpt
+
+        Parameters
+        ----------
+        path : Path
+            Path of the file
+        excerpt : Segment
+            Segment of the file
+
+        Returns
+        -------
+        b64 : str
+            Waveform of the excerpt in b64 format
+        """
         waveform, _ = super().crop(path, excerpt)
         b64 = self.to_base64(waveform, self.sample_rate)
         return b64
@@ -78,7 +105,22 @@ def to_audio_spans(annotation: Annotation, focus: Segment = None) -> Dict:
 def get_audio_spans(
     annotation: Annotation, excerpt: Segment, excerpt_with_context: Segment = None
 ):
+    """Convert pyannote.core.Annotation to Prodigy's audio_spans
+       Shift with excerpt or excerpt_with_context if provided
 
+    Parameters
+    ----------
+    annotation : Annotation
+        Annotation with t=0s time origin.
+    excerpt : Segment
+        Use its start time as audio_spans time origin.
+    excerpt_with_context : Segment, optional
+        When provided, its start time is use to calculate the audio_spans time origin.
+
+    Returns
+    -------
+    audio_spans : list of dict
+    """
     excerpt_with_context = excerpt_with_context or excerpt
     shift = excerpt.start - excerpt_with_context.start
 
@@ -114,6 +156,16 @@ def remove_audio_before_db(examples: List[Dict]) -> List[Dict]:
 def source_to_files(source: Path) -> List[Dict]:
     """
     Convert a directory or a file path to a list of files object for prodigy
+
+    Parameters
+    ----------
+    source : Path
+        Directory or file Path
+
+    Returns
+    -------
+    files : list of dict
+        Files objects for Prodigy
     """
     if source.is_dir():
         files = ProdigyAudioLoader(source)
@@ -125,6 +177,23 @@ def source_to_files(source: Path) -> List[Dict]:
 
 
 def get_chunks(source: Path, chunk_duration: Optional[float] = None):
+    """Stream chunks from a source
+
+    Parameters
+    ----------
+    source : Path
+        Directory or audio file path
+
+    chunk_duration : float, optional
+        The chunks will be of this duration, or the file duration if not provided
+
+    Yields
+    -------
+    file : dict
+        Dictionay describing the file
+
+    chunk : Segment
+    """
 
     files = source_to_files(source)
     audio = Audio()
@@ -175,6 +244,7 @@ def before_db(examples):
 
 
 def remove_context(eg):
+    """Remove context from annotation (context is used in diarization recipe)"""
     annotation = Annotation()
     for segment in eg["audio_spans"]:
         annotation[Segment(segment["start"], segment["end"])] = segment["label"]
@@ -201,7 +271,7 @@ def before_db_diarization(examples):
         annotation_without_context = remove_context(eg)
         eg["audio_spans"] = to_audio_spans(annotation_without_context)
 
-        chunk_start = eg["chunk"]["start"]
+        chunk_start = eg["chunk"]["start"] - eg["chunk_crop"]["start"]
         audio_spans_keys = [key for key in eg if "audio_spans" in key]
         for key in audio_spans_keys:
             eg[key] = [

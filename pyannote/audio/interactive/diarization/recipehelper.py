@@ -277,6 +277,12 @@ class RecipeHelper:
             "meta" : metadata displayed in Prodigy UI {"file": ..., "start": ..., "end": ...}
             "config": {"labels": list of labels}
         """
+        if len(self.speakers) > 0:
+            empty_waveform = torch.Tensor([])
+            for speaker in self.speakers["name"]:
+                self.buffer[speaker] = [empty_waveform, 0]
+                self.audiobuffer[speaker] = empty_waveform
+
         context = getattr(pipeline, "context", self.context)
         chunk = self.chunk
 
@@ -294,6 +300,7 @@ class RecipeHelper:
             text = f"{filename} [{excerpt.start:.1f} - {excerpt.end:.1f}]"
 
             # load contextualized audio excerpt
+            duration = audio_for_pipeline.get_duration(file["path"])
             start = (
                 (excerpt.start - context)
                 if (excerpt.start > self.context)
@@ -301,7 +308,7 @@ class RecipeHelper:
             )
             end = (
                 (excerpt.end + context)
-                if ((excerpt.end - excerpt.start) == chunk)
+                if ((excerpt.end + context) < duration)
                 else excerpt.end
             )
             excerpt_with_context = Segment(start=start, end=end)
@@ -315,16 +322,12 @@ class RecipeHelper:
             )
 
             # crop, shift, and format output for visualization in Prodigy
-            # audio_spans = get_audio_spans(
-            #    output, excerpt, excerpt_with_context=excerpt_with_context
-            # )
             audio_spans = get_audio_spans(output, excerpt_with_context)
 
             # load audio excerpt for visualization in Prodigy
             audio = audio_for_prodigy.crop(path, excerpt_with_context)
 
-            labels = sorted(set(labels) | set(output.labels()))
-            # labels = sorted(set(labels) | set([l["label"] for l in audio_spans]))
+            additionnal_labels = sorted(set(labels) | set(output.labels()))
 
             # group by label
             audio_spans = sorted(audio_spans, key=lambda x: x["label"])
@@ -365,13 +368,13 @@ class RecipeHelper:
                                 span.update({"label": genlabel})
 
             blocks = [{"view_id": "audio_manual"}]
-            all_labels = list(self.speakers["name"]) + labels
+            all_labels = list(self.speakers["name"]) + additionnal_labels
 
             sounds = {spk[0]: spk[3] for spk in self.speakers}
             # sort regions that are inside other regions to avoid unclickable issues
             audio_spans = sorted(audio_spans, key=cmp_to_key(self.compareOverlap))
 
-            for label in labels:
+            for label in additionnal_labels:
                 blocks.append(
                     {
                         "view_id": "text_input",
@@ -399,9 +402,5 @@ class RecipeHelper:
                     "file": filename,
                     "start": f"{excerpt.start:.1f}",
                     "end": f"{excerpt.end:.1f}",
-                    "context": str(excerpt.start - start)
-                    + "s - "
-                    + str(end - excerpt.end)
-                    + "s",
                 },
             }
