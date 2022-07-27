@@ -37,7 +37,7 @@ The chunks are shown with some context at the beginning and end (default to 1s b
 <summary>More options</summary>
 
 ```
-prodigy pyannote.pipeline [options] dataset source
+prodigy pyannote.diarization [options] dataset source
 
   dataset           Prodigy dataset to save annotations to.
   source            Path to directory containing audio files to annotate.
@@ -68,7 +68,7 @@ prodigy pyannote.audio dataset /path/to/audio/directory pyannote/speaker-segment
 <summary>More options</summary>
 
 ```
-prodigy pyannote.pipeline [options] dataset source pipeline
+prodigy pyannote.audio [options] dataset source pipeline
 
   dataset           Prodigy dataset to save annotations to.
   source            Path to directory containing audio files to annotate.
@@ -170,7 +170,7 @@ Though `pyannote.audio` recipes are built on top of the Prodigy [audio interface
 | `shift + down` / `backspace`     | Remove active region           |
 | `spacebar`                       | Play/pause player              |
 | `escape`                         | Ignore this sample             |
-| `U`                              | Undo actions                   |
+| `U`                              | Undo all actions               |
 | `enter`                          | Validate annotation            |
 
 
