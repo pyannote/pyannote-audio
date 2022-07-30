@@ -1,5 +1,5 @@
+// Create a HTMLAudioElement
 var snd = new Audio();
-var idTimer = 0;
 
 /**
 * Make sure that the document is loaded before executing handleWavesurfer
@@ -97,24 +97,21 @@ function createEmojiSound(label){
         var sounds = window.prodigy.content.sounds;
         var val = e.srcElement.parentElement.dataset.prodigyLabel;
         snd.pause();
-        clearInterval(idTimer);
         snd = new Audio(sounds[val]);
         snd.play();
     }
     span.onmouseleave = (e) => {
         snd.pause();
-        clearInterval(idTimer);
         e.srcElement.style.visibility = "";
     }
 }
 
 /**
 * Change the regions label from "SPEAKER_XX" to "XX"
-* Support only on Chrome from now
-* !! use class='c01140' check if prodigy change
+* !! use class='c01140' check if prodigy change !!
+* Tested on chrome, firefox & safari (sometime prodigy use different css classes...)
 */
 function clearSpan(){
-    //TODO: Check span class in other browsers
     var spans = document.querySelectorAll("span[class='c01140']");
     for(var span in spans){
         if(typeof spans[span].innerHTML !== "undefined"){
@@ -136,7 +133,8 @@ function handleWavesurfer(){
         window.wavesurfer.on('region-created', function(e){
             setTimeout(function (){
                 changeDisplayPlaceholder(e.label, false);
-                //TODO : Overkill, update only the new one
+                //TODO : Overkill, update only the new one ->
+                //It's complicated to link the region with its html element, the id not being the same...
                 clearSpan();
             }, 5);
         });
