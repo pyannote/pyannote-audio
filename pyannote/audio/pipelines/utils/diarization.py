@@ -1,6 +1,6 @@
-# The MIT License (MIT)
+# MIT License
 #
-# Copyright (c) 2017-2021 CNRS
+# Copyright (c) 2022- CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -8,10 +8,10 @@
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-
-# The above copyright notice and this permission notice shall be included in
-# all copies or substantial portions of the Software.
-
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -20,191 +20,25 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import itertools
-from copy import deepcopy
-from typing import Any, Mapping, Optional, Text, Tuple, Union
+from typing import Mapping, Tuple, Union
 
 import numpy as np
-import torch
-from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
-from torch_audiomentations.utils.config import from_dict as augmentation_from_dict
-
-from pyannote.audio import Inference, Model
-from pyannote.audio.utils.signal import Binarize, binarize
 from pyannote.core import Annotation, SlidingWindow, SlidingWindowFeature
 from pyannote.metrics.diarization import DiarizationErrorRate
 
-PipelineModel = Union[Model, Text, Mapping]
+from pyannote.audio.core.inference import Inference
+from pyannote.audio.utils.signal import Binarize, binarize
 
 
-def get_model(model: PipelineModel) -> Model:
-    """Load pretrained model and set it into `eval` mode.
-
-    Parameter
-    ---------
-    model : Model, str, or dict
-        When `Model`, returns `model` as is.
-        When `str`, assumes that this is either the path to a checkpoint or the name of a
-        pretrained model on Huggingface.co and loads with `Model.from_pretrained(model)`
-        When `dict`, loads with `Model.from_pretrained(**model)`.
-
-    Returns
-    -------
-    model : Model
-        Model in `eval` mode.
-
-    Examples
-    --------
-    >>> model = get_model("hbredin/VoiceActivityDetection-PyanNet-DIHARD")
-    >>> model = get_model("/path/to/checkpoint.ckpt")
-    >>> model = get_model({"checkpoint": "hbredin/VoiceActivityDetection-PyanNet-DIHARD",
-    ...                    "map_location": torch.device("cuda")})
-
-    See also
-    --------
-    pyannote.audio.core.model.Model.from_pretrained
-
-    """
-
-    if isinstance(model, Model):
-        pass
-
-    elif isinstance(model, Text):
-        model = Model.from_pretrained(model, strict=False)
-
-    elif isinstance(model, Mapping):
-        model = Model.from_pretrained(**model)
-
-    else:
-        raise TypeError(
-            f"Unsupported type ({type(model)}) for loading model: "
-            f"expected `str` or `dict`."
-        )
-
-    model.eval()
-    return model
-
-
-PipelineInference = Union[Inference, Model, Text, Mapping]
-
-
-def get_inference(inference: PipelineInference) -> Inference:
-    """Load inference
-
-    Parameter
-    ---------
-    inference : Inference, Model, str, or dict
-        When `Inference`, returns `inference` as is.
-        When `Model`, wraps it in `Inference(model)`.
-        When `str`, assumes that this is either the path to a checkpoint or the name of a
-        pretrained model on Huggingface.co and loads with `Inference(checkpoint)`.
-        When `dict`, loads with `Inference(**inference)`.
-
-    Returns
-    -------
-    inference : Inference
-        Inference.
-
-    Examples
-    --------
-    >>> inference = get_inference("hbredin/VoiceActivityDetection-PyanNet-DIHARD")
-    >>> inference = get_inference("/path/to/checkpoint.ckpt")
-    >>> inference = get_inference({"model": "hbredin/VoiceActivityDetection-PyanNet-DIHARD",
-    ...                            "window": "sliding"})
-
-    See also
-    --------
-    pyannote.audio.core.inference.Inference
-
-    """
-
-    if isinstance(inference, Inference):
-        return inference
-
-    if isinstance(inference, (Model, Text)):
-        return Inference(inference)
-
-    if isinstance(inference, Mapping):
-        return Inference(**inference)
-
-    raise TypeError(
-        f"Unsupported type ({type(inference)}) for loading inference: "
-        f"expected `Model`, `str` or `dict`."
-    )
-
-
-PipelineAugmentation = Union[BaseWaveformTransform, Mapping]
-
-
-def get_augmentation(augmentation: PipelineAugmentation) -> BaseWaveformTransform:
-    """Load augmentation
-
-    Parameter
-    ---------
-    augmentation : BaseWaveformTransform, or dict
-        When `BaseWaveformTransform`, returns `augmentation` as is.
-        When `dict`, loads with `torch_audiomentations`'s `from_config` utility function.
-
-    Returns
-    -------
-    augmentation : BaseWaveformTransform
-        Augmentation.
-    """
-
-    if augmentation is None:
-        return None
-
-    if isinstance(augmentation, BaseWaveformTransform):
-        return augmentation
-
-    if isinstance(augmentation, Mapping):
-        return augmentation_from_dict(augmentation)
-
-    raise TypeError(
-        f"Unsupported type ({type(augmentation)}) for loading augmentation: "
-        f"expected `BaseWaveformTransform`, or `dict`."
-    )
-
-
-def get_devices(needs: int = None):
-    """Get devices that can be used by the pipeline
-
-    Parameters
-    ----------
-    needs : int, optional
-        Number of devices needed by the pipeline
-
-    Returns
-    -------
-    devices : list of torch.device
-        List of available devices.
-        When `needs` is provided, returns that many devices.
-    """
-
-    num_gpus = torch.cuda.device_count()
-
-    if num_gpus == 0:
-        devices = [torch.device("cpu")]
-        if needs is None:
-            return devices
-        return devices * needs
-
-    devices = [torch.device(f"cuda:{index:d}") for index in range(num_gpus)]
-    if needs is None:
-        return devices
-    return [device for _, device in zip(range(needs), itertools.cycle(devices))]
-
-
-def logging_hook(key: Text, value: Any, file: Optional[Mapping] = None):
-    file[key] = deepcopy(value)
-
-
+# TODO: move to dedicated module
 class SpeakerDiarizationMixin:
     """Defines a bunch of methods common to speaker diarization pipelines"""
 
     @staticmethod
     def set_num_speakers(
-        num_speakers: int = None, min_speakers: int = None, max_speakers: int = None,
+        num_speakers: int = None,
+        min_speakers: int = None,
+        max_speakers: int = None,
     ):
         """Validate number of speakers
 
@@ -268,11 +102,13 @@ class SpeakerDiarizationMixin:
         )
         return hypothesis.rename_labels(mapping=mapping)
 
+    # TODO: get rid of onset/offset (binarization should be applied before calling speaker_count)
+    # TODO: get rid of warm-up parameter (trimming should be applied before calling speaker_count)
     @staticmethod
     def speaker_count(
         segmentations: SlidingWindowFeature,
         onset: float = 0.5,
-        offset: float = 0.5,
+        offset: float = None,
         warm_up: Tuple[float, float] = (0.1, 0.1),
         frames: SlidingWindow = None,
     ) -> SlidingWindowFeature:
@@ -285,7 +121,7 @@ class SpeakerDiarizationMixin:
         onset : float, optional
            Onset threshold. Defaults to 0.5
         offset : float, optional
-           Offset threshold. Defaults to 0.5
+           Offset threshold. Defaults to `onset`.
         warm_up : (float, float) tuple, optional
             Left/right warm up ratio of chunk duration.
             Defaults to (0.1, 0.1), i.e. 10% on both sides.
@@ -299,6 +135,7 @@ class SpeakerDiarizationMixin:
         count : SlidingWindowFeature
             (num_frames, 1)-shaped instantaneous speaker count
         """
+
         binarized: SlidingWindowFeature = binarize(
             segmentations, onset=onset, offset=offset, initial_state=False
         )
@@ -306,8 +143,9 @@ class SpeakerDiarizationMixin:
         count = Inference.aggregate(
             np.sum(trimmed, axis=-1, keepdims=True),
             frames=frames,
-            hamming=True,
+            hamming=False,
             missing=0.0,
+            skip_average=False,
         )
         count.data = np.rint(count.data).astype(np.uint8)
 
@@ -320,7 +158,7 @@ class SpeakerDiarizationMixin:
         min_duration_off: float = 0.0,
     ) -> Annotation:
         """
-        
+
         Parameters
         ----------
         discrete_diarization : SlidingWindowFeature
@@ -347,7 +185,8 @@ class SpeakerDiarizationMixin:
 
     @staticmethod
     def to_diarization(
-        segmentations: SlidingWindowFeature, count: SlidingWindowFeature,
+        segmentations: SlidingWindowFeature,
+        count: SlidingWindowFeature,
     ) -> SlidingWindowFeature:
         """Build diarization out of preprocessed segmentation and precomputed speaker count
 
@@ -364,10 +203,11 @@ class SpeakerDiarizationMixin:
             Discrete (0s and 1s) diarization.
         """
 
+        # TODO: investigate alternative aggregation
         activations = Inference.aggregate(
             segmentations,
             frames=count.sliding_window,
-            hamming=True,
+            hamming=False,
             missing=0.0,
             skip_average=True,
         )
