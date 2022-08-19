@@ -183,7 +183,8 @@ class NeMoPretrainedSpeakerEmbedding:
         wav_lens[too_short] = max_len
 
         _, embeddings = self.model_(
-            input_signal=waveforms, input_signal_length=wav_lens
+            input_signal=waveforms.to(self.device),
+            input_signal_length=wav_lens.to(self.device),
         )
 
         embeddings = embeddings.cpu().numpy()
