@@ -602,6 +602,8 @@ class HiddenMarkovModelClustering(BaseClustering):
 
         history = [-np.inf]
         patience = min(3, max_clusters - min_clusters)
+        num_clusters = min_clusters
+
         for n_components in range(min_clusters, max_clusters + 1):
 
             hmm = self.fit_hmm(n_components, euclidean_embeddings)
@@ -610,6 +612,10 @@ class HiddenMarkovModelClustering(BaseClustering):
             except ValueError:  # ValueError: startprob_ must sum to 1 (got nan)
                 # stop adding states as there too many and not enough
                 # training data to train it in a reliable manner.
+                break
+
+            # stop early if too few states were found
+            if len(np.unique(train_clusters)) < n_components:
                 break
 
             # compute distance between the two closest centroids

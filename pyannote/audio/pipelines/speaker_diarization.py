@@ -498,7 +498,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         # when reference is available, use it to map hypothesized speakers
         # to reference speakers (this makes later error analysis easier
         # but does not modify the actual output of the diarization pipeline)
-        if "annotation" in file:
+        if "annotation" in file and file["annotation"]:
             return self.optimal_mapping(file["annotation"], diarization)
 
         # when reference is not available, rename hypothesized speakers
