@@ -32,7 +32,13 @@ from einops import rearrange
 from hmmlearn.hmm import GaussianHMM
 from pyannote.core import SlidingWindow, SlidingWindowFeature
 from pyannote.pipeline import Pipeline
-from pyannote.pipeline.parameter import Categorical, LogUniform, ParamDict, Uniform
+from pyannote.pipeline.parameter import (
+    Categorical,
+    Integer,
+    LogUniform,
+    ParamDict,
+    Uniform,
+)
 from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.optimize import linear_sum_assignment
 from scipy.spatial.distance import cdist, pdist
@@ -306,6 +312,9 @@ class AgglomerativeClustering(BaseClustering):
             ["average", "centroid", "complete", "median", "single", "ward", "weighted"]
         )
 
+        # minimum cluster size
+        self.min_cluster_size = Integer(1, 20)
+
     def cluster(
         self,
         embeddings: np.ndarray,
@@ -373,7 +382,44 @@ class AgglomerativeClustering(BaseClustering):
                 else -np.inf
             )
 
-        return fcluster(dendrogram, threshold, criterion="distance") - 1
+        clusters = fcluster(dendrogram, threshold, criterion="distance") - 1
+
+        # split clusters into two categories based on their number of items:
+        # large clusters vs. small clusters
+        cluster_unique, cluster_counts = np.unique(
+            clusters,
+            return_counts=True,
+        )
+
+        large_clusters = cluster_unique[cluster_counts >= self.min_cluster_size]
+        if large_clusters.size == 0:
+            clusters[:] = 0
+            return clusters
+
+        small_clusters = cluster_unique[cluster_counts < self.min_cluster_size]
+        if small_clusters.size == 0:
+            return clusters
+
+        # re-assign each small cluster to the most similar large cluster
+        large_centroids = np.vstack(
+            [
+                np.mean(embeddings[clusters == large_k], axis=0)
+                for large_k in large_clusters
+            ]
+        )
+        small_centroids = np.vstack(
+            [
+                np.mean(embeddings[clusters == small_k], axis=0)
+                for small_k in small_clusters
+            ]
+        )
+        centroids_cdist = cdist(large_centroids, small_centroids, metric=self.metric)
+        for small_k, large_k in enumerate(np.argmin(centroids_cdist, axis=0)):
+            clusters[clusters == small_clusters[small_k]] = large_clusters[large_k]
+
+        # re-number clusters from 0 to num_large_clusters
+        _, clusters = np.unique(clusters, return_inverse=True)
+        return clusters
 
 
 class OracleClustering(BaseClustering):
