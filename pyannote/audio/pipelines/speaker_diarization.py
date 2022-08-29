@@ -78,6 +78,10 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         Batch size used for speaker segmentation. Defaults to 32.
     embedding_batch_size : int, optional
         Batch size used for speaker embedding. Defaults to 32.
+    der_variant : dict, optional
+        Optimize for a variant of diarization error rate.
+        Defaults to {"collar": 0.0, "skip_overlap": False}. This is used in `get_metric`
+        when instantiating the metric: GreedyDiarizationErrorRate(**der_variant).
 
     Usage
     -----
@@ -97,6 +101,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         clustering: str = "HiddenMarkovModelClustering",
         embedding_batch_size: int = 32,
         segmentation_batch_size: int = 32,
+        der_variant: dict = None,
     ):
 
         super().__init__()
@@ -110,6 +115,8 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         self.embedding_exclude_overlap = embedding_exclude_overlap
 
         self.klustering = clustering
+
+        self.der_variant = der_variant or {"collar": 0.0, "skip_overlap": False}
 
         seg_device, emb_device = get_devices(needs=2)
 
@@ -506,4 +513,4 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         )
 
     def get_metric(self) -> GreedyDiarizationErrorRate:
-        return GreedyDiarizationErrorRate(collar=0.0, skip_overlap=False)
+        return GreedyDiarizationErrorRate(**self.der_variant)
