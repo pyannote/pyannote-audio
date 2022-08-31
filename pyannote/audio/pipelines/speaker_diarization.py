@@ -61,6 +61,10 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
     segmentation : Model, str, or dict, optional
         Pretrained segmentation model. Defaults to "pyannote/segmentation@2022.07".
         See pyannote.audio.pipelines.utils.get_model for supported format.
+    segmentation_duration: float, optional
+        The segmentation model is applied on a window sliding over the whole audio file.
+        `segmentation_duration` controls the duration of this window. Defaults to the
+        duration used when training the model (model.specifications.duration).
     segmentation_step: float, optional
         The segmentation model is applied on a window sliding over the whole audio file.
         `segmentation_step` controls the step of this window, provided as a ratio of its
@@ -91,6 +95,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
     def __init__(
         self,
         segmentation: PipelineModel = "pyannote/segmentation@2022.07",
+        segmentation_duration: float = None,
         segmentation_step: float = 0.1,
         embedding: PipelineModel = "speechbrain/spkrec-ecapa-voxceleb@5c0be3875fda05e81f3c004ed8c7c06be308de1e",
         embedding_exclude_overlap: bool = False,
@@ -102,7 +107,12 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         super().__init__()
 
         self.segmentation = segmentation
+        model: Model = get_model(segmentation)
+
         self.segmentation_batch_size = segmentation_batch_size
+        self.segmentation_duration = (
+            segmentation_duration or model.specifications.duration
+        )
         self.segmentation_step = segmentation_step
 
         self.embedding = embedding
@@ -113,13 +123,12 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
         seg_device, emb_device = get_devices(needs=2)
 
-        model: Model = get_model(segmentation)
         model.to(seg_device)
 
         self._segmentation = Inference(
             model,
-            duration=model.specifications.duration,
-            step=self.segmentation_step * model.specifications.duration,
+            duration=self.segmentation_duration,
+            step=self.segmentation_step * self.segmentation_duration,
             skip_aggregation=True,
             batch_size=self.segmentation_batch_size,
         )
@@ -148,6 +157,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
         if (
             self.segmentation == "pyannote/segmentation@2022.07"
+            and self.segmentation_duration == 5.0
             and self.segmentation_step == 0.1
             and self.embedding
             == "speechbrain/spkrec-ecapa-voxceleb@5c0be3875fda05e81f3c004ed8c7c06be308de1e"
