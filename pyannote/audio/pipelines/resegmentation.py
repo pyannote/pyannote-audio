@@ -102,7 +102,8 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
 
         self.der_variant = der_variant or {"collar": 0.0, "skip_overlap": False}
 
-        self.warm_up = 0.05
+        # segmentation warm-up
+        self.warm_up = Uniform(0.0, 0.1)
 
         # hysteresis thresholding
         self.onset = Uniform(0.0, 1.0)
@@ -117,6 +118,7 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
         # parameters optimized on DIHARD 3 development set
         if self.segmentation == "pyannote/segmentation":
             return {
+                "warm_up": 0.05,
                 "onset": 0.810,
                 "offset": 0.481,
                 "min_duration_on": 0.055,
