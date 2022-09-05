@@ -29,6 +29,7 @@ from typing import Tuple
 
 import numpy as np
 from einops import rearrange
+from finch import FINCH
 from hmmlearn.hmm import GaussianHMM
 from pyannote.core import SlidingWindow, SlidingWindowFeature
 from pyannote.pipeline import Pipeline
@@ -276,6 +277,76 @@ class BaseClustering(Pipeline):
         )
 
         return hard_clusters, soft_clusters
+
+
+class FINCHClustering(BaseClustering):
+    """FINCH clustering
+
+    Parameters
+    ----------
+    metric : {"cosine", "euclidean", ...}, optional
+        Distance metric to use. Defaults to "cosine".
+
+    """
+
+    def __init__(
+        self,
+        metric: str = "cosine",
+        max_num_embeddings: int = np.inf,
+        constrained_assignment: bool = False,
+    ):
+
+        super().__init__(
+            metric=metric,
+            max_num_embeddings=max_num_embeddings,
+            constrained_assignment=constrained_assignment,
+        )
+
+    def cluster(
+        self,
+        embeddings: np.ndarray,
+        min_clusters: int,
+        max_clusters: int,
+        num_clusters: int = None,
+    ):
+        """
+
+        Parameters
+        ----------
+        embeddings : (num_embeddings, dimension) array
+            Embeddings
+        min_clusters : int
+            Minimum number of clusters
+        max_clusters : int
+            Maximum number of clusters
+        num_clusters : int, optional
+            Actual number of clusters. Default behavior is to estimate it based
+            on values provided for `min_clusters`,  `max_clusters`, and `threshold`.
+
+        Returns
+        -------
+        clusters : (num_embeddings, ) array
+            0-indexed cluster indices.
+        """
+
+        num_embeddings, _ = embeddings.shape
+        if num_embeddings == 1:
+            return np.zeros((1,), dtype=np.uint8)
+
+        clusters, _, _ = FINCH(
+            embeddings,
+            initial_rank=None,
+            req_clust=None,
+            distance=self.metric,
+            ensure_early_exit=True,
+            verbose=False,
+        )
+        clusters = clusters[:, -1]
+
+        # TODO: handle min/max/num_clusters
+        # TODO: handle min_cluster_size
+
+        return clusters
 
 
 class AgglomerativeClustering(BaseClustering):
@@ -697,5 +768,6 @@ class HiddenMarkovModelClustering(BaseClustering):
 
 class Clustering(Enum):
     AgglomerativeClustering = AgglomerativeClustering
+    FINCHClustering = FINCHClustering
     HiddenMarkovModelClustering = HiddenMarkovModelClustering
     OracleClustering = OracleClustering
