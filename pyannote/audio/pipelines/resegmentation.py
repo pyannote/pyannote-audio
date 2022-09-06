@@ -62,6 +62,10 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
         See pyannote.audio.pipelines.utils.get_model for supported format.
     diarization : str, optional
         File key to use as input diarization. Defaults to "diarization".
+    der_variant : dict, optional
+        Optimize for a variant of diarization error rate.
+        Defaults to {"collar": 0.0, "skip_overlap": False}. This is used in `get_metric`
+        when instantiating the metric: GreedyDiarizationErrorRate(**der_variant).
 
     Hyper-parameters
     ----------------
@@ -77,6 +81,7 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
         self,
         segmentation: PipelineModel = "pyannote/segmentation",
         diarization: Text = "diarization",
+        der_variant: dict = None,
     ):
 
         super().__init__()
@@ -95,13 +100,16 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
         # number of speakers in output of segmentation model
         self._num_speakers = len(model.specifications.classes)
 
-        self.warm_up = 0.05
+        self.der_variant = der_variant or {"collar": 0.0, "skip_overlap": False}
 
-        #  hyper-parameters used for hysteresis thresholding
+        # segmentation warm-up
+        self.warm_up = Uniform(0.0, 0.1)
+
+        # hysteresis thresholding
         self.onset = Uniform(0.0, 1.0)
         self.offset = Uniform(0.0, 1.0)
 
-        # hyper-parameters used for post-processing i.e. removing short speech turns
+        # post-processing i.e. removing short speech turns
         # or filling short gaps between speech turns of one speaker
         self.min_duration_on = Uniform(0.0, 1.0)
         self.min_duration_off = Uniform(0.0, 1.0)
@@ -110,6 +118,7 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
         # parameters optimized on DIHARD 3 development set
         if self.segmentation == "pyannote/segmentation":
             return {
+                "warm_up": 0.05,
                 "onset": 0.810,
                 "offset": 0.481,
                 "min_duration_on": 0.055,
@@ -234,4 +243,4 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
         return diarization
 
     def get_metric(self) -> GreedyDiarizationErrorRate:
-        return GreedyDiarizationErrorRate(collar=0.0, skip_overlap=False)
+        return GreedyDiarizationErrorRate(**self.der_variant)
