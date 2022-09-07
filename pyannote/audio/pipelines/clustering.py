@@ -302,6 +302,11 @@ class FINCHClustering(BaseClustering):
             constrained_assignment=constrained_assignment,
         )
 
+        self.threshold = Uniform(0.0, 2.0)  # assume unit-normalized embeddings
+        self.method = Categorical(
+            ["average", "centroid", "complete", "median", "single", "ward", "weighted"]
+        )
+
     def cluster(
         self,
         embeddings: np.ndarray,
@@ -333,6 +338,7 @@ class FINCHClustering(BaseClustering):
         if num_embeddings == 1:
             return np.zeros((1,), dtype=np.uint8)
 
+        # apply FINCH clustering and keep (supposedly pure) penultimate partition
         clusters, _, _ = FINCH(
             embeddings,
             initial_rank=None,
@@ -341,7 +347,22 @@ class FINCHClustering(BaseClustering):
             ensure_early_exit=True,
             verbose=False,
         )
-        clusters = clusters[:, -1]
+        clusters = clusters[:, -2]
+        num_clusters = np.max(clusters) + 1
+
+        # compute centroids
+        centroids = np.vstack(
+            [np.mean(embeddings[clusters == k], axis=0) for k in range(num_clusters)]
+        )
+
+        # perform agglomerative clustering on centroids
+        dendrogram = linkage(centroids, metric=self.metric, method=self.method)
+        klusters = fcluster(dendrogram, self.threshold, criterion="distance") - 1
+
+        # update clusters
+        clusters = -clusters
+        for i, k in enumerate(klusters):
+            clusters[clusters == -i] = k
 
         # TODO: handle min/max/num_clusters
         # TODO: handle min_cluster_size
