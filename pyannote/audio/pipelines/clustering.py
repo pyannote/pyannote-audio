@@ -29,7 +29,6 @@ from typing import Tuple
 
 import numpy as np
 from einops import rearrange
-from finch import FINCH
 from hmmlearn.hmm import GaussianHMM
 from pyannote.core import SlidingWindow, SlidingWindowFeature
 from pyannote.pipeline import Pipeline
@@ -48,6 +47,14 @@ from pyannote.audio import Inference
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.pipelines.utils import oracle_segmentation
 from pyannote.audio.utils.permutation import permutate
+
+try:
+    from finch import FINCH
+
+    FINCH_IS_AVAILABLE = True
+
+except ImportError:
+    FINCH_IS_AVAILABLE = False
 
 
 class BaseClustering(Pipeline):
@@ -295,6 +302,12 @@ class FINCHClustering(BaseClustering):
         max_num_embeddings: int = np.inf,
         constrained_assignment: bool = False,
     ):
+
+        if not FINCH_IS_AVAILABLE:
+            raise ImportError(
+                "'finch-clust' must be installed to use FINCH clustering. "
+                "Visit https://pypi.org/project/finch-clust/ for installation instructions."
+            )
 
         super().__init__(
             metric=metric,
