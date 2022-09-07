@@ -229,18 +229,21 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
         discrete_diarization = self.to_diarization(permutated_segmentations, count)
 
         # convert to continuous diarization
-        diarization = self.to_annotation(
+        resegmentation = self.to_annotation(
             discrete_diarization,
             min_duration_on=self.min_duration_on,
             min_duration_off=self.min_duration_off,
         )
 
-        diarization.uri = file["uri"]
+        resegmentation.uri = file["uri"]
 
-        if "annotation" in file:
-            diarization = self.optimal_mapping(file["annotation"], diarization)
+        # when reference is available, use it to map hypothesized speakers
+        # to reference speakers (this makes later error analysis easier
+        # but does not modify the actual output of the resegmentation pipeline)
+        if "annotation" in file and file["annotation"]:
+            resegmentation = self.optimal_mapping(file["annotation"], resegmentation)
 
-        return diarization
+        return resegmentation
 
     def get_metric(self) -> GreedyDiarizationErrorRate:
         return GreedyDiarizationErrorRate(**self.der_variant)
