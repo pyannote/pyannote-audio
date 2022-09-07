@@ -303,9 +303,7 @@ class FINCHClustering(BaseClustering):
         )
 
         self.threshold = Uniform(0.0, 2.0)  # assume unit-normalized embeddings
-        self.method = Categorical(
-            ["average", "centroid", "complete", "median", "single", "ward", "weighted"]
-        )
+        self.method = Categorical(["average", "complete", "single"])
 
     def cluster(
         self,
