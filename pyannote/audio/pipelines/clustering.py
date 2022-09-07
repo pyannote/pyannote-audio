@@ -387,7 +387,7 @@ class AgglomerativeClustering(BaseClustering):
     def __init__(
         self,
         metric: str = "cosine",
-        max_num_embeddings: int = 1000,
+        max_num_embeddings: int = np.inf,
         constrained_assignment: bool = False,
     ):
 
