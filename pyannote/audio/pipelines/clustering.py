@@ -345,7 +345,12 @@ class FINCHClustering(BaseClustering):
             ensure_early_exit=True,
             verbose=False,
         )
-        clusters = clusters[:, -2]
+
+        _, num_partitions = clusters.shape
+        if num_partitions < 2:
+            clusters = clusters[:, 0]
+        else:
+            clusters = clusters[:, -2]
         num_clusters = np.max(clusters) + 1
 
         # compute centroids
