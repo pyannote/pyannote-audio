@@ -32,7 +32,13 @@ from einops import rearrange
 from hmmlearn.hmm import GaussianHMM
 from pyannote.core import SlidingWindow, SlidingWindowFeature
 from pyannote.pipeline import Pipeline
-from pyannote.pipeline.parameter import Categorical, LogUniform, ParamDict, Uniform
+from pyannote.pipeline.parameter import (
+    Categorical,
+    Integer,
+    LogUniform,
+    ParamDict,
+    Uniform,
+)
 from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.optimize import linear_sum_assignment
 from scipy.spatial.distance import cdist, pdist
@@ -41,6 +47,14 @@ from pyannote.audio import Inference
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.pipelines.utils import oracle_segmentation
 from pyannote.audio.utils.permutation import permutate
+
+try:
+    from finch import FINCH
+
+    FINCH_IS_AVAILABLE = True
+
+except ImportError:
+    FINCH_IS_AVAILABLE = False
 
 
 class BaseClustering(Pipeline):
@@ -272,6 +286,106 @@ class BaseClustering(Pipeline):
         return hard_clusters, soft_clusters
 
 
+class FINCHClustering(BaseClustering):
+    """FINCH clustering
+
+    Parameters
+    ----------
+    metric : {"cosine", "euclidean", ...}, optional
+        Distance metric to use. Defaults to "cosine".
+
+    """
+
+    def __init__(
+        self,
+        metric: str = "cosine",
+        max_num_embeddings: int = np.inf,
+        constrained_assignment: bool = False,
+    ):
+
+        if not FINCH_IS_AVAILABLE:
+            raise ImportError(
+                "'finch-clust' must be installed to use FINCH clustering. "
+                "Visit https://pypi.org/project/finch-clust/ for installation instructions."
+            )
+
+        super().__init__(
+            metric=metric,
+            max_num_embeddings=max_num_embeddings,
+            constrained_assignment=constrained_assignment,
+        )
+
+        self.threshold = Uniform(0.0, 2.0)  # assume unit-normalized embeddings
+        self.method = Categorical(["average", "complete", "single"])
+
+    def cluster(
+        self,
+        embeddings: np.ndarray,
+        min_clusters: int,
+        max_clusters: int,
+        num_clusters: int = None,
+    ):
+        """
+
+        Parameters
+        ----------
+        embeddings : (num_embeddings, dimension) array
+            Embeddings
+        min_clusters : int
+            Minimum number of clusters
+        max_clusters : int
+            Maximum number of clusters
+        num_clusters : int, optional
+            Actual number of clusters. Default behavior is to estimate it based
+            on values provided for `min_clusters`,  `max_clusters`, and `threshold`.
+
+        Returns
+        -------
+        clusters : (num_embeddings, ) array
+            0-indexed cluster indices.
+        """
+
+        num_embeddings, _ = embeddings.shape
+        if num_embeddings == 1:
+            return np.zeros((1,), dtype=np.uint8)
+
+        # apply FINCH clustering and keep (supposedly pure) penultimate partition
+        clusters, _, _ = FINCH(
+            embeddings,
+            initial_rank=None,
+            req_clust=None,
+            distance=self.metric,
+            ensure_early_exit=True,
+            verbose=False,
+        )
+
+        _, num_partitions = clusters.shape
+        if num_partitions < 2:
+            clusters = clusters[:, 0]
+        else:
+            clusters = clusters[:, -2]
+        num_clusters = np.max(clusters) + 1
+
+        # compute centroids
+        centroids = np.vstack(
+            [np.mean(embeddings[clusters == k], axis=0) for k in range(num_clusters)]
+        )
+
+        # perform agglomerative clustering on centroids
+        dendrogram = linkage(centroids, metric=self.metric, method=self.method)
+        klusters = fcluster(dendrogram, self.threshold, criterion="distance") - 1
+
+        # update clusters
+        clusters = -clusters
+        for i, k in enumerate(klusters):
+            clusters[clusters == -i] = k
+
+        # TODO: handle min/max/num_clusters
+        # TODO: handle min_cluster_size
+
+        return clusters
+
+
 class AgglomerativeClustering(BaseClustering):
     """Agglomerative clustering
 
@@ -291,7 +405,7 @@ class AgglomerativeClustering(BaseClustering):
     def __init__(
         self,
         metric: str = "cosine",
-        max_num_embeddings: int = 1000,
+        max_num_embeddings: int = np.inf,
         constrained_assignment: bool = False,
     ):
 
@@ -305,6 +419,9 @@ class AgglomerativeClustering(BaseClustering):
         self.method = Categorical(
             ["average", "centroid", "complete", "median", "single", "ward", "weighted"]
         )
+
+        # minimum cluster size
+        self.min_cluster_size = Integer(1, 20)
 
     def cluster(
         self,
@@ -352,6 +469,12 @@ class AgglomerativeClustering(BaseClustering):
 
         if num_clusters is None:
 
+            # FIXME: revise this to account for "min_cluster_size" as there is no longer
+            # a direct correlation between iteration index and final number of clusters
+
+            # FIXME: revise the assumption that threshold is increasing monotonically
+            # as this is not the case for centroid linkage, for instance...
+
             max_threshold: float = (
                 dendrogram[-min_clusters, 2]
                 if min_clusters < num_embeddings
@@ -373,7 +496,44 @@ class AgglomerativeClustering(BaseClustering):
                 else -np.inf
             )
 
-        return fcluster(dendrogram, threshold, criterion="distance") - 1
+        clusters = fcluster(dendrogram, threshold, criterion="distance") - 1
+
+        # split clusters into two categories based on their number of items:
+        # large clusters vs. small clusters
+        cluster_unique, cluster_counts = np.unique(
+            clusters,
+            return_counts=True,
+        )
+
+        large_clusters = cluster_unique[cluster_counts >= self.min_cluster_size]
+        if large_clusters.size == 0:
+            clusters[:] = 0
+            return clusters
+
+        small_clusters = cluster_unique[cluster_counts < self.min_cluster_size]
+        if small_clusters.size == 0:
+            return clusters
+
+        # re-assign each small cluster to the most similar large cluster
+        large_centroids = np.vstack(
+            [
+                np.mean(embeddings[clusters == large_k], axis=0)
+                for large_k in large_clusters
+            ]
+        )
+        small_centroids = np.vstack(
+            [
+                np.mean(embeddings[clusters == small_k], axis=0)
+                for small_k in small_clusters
+            ]
+        )
+        centroids_cdist = cdist(large_centroids, small_centroids, metric=self.metric)
+        for small_k, large_k in enumerate(np.argmin(centroids_cdist, axis=0)):
+            clusters[clusters == small_clusters[small_k]] = large_clusters[large_k]
+
+        # re-number clusters from 0 to num_large_clusters
+        _, clusters = np.unique(clusters, return_inverse=True)
+        return clusters
 
 
 class OracleClustering(BaseClustering):
@@ -602,6 +762,8 @@ class HiddenMarkovModelClustering(BaseClustering):
 
         history = [-np.inf]
         patience = min(3, max_clusters - min_clusters)
+        num_clusters = min_clusters
+
         for n_components in range(min_clusters, max_clusters + 1):
 
             hmm = self.fit_hmm(n_components, euclidean_embeddings)
@@ -610,6 +772,10 @@ class HiddenMarkovModelClustering(BaseClustering):
             except ValueError:  # ValueError: startprob_ must sum to 1 (got nan)
                 # stop adding states as there too many and not enough
                 # training data to train it in a reliable manner.
+                break
+
+            # stop early if too few states were found
+            if len(np.unique(train_clusters)) < n_components:
                 break
 
             # compute distance between the two closest centroids
@@ -645,5 +811,6 @@ class HiddenMarkovModelClustering(BaseClustering):
 
 class Clustering(Enum):
     AgglomerativeClustering = AgglomerativeClustering
+    FINCHClustering = FINCHClustering
     HiddenMarkovModelClustering = HiddenMarkovModelClustering
     OracleClustering = OracleClustering

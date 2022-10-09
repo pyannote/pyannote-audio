@@ -1,0 +1,5 @@
+# @package _group_
+_target_: adan_pytorch.Adan
+lr: 1e-3
+betas: [0.1, 0.1, 0.001]
+weight_decay: 0.0
