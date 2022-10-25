@@ -451,52 +451,28 @@ class AgglomerativeClustering(BaseClustering):
         """
 
         num_embeddings, _ = embeddings.shape
+
+        # linkage function will complain when there is just one embedding to cluster
         if num_embeddings == 1:
             return np.zeros((1,), dtype=np.uint8)
 
+        # centroid, median, and Ward method only support "euclidean" metric
+        # therefore we unit-normalize embeddings to somehow make them "euclidean"
         if self.metric == "cosine" and self.method in ["centroid", "median", "ward"]:
-            # unit-normalize embeddings to somehow make them "euclidean"
             with np.errstate(divide="ignore", invalid="ignore"):
                 embeddings /= np.linalg.norm(embeddings, axis=-1, keepdims=True)
             dendrogram: np.ndarray = linkage(
                 embeddings, method=self.method, metric="euclidean"
             )
 
+        # other methods work just fine with any metric
         else:
             dendrogram: np.ndarray = linkage(
                 embeddings, method=self.method, metric=self.metric
             )
 
-        if num_clusters is None:
-
-            # FIXME: revise this to account for "min_cluster_size" as there is no longer
-            # a direct correlation between iteration index and final number of clusters
-
-            # FIXME: revise the assumption that threshold is increasing monotonically
-            # as this is not the case for centroid linkage, for instance...
-
-            max_threshold: float = (
-                dendrogram[-min_clusters, 2]
-                if min_clusters < num_embeddings
-                else -np.inf
-            )
-            min_threshold: float = (
-                dendrogram[-max_clusters, 2]
-                if max_clusters < num_embeddings
-                else -np.inf
-            )
-
-            threshold = min(max(self.threshold, min_threshold), max_threshold)
-
-        else:
-
-            threshold = (
-                dendrogram[-num_clusters, 2]
-                if num_clusters < num_embeddings
-                else -np.inf
-            )
-
-        clusters = fcluster(dendrogram, threshold, criterion="distance") - 1
+        # apply the predefined threshold
+        clusters = fcluster(dendrogram, self.threshold, criterion="distance") - 1
 
         # split clusters into two categories based on their number of items:
         # large clusters vs. small clusters
@@ -504,17 +480,75 @@ class AgglomerativeClustering(BaseClustering):
             clusters,
             return_counts=True,
         )
-
         large_clusters = cluster_unique[cluster_counts >= self.min_cluster_size]
-        if large_clusters.size == 0:
+        num_large_clusters = len(large_clusters)
+
+        # force num_clusters to min_clusters in case the actual number is too small
+        if num_large_clusters < min_clusters:
+            num_clusters = min_clusters
+
+        # force num_clusters to max_clusters in case the actual number is too large
+        elif num_large_clusters > max_clusters:
+            num_clusters = max_clusters
+
+        else:
+            num_clusters = num_large_clusters
+
+        # re-run the clustering with the newly defined target num_clusters
+        # and go as far as possible in the merging process.
+
+        # switch stopping criterion from "inter-cluster distance" stopping to "iteration index"
+        _dendrogram = np.copy(dendrogram)
+        _dendrogram[:, 2] = np.arange(num_embeddings - 1)
+
+        best_iteration = num_embeddings - 1
+        best_num_large_clusters = 1
+
+        # traverse the dendrogram in reverse order (from one big cluster to plenty of small clusters)
+        for iteration in range(num_embeddings - 2, 0, -1):
+
+            # only consider iterations that might have resulted in changing the number of large clusters
+            new_cluster_size = _dendrogram[iteration, 3]
+            if new_cluster_size < self.min_cluster_size:
+                continue
+
+            # estimate number of large clusters at considered iteration
+            clusters = fcluster(_dendrogram, iteration, criterion="distance") - 1
+            cluster_unique, cluster_counts = np.unique(clusters, return_counts=True)
+            large_clusters = cluster_unique[cluster_counts >= self.min_cluster_size]
+            num_large_clusters = len(large_clusters)
+
+            # keep track of iteration that leads to the number of large clusters
+            # as close as possible to the target number of clusters
+            if abs(num_large_clusters - num_clusters) < abs(
+                best_num_large_clusters - num_clusters
+            ):
+                best_iteration = iteration
+                best_num_large_clusters = num_large_clusters
+
+            # stop traversing the dendrogram as soon as we found a good candidate
+            if num_large_clusters == num_clusters:
+                break
+
+        # re-apply best iteration in case we did not find a perfect candidate
+        if best_num_large_clusters != num_clusters:
+            clusters = fcluster(_dendrogram, best_iteration, criterion="distance") - 1
+            cluster_unique, cluster_counts = np.unique(clusters, return_counts=True)
+            large_clusters = cluster_unique[cluster_counts >= self.min_cluster_size]
+            num_large_clusters = len(large_clusters)
+            print(
+                f"Found only {num_large_clusters} clusters. Using a smaller value than {self.min_cluster_size} for `min_cluster_size` might help."
+            )
+
+        if num_large_clusters == 0:
             clusters[:] = 0
             return clusters
 
         small_clusters = cluster_unique[cluster_counts < self.min_cluster_size]
-        if small_clusters.size == 0:
+        if len(small_clusters) == 0:
             return clusters
 
-        # re-assign each small cluster to the most similar large cluster
+        # re-assign each small cluster to the most similar large cluster based on their respective centroids
         large_centroids = np.vstack(
             [
                 np.mean(embeddings[clusters == large_k], axis=0)
