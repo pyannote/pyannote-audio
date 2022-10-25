@@ -33,7 +33,7 @@ import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.optim
-from huggingface_hub import cached_download, hf_hub_url
+from huggingface_hub import hf_hub_download
 from pyannote.core import SlidingWindow
 from pytorch_lightning.utilities.cloud_io import load as pl_load
 from pytorch_lightning.utilities.model_summary import ModelSummary
@@ -777,15 +777,21 @@ class Model(pl.LightningModule):
                 model_id = checkpoint
                 revision = None
 
-            url = hf_hub_url(
-                model_id, filename=HF_PYTORCH_WEIGHTS_NAME, revision=revision
-            )
-            path_for_pl = cached_download(
-                url=url,
+            path_for_pl = hf_hub_download(
+                model_id,
+                HF_PYTORCH_WEIGHTS_NAME,
+                repo_type="model",
+                revision=revision,
                 library_name="pyannote",
                 library_version=__version__,
                 cache_dir=cache_dir,
+                # force_download=False,
+                # proxies=None,
+                # etag_timeout=10,
+                # resume_download=False,
                 use_auth_token=use_auth_token,
+                # local_files_only=False,
+                # legacy_cache_layout=False,
             )
 
             # HACK Huggingface download counters rely on config.yaml
@@ -793,16 +799,24 @@ class Model(pl.LightningModule):
             # HACK do not use it. Fails silently in case model does not
             # HACK have a config.yaml file.
             try:
-                config_url = hf_hub_url(
-                    model_id, filename=HF_LIGHTNING_CONFIG_NAME, revision=revision
-                )
-                _ = cached_download(
-                    url=config_url,
+
+                _ = hf_hub_download(
+                    model_id,
+                    HF_LIGHTNING_CONFIG_NAME,
+                    repo_type="model",
+                    revision=revision,
                     library_name="pyannote",
                     library_version=__version__,
                     cache_dir=cache_dir,
+                    # force_download=False,
+                    # proxies=None,
+                    # etag_timeout=10,
+                    # resume_download=False,
                     use_auth_token=use_auth_token,
+                    # local_files_only=False,
+                    # legacy_cache_layout=False,
                 )
+
             except Exception:
                 pass
 

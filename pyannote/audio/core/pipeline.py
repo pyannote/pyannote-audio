@@ -28,14 +28,14 @@ from pathlib import Path
 from typing import Callable, List, Optional, Text, Union
 
 import yaml
-from huggingface_hub import cached_download, hf_hub_url
+from huggingface_hub import hf_hub_download
+from pyannote.core.utils.helper import get_class_by_name
+from pyannote.database import FileFinder, ProtocolFile
+from pyannote.pipeline import Pipeline as _Pipeline
 
 from pyannote.audio import Audio, __version__
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import CACHE_DIR
-from pyannote.core.utils.helper import get_class_by_name
-from pyannote.database import FileFinder, ProtocolFile
-from pyannote.pipeline import Pipeline as _Pipeline
 
 PIPELINE_PARAMS_NAME = "config.yaml"
 
@@ -77,14 +77,22 @@ class Pipeline(_Pipeline):
             else:
                 model_id = checkpoint_path
                 revision = None
-            url = hf_hub_url(model_id, filename=PIPELINE_PARAMS_NAME, revision=revision)
 
-            config_yml = cached_download(
-                url=url,
+            config_yml = hf_hub_download(
+                model_id,
+                PIPELINE_PARAMS_NAME,
+                repo_type="model",
+                revision=revision,
                 library_name="pyannote",
                 library_version=__version__,
                 cache_dir=cache_dir,
+                # force_download=False,
+                # proxies=None,
+                # etag_timeout=10,
+                # resume_download=False,
                 use_auth_token=use_auth_token,
+                # local_files_only=False,
+                # legacy_cache_layout=False,
             )
 
         with open(config_yml, "r") as fp:
