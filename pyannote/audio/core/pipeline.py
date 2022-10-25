@@ -29,6 +29,7 @@ from typing import Callable, List, Optional, Text, Union
 
 import yaml
 from huggingface_hub import hf_hub_download
+from huggingface_hub.utils import RepositoryNotFoundError
 from pyannote.core.utils.helper import get_class_by_name
 from pyannote.database import FileFinder, ProtocolFile
 from pyannote.pipeline import Pipeline as _Pipeline
@@ -78,22 +79,39 @@ class Pipeline(_Pipeline):
                 model_id = checkpoint_path
                 revision = None
 
-            config_yml = hf_hub_download(
-                model_id,
-                PIPELINE_PARAMS_NAME,
-                repo_type="model",
-                revision=revision,
-                library_name="pyannote",
-                library_version=__version__,
-                cache_dir=cache_dir,
-                # force_download=False,
-                # proxies=None,
-                # etag_timeout=10,
-                # resume_download=False,
-                use_auth_token=use_auth_token,
-                # local_files_only=False,
-                # legacy_cache_layout=False,
-            )
+            try:
+                config_yml = hf_hub_download(
+                    model_id,
+                    PIPELINE_PARAMS_NAME,
+                    repo_type="model",
+                    revision=revision,
+                    library_name="pyannote",
+                    library_version=__version__,
+                    cache_dir=cache_dir,
+                    # force_download=False,
+                    # proxies=None,
+                    # etag_timeout=10,
+                    # resume_download=False,
+                    use_auth_token=use_auth_token,
+                    # local_files_only=False,
+                    # legacy_cache_layout=False,
+                )
+
+            except RepositoryNotFoundError:
+                print(
+                    f"""
+Could not download '{model_id}' pipeline.
+It might be because the pipeline is private or gated so make
+sure to authenticate. Visit https://hf.co/settings/tokens to
+create your access token and retry with:
+
+   >>> Pipeline.from_pretrained('{model_id}',
+   ...                          use_auth_token=YOUR_AUTH_TOKEN)
+
+If this still does not work, it might be because the pipeline is gated:
+visit https://hf.co/{model_id} to accept the user conditions."""
+                )
+                return None
 
         with open(config_yml, "r") as fp:
             config = yaml.load(fp, Loader=yaml.SafeLoader)
