@@ -452,6 +452,9 @@ class AgglomerativeClustering(BaseClustering):
 
         num_embeddings, _ = embeddings.shape
 
+        # TODO: heuristic to reduce self.min_cluster_size when num_embeddings
+        # is small. otherwise it will just return one cluster
+
         # linkage function will complain when there is just one embedding to cluster
         if num_embeddings == 1:
             return np.zeros((1,), dtype=np.uint8)
@@ -491,54 +494,55 @@ class AgglomerativeClustering(BaseClustering):
         elif num_large_clusters > max_clusters:
             num_clusters = max_clusters
 
-        else:
-            num_clusters = num_large_clusters
+        if num_clusters is not None:
 
-        # re-run the clustering with the newly defined target num_clusters
-        # and go as far as possible in the merging process.
+            # switch stopping criterion from "inter-cluster distance" stopping to "iteration index"
+            _dendrogram = np.copy(dendrogram)
+            _dendrogram[:, 2] = np.arange(num_embeddings - 1)
 
-        # switch stopping criterion from "inter-cluster distance" stopping to "iteration index"
-        _dendrogram = np.copy(dendrogram)
-        _dendrogram[:, 2] = np.arange(num_embeddings - 1)
+            best_iteration = num_embeddings - 1
+            best_num_large_clusters = 1
 
-        best_iteration = num_embeddings - 1
-        best_num_large_clusters = 1
+            # traverse the dendrogram by going further and further away
+            # from the "optimal" threshold
 
-        # traverse the dendrogram in reverse order (from one big cluster to plenty of small clusters)
-        for iteration in range(num_embeddings - 2, 0, -1):
+            for iteration in np.argsort(np.abs(dendrogram[:, 2] - self.threshold)):
 
-            # only consider iterations that might have resulted in changing the number of large clusters
-            new_cluster_size = _dendrogram[iteration, 3]
-            if new_cluster_size < self.min_cluster_size:
-                continue
+                # only consider iterations that might have resulted
+                # in changing the number of (large) clusters
+                new_cluster_size = _dendrogram[iteration, 3]
+                if new_cluster_size < self.min_cluster_size:
+                    continue
 
-            # estimate number of large clusters at considered iteration
-            clusters = fcluster(_dendrogram, iteration, criterion="distance") - 1
-            cluster_unique, cluster_counts = np.unique(clusters, return_counts=True)
-            large_clusters = cluster_unique[cluster_counts >= self.min_cluster_size]
-            num_large_clusters = len(large_clusters)
+                # estimate number of large clusters at considered iteration
+                clusters = fcluster(_dendrogram, iteration, criterion="distance") - 1
+                cluster_unique, cluster_counts = np.unique(clusters, return_counts=True)
+                large_clusters = cluster_unique[cluster_counts >= self.min_cluster_size]
+                num_large_clusters = len(large_clusters)
 
-            # keep track of iteration that leads to the number of large clusters
-            # as close as possible to the target number of clusters
-            if abs(num_large_clusters - num_clusters) < abs(
-                best_num_large_clusters - num_clusters
-            ):
-                best_iteration = iteration
-                best_num_large_clusters = num_large_clusters
+                # keep track of iteration that leads to the number of large clusters
+                # as close as possible to the target number of clusters.
+                if abs(num_large_clusters - num_clusters) < abs(
+                    best_num_large_clusters - num_clusters
+                ):
+                    best_iteration = iteration
+                    best_num_large_clusters = num_large_clusters
 
-            # stop traversing the dendrogram as soon as we found a good candidate
-            if num_large_clusters == num_clusters:
-                break
+                # stop traversing the dendrogram as soon as we found a good candidate
+                if num_large_clusters == num_clusters:
+                    break
 
-        # re-apply best iteration in case we did not find a perfect candidate
-        if best_num_large_clusters != num_clusters:
-            clusters = fcluster(_dendrogram, best_iteration, criterion="distance") - 1
-            cluster_unique, cluster_counts = np.unique(clusters, return_counts=True)
-            large_clusters = cluster_unique[cluster_counts >= self.min_cluster_size]
-            num_large_clusters = len(large_clusters)
-            print(
-                f"Found only {num_large_clusters} clusters. Using a smaller value than {self.min_cluster_size} for `min_cluster_size` might help."
-            )
+            # re-apply best iteration in case we did not find a perfect candidate
+            if best_num_large_clusters != num_clusters:
+                clusters = (
+                    fcluster(_dendrogram, best_iteration, criterion="distance") - 1
+                )
+                cluster_unique, cluster_counts = np.unique(clusters, return_counts=True)
+                large_clusters = cluster_unique[cluster_counts >= self.min_cluster_size]
+                num_large_clusters = len(large_clusters)
+                print(
+                    f"Found only {num_large_clusters} clusters. Using a smaller value than {self.min_cluster_size} for `min_cluster_size` might help."
+                )
 
         if num_large_clusters == 0:
             clusters[:] = 0
