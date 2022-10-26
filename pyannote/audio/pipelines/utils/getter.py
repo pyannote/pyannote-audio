@@ -46,9 +46,9 @@ def get_model(
         pretrained model on Huggingface.co and loads with `Model.from_pretrained(model)`
         When `dict`, loads with `Model.from_pretrained(**model)`.
     use_auth_token : str, optional
-        When loading a private huggingface.co pipeline, set `use_auth_token`
+        When loading a private or gated huggingface.co pipeline, set `use_auth_token`
         to True or to a string containing your hugginface.co authentication
-        token that can be obtained by running `huggingface-cli login`
+        token that can be obtained by visiting https://hf.co/settings/tokens
 
     Returns
     -------
