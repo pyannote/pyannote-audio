@@ -175,7 +175,7 @@ def pipeline(
     beep: bool = False,
 ) -> Dict[str, Any]:
 
-    pipeline = Pipeline.from_pretrained(pipeline)
+    pipeline = Pipeline.from_pretrained(pipeline, use_auth_token=True)
     classes = pipeline.classes()
 
     if isinstance(classes, Iterator):
