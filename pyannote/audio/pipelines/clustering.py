@@ -452,8 +452,11 @@ class AgglomerativeClustering(BaseClustering):
 
         num_embeddings, _ = embeddings.shape
 
-        # TODO: heuristic to reduce self.min_cluster_size when num_embeddings
-        # is small. otherwise it will just return one cluster
+        # heuristic to reduce self.min_cluster_size when num_embeddings is very small
+        # (0.1 value is kind of arbitrary, though)
+        min_cluster_size = min(
+            self.min_cluster_size, max(1, round(0.1 * num_embeddings))
+        )
 
         # linkage function will complain when there is just one embedding to cluster
         if num_embeddings == 1:
@@ -483,7 +486,7 @@ class AgglomerativeClustering(BaseClustering):
             clusters,
             return_counts=True,
         )
-        large_clusters = cluster_unique[cluster_counts >= self.min_cluster_size]
+        large_clusters = cluster_unique[cluster_counts >= min_cluster_size]
         num_large_clusters = len(large_clusters)
 
         # force num_clusters to min_clusters in case the actual number is too small
@@ -511,13 +514,13 @@ class AgglomerativeClustering(BaseClustering):
                 # only consider iterations that might have resulted
                 # in changing the number of (large) clusters
                 new_cluster_size = _dendrogram[iteration, 3]
-                if new_cluster_size < self.min_cluster_size:
+                if new_cluster_size < min_cluster_size:
                     continue
 
                 # estimate number of large clusters at considered iteration
                 clusters = fcluster(_dendrogram, iteration, criterion="distance") - 1
                 cluster_unique, cluster_counts = np.unique(clusters, return_counts=True)
-                large_clusters = cluster_unique[cluster_counts >= self.min_cluster_size]
+                large_clusters = cluster_unique[cluster_counts >= min_cluster_size]
                 num_large_clusters = len(large_clusters)
 
                 # keep track of iteration that leads to the number of large clusters
@@ -538,17 +541,17 @@ class AgglomerativeClustering(BaseClustering):
                     fcluster(_dendrogram, best_iteration, criterion="distance") - 1
                 )
                 cluster_unique, cluster_counts = np.unique(clusters, return_counts=True)
-                large_clusters = cluster_unique[cluster_counts >= self.min_cluster_size]
+                large_clusters = cluster_unique[cluster_counts >= min_cluster_size]
                 num_large_clusters = len(large_clusters)
                 print(
-                    f"Found only {num_large_clusters} clusters. Using a smaller value than {self.min_cluster_size} for `min_cluster_size` might help."
+                    f"Found only {num_large_clusters} clusters. Using a smaller value than {min_cluster_size} for `min_cluster_size` might help."
                 )
 
         if num_large_clusters == 0:
             clusters[:] = 0
             return clusters
 
-        small_clusters = cluster_unique[cluster_counts < self.min_cluster_size]
+        small_clusters = cluster_unique[cluster_counts < min_cluster_size]
         if len(small_clusters) == 0:
             return clusters
 
