@@ -416,6 +416,10 @@ class Model(pl.LightningModule):
 
     @staticmethod
     def check_version(library: Text, theirs: Text, mine: Text):
+
+        theirs = ".".join(theirs.split(".")[:3])
+        mine = ".".join(mine.split(".")[:3])
+
         theirs = VersionInfo.parse(theirs)
         mine = VersionInfo.parse(mine)
         if theirs.major != mine.major:
