@@ -442,10 +442,10 @@ def multilabel_to_monolabel_torch(t : torch.Tensor, max_num_speakers: int, max_s
         One hot (BATCH_SIZE,NUM_FRAMES,NUM_CLASSES_MONO) tensor
     """
 
-    if torch.max(torch.sum(t, dim=2).flatten()) > max_simult_speakers:
-        print(f"Warning : more than {max_simult_speakers} simult speakers ! {torch.max(torch.sum(t, dim=2).flatten())}")
+    # if torch.max(torch.sum(t, dim=2).flatten()) > max_simult_speakers:
+    #     print(f"Warning : more than {max_simult_speakers} simult speakers ! {torch.max(torch.sum(t, dim=2).flatten())}")
     if t.shape[-1] > max_num_speakers:
-        print("WARNING: input tensor has too speakers. Blindly removing the last ones")
+        print("WARNING: input tensor has too many speakers. Blindly removing the last ones")
         t = t[:,:,:max_num_speakers]
     else:
         t = torch.nn.functional.pad(t, [0, max_num_speakers-t.shape[-1]])
