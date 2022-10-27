@@ -29,6 +29,7 @@ from typing import Dict, Optional, Sequence, Text, Union
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import torch.nn.functional
 from pyannote.core import Segment, SlidingWindowFeature
 from torch.utils.data._utils.collate import default_collate
 from torchmetrics import AUROC, Metric
@@ -400,8 +401,15 @@ class SegmentationTaskMixin:
             )
 
         elif self.specifications.problem == Problem.MONO_LABEL_CLASSIFICATION:
-            # TODO: implement when pyannote.audio gets its first mono-label segmentation task
-            raise NotImplementedError()
+            from .segmentation_monolabel import monolabel_to_multilabel_torch
+
+            # TODO: make cleaner
+            pred_one_hot = torch.nn.functional.one_hot(torch.argmax(preds, dim=-1), num_classes=preds.shape[-1])
+            pred_multi = monolabel_to_multilabel_torch(pred_one_hot, self.max_num_speakers, self.max_simult_speakers)
+            self.model.validation_metric(
+                torch.transpose(pred_multi, 1, 2),
+                torch.transpose(target, 1, 2),
+            )
 
         self.model.log_dict(
             self.model.validation_metric,
