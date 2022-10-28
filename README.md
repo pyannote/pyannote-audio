@@ -11,7 +11,7 @@
 
 
 ```python
-# 1. visit hf.co/pyannote/speaker-diarization and accept user conditions (only if requested)
+# 1. visit hf.co/pyannote/speaker-diarization and hf.co/pyannote/segmentation and accept user conditions (only if requested)
 # 2. visit hf.co/settings/tokens to create an access token (only if you had to go through 1.)
 # 3. instantiate pretrained speaker diarization pipeline
 from pyannote.audio import Pipeline
