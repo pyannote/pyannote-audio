@@ -1,6 +1,8 @@
 import torch
 import random
-from pyannote.audio.tasks.segmentation.segmentation_monolabel import monolabel_to_multilabel_torch, multilabel_to_monolabel_torch, get_monolabel_class_count
+
+from torch.functional import itertools
+from pyannote.audio.tasks.segmentation.segmentation_monolabel import monolabel_to_multilabel_torch, multilabel_to_monolabel_torch, get_monolabel_class_count, get_monolabel_permutation
 
 
 def get_multilabel_sample(batch_size, num_frames, max_num_speakers, max_simult_speakers=0, device=None):
@@ -67,3 +69,23 @@ def test_multi_to_mono_too_many_simult():
     too_many_simult_frames = torch.sum(sample, dim=-1) > MAX_SIMULT_SPEAKERS
     # check the errors are on the frames with too many speakers
     assert torch.all(error_frames == too_many_simult_frames)
+
+
+def test_multi_to_mono_permutation():
+    MAX_SPEAKERS=6
+
+    # tests that the mono-version of every permutations and their inverses
+    # are still permutations and their inverses
+    # (unless our function makes errors on everything but pairs of permutations and their inverses, unlikely)
+
+    for max_speakers in range(1,MAX_SPEAKERS):
+        for max_simult_speakers in range(1, max_speakers+1):
+            sample_t = torch.arange(0, get_monolabel_class_count(max_speakers, max_simult_speakers))
+
+            for p_tuple in itertools.permutations([i for i in range(max_speakers)]):
+                p = torch.tensor(p_tuple)
+                p_inv = torch.argsort(p)
+                p_mono = get_monolabel_permutation(p, max_speakers, max_simult_speakers)
+                p_inv_mono = get_monolabel_permutation(p_inv, max_speakers, max_simult_speakers)
+
+                assert torch.all(sample_t == sample_t[p_mono][p_inv_mono])

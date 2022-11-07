@@ -30,6 +30,7 @@ import torch.nn.functional
 import itertools
 from pyannote.core import SlidingWindow
 from pyannote.database import Protocol
+from torch.nn.modules import padding
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchmetrics import Metric
 from typing_extensions import Literal
@@ -317,9 +318,20 @@ class SegmentationMonolabel(SegmentationTaskMixin, Task):
         batch_size, num_frames, _ = prediction.shape
         # (batch_size, num_frames, num_classes)
 
-        # find optimal permutation
-        # permutated_prediction, _ = permutate(target, prediction)
-        permutated_prediction, _ = align_monolabel(target_mono, prediction, self.max_num_speakers, self.max_simult_speakers)
+        # find optimal permutation between the one hot of our multiclass-softmax and the multilabel target
+        # and use it to permutate the multiclass-softmax
+        one_hot_prediction = torch.nn.functional.one_hot(
+            torch.argmax(prediction, dim=-1),
+            get_monolabel_class_count(self.max_num_speakers, self.max_simult_speakers)).float()
+        one_hot_prediction_multi = monolabel_to_multilabel_torch(one_hot_prediction, self.max_num_speakers, self.max_simult_speakers)
+        
+        permutated_oh, permutation = permutate(target, one_hot_prediction_multi)
+        permutated_prediction = torch.zeros_like(prediction)
+        for i in range(batch_size):
+            # print(f'{permutation[i]=} // {i=} // {one_hot_prediction_multi[i][0]} -> {permutated_oh[i][0]} ({target[i][0]})')
+            best_perm_mono = get_monolabel_permutation(torch.tensor(permutation[i]), self.max_num_speakers, self.max_simult_speakers)
+            permutated_prediction[i,:,:] = prediction[i,:,best_perm_mono]
+
 
         # frames weight
         weight_key = getattr(self, "weight", None)
@@ -495,63 +507,29 @@ def monolabel_to_multilabel_torch(mono_t: torch.Tensor, max_num_speakers: int, m
 
 
 def get_monolabel_permutation(permutation: torch.Tensor, max_speakers: int, max_simult_speakers: int):
-    # Convert a permutation from multilabel to monolabel
+    # In case the permutation only keeps some speakers, build a  tensor padded_permutation
+    # made of the permutation followed by the unused speakers
+    arange_t, idx_counts = torch.cat([torch.arange(0, max_speakers), permutation]).unique(return_counts=True)
+    padded_permutation = torch.cat([permutation, arange_t[idx_counts == 1]])
 
-    # num_mono_classes, groups = get_monolabel_class_count(max_speakers, max_simult_speakers, give_groups=True)
+    conv_dict = compute_conversion_dict(max_speakers, max_simult_speakers)
+    inv_conv_dict = {v: k for k, v in conv_dict.items()}
 
-    conv = build_mono_to_multi_tensor(max_speakers, max_simult_speakers, device=permutation.device)
-    multiplied = torch.matmul(conv.float(), (permutation+1).float())
-
-    result = torch.zeros(conv.shape[0], device=permutation.device, dtype=torch.long)
-    # loop on classes with 0, 1, 2, ... speakers active simultaneously 
-    classes_covered = 0
-    for i in range(0, max_simult_speakers+1):
-        group_size = math.comb(max_speakers, i)
-        # argsort has to give the first arg first if there are multiple identical elements
-        # indices1==permutation to sort, indices2==numbering numbers in ascending order
-        indices1 = torch.argsort(multiplied[classes_covered:classes_covered+group_size])
-        indices2 = torch.argsort(indices1)
-        result[classes_covered:classes_covered+group_size] = classes_covered + indices2
-
-        classes_covered += group_size
-
-    # print(f"{permutation=};;;;;;; {result=}")
-    return result
+    perm_mono = [0,]
+    speakers = [i for i in range(max_speakers)]
+    for simult in range(1, max_simult_speakers+1):
+        # all combinations of simult speakers
+        for c in itertools.combinations(speakers, simult):
+            c_perm_t, _ = torch.sort(padded_permutation[torch.tensor(c)])
+            c_perm = tuple(c_perm_t.tolist())
+            perm_mono.append(inv_conv_dict[c_perm])
+    return perm_mono
 
 def mono_nll_loss(target, preds):
     return torch.nn.functional.nll_loss(preds.float(), torch.argmax(target, dim=-1))
 
 def mono_mse_loss(target, preds):
     return torch.nn.functional.mse_loss(preds, target)
-
-def align_monolabel(target: torch.Tensor, preds: torch.Tensor, max_speakers: int, max_simult_speakers: int, loss_f=mono_nll_loss):
-    batch_size, num_frames, num_mono_classes = preds.shape
-
-    best_permutations = []
-    best_preds_permuted = []
-
-    all_combs = list(itertools.permutations([i for i in range(max_speakers)]))
-    # print(f"number of permutations : {len(all_combs)}")
-    for b in range(batch_size):
-
-        best_loss = 9999999
-        best_permutation = None
-        best_permutation_mono = None
-        for p in all_combs:
-            p_mono = get_monolabel_permutation(torch.tensor(p), max_speakers, max_simult_speakers)
-
-            l = loss_f(preds[b,:,p_mono], target[b])
-            # print(f"{p=} gives {l=}")
-            if l < best_loss:
-                best_permutation = p
-                best_permutation_mono = p_mono
-                best_loss = l
-        best_permutations.append(best_permutation)
-        best_preds_permuted.append(preds[b,:,best_permutation_mono])
-        # print(f"best permutation is {best_permutation=} with {best_loss=}")
-    
-    return torch.stack(best_preds_permuted), best_permutations
-
 
 
 
