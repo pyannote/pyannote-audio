@@ -325,12 +325,17 @@ class SegmentationMonolabel(SegmentationTaskMixin, Task):
             get_monolabel_class_count(self.max_num_speakers, self.max_simult_speakers)).float()
         one_hot_prediction_multi = monolabel_to_multilabel_torch(one_hot_prediction, self.max_num_speakers, self.max_simult_speakers)
         
-        permutated_oh, permutation = permutate(target, one_hot_prediction_multi)
+        permutated_oh, permutations = permutate(target, one_hot_prediction_multi)
         permutated_prediction = torch.zeros_like(prediction)
         for i in range(batch_size):
             # print(f'{permutation[i]=} // {i=} // {one_hot_prediction_multi[i][0]} -> {permutated_oh[i][0]} ({target[i][0]})')
-            best_perm_mono = get_monolabel_permutation(torch.tensor(permutation[i]), self.max_num_speakers, self.max_simult_speakers)
-            permutated_prediction[i,:,:] = prediction[i,:,best_perm_mono]
+            best_permutation = permutations[i]
+            # I suppose that the case where best_permutation is None indicates there's no permutation to do
+            if best_permutation is not None:
+                best_perm_mono = get_monolabel_permutation(torch.tensor(best_permutation), self.max_num_speakers, self.max_simult_speakers)
+                permutated_prediction[i,:,:] = prediction[i,:,best_perm_mono]
+            else:
+                permutated_prediction[i,:,:] = prediction[i,:,:]
 
 
         # frames weight
