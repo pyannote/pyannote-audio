@@ -5,10 +5,10 @@ from pathlib import Path
 from pkg_resources import VersionConflict, require
 from setuptools import find_packages, setup
 
-with open("README.md") as f:
+with open("README.md", mode='r', encoding='utf-8') as f:
     long_description = f.read()
 
-with open("requirements.txt") as f:
+with open("requirements.txt", mode='r', encoding='utf-8') as f:
     requirements = f.read().splitlines()
 
 try:
@@ -21,7 +21,7 @@ except VersionConflict:
 ROOT_DIR = Path(__file__).parent.resolve()
 # Creating the version file
 
-with open("version.txt") as f:
+with open("version.txt", mode='r', encoding='utf-8') as f:
     version = f.read()
 
 version = version.strip()
@@ -35,7 +35,7 @@ print("-- Building version " + version)
 
 version_path = ROOT_DIR / "pyannote" / "audio" / "version.py"
 
-with open(version_path, "w") as f:
+with open(version_path, mode='w', encoding='utf-8') as f:
     f.write("__version__ = '{}'\n".format(version))
 
 if __name__ == "__main__":
