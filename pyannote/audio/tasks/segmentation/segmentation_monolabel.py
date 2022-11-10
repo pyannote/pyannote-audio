@@ -294,10 +294,6 @@ class SegmentationMonolabel(SegmentationTaskMixin, Task):
         target = target[keep]
         waveform = waveform[keep]
 
-
-        # monolabel postprocess
-        target_mono = multilabel_to_monolabel_torch(target, self.max_num_speakers, self.max_simult_speakers)
-
         # log effective batch size
         self.model.log(
             f"{self.logging_prefix}BatchSize",
@@ -319,24 +315,14 @@ class SegmentationMonolabel(SegmentationTaskMixin, Task):
         # (batch_size, num_frames, num_classes)
 
         # find optimal permutation between the one hot of our multiclass-softmax and the multilabel target
-        # and use it to permutate the multiclass-softmax
+        # and use it to permutate target
         one_hot_prediction = torch.nn.functional.one_hot(
             torch.argmax(prediction, dim=-1),
             get_monolabel_class_count(self.max_num_speakers, self.max_simult_speakers)).float()
         one_hot_prediction_multi = monolabel_to_multilabel_torch(one_hot_prediction, self.max_num_speakers, self.max_simult_speakers)
         
-        permutated_oh, permutations = permutate(target, one_hot_prediction_multi)
-        permutated_prediction = torch.zeros_like(prediction)
-        for i in range(batch_size):
-            # print(f'{permutation[i]=} // {i=} // {one_hot_prediction_multi[i][0]} -> {permutated_oh[i][0]} ({target[i][0]})')
-            best_permutation = permutations[i]
-            # I suppose that the case where best_permutation is None indicates there's no permutation to do
-            if best_permutation is not None:
-                best_perm_mono = get_monolabel_permutation(torch.tensor(best_permutation), self.max_num_speakers, self.max_simult_speakers)
-                permutated_prediction[i,:,:] = prediction[i,:,best_perm_mono]
-            else:
-                permutated_prediction[i,:,:] = prediction[i,:,:]
-
+        permutated_target, _ = permutate(one_hot_prediction_multi, target)
+        permutated_target_mono = multilabel_to_monolabel_torch(target, self.max_num_speakers, self.max_simult_speakers)
 
         # frames weight
         weight_key = getattr(self, "weight", None)
@@ -352,7 +338,7 @@ class SegmentationMonolabel(SegmentationTaskMixin, Task):
         warm_up_right = round(self.warm_up[1] / self.duration * num_frames)
         weight[:, num_frames - warm_up_right :] = 0.0
 
-        seg_loss = self.segmentation_loss(permutated_prediction, target_mono, weight=weight)
+        seg_loss = self.segmentation_loss(prediction, permutated_target_mono, weight=weight)
 
         self.model.log(
             f"{self.logging_prefix}TrainSegLoss",
@@ -368,7 +354,7 @@ class SegmentationMonolabel(SegmentationTaskMixin, Task):
 
         else:
             vad_loss = self.voice_activity_detection_loss(
-                permutated_prediction, target, weight=weight
+                prediction, permutated_target_mono, weight=weight
             )
 
             self.model.log(
