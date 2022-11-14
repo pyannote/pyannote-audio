@@ -131,7 +131,7 @@ class SegmentationMonolabel(SegmentationTaskMixin, Task):
 
         self.max_num_speakers = max_num_speakers
         self.max_simult_speakers = max_simult_speakers
-        self.num_monolabel_classes = get_monolabel_class_count(self.max_num_speakers, self.max_simult_speakers)
+
         self.balance = balance
         self.weight = weight
 
@@ -139,6 +139,13 @@ class SegmentationMonolabel(SegmentationTaskMixin, Task):
             raise ValueError("'loss' must be one of {'bce', 'mse', 'nll'}.")
         self.loss = loss
         self.vad_loss = vad_loss
+
+        # cache task specific stuff
+        self.num_monolabel_classes = get_monolabel_class_count(self.max_num_speakers, self.max_simult_speakers)
+        self.conv_dict = compute_conversion_dict(self.max_num_speakers, self.max_simult_speakers)
+        self.conv_dict_inv = {v: k for k, v in self.conv_dict.items()}
+        self.cache_mono_to_multi_tensor = None  # to be initialized when we know the device
+
 
     def setup(self, stage: Optional[str] = None):
 
@@ -288,6 +295,10 @@ class SegmentationMonolabel(SegmentationTaskMixin, Task):
         waveform = batch["X"]
         # (batch_size, num_channels, num_samples)
 
+        # TODO: initialize cache more elegantly or remove it if performance gains are negligible (seems to be)
+        if not self.is_cache_initialized():
+            self.initialize_cache(target.device)
+
         # drop samples that contain too many speakers
         num_speakers: torch.Tensor = torch.sum(torch.any(target, dim=1), dim=1)
         keep: torch.Tensor = num_speakers <= self.max_num_speakers
@@ -318,11 +329,11 @@ class SegmentationMonolabel(SegmentationTaskMixin, Task):
         # and use it to permutate target
         one_hot_prediction = torch.nn.functional.one_hot(
             torch.argmax(prediction, dim=-1),
-            get_monolabel_class_count(self.max_num_speakers, self.max_simult_speakers)).float()
-        one_hot_prediction_multi = monolabel_to_multilabel_torch(one_hot_prediction, self.max_num_speakers, self.max_simult_speakers)
+            self.num_monolabel_classes).float()
+        one_hot_prediction_multi = self.monolabel_to_multilabel(one_hot_prediction)
         
         permutated_target, _ = permutate(one_hot_prediction_multi, target)
-        permutated_target_mono = multilabel_to_monolabel_torch(target, self.max_num_speakers, self.max_simult_speakers)
+        permutated_target_mono = self.multilabel_to_monolabel(target)
 
         # frames weight
         weight_key = getattr(self, "weight", None)
@@ -391,6 +402,35 @@ class SegmentationMonolabel(SegmentationTaskMixin, Task):
             OptimalFalseAlarmRate(),
         ]
 
+    def train__iter__(self):
+        base_train_iter = super().train__iter__()
+        # Only yield chunks with number of speakers <= max_num_speakers, so that we end up with batch target tensors
+        # of speaker dimension size <= max_num_speakers.
+        while True:
+            chunk = next(base_train_iter)
+            if len(chunk['y'].labels) <= self.max_num_speakers:
+                yield chunk
+
+    # Temporary, used as post model setup (so that we know our task's model, and more importantly: its device)
+    def initialize_cache(self, device):
+        # super().setup_loss_func()
+
+        self.cache_mono_to_multi_tensor = build_mono_to_multi_tensor(self.max_num_speakers, self.max_simult_speakers, device=device)
+
+    def is_cache_initialized(self) -> bool:
+        return self.cache_mono_to_multi_tensor is not None
+
+
+    # Monolabel <-> multilabel problem conversion helpers 
+
+    def multilabel_to_monolabel(self, t: torch.Tensor) -> torch.Tensor:
+        return multilabel_to_monolabel_torch(t, self.max_num_speakers, self.max_simult_speakers, self.cache_mono_to_multi_tensor)
+    
+    def monolabel_to_multilabel(self, t: torch.Tensor) -> torch.Tensor:
+        return monolabel_to_multilabel_torch(t, self.max_num_speakers, self.max_simult_speakers, self.cache_mono_to_multi_tensor)
+
+    def convert_to_monolabel_permutation(self, permutation: torch.Tensor):
+        return get_monolabel_permutation(permutation, self.max_num_speakers, self.max_simult_speakers, self.conv_dict, self.conv_dict_inv)
 
 #---- multi/mono-label conversion-----
 
@@ -427,7 +467,7 @@ def build_mono_to_multi_tensor(max_num_speakers, max_simult_speakers, device=Non
             a[id][torch.tensor(speakers)] = 1.0
     return a
 
-def multilabel_to_monolabel_torch(t : torch.Tensor, max_num_speakers: int, max_simult_speakers: int) -> torch.Tensor:
+def multilabel_to_monolabel_torch(t : torch.Tensor, max_num_speakers: int, max_simult_speakers: int, mono_to_multi_tensor: torch.Tensor = None) -> torch.Tensor:
     """Takes as input a multilabel tensor and outputs its corresponding multilabel tensor.
 
     Parameters
@@ -453,8 +493,9 @@ def multilabel_to_monolabel_torch(t : torch.Tensor, max_num_speakers: int, max_s
     else:
         t = torch.nn.functional.pad(t, [0, max_num_speakers-t.shape[-1]])
 
-    conv = build_mono_to_multi_tensor(max_num_speakers, max_simult_speakers, device=t.device)
-    num_mono_classes = conv.shape[0]
+    if mono_to_multi_tensor is None:
+        mono_to_multi_tensor = build_mono_to_multi_tensor(max_num_speakers, max_simult_speakers, device=t.device)
+    num_mono_classes = mono_to_multi_tensor.shape[0]
 
     # multiply the tensor by the conversion tensor and take the argmax to find which class is active
     # in case multiple elts are equal, we rely on the argmax implementation where the first elt with
@@ -462,13 +503,13 @@ def multilabel_to_monolabel_torch(t : torch.Tensor, max_num_speakers: int, max_s
     # (eg. after multiplying, if speaker 1 is active, both classes for spk 1 and spk 1+2+3 will be == 1
     # but we want to take the class spk 1, which is why classes are ordered in this way. Same problem
     # with 0 speakers active)
-    multiplied = torch.matmul(t.float(), conv.t())
+    multiplied = torch.matmul(t.float(), mono_to_multi_tensor.t())
     argmaxed = torch.argmax(multiplied, dim=-1)
     result = torch.nn.functional.one_hot(argmaxed.long(), num_classes=num_mono_classes)
 
     return result
 
-def monolabel_to_multilabel_torch(mono_t: torch.Tensor, max_num_speakers: int, max_simult_speakers: int) -> torch.Tensor:
+def monolabel_to_multilabel_torch(mono_t: torch.Tensor, max_num_speakers: int, max_simult_speakers: int, mono_to_multi_tensor: torch.Tensor = None) -> torch.Tensor:
     """Converts monolabel encoding into multilabel tensor.
     Should probably only be used to convert one hot encodings into multi-hot encoding. 
 
@@ -491,20 +532,24 @@ def monolabel_to_multilabel_torch(mono_t: torch.Tensor, max_num_speakers: int, m
     # output: (B,F,max_num_speakers)
     num_batches, num_frames, num_classes = mono_t.shape
 
-    conv = build_mono_to_multi_tensor(max_num_speakers, max_simult_speakers, device=mono_t.device)
-    result = torch.matmul(mono_t.float(), conv)
+    if mono_to_multi_tensor is None:
+        mono_to_multi_tensor = build_mono_to_multi_tensor(max_num_speakers, max_simult_speakers, device=mono_t.device)
+    
+    result = torch.matmul(mono_t.float(), mono_to_multi_tensor)
 
     return result
 
 
-def get_monolabel_permutation(permutation: torch.Tensor, max_speakers: int, max_simult_speakers: int):
+def get_monolabel_permutation(permutation: torch.Tensor, max_speakers: int, max_simult_speakers: int, conv_dict: dict = None, inv_conv_dict: dict = None):
     # In case the permutation only keeps some speakers, build a  tensor padded_permutation
     # made of the permutation followed by the unused speakers
     arange_t, idx_counts = torch.cat([torch.arange(0, max_speakers), permutation]).unique(return_counts=True)
     padded_permutation = torch.cat([permutation, arange_t[idx_counts == 1]])
 
-    conv_dict = compute_conversion_dict(max_speakers, max_simult_speakers)
-    inv_conv_dict = {v: k for k, v in conv_dict.items()}
+    if conv_dict is None:
+        conv_dict = compute_conversion_dict(max_speakers, max_simult_speakers)
+    if inv_conv_dict is None:
+        inv_conv_dict = {v: k for k, v in conv_dict.items()}
 
     perm_mono = [0,]
     speakers = [i for i in range(max_speakers)]
