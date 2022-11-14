@@ -35,7 +35,7 @@ print("-- Building version " + version)
 
 version_path = ROOT_DIR / "pyannote" / "audio" / "version.py"
 
-with open(version_path, mode='w', encoding='utf-8') as f:
+with open(version_path, mode="w", encoding="utf-8") as f:
     f.write("__version__ = '{}'\n".format(version))
 
 if __name__ == "__main__":
