@@ -32,7 +32,10 @@ from pyannote.audio import Inference, Model
 PipelineModel = Union[Model, Text, Mapping]
 
 
-def get_model(model: PipelineModel) -> Model:
+def get_model(
+    model: PipelineModel,
+    use_auth_token: Union[Text, None] = None,
+) -> Model:
     """Load pretrained model and set it into `eval` mode.
 
     Parameter
@@ -42,6 +45,10 @@ def get_model(model: PipelineModel) -> Model:
         When `str`, assumes that this is either the path to a checkpoint or the name of a
         pretrained model on Huggingface.co and loads with `Model.from_pretrained(model)`
         When `dict`, loads with `Model.from_pretrained(**model)`.
+    use_auth_token : str, optional
+        When loading a private or gated huggingface.co pipeline, set `use_auth_token`
+        to True or to a string containing your hugginface.co authentication
+        token that can be obtained by visiting https://hf.co/settings/tokens
 
     Returns
     -------
@@ -65,9 +72,12 @@ def get_model(model: PipelineModel) -> Model:
         pass
 
     elif isinstance(model, Text):
-        model = Model.from_pretrained(model, strict=False)
+        model = Model.from_pretrained(
+            model, use_auth_token=use_auth_token, strict=False
+        )
 
     elif isinstance(model, Mapping):
+        model.setdefault("use_auth_token", use_auth_token)
         model = Model.from_pretrained(**model)
 
     else:

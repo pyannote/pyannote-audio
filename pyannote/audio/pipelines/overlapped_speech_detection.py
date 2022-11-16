@@ -22,19 +22,19 @@
 
 """Overlapped speech detection pipelines"""
 
-from typing import Optional, Callable
+from typing import Callable, Optional, Text, Union
 
 import numpy as np
+from pyannote.core import Annotation, SlidingWindowFeature, Timeline
+from pyannote.database import get_annotated
+from pyannote.metrics.detection import DetectionPrecisionRecallFMeasure
+from pyannote.pipeline.parameter import Uniform
 
 from pyannote.audio import Inference
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.pipeline import Pipeline
 from pyannote.audio.pipelines.utils import PipelineModel, get_devices, get_model
 from pyannote.audio.utils.signal import Binarize
-from pyannote.core import Annotation, Timeline, SlidingWindowFeature
-from pyannote.database import get_annotated
-from pyannote.metrics.detection import DetectionPrecisionRecallFMeasure
-from pyannote.pipeline.parameter import Uniform
 
 
 def to_overlap(annotation: Annotation) -> Annotation:
@@ -95,6 +95,10 @@ class OverlappedSpeechDetection(Pipeline):
     recall : float, optional
         Optimize precision at target recall
         Defaults to optimize precision/recall fscore
+    use_auth_token : str, optional
+        When loading private huggingface.co models, set `use_auth_token`
+        to True or to a string containing your hugginface.co authentication
+        token that can be obtained by running `huggingface-cli login`
     inference_kwargs : dict, optional
         Keywords arguments passed to Inference.
 
@@ -113,6 +117,7 @@ class OverlappedSpeechDetection(Pipeline):
         segmentation: PipelineModel = "pyannote/segmentation",
         precision: Optional[float] = None,
         recall: Optional[float] = None,
+        use_auth_token: Union[Text, None] = None,
         **inference_kwargs,
     ):
         super().__init__()
@@ -120,7 +125,7 @@ class OverlappedSpeechDetection(Pipeline):
         self.segmentation = segmentation
 
         # load model and send it to GPU (when available and not already on GPU)
-        model = get_model(segmentation)
+        model = get_model(segmentation, use_auth_token=use_auth_token)
         if model.device.type == "cpu":
             (segmentation_device,) = get_devices(needs=1)
             model.to(segmentation_device)

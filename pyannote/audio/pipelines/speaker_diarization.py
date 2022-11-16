@@ -24,7 +24,7 @@
 
 import itertools
 import math
-from typing import Callable, Optional
+from typing import Callable, Optional, Text, Union
 
 import numpy as np
 import torch
@@ -86,6 +86,10 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         Optimize for a variant of diarization error rate.
         Defaults to {"collar": 0.0, "skip_overlap": False}. This is used in `get_metric`
         when instantiating the metric: GreedyDiarizationErrorRate(**der_variant).
+    use_auth_token : str, optional
+        When loading private huggingface.co models, set `use_auth_token`
+        to True or to a string containing your hugginface.co authentication
+        token that can be obtained by running `huggingface-cli login`
 
     Usage
     -----
@@ -112,12 +116,13 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         embedding_batch_size: int = 32,
         segmentation_batch_size: int = 32,
         der_variant: dict = None,
+        use_auth_token: Union[Text, None] = None,
     ):
 
         super().__init__()
 
         self.segmentation_model = segmentation
-        model: Model = get_model(segmentation)
+        model: Model = get_model(segmentation, use_auth_token=use_auth_token)
 
         self.segmentation_batch_size = segmentation_batch_size
         self.segmentation_duration = (
@@ -156,7 +161,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
         else:
             self._embedding = PretrainedSpeakerEmbedding(
-                self.embedding, device=emb_device
+                self.embedding, device=emb_device, use_auth_token=use_auth_token
             )
             self._audio = Audio(sample_rate=self._embedding.sample_rate, mono=True)
             metric = self._embedding.metric

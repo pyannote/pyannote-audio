@@ -11,23 +11,26 @@
 
 
 ```python
-# instantiate pretrained speaker diarization pipeline
+# 1. visit hf.co/pyannote/speaker-diarization and hf.co/pyannote/segmentation and accept user conditions (only if requested)
+# 2. visit hf.co/settings/tokens to create an access token (only if you had to go through 1.)
+# 3. instantiate pretrained speaker diarization pipeline
 from pyannote.audio import Pipeline
-pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization")
+pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization",
+                                    use_auth_token="ACCESS_TOKEN_GOES_HERE")
 
-# apply pretrained pipeline
+# 4. apply pretrained pipeline
 diarization = pipeline("audio.wav")
 
-# print the result
+# 5. print the result
 for turn, _, speaker in diarization.itertracks(yield_label=True):
     print(f"start={turn.start:.1f}s stop={turn.end:.1f}s speaker_{speaker}")
-# start=0.2s stop=1.5s speaker_A
-# start=1.8s stop=3.9s speaker_B
-# start=4.2s stop=5.7s speaker_A
+# start=0.2s stop=1.5s speaker_0
+# start=1.8s stop=3.9s speaker_1
+# start=4.2s stop=5.7s speaker_0
 # ...
 ```
 
-## What's new in `pyannote.audio` 2.0
+## What's new in `pyannote.audio` 2.x?
 
 For version 2.x of `pyannote.audio`, [I](https://herve.niderb.fr) decided to rewrite almost everything from scratch.
 Highlights of this release are:
@@ -56,6 +59,7 @@ pip install pyannote.audio
 
 ## Documentation
 
+- [Changelog](CHANGELOG.md)
 - Models
     - Available tasks explained
     - [Applying a pretrained model](tutorials/applying_a_model.ipynb)
@@ -69,6 +73,9 @@ pip install pyannote.audio
     - [Adding a new task](tutorials/add_your_own_task.ipynb)
     - Adding a new pipeline
     - Sharing pretrained models and pipelines
+- Blog
+    - 2022-10-23 > ["One speaker segmentation model to rule them all"](https://herve.niderb.fr/fastpages/2022/10/23/One-speaker-segmentation-model-to-rule-them-all)
+    - 2021-08-05 > ["Streaming voice activity detection with pyannote.audio"](https://herve.niderb.fr/fastpages/2021/08/05/Streaming-voice-activity-detection-with-pyannote.html)
 - Miscellaneous
     - [Training with `pyannote-audio-train` command line tool](tutorials/training_with_cli.md)
     - [Annotating your own data with Prodigy](tutorials/prodigy.md)
@@ -94,15 +101,19 @@ pip install pyannote.audio
 
 ## Benchmark
 
-Out of the box, `pyannote.audio` default speaker diarization pipeline is expected to be much better (and faster) in v2.0 than in v1.1.:
+Out of the box, `pyannote.audio` default speaker diarization [pipeline](https://hf.co/pyannote/speaker-diarization) is expected to be much better (and faster) in v2.x than in v1.1. Those numbers are diarization error rates (in %)
 
-| Dataset     | DER% with v1.1 | DER% with v2.0 | Relative improvement |
-| ----------- | -------------- | -------------- | -------------------- |
-| AMI         | 29.7%          | 18.2%          | 38%                  |
-| DIHARD      | 29.2%          | 21.0%          | 28%                  |
-| VoxConverse | 21.5%          | 12.6%          | 41%                  |
-
-A more detailed benchmark is available [here](https://hf.co/pyannote/speaker-diarization).
+| Dataset \ Version      | v1.1 | v2.0 | v2.1.1 (finetuned) |
+| ---------------------- | ---- | ---- | ------------------ |
+| AISHELL-4              | -    | 14.6 | 14.1 (14.5)        |
+| AliMeeting (channel 1) | -    | -    | 27.4 (23.8)        |
+| AMI (IHM)              | 29.7 | 18.2 | 18.9 (18.5)        |
+| AMI (SDM)              | -    | 29.0 | 27.1 (22.2)        |
+| CALLHOME (part2)       | -    | 30.2 | 32.4 (29.3)        |
+| DIHARD 3 (full)        | 29.2 | 21.0 | 26.9 (21.9)        |
+| VoxConverse (v0.3)     | 21.5 | 12.6 | 11.2 (10.7)        |
+| REPERE (phase2)        | -    | 12.6 | 8.2 ( 8.3)         |
+| This American Life     | -    | -    | 20.8 (15.2)        |
 
 ## Citations
 

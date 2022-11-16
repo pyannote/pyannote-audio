@@ -33,7 +33,8 @@ import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.optim
-from huggingface_hub import cached_download, hf_hub_url
+from huggingface_hub import hf_hub_download
+from huggingface_hub.utils import RepositoryNotFoundError
 from pyannote.core import SlidingWindow
 from pytorch_lightning.utilities.cloud_io import load as pl_load
 from pytorch_lightning.utilities.model_summary import ModelSummary
@@ -415,6 +416,10 @@ class Model(pl.LightningModule):
 
     @staticmethod
     def check_version(library: Text, theirs: Text, mine: Text):
+
+        theirs = ".".join(theirs.split(".")[:3])
+        mine = ".".join(mine.split(".")[:3])
+
         theirs = VersionInfo.parse(theirs)
         mine = VersionInfo.parse(mine)
         if theirs.major != mine.major:
@@ -777,32 +782,62 @@ class Model(pl.LightningModule):
                 model_id = checkpoint
                 revision = None
 
-            url = hf_hub_url(
-                model_id, filename=HF_PYTORCH_WEIGHTS_NAME, revision=revision
-            )
-            path_for_pl = cached_download(
-                url=url,
-                library_name="pyannote",
-                library_version=__version__,
-                cache_dir=cache_dir,
-                use_auth_token=use_auth_token,
-            )
+            try:
+                path_for_pl = hf_hub_download(
+                    model_id,
+                    HF_PYTORCH_WEIGHTS_NAME,
+                    repo_type="model",
+                    revision=revision,
+                    library_name="pyannote",
+                    library_version=__version__,
+                    cache_dir=cache_dir,
+                    # force_download=False,
+                    # proxies=None,
+                    # etag_timeout=10,
+                    # resume_download=False,
+                    use_auth_token=use_auth_token,
+                    # local_files_only=False,
+                    # legacy_cache_layout=False,
+                )
+            except RepositoryNotFoundError:
+                print(
+                    f"""
+Could not download '{model_id}' model.
+It might be because the model is private or gated so make
+sure to authenticate. Visit https://hf.co/settings/tokens to
+create your access token and retry with:
+
+   >>> Model.from_pretrained('{model_id}',
+   ...                       use_auth_token=YOUR_AUTH_TOKEN)
+
+If this still does not work, it might be because the model is gated:
+visit https://hf.co/{model_id} to accept the user conditions."""
+                )
+                return None
 
             # HACK Huggingface download counters rely on config.yaml
             # HACK Therefore we download config.yaml even though we
             # HACK do not use it. Fails silently in case model does not
             # HACK have a config.yaml file.
             try:
-                config_url = hf_hub_url(
-                    model_id, filename=HF_LIGHTNING_CONFIG_NAME, revision=revision
-                )
-                _ = cached_download(
-                    url=config_url,
+
+                _ = hf_hub_download(
+                    model_id,
+                    HF_LIGHTNING_CONFIG_NAME,
+                    repo_type="model",
+                    revision=revision,
                     library_name="pyannote",
                     library_version=__version__,
                     cache_dir=cache_dir,
+                    # force_download=False,
+                    # proxies=None,
+                    # etag_timeout=10,
+                    # resume_download=False,
                     use_auth_token=use_auth_token,
+                    # local_files_only=False,
+                    # legacy_cache_layout=False,
                 )
+
             except Exception:
                 pass
 
