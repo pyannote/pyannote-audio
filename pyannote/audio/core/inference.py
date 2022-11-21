@@ -33,7 +33,8 @@ from pytorch_lightning.utilities.memory import is_oom_error
 
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import Model
-from pyannote.audio.core.task import Resolution
+from pyannote.audio.core.task import Problem, Resolution
+from pyannote.audio.tasks.segmentation.segmentation_monolabel import build_mono_to_multi_tensor, monolabel_to_multilabel_torch
 from pyannote.audio.utils.permutation import mae_cost_func, permutate
 from pyannote.audio.utils.progress import InferenceProgressHook
 
@@ -60,6 +61,9 @@ class Inference:
         greater than 0s, otherwise 10% of duration. Has no effect when `window` is "whole".
     batch_size : int, optional
         Batch size. Larger values make inference faster. Defaults to 32.
+    use_raw_model_output: bool, optional
+        If possible (= if the problem allows it, eg Problem.POWERSET) do the inference with the
+        raw model outputs instead of speaker activations.
     device : torch.device, optional
         Device used for inference. Defaults to `model.device`.
         In case `device` and `model.device` are different, model is sent to device.
@@ -88,6 +92,7 @@ class Inference:
         duration: float = None,
         step: float = None,
         batch_size: int = 32,
+        use_raw_model_output: bool = False,
         pre_aggregation_hook: Callable[[np.ndarray], np.ndarray] = None,
         progress_hook: Union[bool, Text, Callable[[int, int], Any]] = False,
         use_auth_token: Union[Text, None] = None,
@@ -158,6 +163,7 @@ class Inference:
         self.step = step
 
         self.batch_size = batch_size
+        self.use_raw_model_output = use_raw_model_output
 
         if callable(progress_hook):
             pass
@@ -196,6 +202,23 @@ class Inference:
                     )
                 else:
                     raise exception
+
+        if not self.use_raw_model_output:
+            if self.model.specifications.problem == Problem.POWERSET:
+                max_num_speakers = len(self.model.specifications.classes)
+                max_simult_speakers = self.model.specifications.max_simult_speakers
+                one_hot_prediction = torch.nn.functional.one_hot(
+                    torch.argmax(outputs, dim=-1), outputs.shape[-1]
+                ).float()
+                one_hot_prediction_multi = monolabel_to_multilabel_torch(
+                    one_hot_prediction,
+                    max_num_speakers,
+                    max_simult_speakers,
+                    build_mono_to_multi_tensor(max_num_speakers, max_simult_speakers, outputs.device),
+                )
+                outputs = one_hot_prediction_multi
+            else:
+                pass    # other types of problems where it makes sense to modify the model output
 
         return outputs.cpu().numpy()
 
@@ -285,6 +308,7 @@ class Inference:
                 specifications.permutation_invariant
                 and self.pre_aggregation_hook is None
             )
+            or self.use_raw_model_output
         ):
             frames = SlidingWindow(start=0.0, duration=self.duration, step=self.step)
             return SlidingWindowFeature(outputs, frames)

@@ -401,6 +401,10 @@ class SegmentationTaskMixin:
             )
 
         elif self.specifications.problem == Problem.MONO_LABEL_CLASSIFICATION:
+            # TODO: implement when pyannote.audio gets its first mono-label segmentation task
+            raise NotImplementedError()
+
+        elif self.specifications.problem == Problem.POWERSET:
             from .segmentation_monolabel import monolabel_to_multilabel_torch
 
             # TODO: make cleaner

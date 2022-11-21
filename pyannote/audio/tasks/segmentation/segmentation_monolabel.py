@@ -148,18 +148,18 @@ class SegmentationMonolabel(SegmentationTaskMixin, Task):
 
 
     def setup(self, stage: Optional[str] = None):
-
         super().setup(stage=stage)
 
         # now that we know about the number of speakers upper bound
         # we can set task specifications
         self.specifications = Specifications(
-            problem=Problem.MONO_LABEL_CLASSIFICATION,
+            problem=Problem.POWERSET,
             resolution=Resolution.FRAME,
             duration=self.duration,
             warm_up=self.warm_up,
-            classes=[str(c) for c in compute_conversion_dict(self.max_num_speakers, self.max_simult_speakers).values()],
-            permutation_invariant=False,
+            classes=[f"speaker#{i+1}" for i in range(self.max_num_speakers)],
+            max_simult_speakers=self.max_simult_speakers,
+            permutation_invariant=True,
         )
 
     def adapt_y(self, collated_y: torch.Tensor) -> torch.Tensor:

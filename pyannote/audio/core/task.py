@@ -58,6 +58,7 @@ class Problem(Enum):
     MULTI_LABEL_CLASSIFICATION = 2
     REPRESENTATION = 3
     REGRESSION = 4
+    POWERSET = 5
     # any other we could think of?
 
 
@@ -88,6 +89,8 @@ class Specifications:
 
     # (for classification tasks only) list of classes
     classes: Optional[List[Text]] = None
+    # (for powerset only) max number of simultaneous active speakers (one speaker=one class in 'classes')
+    max_simult_speakers: Optional[int] = None
 
     # whether classes are permutation-invariant (e.g. diarization)
     permutation_invariant: bool = False
@@ -311,10 +314,12 @@ class Task(pl.LightningDataModule):
         if specifications.problem in [
             Problem.BINARY_CLASSIFICATION,
             Problem.MULTI_LABEL_CLASSIFICATION,
+            Problem.POWERSET,
         ]:
             return binary_cross_entropy(prediction, target, weight=weight)
 
-        elif specifications.problem == Problem.MONO_LABEL_CLASSIFICATION:
+        elif (specifications.problem == Problem.MONO_LABEL_CLASSIFICATION or 
+                specifications.problem == Problem.POWERSET):
             return nll_loss(prediction, target, weight=weight)
 
         else:
