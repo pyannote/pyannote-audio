@@ -29,10 +29,13 @@ import torch.nn.functional as F
 from einops import rearrange
 
 from pyannote.audio.core.model import Model
-from pyannote.audio.core.task import Task
+from pyannote.audio.core.task import Problem, Task
 from pyannote.audio.models.blocks.sincnet import SincNet
 from pyannote.audio.utils.params import merge_dict
 from pyannote.core.utils.generators import pairwise
+from pyannote.audio.tasks.segmentation.segmentation_monolabel import (
+    get_monolabel_class_count,
+)
 
 
 class PyanNet(Model):
@@ -130,7 +133,9 @@ class PyanNet(Model):
             [
                 nn.Linear(in_features, out_features)
                 for in_features, out_features in pairwise(
-                    [lstm_out_features,]
+                    [
+                        lstm_out_features,
+                    ]
                     + [self.hparams.linear["hidden_size"]]
                     * self.hparams.linear["num_layers"]
                 )
@@ -146,7 +151,15 @@ class PyanNet(Model):
                 2 if self.hparams.lstm["bidirectional"] else 1
             )
 
-        self.classifier = nn.Linear(in_features, len(self.specifications.classes))
+        if self.specifications.problem == Problem.POWERSET:
+            out_features = get_monolabel_class_count(
+                len(self.specifications.classes),
+                self.specifications.max_simult_speakers,
+            )
+        else:
+            out_features = len(self.specifications.classes)
+
+        self.classifier = nn.Linear(in_features, out_features)
         self.activation = self.default_activation()
 
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
