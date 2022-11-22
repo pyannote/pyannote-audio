@@ -36,7 +36,7 @@ from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
 class MultiLabelSegmentation(SegmentationTaskMixin, Task):
     """Generic multi-label segmentation
 
-    Multi-label segmentation is the process of detecting temporal intervals 
+    Multi-label segmentation is the process of detecting temporal intervals
     when a specific audio class is active.
 
     Example use cases include speaker tracking, gender (male/female)
@@ -80,18 +80,18 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
     """
 
     def __init__(
-            self,
-            protocol: Protocol,
-            classes: Optional[List[str]] = None,
-            duration: float = 2.0,
-            warm_up: Union[float, Tuple[float, float]] = 0.0,
-            balance: Text = None,
-            weight: Text = None,
-            batch_size: int = 32,
-            num_workers: int = None,
-            pin_memory: bool = False,
-            augmentation: BaseWaveformTransform = None,
-            metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
+        self,
+        protocol: Protocol,
+        classes: Optional[List[str]] = None,
+        duration: float = 2.0,
+        warm_up: Union[float, Tuple[float, float]] = 0.0,
+        balance: Text = None,
+        weight: Text = None,
+        batch_size: int = 32,
+        num_workers: int = None,
+        pin_memory: bool = False,
+        augmentation: BaseWaveformTransform = None,
+        metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
     ):
         super().__init__(
             protocol,
@@ -109,7 +109,7 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         self.classes = classes
 
         # task specification depends on the data: we do not know in advance which
-        # classes should be detected. therefore, we postpone the definition of 
+        # classes should be detected. therefore, we postpone the definition of
         # specifications to setup()
 
     def setup(self, stage: Optional[str] = None):

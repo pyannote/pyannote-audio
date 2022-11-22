@@ -408,8 +408,12 @@ class SegmentationTaskMixin:
             from .segmentation_monolabel import monolabel_to_multilabel_torch
 
             # TODO: make cleaner
-            pred_one_hot = torch.nn.functional.one_hot(torch.argmax(preds, dim=-1), num_classes=preds.shape[-1])
-            pred_multi = monolabel_to_multilabel_torch(pred_one_hot, self.max_num_speakers, self.max_simult_speakers)
+            pred_one_hot = torch.nn.functional.one_hot(
+                torch.argmax(preds, dim=-1), num_classes=preds.shape[-1]
+            )
+            pred_multi = monolabel_to_multilabel_torch(
+                pred_one_hot, self.max_num_speakers, self.max_simult_speakers
+            )
             self.model.validation_metric(
                 torch.transpose(pred_multi, 1, 2),
                 torch.transpose(target, 1, 2),

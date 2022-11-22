@@ -318,8 +318,10 @@ class Task(pl.LightningDataModule):
         ]:
             return binary_cross_entropy(prediction, target, weight=weight)
 
-        elif (specifications.problem == Problem.MONO_LABEL_CLASSIFICATION or 
-                specifications.problem == Problem.POWERSET):
+        elif (
+            specifications.problem == Problem.MONO_LABEL_CLASSIFICATION
+            or specifications.problem == Problem.POWERSET
+        ):
             return nll_loss(prediction, target, weight=weight)
 
         else:

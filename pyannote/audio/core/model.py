@@ -487,7 +487,6 @@ class Model(pl.LightningModule):
         elif specifications.problem == Problem.POWERSET:
             return nn.LogSoftmax(dim=-1)
 
-
         else:
             msg = "TODO: implement default activation for other types of problems"
             raise NotImplementedError(msg)

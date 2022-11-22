@@ -25,10 +25,11 @@ from .segmentation.overlapped_speech_detection import (  # isort:skip
     OverlappedSpeechDetection,
 )
 
-from .segmentation.multilabel import MultiLabelSegmentation   # isort:skip
+from .segmentation.multilabel import MultiLabelSegmentation  # isort:skip
 from .segmentation.segmentation import Segmentation  # isort:skip
 from .segmentation.segmentation_monolabel import SegmentationMonolabel  # isort:skip
 from .embedding.arcface import SupervisedRepresentationLearningWithArcFace  # isort:skip
+
 SpeakerEmbedding = SupervisedRepresentationLearningWithArcFace
 
 __all__ = [

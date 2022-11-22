@@ -84,4 +84,3 @@ def test_can_crop_from_file_like():
     assert isinstance(wav, Tensor)
     assert sr == 16000
     assert wav.shape[1] == 0.5 * 16000
-
