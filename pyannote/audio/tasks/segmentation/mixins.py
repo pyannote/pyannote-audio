@@ -405,13 +405,12 @@ class SegmentationTaskMixin:
             raise NotImplementedError()
 
         elif self.specifications.problem == Problem.POWERSET:
-            from .segmentation_monolabel import monolabel_to_multilabel_torch
 
             # TODO: make cleaner
             pred_one_hot = torch.nn.functional.one_hot(
                 torch.argmax(preds, dim=-1), num_classes=preds.shape[-1]
             )
-            pred_multi = monolabel_to_multilabel_torch(
+            pred_multi = Problem.powerset_to_multilabel(
                 pred_one_hot, self.max_num_speakers, self.max_simult_speakers
             )
             self.model.validation_metric(

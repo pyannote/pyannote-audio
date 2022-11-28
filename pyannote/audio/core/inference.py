@@ -34,10 +34,6 @@ from pytorch_lightning.utilities.memory import is_oom_error
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Problem, Resolution
-from pyannote.audio.tasks.segmentation.segmentation_monolabel import (
-    build_mono_to_multi_tensor,
-    monolabel_to_multilabel_torch,
-)
 from pyannote.audio.utils.permutation import mae_cost_func, permutate
 from pyannote.audio.utils.progress import InferenceProgressHook
 
@@ -213,13 +209,10 @@ class Inference:
                 one_hot_prediction = torch.nn.functional.one_hot(
                     torch.argmax(outputs, dim=-1), outputs.shape[-1]
                 ).float()
-                one_hot_prediction_multi = monolabel_to_multilabel_torch(
+                one_hot_prediction_multi = Problem.powerset_to_multilabel(
                     one_hot_prediction,
                     max_num_speakers,
                     max_simult_speakers,
-                    build_mono_to_multi_tensor(
-                        max_num_speakers, max_simult_speakers, outputs.device
-                    ),
                 )
                 outputs = one_hot_prediction_multi
             else:

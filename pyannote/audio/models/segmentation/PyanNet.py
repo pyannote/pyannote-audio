@@ -33,9 +33,6 @@ from pyannote.audio.core.task import Problem, Task
 from pyannote.audio.models.blocks.sincnet import SincNet
 from pyannote.audio.utils.params import merge_dict
 from pyannote.core.utils.generators import pairwise
-from pyannote.audio.tasks.segmentation.segmentation_monolabel import (
-    get_monolabel_class_count,
-)
 
 
 class PyanNet(Model):
@@ -152,7 +149,7 @@ class PyanNet(Model):
             )
 
         if self.specifications.problem == Problem.POWERSET:
-            out_features = get_monolabel_class_count(
+            out_features = Problem.get_powerset_class_count(
                 len(self.specifications.classes),
                 self.specifications.max_simult_speakers,
             )

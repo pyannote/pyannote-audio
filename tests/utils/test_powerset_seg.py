@@ -2,12 +2,7 @@ import torch
 import random
 
 import itertools
-from pyannote.audio.tasks.segmentation.segmentation_monolabel import (
-    monolabel_to_multilabel_torch,
-    multilabel_to_monolabel_torch,
-    get_monolabel_class_count,
-    get_monolabel_permutation,
-)
+from pyannote.audio.core.task import Problem
 
 
 def get_multilabel_sample(
@@ -32,7 +27,9 @@ def test_multi_to_mono_simple():
     active_speakers = torch.tensor([0, 2])
     sample[0, 0, active_speakers] = 1
 
-    r = multilabel_to_monolabel_torch(sample, max_num_speakers=3, max_simult_speakers=2)
+    r = Problem.multilabel_to_powerset(
+        sample, max_num_speakers=3, max_simult_speakers=2
+    )
 
     # checks the right class is predicted
     assert torch.argmax(r, dim=-1).flatten().item() == 5
@@ -45,12 +42,12 @@ def test_multi_to_mono_class_count():
     for max_speakers in range(1, MAX_SPEAKERS_TO_TEST):
         for max_simult_speakers in range(1, max_speakers):
             sample = torch.zeros(1, 1, max_speakers)
-            sample_mono = multilabel_to_monolabel_torch(
+            sample_mono = Problem.multilabel_to_powerset(
                 sample, max_speakers, max_simult_speakers
             )
 
             assert (
-                get_monolabel_class_count(max_speakers, max_simult_speakers)
+                Problem.get_powerset_class_count(max_speakers, max_simult_speakers)
                 == sample_mono.shape[-1]
             )
 
@@ -63,10 +60,10 @@ def test_multi_to_mono_to_multi():
     sample = get_multilabel_sample(
         BATCH_SIZE, NUM_FRAMES, MAX_SPEAKERS, MAX_SIMULT_SPEAKERS
     )
-    sample_mono = multilabel_to_monolabel_torch(
+    sample_mono = Problem.multilabel_to_powerset(
         sample, MAX_SPEAKERS, MAX_SIMULT_SPEAKERS
     )
-    sample_multi = monolabel_to_multilabel_torch(
+    sample_multi = Problem.powerset_to_multilabel(
         sample_mono, MAX_SPEAKERS, MAX_SIMULT_SPEAKERS
     )
     assert sample.shape == sample_multi.shape
@@ -82,10 +79,10 @@ def test_multi_to_mono_too_many_simult():
     sample = get_multilabel_sample(
         BATCH_SIZE, NUM_FRAMES, MAX_SPEAKERS, MAX_SIMULT_SPEAKERS_IN_SAMPLE
     )
-    sample_mono = multilabel_to_monolabel_torch(
+    sample_mono = Problem.multilabel_to_powerset(
         sample, MAX_SPEAKERS, MAX_SIMULT_SPEAKERS
     )
-    sample_multi = monolabel_to_multilabel_torch(
+    sample_multi = Problem.powerset_to_multilabel(
         sample_mono, MAX_SPEAKERS, MAX_SIMULT_SPEAKERS
     )
     assert sample.shape == sample_multi.shape
@@ -105,14 +102,16 @@ def test_multi_to_mono_permutation():
     for max_speakers in range(1, MAX_SPEAKERS):
         for max_simult_speakers in range(1, max_speakers + 1):
             sample_t = torch.arange(
-                0, get_monolabel_class_count(max_speakers, max_simult_speakers)
+                0, Problem.get_powerset_class_count(max_speakers, max_simult_speakers)
             )
 
             for p_tuple in itertools.permutations([i for i in range(max_speakers)]):
                 p = torch.tensor(p_tuple)
                 p_inv = torch.argsort(p)
-                p_mono = get_monolabel_permutation(p, max_speakers, max_simult_speakers)
-                p_inv_mono = get_monolabel_permutation(
+                p_mono = Problem.get_powerset_permutation(
+                    p, max_speakers, max_simult_speakers
+                )
+                p_inv_mono = Problem.get_powerset_permutation(
                     p_inv, max_speakers, max_simult_speakers
                 )
 
