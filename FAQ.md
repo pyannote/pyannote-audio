@@ -1,4 +1,4 @@
-## Frequently asked questions
+# Frequently asked questions
 
 ## How does one capitalize and pronounce the name of this awesome library?
 
