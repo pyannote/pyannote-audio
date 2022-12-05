@@ -343,6 +343,44 @@ class Specifications:
     # whether classes are permutation-invariant (e.g. diarization)
     permutation_invariant: bool = False
 
+    @property
+    def max_num_speakers(self):
+        return len(self.classes)
+
+    @cached_property
+    def powerset_class_count(self):
+        return Problem.get_powerset_class_count(
+            self.max_num_speakers, self.max_simult_speakers
+        )
+
+    @cached_property
+    def powerset_conversion_dict(self):
+        return Problem.compute_powerset_conversion_dict(
+            self.max_num_speakers, self.max_simult_speakers
+        )
+
+    @cached_property
+    def powerset_conversion_dict_inv(self):
+        return {v: k for k, v in self.powerset_conversion_dict.keys()}
+
+    def powerset_to_multilabel(
+        self,
+        ps_t: torch.Tensor,
+        conversion_tensor: torch.Tensor = None,
+    ) -> torch.Tensor:
+        return Problem.powerset_to_multilabel(
+            ps_t, self.max_num_speakers, self.max_simult_speakers, conversion_tensor
+        )
+
+    def multilabel_to_powerset(
+        self,
+        t: torch.Tensor,
+        conversion_tensor: torch.Tensor = None,
+    ) -> torch.Tensor:
+        return Problem.multilabel_to_powerset(
+            t, self.max_num_speakers, self.max_simult_speakers, conversion_tensor
+        )
+
 
 class TrainDataset(IterableDataset):
     def __init__(self, task: Task):
@@ -562,14 +600,13 @@ class Task(pl.LightningDataModule):
         if specifications.problem in [
             Problem.BINARY_CLASSIFICATION,
             Problem.MULTI_LABEL_CLASSIFICATION,
-            Problem.POWERSET,
         ]:
             return binary_cross_entropy(prediction, target, weight=weight)
 
-        elif (
-            specifications.problem == Problem.MONO_LABEL_CLASSIFICATION
-            or specifications.problem == Problem.POWERSET
-        ):
+        elif specifications.problem in [
+            Problem.MONO_LABEL_CLASSIFICATION,
+            Problem.POWERSET,
+        ]:
             return nll_loss(prediction, target, weight=weight)
 
         else:
