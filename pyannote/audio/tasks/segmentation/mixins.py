@@ -35,7 +35,8 @@ from torch.utils.data._utils.collate import default_collate
 from torchmetrics import AUROC, Metric
 
 from pyannote.audio.core.io import AudioFile
-from pyannote.audio.core.task import Problem
+from pyannote.audio.core.task import Problem, Specifications
+from pyannote.audio.utils.permutation import permutate
 from pyannote.audio.utils.random import create_rng_for_worker
 
 
@@ -373,7 +374,7 @@ class SegmentationTaskMixin:
         # pyannote.audio is more explicit so we have to reshape target and preds for
         # torchmetrics to be happy... more details can be found here:
         # https://torchmetrics.readthedocs.io/en/latest/references/modules.html#input-types
-
+        self.specifications: Specifications
         if self.specifications.problem == Problem.BINARY_CLASSIFICATION:
             # target: shape (batch_size, num_frames), type binary
             # preds:  shape (batch_size, num_frames, 1), type float
@@ -405,14 +406,10 @@ class SegmentationTaskMixin:
             raise NotImplementedError()
 
         elif self.specifications.problem == Problem.POWERSET:
-
-            # TODO: make cleaner
             pred_one_hot = torch.nn.functional.one_hot(
                 torch.argmax(preds, dim=-1), num_classes=preds.shape[-1]
             )
-            pred_multi = Problem.powerset_to_multilabel(
-                pred_one_hot, self.max_num_speakers, self.max_simult_speakers
-            )
+            pred_multi = self.specifications.powerset_to_multilabel(pred_one_hot)
             self.model.validation_metric(
                 torch.transpose(pred_multi, 1, 2),
                 torch.transpose(target, 1, 2),
@@ -425,6 +422,30 @@ class SegmentationTaskMixin:
             prog_bar=True,
             logger=True,
         )
+
+        seg_target = None
+        if self.specifications == Problem.POWERSET:
+            one_hot_prediction = torch.nn.functional.one_hot(
+                torch.argmax(preds, dim=-1), self.num_monolabel_classes
+            ).float()
+            one_hot_prediction_multi = self.powerset_to_multilabel(one_hot_prediction)
+
+            permutated_target, _ = permutate(one_hot_prediction_multi, target)
+            seg_target = self.multilabel_to_powerset(permutated_target)
+        elif self.specifications == Problem.MULTI_LABEL_CLASSIFICATION:
+            seg_target, _ = permutate(preds, target)
+
+        if seg_target is not None:
+            seg_loss = self.segmentation_loss(preds, seg_target)
+
+            self.model.log(
+                f"{self.logging_prefix}ValSegLoss",
+                seg_loss,
+                on_step=False,
+                on_epoch=True,
+                prog_bar=False,
+                logger=True,
+            )
 
         # log first batch visualization every 2^n epochs.
         if (
