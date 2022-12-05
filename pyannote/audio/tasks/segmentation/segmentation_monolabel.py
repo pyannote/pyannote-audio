@@ -341,7 +341,7 @@ class SegmentationMonolabel(SegmentationTaskMixin, Task):
         one_hot_prediction_multi = self.powerset_to_multilabel(one_hot_prediction)
 
         permutated_target, _ = permutate(one_hot_prediction_multi, target)
-        permutated_target_mono = self.multilabel_to_powerset(target)
+        permutated_target_mono = self.multilabel_to_powerset(permutated_target)
 
         # frames weight
         weight_key = getattr(self, "weight", None)
