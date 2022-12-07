@@ -424,7 +424,7 @@ class SegmentationTaskMixin:
         )
 
         seg_target = None
-        if self.specifications == Problem.POWERSET:
+        if self.specifications.problem == Problem.POWERSET:
             one_hot_prediction = torch.nn.functional.one_hot(
                 torch.argmax(preds, dim=-1), self.num_monolabel_classes
             ).float()
@@ -432,7 +432,7 @@ class SegmentationTaskMixin:
 
             permutated_target, _ = permutate(one_hot_prediction_multi, target)
             seg_target = self.multilabel_to_powerset(permutated_target)
-        elif self.specifications == Problem.MULTI_LABEL_CLASSIFICATION:
+        elif self.specifications.problem == Problem.MULTI_LABEL_CLASSIFICATION:
             seg_target, _ = permutate(preds, target)
 
         if seg_target is not None:
