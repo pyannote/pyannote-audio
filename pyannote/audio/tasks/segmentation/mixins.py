@@ -360,13 +360,32 @@ class SegmentationTaskMixin:
         # y = (batch_size, num_frames, num_classes) or (batch_size, num_frames)
 
         y_pred = self.model(X)
-        _, num_frames, _ = y_pred.shape
+        # if it's a powerset problem, transform the output into a multilabel (multihot) one
+        if self.specifications.problem == Problem.POWERSET:
+            y_pred_powerset = y_pred
+            y_pred_one_hot = torch.nn.functional.one_hot(
+                torch.argmax(y_pred, dim=-1), num_classes=y_pred.shape[-1]
+            )
+            y_pred = self.specifications.powerset_to_multilabel(y_pred_one_hot)
+
+        batch_size, num_frames, _ = y_pred.shape
         # y_pred = (batch_size, num_frames, num_classes)
+
+        # compute warmup frames boundaries and weight
+        warm_up_left = round(self.warm_up[0] / self.duration * num_frames)
+        warm_up_right = round(self.warm_up[1] / self.duration * num_frames)
+
+        weight_key = getattr(self, "weight", None)
+        weight = batch.get(
+            weight_key,
+            torch.ones(batch_size, num_frames, 1, device=self.model.device),
+        )
+        weight[:, :warm_up_left] = 0.0
+        weight[:, num_frames - warm_up_right :] = 0.0
+        # (batch_size, num_frames, 1)
 
         # - remove warm-up frames
         # - downsample remaining frames
-        warm_up_left = round(self.warm_up[0] / self.duration * num_frames)
-        warm_up_right = round(self.warm_up[1] / self.duration * num_frames)
         preds = y_pred[:, warm_up_left : num_frames - warm_up_right : 10]
         target = y[:, warm_up_left : num_frames - warm_up_right : 10]
 
@@ -388,7 +407,10 @@ class SegmentationTaskMixin:
                 target.reshape(-1),
             )
 
-        elif self.specifications.problem == Problem.MULTI_LABEL_CLASSIFICATION:
+        elif (
+            self.specifications.problem == Problem.MULTI_LABEL_CLASSIFICATION
+            or self.specifications.problem == Problem.POWERSET
+        ):
             # target: shape (batch_size, num_frames, num_classes), type binary
             # preds:  shape (batch_size, num_frames, num_classes), type float
 
@@ -405,16 +427,6 @@ class SegmentationTaskMixin:
             # TODO: implement when pyannote.audio gets its first mono-label segmentation task
             raise NotImplementedError()
 
-        elif self.specifications.problem == Problem.POWERSET:
-            pred_one_hot = torch.nn.functional.one_hot(
-                torch.argmax(preds, dim=-1), num_classes=preds.shape[-1]
-            )
-            pred_multi = self.specifications.powerset_to_multilabel(pred_one_hot)
-            self.model.validation_metric(
-                torch.transpose(pred_multi, 1, 2),
-                torch.transpose(target, 1, 2),
-            )
-
         self.model.log_dict(
             self.model.validation_metric,
             on_step=False,
@@ -423,20 +435,20 @@ class SegmentationTaskMixin:
             logger=True,
         )
 
+        # log validation segmentation loss
         seg_target = None
+        seg_pred = None
+
+        permutated_y, _ = permutate(y_pred, y)
         if self.specifications.problem == Problem.POWERSET:
-            one_hot_prediction = torch.nn.functional.one_hot(
-                torch.argmax(preds, dim=-1), self.num_monolabel_classes
-            ).float()
-            one_hot_prediction_multi = self.powerset_to_multilabel(one_hot_prediction)
-
-            permutated_target, _ = permutate(one_hot_prediction_multi, target)
-            seg_target = self.multilabel_to_powerset(permutated_target)
+            seg_target = self.multilabel_to_powerset(permutated_y)
+            seg_pred = y_pred_powerset
         elif self.specifications.problem == Problem.MULTI_LABEL_CLASSIFICATION:
-            seg_target, _ = permutate(preds, target)
+            seg_target = permutated_y
+            seg_pred = y_pred
 
-        if seg_target is not None:
-            seg_loss = self.segmentation_loss(preds, seg_target)
+        if seg_target is not None and seg_pred is not None:
+            seg_loss = self.segmentation_loss(seg_pred, seg_target, weight=weight)
 
             self.model.log(
                 f"{self.logging_prefix}ValSegLoss",
