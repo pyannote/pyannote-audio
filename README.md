@@ -67,6 +67,7 @@ pip install pyannote.audio
 - Pipelines
     - Available pipelines explained
     - [Applying a pretrained pipeline](tutorials/applying_a_pipeline.ipynb)
+    - [Adapting a pretrained pipeline to your own data](tutorials/adapting_pretrained_pipeline.ipynb)
     - [Training a pipeline](tutorials/voice_activity_detection.ipynb)
 - Contributing
     - [Adding a new model](tutorials/add_your_own_model.ipynb)
@@ -74,6 +75,7 @@ pip install pyannote.audio
     - Adding a new pipeline
     - Sharing pretrained models and pipelines
 - Blog
+    - 2022-12-02 > ["How I reached 1st place at Ego4D 2022, 1st place at Albayzin 2022, and 6th place at VoxSRC 2022 speaker diarization challenges"](tutorials/adapting_pretrained_pipeline.ipynb)
     - 2022-10-23 > ["One speaker segmentation model to rule them all"](https://herve.niderb.fr/fastpages/2022/10/23/One-speaker-segmentation-model-to-rule-them-all)
     - 2021-08-05 > ["Streaming voice activity detection with pyannote.audio"](https://herve.niderb.fr/fastpages/2021/08/05/Streaming-voice-activity-detection-with-pyannote.html)
 - Miscellaneous

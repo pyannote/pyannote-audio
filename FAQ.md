@@ -18,8 +18,8 @@ That being said, this whole authentication process does not prevent you from usi
 
 ## **[Pretrained pipelines](https://huggingface.co/models?other=pyannote-audio-pipeline) do not produce good results on my data. What can I do?**
 
-1. [Annotate](https://github.com/pyannote/pyannote-audio/blob/develop/tutorials/prodigy.md) dozens of conversations manually and separate them into development and test subsets in [`pyannote.database`](https://github.com/pyannote/pyannote-database#speaker-diarization).
-2. [Optimize the hyper-parameters](https://github.com/pyannote/pyannote-audio/blob/develop/tutorials/voice_activity_detection.ipynb) of the pretained pipeline using the development set. If performance is still not good enough, go to step 3.
-3. Annotate hundreds of conversations manually and set them up as training subset in `pyannote.database`.
-4. [Fine-tune](https://github.com/pyannote/pyannote-audio/blob/develop/tutorials/training_a_model.ipynb) the models (on which the pipeline relies) using the training set.
-5. [Optimize the hyper-parameters](https://github.com/pyannote/pyannote-audio/blob/develop/tutorials/voice_activity_detection.ipynb) of the pipeline using the fine-tuned models using the development set. If performance is still not good enough, go back to step 3.
+1. Manually annotate dozens of conversations as precisely as possible.
+2. Separate them into train (80%), development (10%) and test (10%) subsets.
+3. Setup the data for use with [`pyannote.database`](https://github.com/pyannote/pyannote-database#speaker-diarization).
+4. Follow [this recipe](https://github.com/pyannote/pyannote-audio/blob/develop/tutorials/adapting_pretrained_pipeline.ipynb).
+5. Enjoy.
