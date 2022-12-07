@@ -141,18 +141,6 @@ class SegmentationMonolabel(SegmentationTaskMixin, Task):
         self.loss = loss
         self.vad_loss = vad_loss
 
-        # cache task specific stuff
-        self.num_monolabel_classes = Problem.get_powerset_class_count(
-            self.max_num_speakers, self.max_simult_speakers
-        )
-        self.conv_dict = Problem.compute_powerset_conversion_dict(
-            self.max_num_speakers, self.max_simult_speakers
-        )
-        self.conv_dict_inv = {v: k for k, v in self.conv_dict.items()}
-        self.cache_mono_to_multi_tensor = (
-            None  # to be initialized when we know the device
-        )
-
     def setup(self, stage: Optional[str] = None):
         super().setup(stage=stage)
 
@@ -303,10 +291,6 @@ class SegmentationMonolabel(SegmentationTaskMixin, Task):
         waveform = batch["X"]
         # (batch_size, num_channels, num_samples)
 
-        # TODO: initialize cache more elegantly or remove it if performance gains are negligible (seems to be)
-        if not self.is_cache_initialized():
-            self.initialize_cache(target.device)
-
         # drop samples that contain too many speakers
         num_speakers: torch.Tensor = torch.sum(torch.any(target, dim=1), dim=1)
         keep: torch.Tensor = num_speakers <= self.max_num_speakers
@@ -336,7 +320,7 @@ class SegmentationMonolabel(SegmentationTaskMixin, Task):
         # find optimal permutation between the one hot of our multiclass-softmax and the multilabel target
         # and use it to permutate target
         one_hot_prediction = torch.nn.functional.one_hot(
-            torch.argmax(prediction, dim=-1), self.num_monolabel_classes
+            torch.argmax(prediction, dim=-1), self.specifications.powerset_class_count
         ).float()
         one_hot_prediction_multi = self.powerset_to_multilabel(one_hot_prediction)
 
@@ -421,35 +405,33 @@ class SegmentationMonolabel(SegmentationTaskMixin, Task):
             if len(chunk["y"].labels) <= self.max_num_speakers:
                 yield chunk
 
-    # Temporary, used as post model setup (so that we know our task's model, and more importantly: its device)
-    def initialize_cache(self, device):
-        # super().setup_loss_func()
-
-        self.cache_mono_to_multi_tensor = (
-            Problem.build_powerset_to_multi_conversion_tensor(
-                self.max_num_speakers, self.max_simult_speakers, device=device
-            )
+    def setup_loss_func(self):
+        # save our handy conversion tensor in the model (no need for persistence)
+        conversion_tensor = Problem.build_powerset_to_multi_conversion_tensor(
+            self.max_num_speakers, self.max_simult_speakers
+        )
+        self.model.register_buffer(
+            "powerset_conversion_tensor", conversion_tensor, persistent=False
         )
 
-    def is_cache_initialized(self) -> bool:
-        return self.cache_mono_to_multi_tensor is not None
+        # call default setup
+        super().setup_loss_func()
 
-    # Monolabel <-> multilabel problem conversion helpers (using cache !)
+    @property
+    def mono_to_multi_tensor(self):
+        return self.model.powerset_conversion_tensor
 
+    # Monolabel <-> multilabel problem conversion helpers (using cached conversion tensor !)
     def multilabel_to_powerset(self, t: torch.Tensor) -> torch.Tensor:
-        return Problem.multilabel_to_powerset(
+        return self.specifications.multilabel_to_powerset(
             t,
-            self.max_num_speakers,
-            self.max_simult_speakers,
-            self.cache_mono_to_multi_tensor,
+            self.mono_to_multi_tensor,
         )
 
     def powerset_to_multilabel(self, t: torch.Tensor) -> torch.Tensor:
-        return Problem.powerset_to_multilabel(
+        return self.specifications.powerset_to_multilabel(
             t,
-            self.max_num_speakers,
-            self.max_simult_speakers,
-            self.cache_mono_to_multi_tensor,
+            self.mono_to_multi_tensor,
         )
 
     def convert_to_powerset_permutation(self, permutation: torch.Tensor):
@@ -457,8 +439,8 @@ class SegmentationMonolabel(SegmentationTaskMixin, Task):
             permutation,
             self.max_num_speakers,
             self.max_simult_speakers,
-            self.conv_dict,
-            self.conv_dict_inv,
+            self.specifications.powerset_conversion_dict,
+            self.specifications.powerset_conversion_dict_inv,
         )
 
 
