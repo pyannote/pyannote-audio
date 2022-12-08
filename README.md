@@ -67,6 +67,7 @@ pip install pyannote.audio
 - Pipelines
     - Available pipelines explained
     - [Applying a pretrained pipeline](tutorials/applying_a_pipeline.ipynb)
+    - [Adapting a pretrained pipeline to your own data](tutorials/adapting_pretrained_pipeline.ipynb)
     - [Training a pipeline](tutorials/voice_activity_detection.ipynb)
 - Contributing
     - [Adding a new model](tutorials/add_your_own_model.ipynb)
@@ -74,6 +75,7 @@ pip install pyannote.audio
     - Adding a new pipeline
     - Sharing pretrained models and pipelines
 - Blog
+    - 2022-12-02 > ["How I reached 1st place at Ego4D 2022, 1st place at Albayzin 2022, and 6th place at VoxSRC 2022 speaker diarization challenges"](tutorials/adapting_pretrained_pipeline.ipynb)
     - 2022-10-23 > ["One speaker segmentation model to rule them all"](https://herve.niderb.fr/fastpages/2022/10/23/One-speaker-segmentation-model-to-rule-them-all)
     - 2021-08-05 > ["Streaming voice activity detection with pyannote.audio"](https://herve.niderb.fr/fastpages/2021/08/05/Streaming-voice-activity-detection-with-pyannote.html)
 - Miscellaneous
@@ -84,20 +86,9 @@ pip install pyannote.audio
 
 ## Frequently asked questions
 
-#### How does one capitalize and pronounce the name of this awesome library?
-
-📝 Written in lower case: `pyannote.audio` (or `pyannote` if you are lazy).  Not `PyAnnote` nor `PyAnnotate` (*sic*).
-📢 [Pronounced](https://www.howtopronounce.com/french/pianote) like the french verb *pianoter*.  *pi* like in **pi**ano, not *py* like in **py**thon.
-🎹 *pianoter* means *to play the piano* (hence the logo 🤯).
-
-#### **[Pretrained pipelines](https://huggingface.co/models?other=pyannote-audio-pipeline) do not produce good results on my data. What can I do?**
-
-1. [Annotate](https://github.com/pyannote/pyannote-audio/blob/develop/tutorials/prodigy.md) dozens of conversations manually and separate them into development and test subsets in [`pyannote.database`](https://github.com/pyannote/pyannote-database#speaker-diarization).
-2. [Optimize the hyper-parameters](https://github.com/pyannote/pyannote-audio/blob/develop/tutorials/voice_activity_detection.ipynb) of the pretained pipeline using the development set. If performance is still not good enough, go to step 3.
-3. Annotate hundreds of conversations manually and set them up as training subset in `pyannote.database`.
-4. [Fine-tune](https://github.com/pyannote/pyannote-audio/blob/develop/tutorials/training_a_model.ipynb) the models (on which the pipeline relies) using the training set.
-5. [Optimize the hyper-parameters](https://github.com/pyannote/pyannote-audio/blob/develop/tutorials/voice_activity_detection.ipynb) of the pipeline using the fine-tuned models using the development set. If performance is still not good enough, go back to step 3.
-
+* [How does one capitalize and pronounce the name of this awesome library?](FAQ.md)
+* [Can I use gated models (and pipelines) offline?](FAQ.md)
+* [Pretrained pipelines do not produce good results on my data. What can I do?](FAQ.md)
 
 ## Benchmark
 
