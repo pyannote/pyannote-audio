@@ -31,7 +31,8 @@ import numpy as np
 import torch
 from pyannote.core import Segment, SlidingWindowFeature
 from torch.utils.data._utils.collate import default_collate
-from torchmetrics import AUROC, Metric
+from torchmetrics import Metric
+from torchmetrics.classification import BinaryAUROC, MultilabelAUROC, MulticlassAUROC
 
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.task import Problem
@@ -129,7 +130,16 @@ class SegmentationTaskMixin:
         """Returns macro-average of the area under the ROC curve"""
 
         num_classes = len(self.specifications.classes)
-        return AUROC(num_classes, pos_label=1, average="macro", compute_on_step=False)
+        if self.specifications.problem == Problem.BINARY_CLASSIFICATION:
+            return BinaryAUROC(compute_on_cpu=True)
+        elif self.specifications.problem == Problem.MULTI_LABEL_CLASSIFICATION:
+            return MultilabelAUROC(num_classes, average="macro", compute_on_cpu=True)
+        elif self.specifications.problem == Problem.MONO_LABEL_CLASSIFICATION:
+            return MulticlassAUROC(num_classes, average="macro", compute_on_cpu=True)
+        else:
+            raise RuntimeError(
+                f"The {self.specifications.problem} problem type hasn't been given a default segmentation metric yet."
+            )
 
     def adapt_y(self, one_hot_y: np.ndarray) -> np.ndarray:
         raise NotImplementedError(

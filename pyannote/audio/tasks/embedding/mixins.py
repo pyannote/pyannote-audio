@@ -30,7 +30,8 @@ from pyannote.database.protocol import (
     SpeakerDiarizationProtocol,
     SpeakerVerificationProtocol,
 )
-from torchmetrics import AUROC, Metric
+from torchmetrics import Metric
+from torchmetrics.classification import BinaryAUROC
 from tqdm import tqdm
 
 from pyannote.audio.core.task import Problem, Resolution, Specifications
@@ -127,7 +128,7 @@ class SupervisedRepresentationLearningTaskMixin:
     def default_metric(
         self,
     ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
-        return AUROC(compute_on_step=False)
+        return BinaryAUROC(compute_on_cpu=True)
 
     def train__iter__(self):
         """Iterate over training samples
