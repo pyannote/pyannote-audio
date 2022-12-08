@@ -128,7 +128,7 @@ class SupervisedRepresentationLearningTaskMixin:
     def default_metric(
         self,
     ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
-        return BinaryAUROC(compute_on_step=False)
+        return BinaryAUROC(compute_on_cpu=True)
 
     def train__iter__(self):
         """Iterate over training samples

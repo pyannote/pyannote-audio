@@ -131,11 +131,11 @@ class SegmentationTaskMixin:
 
         num_classes = len(self.specifications.classes)
         if self.specifications.problem == Problem.BINARY_CLASSIFICATION:
-            return BinaryAUROC(average="macro", compute_on_step=False)
+            return BinaryAUROC(compute_on_cpu=True)
         elif self.specifications.problem == Problem.MULTI_LABEL_CLASSIFICATION:
-            return MultilabelAUROC(num_classes, average="macro", compute_on_step=True)
+            return MultilabelAUROC(num_classes, average="macro", compute_on_cpu=True)
         elif self.specifications.problem == Problem.MONO_LABEL_CLASSIFICATION:
-            return MulticlassAUROC(num_classes, average="macro", compute_on_step=False)
+            return MulticlassAUROC(num_classes, average="macro", compute_on_cpu=True)
         else:
             raise RuntimeError(
                 f"The {self.specifications.problem} problem type hasn't been given a default segmentation metric yet."
