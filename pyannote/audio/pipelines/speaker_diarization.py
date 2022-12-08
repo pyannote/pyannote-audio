@@ -212,25 +212,35 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
     def CACHED_SEGMENTATION(self):
         return "training_cache/segmentation"
 
-    def get_segmentations(self, file) -> SlidingWindowFeature:
+    def get_segmentations(self, file, hook=None) -> SlidingWindowFeature:
         """Apply segmentation model
 
         Parameter
         ---------
         file : AudioFile
+        hook : Optional[Callable]
 
         Returns
         -------
         segmentations : (num_chunks, num_frames, num_speakers) SlidingWindowFeature
         """
+
+        if hook is not None:
+            progress_hook = lambda completed, total: hook(
+                "segmentation", None, total=total, completed=completed
+            )
+        else:
+            progress_hook = None
+
         if self.training:
             if self.CACHED_SEGMENTATION in file:
                 segmentations = file[self.CACHED_SEGMENTATION]
             else:
-                segmentations = self._segmentation(file)
+                segmentations = self._segmentation(file, progress_hook=progress_hook)
                 file[self.CACHED_SEGMENTATION] = segmentations
         else:
-            segmentations: SlidingWindowFeature = self._segmentation(file)
+            segmentations: SlidingWindowFeature = self._segmentation(file, progress_hook=progress_hook)
+
 
         return segmentations
 
@@ -239,6 +249,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         file,
         binary_segmentations: SlidingWindowFeature,
         exclude_overlap: bool = False,
+        hook: Optional[Callable] = None,
     ):
         """Extract embeddings for each (chunk, speaker) pair
 
@@ -250,6 +261,8 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         exclude_overlap : bool, optional
             Exclude overlapping speech regions when extracting embeddings.
             In case non-overlapping speech is too short, use the whole speech.
+        hook: Optional[Callable]
+            Called during embeddings after every batch to report the progress
 
         Returns
         -------
@@ -272,7 +285,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                 return cache["embeddings"]
 
         duration = binary_segmentations.sliding_window.duration
-        num_chunks, num_frames, _ = binary_segmentations.data.shape
+        num_chunks, num_frames, num_speakers = binary_segmentations.data.shape
 
         if exclude_overlap:
             # minimum number of samples needed to extract an embedding
@@ -335,9 +348,11 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             fillvalue=(None, None),
         )
 
+        batch_count = math.ceil(num_chunks * num_speakers / self.embedding_batch_size)
+
         embedding_batches = []
 
-        for batch in batches:
+        for i, batch in enumerate(batches, 1):
             waveforms, masks = zip(*filter(lambda b: b[0] is not None, batch))
 
             waveform_batch = torch.vstack(waveforms)
@@ -352,6 +367,9 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             # (batch_size, dimension) np.ndarray
 
             embedding_batches.append(embedding_batch)
+
+            if hook is not None:
+                hook("embeddings", None, total=batch_count, completed=i)
 
         embedding_batches = np.vstack(embedding_batches)
 
@@ -440,8 +458,17 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         max_speakers : int, optional
             Maximum number of speakers. Has no effect when `num_speakers` is provided.
         hook : callable, optional
-            Hook called after each major step of the pipeline with the following
-            signature: hook("step_name", step_artefact, file=file)
+            Hook called to report progress of the major steps of the pipeline with the
+            following signature:
+
+            hook("step_name", step_artefact, file=file, total=Optional[int], completed=Optional[int])
+
+            If the step supports more fine-grained process, it will be called multiple
+            times during the steps with `step_artefact` set to None and `completed`
+            containing the progress of `total` units.
+
+            After the step completed, it will be called with total and completed set to
+            None and step_artefact set to the step artefact.
 
         Returns
         -------
@@ -458,8 +485,8 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             max_speakers=max_speakers,
         )
 
-        segmentations = self.get_segmentations(file)
-        hook("segmentation", segmentations)
+        segmentations = self.get_segmentations(file, hook=hook)
+        hook("segmentation", segmentations, total=None, completed=None)
         #   shape: (num_chunks, num_frames, local_num_speakers)
 
         # estimate frame-level number of instantaneous speakers
@@ -468,7 +495,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             onset=self.segmentation.threshold,
             frames=self._frames,
         )
-        hook("speaker_counting", count)
+        hook("speaker_counting", count, total=None, completed=None)
         #   shape: (num_frames, 1)
         #   dtype: int
 
@@ -487,8 +514,9 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                 file,
                 binarized_segmentations,
                 exclude_overlap=self.embedding_exclude_overlap,
+                hook=hook,
             )
-            hook("embeddings", embeddings)
+            hook("embeddings", embeddings, total=None, completed=None)
             #   shape: (num_chunks, local_num_speakers, dimension)
 
         hard_clusters, _ = self.clustering(
@@ -514,7 +542,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             hard_clusters,
             count,
         )
-        hook("discrete_diarization", discrete_diarization)
+        hook("discrete_diarization", discrete_diarization, total=None, completed=None)
 
         # convert to continuous diarization
         diarization = self.to_annotation(

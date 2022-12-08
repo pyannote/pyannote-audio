@@ -24,5 +24,12 @@ from copy import deepcopy
 from typing import Any, Mapping, Optional, Text
 
 
-def logging_hook(key: Text, value: Any, file: Optional[Mapping] = None):
-    file[key] = deepcopy(value)
+def logging_hook(
+    key: Text,
+    value: Any,
+    file: Optional[Mapping] = None,
+    total: Optional[int] = None,
+    completed: Optional[int] = None,
+):
+    if total is None and completed is None:
+        file[key] = deepcopy(value)
