@@ -49,8 +49,8 @@ from pyannote.audio.utils.loss import binary_cross_entropy, mse_loss, nll_loss
 from pyannote.audio.utils.permutation import permutate
 
 
-class SegmentationMonolabel(SegmentationTaskMixin, Task):
-    """Speaker segmentation
+class SegmentationPowerset(SegmentationTaskMixin, Task):
+    """Speaker segmentation using a power set encoding of active speakers.
 
     Parameters
     ----------
@@ -60,6 +60,10 @@ class SegmentationMonolabel(SegmentationTaskMixin, Task):
         Maximum number of speakers per chunk (must be at least 2).
     max_simultaneous_speakers : int
         Maximum number of simultaneous speakers per frame.
+        Limits the maximum cardinality of the subsets of all speakers,
+        setting it to max_num_speakers result in the "true" power set encoding
+        (= all possible speaker combinations have a class).
+        Must be in [1, max_num_speakers].
     duration : float, optional
         Chunks duration. Defaults to 2s.
     warm_up : float or (float, float), optional
@@ -203,7 +207,7 @@ class SegmentationMonolabel(SegmentationTaskMixin, Task):
 
         Parameters
         ----------
-        permutated_prediction : (batch_size, num_frames, num_classes_mono) torch.Tensor
+        permutated_prediction : (batch_size, num_frames, num_classes_powerset) torch.Tensor
             Permutated speaker activity predictions.
         target : (batch_size, num_frames, num_speakers) torch.Tensor
             Speaker activity.
@@ -325,7 +329,7 @@ class SegmentationMonolabel(SegmentationTaskMixin, Task):
         one_hot_prediction_multi = self.powerset_to_multilabel(one_hot_prediction)
 
         permutated_target, _ = permutate(one_hot_prediction_multi, target)
-        permutated_target_mono = self.multilabel_to_powerset(permutated_target)
+        permutated_target_powerset = self.multilabel_to_powerset(permutated_target)
 
         # frames weight
         weight_key = getattr(self, "weight", None)
@@ -342,7 +346,7 @@ class SegmentationMonolabel(SegmentationTaskMixin, Task):
         weight[:, num_frames - warm_up_right :] = 0.0
 
         seg_loss = self.segmentation_loss(
-            prediction, permutated_target_mono, weight=weight
+            prediction, permutated_target_powerset, weight=weight
         )
 
         self.model.log(
@@ -359,7 +363,7 @@ class SegmentationMonolabel(SegmentationTaskMixin, Task):
 
         else:
             vad_loss = self.voice_activity_detection_loss(
-                prediction, permutated_target_mono, weight=weight
+                prediction, permutated_target_powerset, weight=weight
             )
 
             self.model.log(
@@ -418,20 +422,20 @@ class SegmentationMonolabel(SegmentationTaskMixin, Task):
         super().setup_loss_func()
 
     @property
-    def mono_to_multi_tensor(self):
+    def powerset_conversion_tensor(self):
         return self.model.powerset_conversion_tensor
 
-    # Monolabel <-> multilabel problem conversion helpers (using cached conversion tensor !)
+    # Powerset <-> multilabel problem conversion helpers (using cached conversion tensor !)
     def multilabel_to_powerset(self, t: torch.Tensor) -> torch.Tensor:
         return self.specifications.multilabel_to_powerset(
             t,
-            self.mono_to_multi_tensor,
+            self.powerset_conversion_tensor,
         )
 
     def powerset_to_multilabel(self, t: torch.Tensor) -> torch.Tensor:
         return self.specifications.powerset_to_multilabel(
             t,
-            self.mono_to_multi_tensor,
+            self.powerset_conversion_tensor,
         )
 
     def convert_to_powerset_permutation(self, permutation: torch.Tensor):
@@ -442,14 +446,6 @@ class SegmentationMonolabel(SegmentationTaskMixin, Task):
             self.specifications.powerset_conversion_dict,
             self.specifications.powerset_conversion_dict_inv,
         )
-
-
-def mono_nll_loss(target, preds):
-    return torch.nn.functional.nll_loss(preds.float(), torch.argmax(target, dim=-1))
-
-
-def mono_mse_loss(target, preds):
-    return torch.nn.functional.mse_loss(preds, target)
 
 
 def main(protocol: str, subset: str = "test", model: str = "pyannote/segmentation"):

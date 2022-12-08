@@ -22,7 +22,7 @@ def get_multilabel_sample(
     return sample
 
 
-def test_multi_to_mono_simple():
+def test_multi_to_powerset_simple():
     sample = torch.zeros(1, 1, 3)
     active_speakers = torch.tensor([0, 2])
     sample[0, 0, active_speakers] = 1
@@ -37,22 +37,22 @@ def test_multi_to_mono_simple():
     assert r.shape[2] == 7
 
 
-def test_multi_to_mono_class_count():
+def test_multi_to_powerset_class_count():
     MAX_SPEAKERS_TO_TEST = 6
     for max_speakers in range(1, MAX_SPEAKERS_TO_TEST):
         for max_simult_speakers in range(1, max_speakers):
             sample = torch.zeros(1, 1, max_speakers)
-            sample_mono = Problem.multilabel_to_powerset(
+            sample_powerset = Problem.multilabel_to_powerset(
                 sample, max_speakers, max_simult_speakers
             )
 
             assert (
                 Problem.get_powerset_class_count(max_speakers, max_simult_speakers)
-                == sample_mono.shape[-1]
+                == sample_powerset.shape[-1]
             )
 
 
-def test_multi_to_mono_to_multi():
+def test_multi_to_powerset_to_multi():
     BATCH_SIZE = 128
     NUM_FRAMES = 200
     MAX_SPEAKERS = 6
@@ -60,17 +60,17 @@ def test_multi_to_mono_to_multi():
     sample = get_multilabel_sample(
         BATCH_SIZE, NUM_FRAMES, MAX_SPEAKERS, MAX_SIMULT_SPEAKERS
     )
-    sample_mono = Problem.multilabel_to_powerset(
+    sample_powerset = Problem.multilabel_to_powerset(
         sample, MAX_SPEAKERS, MAX_SIMULT_SPEAKERS
     )
     sample_multi = Problem.powerset_to_multilabel(
-        sample_mono, MAX_SPEAKERS, MAX_SIMULT_SPEAKERS
+        sample_powerset, MAX_SPEAKERS, MAX_SIMULT_SPEAKERS
     )
     assert sample.shape == sample_multi.shape
     assert torch.all(sample.flatten() == sample_multi.flatten())
 
 
-def test_multi_to_mono_too_many_simult():
+def test_multi_to_powerset_too_many_simult():
     BATCH_SIZE = 128
     NUM_FRAMES = 200
     MAX_SPEAKERS = 6
@@ -79,11 +79,11 @@ def test_multi_to_mono_too_many_simult():
     sample = get_multilabel_sample(
         BATCH_SIZE, NUM_FRAMES, MAX_SPEAKERS, MAX_SIMULT_SPEAKERS_IN_SAMPLE
     )
-    sample_mono = Problem.multilabel_to_powerset(
+    sample_powerset = Problem.multilabel_to_powerset(
         sample, MAX_SPEAKERS, MAX_SIMULT_SPEAKERS
     )
     sample_multi = Problem.powerset_to_multilabel(
-        sample_mono, MAX_SPEAKERS, MAX_SIMULT_SPEAKERS
+        sample_powerset, MAX_SPEAKERS, MAX_SIMULT_SPEAKERS
     )
     assert sample.shape == sample_multi.shape
     error_frames = torch.sum(sample != sample_multi, dim=-1) > 0
@@ -92,10 +92,10 @@ def test_multi_to_mono_too_many_simult():
     assert torch.all(error_frames == too_many_simult_frames)
 
 
-def test_multi_to_mono_permutation():
+def test_multi_to_powerset_permutation():
     MAX_SPEAKERS = 6
 
-    # tests that the mono-version of every permutations and their inverses
+    # tests that the powerset-version of every permutations and their inverses
     # are still permutations and their inverses
     # (unless our function makes errors on everything but pairs of permutations and their inverses, unlikely)
 
@@ -108,11 +108,11 @@ def test_multi_to_mono_permutation():
             for p_tuple in itertools.permutations([i for i in range(max_speakers)]):
                 p = torch.tensor(p_tuple)
                 p_inv = torch.argsort(p)
-                p_mono = Problem.get_powerset_permutation(
+                p_powerset = Problem.get_powerset_permutation(
                     p, max_speakers, max_simult_speakers
                 )
-                p_inv_mono = Problem.get_powerset_permutation(
+                p_inv_powerset = Problem.get_powerset_permutation(
                     p_inv, max_speakers, max_simult_speakers
                 )
 
-                assert torch.all(sample_t == sample_t[p_mono][p_inv_mono])
+                assert torch.all(sample_t == sample_t[p_powerset][p_inv_powerset])
