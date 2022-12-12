@@ -201,6 +201,8 @@ def get_devices(needs: int = None):
 
     if needs is None or needs == len(devices):
         return devices
+
+    assert needs > 0, f"Invalid number of devices: {needs}"
     if needs <= len(devices):
         return devices[:needs]
     return [device for _, device in zip(range(needs), itertools.cycle(devices))]
