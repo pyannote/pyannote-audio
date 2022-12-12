@@ -23,7 +23,7 @@
 import math
 import warnings
 from pathlib import Path
-from typing import Any, Callable, List, Optional, Text, Tuple, Union
+from typing import Callable, List, Optional, Text, Tuple, Union
 
 import numpy as np
 import torch
@@ -83,7 +83,6 @@ class Inference:
         step: float = None,
         batch_size: int = 32,
         pre_aggregation_hook: Callable[[np.ndarray], np.ndarray] = None,
-        progress_hook: Union[bool, Text, Callable[[int, int], Any]] = False,
         use_auth_token: Union[Text, None] = None,
     ):
 
@@ -183,7 +182,12 @@ class Inference:
 
         return outputs.cpu().numpy()
 
-    def slide(self, waveform: torch.Tensor, sample_rate: int, progress_hook: Optional[Callable]) -> SlidingWindowFeature:
+    def slide(
+        self,
+        waveform: torch.Tensor,
+        sample_rate: int,
+        progress_hook: Optional[Callable],
+    ) -> SlidingWindowFeature:
         """Slide model on a waveform
 
         Parameters
@@ -258,9 +262,7 @@ class Inference:
 
             outputs.append(last_output)
             if progress_hook is not None:
-                progress_hook(
-                    num_chunks + has_last_chunk, num_chunks + has_last_chunk
-                )
+                progress_hook(num_chunks + has_last_chunk, num_chunks + has_last_chunk)
 
         outputs = np.vstack(outputs)
 
@@ -298,7 +300,20 @@ class Inference:
 
         return aggregated
 
-    def __call__(self, file: AudioFile, progress_hook: Optional[Callable]) -> Union[SlidingWindowFeature, np.ndarray]:
+    def _get_progress_hook(self, progress_hook):
+        if callable(progress_hook):
+            pass
+        elif isinstance(progress_hook, Text):
+            progress_hook = InferenceProgressHook(desc=progress_hook)
+        elif progress_hook:
+            progress_hook = InferenceProgressHook()
+        else:
+            progress_hook = None
+        return progress_hook
+
+    def __call__(
+        self, file: AudioFile, progress_hook: Optional[Callable]
+    ) -> Union[SlidingWindowFeature, np.ndarray]:
         """Run inference on a whole file
 
         Parameters
@@ -329,23 +344,12 @@ class Inference:
 
         return self.infer(waveform[None])[0]
 
-    def _get_progress_hook(self, progress_hook):
-        if callable(progress_hook):
-            pass
-        elif isinstance(progress_hook, Text):
-            progress_hook = InferenceProgressHook(desc=progress_hook)
-        elif progress_hook:
-            progress_hook = InferenceProgressHook()
-        else:
-            progress_hook = None
-        return progress_hook
-
     def crop(
         self,
         file: AudioFile,
         chunk: Union[Segment, List[Segment]],
         duration: Optional[float] = None,
-        progress_hook: Optional[Callable] = None
+        progress_hook: Optional[Callable] = None,
     ) -> Union[SlidingWindowFeature, np.ndarray]:
         """Run inference on a chunk or a list of chunks
 
@@ -396,7 +400,11 @@ class Inference:
             waveform, sample_rate = self.model.audio.crop(
                 file, chunk, duration=duration
             )
-            output = self.slide(waveform, sample_rate, progress_hook = self._get_progress_hook(progress_hook=progress_hook))
+            output = self.slide(
+                waveform,
+                sample_rate,
+                progress_hook=self._get_progress_hook(progress_hook=progress_hook),
+            )
 
             frames = output.sliding_window
             shifted_frames = SlidingWindow(
