@@ -13,10 +13,10 @@ pytorch_lightning >=1.5.4,<1.7
 pytorch_metric_learning >=1.0.0,<2.0
 semver >=2.10.2,<3.0
 singledispatchmethod
-soundfile >=0.10.2,<0.11
+soundfile >=0.10.2,<0.12
 speechbrain >=0.5.12,<0.6
 torch >=1.9
 torch_audiomentations >= 0.11.0
 torchaudio >=0.10,<1.0
-torchmetrics >=0.6,<1.0
+torchmetrics >=0.11,<1.0
 typing_extensions

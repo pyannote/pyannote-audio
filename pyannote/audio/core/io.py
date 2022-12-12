@@ -277,6 +277,10 @@ class Audio:
         elif "audio" in file:
             waveform, sample_rate = torchaudio.load(file["audio"])
 
+            # rewind if needed
+            if isinstance(file["audio"], IOBase):
+                file["audio"].seek(0)
+
         channel = file.get("channel", None)
 
         if channel is not None:
@@ -384,6 +388,7 @@ class Audio:
                 data, _ = torchaudio.load(
                     file["audio"], frame_offset=start_frame, num_frames=num_frames
                 )
+                # rewind if needed
                 if isinstance(file["audio"], IOBase):
                     file["audio"].seek(0)
             except RuntimeError:
