@@ -186,15 +186,21 @@ def get_devices(needs: int = None):
         When `needs` is provided, returns that many devices.
     """
 
-    num_gpus = torch.cuda.device_count()
+    cuda_count = torch.cuda.device_count()
 
-    if num_gpus == 0:
+    if cuda_count > 0:
+        devices = [torch.device(f"cuda:{index:d}") for index in range(cuda_count)]
+    else:
         devices = [torch.device("cpu")]
-        if needs is None:
-            return devices
-        return devices * needs
+        try:
+            if torch.has_mps:
+                devices = [torch.device('mps'), torch.device("cpu")]
+                print("Using Apple Metal Performance Shaders")
+        except:
+            pass
 
-    devices = [torch.device(f"cuda:{index:d}") for index in range(num_gpus)]
-    if needs is None:
+    if needs is None or needs == len(devices):
         return devices
+    if needs <= len(devices):
+        return devices[:needs]
     return [device for _, device in zip(range(needs), itertools.cycle(devices))]
