@@ -35,7 +35,6 @@ from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Resolution
 from pyannote.audio.utils.permutation import mae_cost_func, permutate
-from pyannote.audio.utils.progress import InferenceProgressHook
 
 TaskName = Union[Text, None]
 
@@ -186,7 +185,7 @@ class Inference:
         self,
         waveform: torch.Tensor,
         sample_rate: int,
-        progress_hook: Optional[Callable],
+        hook: Optional[Callable],
     ) -> SlidingWindowFeature:
         """Slide model on a waveform
 
@@ -196,9 +195,9 @@ class Inference:
             Waveform.
         sample_rate : int
             Sample rate.
-        progress_hook: Optional[Callable]
+        hook: Optional[Callable]
             When a callable is provided, it is called everytime a batch is
-            processed with two integer arguments:
+            processed with two keyword arguments:
             - `completed`: the number of chunks that have been processed so far
             - `total`: the total number of chunks
 
@@ -211,7 +210,7 @@ class Inference:
 
         window_size: int = round(self.duration * sample_rate)
         step_size: int = round(self.step * sample_rate)
-        num_channels, num_samples = waveform.shape
+        _, num_samples = waveform.shape
 
         specifications = self.model.specifications
         resolution = specifications.resolution
@@ -241,15 +240,15 @@ class Inference:
 
         outputs: Union[List[np.ndarray], np.ndarray] = list()
 
-        if progress_hook is not None:
-            progress_hook(0, num_chunks + has_last_chunk)
+        if hook is not None:
+            hook(completed=0, total=num_chunks + has_last_chunk)
 
         # slide over audio chunks in batch
         for c in np.arange(0, num_chunks, self.batch_size):
             batch: torch.Tensor = chunks[c : c + self.batch_size]
             outputs.append(self.infer(batch))
-            if progress_hook is not None:
-                progress_hook(c + self.batch_size, num_chunks + has_last_chunk)
+            if hook is not None:
+                hook(completed=c + self.batch_size, total=num_chunks + has_last_chunk)
 
         # process orphan last chunk
         if has_last_chunk:
@@ -261,8 +260,11 @@ class Inference:
                 last_output = np.pad(last_output, ((0, 0), (0, pad), (0, 0)))
 
             outputs.append(last_output)
-            if progress_hook is not None:
-                progress_hook(num_chunks + has_last_chunk, num_chunks + has_last_chunk)
+            if hook is not None:
+                hook(
+                    completed=num_chunks + has_last_chunk,
+                    total=num_chunks + has_last_chunk,
+                )
 
         outputs = np.vstack(outputs)
 
@@ -300,19 +302,8 @@ class Inference:
 
         return aggregated
 
-    def _get_progress_hook(self, progress_hook):
-        if callable(progress_hook):
-            pass
-        elif isinstance(progress_hook, Text):
-            progress_hook = InferenceProgressHook(desc=progress_hook)
-        elif progress_hook:
-            progress_hook = InferenceProgressHook()
-        else:
-            progress_hook = None
-        return progress_hook
-
     def __call__(
-        self, file: AudioFile, progress_hook: Optional[Callable]
+        self, file: AudioFile, hook: Optional[Callable]
     ) -> Union[SlidingWindowFeature, np.ndarray]:
         """Run inference on a whole file
 
@@ -320,12 +311,11 @@ class Inference:
         ----------
         file : AudioFile
             Audio file.
-        progress_hook : {callable, True, str}, optional
+        hook : callable, optional
             When a callable is provided, it is called everytime a batch is processed
-            with two integer arguments:
+            with two keyword arguments:
             - `completed`: the number of chunks that have been processed so far
             - `total`: the total number of chunks
-            Set to True (or a descriptive string) to display a tqdm progress bar.
 
         Returns
         -------
@@ -334,13 +324,10 @@ class Inference:
             and `np.ndarray` if is set to "whole".
 
         """
-
-        progress_hook = self._get_progress_hook(progress_hook=progress_hook)
-
         waveform, sample_rate = self.model.audio(file)
 
         if self.window == "sliding":
-            return self.slide(waveform, sample_rate, progress_hook)
+            return self.slide(waveform, sample_rate, hook=hook)
 
         return self.infer(waveform[None])[0]
 
@@ -349,7 +336,7 @@ class Inference:
         file: AudioFile,
         chunk: Union[Segment, List[Segment]],
         duration: Optional[float] = None,
-        progress_hook: Optional[Callable] = None,
+        hook: Optional[Callable] = None,
     ) -> Union[SlidingWindowFeature, np.ndarray]:
         """Run inference on a chunk or a list of chunks
 
@@ -367,12 +354,11 @@ class Inference:
             Enforce chunk duration (in seconds). This is a hack to avoid rounding
             errors that may result in a different number of audio samples for two
             chunks of the same duration.
-        progress_hook : {callable, True, str}, optional
+        hook : callable, optional
             When a callable is provided, it is called everytime a batch is processed
-            with two integer arguments:
+            with two keyword arguments:
             - `completed`: the number of chunks that have been processed so far
             - `total`: the total number of chunks
-            Set to True (or a descriptive string) to display a tqdm progress bar.
 
         Returns
         -------
@@ -400,11 +386,7 @@ class Inference:
             waveform, sample_rate = self.model.audio.crop(
                 file, chunk, duration=duration
             )
-            output = self.slide(
-                waveform,
-                sample_rate,
-                progress_hook=self._get_progress_hook(progress_hook=progress_hook),
-            )
+            output = self.slide(waveform, sample_rate, hook=hook)
 
             frames = output.sliding_window
             shifted_frames = SlidingWindow(
