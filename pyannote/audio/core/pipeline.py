@@ -171,18 +171,10 @@ visit https://hf.co/{model_id} to accept the user conditions."""
 
     @staticmethod
     def setup_hook(file: AudioFile, hook: Optional[Callable] = None) -> Callable:
+        def noop(*args, **kwargs):
+            return
 
-        if hook is None:
-
-            def hook(*args, **kwargs):
-                return
-
-            hook.missing = True
-        else:
-            hook = partial(hook, file=file)
-            hook.missing = False
-
-        return hook
+        return partial(hook or noop, file=file)
 
     def default_parameters(self):
         raise NotImplementedError()
