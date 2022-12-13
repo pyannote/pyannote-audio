@@ -53,14 +53,17 @@ def evaluate(cfg: DictConfig) -> Optional[float]:
         main_task = progress.add_task(protocol.name, total=len(files))
         file_task = progress.add_task("Processing", total=1.0)
 
-        def progress_hook(completed: int, total: int):
+        def progress_hook(completed: int = None, total: int = None):
             progress.update(file_task, completed=completed / total)
 
-        inference = Inference(model, device=device, progress_hook=progress_hook)
+        inference = Inference(model, device=device)
         warm_up = cfg.warm_up / inference.duration
 
         def hypothesis(file: ProtocolFile):
-            return Inference.trim(binarize(inference(file)), warm_up=(warm_up, warm_up))
+            return Inference.trim(
+                binarize(inference(file, hook=progress_hook)),
+                warm_up=(warm_up, warm_up),
+            )
 
         metric = DiscreteDiarizationErrorRate()
 
