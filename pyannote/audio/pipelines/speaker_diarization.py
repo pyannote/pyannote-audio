@@ -22,6 +22,7 @@
 
 """Speaker diarization pipelines"""
 
+import functools
 import itertools
 import math
 from typing import Callable, Optional, Text, Union
@@ -226,21 +227,16 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         """
 
         if hook is not None:
-            progress_hook = lambda completed, total: hook(
-                "segmentation", None, total=total, completed=completed
-            )
-        else:
-            progress_hook = None
+            hook = functools.partial(hook, "segmentation", None)
 
         if self.training:
             if self.CACHED_SEGMENTATION in file:
                 segmentations = file[self.CACHED_SEGMENTATION]
             else:
-                segmentations = self._segmentation(file, progress_hook=progress_hook)
+                segmentations = self._segmentation(file, hook=hook)
                 file[self.CACHED_SEGMENTATION] = segmentations
         else:
-            segmentations: SlidingWindowFeature = self._segmentation(file, progress_hook=progress_hook)
-
+            segmentations: SlidingWindowFeature = self._segmentation(file, hook=hook)
 
         return segmentations
 
@@ -369,7 +365,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             embedding_batches.append(embedding_batch)
 
             if hook is not None:
-                hook("embeddings", None, total=batch_count, completed=i)
+                hook("embeddings", embedding_batch, total=batch_count, completed=i)
 
         embedding_batches = np.vstack(embedding_batches)
 
@@ -464,8 +460,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             hook("step_name", step_artefact, file=file, total=Optional[int], completed=Optional[int])
 
             If the step supports more fine-grained process, it will be called multiple
-            times during the steps with `step_artefact` set to None and `completed`
-            containing the progress of `total` units.
+            times during the steps with `completed` containing the progress of `total` units.
 
             After the step completed, it will be called with total and completed set to
             None and step_artefact set to the step artefact.
