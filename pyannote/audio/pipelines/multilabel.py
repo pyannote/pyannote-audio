@@ -24,7 +24,7 @@
 # Hadrien TITEUX - https://github.com/hadware
 # Hervé BREDIN - http://herve.niderb.fr
 
-
+from functools import partial
 from typing import Callable, Optional, Text, Union
 
 from pyannote.core import Annotation, SlidingWindowFeature
@@ -186,10 +186,14 @@ class MultiLabelSegmentation(Pipeline):
             if self.CACHED_SEGMENTATION in file:
                 segmentations = file[self.CACHED_SEGMENTATION]
             else:
-                segmentations = self._segmentation(file, hook=hook)
+                segmentations = self._segmentation(
+                    file, hook=partial(hook, "segmentation", None)
+                )
                 file[self.CACHED_SEGMENTATION] = segmentations
         else:
-            segmentations: SlidingWindowFeature = self._segmentation(file, hook=hook)
+            segmentations: SlidingWindowFeature = self._segmentation(
+                file, hook=partial(hook, "segmentation", None)
+            )
 
         hook("segmentation", segmentations)
 

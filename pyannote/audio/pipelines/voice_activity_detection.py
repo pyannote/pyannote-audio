@@ -24,6 +24,7 @@
 
 import tempfile
 from copy import deepcopy
+from functools import partial
 from types import MethodType
 from typing import Callable, Optional, Text, Union
 
@@ -196,10 +197,14 @@ class VoiceActivityDetection(Pipeline):
             if self.CACHED_SEGMENTATION in file:
                 segmentations = file[self.CACHED_SEGMENTATION]
             else:
-                segmentations = self._segmentation(file, hook=hook)
+                segmentations = self._segmentation(
+                    file, hook=partial(hook, "segmentation", None)
+                )
                 file[self.CACHED_SEGMENTATION] = segmentations
         else:
-            segmentations: SlidingWindowFeature = self._segmentation(file, hook=hook)
+            segmentations: SlidingWindowFeature = self._segmentation(
+                file, hook=partial(hook, "segmentation", None)
+            )
 
         hook("segmentation", segmentations)
 
