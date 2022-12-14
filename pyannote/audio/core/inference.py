@@ -303,7 +303,7 @@ class Inference:
         return aggregated
 
     def __call__(
-        self, file: AudioFile, hook: Optional[Callable]
+        self, file: AudioFile, hook: Optional[Callable] = None
     ) -> Union[SlidingWindowFeature, np.ndarray]:
         """Run inference on a whole file
 
