@@ -351,7 +351,8 @@ class AdaptiveVoiceActivityDetection(Pipeline):
         with tempfile.TemporaryDirectory() as default_root_dir:
             trainer = Trainer(
                 max_epochs=self.num_epochs,
-                gpus=1,
+                accelerator="gpu",
+                devices=1,
                 callbacks=[GraduallyUnfreeze(epochs_per_stage=self.num_epochs + 1)],
                 enable_checkpointing=False,
                 default_root_dir=default_root_dir,

@@ -1,4 +1,4 @@
-import pytorch_lightning as pl
+from lightning_lite.utilities.seed import seed_everything
 import torch
 
 from pyannote.audio.models.segmentation.debug import SimpleSegmentationModel
@@ -30,7 +30,7 @@ def get_next5(dl):
 
 def test_seeding_ensures_data_loaders():
     "Setting a global seed for the dataloaders ensures that we get data back in the same order"
-    pl.seed_everything(1)
+    seed_everything(1)
 
     for task in [VoiceActivityDetection, MultiLabelSegmentation]:
         protocol, vad = setup_tasks(task)
@@ -50,12 +50,12 @@ def test_different_seeds():
 
     for task in [VoiceActivityDetection, MultiLabelSegmentation]:
         protocol, vad = setup_tasks(task)
-        pl.seed_everything(4)
+        seed_everything(4)
         dl = create_dl(SimpleSegmentationModel, vad)
         last5a = get_next5(dl)
 
         protocol, vad = setup_tasks(task)
-        pl.seed_everything(5)
+        seed_everything(5)
         dl = create_dl(SimpleSegmentationModel, vad)
         last5b = get_next5(dl)
 

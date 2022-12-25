@@ -37,7 +37,7 @@ from pytorch_lightning.callbacks import (
     RichProgressBar,
 )
 from pytorch_lightning.loggers import TensorBoardLogger
-from pytorch_lightning.utilities.seed import seed_everything
+from lightning_lite.utilities.seed import seed_everything
 from torch_audiomentations.utils.config import from_dict as get_augmentation
 
 from pyannote.audio.core.io import get_torchaudio_info
