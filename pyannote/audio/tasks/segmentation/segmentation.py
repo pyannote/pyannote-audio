@@ -429,15 +429,15 @@ def main(protocol: str, subset: str = "test", model: str = "pyannote/segmentatio
         main_task = progress.add_task(protocol.name, total=len(files))
         file_task = progress.add_task("Processing", total=1.0)
 
-        def progress_hook(completed: int, total: int):
+        def progress_hook(completed: int = None, total: int = None):
             progress.update(file_task, completed=completed / total)
 
-        inference = Inference(model, device=device, progress_hook=progress_hook)
+        inference = Inference(model, device=device)
 
         for file in files:
             progress.update(file_task, description=file["uri"])
             reference = file["annotation"]
-            hypothesis = binarize(inference(file))
+            hypothesis = binarize(inference(file, hook=progress_hook))
             uem = file["annotated"]
             _ = metric(reference, hypothesis, uem=uem)
             progress.advance(main_task)

@@ -36,9 +36,10 @@ import torchaudio
 from torch.nn.utils.rnn import pad_sequence
 
 from pyannote.audio import Inference, Model, Pipeline
+from pyannote.audio.core.inference import BaseInference
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import CACHE_DIR
-from pyannote.audio.pipelines.utils import PipelineModel, get_devices, get_model
+from pyannote.audio.pipelines.utils import PipelineModel, get_model
 
 backend = torchaudio.get_audio_backend()
 try:
@@ -62,7 +63,7 @@ except ImportError:
     NEMO_IS_AVAILABLE = False
 
 
-class NeMoPretrainedSpeakerEmbedding:
+class NeMoPretrainedSpeakerEmbedding(BaseInference):
     def __init__(
         self,
         embedding: Text = "nvidia/speakerverification_en_titanet_large",
@@ -77,11 +78,16 @@ class NeMoPretrainedSpeakerEmbedding:
 
         super().__init__()
         self.embedding = embedding
-        self.device = device
+        self.device = device or torch.device("cpu")
 
         self.model_ = NeMo_EncDecSpeakerLabelModel.from_pretrained(self.embedding)
         self.model_.freeze()
         self.model_.to(self.device)
+
+    def to(self, device: torch.device):
+        self.model_.to(device)
+        self.device = device
+        return self
 
     @cached_property
     def sample_rate(self) -> int:
@@ -193,7 +199,7 @@ class NeMoPretrainedSpeakerEmbedding:
         return embeddings
 
 
-class SpeechBrainPretrainedSpeakerEmbedding:
+class SpeechBrainPretrainedSpeakerEmbedding(BaseInference):
     """Pretrained SpeechBrain speaker embedding
 
     Parameters
@@ -237,14 +243,25 @@ class SpeechBrainPretrainedSpeakerEmbedding:
 
         super().__init__()
         self.embedding = embedding
-        self.device = device
+        self.device = device or torch.device("cpu")
+        self.use_auth_token = use_auth_token
 
         self.classifier_ = SpeechBrain_EncoderClassifier.from_hparams(
             source=self.embedding,
             savedir=f"{CACHE_DIR}/speechbrain",
             run_opts={"device": self.device},
-            use_auth_token=use_auth_token,
+            use_auth_token=self.use_auth_token,
         )
+
+    def to(self, device: torch.device):
+        self.classifier_ = SpeechBrain_EncoderClassifier.from_hparams(
+            source=self.embedding,
+            savedir=f"{CACHE_DIR}/speechbrain",
+            run_opts={"device": self.device},
+            use_auth_token=self.use_auth_token,
+        )
+        self.device = device
+        return self
 
     @cached_property
     def sample_rate(self) -> int:
@@ -321,7 +338,10 @@ class SpeechBrainPretrainedSpeakerEmbedding:
             imasks = imasks > 0.5
 
             signals = pad_sequence(
-                [waveform[imask] for waveform, imask in zip(waveforms, imasks)],
+                [
+                    waveform[imask].contiguous()
+                    for waveform, imask in zip(waveforms, imasks)
+                ],
                 batch_first=True,
             )
 
@@ -349,7 +369,7 @@ class SpeechBrainPretrainedSpeakerEmbedding:
         return embeddings
 
 
-class PyannoteAudioPretrainedSpeakerEmbedding:
+class PyannoteAudioPretrainedSpeakerEmbedding(BaseInference):
     """Pretrained pyannote.audio speaker embedding
 
     Parameters
@@ -386,11 +406,16 @@ class PyannoteAudioPretrainedSpeakerEmbedding:
     ):
         super().__init__()
         self.embedding = embedding
-        self.device = device
+        self.device = device or torch.device("cpu")
 
         self.model_: Model = get_model(self.embedding, use_auth_token=use_auth_token)
         self.model_.eval()
         self.model_.to(self.device)
+
+    def to(self, device: torch.device):
+        self.model_.to(device)
+        self.device = device
+        return self
 
     @cached_property
     def sample_rate(self) -> int:
@@ -518,23 +543,11 @@ class SpeakerEmbedding(Pipeline):
             embedding, use_auth_token=use_auth_token
         )
 
-        if self.segmentation is None:
-            models = [self.embedding_model_]
-        else:
+        if self.segmentation is not None:
             segmentation_model: Model = get_model(
                 self.segmentation, use_auth_token=use_auth_token
             )
-            models = [self.embedding_model_, segmentation_model]
-
-        # send models to GPU (when GPUs are available and model is not already on GPU)
-        cpu_models = [model for model in models if model.device.type == "cpu"]
-        for cpu_model, gpu_device in zip(
-            cpu_models, get_devices(needs=len(cpu_models))
-        ):
-            cpu_model.to(gpu_device)
-
-        if self.segmentation is not None:
-            self.voice_activity_ = Inference(
+            self._segmentation = Inference(
                 segmentation_model,
                 pre_aggregation_hook=lambda scores: np.max(
                     scores, axis=-1, keepdims=True
@@ -552,7 +565,7 @@ class SpeakerEmbedding(Pipeline):
             weights = None
         else:
             # obtain voice activity scores
-            weights = self.voice_activity_(file).data
+            weights = self._segmentation(file).data
             # HACK -- this should be fixed upstream
             weights[np.isnan(weights)] = 0.0
             weights = torch.from_numpy(weights**3)[None, :, 0].to(device)

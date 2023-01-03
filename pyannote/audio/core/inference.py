@@ -23,7 +23,7 @@
 import math
 import warnings
 from pathlib import Path
-from typing import Any, Callable, List, Optional, Text, Tuple, Union
+from typing import Callable, List, Optional, Text, Tuple, Union
 
 import numpy as np
 import torch
@@ -35,12 +35,15 @@ from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Resolution
 from pyannote.audio.utils.permutation import mae_cost_func, permutate
-from pyannote.audio.utils.progress import InferenceProgressHook
 
 TaskName = Union[Text, None]
 
 
-class Inference:
+class BaseInference:
+    pass
+
+
+class Inference(BaseInference):
     """Inference
 
     Parameters
@@ -67,12 +70,6 @@ class Inference:
         When a callable is provided, it is applied to the model output, just before aggregation.
         Takes a (num_chunks, num_frames, dimension) numpy array as input and returns a modified
         (num_chunks, num_frames, other_dimension) numpy array passed to overlap-add aggregation.
-    progress_hook : {callable, True, str}, optional
-        When a callable is provided, it is called everytime a batch is processed
-        with two integer arguments:
-        - the number of chunks that have been processed so far
-        - the total number of chunks
-        Set to True (or a descriptive string) to display a tqdm progress bar.
     use_auth_token : str, optional
         When loading a private huggingface.co model, set `use_auth_token`
         to True or to a string containing your hugginface.co authentication
@@ -89,7 +86,6 @@ class Inference:
         step: float = None,
         batch_size: int = 32,
         pre_aggregation_hook: Callable[[np.ndarray], np.ndarray] = None,
-        progress_hook: Union[bool, Text, Callable[[int, int], Any]] = False,
         use_auth_token: Union[Text, None] = None,
     ):
 
@@ -159,15 +155,12 @@ class Inference:
 
         self.batch_size = batch_size
 
-        if callable(progress_hook):
-            pass
-        elif isinstance(progress_hook, Text):
-            progress_hook = InferenceProgressHook(desc=progress_hook)
-        elif progress_hook:
-            progress_hook = InferenceProgressHook()
-        else:
-            progress_hook = None
-        self.progress_hook = progress_hook
+    def to(self, device: torch.device):
+        """Send internal model to `device`"""
+
+        self.model.to(device)
+        self.device = device
+        return self
 
     def infer(self, chunks: torch.Tensor) -> np.ndarray:
         """Forward pass
@@ -199,7 +192,12 @@ class Inference:
 
         return outputs.cpu().numpy()
 
-    def slide(self, waveform: torch.Tensor, sample_rate: int) -> SlidingWindowFeature:
+    def slide(
+        self,
+        waveform: torch.Tensor,
+        sample_rate: int,
+        hook: Optional[Callable],
+    ) -> SlidingWindowFeature:
         """Slide model on a waveform
 
         Parameters
@@ -208,6 +206,11 @@ class Inference:
             Waveform.
         sample_rate : int
             Sample rate.
+        hook: Optional[Callable]
+            When a callable is provided, it is called everytime a batch is
+            processed with two keyword arguments:
+            - `completed`: the number of chunks that have been processed so far
+            - `total`: the total number of chunks
 
         Returns
         -------
@@ -218,7 +221,7 @@ class Inference:
 
         window_size: int = round(self.duration * sample_rate)
         step_size: int = round(self.step * sample_rate)
-        num_channels, num_samples = waveform.shape
+        _, num_samples = waveform.shape
 
         specifications = self.model.specifications
         resolution = specifications.resolution
@@ -248,15 +251,15 @@ class Inference:
 
         outputs: Union[List[np.ndarray], np.ndarray] = list()
 
-        if self.progress_hook is not None:
-            self.progress_hook(0, num_chunks + has_last_chunk)
+        if hook is not None:
+            hook(completed=0, total=num_chunks + has_last_chunk)
 
         # slide over audio chunks in batch
         for c in np.arange(0, num_chunks, self.batch_size):
             batch: torch.Tensor = chunks[c : c + self.batch_size]
             outputs.append(self.infer(batch))
-            if self.progress_hook is not None:
-                self.progress_hook(c + self.batch_size, num_chunks + has_last_chunk)
+            if hook is not None:
+                hook(completed=c + self.batch_size, total=num_chunks + has_last_chunk)
 
         # process orphan last chunk
         if has_last_chunk:
@@ -268,9 +271,10 @@ class Inference:
                 last_output = np.pad(last_output, ((0, 0), (0, pad), (0, 0)))
 
             outputs.append(last_output)
-            if self.progress_hook is not None:
-                self.progress_hook(
-                    num_chunks + has_last_chunk, num_chunks + has_last_chunk
+            if hook is not None:
+                hook(
+                    completed=num_chunks + has_last_chunk,
+                    total=num_chunks + has_last_chunk,
                 )
 
         outputs = np.vstack(outputs)
@@ -309,13 +313,20 @@ class Inference:
 
         return aggregated
 
-    def __call__(self, file: AudioFile) -> Union[SlidingWindowFeature, np.ndarray]:
+    def __call__(
+        self, file: AudioFile, hook: Optional[Callable] = None
+    ) -> Union[SlidingWindowFeature, np.ndarray]:
         """Run inference on a whole file
 
         Parameters
         ----------
         file : AudioFile
             Audio file.
+        hook : callable, optional
+            When a callable is provided, it is called everytime a batch is processed
+            with two keyword arguments:
+            - `completed`: the number of chunks that have been processed so far
+            - `total`: the total number of chunks
 
         Returns
         -------
@@ -324,11 +335,10 @@ class Inference:
             and `np.ndarray` if is set to "whole".
 
         """
-
         waveform, sample_rate = self.model.audio(file)
 
         if self.window == "sliding":
-            return self.slide(waveform, sample_rate)
+            return self.slide(waveform, sample_rate, hook=hook)
 
         return self.infer(waveform[None])[0]
 
@@ -337,6 +347,7 @@ class Inference:
         file: AudioFile,
         chunk: Union[Segment, List[Segment]],
         duration: Optional[float] = None,
+        hook: Optional[Callable] = None,
     ) -> Union[SlidingWindowFeature, np.ndarray]:
         """Run inference on a chunk or a list of chunks
 
@@ -354,6 +365,11 @@ class Inference:
             Enforce chunk duration (in seconds). This is a hack to avoid rounding
             errors that may result in a different number of audio samples for two
             chunks of the same duration.
+        hook : callable, optional
+            When a callable is provided, it is called everytime a batch is processed
+            with two keyword arguments:
+            - `completed`: the number of chunks that have been processed so far
+            - `total`: the total number of chunks
 
         Returns
         -------
@@ -381,7 +397,7 @@ class Inference:
             waveform, sample_rate = self.model.audio.crop(
                 file, chunk, duration=duration
             )
-            output = self.slide(waveform, sample_rate)
+            output = self.slide(waveform, sample_rate, hook=hook)
 
             frames = output.sliding_window
             shifted_frames = SlidingWindow(
