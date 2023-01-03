@@ -22,10 +22,11 @@
 
 import os
 import warnings
+from collections import OrderedDict
 from collections.abc import Iterator
 from functools import partial
 from pathlib import Path
-from typing import Callable, List, Optional, Text, Union
+from typing import Callable, Dict, List, Optional, Text, Union
 
 import yaml
 from huggingface_hub import hf_hub_download
@@ -35,8 +36,9 @@ from pyannote.database import FileFinder, ProtocolFile
 from pyannote.pipeline import Pipeline as _Pipeline
 
 from pyannote.audio import Audio, __version__
+from pyannote.audio.core.inference import BaseInference
 from pyannote.audio.core.io import AudioFile
-from pyannote.audio.core.model import CACHE_DIR
+from pyannote.audio.core.model import CACHE_DIR, Model
 
 PIPELINE_PARAMS_NAME = "config.yaml"
 
@@ -169,6 +171,83 @@ visit https://hf.co/{model_id} to accept the user conditions."""
 
         return pipeline
 
+    def __init__(self):
+        super().__init__()
+        self._models: Dict[str, Model] = OrderedDict()
+        self._inferences: Dict[str, BaseInference] = OrderedDict()
+
+    def __getattr__(self, name):
+        """(Advanced) attribute getter
+
+        Adds support for Model and Inference attributes,
+        which are iterated over by Pipeline.to() method.
+
+        See pyannote.pipeline.Pipeline.__getattr__.
+        """
+
+        if "_models" in self.__dict__:
+            _models = self.__dict__["_models"]
+            if name in _models:
+                return _models[name]
+
+        if "_inferences" in self.__dict__:
+            _inferences = self.__dict__["_inferences"]
+            if name in _inferences:
+                return _inferences[name]
+
+        return super().__getattr__(name)
+
+    def __setattr__(self, name, value):
+        """(Advanced) attribute setter
+
+        Adds support for Model and Inference attributes,
+        which are iterated over by Pipeline.to() method.
+
+        See pyannote.pipeline.Pipeline.__setattr__.
+        """
+
+        def remove_from(*dicts):
+            for d in dicts:
+                if name in d:
+                    del d[name]
+
+        _parameters = self.__dict__.get("_parameters")
+        _instantiated = self.__dict__.get("_instantiated")
+        _pipelines = self.__dict__.get("_pipelines")
+        _models = self.__dict__.get("_models")
+        _inferences = self.__dict__.get("_inferences")
+
+        if isinstance(value, Model):
+            if _models is None:
+                msg = "cannot assign models before Pipeline.__init__() call"
+                raise AttributeError(msg)
+            remove_from(
+                self.__dict__, _inferences, _parameters, _instantiated, _pipelines
+            )
+            _models[name] = value
+            return
+
+        if isinstance(value, BaseInference):
+            if _inferences is None:
+                msg = "cannot assign inferences before Pipeline.__init__() call"
+                raise AttributeError(msg)
+            remove_from(self.__dict__, _models, _parameters, _instantiated, _pipelines)
+            _inferences[name] = value
+            return
+
+        super().__setattr__(name, value)
+
+    def __delattr__(self, name):
+
+        if name in self._models:
+            del self._models[name]
+
+        elif name in self._inferences:
+            del self._inferences[name]
+
+        else:
+            super().__delattr__(name)
+
     @staticmethod
     def setup_hook(file: AudioFile, hook: Optional[Callable] = None) -> Callable:
         def noop(*args, **kwargs):
@@ -228,3 +307,18 @@ visit https://hf.co/{model_id} to accept the user conditions."""
             file = ProtocolFile(file, lazy=self.preprocessors)
 
         return self.apply(file, **kwargs)
+
+    def to(self, device):
+        """Send pipeline to `device`"""
+
+        for _, pipeline in self._pipelines.items():
+            if hasattr(pipeline, "to"):
+                _ = pipeline.to(device)
+
+        for _, model in self._models.items():
+            _ = model.to(device)
+
+        for _, inference in self._inferences.items():
+            _ = inference.to(device)
+
+        return self

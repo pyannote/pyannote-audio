@@ -39,7 +39,11 @@ from pyannote.audio.utils.permutation import mae_cost_func, permutate
 TaskName = Union[Text, None]
 
 
-class Inference:
+class BaseInference:
+    pass
+
+
+class Inference(BaseInference):
     """Inference
 
     Parameters
@@ -150,6 +154,13 @@ class Inference:
         self.step = step
 
         self.batch_size = batch_size
+
+    def to(self, device: torch.device):
+        """Send internal model to `device`"""
+
+        self.model.to(device)
+        self.device = device
+        return self
 
     def infer(self, chunks: torch.Tensor) -> np.ndarray:
         """Forward pass

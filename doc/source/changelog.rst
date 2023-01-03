@@ -2,17 +2,18 @@
 Changelog
 #########
 
-Version 2.2 (xxxx-xx-xx)
-~~~~~~~~~~~~~~~~~~~~~~~~
+Version 2.2.x
+~~~~~~~~~~~~~
 
+  - feat(pipeline): (BREAKING) send pipeline to device with Pipeline.to(device)
   - feat(pipeline): add progress hook to pipelines
   - fix(pipeline): fix support for IOBase audio
   - fix(pipeline): fix corner case with no speaker
   - setup: add support for soundfile >= 0.11
   - setup: add support for torchmetrics >= 0.11
 
-Version 2.1 (2022-11-xx)
-~~~~~~~~~~~~~~~~~~~~~~~~
+Version 2.1.1 (2022-10-27)
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 
   - BREAKING(pipeline): rewrite speaker diarization pipeline
   - feat(pipeline): add option to optimize for DER variant

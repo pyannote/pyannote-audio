@@ -37,7 +37,7 @@ from pyannote.audio.core.pipeline import Pipeline
 from pyannote.audio.utils.metric import MacroAverageFMeasure
 
 from ..utils.signal import Binarize
-from .utils import PipelineModel, get_devices, get_model
+from .utils import PipelineModel, get_model
 
 
 class MultiLabelSegmentation(Pipeline):
@@ -93,11 +93,8 @@ class MultiLabelSegmentation(Pipeline):
         self.fscore = fscore
         self.share_min_duration = share_min_duration
 
-        # load model and send it to GPU (when available and not already on GPU)
+        # load model
         model = get_model(segmentation, use_auth_token=use_auth_token)
-        if model.device.type == "cpu":
-            (segmentation_device,) = get_devices(needs=1)
-            model.to(segmentation_device)
 
         self._classes = model.specifications.classes
         self._segmentation = Inference(model, **inference_kwargs)
