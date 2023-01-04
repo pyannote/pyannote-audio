@@ -34,7 +34,7 @@ from pyannote.pipeline.parameter import Uniform
 from pyannote.audio import Inference
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.pipeline import Pipeline
-from pyannote.audio.pipelines.utils import PipelineModel, get_devices, get_model
+from pyannote.audio.pipelines.utils import PipelineModel, get_model
 from pyannote.audio.utils.signal import Binarize
 
 
@@ -125,11 +125,8 @@ class OverlappedSpeechDetection(Pipeline):
 
         self.segmentation = segmentation
 
-        # load model and send it to GPU (when available and not already on GPU)
+        # load model
         model = get_model(segmentation, use_auth_token=use_auth_token)
-        if model.device.type == "cpu":
-            (segmentation_device,) = get_devices(needs=1)
-            model.to(segmentation_device)
 
         if model.introspection.dimension > 1:
             inference_kwargs["pre_aggregation_hook"] = lambda scores: np.partition(

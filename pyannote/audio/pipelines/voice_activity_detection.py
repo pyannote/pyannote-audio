@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2018-2021 CNRS
+# Copyright (c) 2018- CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -49,7 +49,6 @@ from pyannote.audio.pipelines.utils import (
     PipelineInference,
     PipelineModel,
     get_augmentation,
-    get_devices,
     get_inference,
     get_model,
 )
@@ -122,10 +121,6 @@ class VoiceActivityDetection(Pipeline):
 
         # load model and send it to GPU (when available and not already on GPU)
         model = get_model(segmentation, use_auth_token=use_auth_token)
-        if model.device.type == "cpu":
-            (segmentation_device,) = get_devices(needs=1)
-            model.to(segmentation_device)
-
         inference_kwargs["pre_aggregation_hook"] = lambda scores: np.max(
             scores, axis=-1, keepdims=True
         )

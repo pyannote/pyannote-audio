@@ -38,7 +38,6 @@ from pyannote.audio.core.pipeline import Pipeline
 from pyannote.audio.pipelines.utils import (
     PipelineModel,
     SpeakerDiarizationMixin,
-    get_devices,
     get_model,
 )
 from pyannote.audio.utils.metric import (
@@ -95,8 +94,6 @@ class SpeakerSegmentation(SpeakerDiarizationMixin, Pipeline):
         self.skip_conversion = skip_conversion
 
         model: Model = get_model(segmentation, use_auth_token=use_auth_token)
-        (device,) = get_devices(needs=1)
-        model.to(device)
         self._segmentation = Inference(model)
         self._frames = self._segmentation.model.introspection.frames
 
