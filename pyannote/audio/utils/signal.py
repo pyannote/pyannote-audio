@@ -37,8 +37,10 @@ from typing import Optional, Union
 import einops
 import numpy as np
 import scipy.signal
+from numba import jit
 from pyannote.core import Annotation, Segment, SlidingWindowFeature, Timeline
 from pyannote.core.utils.generators import pairwise
+from pyannote.audio.utils.diskstore import DiskArray, DiskStore
 
 
 @singledispatch
@@ -47,6 +49,7 @@ def binarize(
     onset: float = 0.5,
     offset: Optional[float] = None,
     initial_state: Optional[Union[bool, np.ndarray]] = None,
+    disk_store: DiskStore = None,
 ):
     """(Batch) hysteresis thresholding
 
@@ -60,6 +63,11 @@ def binarize(
         Offset threshold. Defaults to `onset`.
     initial_state : np.ndarray or bool, optional
         Initial state.
+    disk_store: DiskStore, optional
+        All large numpy arrays used during processing can be stored
+        on the disk and memory mapped for use in order to allow the
+        processing of very large audio files without running out of
+        memory.
 
     Returns
     -------
@@ -81,6 +89,7 @@ def binarize_ndarray(
     onset: float = 0.5,
     offset: Optional[float] = None,
     initial_state: Optional[Union[bool, np.ndarray]] = None,
+    disk_store: DiskStore = None,
 ):
     """(Batch) hysteresis thresholding
 
@@ -94,6 +103,11 @@ def binarize_ndarray(
         Offset threshold. Defaults to `onset`.
     initial_state : np.ndarray or bool, optional
         Initial state.
+    disk_store: DiskStore, optional
+        All large numpy arrays used during processing can be stored
+        on the disk and memory mapped for use in order to allow the
+        processing of very large audio files without running out of
+        memory.
 
     Returns
     -------
@@ -123,22 +137,86 @@ def binarize_ndarray(
     off_or_on = (scores < offset) | on
 
     # indices of frames for which the on/off state is well-defined
-    well_defined_idx = np.array(
-        list(zip_longest(*[np.nonzero(oon)[0] for oon in off_or_on], fillvalue=-1))
-    ).T
+    if not disk_store:
+        well_defined_idx = np.array(
+            list(zip_longest(*[np.nonzero(oon)[0] for oon in off_or_on], fillvalue=-1))
+        ).T
+    else:
+        oon_maxlen = max(np.nonzero(oon)[0].shape[0] for oon in off_or_on)
+        well_defined_idx = disk_store.get_array(
+            "binarize_well_defined_idx",
+            shape=(off_or_on.shape[0], oon_maxlen),
+            dtype=np.int64,
+        ).data
+        well_defined_idx.fill(-1)
+
+        for i, oon in enumerate(off_or_on):
+            nz = np.nonzero(oon)[0]
+            well_defined_idx[i][: nz.shape[0]] = nz
 
     # corner case where well_defined_idx is empty
     if not well_defined_idx.size:
         return np.zeros_like(scores, dtype=bool) | initial_state
 
     # points to the index of the previous well-defined frame
-    same_as = np.cumsum(off_or_on, axis=1)
+    if not disk_store:
+        same_as = np.cumsum(off_or_on, axis=1)
+        samples = np.tile(np.arange(batch_size), (num_frames, 1)).T
 
-    samples = np.tile(np.arange(batch_size), (num_frames, 1)).T
+        out = np.where(
+            same_as, on[samples, well_defined_idx[samples, same_as - 1]], initial_state
+        )
+    else:
+        same_as = disk_store.get_array(
+            "binarize_same_as", shape=off_or_on.shape, dtype=np.int64
+        ).data
+        np.cumsum(off_or_on, axis=1, out=same_as)
 
-    return np.where(
-        same_as, on[samples, well_defined_idx[samples, same_as - 1]], initial_state
-    )
+        samples = disk_store.get_array(
+            "binarize_samples", shape=(batch_size, num_frames), dtype=np.int64
+        ).data
+        for i in range(batch_size):
+            samples[i].fill(i)
+
+        _well_defined_idx = disk_store.get_array(
+            "binarize__well_defined_idx",
+            shape=well_defined_idx.shape,
+            dtype=well_defined_idx.dtype,
+        ).data
+        fancy_idx_with_out(
+            well_defined_idx, samples, same_as, _well_defined_idx, y_add=-1
+        )
+
+        _on = disk_store.get_array("binarize__on", shape=on.shape, dtype=on.dtype).data
+        fancy_idx_with_out(on, samples, _well_defined_idx, _on)
+
+        out = disk_store.get_array("binarize_out", shape=on.shape, dtype=on.dtype).data
+        where_with_out(same_as, _on, initial_state, out)
+
+    return out
+
+
+@jit(nopython=True)
+def fancy_idx_with_out(inp, x, y, out, y_add=0):
+    # assert(inp.shape == x.shape == y.shape == out.shape)
+    # assert(inp.dtype == out.dtype)
+
+    ni, nj = inp.shape
+    for i in range(ni):
+        for j in range(nj):
+            out[i, j] = inp[x[i, j], y[i, j] + y_add]
+
+    return out
+
+
+@jit(nopython=True)
+def where_with_out(inp, x, y, out):
+    ni, nj = inp.shape
+    for i in range(ni):
+        for j in range(nj):
+            out[i, j] = x[i, j] if inp[i, j] else y[i, j]
+
+    return out
 
 
 @binarize.register
@@ -147,6 +225,7 @@ def binarize_swf(
     onset: float = 0.5,
     offset: Optional[float] = None,
     initial_state: Optional[bool] = None,
+    disk_store: DiskStore = None,
 ):
     """(Batch) hysteresis thresholding
 
@@ -160,6 +239,11 @@ def binarize_swf(
         Offset threshold. Defaults to `onset`.
     initial_state : np.ndarray or bool, optional
         Initial state.
+    disk_store: DiskStore, optional
+        All large numpy arrays used during processing can be stored
+        on the disk and memory mapped for use in order to allow the
+        processing of very large audio files without running out of
+        memory.
 
     Returns
     -------
@@ -174,7 +258,11 @@ def binarize_swf(
         num_frames, num_classes = scores.data.shape
         data = einops.rearrange(scores.data, "f k -> k f", f=num_frames, k=num_classes)
         binarized = binarize(
-            data, onset=onset, offset=offset, initial_state=initial_state
+            data,
+            onset=onset,
+            offset=offset,
+            initial_state=initial_state,
+            disk_store=disk_store,
         )
         return SlidingWindowFeature(
             1.0
@@ -188,7 +276,11 @@ def binarize_swf(
             scores.data, "c f k -> (c k) f", c=num_chunks, f=num_frames, k=num_classes
         )
         binarized = binarize(
-            data, onset=onset, offset=offset, initial_state=initial_state
+            data,
+            onset=onset,
+            offset=offset,
+            initial_state=initial_state,
+            disk_store=disk_store,
         )
         return SlidingWindowFeature(
             1.0

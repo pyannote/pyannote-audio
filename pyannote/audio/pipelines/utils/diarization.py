@@ -28,6 +28,7 @@ from pyannote.metrics.diarization import DiarizationErrorRate
 
 from pyannote.audio.core.inference import Inference
 from pyannote.audio.utils.signal import Binarize, binarize
+from pyannote.audio.utils.diskstore import DiskStore
 
 
 # TODO: move to dedicated module
@@ -111,6 +112,7 @@ class SpeakerDiarizationMixin:
         offset: float = None,
         warm_up: Tuple[float, float] = (0.1, 0.1),
         frames: SlidingWindow = None,
+        disk_store: DiskStore = None,
     ) -> SlidingWindowFeature:
         """Estimate frame-level number of instantaneous speakers
 
@@ -129,6 +131,11 @@ class SpeakerDiarizationMixin:
             Frames resolution. Defaults to estimate it automatically based on
             `segmentations` shape and chunk size. Providing the exact frame
             resolution (when known) leads to better temporal precision.
+        disk_store: DiskStore, optional
+            All large numpy arrays used during processing can be stored
+            on the disk and memory mapped for use in order to allow the
+            processing of very large audio files without running out of
+            memory.
 
         Returns
         -------
@@ -137,7 +144,7 @@ class SpeakerDiarizationMixin:
         """
 
         binarized: SlidingWindowFeature = binarize(
-            segmentations, onset=onset, offset=offset, initial_state=False
+            segmentations, onset=onset, offset=offset, initial_state=False, disk_store=disk_store
         )
         trimmed = Inference.trim(binarized, warm_up=warm_up)
         count = Inference.aggregate(
@@ -146,6 +153,7 @@ class SpeakerDiarizationMixin:
             hamming=False,
             missing=0.0,
             skip_average=False,
+            disk_store=disk_store,
         )
         count.data = np.rint(count.data).astype(np.uint8)
 

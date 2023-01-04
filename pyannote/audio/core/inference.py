@@ -35,6 +35,7 @@ from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Resolution
 from pyannote.audio.utils.permutation import mae_cost_func, permutate
+from pyannote.audio.utils.diskstore import DiskArray, DiskList, DiskStore
 
 TaskName = Union[Text, None]
 
@@ -186,6 +187,7 @@ class Inference:
         waveform: torch.Tensor,
         sample_rate: int,
         hook: Optional[Callable],
+        disk_store: DiskStore = None,
     ) -> SlidingWindowFeature:
         """Slide model on a waveform
 
@@ -215,11 +217,12 @@ class Inference:
         specifications = self.model.specifications
         resolution = specifications.resolution
         introspection = self.model.introspection
+        num_frames_per_chunk, dimension = introspection(window_size)
+
         if resolution == Resolution.CHUNK:
             frames = SlidingWindow(start=0.0, duration=self.duration, step=self.step)
         elif resolution == Resolution.FRAME:
             frames = introspection.frames
-            num_frames_per_chunk, dimension = introspection(window_size)
 
         # prepare complete chunks
         if num_samples >= window_size:
@@ -238,7 +241,20 @@ class Inference:
         if has_last_chunk:
             last_chunk: torch.Tensor = waveform[:, num_chunks * step_size :]
 
-        outputs: Union[List[np.ndarray], np.ndarray] = list()
+        if not disk_store:
+            outputs: Union[List[np.ndarray], np.ndarray] = list()
+        else:
+            nchunks = num_chunks
+            if has_last_chunk:
+                nchunks += 1
+
+            # TODO: for all the names of DiskList and DiskArray, use more specific
+            # names so that there is no conflict when invoked from multiple contexts
+            outputs: DiskList = disk_store.get_list(
+                "outputs",
+                shape=(nchunks, num_frames_per_chunk, dimension),
+                dtype=np.float32,
+            )
 
         if hook is not None:
             hook(completed=0, total=num_chunks + has_last_chunk)
@@ -266,7 +282,7 @@ class Inference:
                     total=num_chunks + has_last_chunk,
                 )
 
-        outputs = np.vstack(outputs)
+        outputs = outputs.data if disk_store else np.vstack(outputs)
 
         # skip aggregation when requested,
         # or when model outputs just one vector per chunk
@@ -294,6 +310,7 @@ class Inference:
             warm_up=self.warm_up,
             hamming=True,
             missing=0.0,
+            disk_store=disk_store,
         )
 
         if has_last_chunk:
@@ -303,7 +320,10 @@ class Inference:
         return aggregated
 
     def __call__(
-        self, file: AudioFile, hook: Optional[Callable] = None
+        self,
+        file: AudioFile,
+        hook: Optional[Callable] = None,
+        disk_store: DiskStore = None,
     ) -> Union[SlidingWindowFeature, np.ndarray]:
         """Run inference on a whole file
 
@@ -316,6 +336,11 @@ class Inference:
             with two keyword arguments:
             - `completed`: the number of chunks that have been processed so far
             - `total`: the total number of chunks
+        disk_store: DiskStore, optional
+            All large numpy arrays used during processing can be stored
+            on the disk and memory mapped for use in order to allow the
+            processing of very large audio files without running out of
+            memory.
 
         Returns
         -------
@@ -327,7 +352,7 @@ class Inference:
         waveform, sample_rate = self.model.audio(file)
 
         if self.window == "sliding":
-            return self.slide(waveform, sample_rate, hook=hook)
+            return self.slide(waveform, sample_rate, hook=hook, disk_store=disk_store)
 
         return self.infer(waveform[None])[0]
 
@@ -421,6 +446,7 @@ class Inference:
         hamming: bool = False,
         missing: float = np.NaN,
         skip_average: bool = False,
+        disk_store: DiskStore = None,
     ) -> SlidingWindowFeature:
         """Aggregation
 
@@ -458,8 +484,23 @@ class Inference:
                 step=frames.step,
             )
 
-        masks = 1 - np.isnan(scores)
-        scores.data = np.nan_to_num(scores.data, copy=True, nan=0.0)
+        if not disk_store:
+            masks = 1 - np.isnan(scores)
+        else:
+            np_is_nan = disk_store.get_array(
+                "np_is_nan", scores.data.shape, np.bool
+            ).data
+            masks = disk_store.get_array("masks", scores.data.shape, np.int64).data
+
+            np.isnan(scores.data, out=np_is_nan)
+            np.subtract(1, np_is_nan, out=masks)
+
+            _s = scores.sliding_window
+            masks = SlidingWindowFeature(
+                masks, SlidingWindow(start=_s.start, duration=_s.duration, step=_s.step)
+            )
+
+        scores.data = np.nan_to_num(scores.data, copy=False, nan=0.0)
 
         # Hamming window used for overlap-add aggregation
         hamming_window = (
@@ -494,21 +535,37 @@ class Inference:
             )
             + 1
         )
-        aggregated_output: np.ndarray = np.zeros(
-            (num_frames, num_classes), dtype=np.float32
-        )
+
+        if not disk_store:
+            aggregated_output: np.ndarray = np.zeros(
+                (num_frames, num_classes), dtype=np.float32
+            )
+        else:
+            aggregated_output: DiskArray = disk_store.get_array(
+                "aggregated_output", (num_frames, num_classes), np.float32
+            ).data
 
         # overlapping_chunk_count[i] will be used to store the number of chunks
         # that contributed to frame #i
-        overlapping_chunk_count: np.ndarray = np.zeros(
-            (num_frames, num_classes), dtype=np.float32
-        )
+        if not disk_store:
+            overlapping_chunk_count: np.ndarray = np.zeros(
+                (num_frames, num_classes), dtype=np.float32
+            )
+        else:
+            overlapping_chunk_count: DiskArray = disk_store.get_array(
+                "overlapping_chunk_count", (num_frames, num_classes), np.float32
+            ).data
 
         # aggregated_mask[i] will be used to indicate whether
         # at least one non-NAN frame contributed to frame #i
-        aggregated_mask: np.ndarray = np.zeros(
-            (num_frames, num_classes), dtype=np.float32
-        )
+        if not disk_store:
+            aggregated_mask: np.ndarray = np.zeros(
+                (num_frames, num_classes), dtype=np.float32
+            )
+        else:
+            aggregated_mask: DiskArray = disk_store.get_array(
+                "aggregated_mask", (num_frames, num_classes), np.float32
+            ).data
 
         # loop on the scores of sliding chunks
         for (chunk, score), (_, mask) in zip(scores, masks):
@@ -535,7 +592,19 @@ class Inference:
         if skip_average:
             average = aggregated_output
         else:
-            average = aggregated_output / np.maximum(overlapping_chunk_count, epsilon)
+            if not disk_store:
+                average = aggregated_output / np.maximum(
+                    overlapping_chunk_count, epsilon
+                )
+            else:
+                np_max: DiskArray = disk_store.get_array(
+                    "np_max",
+                    overlapping_chunk_count.shape,
+                    overlapping_chunk_count.dtype,
+                ).data
+
+                np.maximum(overlapping_chunk_count, epsilon, out=np_max)
+                average = aggregated_output / np_max
 
         average[aggregated_mask == 0.0] = missing
 

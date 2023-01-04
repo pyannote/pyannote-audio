@@ -45,6 +45,7 @@ from pyannote.audio.pipelines.utils import (
     get_model,
 )
 from pyannote.audio.utils.signal import binarize
+from pyannote.audio.utils.diskstore import DiskArray, DiskList, DiskStore
 
 
 def batchify(iterable, batch_size: int = 32, fillvalue=None):
@@ -213,7 +214,9 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
     def CACHED_SEGMENTATION(self):
         return "training_cache/segmentation"
 
-    def get_segmentations(self, file, hook=None) -> SlidingWindowFeature:
+    def get_segmentations(
+        self, file, hook=None, disk_store: DiskStore = None
+    ) -> SlidingWindowFeature:
         """Apply segmentation model
 
         Parameter
@@ -236,7 +239,9 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                 segmentations = self._segmentation(file, hook=hook)
                 file[self.CACHED_SEGMENTATION] = segmentations
         else:
-            segmentations: SlidingWindowFeature = self._segmentation(file, hook=hook)
+            segmentations: SlidingWindowFeature = self._segmentation(
+                file, hook=hook, disk_store=disk_store
+            )
 
         return segmentations
 
@@ -246,6 +251,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         binary_segmentations: SlidingWindowFeature,
         exclude_overlap: bool = False,
         hook: Optional[Callable] = None,
+        disk_store: DiskStore = None,
     ):
         """Extract embeddings for each (chunk, speaker) pair
 
@@ -259,6 +265,11 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             In case non-overlapping speech is too short, use the whole speech.
         hook: Optional[Callable]
             Called during embeddings after every batch to report the progress
+        disk_store: DiskStore, optional
+            All large numpy arrays used during processing can be stored
+            on the disk and memory mapped for use in order to allow the
+            processing of very large audio files without running out of
+            memory.
 
         Returns
         -------
@@ -346,7 +357,14 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
         batch_count = math.ceil(num_chunks * num_speakers / self.embedding_batch_size)
 
-        embedding_batches = []
+        if not disk_store:
+            embedding_batches = []
+        else:
+            embedding_batches = disk_store.get_list(
+                "embedding_batches",
+                shape=(num_chunks * num_speakers, self._embedding.dimension),
+                dtype=np.float64,
+            )
 
         for i, batch in enumerate(batches, 1):
             waveforms, masks = zip(*filter(lambda b: b[0] is not None, batch))
@@ -367,7 +385,10 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             if hook is not None:
                 hook("embeddings", embedding_batch, total=batch_count, completed=i)
 
-        embedding_batches = np.vstack(embedding_batches)
+        if not disk_store:
+            embedding_batches = np.vstack(embedding_batches)
+        else:
+            embedding_batches = embedding_batches.data
 
         embeddings = rearrange(embedding_batches, "(c s) d -> c s d", c=num_chunks)
 
@@ -440,6 +461,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         min_speakers: int = None,
         max_speakers: int = None,
         hook: Optional[Callable] = None,
+        disk_store: DiskStore = None,
     ) -> Annotation:
         """Apply speaker diarization
 
@@ -460,6 +482,11 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                     file=file)      # file being processed
             Additionnally, time-consuming steps may call `hook` multiple times with the
             same `step_name`, and `completed` increasing progressively from 0 to `total`.
+        disk_store: DiskStore, optional
+            All large numpy arrays used during processing can be stored
+            on the disk and memory mapped for use in order to allow the
+            processing of very large audio files without running out of
+            memory.
 
         Returns
         -------
@@ -476,7 +503,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             max_speakers=max_speakers,
         )
 
-        segmentations = self.get_segmentations(file, hook=hook)
+        segmentations = self.get_segmentations(file, hook=hook, disk_store=disk_store)
         hook("segmentation", segmentations)
         #   shape: (num_chunks, num_frames, local_num_speakers)
 
@@ -485,10 +512,11 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             segmentations,
             onset=self.segmentation.threshold,
             frames=self._frames,
+            disk_store=disk_store,
         )
         hook("speaker_counting", count)
         #   shape: (num_frames, 1)
-        #   dtype: int
+        #   dtype: uint8
 
         # exit early when no speaker is ever active
         if np.nanmax(count.data) == 0.0:
@@ -499,6 +527,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             segmentations,
             onset=self.segmentation.threshold,
             initial_state=False,
+            disk_store=disk_store,
         )
 
         if self.klustering == "OracleClustering":
@@ -510,6 +539,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                 binarized_segmentations,
                 exclude_overlap=self.embedding_exclude_overlap,
                 hook=hook,
+                disk_store=disk_store,
             )
             hook("embeddings", embeddings)
             #   shape: (num_chunks, local_num_speakers, dimension)
