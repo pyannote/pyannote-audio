@@ -540,10 +540,6 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             hook("embeddings", embeddings)
             #   shape: (num_chunks, local_num_speakers, dimension)
 
-        import pdb
-
-        pdb.set_trace()
-
         hard_clusters, _ = self.clustering(
             embeddings=embeddings,
             segmentations=binarized_segmentations,
