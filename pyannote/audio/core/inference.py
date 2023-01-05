@@ -259,10 +259,8 @@ class Inference(BaseInference):
             if has_last_chunk:
                 nchunks += 1
 
-            # TODO: for all the names of DiskList and DiskArray, use more specific
-            # names so that there is no conflict when invoked from multiple contexts
             outputs: DiskList = disk_store.get_list(
-                "outputs",
+                "inference_outputs",
                 shape=(nchunks, num_frames_per_chunk, dimension),
                 dtype=np.float32,
             )
@@ -499,9 +497,11 @@ class Inference(BaseInference):
             masks = 1 - np.isnan(scores)
         else:
             np_is_nan = disk_store.get_array(
-                "np_is_nan", scores.data.shape, np.bool
+                "inference_aggregate_np_is_nan", scores.data.shape, np.bool
             ).data
-            masks = disk_store.get_array("masks", scores.data.shape, np.int64).data
+            masks = disk_store.get_array(
+                "inference_aggregate_masks", scores.data.shape, np.int64
+            ).data
 
             np.isnan(scores.data, out=np_is_nan)
             np.subtract(1, np_is_nan, out=masks)
@@ -553,7 +553,9 @@ class Inference(BaseInference):
             )
         else:
             aggregated_output: DiskArray = disk_store.get_array(
-                "aggregated_output", (num_frames, num_classes), np.float32
+                "inference_aggregate_aggregated_output",
+                (num_frames, num_classes),
+                np.float32,
             ).data
 
         # overlapping_chunk_count[i] will be used to store the number of chunks
@@ -564,7 +566,9 @@ class Inference(BaseInference):
             )
         else:
             overlapping_chunk_count: DiskArray = disk_store.get_array(
-                "overlapping_chunk_count", (num_frames, num_classes), np.float32
+                "inference_aggregate_overlapping_chunk_count",
+                (num_frames, num_classes),
+                np.float32,
             ).data
 
         # aggregated_mask[i] will be used to indicate whether
@@ -575,7 +579,9 @@ class Inference(BaseInference):
             )
         else:
             aggregated_mask: DiskArray = disk_store.get_array(
-                "aggregated_mask", (num_frames, num_classes), np.float32
+                "inference_aggregate_aggregated_mask",
+                (num_frames, num_classes),
+                np.float32,
             ).data
 
         # loop on the scores of sliding chunks
@@ -609,7 +615,7 @@ class Inference(BaseInference):
                 )
             else:
                 np_max: DiskArray = disk_store.get_array(
-                    "np_max",
+                    "inference_aggregate_np_max",
                     overlapping_chunk_count.shape,
                     overlapping_chunk_count.dtype,
                 ).data

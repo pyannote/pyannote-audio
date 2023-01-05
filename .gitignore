@@ -89,3 +89,4 @@ pyannote/audio/version.py
 
 # vim
 .vim
+*.swp

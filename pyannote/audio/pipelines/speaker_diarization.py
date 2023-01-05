@@ -356,7 +356,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             embedding_batches = []
         else:
             embedding_batches = disk_store.get_list(
-                "embedding_batches",
+                "speaker_diarization_get_embeddings_embedding_batches",
                 shape=(num_chunks * num_speakers, self._embedding.dimension),
                 dtype=np.float64,
             )
@@ -477,7 +477,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                     file=file)      # file being processed
             Time-consuming steps call `hook` multiple times with the same `step_name`
             and additional `completed` and `total` keyword arguments usable to track
-            progress of current step.            
+            progress of current step.
         disk_store: DiskStore, optional
             All large numpy arrays used during processing can be stored
             on the disk and memory mapped for use in order to allow the
@@ -539,6 +539,10 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             )
             hook("embeddings", embeddings)
             #   shape: (num_chunks, local_num_speakers, dimension)
+
+        import pdb
+
+        pdb.set_trace()
 
         hard_clusters, _ = self.clustering(
             embeddings=embeddings,
