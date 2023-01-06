@@ -293,7 +293,6 @@ class FINCHClustering(BaseClustering):
     ----------
     metric : {"cosine", "euclidean", ...}, optional
         Distance metric to use. Defaults to "cosine".
-
     """
 
     def __init__(
@@ -400,6 +399,21 @@ class AgglomerativeClustering(BaseClustering):
         Linkage method.
     threshold : float in range [0.0, 2.0]
         Clustering threshold.
+    min_cluster_size : int in range [1, 20]
+        Minimum cluster size
+
+    Usage
+    -----
+    >>> clustering = AgglomerativeClustering(metric="cosine")
+    >>> clustering.instantiate({"method": "average",
+    ...                         "threshold": 1.0,
+    ...                         "min_cluster_size": 1})
+    >>> clusters, _  = clustering(embeddings,           # shape
+    ...                           num_clusters=None,
+    ...                           min_clusters=None,
+    ...                           max_clusters=None)
+    where `embeddings` is a np.ndarray with shape (num_embeddings, embedding_dimension)
+    and `clusters` is a np.ndarray with shape (num_embeddings, )
     """
 
     def __init__(
