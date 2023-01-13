@@ -148,10 +148,10 @@ class PyanNet(Model):
                 2 if self.hparams.lstm["bidirectional"] else 1
             )
 
-        if self.specifications.problem == Problem.POWERSET:
+        if self.specifications.is_powerset_problem:
             out_features = Problem.get_powerset_class_count(
                 len(self.specifications.classes),
-                self.specifications.max_simult_speakers,
+                self.specifications.powerset_max_classes,
             )
         else:
             out_features = len(self.specifications.classes)

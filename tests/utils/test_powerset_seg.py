@@ -23,12 +23,14 @@ def get_multilabel_sample(
 
 
 def test_multi_to_powerset_simple():
-    sample = torch.zeros(1, 1, 3)
+    NUM_CLASSES=3
+    MAX_SIMULT=2
+    sample = torch.zeros(1, 1, NUM_CLASSES)
     active_speakers = torch.tensor([0, 2])
     sample[0, 0, active_speakers] = 1
 
     r = Problem.multilabel_to_powerset(
-        sample, max_num_speakers=3, max_simult_speakers=2
+        sample, NUM_CLASSES, MAX_SIMULT
     )
 
     # checks the right class is predicted

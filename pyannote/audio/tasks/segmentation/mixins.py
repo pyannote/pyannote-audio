@@ -371,7 +371,7 @@ class SegmentationTaskMixin:
 
         y_pred = self.model(X)
         # if it's a powerset problem, transform the output into a multilabel (multihot) one
-        if self.specifications.problem == Problem.POWERSET:
+        if self.specifications.is_powerset_problem:
             y_pred_powerset = y_pred
             y_pred_one_hot = torch.nn.functional.one_hot(
                 torch.argmax(y_pred, dim=-1), num_classes=y_pred.shape[-1]
@@ -419,7 +419,7 @@ class SegmentationTaskMixin:
 
         elif (
             self.specifications.problem == Problem.MULTI_LABEL_CLASSIFICATION
-            or self.specifications.problem == Problem.POWERSET
+            or self.specifications.is_powerset_problem
         ):
             # target: shape (batch_size, num_frames, num_classes), type binary
             # preds:  shape (batch_size, num_frames, num_classes), type float
@@ -449,7 +449,7 @@ class SegmentationTaskMixin:
         seg_target = None
         seg_pred = None
 
-        if self.specifications.problem == Problem.POWERSET:
+        if self.specifications.is_powerset_problem:
             permutated_y, _ = permutate(y_pred, y)
             seg_target = self.multilabel_to_powerset(permutated_y)
             seg_pred = y_pred_powerset

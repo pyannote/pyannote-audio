@@ -151,12 +151,12 @@ class SegmentationPowerset(SegmentationTaskMixin, Task):
         # now that we know about the number of speakers upper bound
         # we can set task specifications
         self.specifications = Specifications(
-            problem=Problem.POWERSET,
+            problem=Problem.MONO_LABEL_CLASSIFICATION,
             resolution=Resolution.FRAME,
             duration=self.duration,
             warm_up=self.warm_up,
             classes=[f"speaker#{i+1}" for i in range(self.max_num_speakers)],
-            max_simult_speakers=self.max_simult_speakers,
+            powerset_max_classes=self.max_simult_speakers,
             permutation_invariant=True,
         )
 

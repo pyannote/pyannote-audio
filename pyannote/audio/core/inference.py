@@ -61,7 +61,7 @@ class Inference:
     batch_size : int, optional
         Batch size. Larger values make inference faster. Defaults to 32.
     use_raw_model_output: bool, optional
-        If possible (= if the problem allows it, eg Problem.POWERSET) do the inference with the
+        If possible (= if the problem allows it, eg Problem.is_powerset_problem) do the inference with the
         raw model outputs instead of speaker activations.
     device : torch.device, optional
         Device used for inference. Defaults to `model.device`.
@@ -203,9 +203,9 @@ class Inference:
                     raise exception
 
         if not self.use_raw_model_output:
-            if self.model.specifications.problem == Problem.POWERSET:
+            if self.model.specifications.is_powerset_problem:
                 max_num_speakers = len(self.model.specifications.classes)
-                max_simult_speakers = self.model.specifications.max_simult_speakers
+                max_simult_speakers = self.model.specifications.powerset_max_classes
                 one_hot_prediction = torch.nn.functional.one_hot(
                     torch.argmax(outputs, dim=-1), outputs.shape[-1]
                 ).float()

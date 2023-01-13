@@ -61,32 +61,31 @@ class Problem(Enum):
     MULTI_LABEL_CLASSIFICATION = 2
     REPRESENTATION = 3
     REGRESSION = 4
-    POWERSET = 5
     # any other we could think of?
 
     @staticmethod
     def compute_powerset_conversion_dict(
-        max_num_speakers: int, max_simult_speakers: int
+        num_classes: int, max_simult: int
     ) -> Dict[int, tuple]:
-        """Returns a dict that maps all powerset classes to tuples of active multilabel speaker number.
+        """Returns a dict that maps all powerset classes to tuples of active multilabel classes.
 
         Parameters
         ----------
-        max_num_speakers : int
-            Number of distinct speaker identities
-        max_simult_speakers : int
-            Maximum number of speakers that can be active simultaneously
+        num_classes : int
+            Number of multilabel classes
+        max_simult : int
+            Maximum number of multilabel classes that can be active simultaneously (in the encoding)
 
         Returns
         -------
         Dict[int,tuple]
-            The mapping 'class -> tuple of active speakers'. The speaker id is in [0,max_num_speakers-1]
+            The mapping 'class -> tuple of active classes'. The class id is in [0,num_classes-1]
         """
         powerset_to_multi = {0: ()}  # id==0 : "no speaker" class
-        speakers = [i for i in range(max_num_speakers)]
+        speakers = [i for i in range(num_classes)]
 
         id = 1  # begin at 1, id==0 is "no speaker"
-        for simult in range(1, max_simult_speakers + 1):
+        for simult in range(1, max_simult + 1):
             # all combinations of simult speakers
             for c in itertools.combinations(speakers, simult):
                 powerset_to_multi[id] = c
@@ -95,16 +94,16 @@ class Problem(Enum):
 
     @staticmethod
     def get_powerset_class_count(
-        max_num_speakers: int, max_simult_speakers: int
+        num_classes: int, max_simult: int
     ) -> int:
         """For the given parameters, get how many classes the powerset encoding contains.
 
         Parameters
         ----------
-        max_num_speakers : int
-            Number of distinct speaker identities
-        max_simult_speakers : int
-            Maximum number of speakers that can be active simultaneously
+        num_classes : int
+            Number of multilabel classes
+        max_simult : int
+            Maximum number of multilabel classes that can be active simultaneously (in the encoding)
 
         Returns
         -------
@@ -113,16 +112,16 @@ class Problem(Enum):
         """
 
         result = 0  # account for "no speaker" class
-        for i in range(0, max_simult_speakers + 1):
-            result += int(scipy.special.binom(max_num_speakers, i))
-            # result += math.comb(max_num_speakers, i)  # python >=3.8 only
+        for i in range(0, max_simult + 1):
+            result += int(scipy.special.binom(num_classes, i))
+            # result += math.comb(num_classes, i)  # python >=3.8 only
         return result
 
     @staticmethod
     def build_powerset_to_multi_conversion_tensor(
-        max_num_speakers: int, max_simult_speakers: int, device: torch.device = None
+        num_classes: int, max_simult: int, device: torch.device = None
     ) -> torch.Tensor:
-        """Builds a conversion tensor of size [num_classes_powerset, max_num_speakers].
+        """Builds a conversion tensor of size [num_classes_powerset, num_classes].
         For each row (which corresponding to a powerset class), the active speakers in that row
         have their corresponding column set to 1.0, inactive speakers have theirs set to 0.0.
 
@@ -131,24 +130,24 @@ class Problem(Enum):
 
         Parameters
         ----------
-        max_num_speakers : int
-            Number of distinct speaker identities
-        max_simult_speakers : int
-            Maximum number of speakers that can be active simultaneously
+        num_classes : int
+            Number of multilabel classes
+        max_simult : int
+            Maximum Number of multilabel classes that can be active simultaneously
         device : torch.device, optional
             Device to build the conversion tensor on, by default None
 
         Returns
         -------
         torch.Tensor
-            The [num_classes_powerset, max_num_speakers]-shaped powerset <-> multilabel conversion tensor
+            The [num_classes_powerset, num_classes]-shaped powerset <-> multilabel conversion tensor
         """
 
         powerset_to_multi = __class__.compute_powerset_conversion_dict(
-            max_num_speakers, max_simult_speakers
+            num_classes, max_simult
         )
 
-        a = torch.zeros(len(powerset_to_multi), max_num_speakers, device=device).float()
+        a = torch.zeros(len(powerset_to_multi), num_classes, device=device).float()
         for id in powerset_to_multi:
             speakers = powerset_to_multi[id]
             if len(speakers) > 0:
@@ -158,8 +157,8 @@ class Problem(Enum):
     @staticmethod
     def multilabel_to_powerset(
         t: torch.Tensor,
-        max_num_speakers: int,
-        max_simult_speakers: int,
+        num_classes: int,
+        max_simult: int,
         conversion_tensor: torch.Tensor = None,
     ) -> torch.Tensor:
         """Takes as input a multilabel tensor and outputs its corresponding one-hot powerset tensor.
@@ -168,12 +167,13 @@ class Problem(Enum):
         ----------
         t : torch.Tensor
             (BATCH_SIZE,NUM_FRAMES,NUM_SPEAKERS) tensor
-        max_num_speakers : int
-            Maximum number of different speakers in a batch
-        max_simult_speakers : int
-            Maximum number of simultaneously active speakers in one frame
-        conversion_tensor: torch.Tensor
+        num_classes : int
+            Number of multilabel classes
+        max_simult : int
+            Maximum number of simultaneously active multilabel classes (allowed in our powerset encoding)
+        conversion_tensor: torch.Tensor, optional
             The tensor built with 'build_powerset_to_multi_conversion_tensor' (to avoid recomputing it each call)
+            If left to None, defaults to recomputing the conversion tensor.
 
         Returns
         -------
@@ -181,19 +181,19 @@ class Problem(Enum):
             One hot (BATCH_SIZE,NUM_FRAMES,NUM_CLASSES_POWERSET) tensor
         """
 
-        # if torch.max(torch.sum(t, dim=2).flatten()) > max_simult_speakers:
-        #     print(f"Warning : more than {max_simult_speakers} simult speakers ! {torch.max(torch.sum(t, dim=2).flatten())}")
-        if t.shape[-1] > max_num_speakers:
+        # if torch.max(torch.sum(t, dim=2).flatten()) > max_simult:
+        #     print(f"Warning : more than {max_simult} simult speakers ! {torch.max(torch.sum(t, dim=2).flatten())}")
+        if t.shape[-1] > num_classes:
             print(
                 "WARNING: input tensor has too many speakers. Blindly removing the last ones"
             )
-            t = t[:, :, :max_num_speakers]
+            t = t[:, :, :num_classes]
         else:
-            t = torch.nn.functional.pad(t, [0, max_num_speakers - t.shape[-1]])
+            t = torch.nn.functional.pad(t, [0, num_classes - t.shape[-1]])
 
         if conversion_tensor is None:
             conversion_tensor = __class__.build_powerset_to_multi_conversion_tensor(
-                max_num_speakers, max_simult_speakers, device=t.device
+                num_classes, max_simult, device=t.device
             )
         num_powerset_classes = conversion_tensor.shape[0]
 
@@ -214,8 +214,8 @@ class Problem(Enum):
     @staticmethod
     def powerset_to_multilabel(
         ps_t: torch.Tensor,
-        max_num_speakers: int,
-        max_simult_speakers: int,
+        num_classes: int,
+        max_simult: int,
         conversion_tensor: torch.Tensor = None,
     ) -> torch.Tensor:
         """Converts powerset encoding into multilabel tensor.
@@ -226,27 +226,27 @@ class Problem(Enum):
         ----------
         ps_t : torch.Tensor
             (BATCH_SIZE,NUM_FRAMES,NUM_CLASSES_POWERSET) tensor (one-hot)
-        max_num_speakers : int
-            Maximum number of different speakers in a batch
-        max_simult_speakers : int
-            Maximum number of simultaneously active speakers in one frame
-        conversion_tensor: torch.Tensor
+        num_classes : int
+            Number of multilabel classes
+        max_simult : int
+            Maximum number of simultaneously active multilabel classes (allowed in our powerset encoding)
+        conversion_tensor: torch.Tensor, optional
             The tensor built with 'build_powerset_to_multi_conversion_tensor' (to avoid recomputing it each call)
+            If left to None, defaults to recomputing the conversion tensor.
 
 
         Returns
         -------
         torch.Tensor
-            (BATCH_SIZE,NUM_FRAMES,MAX_NUM_SPEAKERS) tensor
+            (BATCH_SIZE,NUM_FRAMES,NUM_CLASSES) tensor
         """
 
         # input: (B,F,Classes)
-        # output: (B,F,max_num_speakers)
-        num_batches, num_frames, num_classes = ps_t.shape
+        # output: (B,F,num_classes)
 
         if conversion_tensor is None:
             conversion_tensor = __class__.build_powerset_to_multi_conversion_tensor(
-                max_num_speakers, max_simult_speakers, device=ps_t.device
+                num_classes, max_simult, device=ps_t.device
             )
 
         result = torch.matmul(ps_t.float(), conversion_tensor)
@@ -256,8 +256,8 @@ class Problem(Enum):
     @staticmethod
     def get_powerset_permutation(
         permutation: torch.Tensor,
-        max_speakers: int,
-        max_simult_speakers: int,
+        num_classes: int,
+        max_simult: int,
         conv_dict: dict = None,
         inv_conv_dict: dict = None,
     ) -> List[int]:
@@ -267,10 +267,10 @@ class Problem(Enum):
         ----------
         permutation : torch.Tensor
             The permutation, of shape (<=MAX_SPEAKERS)
-        max_speakers : int
-            Number of distinct speaker identities
-        max_simult_speakers : int
-            Maximum number of speakers that can be active simultaneously
+        num_classes : int
+            Number of multilabel classes
+        max_simult : int
+            Maximum number of simultaneously active multilabel classes (allowed in our powerset encoding)
         conv_dict : dict, optional
             The conversion dictionary built with 'compute_powerset_conversion_dict' (to avoid recomputing it each call), by default None
         inv_conv_dict : dict, optional
@@ -285,14 +285,14 @@ class Problem(Enum):
         # In case the permutation only keeps some speakers, build a tensor padded_permutation
         # made of the permutation followed by the unused speakers
         arange_t, idx_counts = torch.cat(
-            [torch.arange(0, max_speakers), permutation]
+            [torch.arange(0, num_classes), permutation]
         ).unique(return_counts=True)
         padded_permutation = torch.cat([permutation, arange_t[idx_counts == 1]])
 
         # build the conversion dicts if necessary
         if conv_dict is None:
             conv_dict = __class__.compute_powerset_conversion_dict(
-                max_speakers, max_simult_speakers
+                num_classes, max_simult
             )
         if inv_conv_dict is None:
             inv_conv_dict = {v: k for k, v in conv_dict.items()}
@@ -300,8 +300,8 @@ class Problem(Enum):
         perm_powerset = [
             0,
         ]
-        speakers = [i for i in range(max_speakers)]
-        for simult in range(1, max_simult_speakers + 1):
+        speakers = [i for i in range(num_classes)]
+        for simult in range(1, max_simult + 1):
             # all combinations of simult speakers
             for c in itertools.combinations(speakers, simult):
                 c_perm_t, _ = torch.sort(padded_permutation[torch.tensor(c)])
@@ -337,26 +337,32 @@ class Specifications:
 
     # (for classification tasks only) list of classes
     classes: Optional[List[Text]] = None
-    # (for powerset only) max number of simultaneous active speakers (one speaker=one class in 'classes')
-    max_simult_speakers: Optional[int] = None
+    # (for powerset only) max number of simultaneous classes (n choose k with k<=powerset_max_classes)
+    powerset_max_classes: Optional[int] = None
 
     # whether classes are permutation-invariant (e.g. diarization)
     permutation_invariant: bool = False
 
-    @property
-    def max_num_speakers(self):
+    @cached_property
+    def is_powerset_problem(self):
+        return self.problem == Problem.MONO_LABEL_CLASSIFICATION and self.powerset_max_classes is not None
+
+    @cached_property
+    def class_count(self):
+        self.is_powerset_problem
         return len(self.classes)
+    
 
     @cached_property
     def powerset_class_count(self):
         return Problem.get_powerset_class_count(
-            self.max_num_speakers, self.max_simult_speakers
+            self.class_count, self.powerset_max_classes
         )
 
     @cached_property
     def powerset_conversion_dict(self):
         return Problem.compute_powerset_conversion_dict(
-            self.max_num_speakers, self.max_simult_speakers
+            self.class_count, self.powerset_max_classes
         )
 
     @cached_property
@@ -369,7 +375,7 @@ class Specifications:
         conversion_tensor: torch.Tensor = None,
     ) -> torch.Tensor:
         return Problem.powerset_to_multilabel(
-            ps_t, self.max_num_speakers, self.max_simult_speakers, conversion_tensor
+            ps_t, self.class_count, self.powerset_max_classes, conversion_tensor
         )
 
     def multilabel_to_powerset(
@@ -378,7 +384,7 @@ class Specifications:
         conversion_tensor: torch.Tensor = None,
     ) -> torch.Tensor:
         return Problem.multilabel_to_powerset(
-            t, self.max_num_speakers, self.max_simult_speakers, conversion_tensor
+            t, self.class_count, self.powerset_max_classes, conversion_tensor
         )
 
 
@@ -604,8 +610,7 @@ class Task(pl.LightningDataModule):
             return binary_cross_entropy(prediction, target, weight=weight)
 
         elif specifications.problem in [
-            Problem.MONO_LABEL_CLASSIFICATION,
-            Problem.POWERSET,
+            Problem.MONO_LABEL_CLASSIFICATION
         ]:
             return nll_loss(prediction, target, weight=weight)
 
