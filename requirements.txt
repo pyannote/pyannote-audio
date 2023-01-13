@@ -11,6 +11,7 @@ pyannote.metrics >=3.2,<4.0
 pyannote.pipeline >=2.3,<3.0
 pytorch_lightning >=1.5.4,<1.7
 pytorch_metric_learning >=1.0.0,<2.0
+rich >= 12.0.0
 semver >=2.10.2,<3.0
 singledispatchmethod
 soundfile >=0.10.2,<0.12
