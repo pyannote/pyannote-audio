@@ -25,6 +25,7 @@ from typing import Dict, Optional, Sequence, Text, Tuple, Union
 
 import numpy as np
 import torch
+import torch.nn.functional
 from pyannote.core import SlidingWindow
 from pyannote.database import Protocol
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
@@ -40,7 +41,7 @@ from pyannote.audio.torchmetrics import (
     OptimalMissedDetectionRate,
     OptimalSpeakerConfusionRate,
 )
-from pyannote.audio.utils.loss import binary_cross_entropy, mse_loss
+from pyannote.audio.utils.loss import binary_cross_entropy, mse_loss, nll_loss
 from pyannote.audio.utils.permutation import permutate
 
 
@@ -56,6 +57,13 @@ class Segmentation(SegmentationTaskMixin, Task):
     max_num_speakers : int, optional
         Force maximum number of speakers per chunk (must be at least 2).
         Defaults to estimating it from the training set.
+    max_simultaneous_speakers : int, optional
+        Maximum number of simultaneous speakers per frame, enables powerset encoding.
+        Limits the maximum cardinality of the subsets of all speakers,
+        setting it to max_num_speakers result in the "true" power set encoding
+        (= all possible speaker combinations have a class).
+        If defined, must be in [1, max_num_speakers]. 
+        Defaults to None, which disables powerset encoding. 
     warm_up : float or (float, float), optional
         Use that many seconds on the left- and rightmost parts of each chunk
         to warm up the model. While the model does process those left- and right-most
@@ -100,6 +108,7 @@ class Segmentation(SegmentationTaskMixin, Task):
         protocol: Protocol,
         duration: float = 2.0,
         max_num_speakers: int = None,
+        max_simult_speakers: int = None,
         warm_up: Union[float, Tuple[float, float]] = 0.0,
         balance: Text = None,
         weight: Text = None,
@@ -107,7 +116,7 @@ class Segmentation(SegmentationTaskMixin, Task):
         num_workers: int = None,
         pin_memory: bool = False,
         augmentation: BaseWaveformTransform = None,
-        loss: Literal["bce", "mse"] = "bce",
+        loss: Literal["bce", "mse", "nll"] = "nll",
         vad_loss: Literal["bce", "mse"] = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
     ):
@@ -124,11 +133,16 @@ class Segmentation(SegmentationTaskMixin, Task):
         )
 
         self.max_num_speakers = max_num_speakers
+        self.max_simult_speakers = max_simult_speakers
+
+        if self.max_simult_speakers is not None and (self.max_num_speakers is None or self.max_simult_speakers > self.max_num_speakers):
+            raise ValueError(f"max_simult_speakers ({self.max_simult_speakers}) must be <= max_num_speakers ({self.max_num_speakers})")
+
         self.balance = balance
         self.weight = weight
 
-        if loss not in ["bce", "mse"]:
-            raise ValueError("'loss' must be one of {'bce', 'mse'}.")
+        if loss not in ["bce", "mse", "nll"]:
+            raise ValueError("'loss' must be one of {'bce', 'mse', 'nll'}.")
         self.loss = loss
         self.vad_loss = vad_loss
 
@@ -173,11 +187,12 @@ class Segmentation(SegmentationTaskMixin, Task):
         # now that we know about the number of speakers upper bound
         # we can set task specifications
         self.specifications = Specifications(
-            problem=Problem.MULTI_LABEL_CLASSIFICATION,
+            problem=Problem.MULTI_LABEL_CLASSIFICATION if self.max_simult_speakers is not None else Problem.MONO_LABEL_CLASSIFICATION,
             resolution=Resolution.FRAME,
             duration=self.duration,
             warm_up=self.warm_up,
             classes=[f"speaker#{i+1}" for i in range(self.max_num_speakers)],
+            powerset_max_classes=self.max_simult_speakers,
             permutation_invariant=True,
         )
 
@@ -248,6 +263,11 @@ class Segmentation(SegmentationTaskMixin, Task):
 
         elif self.loss == "mse":
             seg_loss = mse_loss(permutated_prediction, target.float(), weight=weight)
+
+        elif self.loss == "nll":
+            seg_loss = nll_loss(
+                permutated_prediction, torch.argmax(target, dim=-1), weight=weight
+            )
 
         return seg_loss
 
@@ -338,7 +358,29 @@ class Segmentation(SegmentationTaskMixin, Task):
         # (batch_size, num_frames, num_classes)
 
         # find optimal permutation
-        permutated_prediction, _ = permutate(target, prediction)
+        if self.specifications.is_powerset_problem:
+            # find optimal permutation between the one hot of our multiclass-softmax and the multilabel target
+            # and use it to permutate target
+            one_hot_prediction = torch.nn.functional.one_hot(
+                torch.argmax(prediction, dim=-1), self.specifications.powerset_class_count
+            ).float()
+            one_hot_prediction_multi = self.powerset_to_multilabel(one_hot_prediction)
+            self.specifications.powerset_to_multilabel(
+                one_hot_prediction, self.model.powerset_conversion_tensor
+            )
+
+            permutated_target, _ = permutate(one_hot_prediction_multi, target)
+            permutated_target_powerset = self.specifications.multilabel_to_powerset(
+                permutated_target, self.model.powerset_conversion_tensor
+            )
+
+            seg_loss_prediction = prediction
+            seg_loss_target = permutated_target_powerset
+        else:   # multilabel
+            permutated_prediction, _ = permutate(target, prediction)
+
+            seg_loss_prediction = permutated_prediction
+            seg_loss_target = target
 
         # frames weight
         weight_key = getattr(self, "weight", None)
@@ -354,7 +396,9 @@ class Segmentation(SegmentationTaskMixin, Task):
         warm_up_right = round(self.warm_up[1] / self.duration * num_frames)
         weight[:, num_frames - warm_up_right :] = 0.0
 
-        seg_loss = self.segmentation_loss(permutated_prediction, target, weight=weight)
+        seg_loss = self.segmentation_loss(
+            seg_loss_prediction, seg_loss_target, weight=weight
+        )
 
         self.model.log(
             f"{self.logging_prefix}TrainSegLoss",
@@ -370,7 +414,7 @@ class Segmentation(SegmentationTaskMixin, Task):
 
         else:
             vad_loss = self.voice_activity_detection_loss(
-                permutated_prediction, target, weight=weight
+                seg_loss_prediction, seg_loss_target, weight=weight
             )
 
             self.model.log(
@@ -407,6 +451,29 @@ class Segmentation(SegmentationTaskMixin, Task):
             OptimalFalseAlarmRate(),
         ]
 
+    def train__iter__(self):
+        base_train_iter = super().train__iter__()
+        # Only yield chunks with number of speakers <= max_num_speakers, so that we end up with batch target tensors
+        # of speaker dimension size <= max_num_speakers.
+        if self.specifications.is_powerset_problem:
+            for chunk in base_train_iter:
+                if len(chunk["y"].labels) <= self.max_num_speakers:
+                    yield chunk
+        else:
+            return base_train_iter
+    
+    def setup_loss_func(self):
+        # save our handy conversion tensor in the model (no need for persistence)
+        if self.specifications.is_powerset_problem:
+            conversion_tensor = Problem.build_powerset_to_multi_conversion_tensor(
+                self.max_num_speakers, self.max_simult_speakers
+            )
+            self.model.register_buffer(
+                "powerset_conversion_tensor", conversion_tensor, persistent=False
+            )
+
+        # call default setup
+        super().setup_loss_func()
 
 def main(protocol: str, subset: str = "test", model: str = "pyannote/segmentation"):
     """Evaluate a segmentation model"""
