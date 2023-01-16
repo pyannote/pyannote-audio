@@ -242,7 +242,12 @@ class SpeechBrainPretrainedSpeakerEmbedding(BaseInference):
             )
 
         super().__init__()
-        self.embedding = embedding
+        if "@" in embedding:
+            self.embedding = embedding.split("@")[0]
+            self.revision = embedding.split("@")[1]
+        else:
+            self.embedding = embedding
+            self.revision = None
         self.device = device or torch.device("cpu")
         self.use_auth_token = use_auth_token
 
@@ -251,6 +256,7 @@ class SpeechBrainPretrainedSpeakerEmbedding(BaseInference):
             savedir=f"{CACHE_DIR}/speechbrain",
             run_opts={"device": self.device},
             use_auth_token=self.use_auth_token,
+            revision=self.revision,
         )
 
     def to(self, device: torch.device):
@@ -259,6 +265,7 @@ class SpeechBrainPretrainedSpeakerEmbedding(BaseInference):
             savedir=f"{CACHE_DIR}/speechbrain",
             run_opts={"device": device},
             use_auth_token=self.use_auth_token,
+            revision=self.revision,
         )
         self.device = device
         return self
