@@ -23,9 +23,9 @@
 
 from __future__ import annotations
 
-from functools import partial
 import itertools
-import math
+from functools import partial
+
 import scipy.special
 
 try:
@@ -91,31 +91,6 @@ class Problem(Enum):
                 powerset_to_multi[id] = c
                 id += 1  # one combination = one id
         return powerset_to_multi
-
-    @staticmethod
-    def get_powerset_class_count(
-        num_classes: int, max_simult: int
-    ) -> int:
-        """For the given parameters, get how many classes the powerset encoding contains.
-
-        Parameters
-        ----------
-        num_classes : int
-            Number of multilabel classes
-        max_simult : int
-            Maximum number of multilabel classes that can be active simultaneously (in the encoding)
-
-        Returns
-        -------
-        int
-            Number of classes in the powerset encoding
-        """
-
-        result = 0  # account for "no speaker" class
-        for i in range(0, max_simult + 1):
-            result += int(scipy.special.binom(num_classes, i))
-            # result += math.comb(num_classes, i)  # python >=3.8 only
-        return result
 
     @staticmethod
     def build_powerset_to_multi_conversion_tensor(
@@ -337,7 +312,9 @@ class Specifications:
 
     # (for classification tasks only) list of classes
     classes: Optional[List[Text]] = None
-    # (for powerset only) max number of simultaneous classes (n choose k with k<=powerset_max_classes)
+
+    # (for powerset only) max number of simultaneous classes
+    # (n choose k with k <= powerset_max_classes)
     powerset_max_classes: Optional[int] = None
 
     # whether classes are permutation-invariant (e.g. diarization)
@@ -345,24 +322,25 @@ class Specifications:
 
     @cached_property
     def is_powerset_problem(self):
-        return self.problem == Problem.MONO_LABEL_CLASSIFICATION and self.powerset_max_classes is not None
-
-    @cached_property
-    def class_count(self):
-        self.is_powerset_problem
-        return len(self.classes)
-    
+        return (
+            self.problem == Problem.MONO_LABEL_CLASSIFICATION
+            and self.powerset_max_classes is not None
+        )
 
     @cached_property
     def powerset_class_count(self):
-        return Problem.get_powerset_class_count(
-            self.class_count, self.powerset_max_classes
+        """Number of classes in powerset encoding"""
+        return int(
+            sum(
+                scipy.special.binom(len(self.classes), i)
+                for i in range(0, self.powerset_max_classes + 1)
+            )
         )
 
     @cached_property
     def powerset_conversion_dict(self):
         return Problem.compute_powerset_conversion_dict(
-            self.class_count, self.powerset_max_classes
+            len(self.classes), self.powerset_max_classes
         )
 
     @cached_property
@@ -375,7 +353,7 @@ class Specifications:
         conversion_tensor: torch.Tensor = None,
     ) -> torch.Tensor:
         return Problem.powerset_to_multilabel(
-            ps_t, self.class_count, self.powerset_max_classes, conversion_tensor
+            ps_t, len(self.classes), self.powerset_max_classes, conversion_tensor
         )
 
     def multilabel_to_powerset(
@@ -384,7 +362,7 @@ class Specifications:
         conversion_tensor: torch.Tensor = None,
     ) -> torch.Tensor:
         return Problem.multilabel_to_powerset(
-            t, self.class_count, self.powerset_max_classes, conversion_tensor
+            t, len(self.classes), self.powerset_max_classes, conversion_tensor
         )
 
 
@@ -609,9 +587,7 @@ class Task(pl.LightningDataModule):
         ]:
             return binary_cross_entropy(prediction, target, weight=weight)
 
-        elif specifications.problem in [
-            Problem.MONO_LABEL_CLASSIFICATION
-        ]:
+        elif specifications.problem in [Problem.MONO_LABEL_CLASSIFICATION]:
             return nll_loss(prediction, target, weight=weight)
 
         else:
