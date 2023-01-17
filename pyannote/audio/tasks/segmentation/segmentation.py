@@ -62,8 +62,8 @@ class Segmentation(SegmentationTaskMixin, Task):
         Limits the maximum cardinality of the subsets of all speakers,
         setting it to max_num_speakers result in the "true" power set encoding
         (= all possible speaker combinations have a class).
-        If defined, must be in [1, max_num_speakers]. 
-        Defaults to None, which disables powerset encoding. 
+        If defined, must be in [1, max_num_speakers].
+        Defaults to None, which disables powerset encoding.
     warm_up : float or (float, float), optional
         Use that many seconds on the left- and rightmost parts of each chunk
         to warm up the model. While the model does process those left- and right-most
@@ -135,8 +135,13 @@ class Segmentation(SegmentationTaskMixin, Task):
         self.max_num_speakers = max_num_speakers
         self.max_simult_speakers = max_simult_speakers
 
-        if self.max_simult_speakers is not None and (self.max_num_speakers is None or self.max_simult_speakers > self.max_num_speakers):
-            raise ValueError(f"max_simult_speakers ({self.max_simult_speakers}) must be <= max_num_speakers ({self.max_num_speakers})")
+        if self.max_simult_speakers is not None and (
+            self.max_num_speakers is None
+            or self.max_simult_speakers > self.max_num_speakers
+        ):
+            raise ValueError(
+                f"max_simult_speakers ({self.max_simult_speakers}) must be <= max_num_speakers ({self.max_num_speakers})"
+            )
 
         self.balance = balance
         self.weight = weight
@@ -187,7 +192,9 @@ class Segmentation(SegmentationTaskMixin, Task):
         # now that we know about the number of speakers upper bound
         # we can set task specifications
         self.specifications = Specifications(
-            problem=Problem.MULTI_LABEL_CLASSIFICATION if self.max_simult_speakers is not None else Problem.MONO_LABEL_CLASSIFICATION,
+            problem=Problem.MULTI_LABEL_CLASSIFICATION
+            if self.max_simult_speakers is None
+            else Problem.MONO_LABEL_CLASSIFICATION,
             resolution=Resolution.FRAME,
             duration=self.duration,
             warm_up=self.warm_up,
@@ -362,7 +369,8 @@ class Segmentation(SegmentationTaskMixin, Task):
             # find optimal permutation between the one hot of our multiclass-softmax and the multilabel target
             # and use it to permutate target
             one_hot_prediction = torch.nn.functional.one_hot(
-                torch.argmax(prediction, dim=-1), self.specifications.powerset_class_count
+                torch.argmax(prediction, dim=-1),
+                self.specifications.powerset_class_count,
             ).float()
             one_hot_prediction_multi = self.powerset_to_multilabel(one_hot_prediction)
             self.specifications.powerset_to_multilabel(
@@ -376,7 +384,7 @@ class Segmentation(SegmentationTaskMixin, Task):
 
             seg_loss_prediction = prediction
             seg_loss_target = permutated_target_powerset
-        else:   # multilabel
+        else:  # multilabel
             permutated_prediction, _ = permutate(target, prediction)
 
             seg_loss_prediction = permutated_prediction
@@ -461,7 +469,7 @@ class Segmentation(SegmentationTaskMixin, Task):
                     yield chunk
         else:
             return base_train_iter
-    
+
     def setup_loss_func(self):
         # save our handy conversion tensor in the model (no need for persistence)
         if self.specifications.is_powerset_problem:
@@ -474,6 +482,7 @@ class Segmentation(SegmentationTaskMixin, Task):
 
         # call default setup
         super().setup_loss_func()
+
 
 def main(protocol: str, subset: str = "test", model: str = "pyannote/segmentation"):
     """Evaluate a segmentation model"""
