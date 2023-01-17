@@ -460,15 +460,12 @@ class Segmentation(SegmentationTaskMixin, Task):
         ]
 
     def train__iter__(self):
-        base_train_iter = super().train__iter__()
-        # Only yield chunks with number of speakers <= max_num_speakers, so that we end up with batch target tensors
-        # of speaker dimension size <= max_num_speakers.
-        if self.specifications.is_powerset_problem:
-            for chunk in base_train_iter:
+        for chunk in super().train__iter__():
+            if self.specifications.is_powerset_problem:
                 if len(chunk["y"].labels) <= self.max_num_speakers:
                     yield chunk
-        else:
-            return base_train_iter
+            else:
+                yield chunk
 
     def setup_loss_func(self):
         # save our handy conversion tensor in the model (no need for persistence)
