@@ -31,14 +31,15 @@ import numpy as np
 import torch
 import torch.nn.functional
 from pyannote.core import Segment, SlidingWindowFeature
-from pytorch_lightning.loggers import TensorBoardLogger, MLFlowLogger
+from pytorch_lightning.loggers import MLFlowLogger, TensorBoardLogger
 from torch.utils.data._utils.collate import default_collate
 from torchmetrics import Metric
-from torchmetrics.classification import BinaryAUROC, MultilabelAUROC, MulticlassAUROC
+from torchmetrics.classification import BinaryAUROC, MulticlassAUROC, MultilabelAUROC
 
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.task import Problem, Specifications
 from pyannote.audio.utils.permutation import permutate
+from pyannote.audio.utils.powerset import Powerset
 from pyannote.audio.utils.random import create_rng_for_worker
 
 
@@ -126,6 +127,13 @@ class SegmentationTaskMixin:
                     self._validation.append((f, chunk))
 
         random.shuffle(self._validation)
+
+    def setup_loss_func(self):
+        if self.specifications.is_powerset_problem:
+            self.model.powerset = Powerset(
+                len(self.specifications.classes),
+                self.specifications.powerset_max_classes,
+            )
 
     def default_metric(
         self,

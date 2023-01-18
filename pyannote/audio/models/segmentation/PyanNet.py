@@ -27,12 +27,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
+from pyannote.core.utils.generators import pairwise
 
 from pyannote.audio.core.model import Model
-from pyannote.audio.core.task import Problem, Task
+from pyannote.audio.core.task import Task
 from pyannote.audio.models.blocks.sincnet import SincNet
 from pyannote.audio.utils.params import merge_dict
-from pyannote.core.utils.generators import pairwise
 
 
 class PyanNet(Model):
@@ -149,10 +149,7 @@ class PyanNet(Model):
             )
 
         if self.specifications.is_powerset_problem:
-            out_features = Problem.get_powerset_class_count(
-                len(self.specifications.classes),
-                self.specifications.powerset_max_classes,
-            )
+            out_features = self.specifications.num_powerset_classes
         else:
             out_features = len(self.specifications.classes)
 

@@ -366,25 +366,22 @@ class Segmentation(SegmentationTaskMixin, Task):
 
         # find optimal permutation
         if self.specifications.is_powerset_problem:
-            # find optimal permutation between the one hot of our multiclass-softmax and the multilabel target
-            # and use it to permutate target
-            one_hot_prediction = torch.nn.functional.one_hot(
-                torch.argmax(prediction, dim=-1),
-                self.specifications.powerset_class_count,
-            ).float()
-            one_hot_prediction_multi = self.powerset_to_multilabel(one_hot_prediction)
-            self.specifications.powerset_to_multilabel(
-                one_hot_prediction, self.model.powerset_conversion_tensor
-            )
 
-            permutated_target, _ = permutate(one_hot_prediction_multi, target)
-            permutated_target_powerset = self.specifications.multilabel_to_powerset(
-                permutated_target, self.model.powerset_conversion_tensor
+            powerset = torch.nn.functional.one_hot(
+                torch.argmax(prediction, dim=-1),
+                self.model.powerset.num_powerset_classes,
+            ).float()
+            multilabel = self.model.powerset.to_multilabel(powerset)
+
+            permutated_target, _ = permutate(multilabel, target)
+            permutated_target_powerset = self.model.powerset.to_powerset(
+                permutated_target.float()
             )
 
             seg_loss_prediction = prediction
             seg_loss_target = permutated_target_powerset
-        else:  # multilabel
+
+        else:
             permutated_prediction, _ = permutate(target, prediction)
 
             seg_loss_prediction = permutated_prediction
@@ -466,19 +463,6 @@ class Segmentation(SegmentationTaskMixin, Task):
                     yield chunk
             else:
                 yield chunk
-
-    def setup_loss_func(self):
-        # save our handy conversion tensor in the model (no need for persistence)
-        if self.specifications.is_powerset_problem:
-            conversion_tensor = Problem.build_powerset_to_multi_conversion_tensor(
-                self.max_num_speakers, self.max_simult_speakers
-            )
-            self.model.register_buffer(
-                "powerset_conversion_tensor", conversion_tensor, persistent=False
-            )
-
-        # call default setup
-        super().setup_loss_func()
 
 
 def main(protocol: str, subset: str = "test", model: str = "pyannote/segmentation"):

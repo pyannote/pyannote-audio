@@ -328,8 +328,10 @@ class Specifications:
         )
 
     @cached_property
-    def powerset_class_count(self):
-        """Number of classes in powerset encoding"""
+    def num_powerset_classes(self) -> int:
+        # compute number of subsets of size at most "powerset_max_classes"
+        # e.g. with len(classes) = 3 and powerset_max_classes = 2:
+        # {}, {0}, {1}, {2}, {0, 1}, {0, 2}, {1, 2}
         return int(
             sum(
                 scipy.special.binom(len(self.classes), i)
