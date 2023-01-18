@@ -33,8 +33,9 @@ from pytorch_lightning.utilities.memory import is_oom_error
 
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import Model
-from pyannote.audio.core.task import Problem, Resolution
+from pyannote.audio.core.task import Resolution
 from pyannote.audio.utils.permutation import mae_cost_func, permutate
+from pyannote.audio.utils.powerset import Powerset
 
 TaskName = Union[Text, None]
 
@@ -46,6 +47,7 @@ class BaseInference:
 class Inference(BaseInference):
     """Inference
 
+
     Parameters
     ----------
     model : Model
@@ -53,26 +55,26 @@ class Inference(BaseInference):
     window : {"sliding", "whole"}, optional
         Use a "sliding" window and aggregate the corresponding outputs (default)
         or just one (potentially long) window covering the "whole" file or chunk.
-    skip_aggregation : bool, optional
-        Do not aggregate outputs when using "sliding" window. Defaults to False.
     duration : float, optional
         Chunk duration, in seconds. Defaults to duration used for training the model.
         Has no effect when `window` is "whole".
     step : float, optional
         Step between consecutive chunks, in seconds. Defaults to warm-up duration when
         greater than 0s, otherwise 10% of duration. Has no effect when `window` is "whole".
-    batch_size : int, optional
-        Batch size. Larger values make inference faster. Defaults to 32.
-    use_raw_model_output: bool, optional
-        If possible (= if the problem allows it, eg Problem.is_powerset_problem) do the inference with the
-        raw model outputs instead of speaker activations.
-    device : torch.device, optional
-        Device used for inference. Defaults to `model.device`.
-        In case `device` and `model.device` are different, model is sent to device.
     pre_aggregation_hook : callable, optional
         When a callable is provided, it is applied to the model output, just before aggregation.
         Takes a (num_chunks, num_frames, dimension) numpy array as input and returns a modified
         (num_chunks, num_frames, other_dimension) numpy array passed to overlap-add aggregation.
+    skip_aggregation : bool, optional
+        Do not aggregate outputs when using "sliding" window. Defaults to False.
+    skip_conversion: bool, optional
+        In case `model` has been trained with `powerset` mode, its output is automatically
+        converted to `multi-label`, unless `skip_conversion` is set to True.
+    batch_size : int, optional
+        Batch size. Larger values make inference faster. Defaults to 32.
+    device : torch.device, optional
+        Device used for inference. Defaults to `model.device`.
+        In case `device` and `model.device` are different, model is sent to device.
     use_auth_token : str, optional
         When loading a private huggingface.co model, set `use_auth_token`
         to True or to a string containing your hugginface.co authentication
@@ -83,13 +85,13 @@ class Inference(BaseInference):
         self,
         model: Union[Model, Text, Path],
         window: Text = "sliding",
-        skip_aggregation: bool = False,
-        device: torch.device = None,
         duration: float = None,
         step: float = None,
-        batch_size: int = 32,
-        use_raw_model_output: bool = False,
         pre_aggregation_hook: Callable[[np.ndarray], np.ndarray] = None,
+        skip_aggregation: bool = False,
+        skip_conversion: bool = False,
+        device: torch.device = None,
+        batch_size: int = 32,
         use_auth_token: Union[Text, None] = None,
     ):
 
@@ -158,7 +160,11 @@ class Inference(BaseInference):
         self.step = step
 
         self.batch_size = batch_size
-        self.use_raw_model_output = use_raw_model_output
+        self.skip_conversion = skip_conversion
+        if specifications.powerset and not self.skip_conversion:
+            self._powerset = Powerset(
+                len(specifications.classes), specifications.powerset_max_classes
+            )
 
     def to(self, device: torch.device):
         """Send internal model to `device`"""
@@ -194,22 +200,6 @@ class Inference(BaseInference):
                     )
                 else:
                     raise exception
-
-        if not self.use_raw_model_output:
-            if self.model.specifications.is_powerset_problem:
-                max_num_speakers = len(self.model.specifications.classes)
-                max_simult_speakers = self.model.specifications.powerset_max_classes
-                one_hot_prediction = torch.nn.functional.one_hot(
-                    torch.argmax(outputs, dim=-1), outputs.shape[-1]
-                ).float()
-                one_hot_prediction_multi = Problem.powerset_to_multilabel(
-                    one_hot_prediction,
-                    max_num_speakers,
-                    max_simult_speakers,
-                )
-                outputs = one_hot_prediction_multi
-            else:
-                pass  # other types of problems where it makes sense to modify the model output
 
         return outputs.cpu().numpy()
 
@@ -300,6 +290,14 @@ class Inference(BaseInference):
 
         outputs = np.vstack(outputs)
 
+        # convert powerset to multi-label unless specifically requested not too
+        if specifications.powerset and not self.skip_conversion:
+            powerset = torch.nn.functional.one_hot(
+                torch.argmax(torch.from_numpy(outputs), dim=-1),
+                specifications.num_powerset_classes,
+            ).float()
+            outputs = self._powerset.to_multilabel(powerset).numpy()
+
         # skip aggregation when requested,
         # or when model outputs just one vector per chunk
         # or when model is permutation-invariant (and not post-processed)
@@ -310,7 +308,6 @@ class Inference(BaseInference):
                 specifications.permutation_invariant
                 and self.pre_aggregation_hook is None
             )
-            or self.use_raw_model_output
         ):
             frames = SlidingWindow(start=0.0, duration=self.duration, step=self.step)
             return SlidingWindowFeature(outputs, frames)
@@ -362,7 +359,17 @@ class Inference(BaseInference):
         if self.window == "sliding":
             return self.slide(waveform, sample_rate, hook=hook)
 
-        return self.infer(waveform[None])[0]
+        outputs = self.infer(waveform[None])
+
+        # convert powerset to multi-label unless specifically requested not too
+        if self.model.specifications.powerset and not self.skip_conversion:
+            powerset = torch.nn.functional.one_hot(
+                torch.argmax(torch.from_numpy(outputs), dim=-1),
+                self.model.specifications.num_powerset_classes,
+            ).float()
+            outputs = self._powerset.to_multilabel(powerset).numpy()
+
+        return outputs[0]
 
     def crop(
         self,
