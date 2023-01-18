@@ -100,10 +100,16 @@ class Specifications:
 
     @cached_property
     def powerset(self):
-        return (
-            self.problem == Problem.MONO_LABEL_CLASSIFICATION
-            and self.powerset_max_classes is not None
-        )
+
+        if self.powerset_max_classes is None:
+            return False
+
+        if self.problem != Problem.MONO_LABEL_CLASSIFICATION:
+            raise ValueError(
+                "`powerset_max_classes` only makes sense with multi-class classification problems."
+            )
+
+        return True
 
     @cached_property
     def num_powerset_classes(self) -> int:
