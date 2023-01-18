@@ -148,7 +148,7 @@ class PyanNet(Model):
                 2 if self.hparams.lstm["bidirectional"] else 1
             )
 
-        if self.specifications.is_powerset_problem:
+        if self.specifications.powerset:
             out_features = self.specifications.num_powerset_classes
         else:
             out_features = len(self.specifications.classes)

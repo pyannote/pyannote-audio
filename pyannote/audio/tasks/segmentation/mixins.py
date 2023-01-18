@@ -37,8 +37,7 @@ from torchmetrics import Metric
 from torchmetrics.classification import BinaryAUROC, MulticlassAUROC, MultilabelAUROC
 
 from pyannote.audio.core.io import AudioFile
-from pyannote.audio.core.task import Problem, Specifications
-from pyannote.audio.utils.permutation import permutate
+from pyannote.audio.core.task import Problem
 from pyannote.audio.utils.powerset import Powerset
 from pyannote.audio.utils.random import create_rng_for_worker
 
@@ -129,7 +128,7 @@ class SegmentationTaskMixin:
         random.shuffle(self._validation)
 
     def setup_loss_func(self):
-        if self.specifications.is_powerset_problem:
+        if self.specifications.powerset:
             self.model.powerset = Powerset(
                 len(self.specifications.classes),
                 self.specifications.powerset_max_classes,
@@ -379,29 +378,12 @@ class SegmentationTaskMixin:
         # y = (batch_size, num_frames, num_classes) or (batch_size, num_frames)
 
         y_pred = self.model(X)
-        # if it's a powerset problem, transform the output into a multilabel (multihot) one
-        if self.specifications.is_powerset_problem:
-            y_pred_powerset = y_pred
-            y_pred_one_hot = torch.nn.functional.one_hot(
-                torch.argmax(y_pred, dim=-1), num_classes=y_pred.shape[-1]
-            )
-            y_pred = self.specifications.powerset_to_multilabel(y_pred_one_hot)
-
-        batch_size, num_frames, _ = y_pred.shape
+        _, num_frames, _ = y_pred.shape
         # y_pred = (batch_size, num_frames, num_classes)
 
         # compute warmup frames boundaries and weight
         warm_up_left = round(self.warm_up[0] / self.duration * num_frames)
         warm_up_right = round(self.warm_up[1] / self.duration * num_frames)
-
-        weight_key = getattr(self, "weight", None)
-        weight = batch.get(
-            weight_key,
-            torch.ones(batch_size, num_frames, 1, device=self.model.device),
-        )
-        weight[:, :warm_up_left] = 0.0
-        weight[:, num_frames - warm_up_right :] = 0.0
-        # (batch_size, num_frames, 1)
 
         # - remove warm-up frames
         # - downsample remaining frames
@@ -412,7 +394,6 @@ class SegmentationTaskMixin:
         # pyannote.audio is more explicit so we have to reshape target and preds for
         # torchmetrics to be happy... more details can be found here:
         # https://torchmetrics.readthedocs.io/en/latest/references/modules.html#input-types
-        self.specifications: Specifications
         if self.specifications.problem == Problem.BINARY_CLASSIFICATION:
             # target: shape (batch_size, num_frames), type binary
             # preds:  shape (batch_size, num_frames, 1), type float
@@ -426,10 +407,7 @@ class SegmentationTaskMixin:
                 target.reshape(-1),
             )
 
-        elif (
-            self.specifications.problem == Problem.MULTI_LABEL_CLASSIFICATION
-            or self.specifications.is_powerset_problem
-        ):
+        elif self.specifications.problem == Problem.MULTI_LABEL_CLASSIFICATION:
             # target: shape (batch_size, num_frames, num_classes), type binary
             # preds:  shape (batch_size, num_frames, num_classes), type float
 
@@ -453,31 +431,6 @@ class SegmentationTaskMixin:
             prog_bar=True,
             logger=True,
         )
-
-        # log validation segmentation loss
-        seg_target = None
-        seg_pred = None
-
-        if self.specifications.is_powerset_problem:
-            permutated_y, _ = permutate(y_pred, y)
-            seg_target = self.multilabel_to_powerset(permutated_y)
-            seg_pred = y_pred_powerset
-        elif self.specifications.problem == Problem.MULTI_LABEL_CLASSIFICATION:
-            permutated_y, _ = permutate(y_pred, y)
-            seg_target = permutated_y
-            seg_pred = y_pred
-
-        if seg_target is not None and seg_pred is not None:
-            seg_loss = self.segmentation_loss(seg_pred, seg_target, weight=weight)
-
-            self.model.log(
-                f"{self.logging_prefix}ValSegLoss",
-                seg_loss,
-                on_step=False,
-                on_epoch=True,
-                prog_bar=False,
-                logger=True,
-            )
 
         # log first batch visualization every 2^n epochs.
         if (

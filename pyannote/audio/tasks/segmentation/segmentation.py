@@ -20,14 +20,17 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import math
 from collections import Counter
 from typing import Dict, Optional, Sequence, Text, Tuple, Union
 
 import numpy as np
 import torch
 import torch.nn.functional
+from matplotlib import pyplot as plt
 from pyannote.core import SlidingWindow
 from pyannote.database import Protocol
+from pytorch_lightning.loggers import MLFlowLogger, TensorBoardLogger
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchmetrics import Metric
 from typing_extensions import Literal
@@ -58,16 +61,13 @@ class Segmentation(SegmentationTaskMixin, Task):
         pyannote.database protocol
     duration : float, optional
         Chunks duration. Defaults to 2s.
-    max_num_speakers : int, optional
-        Force maximum number of speakers per chunk (must be at least 2).
+    max_speakers_per_chunk : int, optional
+        Maximum number of speakers per chunk (must be at least 2).
         Defaults to estimating it from the training set.
-    max_simultaneous_speakers : int, optional
-        Maximum number of simultaneous speakers per frame, enables powerset encoding.
-        Limits the maximum cardinality of the subsets of all speakers,
-        setting it to max_num_speakers result in the "true" power set encoding
-        (= all possible speaker combinations have a class).
-        If defined, must be in [1, max_num_speakers].
-        Defaults to None, which disables powerset encoding.
+    max_speakers_per_frame : int, optional
+        Maximum number of (overlapping) speakers per frame.
+        Setting this value to 1 or more enables `powerset multi-class` training.
+        Default behavior is to use `multi-label` training.
     warm_up : float or (float, float), optional
         Use that many seconds on the left- and rightmost parts of each chunk
         to warm up the model. While the model does process those left- and right-most
@@ -92,10 +92,9 @@ class Segmentation(SegmentationTaskMixin, Task):
     augmentation : BaseWaveformTransform, optional
         torch_audiomentations waveform transform, used by dataloader
         during training.
-    loss : {"bce", "mse"}, optional
-        Permutation-invariant segmentation loss. Defaults to "bce".
     vad_loss : {"bce", "mse"}, optional
         Add voice activity detection loss.
+        Cannot be used in conjunction with `max_speakers_per_frame`.
     metric : optional
         Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
         Defaults to AUROC (area under the ROC curve).
@@ -111,8 +110,8 @@ class Segmentation(SegmentationTaskMixin, Task):
         self,
         protocol: Protocol,
         duration: float = 2.0,
-        max_num_speakers: int = None,
-        max_simult_speakers: int = None,
+        max_speakers_per_chunk: int = None,
+        max_speakers_per_frame: int = None,
         warm_up: Union[float, Tuple[float, float]] = 0.0,
         balance: Text = None,
         weight: Text = None,
@@ -120,7 +119,6 @@ class Segmentation(SegmentationTaskMixin, Task):
         num_workers: int = None,
         pin_memory: bool = False,
         augmentation: BaseWaveformTransform = None,
-        loss: Literal["bce", "mse", "nll"] = "nll",
         vad_loss: Literal["bce", "mse"] = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
     ):
@@ -136,30 +134,30 @@ class Segmentation(SegmentationTaskMixin, Task):
             metric=metric,
         )
 
-        self.max_num_speakers = max_num_speakers
-        self.max_simult_speakers = max_simult_speakers
-
-        if self.max_simult_speakers is not None and (
-            self.max_num_speakers is None
-            or self.max_simult_speakers > self.max_num_speakers
-        ):
-            raise ValueError(
-                f"max_simult_speakers ({self.max_simult_speakers}) must be <= max_num_speakers ({self.max_num_speakers})"
-            )
-
         self.balance = balance
         self.weight = weight
-
-        if loss not in ["bce", "mse", "nll"]:
-            raise ValueError("'loss' must be one of {'bce', 'mse', 'nll'}.")
-        self.loss = loss
         self.vad_loss = vad_loss
+
+        self.max_speakers_per_chunk = max_speakers_per_chunk
+        self.max_speakers_per_frame = max_speakers_per_frame
+
+        if max_speakers_per_frame is not None:
+
+            if max_speakers_per_frame < 1:
+                raise ValueError(
+                    f"`max_speakers_per_frame` must be 1 or more (you used {max_speakers_per_frame})."
+                )
+
+            if vad_loss is not None:
+                raise ValueError(
+                    "`vad_loss` cannot be used jointly with `max_speakers_per_frame`"
+                )
 
     def setup(self, stage: Optional[str] = None):
 
         super().setup(stage=stage)
 
-        if self.max_num_speakers is None:
+        if self.max_speakers_per_chunk is None:
 
             # TODO: optimize this
 
@@ -188,22 +186,31 @@ class Segmentation(SegmentationTaskMixin, Task):
             num_speakers = num_speakers[sorting_indices]
             counts = counts[sorting_indices]
 
-            self.max_num_speakers = max(
+            self.max_speakers_per_chunk = max(
                 2,
                 num_speakers[np.where(np.cumsum(counts) / np.sum(counts) > 0.99)[0][0]],
+            )
+
+        if (
+            self.max_speakers_per_frame is not None
+            and self.max_speakers_per_frame > self.max_speakers_per_chunk
+        ):
+            raise ValueError(
+                f"`max_speakers_per_frame` ({self.max_speakers_per_frame}) must be smaller "
+                f"than `max_speakers_per_chunk` ({self.max_speakers_per_chunk})"
             )
 
         # now that we know about the number of speakers upper bound
         # we can set task specifications
         self.specifications = Specifications(
             problem=Problem.MULTI_LABEL_CLASSIFICATION
-            if self.max_simult_speakers is None
+            if self.max_speakers_per_frame is None
             else Problem.MONO_LABEL_CLASSIFICATION,
             resolution=Resolution.FRAME,
             duration=self.duration,
             warm_up=self.warm_up,
-            classes=[f"speaker#{i+1}" for i in range(self.max_num_speakers)],
-            powerset_max_classes=self.max_simult_speakers,
+            classes=[f"speaker#{i+1}" for i in range(self.max_speakers_per_chunk)],
+            powerset_max_classes=self.max_speakers_per_frame,
             permutation_invariant=True,
         )
 
@@ -219,27 +226,27 @@ class Segmentation(SegmentationTaskMixin, Task):
 
         Returns
         -------
-        y : (batch_size, num_frames, max_num_speakers) tensor
-            Same as collated_y, except we only keep ``max_num_speakers`` most
+        y : (batch_size, num_frames, max_speakers_per_chunk) tensor
+            Same as collated_y, except we only keep ``max_speakers_per_chunk`` most
             talkative speakers (per sample).
         """
 
         batch_size, num_frames, num_speakers = collated_y.shape
 
         # maximum number of active speakers in a chunk
-        max_num_speakers = torch.max(
+        max_speakers_per_chunk = torch.max(
             torch.sum(torch.sum(collated_y, dim=1) > 0.0, dim=1)
         )
 
         # sort speakers in descending talkativeness order
         indices = torch.argsort(torch.sum(collated_y, dim=1), dim=1, descending=True)
 
-        # keep max_num_speakers most talkative speakers, for each chunk
+        # keep max_speakers_per_chunk most talkative speakers, for each chunk
         y = torch.zeros(
-            (batch_size, num_frames, max_num_speakers), dtype=collated_y.dtype
+            (batch_size, num_frames, max_speakers_per_chunk), dtype=collated_y.dtype
         )
         for b, index in enumerate(indices):
-            for k, i in zip(range(max_num_speakers), index):
+            for k, i in zip(range(max_speakers_per_chunk), index):
                 y[b, :, k] = collated_y[b, :, i.item()]
 
         return y
@@ -267,17 +274,13 @@ class Segmentation(SegmentationTaskMixin, Task):
             Permutation-invariant segmentation loss
         """
 
-        if self.loss == "bce":
-            seg_loss = binary_cross_entropy(
-                permutated_prediction, target.float(), weight=weight
-            )
-
-        elif self.loss == "mse":
-            seg_loss = mse_loss(permutated_prediction, target.float(), weight=weight)
-
-        elif self.loss == "nll":
+        if self.specifications.powerset:
             seg_loss = nll_loss(
                 permutated_prediction, torch.argmax(target, dim=-1), weight=weight
+            )
+        else:
+            seg_loss = binary_cross_entropy(
+                permutated_prediction, target.float(), weight=weight
             )
 
         return seg_loss
@@ -344,7 +347,7 @@ class Segmentation(SegmentationTaskMixin, Task):
 
         # drop samples that contain too many speakers
         num_speakers: torch.Tensor = torch.sum(torch.any(target, dim=1), dim=1)
-        keep: torch.Tensor = num_speakers <= self.max_num_speakers
+        keep: torch.Tensor = num_speakers <= self.max_speakers_per_chunk
         target = target[keep]
         waveform = waveform[keep]
 
@@ -382,7 +385,7 @@ class Segmentation(SegmentationTaskMixin, Task):
         warm_up_right = round(self.warm_up[1] / self.duration * num_frames)
         weight[:, num_frames - warm_up_right :] = 0.0
 
-        if self.specifications.is_powerset_problem:
+        if self.specifications.powerset:
 
             powerset = torch.nn.functional.one_hot(
                 torch.argmax(prediction, dim=-1),
@@ -419,7 +422,7 @@ class Segmentation(SegmentationTaskMixin, Task):
 
             # TODO: vad_loss probably does not make sense in powerset mode
             # because first class (empty set of labels) does exactly this...
-            if self.specifications.is_powerset_problem:
+            if self.specifications.powerset:
                 vad_loss = self.voice_activity_detection_loss(
                     prediction, permutated_target_powerset, weight=weight
                 )
@@ -456,7 +459,7 @@ class Segmentation(SegmentationTaskMixin, Task):
     ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
         """Returns diarization error rate and its components"""
 
-        if self.specifications.is_powerset_problem:
+        if self.specifications.powerset:
             return [
                 DiarizationErrorRate(0.5),
                 SpeakerConfusionRate(0.5),
@@ -474,11 +477,224 @@ class Segmentation(SegmentationTaskMixin, Task):
 
     def train__iter__(self):
         for chunk in super().train__iter__():
-            if self.specifications.is_powerset_problem:
-                if len(chunk["y"].labels) <= self.max_num_speakers:
+            # TODO: document why this filtering is needed
+            if self.specifications.powerset:
+                if len(chunk["y"].labels) <= self.max_speakers_per_chunk:
                     yield chunk
             else:
                 yield chunk
+
+    # TODO: no need to compute gradient in this method
+    def validation_step(self, batch, batch_idx: int):
+        """Compute validation loss and metric
+
+        Parameters
+        ----------
+        batch : dict of torch.Tensor
+            Current batch.
+        batch_idx: int
+            Batch index.
+        """
+
+        # target
+        target = batch["y"]
+        # (batch_size, num_frames, num_speakers)
+
+        waveform = batch["X"]
+        # (batch_size, num_channels, num_samples)
+
+        # TODO: should we handle validation samples with too many speakers
+        # waveform = waveform[keep]
+        # target = target[keep]
+
+        # forward pass
+        prediction = self.model(waveform)
+        batch_size, num_frames, _ = prediction.shape
+
+        # frames weight
+        weight_key = getattr(self, "weight", None)
+        weight = batch.get(
+            weight_key,
+            torch.ones(batch_size, num_frames, 1, device=self.model.device),
+        )
+        # (batch_size, num_frames, 1)
+
+        # warm-up
+        warm_up_left = round(self.warm_up[0] / self.duration * num_frames)
+        weight[:, :warm_up_left] = 0.0
+        warm_up_right = round(self.warm_up[1] / self.duration * num_frames)
+        weight[:, num_frames - warm_up_right :] = 0.0
+
+        if self.specifications.powerset:
+
+            powerset = torch.nn.functional.one_hot(
+                torch.argmax(prediction, dim=-1),
+                self.model.powerset.num_powerset_classes,
+            ).float()
+            multilabel = self.model.powerset.to_multilabel(powerset)
+            permutated_target, _ = permutate(multilabel, target)
+
+            # FIXME: handle case where target have too many speakers?
+            # since we don't need
+            permutated_target_powerset = self.model.powerset.to_powerset(
+                permutated_target.float()
+            )
+            seg_loss = self.segmentation_loss(
+                prediction, permutated_target_powerset, weight=weight
+            )
+
+        else:
+            permutated_prediction, _ = permutate(target, prediction)
+            seg_loss = self.segmentation_loss(
+                permutated_prediction, target, weight=weight
+            )
+
+        self.model.log(
+            f"{self.logging_prefix}ValSegLoss",
+            seg_loss,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=False,
+            logger=True,
+        )
+
+        if self.vad_loss is None:
+            vad_loss = 0.0
+
+        else:
+
+            # TODO: vad_loss probably does not make sense in powerset mode
+            # because first class (empty set of labels) does exactly this...
+            if self.specifications.powerset:
+                vad_loss = self.voice_activity_detection_loss(
+                    prediction, permutated_target_powerset, weight=weight
+                )
+
+            else:
+                vad_loss = self.voice_activity_detection_loss(
+                    permutated_prediction, target, weight=weight
+                )
+
+            self.model.log(
+                f"{self.logging_prefix}ValVADLoss",
+                vad_loss,
+                on_step=False,
+                on_epoch=True,
+                prog_bar=False,
+                logger=True,
+            )
+
+        loss = seg_loss + vad_loss
+
+        self.model.log(
+            f"{self.logging_prefix}ValLoss",
+            loss,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=False,
+            logger=True,
+        )
+
+        if self.specifications.powerset:
+            self.model.validation_metric(
+                torch.transpose(
+                    multilabel[:, warm_up_left : num_frames - warm_up_right], 1, 2
+                ),
+                torch.transpose(
+                    target[:, warm_up_left : num_frames - warm_up_right], 1, 2
+                ),
+            )
+        else:
+            self.model.validation_metric(
+                torch.transpose(
+                    prediction[:, warm_up_left : num_frames - warm_up_right], 1, 2
+                ),
+                torch.transpose(
+                    target[:, warm_up_left : num_frames - warm_up_right], 1, 2
+                ),
+            )
+
+        self.model.log_dict(
+            self.model.validation_metric,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+        )
+
+        # log first batch visualization every 2^n epochs.
+        if (
+            self.model.current_epoch == 0
+            or math.log2(self.model.current_epoch) % 1 > 0
+            or batch_idx > 0
+        ):
+            return
+
+        # visualize first 9 validation samples of first batch in Tensorboard/MLflow
+
+        if self.specifications.powerset:
+            y = permutated_target_powerset.float().cpu().numpy()
+            y_pred = multilabel.cpu().numpy()
+        else:
+            y = target.float().cpu().numpy()
+            y_pred = permutated_prediction.cpu().numpy()
+
+        # prepare 3 x 3 grid (or smaller if batch size is smaller)
+        num_samples = min(self.batch_size, 9)
+        nrows = math.ceil(math.sqrt(num_samples))
+        ncols = math.ceil(num_samples / nrows)
+        fig, axes = plt.subplots(
+            nrows=2 * nrows, ncols=ncols, figsize=(8, 5), squeeze=False
+        )
+
+        # reshape target so that there is one line per class when plotting it
+        y[y == 0] = np.NaN
+        if len(y.shape) == 2:
+            y = y[:, :, np.newaxis]
+        y *= np.arange(y.shape[2])
+
+        # plot each sample
+        for sample_idx in range(num_samples):
+
+            # find where in the grid it should be plotted
+            row_idx = sample_idx // nrows
+            col_idx = sample_idx % ncols
+
+            # plot target
+            ax_ref = axes[row_idx * 2 + 0, col_idx]
+            sample_y = y[sample_idx]
+            ax_ref.plot(sample_y)
+            ax_ref.set_xlim(0, len(sample_y))
+            ax_ref.set_ylim(-1, sample_y.shape[1])
+            ax_ref.get_xaxis().set_visible(False)
+            ax_ref.get_yaxis().set_visible(False)
+
+            # plot predictions
+            ax_hyp = axes[row_idx * 2 + 1, col_idx]
+            sample_y_pred = y_pred[sample_idx]
+            ax_hyp.axvspan(0, warm_up_left, color="k", alpha=0.5, lw=0)
+            ax_hyp.axvspan(
+                num_frames - warm_up_right, num_frames, color="k", alpha=0.5, lw=0
+            )
+            ax_hyp.plot(sample_y_pred)
+            ax_hyp.set_ylim(-0.1, 1.1)
+            ax_hyp.set_xlim(0, len(sample_y))
+            ax_hyp.get_xaxis().set_visible(False)
+
+        plt.tight_layout()
+
+        if isinstance(self.model.logger, TensorBoardLogger):
+            self.model.logger.experiment.add_figure(
+                f"{self.logging_prefix}ValSamples", fig, self.model.current_epoch
+            )
+        elif isinstance(self.model.logger, MLFlowLogger):
+            self.model.logger.experiment.log_figure(
+                run_id=self.model.logger.run_id,
+                figure=fig,
+                artifact_file=f"{self.logging_prefix}ValSamples_epoch{self.model.current_epoch}.png",
+            )
+
+        plt.close(fig)
 
 
 def main(protocol: str, subset: str = "test", model: str = "pyannote/segmentation"):

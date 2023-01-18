@@ -23,7 +23,6 @@
 
 from __future__ import annotations
 
-import itertools
 from functools import partial
 
 import scipy.special
@@ -63,227 +62,6 @@ class Problem(Enum):
     REGRESSION = 4
     # any other we could think of?
 
-    @staticmethod
-    def compute_powerset_conversion_dict(
-        num_classes: int, max_simult: int
-    ) -> Dict[int, tuple]:
-        """Returns a dict that maps all powerset classes to tuples of active multilabel classes.
-
-        Parameters
-        ----------
-        num_classes : int
-            Number of multilabel classes
-        max_simult : int
-            Maximum number of multilabel classes that can be active simultaneously (in the encoding)
-
-        Returns
-        -------
-        Dict[int,tuple]
-            The mapping 'class -> tuple of active classes'. The class id is in [0,num_classes-1]
-        """
-        powerset_to_multi = {0: ()}  # id==0 : "no speaker" class
-        speakers = [i for i in range(num_classes)]
-
-        id = 1  # begin at 1, id==0 is "no speaker"
-        for simult in range(1, max_simult + 1):
-            # all combinations of simult speakers
-            for c in itertools.combinations(speakers, simult):
-                powerset_to_multi[id] = c
-                id += 1  # one combination = one id
-        return powerset_to_multi
-
-    @staticmethod
-    def build_powerset_to_multi_conversion_tensor(
-        num_classes: int, max_simult: int, device: torch.device = None
-    ) -> torch.Tensor:
-        """Builds a conversion tensor of size [num_classes_powerset, num_classes].
-        For each row (which corresponding to a powerset class), the active speakers in that row
-        have their corresponding column set to 1.0, inactive speakers have theirs set to 0.0.
-
-        For example, with 3 max simultaneous speakers, row [0., 0., 1.] indicates that the
-        speaker 2 is active in that class.
-
-        Parameters
-        ----------
-        num_classes : int
-            Number of multilabel classes
-        max_simult : int
-            Maximum Number of multilabel classes that can be active simultaneously
-        device : torch.device, optional
-            Device to build the conversion tensor on, by default None
-
-        Returns
-        -------
-        torch.Tensor
-            The [num_classes_powerset, num_classes]-shaped powerset <-> multilabel conversion tensor
-        """
-
-        powerset_to_multi = __class__.compute_powerset_conversion_dict(
-            num_classes, max_simult
-        )
-
-        a = torch.zeros(len(powerset_to_multi), num_classes, device=device).float()
-        for id in powerset_to_multi:
-            speakers = powerset_to_multi[id]
-            if len(speakers) > 0:
-                a[id][torch.tensor(speakers)] = 1.0
-        return a
-
-    @staticmethod
-    def multilabel_to_powerset(
-        t: torch.Tensor,
-        num_classes: int,
-        max_simult: int,
-        conversion_tensor: torch.Tensor = None,
-    ) -> torch.Tensor:
-        """Takes as input a multilabel tensor and outputs its corresponding one-hot powerset tensor.
-
-        Parameters
-        ----------
-        t : torch.Tensor
-            (BATCH_SIZE,NUM_FRAMES,NUM_SPEAKERS) tensor
-        num_classes : int
-            Number of multilabel classes
-        max_simult : int
-            Maximum number of simultaneously active multilabel classes (allowed in our powerset encoding)
-        conversion_tensor: torch.Tensor, optional
-            The tensor built with 'build_powerset_to_multi_conversion_tensor' (to avoid recomputing it each call)
-            If left to None, defaults to recomputing the conversion tensor.
-
-        Returns
-        -------
-        torch.Tensor
-            One hot (BATCH_SIZE,NUM_FRAMES,NUM_CLASSES_POWERSET) tensor
-        """
-
-        # if torch.max(torch.sum(t, dim=2).flatten()) > max_simult:
-        #     print(f"Warning : more than {max_simult} simult speakers ! {torch.max(torch.sum(t, dim=2).flatten())}")
-        if t.shape[-1] > num_classes:
-            print(
-                "WARNING: input tensor has too many speakers. Blindly removing the last ones"
-            )
-            t = t[:, :, :num_classes]
-        else:
-            t = torch.nn.functional.pad(t, [0, num_classes - t.shape[-1]])
-
-        if conversion_tensor is None:
-            conversion_tensor = __class__.build_powerset_to_multi_conversion_tensor(
-                num_classes, max_simult, device=t.device
-            )
-        num_powerset_classes = conversion_tensor.shape[0]
-
-        # multiply the tensor by the conversion tensor and take the argmax to find which class is active
-        # in case multiple elts are equal, we rely on the argmax implementation where the first elt with
-        # that value is taken.
-        # (eg. after multiplying, if speaker 1 is active, both classes for spk 1 and spk 1+2+3 will be == 1
-        # but we want to take the class spk 1, which is why classes are ordered in this way. Same problem
-        # with 0 speakers active)
-        multiplied = torch.matmul(t.float(), conversion_tensor.t())
-        argmaxed = torch.argmax(multiplied, dim=-1)
-        result = torch.nn.functional.one_hot(
-            argmaxed.long(), num_classes=num_powerset_classes
-        )
-
-        return result
-
-    @staticmethod
-    def powerset_to_multilabel(
-        ps_t: torch.Tensor,
-        num_classes: int,
-        max_simult: int,
-        conversion_tensor: torch.Tensor = None,
-    ) -> torch.Tensor:
-        """Converts powerset encoding into multilabel tensor.
-        Should probably only be used to convert one hot encodings into multi-hot encoding,
-        other uses do not make sense.
-
-        Parameters
-        ----------
-        ps_t : torch.Tensor
-            (BATCH_SIZE,NUM_FRAMES,NUM_CLASSES_POWERSET) tensor (one-hot)
-        num_classes : int
-            Number of multilabel classes
-        max_simult : int
-            Maximum number of simultaneously active multilabel classes (allowed in our powerset encoding)
-        conversion_tensor: torch.Tensor, optional
-            The tensor built with 'build_powerset_to_multi_conversion_tensor' (to avoid recomputing it each call)
-            If left to None, defaults to recomputing the conversion tensor.
-
-
-        Returns
-        -------
-        torch.Tensor
-            (BATCH_SIZE,NUM_FRAMES,NUM_CLASSES) tensor
-        """
-
-        # input: (B,F,Classes)
-        # output: (B,F,num_classes)
-
-        if conversion_tensor is None:
-            conversion_tensor = __class__.build_powerset_to_multi_conversion_tensor(
-                num_classes, max_simult, device=ps_t.device
-            )
-
-        result = torch.matmul(ps_t.float(), conversion_tensor)
-
-        return result
-
-    @staticmethod
-    def get_powerset_permutation(
-        permutation: torch.Tensor,
-        num_classes: int,
-        max_simult: int,
-        conv_dict: dict = None,
-        inv_conv_dict: dict = None,
-    ) -> List[int]:
-        """Converts a multilabel permutation into a powerset permutation.
-
-        Parameters
-        ----------
-        permutation : torch.Tensor
-            The permutation, of shape (<=MAX_SPEAKERS)
-        num_classes : int
-            Number of multilabel classes
-        max_simult : int
-            Maximum number of simultaneously active multilabel classes (allowed in our powerset encoding)
-        conv_dict : dict, optional
-            The conversion dictionary built with 'compute_powerset_conversion_dict' (to avoid recomputing it each call), by default None
-        inv_conv_dict : dict, optional
-            The inverse mapping of conv_dict  (to avoid recomputing it each call), by default None
-
-        Returns
-        -------
-        List[int]
-            _description_
-        """
-
-        # In case the permutation only keeps some speakers, build a tensor padded_permutation
-        # made of the permutation followed by the unused speakers
-        arange_t, idx_counts = torch.cat(
-            [torch.arange(0, num_classes), permutation]
-        ).unique(return_counts=True)
-        padded_permutation = torch.cat([permutation, arange_t[idx_counts == 1]])
-
-        # build the conversion dicts if necessary
-        if conv_dict is None:
-            conv_dict = __class__.compute_powerset_conversion_dict(
-                num_classes, max_simult
-            )
-        if inv_conv_dict is None:
-            inv_conv_dict = {v: k for k, v in conv_dict.items()}
-
-        perm_powerset = [
-            0,
-        ]
-        speakers = [i for i in range(num_classes)]
-        for simult in range(1, max_simult + 1):
-            # all combinations of simult speakers
-            for c in itertools.combinations(speakers, simult):
-                c_perm_t, _ = torch.sort(padded_permutation[torch.tensor(c)])
-                c_perm = tuple(c_perm_t.tolist())
-                perm_powerset.append(inv_conv_dict[c_perm])
-        return perm_powerset
-
 
 # A task takes an audio chunk as input and returns
 # either a temporal sequence of predictions
@@ -321,7 +99,7 @@ class Specifications:
     permutation_invariant: bool = False
 
     @cached_property
-    def is_powerset_problem(self):
+    def powerset(self):
         return (
             self.problem == Problem.MONO_LABEL_CLASSIFICATION
             and self.powerset_max_classes is not None
@@ -337,34 +115,6 @@ class Specifications:
                 scipy.special.binom(len(self.classes), i)
                 for i in range(0, self.powerset_max_classes + 1)
             )
-        )
-
-    @cached_property
-    def powerset_conversion_dict(self):
-        return Problem.compute_powerset_conversion_dict(
-            len(self.classes), self.powerset_max_classes
-        )
-
-    @cached_property
-    def powerset_conversion_dict_inv(self):
-        return {v: k for k, v in self.powerset_conversion_dict.keys()}
-
-    def powerset_to_multilabel(
-        self,
-        ps_t: torch.Tensor,
-        conversion_tensor: torch.Tensor = None,
-    ) -> torch.Tensor:
-        return Problem.powerset_to_multilabel(
-            ps_t, len(self.classes), self.powerset_max_classes, conversion_tensor
-        )
-
-    def multilabel_to_powerset(
-        self,
-        t: torch.Tensor,
-        conversion_tensor: torch.Tensor = None,
-    ) -> torch.Tensor:
-        return Problem.multilabel_to_powerset(
-            t, len(self.classes), self.powerset_max_classes, conversion_tensor
         )
 
 
