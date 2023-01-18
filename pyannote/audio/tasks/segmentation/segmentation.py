@@ -320,7 +320,7 @@ class Segmentation(SegmentationTaskMixin, Task):
         return loss
 
     def training_step(self, batch, batch_idx: int):
-        """Compute permutation-invariant binary cross-entropy
+        """Compute permutation-invariant segmentation loss
 
         Parameters
         ----------
@@ -368,29 +368,6 @@ class Segmentation(SegmentationTaskMixin, Task):
         batch_size, num_frames, _ = prediction.shape
         # (batch_size, num_frames, num_classes)
 
-        # find optimal permutation
-        if self.specifications.is_powerset_problem:
-
-            powerset = torch.nn.functional.one_hot(
-                torch.argmax(prediction, dim=-1),
-                self.model.powerset.num_powerset_classes,
-            ).float()
-            multilabel = self.model.powerset.to_multilabel(powerset)
-
-            permutated_target, _ = permutate(multilabel, target)
-            permutated_target_powerset = self.model.powerset.to_powerset(
-                permutated_target.float()
-            )
-
-            seg_loss_prediction = prediction
-            seg_loss_target = permutated_target_powerset
-
-        else:
-            permutated_prediction, _ = permutate(target, prediction)
-
-            seg_loss_prediction = permutated_prediction
-            seg_loss_target = target
-
         # frames weight
         weight_key = getattr(self, "weight", None)
         weight = batch.get(
@@ -405,9 +382,26 @@ class Segmentation(SegmentationTaskMixin, Task):
         warm_up_right = round(self.warm_up[1] / self.duration * num_frames)
         weight[:, num_frames - warm_up_right :] = 0.0
 
-        seg_loss = self.segmentation_loss(
-            seg_loss_prediction, seg_loss_target, weight=weight
-        )
+        if self.specifications.is_powerset_problem:
+
+            powerset = torch.nn.functional.one_hot(
+                torch.argmax(prediction, dim=-1),
+                self.model.powerset.num_powerset_classes,
+            ).float()
+            multilabel = self.model.powerset.to_multilabel(powerset)
+            permutated_target, _ = permutate(multilabel, target)
+            permutated_target_powerset = self.model.powerset.to_powerset(
+                permutated_target.float()
+            )
+            seg_loss = self.segmentation_loss(
+                prediction, permutated_target_powerset, weight=weight
+            )
+
+        else:
+            permutated_prediction, _ = permutate(target, prediction)
+            seg_loss = self.segmentation_loss(
+                permutated_prediction, target, weight=weight
+            )
 
         self.model.log(
             f"{self.logging_prefix}TrainSegLoss",
@@ -422,9 +416,18 @@ class Segmentation(SegmentationTaskMixin, Task):
             vad_loss = 0.0
 
         else:
-            vad_loss = self.voice_activity_detection_loss(
-                seg_loss_prediction, seg_loss_target, weight=weight
-            )
+
+            # TODO: vad_loss probably does not make sense in powerset mode
+            # because first class (empty set of labels) does exactly this...
+            if self.specifications.is_powerset_problem:
+                vad_loss = self.voice_activity_detection_loss(
+                    prediction, permutated_target_powerset, weight=weight
+                )
+
+            else:
+                vad_loss = self.voice_activity_detection_loss(
+                    permutated_prediction, target, weight=weight
+                )
 
             self.model.log(
                 f"{self.logging_prefix}TrainVADLoss",
