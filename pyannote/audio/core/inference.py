@@ -47,7 +47,6 @@ class BaseInference:
 class Inference(BaseInference):
     """Inference
 
-
     Parameters
     ----------
     model : Model
@@ -165,11 +164,14 @@ class Inference(BaseInference):
             self._powerset = Powerset(
                 len(specifications.classes), specifications.powerset_max_classes
             )
+            self._powerset.to(self.device)
 
     def to(self, device: torch.device):
         """Send internal model to `device`"""
 
         self.model.to(device)
+        if self.model.specifications.powerset and not self.skip_conversion:
+            self._powerset.to(device)
         self.device = device
         return self
 
@@ -200,6 +202,14 @@ class Inference(BaseInference):
                     )
                 else:
                     raise exception
+
+        # convert powerset to multi-label unless specifically requested not to
+        if self.model.specifications.powerset and not self.skip_conversion:
+            powerset = torch.nn.functional.one_hot(
+                torch.argmax(outputs, dim=-1),
+                self.model.specifications.num_powerset_classes,
+            ).float()
+            outputs = self._powerset.to_multilabel(powerset)
 
         return outputs.cpu().numpy()
 
@@ -359,17 +369,7 @@ class Inference(BaseInference):
         if self.window == "sliding":
             return self.slide(waveform, sample_rate, hook=hook)
 
-        outputs = self.infer(waveform[None])
-
-        # convert powerset to multi-label unless specifically requested not too
-        if self.model.specifications.powerset and not self.skip_conversion:
-            powerset = torch.nn.functional.one_hot(
-                torch.argmax(torch.from_numpy(outputs), dim=-1),
-                self.model.specifications.num_powerset_classes,
-            ).float()
-            outputs = self._powerset.to_multilabel(powerset).numpy()
-
-        return outputs[0]
+        return self.infer(waveform[None])[0]
 
     def crop(
         self,
