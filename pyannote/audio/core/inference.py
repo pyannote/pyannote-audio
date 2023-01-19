@@ -300,14 +300,6 @@ class Inference(BaseInference):
 
         outputs = np.vstack(outputs)
 
-        # convert powerset to multi-label unless specifically requested not too
-        if specifications.powerset and not self.skip_conversion:
-            powerset = torch.nn.functional.one_hot(
-                torch.argmax(torch.from_numpy(outputs), dim=-1),
-                specifications.num_powerset_classes,
-            ).float()
-            outputs = self._powerset.to_multilabel(powerset).numpy()
-
         # skip aggregation when requested,
         # or when model outputs just one vector per chunk
         # or when model is permutation-invariant (and not post-processed)
