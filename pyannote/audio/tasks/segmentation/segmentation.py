@@ -99,11 +99,17 @@ class Segmentation(SegmentationTaskMixin, Task):
         Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
         Defaults to AUROC (area under the ROC curve).
 
-    Reference
+    References
     ----------
     Hervé Bredin and Antoine Laurent
     "End-To-End Speaker Segmentation for Overlap-Aware Resegmentation."
     Proc. Interspeech 2021
+
+    Zhihao Du, Shiliang Zhang, Siqi Zheng, and Zhijie Yan
+    "Speaker Embedding-aware Neural Diarization: an Efficient Framework for Overlapping
+    Speech Diarization in Meeting Scenarios"
+    https://arxiv.org/abs/2203.09767
+
     """
 
     def __init__(
