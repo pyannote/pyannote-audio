@@ -147,10 +147,16 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         )
         self._frames: SlidingWindow = self._segmentation.model.introspection.frames
 
-        self.segmentation = ParamDict(
-            threshold=Uniform(0.1, 0.9),
-            min_duration_off=Uniform(0.0, 1.0),
-        )
+        if self._segmentation.model.specifications.powerset:
+            self.segmentation = ParamDict(
+                min_duration_off=Uniform(0.0, 1.0),
+            )
+
+        else:
+            self.segmentation = ParamDict(
+                threshold=Uniform(0.1, 0.9),
+                min_duration_off=Uniform(0.0, 1.0),
+            )
 
         if self.klustering == "OracleClustering":
             metric = "not_applicable"
@@ -260,18 +266,19 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         embeddings : (num_chunks, num_speakers, dimension) array
         """
 
-        # when optimizing the hyper-parameters of this pipeline with frozen "segmentation_onset",
-        # one can reuse the embeddings from the first trial, bringing a massive speed up to
-        # the optimization process (and hence allowing to use a larger search space).
+        # when optimizing the hyper-parameters of this pipeline with frozen
+        # "segmentation.threshold", one can reuse the embeddings from the first trial,
+        # bringing a massive speed up to the optimization process (and hence allowing to use
+        # a larger search space).
         if self.training:
 
             # we only re-use embeddings if they were extracted based on the same value of the
-            # "segmentation_onset" hyperparameter and "embedding_exclude_overlap" parameter.
+            # "segmentation.threshold" hyperparameter or if the segmentation model relies on
+            # `powerset` mode
             cache = file.get("training_cache/embeddings", dict())
-            if (
-                cache.get("segmentation.threshold", None) == self.segmentation.threshold
-                and cache.get("embedding_exclude_overlap", None)
-                == self.embedding_exclude_overlap
+            if ("embeddings" in cache) and (
+                self._segmentation.model.specifications.powerset
+                or (cache["segmentation.threshold"] == self.segmentation.threshold)
             ):
                 return cache["embeddings"]
 
@@ -369,11 +376,16 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         # caching embeddings for subsequent trials
         # (see comments at the top of this method for more details)
         if self.training:
-            file["training_cache/embeddings"] = {
-                "segmentation.threshold": self.segmentation.threshold,
-                "embedding_exclude_overlap": self.embedding_exclude_overlap,
-                "embeddings": embeddings,
-            }
+
+            if self._segmentation.model.specifications.powerset:
+                file["training_cache/embeddings"] = {
+                    "embeddings": embeddings,
+                }
+            else:
+                file["training_cache/embeddings"] = {
+                    "segmentation.threshold": self.segmentation.threshold,
+                    "embeddings": embeddings,
+                }
 
         return embeddings
 
@@ -479,7 +491,9 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         # estimate frame-level number of instantaneous speakers
         count = self.speaker_count(
             segmentations,
-            onset=self.segmentation.threshold,
+            onset=0.5
+            if self._segmentation.model.specifications.powerset
+            else self.segmentation.threshold,
             frames=self._frames,
         )
         hook("speaker_counting", count)
@@ -491,11 +505,14 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             return Annotation(uri=file["uri"])
 
         # binarize segmentation
-        binarized_segmentations: SlidingWindowFeature = binarize(
-            segmentations,
-            onset=self.segmentation.threshold,
-            initial_state=False,
-        )
+        if self._segmentation.model.specifications.powerset:
+            binarized_segmentations = segmentations
+        else:
+            binarized_segmentations: SlidingWindowFeature = binarize(
+                segmentations,
+                onset=self.segmentation.threshold,
+                initial_state=False,
+            )
 
         if self.klustering == "OracleClustering":
             embeddings = None
