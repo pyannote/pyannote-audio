@@ -24,7 +24,11 @@
 # Hervé BREDIN - https://herve.niderb.fr
 # Alexis PLAQUET
 
-from functools import cached_property
+try:
+    from functools import cached_property
+except ImportError:
+    from backports.cached_property import cached_property
+
 from itertools import combinations
 
 import scipy.special
