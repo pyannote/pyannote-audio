@@ -35,6 +35,7 @@ from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Resolution
 from pyannote.audio.utils.permutation import mae_cost_func, permutate
+from pyannote.audio.utils.powerset import Powerset
 
 TaskName = Union[Text, None]
 
@@ -53,23 +54,26 @@ class Inference(BaseInference):
     window : {"sliding", "whole"}, optional
         Use a "sliding" window and aggregate the corresponding outputs (default)
         or just one (potentially long) window covering the "whole" file or chunk.
-    skip_aggregation : bool, optional
-        Do not aggregate outputs when using "sliding" window. Defaults to False.
     duration : float, optional
         Chunk duration, in seconds. Defaults to duration used for training the model.
         Has no effect when `window` is "whole".
     step : float, optional
         Step between consecutive chunks, in seconds. Defaults to warm-up duration when
         greater than 0s, otherwise 10% of duration. Has no effect when `window` is "whole".
+    pre_aggregation_hook : callable, optional
+        When a callable is provided, it is applied to the model output, just before aggregation.
+        Takes a (num_chunks, num_frames, dimension) numpy array as input and returns a modified
+        (num_chunks, num_frames, other_dimension) numpy array passed to overlap-add aggregation.
+    skip_aggregation : bool, optional
+        Do not aggregate outputs when using "sliding" window. Defaults to False.
+    skip_conversion: bool, optional
+        In case `model` has been trained with `powerset` mode, its output is automatically
+        converted to `multi-label`, unless `skip_conversion` is set to True.
     batch_size : int, optional
         Batch size. Larger values make inference faster. Defaults to 32.
     device : torch.device, optional
         Device used for inference. Defaults to `model.device`.
         In case `device` and `model.device` are different, model is sent to device.
-    pre_aggregation_hook : callable, optional
-        When a callable is provided, it is applied to the model output, just before aggregation.
-        Takes a (num_chunks, num_frames, dimension) numpy array as input and returns a modified
-        (num_chunks, num_frames, other_dimension) numpy array passed to overlap-add aggregation.
     use_auth_token : str, optional
         When loading a private huggingface.co model, set `use_auth_token`
         to True or to a string containing your hugginface.co authentication
@@ -80,12 +84,13 @@ class Inference(BaseInference):
         self,
         model: Union[Model, Text, Path],
         window: Text = "sliding",
-        skip_aggregation: bool = False,
-        device: torch.device = None,
         duration: float = None,
         step: float = None,
-        batch_size: int = 32,
         pre_aggregation_hook: Callable[[np.ndarray], np.ndarray] = None,
+        skip_aggregation: bool = False,
+        skip_conversion: bool = False,
+        device: torch.device = None,
+        batch_size: int = 32,
         use_auth_token: Union[Text, None] = None,
     ):
 
@@ -154,11 +159,19 @@ class Inference(BaseInference):
         self.step = step
 
         self.batch_size = batch_size
+        self.skip_conversion = skip_conversion
+        if specifications.powerset and not self.skip_conversion:
+            self._powerset = Powerset(
+                len(specifications.classes), specifications.powerset_max_classes
+            )
+            self._powerset.to(self.device)
 
     def to(self, device: torch.device):
         """Send internal model to `device`"""
 
         self.model.to(device)
+        if self.model.specifications.powerset and not self.skip_conversion:
+            self._powerset.to(device)
         self.device = device
         return self
 
@@ -189,6 +202,14 @@ class Inference(BaseInference):
                     )
                 else:
                     raise exception
+
+        # convert powerset to multi-label unless specifically requested not to
+        if self.model.specifications.powerset and not self.skip_conversion:
+            powerset = torch.nn.functional.one_hot(
+                torch.argmax(outputs, dim=-1),
+                self.model.specifications.num_powerset_classes,
+            ).float()
+            outputs = self._powerset.to_multilabel(powerset)
 
         return outputs.cpu().numpy()
 

@@ -257,7 +257,7 @@ class SpeechBrainPretrainedSpeakerEmbedding(BaseInference):
         self.classifier_ = SpeechBrain_EncoderClassifier.from_hparams(
             source=self.embedding,
             savedir=f"{CACHE_DIR}/speechbrain",
-            run_opts={"device": self.device},
+            run_opts={"device": device},
             use_auth_token=self.use_auth_token,
         )
         self.device = device

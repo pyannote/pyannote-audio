@@ -29,14 +29,16 @@ from typing import Dict, Optional, Sequence, Text, Union
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import torch.nn.functional
 from pyannote.core import Segment, SlidingWindowFeature
-from pytorch_lightning.loggers import TensorBoardLogger, MLFlowLogger
+from pytorch_lightning.loggers import MLFlowLogger, TensorBoardLogger
 from torch.utils.data._utils.collate import default_collate
 from torchmetrics import Metric
-from torchmetrics.classification import BinaryAUROC, MultilabelAUROC, MulticlassAUROC
+from torchmetrics.classification import BinaryAUROC, MulticlassAUROC, MultilabelAUROC
 
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.task import Problem
+from pyannote.audio.utils.powerset import Powerset
 from pyannote.audio.utils.random import create_rng_for_worker
 
 
@@ -124,6 +126,13 @@ class SegmentationTaskMixin:
                     self._validation.append((f, chunk))
 
         random.shuffle(self._validation)
+
+    def setup_loss_func(self):
+        if self.specifications.powerset:
+            self.model.powerset = Powerset(
+                len(self.specifications.classes),
+                self.specifications.powerset_max_classes,
+            )
 
     def default_metric(
         self,
@@ -372,10 +381,12 @@ class SegmentationTaskMixin:
         _, num_frames, _ = y_pred.shape
         # y_pred = (batch_size, num_frames, num_classes)
 
-        # - remove warm-up frames
-        # - downsample remaining frames
+        # compute warmup frames boundaries and weight
         warm_up_left = round(self.warm_up[0] / self.duration * num_frames)
         warm_up_right = round(self.warm_up[1] / self.duration * num_frames)
+
+        # - remove warm-up frames
+        # - downsample remaining frames
         preds = y_pred[:, warm_up_left : num_frames - warm_up_right : 10]
         target = y[:, warm_up_left : num_frames - warm_up_right : 10]
 
@@ -383,7 +394,6 @@ class SegmentationTaskMixin:
         # pyannote.audio is more explicit so we have to reshape target and preds for
         # torchmetrics to be happy... more details can be found here:
         # https://torchmetrics.readthedocs.io/en/latest/references/modules.html#input-types
-
         if self.specifications.problem == Problem.BINARY_CLASSIFICATION:
             # target: shape (batch_size, num_frames), type binary
             # preds:  shape (batch_size, num_frames, 1), type float
