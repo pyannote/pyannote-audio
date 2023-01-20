@@ -21,6 +21,7 @@
 # SOFTWARE.
 
 import math
+import warnings
 from collections import Counter
 from typing import Dict, Optional, Sequence, Text, Tuple, Union
 
@@ -79,7 +80,7 @@ class Segmentation(SegmentationTaskMixin, Task):
         For instance, setting `balance` to "uri" will make sure that each file will be
         equally represented in the training samples.
     weight: str, optional
-        When provided, use this key to as frame-wise weight in loss function.
+        When provided, use this key as frame-wise weight in loss function.
     batch_size : int, optional
         Number of training samples per batch. Defaults to 32.
     num_workers : int, optional
@@ -127,6 +128,8 @@ class Segmentation(SegmentationTaskMixin, Task):
         augmentation: BaseWaveformTransform = None,
         vad_loss: Literal["bce", "mse"] = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
+        max_num_speakers: int = None,  # deprecated in favor of `max_speakers_per_chunk``
+        loss: Literal["bce", "mse"] = None,  # deprecated
     ):
 
         super().__init__(
@@ -140,24 +143,31 @@ class Segmentation(SegmentationTaskMixin, Task):
             metric=metric,
         )
 
-        self.balance = balance
-        self.weight = weight
-        self.vad_loss = vad_loss
+        # deprecation warnings
+        if max_speakers_per_chunk is None and max_num_speakers is not None:
+            max_speakers_per_chunk = max_num_speakers
+            warnings.warn(
+                "`max_num_speakers` has been deprecated in favor of `max_speakers_per_chunk`."
+            )
+        if loss is not None:
+            warnings.warn("`loss` has been deprecated and has no effect.")
 
-        self.max_speakers_per_chunk = max_speakers_per_chunk
-        self.max_speakers_per_frame = max_speakers_per_frame
-
+        # parameter validation
         if max_speakers_per_frame is not None:
-
             if max_speakers_per_frame < 1:
                 raise ValueError(
                     f"`max_speakers_per_frame` must be 1 or more (you used {max_speakers_per_frame})."
                 )
-
             if vad_loss is not None:
                 raise ValueError(
                     "`vad_loss` cannot be used jointly with `max_speakers_per_frame`"
                 )
+
+        self.max_speakers_per_chunk = max_speakers_per_chunk
+        self.max_speakers_per_frame = max_speakers_per_frame
+        self.balance = balance
+        self.weight = weight
+        self.vad_loss = vad_loss
 
     def setup(self, stage: Optional[str] = None):
 
