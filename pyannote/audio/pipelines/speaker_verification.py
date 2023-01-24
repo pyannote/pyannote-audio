@@ -27,7 +27,7 @@ try:
 except ImportError:
     from backports.cached_property import cached_property
 
-from typing import Text
+from typing import Text, Union
 
 import numpy as np
 import torch
@@ -36,9 +36,10 @@ import torchaudio
 from torch.nn.utils.rnn import pad_sequence
 
 from pyannote.audio import Inference, Model, Pipeline
+from pyannote.audio.core.inference import BaseInference
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import CACHE_DIR
-from pyannote.audio.pipelines.utils import PipelineModel, get_devices, get_model
+from pyannote.audio.pipelines.utils import PipelineModel, get_model
 
 backend = torchaudio.get_audio_backend()
 try:
@@ -62,7 +63,7 @@ except ImportError:
     NEMO_IS_AVAILABLE = False
 
 
-class NeMoPretrainedSpeakerEmbedding:
+class NeMoPretrainedSpeakerEmbedding(BaseInference):
     def __init__(
         self,
         embedding: Text = "nvidia/speakerverification_en_titanet_large",
@@ -77,11 +78,16 @@ class NeMoPretrainedSpeakerEmbedding:
 
         super().__init__()
         self.embedding = embedding
-        self.device = device
+        self.device = device or torch.device("cpu")
 
         self.model_ = NeMo_EncDecSpeakerLabelModel.from_pretrained(self.embedding)
         self.model_.freeze()
         self.model_.to(self.device)
+
+    def to(self, device: torch.device):
+        self.model_.to(device)
+        self.device = device
+        return self
 
     @cached_property
     def sample_rate(self) -> int:
@@ -193,7 +199,7 @@ class NeMoPretrainedSpeakerEmbedding:
         return embeddings
 
 
-class SpeechBrainPretrainedSpeakerEmbedding:
+class SpeechBrainPretrainedSpeakerEmbedding(BaseInference):
     """Pretrained SpeechBrain speaker embedding
 
     Parameters
@@ -202,6 +208,10 @@ class SpeechBrainPretrainedSpeakerEmbedding:
         Name of SpeechBrain model
     device : torch.device, optional
         Device
+    use_auth_token : str, optional
+        When loading private huggingface.co models, set `use_auth_token`
+        to True or to a string containing your hugginface.co authentication
+        token that can be obtained by running `huggingface-cli login`
 
     Usage
     -----
@@ -222,6 +232,7 @@ class SpeechBrainPretrainedSpeakerEmbedding:
         self,
         embedding: Text = "speechbrain/spkrec-ecapa-voxceleb",
         device: torch.device = None,
+        use_auth_token: Union[Text, None] = None,
     ):
 
         if not SPEECHBRAIN_IS_AVAILABLE:
@@ -232,13 +243,25 @@ class SpeechBrainPretrainedSpeakerEmbedding:
 
         super().__init__()
         self.embedding = embedding
-        self.device = device
+        self.device = device or torch.device("cpu")
+        self.use_auth_token = use_auth_token
 
         self.classifier_ = SpeechBrain_EncoderClassifier.from_hparams(
             source=self.embedding,
             savedir=f"{CACHE_DIR}/speechbrain",
             run_opts={"device": self.device},
+            use_auth_token=self.use_auth_token,
         )
+
+    def to(self, device: torch.device):
+        self.classifier_ = SpeechBrain_EncoderClassifier.from_hparams(
+            source=self.embedding,
+            savedir=f"{CACHE_DIR}/speechbrain",
+            run_opts={"device": device},
+            use_auth_token=self.use_auth_token,
+        )
+        self.device = device
+        return self
 
     @cached_property
     def sample_rate(self) -> int:
@@ -315,7 +338,10 @@ class SpeechBrainPretrainedSpeakerEmbedding:
             imasks = imasks > 0.5
 
             signals = pad_sequence(
-                [waveform[imask] for waveform, imask in zip(waveforms, imasks)],
+                [
+                    waveform[imask].contiguous()
+                    for waveform, imask in zip(waveforms, imasks)
+                ],
                 batch_first=True,
             )
 
@@ -343,7 +369,7 @@ class SpeechBrainPretrainedSpeakerEmbedding:
         return embeddings
 
 
-class PyannoteAudioPretrainedSpeakerEmbedding:
+class PyannoteAudioPretrainedSpeakerEmbedding(BaseInference):
     """Pretrained pyannote.audio speaker embedding
 
     Parameters
@@ -352,6 +378,10 @@ class PyannoteAudioPretrainedSpeakerEmbedding:
         pyannote.audio model
     device : torch.device, optional
         Device
+    use_auth_token : str, optional
+        When loading private huggingface.co models, set `use_auth_token`
+        to True or to a string containing your hugginface.co authentication
+        token that can be obtained by running `huggingface-cli login`
 
     Usage
     -----
@@ -372,14 +402,20 @@ class PyannoteAudioPretrainedSpeakerEmbedding:
         self,
         embedding: PipelineModel = "pyannote/embedding",
         device: torch.device = None,
+        use_auth_token: Union[Text, None] = None,
     ):
         super().__init__()
         self.embedding = embedding
-        self.device = device
+        self.device = device or torch.device("cpu")
 
-        self.model_: Model = get_model(self.embedding)
+        self.model_: Model = get_model(self.embedding, use_auth_token=use_auth_token)
         self.model_.eval()
         self.model_.to(self.device)
+
+    def to(self, device: torch.device):
+        self.model_.to(device)
+        self.device = device
+        return self
 
     @cached_property
     def sample_rate(self) -> int:
@@ -412,7 +448,11 @@ class PyannoteAudioPretrainedSpeakerEmbedding:
         return embeddings.cpu().numpy()
 
 
-def PretrainedSpeakerEmbedding(embedding: PipelineModel, device: torch.device = None):
+def PretrainedSpeakerEmbedding(
+    embedding: PipelineModel,
+    device: torch.device = None,
+    use_auth_token: Union[Text, None] = None,
+):
     """Pretrained speaker embedding
 
     Parameters
@@ -422,6 +462,10 @@ def PretrainedSpeakerEmbedding(embedding: PipelineModel, device: torch.device = 
         or a pyannote.audio model.
     device : torch.device, optional
         Device
+    use_auth_token : str, optional
+        When loading private huggingface.co models, set `use_auth_token`
+        to True or to a string containing your hugginface.co authentication
+        token that can be obtained by running `huggingface-cli login`
 
     Usage
     -----
@@ -441,13 +485,17 @@ def PretrainedSpeakerEmbedding(embedding: PipelineModel, device: torch.device = 
     """
 
     if isinstance(embedding, str) and "speechbrain" in embedding:
-        return SpeechBrainPretrainedSpeakerEmbedding(embedding, device=device)
+        return SpeechBrainPretrainedSpeakerEmbedding(
+            embedding, device=device, use_auth_token=use_auth_token
+        )
 
     elif isinstance(embedding, str) and "nvidia" in embedding:
         return NeMoPretrainedSpeakerEmbedding(embedding, device=device)
 
     else:
-        return PyannoteAudioPretrainedSpeakerEmbedding(embedding, device=device)
+        return PyannoteAudioPretrainedSpeakerEmbedding(
+            embedding, device=device, use_auth_token=use_auth_token
+        )
 
 
 class SpeakerEmbedding(Pipeline):
@@ -465,6 +513,10 @@ class SpeakerEmbedding(Pipeline):
         Pretrained segmentation (or voice activity detection) model.
         See pyannote.audio.pipelines.utils.get_model for supported format.
         Defaults to no voice activity detection.
+    use_auth_token : str, optional
+        When loading private huggingface.co models, set `use_auth_token`
+        to True or to a string containing your hugginface.co authentication
+        token that can be obtained by running `huggingface-cli login`
 
     Usage
     -----
@@ -480,29 +532,22 @@ class SpeakerEmbedding(Pipeline):
         self,
         embedding: PipelineModel = "pyannote/embedding",
         segmentation: PipelineModel = None,
+        use_auth_token: Union[Text, None] = None,
     ):
         super().__init__()
 
         self.embedding = embedding
         self.segmentation = segmentation
 
-        self.embedding_model_: Model = get_model(embedding)
-
-        if self.segmentation is None:
-            models = [self.embedding_model_]
-        else:
-            segmentation_model: Model = get_model(self.segmentation)
-            models = [self.embedding_model_, segmentation_model]
-
-        # send models to GPU (when GPUs are available and model is not already on GPU)
-        cpu_models = [model for model in models if model.device.type == "cpu"]
-        for cpu_model, gpu_device in zip(
-            cpu_models, get_devices(needs=len(cpu_models))
-        ):
-            cpu_model.to(gpu_device)
+        self.embedding_model_: Model = get_model(
+            embedding, use_auth_token=use_auth_token
+        )
 
         if self.segmentation is not None:
-            self.voice_activity_ = Inference(
+            segmentation_model: Model = get_model(
+                self.segmentation, use_auth_token=use_auth_token
+            )
+            self._segmentation = Inference(
                 segmentation_model,
                 pre_aggregation_hook=lambda scores: np.max(
                     scores, axis=-1, keepdims=True
@@ -520,7 +565,7 @@ class SpeakerEmbedding(Pipeline):
             weights = None
         else:
             # obtain voice activity scores
-            weights = self.voice_activity_(file).data
+            weights = self._segmentation(file).data
             # HACK -- this should be fixed upstream
             weights[np.isnan(weights)] = 0.0
             weights = torch.from_numpy(weights**3)[None, :, 0].to(device)

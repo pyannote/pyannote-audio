@@ -7,5 +7,3 @@ weight: null
 batch_size: 32
 num_workers: null
 pin_memory: False
-loss: "bce"
-vad_loss: "bce"

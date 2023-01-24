@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2021 CNRS
+# Copyright (c) 2023- CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -21,24 +21,33 @@
 # SOFTWARE.
 
 
-from typing import Text
+import torch
 
-from tqdm import tqdm
+from pyannote.audio.utils.powerset import Powerset
 
 
-class InferenceProgressHook:
-    """Default inference progress bar"""
+def test_roundtrip():
 
-    def __init__(self, desc: Text = None):
-        self.desc = desc
+    for num_classes in range(2, 5):
+        for max_set_size in range(1, num_classes + 1):
 
-    def __call__(self, chunk_idx, num_chunks):
+            powerset = Powerset(num_classes, max_set_size)
 
-        if chunk_idx == 0:
-            self.pbar = tqdm(desc=self.desc, total=num_chunks, unit="chunks")
-            self.chunk_idx = chunk_idx
+            # simulate a sequence where each frame is assigned to a different powerset class
+            one_sequence = [
+                [0] * powerset.num_powerset_classes
+                for _ in range(powerset.num_powerset_classes)
+            ]
+            for i in range(powerset.num_powerset_classes):
+                one_sequence[i][i] = 1.0
 
-        self.pbar.update(chunk_idx - self.chunk_idx)
-        self.chunk_idx = chunk_idx
-        if self.chunk_idx == num_chunks:
-            self.pbar.close()
+            # make a batch out of this sequence and the same sequence in reverse order
+            batch_powerset = torch.tensor([one_sequence, one_sequence[::-1]])
+
+            # convert from powerset to multi-label
+            batch_multilabel = powerset.to_multilabel(batch_powerset)
+
+            # convert batch back to powerset
+            reconstruction = powerset.to_powerset(batch_multilabel)
+
+            assert torch.equal(batch_powerset, reconstruction)

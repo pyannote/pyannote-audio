@@ -22,20 +22,23 @@
 
 import os
 import warnings
+from collections import OrderedDict
 from collections.abc import Iterator
 from functools import partial
 from pathlib import Path
-from typing import Callable, List, Optional, Text, Union
+from typing import Callable, Dict, List, Optional, Text, Union
 
 import yaml
-from huggingface_hub import cached_download, hf_hub_url
-
-from pyannote.audio import Audio, __version__
-from pyannote.audio.core.io import AudioFile
-from pyannote.audio.core.model import CACHE_DIR
+from huggingface_hub import hf_hub_download
+from huggingface_hub.utils import RepositoryNotFoundError
 from pyannote.core.utils.helper import get_class_by_name
 from pyannote.database import FileFinder, ProtocolFile
 from pyannote.pipeline import Pipeline as _Pipeline
+
+from pyannote.audio import Audio, __version__
+from pyannote.audio.core.inference import BaseInference
+from pyannote.audio.core.io import AudioFile
+from pyannote.audio.core.model import CACHE_DIR, Model
 
 PIPELINE_PARAMS_NAME = "config.yaml"
 
@@ -77,15 +80,40 @@ class Pipeline(_Pipeline):
             else:
                 model_id = checkpoint_path
                 revision = None
-            url = hf_hub_url(model_id, filename=PIPELINE_PARAMS_NAME, revision=revision)
 
-            config_yml = cached_download(
-                url=url,
-                library_name="pyannote",
-                library_version=__version__,
-                cache_dir=cache_dir,
-                use_auth_token=use_auth_token,
-            )
+            try:
+                config_yml = hf_hub_download(
+                    model_id,
+                    PIPELINE_PARAMS_NAME,
+                    repo_type="model",
+                    revision=revision,
+                    library_name="pyannote",
+                    library_version=__version__,
+                    cache_dir=cache_dir,
+                    # force_download=False,
+                    # proxies=None,
+                    # etag_timeout=10,
+                    # resume_download=False,
+                    use_auth_token=use_auth_token,
+                    # local_files_only=False,
+                    # legacy_cache_layout=False,
+                )
+
+            except RepositoryNotFoundError:
+                print(
+                    f"""
+Could not download '{model_id}' pipeline.
+It might be because the pipeline is private or gated so make
+sure to authenticate. Visit https://hf.co/settings/tokens to
+create your access token and retry with:
+
+   >>> Pipeline.from_pretrained('{model_id}',
+   ...                          use_auth_token=YOUR_AUTH_TOKEN)
+
+If this still does not work, it might be because the pipeline is gated:
+visit https://hf.co/{model_id} to accept the user conditions."""
+                )
+                return None
 
         with open(config_yml, "r") as fp:
             config = yaml.load(fp, Loader=yaml.SafeLoader)
@@ -95,7 +123,9 @@ class Pipeline(_Pipeline):
         Klass = get_class_by_name(
             pipeline_name, default_module_name="pyannote.pipeline.blocks"
         )
-        pipeline = Klass(**config["pipeline"].get("params", {}))
+        params = config["pipeline"].get("params", {})
+        params.setdefault("use_auth_token", use_auth_token)
+        pipeline = Klass(**params)
 
         # freeze  parameters
         if "freeze" in config:
@@ -141,20 +171,89 @@ class Pipeline(_Pipeline):
 
         return pipeline
 
+    def __init__(self):
+        super().__init__()
+        self._models: Dict[str, Model] = OrderedDict()
+        self._inferences: Dict[str, BaseInference] = OrderedDict()
+
+    def __getattr__(self, name):
+        """(Advanced) attribute getter
+
+        Adds support for Model and Inference attributes,
+        which are iterated over by Pipeline.to() method.
+
+        See pyannote.pipeline.Pipeline.__getattr__.
+        """
+
+        if "_models" in self.__dict__:
+            _models = self.__dict__["_models"]
+            if name in _models:
+                return _models[name]
+
+        if "_inferences" in self.__dict__:
+            _inferences = self.__dict__["_inferences"]
+            if name in _inferences:
+                return _inferences[name]
+
+        return super().__getattr__(name)
+
+    def __setattr__(self, name, value):
+        """(Advanced) attribute setter
+
+        Adds support for Model and Inference attributes,
+        which are iterated over by Pipeline.to() method.
+
+        See pyannote.pipeline.Pipeline.__setattr__.
+        """
+
+        def remove_from(*dicts):
+            for d in dicts:
+                if name in d:
+                    del d[name]
+
+        _parameters = self.__dict__.get("_parameters")
+        _instantiated = self.__dict__.get("_instantiated")
+        _pipelines = self.__dict__.get("_pipelines")
+        _models = self.__dict__.get("_models")
+        _inferences = self.__dict__.get("_inferences")
+
+        if isinstance(value, Model):
+            if _models is None:
+                msg = "cannot assign models before Pipeline.__init__() call"
+                raise AttributeError(msg)
+            remove_from(
+                self.__dict__, _inferences, _parameters, _instantiated, _pipelines
+            )
+            _models[name] = value
+            return
+
+        if isinstance(value, BaseInference):
+            if _inferences is None:
+                msg = "cannot assign inferences before Pipeline.__init__() call"
+                raise AttributeError(msg)
+            remove_from(self.__dict__, _models, _parameters, _instantiated, _pipelines)
+            _inferences[name] = value
+            return
+
+        super().__setattr__(name, value)
+
+    def __delattr__(self, name):
+
+        if name in self._models:
+            del self._models[name]
+
+        elif name in self._inferences:
+            del self._inferences[name]
+
+        else:
+            super().__delattr__(name)
+
     @staticmethod
     def setup_hook(file: AudioFile, hook: Optional[Callable] = None) -> Callable:
+        def noop(*args, **kwargs):
+            return
 
-        if hook is None:
-
-            def hook(*args, **kwargs):
-                return
-
-            hook.missing = True
-        else:
-            hook = partial(hook, file=file)
-            hook.missing = False
-
-        return hook
+        return partial(hook or noop, file=file)
 
     def default_parameters(self):
         raise NotImplementedError()
@@ -208,3 +307,18 @@ class Pipeline(_Pipeline):
             file = ProtocolFile(file, lazy=self.preprocessors)
 
         return self.apply(file, **kwargs)
+
+    def to(self, device):
+        """Send pipeline to `device`"""
+
+        for _, pipeline in self._pipelines.items():
+            if hasattr(pipeline, "to"):
+                _ = pipeline.to(device)
+
+        for _, model in self._models.items():
+            _ = model.to(device)
+
+        for _, inference in self._inferences.items():
+            _ = inference.to(device)
+
+        return self

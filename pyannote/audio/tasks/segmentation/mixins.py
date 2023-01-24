@@ -29,12 +29,16 @@ from typing import Dict, Optional, Sequence, Text, Union
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import torch.nn.functional
 from pyannote.core import Segment, SlidingWindowFeature
+from pytorch_lightning.loggers import MLFlowLogger, TensorBoardLogger
 from torch.utils.data._utils.collate import default_collate
-from torchmetrics import AUROC, Metric
+from torchmetrics import Metric
+from torchmetrics.classification import BinaryAUROC, MulticlassAUROC, MultilabelAUROC
 
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.task import Problem
+from pyannote.audio.utils.powerset import Powerset
 from pyannote.audio.utils.random import create_rng_for_worker
 
 
@@ -123,13 +127,29 @@ class SegmentationTaskMixin:
 
         random.shuffle(self._validation)
 
+    def setup_loss_func(self):
+        if self.specifications.powerset:
+            self.model.powerset = Powerset(
+                len(self.specifications.classes),
+                self.specifications.powerset_max_classes,
+            )
+
     def default_metric(
         self,
     ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
         """Returns macro-average of the area under the ROC curve"""
 
         num_classes = len(self.specifications.classes)
-        return AUROC(num_classes, pos_label=1, average="macro", compute_on_step=False)
+        if self.specifications.problem == Problem.BINARY_CLASSIFICATION:
+            return BinaryAUROC(compute_on_cpu=True)
+        elif self.specifications.problem == Problem.MULTI_LABEL_CLASSIFICATION:
+            return MultilabelAUROC(num_classes, average="macro", compute_on_cpu=True)
+        elif self.specifications.problem == Problem.MONO_LABEL_CLASSIFICATION:
+            return MulticlassAUROC(num_classes, average="macro", compute_on_cpu=True)
+        else:
+            raise RuntimeError(
+                f"The {self.specifications.problem} problem type hasn't been given a default segmentation metric yet."
+            )
 
     def adapt_y(self, one_hot_y: np.ndarray) -> np.ndarray:
         raise NotImplementedError(
@@ -355,10 +375,12 @@ class SegmentationTaskMixin:
         _, num_frames, _ = y_pred.shape
         # y_pred = (batch_size, num_frames, num_classes)
 
-        # - remove warm-up frames
-        # - downsample remaining frames
+        # compute warmup frames boundaries and weight
         warm_up_left = round(self.warm_up[0] / self.duration * num_frames)
         warm_up_right = round(self.warm_up[1] / self.duration * num_frames)
+
+        # - remove warm-up frames
+        # - downsample remaining frames
         preds = y_pred[:, warm_up_left : num_frames - warm_up_right : 10]
         target = y[:, warm_up_left : num_frames - warm_up_right : 10]
 
@@ -366,7 +388,6 @@ class SegmentationTaskMixin:
         # pyannote.audio is more explicit so we have to reshape target and preds for
         # torchmetrics to be happy... more details can be found here:
         # https://torchmetrics.readthedocs.io/en/latest/references/modules.html#input-types
-
         if self.specifications.problem == Problem.BINARY_CLASSIFICATION:
             # target: shape (batch_size, num_frames), type binary
             # preds:  shape (batch_size, num_frames, 1), type float
@@ -413,7 +434,7 @@ class SegmentationTaskMixin:
         ):
             return
 
-        # visualize first 9 validation samples of first batch in Tensorboard
+        # visualize first 9 validation samples of first batch in Tensorboard/MLflow
         X = X.cpu().numpy()
         y = y.float().cpu().numpy()
         y_pred = y_pred.cpu().numpy()
@@ -462,8 +483,15 @@ class SegmentationTaskMixin:
 
         plt.tight_layout()
 
-        self.model.logger.experiment.add_figure(
-            f"{self.logging_prefix}ValSamples", fig, self.model.current_epoch
-        )
+        if isinstance(self.model.logger, TensorBoardLogger):
+            self.model.logger.experiment.add_figure(
+                f"{self.logging_prefix}ValSamples", fig, self.model.current_epoch
+            )
+        elif isinstance(self.model.logger, MLFlowLogger):
+            self.model.logger.experiment.log_figure(
+                run_id=self.model.logger.run_id,
+                figure=fig,
+                artifact_file=f"{self.logging_prefix}ValSamples_epoch{self.model.current_epoch}.png",
+            )
 
         plt.close(fig)
