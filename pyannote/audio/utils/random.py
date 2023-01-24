@@ -48,26 +48,14 @@ def create_rng_for_worker(epoch: int) -> Random:
     global_seed = int(os.environ.get("PL_GLOBAL_SEED", "0"))
     local_rank = int(os.environ.get("LOCAL_RANK", "0"))
     node_rank = int(os.environ.get("NODE_RANK", "0"))
-    num_gpus = len(os.environ.get("PL_TRAINER_GPUS", "0").split(","))
-    world_size = int(os.environ.get("WORLD_SIZE", "1"))
 
     worker_info = torch.utils.data.get_worker_info()
 
     if worker_info is None:
-        num_workers = 1
         worker_id = 0
     else:
-        num_workers = worker_info.num_workers
         worker_id = worker_info.id
 
-    seed = (
-        global_seed
-        + worker_id
-        + local_rank * num_workers
-        + node_rank * num_workers * num_gpus
-        + epoch * num_workers * world_size
-    )
-
-    rng.seed(seed)
+    rng.seed(hash((global_seed, worker_id, local_rank, node_rank, epoch)))
 
     return rng
