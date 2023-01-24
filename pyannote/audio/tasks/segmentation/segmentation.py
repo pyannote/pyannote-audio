@@ -250,8 +250,8 @@ class Segmentation(SegmentationTaskMixin, Task):
         batch_size, num_frames, num_speakers = collated_y.shape
 
         # maximum number of active speakers in a chunk
-        max_speakers_per_chunk = torch.max(
-            torch.sum(torch.sum(collated_y, dim=1) > 0.0, dim=1)
+        max_speakers_per_chunk = max(
+            1, torch.max(torch.sum(torch.sum(collated_y, dim=1) > 0.0, dim=1))
         )
 
         # sort speakers in descending talkativeness order

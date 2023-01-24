@@ -296,14 +296,17 @@ class SegmentationTaskMixin:
         # gather common set of labels
         # b["y"] is a SlidingWindowFeature instance
         labels = sorted(set(itertools.chain(*(b["y"].labels for b in batch))))
+        num_labels = len(labels)
 
-        batch_size, num_frames, num_labels = (
-            len(batch),
-            len(batch[0]["y"]),
-            len(labels),
-        )
+        batch_size = len(batch)
+        num_frames = len(batch[0]["y"])
+
+        if num_labels == 0:
+            return torch.from_numpy(
+                np.zeros((batch_size, num_frames, 1), dtype=np.int64)
+            )
+
         Y = np.zeros((batch_size, num_frames, num_labels), dtype=np.int64)
-
         for i, b in enumerate(batch):
             for local_idx, label in enumerate(b["y"].labels):
                 global_idx = labels.index(label)
