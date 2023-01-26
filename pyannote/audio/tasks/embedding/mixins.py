@@ -30,6 +30,7 @@ from pyannote.database.protocol import (
     SpeakerDiarizationProtocol,
     SpeakerVerificationProtocol,
 )
+from torch.utils.data._utils.collate import default_collate
 from torchmetrics import Metric
 from torchmetrics.classification import BinaryAUROC
 from tqdm import tqdm
@@ -216,6 +217,29 @@ class SupervisedRepresentationLearningTaskMixin:
         )
         avg_chunk_duration = 0.5 * (self.min_duration + self.duration)
         return max(self.batch_size, math.ceil(duration / avg_chunk_duration))
+
+    def collate_X(self, batch) -> torch.Tensor:
+        return default_collate([b["X"] for b in batch])
+
+    def collate_y(self, batch) -> torch.Tensor:
+        return default_collate([b["y"] for b in batch])
+
+    def collate_fn(self, batch, stage="train"):
+
+        # collate X
+        collated_X = self.collate_X(batch)
+
+        # collate y
+        collated_y = self.collate_y(batch)
+
+        # apply augmentation (only in "train" stage)
+        self.augmentation.train(mode=(stage == "train"))
+        augmented = self.augmentation(
+            samples=collated_X,
+            sample_rate=self.model.hparams.sample_rate,
+        )
+
+        return {"X": augmented.samples, "y": collated_y}
 
     def training_step(self, batch, batch_idx: int):
 
