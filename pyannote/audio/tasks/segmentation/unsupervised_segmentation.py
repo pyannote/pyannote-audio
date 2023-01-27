@@ -108,6 +108,10 @@ class UnsupervisedSegmentation(Segmentation, Task):
 
         if pl_fw_passes < 1:
             raise ValueError("pl_fw_passes must be strictly positive.")
+        if pl_fw_passes > 1:
+            raise ValueError(
+                "pl_fw_passes for multiple forward passes isn't properly implemented yet "
+            )
         if teacher is None:
             raise ValueError(
                 "Using the model as its own teacher isn't supported yet. Please pass a teacher model."
@@ -159,6 +163,7 @@ class UnsupervisedSegmentation(Segmentation, Task):
                 pl = self.teacher(waveforms=teacher_input).detach()
                 out_fw_passes.append(pl)
             # compute mean of forward passes if needed, and round to make pseudolabels
+            # TODO: make it work properly by permutating the forward passes so that they "agree"
             stacked_passes = torch.stack(out_fw_passes)
             if fw_passes == 1:
                 out = out_fw_passes[0]
