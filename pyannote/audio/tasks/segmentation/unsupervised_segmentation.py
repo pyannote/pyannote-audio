@@ -24,7 +24,8 @@ class UnsupervisedSegmentation(Segmentation, Task):
         pl_fw_passes: int = 1,  # how many forward passes to average to get the pseudolabels
         # supervised params
         duration: float = 2.0,
-        max_num_speakers: int = None,
+        max_speakers_per_chunk: int = None,
+        max_speakers_per_frame: int = None,
         warm_up: Union[float, Tuple[float, float]] = 0.0,
         balance: Text = None,
         weight: Text = None,
@@ -52,9 +53,13 @@ class UnsupervisedSegmentation(Segmentation, Task):
             How many forward passes to average to get the pseudolabels. Defaults to 1.
         duration : float, optional
             Chunks duration. Defaults to 2s.
-        max_num_speakers : int, optional
-            Force maximum number of speakers per chunk (must be at least 2).
+        max_speakers_per_chunk : int, optional
+            Maximum number of speakers per chunk (must be at least 2).
             Defaults to estimating it from the training set.
+        max_speakers_per_frame : int, optional
+            Maximum number of (overlapping) speakers per frame.
+            Setting this value to 1 or more enables `powerset multi-class` training.
+            Default behavior is to use `multi-label` training.
         warm_up : float or (float, float), optional
             Use that many seconds on the left- and rightmost parts of each chunk
             to warm up the model. While the model does process those left- and right-most
@@ -98,7 +103,8 @@ class UnsupervisedSegmentation(Segmentation, Task):
             pin_memory=pin_memory,
             augmentation=augmentation,
             # Segmentation params
-            max_num_speakers=max_num_speakers,
+            max_speakers_per_chunk=max_speakers_per_chunk,
+            max_speakers_per_frame=max_speakers_per_frame,
             balance=balance,
             weight=weight,
             loss=loss,
