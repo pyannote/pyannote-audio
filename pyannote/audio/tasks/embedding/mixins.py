@@ -79,6 +79,9 @@ class SupervisedRepresentationLearningTaskMixin:
         # loop over the training set, remove annotated regions shorter than
         # chunk duration, and keep track of the reference annotations, per class.
 
+        # FIXME: it looks like this time consuming step is called multiple times.
+        # it should not be...
+
         self._train = dict()
 
         desc = f"Loading {self.protocol.name} training labels"
