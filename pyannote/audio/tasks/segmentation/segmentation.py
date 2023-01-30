@@ -250,8 +250,8 @@ class Segmentation(SegmentationTaskMixin, Task):
         batch_size, num_frames, num_speakers = collated_y.shape
 
         # maximum number of active speakers in a chunk
-        max_speakers_per_chunk = torch.max(
-            torch.sum(torch.sum(collated_y, dim=1) > 0.0, dim=1)
+        max_speakers_per_chunk = max(
+            1, torch.max(torch.sum(torch.sum(collated_y, dim=1) > 0.0, dim=1))
         )
 
         # sort speakers in descending talkativeness order
@@ -699,16 +699,17 @@ class Segmentation(SegmentationTaskMixin, Task):
 
         plt.tight_layout()
 
-        if isinstance(self.model.logger, TensorBoardLogger):
-            self.model.logger.experiment.add_figure(
-                f"{self.logging_prefix}ValSamples", fig, self.model.current_epoch
-            )
-        elif isinstance(self.model.logger, MLFlowLogger):
-            self.model.logger.experiment.log_figure(
-                run_id=self.model.logger.run_id,
-                figure=fig,
-                artifact_file=f"{self.logging_prefix}ValSamples_epoch{self.model.current_epoch}.png",
-            )
+        for logger in self.model.loggers:
+            if isinstance(logger, TensorBoardLogger):
+                logger.experiment.add_figure(
+                    f"{self.logging_prefix}ValSamples", fig, self.model.current_epoch
+                )
+            elif isinstance(logger, MLFlowLogger):
+                logger.experiment.log_figure(
+                    run_id=logger.run_id,
+                    figure=fig,
+                    artifact_file=f"{self.logging_prefix}ValSamples_epoch{self.model.current_epoch}.png",
+                )
 
         plt.close(fig)
 

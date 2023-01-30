@@ -291,14 +291,17 @@ class SegmentationTaskMixin:
         # gather common set of labels
         # b["y"] is a SlidingWindowFeature instance
         labels = sorted(set(itertools.chain(*(b["y"].labels for b in batch))))
+        num_labels = len(labels)
 
-        batch_size, num_frames, num_labels = (
-            len(batch),
-            len(batch[0]["y"]),
-            len(labels),
-        )
+        batch_size = len(batch)
+        num_frames = len(batch[0]["y"])
+
+        if num_labels == 0:
+            return torch.from_numpy(
+                np.zeros((batch_size, num_frames, 1), dtype=np.int64)
+            )
+
         Y = np.zeros((batch_size, num_frames, num_labels), dtype=np.int64)
-
         for i, b in enumerate(batch):
             for local_idx, label in enumerate(b["y"].labels):
                 global_idx = labels.index(label)
@@ -483,15 +486,16 @@ class SegmentationTaskMixin:
 
         plt.tight_layout()
 
-        if isinstance(self.model.logger, TensorBoardLogger):
-            self.model.logger.experiment.add_figure(
-                f"{self.logging_prefix}ValSamples", fig, self.model.current_epoch
-            )
-        elif isinstance(self.model.logger, MLFlowLogger):
-            self.model.logger.experiment.log_figure(
-                run_id=self.model.logger.run_id,
-                figure=fig,
-                artifact_file=f"{self.logging_prefix}ValSamples_epoch{self.model.current_epoch}.png",
-            )
+        for logger in self.model.loggers:
+            if isinstance(logger, TensorBoardLogger):
+                logger.experiment.add_figure(
+                    f"{self.logging_prefix}ValSamples", fig, self.model.current_epoch
+                )
+            elif isinstance(logger, MLFlowLogger):
+                logger.experiment.log_figure(
+                    run_id=logger.run_id,
+                    figure=fig,
+                    artifact_file=f"{self.logging_prefix}ValSamples_epoch{self.model.current_epoch}.png",
+                )
 
         plt.close(fig)
