@@ -48,5 +48,5 @@ class EqualErrorRate(Metric):
     def compute(self) -> torch.Tensor:
         scores = dim_zero_cat(self.scores)
         y_true = dim_zero_cat(self.y_true)
-        _, _, _, eer = det_curve(y_true, scores, distances=self.distances)
+        _, _, _, eer = det_curve(y_true.cpu(), scores.cpu(), distances=self.distances)
         return torch.tensor(eer)
