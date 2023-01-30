@@ -30,6 +30,7 @@ from pyannote.database.protocol import (
     SpeakerDiarizationProtocol,
     SpeakerVerificationProtocol,
 )
+from torch.utils.data._utils.collate import default_collate
 from torchmetrics import Metric
 from torchmetrics.classification import BinaryAUROC
 from tqdm import tqdm
@@ -77,6 +78,9 @@ class SupervisedRepresentationLearningTaskMixin:
 
         # loop over the training set, remove annotated regions shorter than
         # chunk duration, and keep track of the reference annotations, per class.
+
+        # FIXME: it looks like this time consuming step is called multiple times.
+        # it should not be...
 
         self._train = dict()
 
@@ -217,6 +221,20 @@ class SupervisedRepresentationLearningTaskMixin:
         avg_chunk_duration = 0.5 * (self.min_duration + self.duration)
         return max(self.batch_size, math.ceil(duration / avg_chunk_duration))
 
+    def collate_fn(self, batch, stage="train"):
+
+        collated = default_collate(batch)
+
+        if stage == "train":
+            self.augmentation.train(mode=True)
+            augmented = self.augmentation(
+                samples=collated["X"],
+                sample_rate=self.model.hparams.sample_rate,
+            )
+            collated["X"] = augmented.samples
+
+        return collated
+
     def training_step(self, batch, batch_idx: int):
 
         X, y = batch["X"], batch["y"]
@@ -233,6 +251,7 @@ class SupervisedRepresentationLearningTaskMixin:
         return {"loss": loss}
 
     def val__getitem__(self, idx):
+
         if isinstance(self.protocol, SpeakerVerificationProtocol):
             trial = self._validation[idx]
 
@@ -288,6 +307,3 @@ class SupervisedRepresentationLearningTaskMixin:
                 prog_bar=True,
                 logger=True,
             )
-
-        elif isinstance(self.protocol, SpeakerDiarizationProtocol):
-            pass

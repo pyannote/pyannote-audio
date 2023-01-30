@@ -26,6 +26,4 @@ from pyannote.audio import Model
 
 
 def pretrained(checkpoint: Text):
-    return Model.from_pretrained(
-        checkpoint, map_location=lambda storage, loc: storage
-    )
+    return Model.from_pretrained(checkpoint, map_location=lambda storage, loc: storage)

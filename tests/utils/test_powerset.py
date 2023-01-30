@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020 CNRS
+# Copyright (c) 2023- CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -21,41 +21,33 @@
 # SOFTWARE.
 
 
-import os
-from random import Random
-
 import torch
 
+from pyannote.audio.utils.powerset import Powerset
 
-def create_rng_for_worker(epoch: int) -> Random:
-    """Create worker-specific random number generator
 
-    This makes sure that
-    1. training samples generation is reproducible
-    2. every (worker, epoch) uses a different seed
+def test_roundtrip():
 
-    Parameters
-    ----------
-    epoch : int
-        Current epoch.
-    """
+    for num_classes in range(2, 5):
+        for max_set_size in range(1, num_classes + 1):
 
-    # create random number generator
-    rng = Random()
+            powerset = Powerset(num_classes, max_set_size)
 
-    #  create seed as a combination of PL_GLOBAL_SEED (set by pl.seed_everything())
-    #  and other PL multi-processing variables
-    global_seed = int(os.environ.get("PL_GLOBAL_SEED", "0"))
-    local_rank = int(os.environ.get("LOCAL_RANK", "0"))
-    node_rank = int(os.environ.get("NODE_RANK", "0"))
+            # simulate a sequence where each frame is assigned to a different powerset class
+            one_sequence = [
+                [0] * powerset.num_powerset_classes
+                for _ in range(powerset.num_powerset_classes)
+            ]
+            for i in range(powerset.num_powerset_classes):
+                one_sequence[i][i] = 1.0
 
-    worker_info = torch.utils.data.get_worker_info()
+            # make a batch out of this sequence and the same sequence in reverse order
+            batch_powerset = torch.tensor([one_sequence, one_sequence[::-1]])
 
-    if worker_info is None:
-        worker_id = 0
-    else:
-        worker_id = worker_info.id
+            # convert from powerset to multi-label
+            batch_multilabel = powerset.to_multilabel(batch_powerset)
 
-    rng.seed(hash((global_seed, worker_id, local_rank, node_rank, epoch)))
+            # convert batch back to powerset
+            reconstruction = powerset.to_powerset(batch_multilabel)
 
-    return rng
+            assert torch.equal(batch_powerset, reconstruction)

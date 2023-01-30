@@ -194,7 +194,7 @@ def build_permutation_graph(
     cost_func: Callable[[torch.Tensor, torch.Tensor], torch.Tensor] = mae_cost_func,
 ) -> nx.Graph:
     """Build permutation graph
-    
+
     Parameters
     ----------
     segmentations : (num_chunks, num_frames, local_num_speakers)-shaped SlidingWindowFeature
@@ -203,7 +203,7 @@ def build_permutation_graph(
         Threshold above which a speaker is considered active. Defaults to 0.5
     cost_func : callable
         Cost function used to find the optimal bijective mapping between speaker activations
-        of two overlapping chunks. Expects two (num_frames, num_classes) torch.tensor as input 
+        of two overlapping chunks. Expects two (num_frames, num_classes) torch.tensor as input
         and returns cost as a (num_classes, ) torch.tensor. Defaults to mae_cost_func.
 
     Returns

@@ -25,6 +25,8 @@ from __future__ import annotations
 
 from functools import partial
 
+import scipy.special
+
 try:
     from functools import cached_property
 except ImportError:
@@ -89,8 +91,37 @@ class Specifications:
     # (for classification tasks only) list of classes
     classes: Optional[List[Text]] = None
 
+    # (for powerset only) max number of simultaneous classes
+    # (n choose k with k <= powerset_max_classes)
+    powerset_max_classes: Optional[int] = None
+
     # whether classes are permutation-invariant (e.g. diarization)
     permutation_invariant: bool = False
+
+    @cached_property
+    def powerset(self):
+
+        if self.powerset_max_classes is None:
+            return False
+
+        if self.problem != Problem.MONO_LABEL_CLASSIFICATION:
+            raise ValueError(
+                "`powerset_max_classes` only makes sense with multi-class classification problems."
+            )
+
+        return True
+
+    @cached_property
+    def num_powerset_classes(self) -> int:
+        # compute number of subsets of size at most "powerset_max_classes"
+        # e.g. with len(classes) = 3 and powerset_max_classes = 2:
+        # {}, {0}, {1}, {2}, {0, 1}, {0, 2}, {1, 2}
+        return int(
+            sum(
+                scipy.special.binom(len(self.classes), i)
+                for i in range(0, self.powerset_max_classes + 1)
+            )
+        )
 
 
 class TrainDataset(IterableDataset):
@@ -314,7 +345,7 @@ class Task(pl.LightningDataModule):
         ]:
             return binary_cross_entropy(prediction, target, weight=weight)
 
-        elif specifications.problem == Problem.MONO_LABEL_CLASSIFICATION:
+        elif specifications.problem in [Problem.MONO_LABEL_CLASSIFICATION]:
             return nll_loss(prediction, target, weight=weight)
 
         else:
