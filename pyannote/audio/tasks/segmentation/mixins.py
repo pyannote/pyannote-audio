@@ -492,15 +492,16 @@ class SegmentationTaskMixin:
 
         plt.tight_layout()
 
-        if isinstance(self.model.logger, TensorBoardLogger):
-            self.model.logger.experiment.add_figure(
-                f"{self.logging_prefix}ValSamples", fig, self.model.current_epoch
-            )
-        elif isinstance(self.model.logger, MLFlowLogger):
-            self.model.logger.experiment.log_figure(
-                run_id=self.model.logger.run_id,
-                figure=fig,
-                artifact_file=f"{self.logging_prefix}ValSamples_epoch{self.model.current_epoch}.png",
-            )
+        for logger in self.model.loggers:
+            if isinstance(logger, TensorBoardLogger):
+                logger.experiment.add_figure(
+                    f"{self.logging_prefix}ValSamples", fig, self.model.current_epoch
+                )
+            elif isinstance(logger, MLFlowLogger):
+                logger.experiment.log_figure(
+                    run_id=logger.run_id,
+                    figure=fig,
+                    artifact_file=f"{self.logging_prefix}ValSamples_epoch{self.model.current_epoch}.png",
+                )
 
         plt.close(fig)
