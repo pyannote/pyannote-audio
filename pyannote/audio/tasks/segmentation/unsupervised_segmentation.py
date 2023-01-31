@@ -12,11 +12,15 @@ from typing_extensions import Literal
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
 from pyannote.audio.tasks import Segmentation
+
 from pyannote.audio import Inference
 from pyannote.audio.pipelines.utils import get_devices
 
 
 class PseudoLabelPostprocess:
+    def setup(self, protocol: Protocol, model: Model, teacher: Model) -> None:
+        raise NotImplementedError()
+
     def process(
         self, pseudo_y: torch.Tensor, y: torch.Tensor, x: torch.Tensor, ys: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -356,6 +360,8 @@ class BrouhahaPseudolabelsFilter(PseudoLabelPostprocess):
         mode: Literal["threshold", "quantile"],
         threshold: float,
         step_size_percent: float = 0.5,
+        setup_protocol: Protocol = None,      # defaults to the protocol the model is trained on
+        setup_subset: str = "train",
     ):
         self.model = model
         self.data = data
@@ -368,8 +374,36 @@ class BrouhahaPseudolabelsFilter(PseudoLabelPostprocess):
         self.threshold = threshold
         self.step_size_percent = step_size_percent
 
-    def compute_quantile(self, protocol, subset_name: str):
-        files = list(getattr(protocol, subset_name)())
+        self.setup_protocol = setup_protocol
+        self.setup_subset = setup_subset
+
+        self.is_setup = False
+
+    @staticmethod
+    def compute_vad_masked_means(output: torch.Tensor):
+        # Means the SNR (and C50 and VAD) by chunk, only accounting frames where there is voice activity.
+        # output should be shaped [NB_CHUNKED,NB_FRAMES,NB_OUTPUTS]
+        speech_frames = output[:,:, 0] > 0.5   # shape [NB_CHUNKS,NB_FRAMES]
+        speech_frames_per_chunk = torch.sum(speech_frames,dim=1).clamp(min=1.0)     # shape [NB_CHUNKS]
+        mean_output_per_chunk = torch.sum(speech_frames[:,:,None] * output, dim=2) / speech_frames_per_chunk[:,None]    # shape [NB_CHUNKS,NB_OUTPUTS]
+        return mean_output_per_chunk
+
+    def setup(self, protocol: Protocol, model: Model, teacher: Model) -> None:
+        if self.is_setup:
+            return
+        # Only "quantile" mode needs setup
+        if not self.mode == "quantile":
+            self.is_setup = True
+            return
+
+        # Load default protocol if none provided
+        if self.setup_protocol is None:
+            self.setup_protocol = protocol
+        # Do the setup (compute x% quantile on the setup protocol/subset)
+        self.compute_quantile()
+
+    def compute_quantile(self):
+        files = list(getattr(self.setup_protocol, self.setup_subset)())
 
         (device,) = get_devices(needs=1)
         inference = Inference(
@@ -377,31 +411,38 @@ class BrouhahaPseudolabelsFilter(PseudoLabelPostprocess):
             device=device,
             duration=self.model.specifications.duration,
             step=self.step_size_percent * self.model.specifications.duration,
+            skip_aggregation=True
         )
 
-        means = torch.zeros(len(files))
+        output_list = []
 
         for i, file in enumerate(files):
             output = inference(file)
-            # TODO : use something other than mean ? (max ?) (if changed, dont forget to update accordingly in process)
-            means[i] = torch.mean(torch.from_numpy(output.data[:, self.data_index]))
+            output_list.append(torch.from_numpy(output.data))
+
+        outputs = torch.cat(output_list) # shape [NB_CHUNKS,NB_FRAMES,OUTPUTS]
+        
+        # TODO : use something other than mean ? (max ?) (if changed, dont forget to update accordingly in process)
+        mean_output_per_chunk = BrouhahaPseudolabelsFilter.compute_vad_masked_means(outputs)
 
         self.quantile_value = float(
-            torch.quantile(means, torch.tensor([self.threshold])).item()
+            torch.quantile(mean_output_per_chunk[:,self.data_index], torch.tensor([self.threshold])).item()
         )
         print(
             f"Computed quantile {self.threshold} value = {self.quantile_value} on {len(files)} files"
         )
+        self.is_setup = True
+
 
     def process(
         self, pseudo_y: torch.Tensor, y: torch.Tensor, x: torch.Tensor, ys: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         outputs = self.model(x)
-        means = torch.mean(outputs[:, self.data_index], dim=1)
+        mean_output_per_chunk = BrouhahaPseudolabelsFilter.compute_vad_masked_means(outputs)
 
         if self.mode == "quantile":
-            filter = means < self.quantile_value
+            filter = mean_output_per_chunk[:, self.data_index] < self.quantile_value
         elif self.mode == "threshold":
-            filter = means < self.threshold
+            filter = mean_output_per_chunk[:, self.data_index] < self.threshold
 
         return x[filter], pseudo_y[filter]
