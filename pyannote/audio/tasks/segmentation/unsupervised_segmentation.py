@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, OrderedDict, Sequence, Text, Tuple, Union
+from typing import Any, Dict, List, Optional, OrderedDict, Sequence, Text, Tuple, Union
 
 import pytorch_lightning as pl
 import torch
@@ -12,6 +12,9 @@ from typing_extensions import Literal
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
 from pyannote.audio.tasks import Segmentation
+from pyannote.audio import Inference
+from pyannote.audio.pipelines.utils import get_devices
+
 
 class PseudoLabelPostprocess:
     def process(
@@ -218,7 +221,7 @@ class UnsupervisedSegmentation(Segmentation, Task):
                 collated_batch["X"] = processed_x
                 collated_batch["y"] = processed_pseudo_y
             else:
-            collated_batch["y"] = pseudo_y
+                collated_batch["y"] = pseudo_y
 
         # Augment x/pseudo y if an augmentation is specified
         if self.augmentation is not None:
@@ -343,3 +346,63 @@ class TeacherEmaUpdate(Callback):
                 raise AttributeError(
                     f"TeacherUpdate callback can't be applied on this model : {err}"
                 )
+
+
+class BrouhahaPseudolabelsFilter(PseudoLabelPostprocess):
+    def __init__(
+        self,
+        model,
+        data: Literal["snr", "c50"],
+        mode: Literal["threshold", "quantile"],
+        threshold: float,
+        step_size_percent: float = 0.5,
+    ):
+        self.model = model
+        self.data = data
+        if self.data not in ["snr", "c50"]:
+            raise ValueError(f"Invalid data type ({data}), use snr or c50")
+        self.data_index = 1 if "snr" else 2
+        self.mode = mode
+        if self.mode not in ["threshold", "quantile"]:
+            raise ValueError(f"Invalid mode ({mode}), use threshold or quantile")
+        self.threshold = threshold
+        self.step_size_percent = step_size_percent
+
+    def compute_quantile(self, protocol, subset_name: str):
+        files = list(getattr(protocol, subset_name)())
+
+        (device,) = get_devices(needs=1)
+        inference = Inference(
+            self.model,
+            device=device,
+            duration=self.model.specifications.duration,
+            step=self.step_size_percent * self.model.specifications.duration,
+        )
+
+        means = torch.zeros(len(files))
+
+        for i in range(len(files)):
+            file = files[i]
+            output = inference(file)
+            # TODO : use something other than mean ? (max ?) (if changed, dont forget to update accordingly in process)
+            means[i] = torch.mean(torch.from_numpy(output.data[:, self.data_index]))
+
+        self.quantile_value = float(
+            torch.quantile(means, torch.tensor([self.threshold])).item()
+        )
+        print(
+            f"Computed quantile {self.threshold} value = {self.quantile_value} on {len(files)} files"
+        )
+
+    def process(
+        self, pseudo_y: torch.Tensor, y: torch.Tensor, x: torch.Tensor, ys: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        outputs = self.model(x)
+        means = torch.mean(outputs[:, self.data_index], dim=1)
+
+        if self.mode == "quantile":
+            filter = means < self.quantile_value
+        elif self.mode == "threshold":
+            filter = means < self.threshold
+
+        return x[filter], pseudo_y[filter]
