@@ -381,8 +381,7 @@ class BrouhahaPseudolabelsFilter(PseudoLabelPostprocess):
 
         means = torch.zeros(len(files))
 
-        for i in range(len(files)):
-            file = files[i]
+        for i, file in enumerate(files):
             output = inference(file)
             # TODO : use something other than mean ? (max ?) (if changed, dont forget to update accordingly in process)
             means[i] = torch.mean(torch.from_numpy(output.data[:, self.data_index]))
