@@ -13,6 +13,13 @@ from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
 from pyannote.audio.tasks import Segmentation
 
+class PseudoLabelPostprocess:
+    def process(
+        self, pseudo_y: torch.Tensor, y: torch.Tensor, x: torch.Tensor, ys: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        # returns (modified x, modified pseudo_y)
+        raise NotImplementedError()
+
 
 class UnsupervisedSegmentation(Segmentation, Task):
     def __init__(
@@ -22,6 +29,7 @@ class UnsupervisedSegmentation(Segmentation, Task):
         use_pseudolabels: bool = True,  # generate pseudolabels in training mode
         augmentation_teacher: BaseWaveformTransform = None,
         pl_fw_passes: int = 1,  # how many forward passes to average to get the pseudolabels
+        pl_postprocess: List[PseudoLabelPostprocess] = None,
         # supervised params
         duration: float = 2.0,
         max_speakers_per_chunk: int = None,
@@ -127,6 +135,7 @@ class UnsupervisedSegmentation(Segmentation, Task):
         self.use_pseudolabels = use_pseudolabels
         self.augmentation_teacher = augmentation_teacher
         self.pl_fw_passes = pl_fw_passes
+        self.pl_postprocess = pl_postprocess
 
         self.teacher.eval()
 
@@ -200,6 +209,15 @@ class UnsupervisedSegmentation(Segmentation, Task):
             pseudo_y = self.get_teacher_output(
                 x=x, aug=self.augmentation_teacher, fw_passes=self.pl_fw_passes
             )
+            if self.pl_postprocess is not None:
+                processed_x, processed_pseudo_y = collated_batch["X"], pseudo_y
+                for pp in self.pl_postprocess:
+                    processed_x, processed_pseudo_y = pp.process(
+                        processed_pseudo_y, collated_batch["y"], processed_x, None
+                    )
+                collated_batch["X"] = processed_x
+                collated_batch["y"] = processed_pseudo_y
+            else:
             collated_batch["y"] = pseudo_y
 
         # Augment x/pseudo y if an augmentation is specified
