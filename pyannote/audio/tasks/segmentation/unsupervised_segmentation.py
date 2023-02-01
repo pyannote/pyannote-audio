@@ -143,9 +143,14 @@ class UnsupervisedSegmentation(Segmentation, Task):
         self.augmentation_teacher = augmentation_teacher
         self.pl_fw_passes = pl_fw_passes
         self.pl_postprocess = pl_postprocess
+        if self.pl_postprocess is not None:
+            for pp in self.pl_postprocess:
+                pp.setup(self.protocol, self, self.teacher)
 
         self.teacher.eval()
 
+
+    # TODO: use torch.inference_mode() decorator instead of 'with torch.no_grad()' ? It should work + speed up ?
     def get_teacher_outputs_passes(
         self, x: torch.Tensor, aug: BaseWaveformTransform, fw_passes: int = 1
     ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -355,7 +360,7 @@ class TeacherEmaUpdate(Callback):
 class BrouhahaPseudolabelsFilter(PseudoLabelPostprocess):
     def __init__(
         self,
-        model,
+        model: Model,
         data: Literal["snr", "c50"],
         mode: Literal["threshold", "quantile"],
         threshold: float,
