@@ -36,6 +36,7 @@ from torchmetrics.classification import BinaryAUROC
 from tqdm import tqdm
 
 from pyannote.audio.core.task import Problem, Resolution, Specifications
+from pyannote.audio.torchmetrics.classification import EqualErrorRate
 from pyannote.audio.utils.random import create_rng_for_worker
 
 
@@ -132,7 +133,11 @@ class SupervisedRepresentationLearningTaskMixin:
     def default_metric(
         self,
     ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
-        return BinaryAUROC(compute_on_cpu=True)
+
+        return [
+            EqualErrorRate(compute_on_cpu=True, distances=False),
+            BinaryAUROC(compute_on_cpu=True),
+        ]
 
     def train__iter__(self):
         """Iterate over training samples

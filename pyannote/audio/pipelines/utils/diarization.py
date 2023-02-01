@@ -211,9 +211,14 @@ class SpeakerDiarizationMixin:
             missing=0.0,
             skip_average=True,
         )
+        # shape is (num_frames, num_speakers)
 
         _, num_speakers = activations.data.shape
-        count.data = np.minimum(count.data, num_speakers)
+        max_speakers_per_frame = np.max(count.data)
+        if num_speakers < max_speakers_per_frame:
+            activations.data = np.pad(
+                activations.data, ((0, 0), (0, max_speakers_per_frame - num_speakers))
+            )
 
         extent = activations.extent & count.extent
         activations = activations.crop(extent, return_data=False)
