@@ -380,7 +380,7 @@ class Segmentation(SegmentationTaskMixin, Task):
 
         # corner case
         if not keep.any():
-            return {"loss": 0.0}
+            return {"loss": torch.tensor(0.0, device=target.device, requires_grad=True)}
 
         # forward pass
         prediction = self.model(waveform)
