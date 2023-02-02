@@ -15,6 +15,7 @@ from pyannote.audio.tasks import Segmentation
 
 from pyannote.audio import Inference
 from pyannote.audio.pipelines.utils import get_devices
+from pyannote.audio.utils.powerset import Powerset
 
 
 class PseudoLabelPostprocess:
@@ -148,6 +149,13 @@ class UnsupervisedSegmentation(Segmentation, Task):
                 pp.setup(self.protocol, self, self.teacher)
 
         self.teacher.eval()
+        teacher_specs = self.teacher.specifications
+        if teacher_specs.powerset:
+            self._powerset = Powerset(
+                len(teacher_specs.classes), teacher_specs.powerset_max_classes
+            )
+            # TODO: move self._powerset to the correct device (self.model's ? not accessible from there)
+
 
 
     # TODO: use torch.inference_mode() decorator instead of 'with torch.no_grad()' ? It should work + speed up ?
@@ -187,7 +195,17 @@ class UnsupervisedSegmentation(Segmentation, Task):
                     )
                     teacher_input = augmented.samples
                 # Compute pseudolabels and detach to avoid "memory leaks"
-                pl = self.teacher(waveforms=teacher_input).detach()
+                model_output = self.teacher(waveforms=teacher_input).detach()
+
+                # Convert to multilabel if powerset
+                if self.teacher.specifications.powerset:
+                    one_hot_output = torch.nn.functional.one_hot(
+                        torch.argmax(model_output, dim=-1),
+                        self.teacher.specifications.num_powerset_classes,
+                    ).float()
+                    pl = self._powerset.to_multilabel(one_hot_output)
+                else:
+                    pl = model_output
                 out_fw_passes.append(pl)
             # compute mean of forward passes if needed, and round to make pseudolabels
             # TODO: make it work properly by permutating the forward passes so that they "agree"
@@ -196,6 +214,7 @@ class UnsupervisedSegmentation(Segmentation, Task):
                 out = out_fw_passes[0]
             else:
                 out = torch.mean(stacked_passes, dim=0)
+                raise RuntimeError("Multiple teacher forward passes is not implemented.")
             out = torch.round(out).type(torch.int8)
 
         return out, stacked_passes
