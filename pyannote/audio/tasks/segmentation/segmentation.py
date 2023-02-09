@@ -300,9 +300,9 @@ class Segmentation(SegmentationTaskMixin, Task):
 
         if self.specifications.powerset:
 
-            # `maximum` is needed to set non-speech weight to 1.
+            # `clamp_min` is needed to set non-speech weight to 1.
             class_weight = (
-                torch.maximum(self.model.powerset.cardinality, 1.0)
+                torch.clamp_min(self.model.powerset.cardinality, 1.0)
                 if self.weigh_by_cardinality
                 else None
             )
