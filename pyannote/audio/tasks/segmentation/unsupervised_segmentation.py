@@ -196,17 +196,7 @@ class UnsupervisedSegmentation(Segmentation, Task):
                     teacher_input = augmented.samples
                 # Compute pseudolabels and detach to avoid "memory leaks"
                 model_output = self.teacher(waveforms=teacher_input).detach()
-
-                # Convert to multilabel if powerset
-                if self.teacher.specifications.powerset:
-                    one_hot_output = torch.nn.functional.one_hot(
-                        torch.argmax(model_output, dim=-1),
-                        self.teacher.specifications.num_powerset_classes,
-                    ).float()
-                    pl = self._powerset.to_multilabel(one_hot_output)
-                else:
-                    pl = model_output
-                out_fw_passes.append(pl)
+                out_fw_passes.append(model_output)
             # compute mean of forward passes if needed, and round to make pseudolabels
             # TODO: make it work properly by permutating the forward passes so that they "agree"
             stacked_passes = torch.stack(out_fw_passes)
@@ -215,6 +205,15 @@ class UnsupervisedSegmentation(Segmentation, Task):
             else:
                 out = torch.mean(stacked_passes, dim=0)
                 raise RuntimeError("Multiple teacher forward passes is not implemented.")
+            
+            # Convert "out" to multilabel if powerset
+            if self.teacher.specifications.powerset:
+                one_hot_out = torch.nn.functional.one_hot(
+                    torch.argmax(out, dim=-1),
+                    self.teacher.specifications.num_powerset_classes,
+                ).float()
+                out = self._powerset.to_multilabel(one_hot_out)
+
             out = torch.round(out).type(torch.int8)
 
         return out, stacked_passes
@@ -237,14 +236,14 @@ class UnsupervisedSegmentation(Segmentation, Task):
         if self.use_pseudolabels:
             x = collated_X
             # compute pseudo labels
-            pseudo_y = self.get_teacher_output(
+            pseudo_y, model_out_passes = self.get_teacher_outputs_passes(
                 x=x, aug=self.augmentation_teacher, fw_passes=self.pl_fw_passes
             )
             if self.pl_postprocess is not None:
                 processed_x, processed_pseudo_y = collated_batch["X"], pseudo_y
                 for pp in self.pl_postprocess:
                     processed_x, processed_pseudo_y = pp.process(
-                        processed_pseudo_y, collated_batch["y"], processed_x, None
+                        processed_pseudo_y, collated_batch["y"], processed_x, model_out_passes
                     )
                 collated_batch["X"] = processed_x
                 collated_batch["y"] = processed_pseudo_y
@@ -374,6 +373,39 @@ class TeacherEmaUpdate(Callback):
                 raise AttributeError(
                     f"TeacherUpdate callback can't be applied on this model : {err}"
                 )
+
+
+class ConfidenceFilter(PseudoLabelPostprocess):
+
+    def __init__(self, estimator: Literal['maxprob','probdelta'], threshold: float) -> None:
+        if estimator not in ['maxprob','probdelta']:
+            raise ValueError(f"Estimator {estimator} unknown")
+        if threshold < 0.0 or threshold > 1.0:
+            raise ValueError(f"Wrong threshold value: {threshold}")
+
+        self.estimator = estimator
+        self.threshold = threshold
+
+    def setup(self, protocol: Protocol, model: Model, teacher: Model) -> None:
+        if not teacher.specifications.powerset:
+            raise RuntimeError("Confidence filter currently only supports POWERSET models")
+        self.teacher = teacher
+    
+    def process(self, pseudo_y: torch.Tensor, y: torch.Tensor, x: torch.Tensor, ys: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        out = ys[0]
+        out_probas = out.exp()
+        sorted_out_probas = out_probas.sort(axis=-1)[0]     # sorted from less confident to more confident
+
+        if self.estimator == "maxprob":
+            # max probability averaged over time
+            maxprob = sorted_out_probas[:,:,-1].mean(axis=1)
+            filter = maxprob > self.threshold
+        elif self.estimator == "probdelta":
+            # difference between the two classes of highest probability, averaged over time
+            probdelta = (sorted_out_probas[:,:,-1] - sorted_out_probas[:,:,-2]).mean(axis=1)
+            filter = probdelta > self.threshold
+        
+        return x[filter], pseudo_y[filter]
 
 
 class BrouhahaPseudolabelsFilter(PseudoLabelPostprocess):
