@@ -51,12 +51,21 @@ def logging_hook(
 class ProgressHook:
     """Hook to show progress of each internal step
 
+    Parameters
+    ----------
+    transient: bool, optional
+        Clear the progress on exit. Defaults to False.
+
     Example
     -------
     pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization")
     with ProgressHook() as hook:
        output = pipeline(file, hook=hook)
     """
+
+    def __init__(self, transient: bool = False):
+        super().__init__()
+        self.transient = transient
 
     def __enter__(self):
 
@@ -65,6 +74,7 @@ class ProgressHook:
             BarColumn(),
             TaskProgressColumn(),
             TimeRemainingColumn(elapsed_when_finished=True),
+            transient=self.transient,
         )
         self.progress.start()
         return self
