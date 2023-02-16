@@ -28,6 +28,7 @@ from functools import partial
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Text, Union
 
+import torch
 import yaml
 from huggingface_hub import hf_hub_download
 from huggingface_hub.utils import RepositoryNotFoundError
@@ -168,6 +169,11 @@ visit https://hf.co/{model_id} to accept the user conditions."""
                     preprocessors[key] = template
 
             pipeline.preprocessors = preprocessors
+
+        # send pipeline to specified device
+        if "device" in config:
+            device = torch.device(config["device"])
+            pipeline.to(device)
 
         return pipeline
 
