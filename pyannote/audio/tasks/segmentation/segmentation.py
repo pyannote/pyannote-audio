@@ -69,6 +69,12 @@ class Segmentation(SegmentationTaskMixin, Task):
         Maximum number of (overlapping) speakers per frame.
         Setting this value to 1 or more enables `powerset multi-class` training.
         Default behavior is to use `multi-label` training.
+    weigh_by_cardinality: bool, optional
+        Weigh each powerset classes by the size of the corresponding speaker set.
+        In other words, {0, 1} powerset class weight is 2x bigger than that of {0}
+        or {1} powerset classes. Note that empty (non-speech) powerset class is
+        assigned the same weight as mono-speaker classes. Defaults to False (i.e. use
+        same weight for every class). Has no effect with `multi-label` training.
     warm_up : float or (float, float), optional
         Use that many seconds on the left- and rightmost parts of each chunk
         to warm up the model. While the model does process those left- and right-most
@@ -119,6 +125,7 @@ class Segmentation(SegmentationTaskMixin, Task):
         duration: float = 2.0,
         max_speakers_per_chunk: int = None,
         max_speakers_per_frame: int = None,
+        weigh_by_cardinality: bool = False,
         warm_up: Union[float, Tuple[float, float]] = 0.0,
         balance: Text = None,
         weight: Text = None,
@@ -165,6 +172,7 @@ class Segmentation(SegmentationTaskMixin, Task):
 
         self.max_speakers_per_chunk = max_speakers_per_chunk
         self.max_speakers_per_frame = max_speakers_per_frame
+        self.weigh_by_cardinality = weigh_by_cardinality
         self.balance = balance
         self.weight = weight
         self.vad_loss = vad_loss
@@ -291,8 +299,18 @@ class Segmentation(SegmentationTaskMixin, Task):
         """
 
         if self.specifications.powerset:
+
+            # `clamp_min` is needed to set non-speech weight to 1.
+            class_weight = (
+                torch.clamp_min(self.model.powerset.cardinality, 1.0)
+                if self.weigh_by_cardinality
+                else None
+            )
             seg_loss = nll_loss(
-                permutated_prediction, torch.argmax(target, dim=-1), weight=weight
+                permutated_prediction,
+                torch.argmax(target, dim=-1),
+                class_weight=class_weight,
+                weight=weight,
             )
         else:
             seg_loss = binary_cross_entropy(

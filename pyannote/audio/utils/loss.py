@@ -129,7 +129,10 @@ def mse_loss(
 
 
 def nll_loss(
-    prediction: torch.Tensor, target: torch.Tensor, weight: torch.Tensor = None
+    prediction: torch.Tensor,
+    target: torch.Tensor,
+    class_weight: torch.Tensor = None,
+    weight: torch.Tensor = None,
 ) -> torch.Tensor:
     """Frame-weighted negative log-likelihood loss
 
@@ -139,6 +142,8 @@ def nll_loss(
         Prediction with shape (batch_size, num_frames, num_classes).
     target : torch.Tensor
         Target with shape (batch_size, num_frames)
+    class_weight : (num_classes, ) torch.Tensor, optional
+        Class weight with shape (num_classes,  )
     weight : (batch_size, num_frames, 1) torch.Tensor, optional
         Frame weight with shape (batch_size, num_frames, 1).
 
@@ -154,6 +159,8 @@ def nll_loss(
         # (batch_size x num_frames, num_classes)
         target.view(-1),
         # (batch_size x num_frames, )
+        weight=class_weight,
+        # (num_classes, )
         reduction="none",
     ).view(target.shape)
     # (batch_size, num_frames)
