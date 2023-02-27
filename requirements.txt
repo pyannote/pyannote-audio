@@ -1,6 +1,6 @@
 asteroid-filterbanks >=0.4,<0.5
 backports.cached_property
-einops >=0.3,<0.4.0
+einops >=0.3
 hmmlearn >=0.2.7,<0.3
 huggingface_hub >= 0.8.1
 networkx >= 2.6,<3.0
