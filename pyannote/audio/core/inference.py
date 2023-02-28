@@ -98,7 +98,7 @@ class Inference(BaseInference):
             model
             if isinstance(model, Model)
             else Model.from_pretrained(
-                Path(model),
+                model,
                 map_location=device,
                 strict=False,
                 use_auth_token=use_auth_token,
