@@ -14,7 +14,7 @@ pytorch_metric_learning >=1.0.0,<2.0
 rich >= 12.0.0
 semver >=2.10.2,<3.0
 singledispatchmethod
-soundfile >=0.10.2,<0.12
+soundfile >=0.10.2
 speechbrain >=0.5.12,<0.6
 torch >=1.9
 torch_audiomentations >= 0.11.0
