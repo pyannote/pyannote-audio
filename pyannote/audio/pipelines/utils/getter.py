@@ -186,15 +186,15 @@ def get_devices(needs: int = None):
         When `needs` is provided, returns that many devices.
     """
 
-    num_gpus = torch.cuda.device_count()
+    num_cuda_gpus = torch.cuda.device_count()
+    has_mps_device = hasattr(torch.backends, "mps") and torch.backends.mps.is_available() and torch.backends.mps.is_built()
 
-    if num_gpus == 0:
-        devices = [torch.device("cpu")]
+    if num_cuda_gpus > 0:
+        devices = [torch.device(f"cuda:{index:d}") for index in range(num_cuda_gpus)]
         if needs is None:
             return devices
-        return devices * needs
-
-    devices = [torch.device(f"cuda:{index:d}") for index in range(num_gpus)]
-    if needs is None:
-        return devices
-    return [device for _, device in zip(range(needs), itertools.cycle(devices))]
+        return [device for _, device in zip(range(needs), itertools.cycle(devices))]
+    elif has_mps_device:
+        return [torch.device("mps") for _ in range(needs or 1)]
+    else:
+        return [torch.device("cpu") for _ in range(needs or 1)]
