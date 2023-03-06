@@ -14,7 +14,7 @@ repos:
 
     # Sort imports
     - repo: https://github.com/PyCQA/isort
-      rev: 5.10.1
+      rev: 5.12.0
       hooks:
       - id: isort
         args: ["--profile", "black"]
@@ -33,8 +33,14 @@ repos:
       - id: check-yaml
       - id: debug-statements
       - id: end-of-file-fixer
-      - id: requirements-txt-fixer
       - id: mixed-line-ending
         args: ['--fix=no']
       - id: flake8
         args: ['--ignore=E203,E501,F811,E712,W503']
+    - repo: https://github.com/python-poetry/poetry
+      rev: '1.4.0'  # add version here
+      hooks:
+        - id: poetry-check
+        - id: poetry-lock
+        - id: poetry-export
+          args: ["-f", "requirements.txt", "-o", "requirements.txt"]

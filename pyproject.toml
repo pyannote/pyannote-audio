@@ -1,0 +1,45 @@
+[tool.poetry]
+name = "pyannote-audio"
+version = "2.1.1"
+description = "pyannote.audio is an open-source toolkit written in Python for speaker diarization. Based on PyTorch machine learning framework, it provides a set of trainable end-to-end neural building blocks that can be combined and jointly optimized to build speaker diarization pipelines."
+authors = ["Hervé BREDIN <hbredin@users.noreply.github.com>"]
+license = "MIT"
+readme = "README.md"
+packages = [{include = "pyannote"}]
+repository = "https://github.com/pyannote/pyannote-audio"
+homepage = "https://pyannote.github.io/"
+
+[tool.poetry.dependencies]
+python = "^3.8"
+torch = "^1.11.0"
+torchvision = "^0.12.0"
+torchaudio = "^0.11.0"
+rich = "^13.3.2"
+typing-extensions = "^4.5.0"
+torchmetrics = "^0.11"
+torch-audiomentations = "^0.11.0"
+pyannote-core = "^4.4"
+pytorch-metric-learning = "^1"
+pyannote-pipeline = "^2.3"
+pyannote-metrics = "^3.2"
+pyannote-database = "^4.1.1"
+speechbrain = ">=0.5.12,<0.6"
+soundfile = ">=0.10.2,<0.12"
+pytorch-lightning = "^1.8.0"
+semver = "^2.10.2"
+huggingface-hub = "^0.12.1"
+singledispatchmethod = "^1.0"
+omegaconf = "^2.1"
+networkx = "^2.6"
+hmmlearn = "^0.2.7"
+einops = "^0.3"
+backports-cached-property = "^1.0.2"
+asteroid-filterbanks = "^0.4"
+
+
+[tool.poetry.group.dev.dependencies]
+pre-commit = "^3.1.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
