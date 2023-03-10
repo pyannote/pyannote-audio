@@ -33,6 +33,7 @@ from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
 from pyannote.audio.models.blocks.sincnet import SincNet
 from pyannote.audio.utils.params import merge_dict
+from asteroid.masknn.convolutional import TDConvNet
 
 
 class PyanNet(Model):
@@ -70,12 +71,24 @@ class PyanNet(Model):
         "dropout": 0.0,
     }
     LINEAR_DEFAULTS = {"hidden_size": 128, "num_layers": 2}
+    CONVNET_DEFAULTS = {
+        "n_src": 3,
+        "n_blocks":8,
+        "n_repeats":3,
+        "bn_chan":128,
+        "hid_chan":512,
+        "skip_chan":128,
+        "conv_kernel_size":3,
+        "norm_type":"gLN",
+        "mask_act":"relu",
+    }
 
     def __init__(
         self,
-        sincnet: Optional[dict] = None,
-        lstm: Optional[dict] = None,
-        linear: Optional[dict] = None,
+        sincnet: dict = None,
+        lstm: dict = None,
+        linear: dict = None,
+        convnet: dict = None,
         sample_rate: int = 16000,
         num_channels: int = 1,
         task: Optional[Task] = None,
@@ -87,15 +100,18 @@ class PyanNet(Model):
         lstm = merge_dict(self.LSTM_DEFAULTS, lstm)
         lstm["batch_first"] = True
         linear = merge_dict(self.LINEAR_DEFAULTS, linear)
-        self.save_hyperparameters("sincnet", "lstm", "linear")
+        convnet = merge_dict(self.CONVNET_DEFAULTS, convnet)
+        self.save_hyperparameters("sincnet", "lstm", "linear", "convnet")
 
         self.sincnet = SincNet(**self.hparams.sincnet)
+
+        self.convnet = TDConvNet(60, **self.hparams.convnet)
 
         monolithic = lstm["monolithic"]
         if monolithic:
             multi_layer_lstm = dict(lstm)
             del multi_layer_lstm["monolithic"]
-            self.lstm = nn.LSTM(60, **multi_layer_lstm)
+            self.lstm = nn.LSTM(3*60, **multi_layer_lstm)
 
         else:
             num_layers = lstm["num_layers"]
@@ -110,7 +126,7 @@ class PyanNet(Model):
             self.lstm = nn.ModuleList(
                 [
                     nn.LSTM(
-                        60
+                        3*60
                         if i == 0
                         else lstm["hidden_size"] * (2 if lstm["bidirectional"] else 1),
                         **one_layer_lstm
@@ -221,13 +237,15 @@ class PyanNet(Model):
         """
 
         outputs = self.sincnet(waveforms)
+        outputs = self.convnet(outputs)
+        outputs = rearrange(
+            outputs, "batch nsrc nfilters nframes -> batch nframes nfilters nsrc"
+        )
+        outputs = torch.flatten(outputs, start_dim=2, end_dim=3)
 
         if self.hparams.lstm["monolithic"]:
-            outputs, _ = self.lstm(
-                rearrange(outputs, "batch feature frame -> batch frame feature")
-            )
+            outputs, _ = self.lstm(outputs)
         else:
-            outputs = rearrange(outputs, "batch feature frame -> batch frame feature")
             for i, lstm in enumerate(self.lstm):
                 outputs, _ = lstm(outputs)
                 if i + 1 < self.hparams.lstm["num_layers"]:
