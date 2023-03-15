@@ -34,6 +34,8 @@ from pyannote.audio.core.task import Task
 from pyannote.audio.models.blocks.sincnet import SincNet
 from pyannote.audio.utils.params import merge_dict
 from asteroid.masknn.convolutional import TDConvNet
+from asteroid_filterbanks import make_enc_dec
+from asteroid.utils.torch_utils import pad_x_to_y
 
 
 class PyanNet(Model):
@@ -63,6 +65,12 @@ class PyanNet(Model):
     """
 
     SINCNET_DEFAULTS = {"stride": 10}
+    ENCODER_DECODER_DEFAULTS = {
+        "fb_name": "stft",
+        "kernel_size": 512,
+        "n_filters": 512,
+        "stride": 256,
+    }
     LSTM_DEFAULTS = {
         "hidden_size": 128,
         "num_layers": 2,
@@ -72,52 +80,55 @@ class PyanNet(Model):
     }
     LINEAR_DEFAULTS = {"hidden_size": 128, "num_layers": 2}
     CONVNET_DEFAULTS = {
-        "n_src": 3,
-        "n_blocks":8,
-        "n_repeats":3,
-        "bn_chan":128,
-        "hid_chan":512,
-        "skip_chan":128,
-        "conv_kernel_size":3,
-        "norm_type":"gLN",
-        "mask_act":"relu",
+        "n_src": 6,
+        "n_blocks": 8,
+        "n_repeats": 3,
+        "bn_chan": 128,
+        "hid_chan": 512,
+        "skip_chan": 128,
+        "conv_kernel_size": 3,
+        "norm_type": "gLN",
+        "mask_act": "relu",
     }
 
     def __init__(
         self,
-        sincnet: dict = None,
+        encoder_decoder: dict = None,
         lstm: dict = None,
         linear: dict = None,
         convnet: dict = None,
+        free_encoder: dict = None,
+        stft_encoder: dict = None,
         sample_rate: int = 16000,
         num_channels: int = 1,
         task: Optional[Task] = None,
+        encoder_type: str = None,
     ):
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
 
-        sincnet = merge_dict(self.SINCNET_DEFAULTS, sincnet)
-        sincnet["sample_rate"] = sample_rate
         lstm = merge_dict(self.LSTM_DEFAULTS, lstm)
         lstm["batch_first"] = True
         linear = merge_dict(self.LINEAR_DEFAULTS, linear)
         convnet = merge_dict(self.CONVNET_DEFAULTS, convnet)
-        self.save_hyperparameters("sincnet", "lstm", "linear", "convnet")
+        encoder_decoder = merge_dict(self.ENCODER_DECODER_DEFAULTS, encoder_decoder)
+        self.save_hyperparameters("encoder_decoder", "lstm", "linear", "convnet")
 
-        self.sincnet = SincNet(**self.hparams.sincnet)
-        # self.encoder, self.decoder = make_enc_dec(
-        #     fb_name="free", kernel_size=16, n_filters=512, stride=8, sample_rate=16000
-        # )
+        if encoder_decoder["fb_name"] == "free":
+            n_feats_out = encoder_decoder["n_filters"]
+        elif encoder_decoder["fb_name"] == "stft":
+            n_feats_out = int(2 * (encoder_decoder["n_filters"] / 2 + 1))
+        else:
+            raise ValueError("Filterbank type not recognized.")
         self.encoder, self.decoder = make_enc_dec(
-            fb_name="stft", kernel_size=512, n_filters=512, stride=25, sample_rate=16000
+            sample_rate=sample_rate, **self.hparams.encoder_decoder
         )
-
-        self.convnet = TDConvNet(60, **self.hparams.convnet)
+        self.convnet = TDConvNet(n_feats_out, **self.hparams.convnet)
 
         monolithic = lstm["monolithic"]
         if monolithic:
             multi_layer_lstm = dict(lstm)
             del multi_layer_lstm["monolithic"]
-            self.lstm = nn.LSTM(3*60, **multi_layer_lstm)
+            self.lstm = nn.LSTM(6 * n_feats_out, **multi_layer_lstm)
 
         else:
             num_layers = lstm["num_layers"]
@@ -132,7 +143,7 @@ class PyanNet(Model):
             self.lstm = nn.ModuleList(
                 [
                     nn.LSTM(
-                        3*60
+                        6 * n_feats_out
                         if i == 0
                         else lstm["hidden_size"] * (2 if lstm["bidirectional"] else 1),
                         **one_layer_lstm
@@ -242,11 +253,15 @@ class PyanNet(Model):
         scores : (batch, frame, classes)
         """
 
-        # outputs = self.sincnet(waveforms)
-        outputs = self.encoder(waveforms)
-        outputs = self.convnet(outputs)
+        tf_rep = self.encoder(waveforms)
+        masks = self.convnet(tf_rep)
+
+        masked_tf_rep = masks * tf_rep.unsqueeze(1)
+        decoded_sources = self.decoder(masked_tf_rep)
+        decoded_sources = pad_x_to_y(decoded_sources, waveforms)
+
         outputs = rearrange(
-            outputs, "batch nsrc nfilters nframes -> batch nframes nfilters nsrc"
+            masks, "batch nsrc nfilters nframes -> batch nframes nfilters nsrc"
         )
         outputs = torch.flatten(outputs, start_dim=2, end_dim=3)
 
@@ -262,4 +277,4 @@ class PyanNet(Model):
             for linear in self.linear:
                 outputs = F.leaky_relu(linear(outputs))
 
-        return self.activation(self.classifier(outputs))
+        return self.activation(self.classifier(outputs)), decoded_sources
