@@ -104,6 +104,12 @@ class PyanNet(Model):
         self.save_hyperparameters("sincnet", "lstm", "linear", "convnet")
 
         self.sincnet = SincNet(**self.hparams.sincnet)
+        # self.encoder, self.decoder = make_enc_dec(
+        #     fb_name="free", kernel_size=16, n_filters=512, stride=8, sample_rate=16000
+        # )
+        self.encoder, self.decoder = make_enc_dec(
+            fb_name="stft", kernel_size=512, n_filters=512, stride=25, sample_rate=16000
+        )
 
         self.convnet = TDConvNet(60, **self.hparams.convnet)
 
@@ -236,7 +242,8 @@ class PyanNet(Model):
         scores : (batch, frame, classes)
         """
 
-        outputs = self.sincnet(waveforms)
+        # outputs = self.sincnet(waveforms)
+        outputs = self.encoder(waveforms)
         outputs = self.convnet(outputs)
         outputs = rearrange(
             outputs, "batch nsrc nfilters nframes -> batch nframes nfilters nsrc"
