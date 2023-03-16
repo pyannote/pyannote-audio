@@ -118,6 +118,8 @@ class SpeakerDiarization(SegmentationTask):
     metric : optional
         Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
         Defaults to AUROC (area under the ROC curve).
+    mixit_loss_weight : float, optional
+        Factor that speaker separation loss is scaled by when calculating total loss.
 
     References
     ----------
@@ -153,6 +155,7 @@ class SpeakerDiarization(SegmentationTask):
             int
         ] = None,  # deprecated in favor of `max_speakers_per_chunk``
         loss: Literal["bce", "mse"] = None,  # deprecated
+        mixit_loss_weight: float = 0.2,
     ):
         super().__init__(
             protocol,
@@ -198,6 +201,7 @@ class SpeakerDiarization(SegmentationTask):
         self.weight = weight
         self.vad_loss = vad_loss
         self.separation_loss = MixITLossWrapper(multisrc_neg_sisdr, generalized=True)
+        self.mixit_loss_weight = mixit_loss_weight
 
     def setup(self, stage=None):
         super().setup(stage)
@@ -650,13 +654,12 @@ class SpeakerDiarization(SegmentationTask):
                 logger=True,
             )
 
-        loss = seg_loss + vad_loss + mixit_loss
+            loss = seg_loss + vad_loss + self.mixit_loss_weight * mixit_loss
 
         # skip batch if something went wrong for some reason
         if torch.isnan(loss):
             return None
 
-        breakpoint()
         self.model.log(
             "loss/train",
             loss,
@@ -767,7 +770,7 @@ class SpeakerDiarization(SegmentationTask):
             prog_bar=False,
             logger=True,
         )
-        
+
         self.model.log(
             f"{self.logging_prefix}ValSegLoss",
             seg_loss,
@@ -802,7 +805,7 @@ class SpeakerDiarization(SegmentationTask):
                 logger=True,
             )
 
-        loss = seg_loss + vad_loss + mixit_loss
+        loss = seg_loss + vad_loss + self.mixit_loss_weight * mixit_loss
 
         self.model.log(
             "loss/val",
