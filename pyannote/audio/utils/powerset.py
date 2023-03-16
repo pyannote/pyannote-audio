@@ -53,8 +53,8 @@ class Powerset(nn.Module):
         self.num_classes = num_classes
         self.max_set_size = max_set_size
 
-        mapping = self.build_mapping()
-        self.register_buffer("mapping", mapping, persistent=False)
+        self.register_buffer("mapping", self.build_mapping(), persistent=False)
+        self.register_buffer("cardinality", self.build_cardinality(), persistent=False)
 
     @cached_property
     def num_powerset_classes(self) -> int:
@@ -77,6 +77,16 @@ class Powerset(nn.Module):
                 powerset_k += 1
 
         return mapping
+
+    def build_cardinality(self) -> torch.Tensor:
+        """Compute size of each powerset class"""
+        cardinality = torch.zeros(self.num_powerset_classes)
+        powerset_k = 0
+        for set_size in range(0, self.max_set_size + 1):
+            for _ in combinations(range(self.num_classes), set_size):
+                cardinality[powerset_k] = set_size
+                powerset_k += 1
+        return cardinality
 
     def to_multilabel(self, powerset: torch.Tensor) -> torch.Tensor:
         """Convert (hard) predictions from powerset to multi-label

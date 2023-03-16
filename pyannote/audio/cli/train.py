@@ -26,6 +26,7 @@ from typing import Optional
 
 import hydra
 from hydra.utils import instantiate
+from lightning_lite.utilities.seed import seed_everything
 from omegaconf import DictConfig, OmegaConf
 
 # from pyannote.audio.core.callback import GraduallyUnfreeze
@@ -37,7 +38,6 @@ from pytorch_lightning.callbacks import (
     RichProgressBar,
 )
 from pytorch_lightning.loggers import TensorBoardLogger
-from lightning_lite.utilities.seed import seed_everything
 from torch_audiomentations.utils.config import from_dict as get_augmentation
 
 from pyannote.audio.core.io import get_torchaudio_info
@@ -112,7 +112,7 @@ def train(cfg: DictConfig) -> Optional[float]:
     checkpoint = ModelCheckpoint(
         monitor=monitor,
         mode=direction,
-        save_top_k=None if monitor is None else 5,
+        save_top_k=None if monitor is None else 1,
         every_n_epochs=1,
         save_last=True,
         save_weights_only=False,
