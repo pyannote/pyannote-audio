@@ -60,6 +60,7 @@ pip install pyannote.audio
 ## Documentation
 
 - [Changelog](CHANGELOG.md)
+- [Frequently asked questions](FAQ.md)
 - Models
     - Available tasks explained
     - [Applying a pretrained model](tutorials/applying_a_model.ipynb)
@@ -83,12 +84,6 @@ pip install pyannote.audio
     - [Annotating your own data with Prodigy](tutorials/prodigy.md)
     - [Speaker verification](tutorials/speaker_verification.ipynb)
     - Visualization and debugging
-
-## Frequently asked questions
-
-* [How does one capitalize and pronounce the name of this awesome library?](FAQ.md)
-* [Can I use gated models (and pipelines) offline?](FAQ.md)
-* [Pretrained pipelines do not produce good results on my data. What can I do?](FAQ.md)
 
 ## Benchmark
 
