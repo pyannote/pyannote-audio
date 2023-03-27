@@ -654,7 +654,7 @@ class SpeakerDiarization(SegmentationTask):
                 logger=True,
             )
 
-            loss = seg_loss + vad_loss + self.mixit_loss_weight * mixit_loss
+        loss = (1 - self.mixit_loss_weight) * (seg_loss + vad_loss) + self.mixit_loss_weight * mixit_loss
 
         # skip batch if something went wrong for some reason
         if torch.isnan(loss):
@@ -805,7 +805,7 @@ class SpeakerDiarization(SegmentationTask):
                 logger=True,
             )
 
-        loss = seg_loss + vad_loss + self.mixit_loss_weight * mixit_loss
+        loss = (1 - self.mixit_loss_weight) * (seg_loss + vad_loss) + self.mixit_loss_weight * mixit_loss
 
         self.model.log(
             "loss/val",
