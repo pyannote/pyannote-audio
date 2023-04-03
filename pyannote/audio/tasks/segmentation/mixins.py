@@ -208,7 +208,7 @@ class SegmentationTaskMixin:
                         category=UserWarning,
                     )
 
-            metadata.append(tuple(metadatum[key] for key in metadata_unique_values))
+            metadata.append(metadatum)
 
             database_unique_labels = list()
 
@@ -315,6 +315,11 @@ class SegmentationTaskMixin:
                     )
                 )
 
+        # since not all metadata keys are present in all files, fallback to -1 when a key is missing
+        metadata = [
+            tuple(metadatum.get(key, -1) for key in metadata_unique_values)
+            for metadatum in metadata
+        ]
         dtype = [(key, "i") for key in metadata_unique_values]
         self.metadata = np.array(metadata, dtype=dtype)
 
