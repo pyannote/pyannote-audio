@@ -23,6 +23,8 @@
 from typing import Dict, List, Optional, Sequence, Text, Tuple, Union
 
 import numpy as np
+import torch
+import torch.nn.functional as F
 from pyannote.core import Segment, SlidingWindow, SlidingWindowFeature
 from pyannote.database import Protocol
 from pyannote.database.protocol import SegmentationProtocol
@@ -31,8 +33,6 @@ from torchmetrics import Metric
 
 from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
-
-# TODO: update loss function to support missing classes
 
 
 class MultiLabelSegmentation(SegmentationTaskMixin, Task):
@@ -206,3 +206,55 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         sample["meta"]["file"] = file_id
 
         return sample
+
+    def training_step(self, batch, batch_idx: int):
+
+        X = batch["X"]
+        y_pred = self.model(X)
+        y_true = batch["y"]
+        assert y_pred.shape == y_true.shape
+
+        # TODO: add support for frame weights
+        # TODO: add support for class weights
+
+        # mask (frame, class) index for which label is missing
+        mask: torch.Tensor = y_true != -1
+        y_pred = y_pred[mask]
+        y_true = y_true[mask]
+        loss = F.binary_cross_entropy(y_pred, y_true)
+
+        self.model.log(
+            f"{self.logging_prefix}TrainLoss",
+            loss,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+        )
+        return {"loss": loss}
+
+    def validation_step(self, batch, batch_idx: int):
+
+        X = batch["X"]
+        y_pred = self.model(X)
+        y_true = batch["y"]
+        assert y_pred.shape == y_true.shape
+
+        # TODO: add support for frame weights
+        # TODO: add support for class weights
+
+        # mask (frame, class) index for which label is missing
+        mask: torch.Tensor = y_true != -1
+        y_pred = y_pred[mask]
+        y_true = y_true[mask]
+        loss = F.binary_cross_entropy(y_pred, y_true)
+
+        self.model.log(
+            f"{self.logging_prefix}ValLoss",
+            loss,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+        )
+        return {"loss": loss}
