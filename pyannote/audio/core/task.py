@@ -436,9 +436,6 @@ class Task(pl.LightningDataModule):
     def validation_step(self, batch, batch_idx: int):
         return self.common_step(batch, batch_idx, "val")
 
-    def validation_epoch_end(self, outputs):
-        pass
-
     def default_metric(self) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
         """Default validation metric"""
         msg = f"Missing '{self.__class__.__name__}.default_metric' method."
