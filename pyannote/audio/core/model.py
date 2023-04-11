@@ -35,8 +35,8 @@ import torch.nn as nn
 import torch.optim
 from huggingface_hub import hf_hub_download
 from huggingface_hub.utils import RepositoryNotFoundError
+from lightning_fabric.utilities.cloud_io import _load as pl_load
 from pyannote.core import SlidingWindow
-from lightning_lite.utilities.cloud_io import _load as pl_load
 from pytorch_lightning.utilities.model_summary import ModelSummary
 from semver import VersionInfo
 from torch.utils.data import DataLoader
