@@ -23,7 +23,7 @@
 import math
 import warnings
 from collections import Counter
-from typing import Dict, Optional, Sequence, Text, Tuple, Union
+from typing import Dict, Literal, Optional, Sequence, Text, Tuple, Union
 
 import numpy as np
 import torch
@@ -34,7 +34,6 @@ from pyannote.database import Protocol
 from pytorch_lightning.loggers import MLFlowLogger, TensorBoardLogger
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchmetrics import Metric
-from typing_extensions import Literal
 
 from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin

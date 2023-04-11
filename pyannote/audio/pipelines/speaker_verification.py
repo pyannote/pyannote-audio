@@ -21,12 +21,7 @@
 # SOFTWARE.
 
 import warnings
-
-try:
-    from functools import cached_property
-except ImportError:
-    from backports.cached_property import cached_property
-
+from functools import cached_property
 from typing import Text, Union
 
 import numpy as np
