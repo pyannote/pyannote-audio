@@ -44,16 +44,12 @@ Highlights of this release are:
 
 ## Installation
 
-Only Python 3.8+ is officially supported (though it might work with Python 3.7)
+Only Python 3.8+ is supported.
 
 ```bash
-conda create -n pyannote python=3.8
+conda create -n pyannote python=3.10
 conda activate pyannote
-
-# pytorch 1.11 is required for speechbrain compatibility
-# (see https://pytorch.org/get-started/previous-versions/#v1110)
-conda install pytorch==1.11.0 torchvision==0.12.0 torchaudio==0.11.0 -c pytorch
-
+conda install pytorch torchvision torchaudio -c pytorch
 pip install pyannote.audio
 ```
 
