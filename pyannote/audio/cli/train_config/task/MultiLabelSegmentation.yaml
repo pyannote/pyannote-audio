@@ -1,0 +1,9 @@
+# @package _group_
+_target_: pyannote.audio.tasks.MultiLabelSegmentation
+duration: 3.0
+warm_up: 0.0
+balance: null
+weight: null
+batch_size: 32
+num_workers: null
+pin_memory: False
