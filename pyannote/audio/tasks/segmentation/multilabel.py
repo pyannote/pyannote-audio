@@ -221,7 +221,7 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         mask: torch.Tensor = y_true != -1
         y_pred = y_pred[mask]
         y_true = y_true[mask]
-        loss = F.binary_cross_entropy(y_pred, y_true)
+        loss = F.binary_cross_entropy(y_pred, y_true.type(torch.float))
 
         self.model.log(
             f"{self.logging_prefix}TrainLoss",
@@ -247,7 +247,7 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         mask: torch.Tensor = y_true != -1
         y_pred = y_pred[mask]
         y_true = y_true[mask]
-        loss = F.binary_cross_entropy(y_pred, y_true)
+        loss = F.binary_cross_entropy(y_pred, y_true.type(torch.float))
 
         self.model.log(
             f"{self.logging_prefix}ValLoss",
