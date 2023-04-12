@@ -243,6 +243,8 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         # TODO: add support for frame weights
         # TODO: add support for class weights
 
+        # TODO: compute metrics for each class separately
+
         # mask (frame, class) index for which label is missing
         mask: torch.Tensor = y_true != -1
         y_pred = y_pred[mask]
@@ -258,3 +260,24 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
             logger=True,
         )
         return {"loss": loss}
+
+    @property
+    def val_monitor(self):
+        """Quantity (and direction) to monitor
+
+        Useful for model checkpointing or early stopping.
+
+        Returns
+        -------
+        monitor : str
+            Name of quantity to monitor.
+        mode : {'min', 'max}
+            Minimize
+
+        See also
+        --------
+        pytorch_lightning.callbacks.ModelCheckpoint
+        pytorch_lightning.callbacks.EarlyStopping
+        """
+
+        return f"{self.logging_prefix}ValLoss", "min"
