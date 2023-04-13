@@ -417,6 +417,11 @@ class Audio:
 
         # pad with zeros
         if mode == "pad":
+            # torchaudio.load(...) doesn't pad-fetch and only fetches the remaining frames
+            # F.pad here is padding the last dimension with pad_start at the beginning and pad_end at the end
+            # data.shape[-1] is the len of the last dimension
+            # choosing to pad towards the end to be consistent with how torchaudio.load() works 
+            pad_end = num_frames - data.shape[-1] - (pad_start + pad_end)
             data = F.pad(data, (pad_start, pad_end))
 
         return self.downmix_and_resample(data, sample_rate)
