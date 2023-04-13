@@ -20,12 +20,14 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import warnings
-from typing import Dict, Optional, Sequence, Text, Tuple, Union, List
+from typing import Dict, List, Optional, Sequence, Text, Tuple, Union
 
 import numpy as np
 import torch
+import torch.nn.functional as F
+from pyannote.core import Segment, SlidingWindow, SlidingWindowFeature
 from pyannote.database import Protocol
+from pyannote.database.protocol import SegmentationProtocol
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchmetrics import Metric
 
@@ -93,6 +95,12 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         augmentation: BaseWaveformTransform = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
     ):
+
+        if not isinstance(protocol, SegmentationProtocol):
+            raise ValueError(
+                f"MultiLabelSegmentation task expects a SegmentationProtocol but you gave {type(protocol)}. "
+            )
+
         super().__init__(
             protocol,
             duration=duration,
@@ -116,42 +124,160 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
 
         super().setup(stage=stage)
 
-        classes_from_training_set = sorted(self._train_metadata["annotation"])
-        if self.classes is None:
-            classes = classes_from_training_set
-        else:
-            if set(classes_from_training_set) != set(self.classes):
-                warnings.warn(
-                    f"Mismatch between classes passed to the task ({self.classes}) "
-                    f"and those of the training set ({classes_from_training_set})."
-                )
-            classes = self.classes
-
         self.specifications = Specifications(
-            classes=classes,
+            classes=self.classes,
             problem=Problem.MULTI_LABEL_CLASSIFICATION,
             resolution=Resolution.FRAME,
             duration=self.duration,
             warm_up=self.warm_up,
         )
 
-    def collate_y(self, batch) -> torch.Tensor:
+    def prepare_chunk(self, file_id: int, start_time: float, duration: float):
+        """Prepare chunk for multi-label segmentation
 
-        labels = self.specifications.classes
+        Parameters
+        ----------
+        file_id : int
+            File index
+        start_time : float
+            Chunk start time
+        duration : float
+            Chunk duration.
 
-        batch_size, num_frames, num_labels = (
-            len(batch),
-            len(batch[0]["y"]),
-            len(labels),
+        Returns
+        -------
+        sample : dict
+            Dictionary containing the chunk data with the following keys:
+            - `X`: waveform
+            - `y`: target (see Notes below)
+            - `meta`:
+                - `database`: database index
+                - `file`: file index
+
+        Notes
+        -----
+        y is a trinary matrix with shape (num_frames, num_classes):
+            -  0: class is inactive
+            -  1: class is active
+            - -1: we have no idea
+
+        """
+
+        file = self.get_file(file_id)
+
+        chunk = Segment(start_time, start_time + duration)
+
+        sample = dict()
+        sample["X"], _ = self.model.audio.crop(file, chunk, duration=duration)
+
+        # TODO: this should be cached
+        # use model introspection to predict how many frames it will output
+        num_samples = sample["X"].shape[1]
+        num_frames, _ = self.model.introspection(num_samples)
+        resolution = duration / num_frames
+        frames = SlidingWindow(start=0.0, duration=resolution, step=resolution)
+
+        # gather all annotations of current file
+        annotations = self.annotations[self.annotations["file_id"] == file_id]
+
+        # gather all annotations with non-empty intersection with current chunk
+        chunk_annotations = annotations[
+            (annotations["start"] < chunk.end) & (annotations["end"] > chunk.start)
+        ]
+
+        # discretize chunk annotations at model output resolution
+        start = np.maximum(chunk_annotations["start"], chunk.start) - chunk.start
+        start_idx = np.floor(start / resolution).astype(np.int)
+        end = np.minimum(chunk_annotations["end"], chunk.end) - chunk.start
+        end_idx = np.ceil(end / resolution).astype(np.int)
+
+        # frame-level targets (-1 for un-annotated classes)
+        y = -np.ones((num_frames, len(self.classes)), dtype=np.int8)
+        y[:, self.annotated_classes[file_id]] = 0
+        for start, end, label in zip(
+            start_idx, end_idx, chunk_annotations["global_label_idx"]
+        ):
+            y[start:end, label] = 1
+
+        sample["y"] = SlidingWindowFeature(y, frames, labels=self.classes)
+
+        metadata = self.metadata[file_id]
+        sample["meta"] = {key: metadata[key] for key in metadata.dtype.names}
+        sample["meta"]["file"] = file_id
+
+        return sample
+
+    def training_step(self, batch, batch_idx: int):
+
+        X = batch["X"]
+        y_pred = self.model(X)
+        y_true = batch["y"]
+        assert y_pred.shape == y_true.shape
+
+        # TODO: add support for frame weights
+        # TODO: add support for class weights
+
+        # mask (frame, class) index for which label is missing
+        mask: torch.Tensor = y_true != -1
+        y_pred = y_pred[mask]
+        y_true = y_true[mask]
+        loss = F.binary_cross_entropy(y_pred, y_true.type(torch.float))
+
+        self.model.log(
+            f"{self.logging_prefix}TrainLoss",
+            loss,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
         )
-        Y = np.zeros((batch_size, num_frames, num_labels), dtype=np.int64)
+        return {"loss": loss}
 
-        for i, b in enumerate(batch):
-            for local_idx, label in enumerate(b["y"].labels):
-                global_idx = labels.index(label)
-                Y[i, :, global_idx] = b["y"].data[:, local_idx]
+    def validation_step(self, batch, batch_idx: int):
 
-        return torch.from_numpy(Y)
+        X = batch["X"]
+        y_pred = self.model(X)
+        y_true = batch["y"]
+        assert y_pred.shape == y_true.shape
 
-    # TODO: add option to give more weights to smaller classes
-    # TODO: add option to balance training samples between classes
+        # TODO: add support for frame weights
+        # TODO: add support for class weights
+
+        # TODO: compute metrics for each class separately
+
+        # mask (frame, class) index for which label is missing
+        mask: torch.Tensor = y_true != -1
+        y_pred = y_pred[mask]
+        y_true = y_true[mask]
+        loss = F.binary_cross_entropy(y_pred, y_true.type(torch.float))
+
+        self.model.log(
+            f"{self.logging_prefix}ValLoss",
+            loss,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+        )
+        return {"loss": loss}
+
+    @property
+    def val_monitor(self):
+        """Quantity (and direction) to monitor
+
+        Useful for model checkpointing or early stopping.
+
+        Returns
+        -------
+        monitor : str
+            Name of quantity to monitor.
+        mode : {'min', 'max}
+            Minimize
+
+        See also
+        --------
+        pytorch_lightning.callbacks.ModelCheckpoint
+        pytorch_lightning.callbacks.EarlyStopping
+        """
+
+        return f"{self.logging_prefix}ValLoss", "min"
