@@ -36,6 +36,7 @@ from pyannote.audio.utils.params import merge_dict
 from asteroid.masknn.convolutional import TDConvNet
 from asteroid_filterbanks import make_enc_dec
 from asteroid.utils.torch_utils import pad_x_to_y
+from asteroid.masknn import DPRNN
 
 
 class PyanNet(Model):
@@ -90,6 +91,16 @@ class PyanNet(Model):
         "norm_type": "gLN",
         "mask_act": "relu",
     }
+    DPRNN_DEFAULTS = {
+        "n_src": 6,
+        "n_repeats": 6,
+        "bn_chan": 128,
+        "hid_size": 128,
+        "chunk_size": 100,
+        "norm_type": "gLN",
+        "mask_act": "relu",
+        "rnn_type": "LSTM",
+    }
 
     def __init__(
         self,
@@ -97,6 +108,7 @@ class PyanNet(Model):
         lstm: dict = None,
         linear: dict = None,
         convnet: dict = None,
+        dprnn: dict = None,
         free_encoder: dict = None,
         stft_encoder: dict = None,
         sample_rate: int = 16000,
@@ -110,8 +122,9 @@ class PyanNet(Model):
         lstm["batch_first"] = True
         linear = merge_dict(self.LINEAR_DEFAULTS, linear)
         convnet = merge_dict(self.CONVNET_DEFAULTS, convnet)
+        dprnn = merge_dict(self.DPRNN_DEFAULTS, dprnn)
         encoder_decoder = merge_dict(self.ENCODER_DECODER_DEFAULTS, encoder_decoder)
-        self.save_hyperparameters("encoder_decoder", "lstm", "linear", "convnet")
+        self.save_hyperparameters("encoder_decoder", "lstm", "linear", "convnet", "dprnn")
 
         if encoder_decoder["fb_name"] == "free":
             n_feats_out = encoder_decoder["n_filters"]
@@ -122,7 +135,8 @@ class PyanNet(Model):
         self.encoder, self.decoder = make_enc_dec(
             sample_rate=sample_rate, **self.hparams.encoder_decoder
         )
-        self.convnet = TDConvNet(n_feats_out, **self.hparams.convnet)
+        self.masker = DPRNN(n_feats_out, **self.hparams.dprnn)
+        #self.convnet= TDConvNet(n_feats_out, **self.hparams.convnet)
 
         monolithic = lstm["monolithic"]
         if monolithic:
@@ -254,7 +268,7 @@ class PyanNet(Model):
         """
 
         tf_rep = self.encoder(waveforms)
-        masks = self.convnet(tf_rep)
+        masks = self.masker(tf_rep)
 
         masked_tf_rep = masks * tf_rep.unsqueeze(1)
         decoded_sources = self.decoder(masked_tf_rep)
