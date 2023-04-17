@@ -1,13 +1,13 @@
 import pytest
+from pyannote.database import FileFinder, get_protocol
 from pytorch_lightning import Trainer
 
 from pyannote.audio.models.segmentation.debug import SimpleSegmentationModel
 from pyannote.audio.tasks import (
     OverlappedSpeechDetection,
-    Segmentation,
+    SpeakerDiarization,
     VoiceActivityDetection,
 )
-from pyannote.database import FileFinder, get_protocol
 
 
 @pytest.fixture()
@@ -18,7 +18,7 @@ def protocol():
 
 
 def test_train_segmentation(protocol):
-    segmentation = Segmentation(protocol)
+    segmentation = SpeakerDiarization(protocol)
     model = SimpleSegmentationModel(task=segmentation)
     trainer = Trainer(fast_dev_run=True)
     trainer.fit(model)
@@ -51,12 +51,12 @@ def test_finetune_with_task_that_does_not_need_setup_for_specs(protocol):
 
 
 def test_finetune_with_task_that_needs_setup_for_specs(protocol):
-    segmentation = Segmentation(protocol)
+    segmentation = SpeakerDiarization(protocol)
     model = SimpleSegmentationModel(task=segmentation)
     trainer = Trainer(fast_dev_run=True)
     trainer.fit(model)
 
-    segmentation = Segmentation(protocol)
+    segmentation = SpeakerDiarization(protocol)
     model.task = segmentation
     trainer = Trainer(fast_dev_run=True)
     trainer.fit(model)
@@ -64,7 +64,7 @@ def test_finetune_with_task_that_needs_setup_for_specs(protocol):
 
 def test_transfer_with_task_that_does_not_need_setup_for_specs(protocol):
 
-    segmentation = Segmentation(protocol)
+    segmentation = SpeakerDiarization(protocol)
     model = SimpleSegmentationModel(task=segmentation)
     trainer = Trainer(fast_dev_run=True)
     trainer.fit(model)
@@ -82,7 +82,7 @@ def test_transfer_with_task_that_needs_setup_for_specs(protocol):
     trainer = Trainer(fast_dev_run=True)
     trainer.fit(model)
 
-    segmentation = Segmentation(protocol)
+    segmentation = SpeakerDiarization(protocol)
     model.task = segmentation
     trainer = Trainer(fast_dev_run=True)
     trainer.fit(model)
@@ -90,12 +90,12 @@ def test_transfer_with_task_that_needs_setup_for_specs(protocol):
 
 def test_finetune_freeze_with_task_that_needs_setup_for_specs(protocol):
 
-    segmentation = Segmentation(protocol)
+    segmentation = SpeakerDiarization(protocol)
     model = SimpleSegmentationModel(task=segmentation)
     trainer = Trainer(fast_dev_run=True)
     trainer.fit(model)
 
-    segmentation = Segmentation(protocol)
+    segmentation = SpeakerDiarization(protocol)
     model.task = segmentation
     model.freeze_up_to("mfcc")
     trainer = Trainer(fast_dev_run=True)
@@ -118,7 +118,7 @@ def test_finetune_freeze_with_task_that_does_not_need_setup_for_specs(protocol):
 
 def test_transfer_freeze_with_task_that_does_not_need_setup_for_specs(protocol):
 
-    segmentation = Segmentation(protocol)
+    segmentation = SpeakerDiarization(protocol)
     model = SimpleSegmentationModel(task=segmentation)
     trainer = Trainer(fast_dev_run=True)
     trainer.fit(model)
@@ -137,7 +137,7 @@ def test_transfer_freeze_with_task_that_needs_setup_for_specs(protocol):
     trainer = Trainer(fast_dev_run=True)
     trainer.fit(model)
 
-    segmentation = Segmentation(protocol)
+    segmentation = SpeakerDiarization(protocol)
     model.task = segmentation
     model.freeze_up_to("mfcc")
     trainer = Trainer(fast_dev_run=True)

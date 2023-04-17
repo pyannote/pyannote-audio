@@ -30,36 +30,27 @@ for turn, _, speaker in diarization.itertracks(yield_label=True):
 # ...
 ```
 
-## What's new in `pyannote.audio` 2.x?
+## Highlights
 
-For version 2.x of `pyannote.audio`, [I](https://herve.niderb.fr) decided to rewrite almost everything from scratch.
-Highlights of this release are:
-
-- :exploding_head: much better performance (see [Benchmark](#benchmark))
-- :snake: Python-first API
 - :hugs: pretrained [pipelines](https://hf.co/models?other=pyannote-audio-pipeline) (and [models](https://hf.co/models?other=pyannote-audio-model)) on [:hugs: model hub](https://huggingface.co/pyannote)
+- :exploding_head: state-of-the-art performance (see [Benchmark](#benchmark))
+- :snake: Python-first API
 - :zap: multi-GPU training with [pytorch-lightning](https://pytorchlightning.ai/)
 - :control_knobs: data augmentation with [torch-audiomentations](https://github.com/asteroid-team/torch-audiomentations)
-- :boom: [Prodigy](https://prodi.gy/) recipes for model-assisted audio annotation
 
 ## Installation
 
-Only Python 3.8+ is officially supported (though it might work with Python 3.7)
+Only Python 3.8+ is supported.
 
 ```bash
-conda create -n pyannote python=3.8
-conda activate pyannote
-
-# pytorch 1.11 is required for speechbrain compatibility
-# (see https://pytorch.org/get-started/previous-versions/#v1110)
-conda install pytorch==1.11.0 torchvision==0.12.0 torchaudio==0.11.0 -c pytorch
-
-pip install pyannote.audio
+# install from develop branch
+pip install -qq https://github.com/pyannote/pyannote-audio/archive/refs/heads/develop.zip
 ```
 
 ## Documentation
 
 - [Changelog](CHANGELOG.md)
+- [Frequently asked questions](FAQ.md)
 - Models
     - Available tasks explained
     - [Applying a pretrained model](tutorials/applying_a_model.ipynb)
@@ -83,12 +74,6 @@ pip install pyannote.audio
     - [Annotating your own data with Prodigy](tutorials/prodigy.md)
     - [Speaker verification](tutorials/speaker_verification.ipynb)
     - Visualization and debugging
-
-## Frequently asked questions
-
-* [How does one capitalize and pronounce the name of this awesome library?](FAQ.md)
-* [Can I use gated models (and pipelines) offline?](FAQ.md)
-* [Pretrained pipelines do not produce good results on my data. What can I do?](FAQ.md)
 
 ## Benchmark
 

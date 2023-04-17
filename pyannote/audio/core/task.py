@@ -23,31 +23,23 @@
 
 from __future__ import annotations
 
-from functools import partial
-
-import scipy.special
-
-try:
-    from functools import cached_property
-except ImportError:
-    from backports.cached_property import cached_property
-
 import multiprocessing
 import sys
 import warnings
 from dataclasses import dataclass
 from enum import Enum
+from functools import cached_property, partial
 from numbers import Number
-from typing import Dict, List, Optional, Sequence, Text, Tuple, Union
+from typing import Dict, List, Literal, Optional, Sequence, Text, Tuple, Union
 
 import pytorch_lightning as pl
+import scipy.special
 import torch
 from pyannote.database import Protocol
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 from torch_audiomentations import Identity
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchmetrics import Metric, MetricCollection
-from typing_extensions import Literal
 
 from pyannote.audio.utils.loss import binary_cross_entropy, nll_loss
 from pyannote.audio.utils.protocol import check_protocol
@@ -215,7 +207,10 @@ class Task(pl.LightningDataModule):
         super().__init__()
 
         # dataset
-        self.protocol, self.has_validation = check_protocol(protocol)
+        self.protocol, checks = check_protocol(protocol)
+        self.has_validation = checks["has_validation"]
+        self.has_scope = checks["has_scope"]
+        self.has_classes = checks["has_classes"]
 
         # batching
         self.duration = duration
@@ -443,9 +438,6 @@ class Task(pl.LightningDataModule):
     # can obviously be overriden for each task
     def validation_step(self, batch, batch_idx: int):
         return self.common_step(batch, batch_idx, "val")
-
-    def validation_epoch_end(self, outputs):
-        pass
 
     def default_metric(self) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
         """Default validation metric"""

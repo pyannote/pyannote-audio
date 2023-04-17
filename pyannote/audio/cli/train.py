@@ -26,7 +26,7 @@ from typing import Optional
 
 import hydra
 from hydra.utils import instantiate
-from lightning_lite.utilities.seed import seed_everything
+from lightning.pytorch import seed_everything
 from omegaconf import DictConfig, OmegaConf
 
 # from pyannote.audio.core.callback import GraduallyUnfreeze
