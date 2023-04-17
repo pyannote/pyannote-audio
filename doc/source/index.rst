@@ -9,6 +9,9 @@ Installation
 
 ::
 
+  $ conda create -n pyannote python=3.10
+  $ conda activate pyannote
+  $ conda install pytorch torchvision torchaudio -c pytorch
   $ pip install pyannote.audio
 
 
