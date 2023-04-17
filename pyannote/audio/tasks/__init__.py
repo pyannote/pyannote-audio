@@ -20,21 +20,25 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+from .segmentation.multilabel import MultiLabelSegmentation  # isort:skip
+from .segmentation.speaker_diarization import SpeakerDiarization  # isort:skip
 from .segmentation.voice_activity_detection import VoiceActivityDetection  # isort:skip
 from .segmentation.overlapped_speech_detection import (  # isort:skip
     OverlappedSpeechDetection,
 )
-
-from .segmentation.multilabel import MultiLabelSegmentation  # isort:skip
-from .segmentation.segmentation import Segmentation  # isort:skip
 from .embedding.arcface import SupervisedRepresentationLearningWithArcFace  # isort:skip
 
+# Segmentation has been renamed to SpeakerDiarization but we keep Segmentation here for backward compatibility
+Segmentation = SpeakerDiarization
+
+# SpeakerEmbedding is more human-friendly
 SpeakerEmbedding = SupervisedRepresentationLearningWithArcFace
 
 __all__ = [
-    "Segmentation",
+    "SpeakerDiarization",
     "VoiceActivityDetection",
     "OverlappedSpeechDetection",
     "MultiLabelSegmentation",
     "SpeakerEmbedding",
+    "Segmentation",
 ]

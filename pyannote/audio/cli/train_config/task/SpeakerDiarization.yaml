@@ -1,0 +1,8 @@
+# @package _group_
+_target_: pyannote.audio.tasks.SpeakerDiarization
+duration: 5.0
+max_speakers_per_chunk: 3
+max_speakers_per_frame: 2
+batch_size: 32
+num_workers: 10
+pin_memory: False

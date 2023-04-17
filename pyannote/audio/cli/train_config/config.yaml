@@ -2,7 +2,7 @@ registry: ???
 protocol: ???
 
 defaults:
-  - task: SpeakerSegmentation
+  - task: SpeakerDiarization
   - model: PyanNet
   - optimizer: Adam
   - scheduler: CosineAnnealingWarmRestarts

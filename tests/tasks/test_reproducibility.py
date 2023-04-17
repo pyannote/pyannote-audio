@@ -1,9 +1,9 @@
-from lightning_lite.utilities.seed import seed_everything
 import torch
+from lightning_lite.utilities.seed import seed_everything
+from pyannote.database import FileFinder, get_protocol
 
 from pyannote.audio.models.segmentation.debug import SimpleSegmentationModel
 from pyannote.audio.tasks import MultiLabelSegmentation, VoiceActivityDetection
-from pyannote.database import FileFinder, get_protocol
 
 
 def setup_tasks(task):
@@ -30,13 +30,15 @@ def get_next5(dl):
 
 def test_seeding_ensures_data_loaders():
     "Setting a global seed for the dataloaders ensures that we get data back in the same order"
-    seed_everything(1)
 
     for task in [VoiceActivityDetection, MultiLabelSegmentation]:
+
+        seed_everything(1)
         protocol, vad = setup_tasks(task)
         dl = create_dl(SimpleSegmentationModel, vad)
         last5a = get_next5(dl)
 
+        seed_everything(1)
         protocol, vad = setup_tasks(task)
         dl = create_dl(SimpleSegmentationModel, vad)
         last5b = get_next5(dl)

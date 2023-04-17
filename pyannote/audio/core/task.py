@@ -215,7 +215,10 @@ class Task(pl.LightningDataModule):
         super().__init__()
 
         # dataset
-        self.protocol, self.has_validation = check_protocol(protocol)
+        self.protocol, checks = check_protocol(protocol)
+        self.has_validation = checks["has_validation"]
+        self.has_scope = checks["has_scope"]
+        self.has_classes = checks["has_classes"]
 
         # batching
         self.duration = duration
