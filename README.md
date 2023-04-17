@@ -30,27 +30,21 @@ for turn, _, speaker in diarization.itertracks(yield_label=True):
 # ...
 ```
 
-## What's new in `pyannote.audio` 2.x?
+## Highlights
 
-For version 2.x of `pyannote.audio`, [I](https://herve.niderb.fr) decided to rewrite almost everything from scratch.
-Highlights of this release are:
-
-- :exploding_head: much better performance (see [Benchmark](#benchmark))
-- :snake: Python-first API
 - :hugs: pretrained [pipelines](https://hf.co/models?other=pyannote-audio-pipeline) (and [models](https://hf.co/models?other=pyannote-audio-model)) on [:hugs: model hub](https://huggingface.co/pyannote)
+- :exploding_head: state-of-the-art performance (see [Benchmark](#benchmark))
+- :snake: Python-first API
 - :zap: multi-GPU training with [pytorch-lightning](https://pytorchlightning.ai/)
 - :control_knobs: data augmentation with [torch-audiomentations](https://github.com/asteroid-team/torch-audiomentations)
-- :boom: [Prodigy](https://prodi.gy/) recipes for model-assisted audio annotation
 
 ## Installation
 
 Only Python 3.8+ is supported.
 
 ```bash
-conda create -n pyannote python=3.10
-conda activate pyannote
-conda install pytorch torchvision torchaudio -c pytorch
-pip install pyannote.audio
+# install from develop branch
+pip install -qq https://github.com/pyannote/pyannote-audio/archive/refs/heads/develop.zip
 ```
 
 ## Documentation
