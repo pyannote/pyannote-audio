@@ -161,9 +161,9 @@ class VoiceActivityDetection(SegmentationTaskMixin, Task):
 
         # discretize chunk annotations at model output resolution
         start = np.maximum(chunk_annotations["start"], chunk.start) - chunk.start
-        start_idx = np.floor(start / resolution).astype(np.int)
+        start_idx = np.floor(start / resolution).astype(int)
         end = np.minimum(chunk_annotations["end"], chunk.end) - chunk.start
-        end_idx = np.ceil(end / resolution).astype(np.int)
+        end_idx = np.ceil(end / resolution).astype(int)
 
         # frame-level targets
         y = np.zeros((num_frames, 1), dtype=np.uint8)
