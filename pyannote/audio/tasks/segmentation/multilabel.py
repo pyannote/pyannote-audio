@@ -29,7 +29,7 @@ from pyannote.core import Segment, SlidingWindow, SlidingWindowFeature
 from pyannote.database import Protocol
 from pyannote.database.protocol import SegmentationProtocol
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
-from torchmetrics import Metric
+from torchmetrics import F1Score, Metric, Precision, Recall
 
 from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
@@ -255,6 +255,16 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         y_true = y_true[mask]
         loss = F.binary_cross_entropy(y_pred, y_true.type(torch.float))
 
+        self.model.validation_metric(y_pred,y_true)
+
+        self.model.log_dict(
+            self.model.validation_metric,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+        )
+
         self.model.log(
             f"{self.logging_prefix}ValLoss",
             loss,
@@ -264,6 +274,27 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
             logger=True,
         )
         return {"loss": loss}
+
+
+    def default_metric(
+        self,
+    ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
+        classes = None
+        if self.classes is not None:
+            classes = self.classes
+        else:
+            classes = self.protocol.stats()["labels"].keys() 
+
+        if classes is not None:
+            class_count = len(classes)
+            classification_type = "multilabel" if class_count > 1 else "binary"
+            return [
+                F1Score(task=classification_type, num_labels=class_count),
+                Precision(task=classification_type, num_labels=class_count),
+                Recall(task=classification_type, num_labels=class_count),
+            ]
+        else:
+            return []
 
     @property
     def val_monitor(self):
