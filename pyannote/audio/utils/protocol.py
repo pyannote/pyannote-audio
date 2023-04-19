@@ -40,7 +40,10 @@ def check_protocol(protocol: Protocol) -> Protocol:
     Returns
     -------
     fixed_protocol : Protocol
-    has_validation : bool
+    checks: dict
+        has_validation : bool
+        has_scope : bool
+        has_classes : bool
 
     Raises
     ------
@@ -108,6 +111,9 @@ def check_protocol(protocol: Protocol) -> Protocol:
         )
         print(msg)
 
+    has_scope = "scope" in file
+    has_classes = "classes" in file
+
     # does protocol define a validation set?
     if isinstance(protocol, SpeakerVerificationProtocol):
         validation_method = "development_trial"
@@ -121,4 +127,10 @@ def check_protocol(protocol: Protocol) -> Protocol:
     else:
         has_validation = True
 
-    return protocol, has_validation
+    checks = {
+        "has_validation": has_validation,
+        "has_scope": has_scope,
+        "has_classes": has_classes,
+    }
+
+    return protocol, checks

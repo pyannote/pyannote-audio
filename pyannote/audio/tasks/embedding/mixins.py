@@ -245,6 +245,10 @@ class SupervisedRepresentationLearningTaskMixin:
         X, y = batch["X"], batch["y"]
         loss = self.model.loss_func(self.model(X), y)
 
+        # skip batch if something went wrong for some reason
+        if torch.isnan(loss):
+            return None
+
         self.model.log(
             f"{self.logging_prefix}TrainLoss",
             loss,
@@ -253,6 +257,7 @@ class SupervisedRepresentationLearningTaskMixin:
             prog_bar=True,
             logger=True,
         )
+
         return {"loss": loss}
 
     def val__getitem__(self, idx):

@@ -1,5 +1,20 @@
 # Changelog
 
+## Version 3.0 (xxxx-xx-xx)
+
+  - feat(task): add support for label scope in speaker diarization task (from pyannote.database 5.0)
+  - feat(task): add support for missing classes in multi-label segmentation task (from pyannote.database 5.0)
+  - improve(task): load metadata as tensors rather than pyannote.core instances
+  - setup: switch to torch 2.0+ and lightning 2.0+
+  - setup: switch to torchaudio 2.0+ and soundfile 0.12+
+  - setup: switch to pyannote.core 5.0+ and pyannote.database 5.0+
+  - setup: switch to speechbrain 0.5.14+
+  - BREAKING(task): rename `Segmentation` task to `SpeakerDiarization`
+  - BREAKING(task): remove support for variable chunk duration
+  - BREAKING(pipeline): remove `SpeakerSegmentation` pipeline (in favor of `SpeakerDiarization` pipeline)
+  - BREAKING(pipeline): remove support `FINCHClustering` and `HiddenMarkovModelClustering`
+  - BREAKING: drop support for Python 3.7
+
 ## Version 2.1.1 (2022-10-27)
 
   - BREAKING(pipeline): rewrite speaker diarization pipeline

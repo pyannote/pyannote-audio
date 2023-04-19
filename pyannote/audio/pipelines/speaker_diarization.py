@@ -77,7 +77,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         Defaults (False) to use the whole speech.
     clustering : str, optional
         Clustering algorithm. See pyannote.audio.pipelines.clustering.Clustering
-        for available options. Defaults to "HiddenMarkovModelClustering".
+        for available options. Defaults to "AgglomerativeClustering".
     segmentation_batch_size : int, optional
         Batch size used for speaker segmentation. Defaults to 32.
     embedding_batch_size : int, optional
@@ -112,7 +112,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         segmentation_step: float = 0.1,
         embedding: PipelineModel = "speechbrain/spkrec-ecapa-voxceleb@5c0be3875fda05e81f3c004ed8c7c06be308de1e",
         embedding_exclude_overlap: bool = False,
-        clustering: str = "HiddenMarkovModelClustering",
+        clustering: str = "AgglomerativeClustering",
         embedding_batch_size: int = 32,
         segmentation_batch_size: int = 32,
         der_variant: dict = None,
@@ -177,31 +177,6 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         self.clustering = Klustering.value(metric=metric)
 
     def default_parameters(self):
-
-        if (
-            self.segmentation_model == "pyannote/segmentation@2022.07"
-            and self.segmentation_duration == 5.0
-            and self.segmentation_step == 0.1
-            and self.embedding
-            == "speechbrain/spkrec-ecapa-voxceleb@5c0be3875fda05e81f3c004ed8c7c06be308de1e"
-            and self.embedding_exclude_overlap == True
-            and self.clustering == "HiddenMarkovModelClustering"
-        ):
-            return {
-                "segmentation": {
-                    "threshold": 0.58,
-                    "min_duration_off": 0.0,
-                },
-                "clustering": {
-                    "single_cluster_detection": {
-                        "quantile": 0.05,
-                        "threshold": 1.15,
-                    },
-                    "covariance_type": "diag",
-                    "threshold": 0.35,
-                },
-            }
-
         raise NotImplementedError()
 
     def classes(self):

@@ -22,7 +22,8 @@
 
 from typing import Dict, Sequence, Text, Tuple, Union
 
-import torch
+import numpy as np
+from pyannote.core import Segment, SlidingWindow, SlidingWindowFeature
 from pyannote.database import Protocol
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchmetrics import Metric
@@ -113,20 +114,66 @@ class VoiceActivityDetection(SegmentationTaskMixin, Task):
             ],
         )
 
-    def adapt_y(self, collated_y: torch.Tensor) -> torch.Tensor:
-        """Get voice activity detection targets
+    def prepare_chunk(self, file_id: int, start_time: float, duration: float):
+        """Prepare chunk for voice activity detection
 
         Parameters
         ----------
-        collated_y : (batch_size, num_frames, num_speakers) tensor
-            One-hot-encoding of current chunk speaker activity:
-                * one_hot_y[b, f, s] = 1 if sth speaker is active at fth frame
-                * one_hot_y[b, f, s] = 0 otherwise.
+        file_id : int
+            File index
+        start_time : float
+            Chunk start time
+        duration : float
+            Chunk duration.
 
         Returns
         -------
-        y : (batch_size, num_frames, ) tensor
-            y[b, f] = 1 if at least one speaker is active at fth frame, 0 otherwise.
+        sample : dict
+            Dictionary containing the chunk data with the following keys:
+            - `X`: waveform
+            - `y`: target as a SlidingWindowFeature instance
+            - `meta`:
+                - `database`: database index
+                - `file`: file index
         """
 
-        return 1 * (torch.sum(collated_y, dim=2, keepdims=False) > 0)
+        file = self.get_file(file_id)
+
+        chunk = Segment(start_time, start_time + duration)
+
+        sample = dict()
+        sample["X"], _ = self.model.audio.crop(file, chunk, duration=duration)
+
+        # use model introspection to predict how many frames it will output
+        # TODO: this should be cached
+        num_samples = sample["X"].shape[1]
+        num_frames, _ = self.model.introspection(num_samples)
+        resolution = duration / num_frames
+        frames = SlidingWindow(start=0.0, duration=resolution, step=resolution)
+
+        # gather all annotations of current file
+        annotations = self.annotations[self.annotations["file_id"] == file_id]
+
+        # gather all annotations with non-empty intersection with current chunk
+        chunk_annotations = annotations[
+            (annotations["start"] < chunk.end) & (annotations["end"] > chunk.start)
+        ]
+
+        # discretize chunk annotations at model output resolution
+        start = np.maximum(chunk_annotations["start"], chunk.start) - chunk.start
+        start_idx = np.floor(start / resolution).astype(int)
+        end = np.minimum(chunk_annotations["end"], chunk.end) - chunk.start
+        end_idx = np.ceil(end / resolution).astype(int)
+
+        # frame-level targets
+        y = np.zeros((num_frames, 1), dtype=np.uint8)
+        for start, end in zip(start_idx, end_idx):
+            y[start:end, 0] = 1
+
+        sample["y"] = SlidingWindowFeature(y, frames, labels=["speech"])
+
+        metadata = self.metadata[file_id]
+        sample["meta"] = {key: metadata[key] for key in metadata.dtype.names}
+        sample["meta"]["file"] = file_id
+
+        return sample

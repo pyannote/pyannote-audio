@@ -2,9 +2,9 @@ name: Tests
 
 on:
   push:
-    branches: [ develop ]
+    branches: [develop]
   pull_request:
-    branches: [ develop ]
+    branches: [develop]
 
 jobs:
   build:
@@ -13,28 +13,28 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        python-version: [3.7, 3.8, 3.9]
+        python-version: [3.8, 3.9, "3.10"]
     steps:
-    - uses: actions/checkout@v2
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v2
-      with:
-        python-version: ${{ matrix.python-version }}
-    - name: Install libsndfile
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        sudo apt-get install libsndfile1
-    - name: Install pyannote.audio
-      run: |
+      - uses: actions/checkout@v2
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install libsndfile
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get install libsndfile1
+      - name: Install pyannote.audio
+        run: |
           pip install -e .[dev,testing]
-    - name: Test with pytest
-      run: |
+      - name: Test with pytest
+        run: |
           export PYANNOTE_DATABASE_CONFIG=$GITHUB_WORKSPACE/tests/data/database.yml
           pytest --cov-report=xml
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v1
-      with:
-        file: ./coverage.xml
-        env_vars: PYTHON
-        name: codecov-pyannote-audio
-        fail_ci_if_error: false
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v1
+        with:
+          file: ./coverage.xml
+          env_vars: PYTHON
+          name: codecov-pyannote-audio
+          fail_ci_if_error: false
