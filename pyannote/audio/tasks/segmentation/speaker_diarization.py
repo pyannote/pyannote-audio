@@ -547,7 +547,7 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
 
         # corner case
         if not keep.any():
-            return {"loss": 0.0}
+            return None
 
         # forward pass
         prediction = self.model(waveform)
@@ -625,6 +625,10 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
             )
 
         loss = seg_loss + vad_loss
+
+        # skip batch if something went wrong for some reason
+        if torch.isnan(loss):
+            return None
 
         self.model.log(
             f"{self.logging_prefix}TrainLoss",

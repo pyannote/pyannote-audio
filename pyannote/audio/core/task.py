@@ -396,6 +396,11 @@ class Task(pl.LightningDataModule):
 
         # compute loss
         loss = self.default_loss(self.specifications, y, y_pred, weight=weight)
+
+        # skip batch if something went wrong for some reason
+        if torch.isnan(loss):
+            return None
+
         self.model.log(
             f"{self.logging_prefix}{stage.capitalize()}Loss",
             loss,

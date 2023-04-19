@@ -223,6 +223,10 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         y_true = y_true[mask]
         loss = F.binary_cross_entropy(y_pred, y_true.type(torch.float))
 
+        # skip batch if something went wrong for some reason
+        if torch.isnan(loss):
+            return None
+
         self.model.log(
             f"{self.logging_prefix}TrainLoss",
             loss,
