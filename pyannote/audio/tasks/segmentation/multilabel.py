@@ -20,6 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+from functools import cached_property
 from typing import Dict, List, Optional, Sequence, Text, Tuple, Union
 from einops import rearrange
 
@@ -30,7 +31,7 @@ from pyannote.core import Segment, SlidingWindow, SlidingWindowFeature
 from pyannote.database import Protocol
 from pyannote.database.protocol import SegmentationProtocol
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
-from torchmetrics import F1Score, Metric, Precision, Recall
+from torchmetrics import F1Score, Metric, MetricCollection, Precision, Recall
 
 from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
@@ -95,6 +96,7 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         pin_memory: bool = False,
         augmentation: BaseWaveformTransform = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
+        metric_per_class: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
     ):
 
         if not isinstance(protocol, SegmentationProtocol):
@@ -116,6 +118,7 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         self.balance = balance
         self.weight = weight
         self.classes = classes
+        self._metric_per_class = metric_per_class
 
         # task specification depends on the data: we do not know in advance which
         # classes should be detected. therefore, we postpone the definition of
@@ -244,27 +247,24 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         y_pred = self.model(X)
         y_true = batch["y"]
         assert y_pred.shape == y_true.shape
-        # shape (BATCH_SIZE, NUM_FRAMES, NUM_CLASSES)
-        shape = y_pred.shape
 
         # TODO: add support for frame weights
         # TODO: add support for class weights
 
-        # TODO: compute metrics for each class separately
-
         # mask (frame, class) index for which label is missing
         mask: torch.Tensor = y_true != -1
-        y_pred = y_pred[mask].reshape(shape)
-        y_true = y_true[mask].reshape(shape)
-        loss = F.binary_cross_entropy(y_pred, y_true.type(torch.float))
-
-        # pass preds and targets in format (N, C), or (N) if there is only one class (monolabel)
-        # where N=num of samples, C=number of classes
-        self.model.validation_metric(
-            rearrange(y_pred, "batch sample class -> (batch sample) class").squeeze(),
-            rearrange(y_true, "batch sample class -> (batch sample) class").squeeze(),
+        y_pred_labelled = y_pred[mask]
+        y_true_labelled = y_true[mask]
+        loss = F.binary_cross_entropy(
+            y_pred_labelled, y_true_labelled.type(torch.float)
         )
 
+        # log global metric
+        # TODO: allow using real multilabel metrics (when mask.all() ?)
+        self.model.validation_metric(
+            y_pred_labelled,
+            y_true_labelled,
+        )
         self.model.log_dict(
             self.model.validation_metric,
             on_step=False,
@@ -272,6 +272,29 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
             prog_bar=True,
             logger=True,
         )
+
+        # log metrics per class
+        for class_id, class_name in enumerate(self.classes):
+            mask: torch.Tensor = y_true[..., class_id] != -1
+            if mask.sum() == 0:
+                continue
+
+            y_pred_labelled = y_pred[..., class_id][mask]
+            y_true_labelled = y_true[..., class_id][mask]
+
+            metric = self.model.validation_metric_per_class[class_name]
+            metric(
+                y_pred_labelled,
+                y_true_labelled,
+            )
+
+            self.model.log_dict(
+                metric,
+                on_step=False,
+                on_epoch=True,
+                prog_bar=True,
+                logger=True,
+            )
 
         self.model.log(
             f"{self.logging_prefix}ValLoss",
@@ -287,15 +310,51 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         self,
     ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
         class_count = len(self.classes)
-        classification_type = "multilabel" if class_count > 1 else "binary"
+        if class_count > 1:  # multilabel
+            # task is binary because in case some targets are missing, we
+            # can't compute multilabel metrics anymore (torchmetrics doesn't allow
+            # us to ignore specific classes for specific data points)
+            return [
+                F1Score(task="binary"),
+                Precision(task="binary"),
+                Recall(task="binary"),
+            ]
+        else:
+            # This case is handled by the per-class metric, see 'default_metric_per_class'
+            return None
 
+    def default_metric_per_class(
+        self,
+    ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
         return [
-            F1Score(task=classification_type, num_labels=class_count, average="macro"),
-            Precision(
-                task=classification_type, num_labels=class_count, average="macro"
-            ),
-            Recall(task=classification_type, num_labels=class_count, average="macro"),
+            F1Score(task="binary"),
+            Precision(task="binary"),
+            Recall(task="binary"),
         ]
+
+    @cached_property
+    def metric_per_class(self) -> MetricCollection:
+        if self._metric_per_class is None:
+            self._metric_per_class = self.default_metric_per_class()
+
+        return MetricCollection(self._metric_per_class, prefix=self.logging_prefix)
+
+    def setup_validation_metric(self):
+        # setup validation metric
+        super().setup_validation_metric()
+
+        # and then setup validation metric per class
+        metric = self.metric
+        if metric is None:
+            return
+
+        self.model.validation_metric_per_class = torch.nn.ModuleDict().to(
+            self.model.device
+        )
+        for class_name in self.classes:
+            self.model.validation_metric_per_class[class_name] = metric.clone(
+                prefix=self.logging_prefix, postfix=f"-{class_name}"
+            )
 
     @property
     def val_monitor(self):
