@@ -255,7 +255,7 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         y_true = y_true[mask]
         loss = F.binary_cross_entropy(y_pred, y_true.type(torch.float))
 
-        self.model.validation_metric(y_pred,y_true)
+        self.model.validation_metric(y_pred, y_true)
 
         self.model.log_dict(
             self.model.validation_metric,
@@ -275,7 +275,6 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         )
         return {"loss": loss}
 
-
     def default_metric(
         self,
     ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
@@ -283,7 +282,7 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         if self.classes is not None:
             classes = self.classes
         else:
-            classes = self.protocol.stats()["labels"].keys() 
+            classes = self.protocol.stats()["labels"].keys()
 
         if classes is not None:
             class_count = len(classes)
