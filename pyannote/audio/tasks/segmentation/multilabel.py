@@ -278,22 +278,14 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
     def default_metric(
         self,
     ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
-        classes = None
-        if self.classes is not None:
-            classes = self.classes
-        else:
-            classes = self.protocol.stats()["labels"].keys()
+        class_count = len(self.classes)
+        classification_type = "multilabel" if class_count > 1 else "binary"
 
-        if classes is not None:
-            class_count = len(classes)
-            classification_type = "multilabel" if class_count > 1 else "binary"
-            return [
-                F1Score(task=classification_type, num_labels=class_count),
-                Precision(task=classification_type, num_labels=class_count),
-                Recall(task=classification_type, num_labels=class_count),
-            ]
-        else:
-            return []
+        return [
+            F1Score(task=classification_type, num_labels=class_count),
+            Precision(task=classification_type, num_labels=class_count),
+            Recall(task=classification_type, num_labels=class_count),
+        ]
 
     @property
     def val_monitor(self):
