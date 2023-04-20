@@ -258,11 +258,11 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         y_true = y_true[mask].reshape(shape)
         loss = F.binary_cross_entropy(y_pred, y_true.type(torch.float))
 
-        # pass preds and targets in format (N, C), or (N) if there is only one class (monolabel)
+        # pass preds and targets in format (N, C), or (N) if there is only one class (monolabel)
         # where N=num of samples, C=number of classes
         self.model.validation_metric(
             rearrange(y_pred, "batch sample class -> (batch sample) class").squeeze(),
-            rearrange(y_true, "batch sample class -> (batch sample) class").squeeze()
+            rearrange(y_true, "batch sample class -> (batch sample) class").squeeze(),
         )
 
         self.model.log_dict(
@@ -291,7 +291,9 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
 
         return [
             F1Score(task=classification_type, num_labels=class_count, average="macro"),
-            Precision(task=classification_type, num_labels=class_count, average="macro"),
+            Precision(
+                task=classification_type, num_labels=class_count, average="macro"
+            ),
             Recall(task=classification_type, num_labels=class_count, average="macro"),
         ]
 
