@@ -290,9 +290,9 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         classification_type = "multilabel" if class_count > 1 else "binary"
 
         return [
-            F1Score(task=classification_type, num_labels=class_count),
-            Precision(task=classification_type, num_labels=class_count),
-            Recall(task=classification_type, num_labels=class_count),
+            F1Score(task=classification_type, num_labels=class_count, average="macro"),
+            Precision(task=classification_type, num_labels=class_count, average="macro"),
+            Recall(task=classification_type, num_labels=class_count, average="macro"),
         ]
 
     @property
