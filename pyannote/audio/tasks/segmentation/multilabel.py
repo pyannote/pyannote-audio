@@ -21,6 +21,7 @@
 # SOFTWARE.
 
 from typing import Dict, List, Optional, Sequence, Text, Tuple, Union
+from einops import rearrange
 
 import numpy as np
 import torch
@@ -243,6 +244,8 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         y_pred = self.model(X)
         y_true = batch["y"]
         assert y_pred.shape == y_true.shape
+        # shape (BATCH_SIZE, NUM_FRAMES, NUM_CLASSES)
+        shape = y_pred.shape
 
         # TODO: add support for frame weights
         # TODO: add support for class weights
@@ -251,11 +254,16 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
 
         # mask (frame, class) index for which label is missing
         mask: torch.Tensor = y_true != -1
-        y_pred = y_pred[mask]
-        y_true = y_true[mask]
+        y_pred = y_pred[mask].reshape(shape)
+        y_true = y_true[mask].reshape(shape)
         loss = F.binary_cross_entropy(y_pred, y_true.type(torch.float))
 
-        self.model.validation_metric(y_pred, y_true)
+        # pass preds and targets in format (N, C), or (N) if there is only one class (monolabel)
+        # where N=num of samples, C=number of classes
+        self.model.validation_metric(
+            rearrange(y_pred, "batch sample class -> (batch sample) class").squeeze(),
+            rearrange(y_true, "batch sample class -> (batch sample) class").squeeze()
+        )
 
         self.model.log_dict(
             self.model.validation_metric,
