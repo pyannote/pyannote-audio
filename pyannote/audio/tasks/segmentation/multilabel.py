@@ -344,7 +344,7 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         super().setup_validation_metric()
 
         # and then setup validation metric per class
-        metric = self.metric
+        metric = self.metric_per_class
         if metric is None:
             return
 
