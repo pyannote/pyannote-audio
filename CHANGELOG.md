@@ -14,6 +14,7 @@
   - BREAKING(pipeline): remove `SpeakerSegmentation` pipeline (in favor of `SpeakerDiarization` pipeline)
   - BREAKING(pipeline): remove support `FINCHClustering` and `HiddenMarkovModelClustering`
   - BREAKING: drop support for Python 3.7
+  - BREAKING(io): channels are now 0-indexed
 
 ## Version 2.1.1 (2022-10-27)
 

@@ -29,7 +29,7 @@ def test_correct_audio_channel():
     waveform = torch.rand(2, 16000 * 2)
     loader = Audio(mono="downmix")
     wav, sr = loader({"waveform": waveform, "sample_rate": 16000, "channel": 1})
-    assert torch.equal(wav, waveform[0:1])
+    assert torch.equal(wav, waveform[1:2])
     assert sr == 16000
 
 
