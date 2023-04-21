@@ -22,6 +22,7 @@
   - feat(pipeline): send pipeline to device with `pipeline.to(device)`
   - feat(task): add [powerset](https://arxiv.org/PLACEHOLDER) support to `SpeakerDiarization` task
   - feat(pipeline): add progress hook to pipelines
+  - feat(pipeline): check version compatibility at load time
   - feat(task): add support for label scope in speaker diarization task
   - feat(task): add support for missing classes in multi-label segmentation task
   - improve(task): load metadata as tensors rather than pyannote.core instances
