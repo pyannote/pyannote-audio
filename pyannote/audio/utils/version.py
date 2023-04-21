@@ -20,7 +20,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import warnings
 from typing import Text
 
 from semver import VersionInfo
@@ -33,13 +32,21 @@ def check_version(library: Text, theirs: Text, mine: Text, what: Text = "Pipelin
 
     theirs = VersionInfo.parse(theirs)
     mine = VersionInfo.parse(mine)
-    if theirs.major != mine.major:
-        warnings.warn(
+
+    if theirs.major > mine.major:
+        print(
             f"{what} was trained with {library} {theirs}, yours is {mine}. "
-            f"Bad things will probably happen unless you update {library} to {theirs.major}.x."
+            f"Bad things will probably happen unless you upgrade {library} to {theirs.major}.x."
         )
-    if theirs.minor > mine.minor:
-        warnings.warn(
+
+    elif theirs.major < mine.major:
+        print(
             f"{what} was trained with {library} {theirs}, yours is {mine}. "
-            f"This should be OK but you might want to update {library}."
+            f"Bad things might happen unless you revert {library} to {theirs.major}.x."
+        )
+
+    elif theirs.minor > mine.minor:
+        print(
+            f"{what} was trained with {library} {theirs}, yours is {mine}. "
+            f"This should be OK but you might want to upgrade {library}."
         )
