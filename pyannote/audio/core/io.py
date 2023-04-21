@@ -28,6 +28,7 @@ pyannote.audio relies on torchaudio for reading and resampling.
 """
 
 import math
+import random
 import warnings
 from io import IOBase
 from pathlib import Path
@@ -79,12 +80,14 @@ class Audio:
     ----------
     sample_rate: int, optional
         Target sampling rate. Defaults to using native sampling rate.
-    mono : int, optional
-        Convert multi-channel to mono. Defaults to True.
+    mono : {'random', 'downmix'}, optional
+        In case of multi-channel audio, convert to single-channel audio
+        using one of the following strategies: select on channel at 'random'
+        or 'downmix' by averaging all channels.
 
     Usage
     -----
-    >>> audio = Audio(sample_rate=16000, mono=True)
+    >>> audio = Audio(sample_rate=16000, mono='downmix')
     >>> waveform, sample_rate = audio({"audio": "/path/to/audio.wav"})
     >>> assert sample_rate == 16000
     >>> sample_rate = 44100
@@ -181,7 +184,7 @@ class Audio:
 
         return file
 
-    def __init__(self, sample_rate=None, mono=True):
+    def __init__(self, sample_rate=None, mono=None):
 
         super().__init__()
         self.sample_rate = sample_rate
@@ -206,8 +209,13 @@ class Audio:
         """
 
         # downmix to mono
-        if self.mono and waveform.shape[0] > 1:
-            waveform = waveform.mean(dim=0, keepdim=True)
+        num_channels = waveform.shape[0]
+        if num_channels > 1:
+            if self.mono == "random":
+                channel = random.randint(0, num_channels - 1)
+                waveform = waveform[channel : channel + 1]
+            elif self.mono == "downmix":
+                waveform = waveform.mean(dim=0, keepdim=True)
 
         # resample
         if (self.sample_rate is not None) and (self.sample_rate != sample_rate):
