@@ -82,8 +82,8 @@ class Audio:
         Target sampling rate. Defaults to using native sampling rate.
     mono : {'random', 'downmix'}, optional
         In case of multi-channel audio, convert to single-channel audio
-        using one of the following strategies: select on channel at 'random'
-        or 'downmix' by averaging all channels.
+        using one of the following strategies: select one channel at
+        'random' or 'downmix' by averaging all channels.
 
     Usage
     -----
