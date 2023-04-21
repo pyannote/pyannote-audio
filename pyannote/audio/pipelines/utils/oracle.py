@@ -62,7 +62,7 @@ def oracle_segmentation(
     """
 
     if "duration" not in file:
-        duration = Audio().get_duration(file)
+        duration = Audio(mono="downmix").get_duration(file)
     else:
         duration: float = file["duration"]
     reference: Annotation = file["annotation"]

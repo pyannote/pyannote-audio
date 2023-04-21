@@ -122,7 +122,7 @@ def source_to_files(source: Path) -> List[Dict]:
 def get_chunks(source: Path, chunk_duration: Optional[float] = None):
 
     files = source_to_files(source)
-    audio = Audio()
+    audio = Audio(mono="downmix")
 
     for file in files:
 

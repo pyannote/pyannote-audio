@@ -272,9 +272,7 @@ class Model(pl.LightningModule):
         self.save_hyperparameters("sample_rate", "num_channels")
 
         self.task = task
-        self.audio = Audio(
-            sample_rate=self.hparams.sample_rate, mono=self.hparams.num_channels == 1
-        )
+        self.audio = Audio(sample_rate=self.hparams.sample_rate, mono="downmix")
 
     @property
     def example_input_array(self) -> torch.Tensor:
