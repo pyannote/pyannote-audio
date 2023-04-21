@@ -413,7 +413,7 @@ class Audio:
                 file["sample_rate"] = sample_rate
 
         if channel is not None:
-            data = data[channel - 1 : channel, :]
+            data = data[channel : channel + 1, :]
 
         # pad with zeros
         if mode == "pad":
