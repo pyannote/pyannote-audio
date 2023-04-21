@@ -179,7 +179,10 @@ visit https://hf.co/{model_id} to accept the user conditions."""
         # send pipeline to specified device
         if "device" in config:
             device = torch.device(config["device"])
-            pipeline.to(device)
+            try:
+                pipeline.to(device)
+            except RuntimeError as e:
+                print(e)
 
         return pipeline
 
