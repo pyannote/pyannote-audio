@@ -284,7 +284,7 @@ class Audio:
         channel = file.get("channel", None)
 
         if channel is not None:
-            waveform = waveform[channel - 1 : channel]
+            waveform = waveform[channel : channel + 1]
 
         return self.downmix_and_resample(waveform, sample_rate)
 
