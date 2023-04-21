@@ -21,20 +21,112 @@
 # SOFTWARE.
 
 from functools import cached_property
-from typing import Dict, List, Optional, Sequence, Text, Tuple, Union
+import math
+from typing import Dict, List, Literal, Optional, Sequence, Text, Tuple, Union
 from einops import rearrange
 
 import numpy as np
 import torch
 import torch.nn.functional as F
+from torch.utils.tensorboard import SummaryWriter
 from pyannote.core import Segment, SlidingWindow, SlidingWindowFeature
 from pyannote.database import Protocol
 from pyannote.database.protocol import SegmentationProtocol
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
+from torchmetrics import (
+    CalibrationError,
+    F1Score,
+    Metric,
+    Precision,
+    Recall,
+    MetricCollection,
+)
 from torchmetrics import F1Score, Metric, MetricCollection, Precision, Recall
+from pytorch_lightning.loggers import TensorBoardLogger
 
 from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
+
+
+class Loggable:
+    def __init__(
+        self,
+        name: str = "Histogram",
+        update_in: Literal["train", "val"] = "val",
+        log_on: Literal["step", "epoch"] = "epoch",
+    ):
+        self.name = name
+        self.update_in = update_in
+        self.compute_on = log_on
+
+    # TODO: use kwargs ? also, pass task/model in calls
+    def update(
+        self,
+        data: dict,
+    ):
+        raise NotImplementedError()
+
+    def log(self, loggers: list, current_epoch: int, batch_idx: int):
+        raise NotImplementedError()
+
+    def clear(self):
+        raise NotImplementedError()
+
+
+class LoggableHistogram(Loggable):
+    def __init__(
+        self,
+        bins: torch.Tensor,
+        values_field: str = "y_pred",
+        name: str = "Histogram",
+        update_in: Literal["train", "val"] = "val",
+    ):
+        super().__init__(
+            name=name,
+            update_in=update_in,
+            log_on="epoch",
+        )
+        self.bins = bins
+        self.values_field = values_field
+
+        self.clear()  # initialize all state values
+
+    def _get_values(self, data) -> torch.Tensor:
+        return data[self.values_field]
+
+    def update(self, data):
+        values = self._get_values(data).flatten()
+        hist, _ = torch.histogram(values.float(), bins=self.bins, density=False)
+        self.num += len(values)
+        self.totals += hist
+        self.min = min(self.min, values.min().item())
+        self.max = max(self.max, values.max().item())
+        self.sum += values.sum()
+        self.sum_square += values.dot(values)
+
+    def log(self, loggers: list, current_epoch: int, batch_idx: int):
+        for logger in loggers:
+            if isinstance(logger, TensorBoardLogger):
+                experiment: SummaryWriter = logger.experiment
+                experiment.add_histogram_raw(
+                    self.name,
+                    min=self.min,
+                    max=self.max,
+                    num=self.num,
+                    sum=self.sum,
+                    sum_squares=self.sum_square,
+                    bucket_limits=self.bins[1:],
+                    bucket_counts=self.totals,
+                    global_step=current_epoch,
+                )
+
+    def clear(self):
+        self.totals = torch.zeros(len(self.bins) - 1)
+        self.num = 0
+        self.sum = 0
+        self.sum_square = 0
+        self.min = math.inf
+        self.max = -math.inf
 
 
 class MultiLabelSegmentation(SegmentationTaskMixin, Task):
@@ -97,6 +189,7 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         augmentation: BaseWaveformTransform = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
         metric_classwise: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
+        loggables: List[Loggable] = None,
     ):
 
         if not isinstance(protocol, SegmentationProtocol):
@@ -119,6 +212,12 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         self.weight = weight
         self.classes = classes
         self._metric_classwise = metric_classwise
+
+        if loggables is None:
+            loggables = []
+        elif isinstance(loggables, Loggable):
+            loggables = [loggables]
+        self.loggables = loggables
 
         # task specification depends on the data: we do not know in advance which
         # classes should be detected. therefore, we postpone the definition of
@@ -273,6 +372,40 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
             logger=True,
         )
 
+        loggable_data = {
+            "X": X,
+            "y_pred": y_pred_labelled,
+            "y_true": y_true_labelled,
+        }
+        for loggable in self.loggables:
+            if loggable.update_in == "val":
+                loggable.update(loggable_data)
+            if loggable.compute_on == "step":
+                loggable.log(self.model.loggers, self.model.current_epoch, batch_idx)
+                loggable.clear()
+        # if batch_idx == 0:
+        #     for logger in self.model.loggers:
+        #         if isinstance(logger, TensorBoardLogger):
+        #             experiment: SummaryWriter = logger.experiment
+
+        #             bins = torch.linspace(0, 1, 15 + 1)
+        #             values = torch.rand(50000)
+        #             hist, _ = torch.histogram(values, bins=bins, density=False)
+        #             sum_sq = values.dot(values)
+
+        #             experiment.add_histogram_raw(
+        #                 f"{self.logging_prefix}HistogramTest",
+        #                 min=values.min(),
+        #                 max=values.max(),
+        #                 num=len(values),
+        #                 sum=values.sum(),
+        #                 sum_squares=sum_sq,
+        #                 bucket_limits=bins[1:],
+        #                 bucket_counts=hist,
+        #                 global_step=self.model.current_epoch,
+        #             )
+        #             print("logged histogram :D")
+
         # log metrics per class
         for class_id, class_name in enumerate(self.classes):
             mask: torch.Tensor = y_true[..., class_id] != -1
@@ -306,6 +439,14 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         )
         return {"loss": loss}
 
+    def on_validation_end(self):
+        super().on_validation_end()
+        print("on_validation_end :D")
+        for loggable in self.loggables:
+            if loggable.compute_on == "epoch":
+                loggable.log(self.model.loggers, self.model.current_epoch, -1)
+                loggable.clear()
+
     def default_metric(
         self,
     ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
@@ -320,8 +461,8 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
                 Recall(task="binary"),
             ]
         else:
-            # This case is handled by the per-class metric, see 'default_metric_per_class'
-            return None
+            # This case is handled by the per-class metric, see 'default_metric_classwise'
+            return []
 
     def default_metric_classwise(
         self,
@@ -330,6 +471,7 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
             F1Score(task="binary"),
             Precision(task="binary"),
             Recall(task="binary"),
+            CalibrationError(task="binary"),
         ]
 
     @cached_property

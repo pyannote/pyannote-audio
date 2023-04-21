@@ -523,6 +523,9 @@ class Model(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         return self.task.validation_step(batch, batch_idx)
 
+    def on_validation_end(self):
+        return self.task.on_validation_end()
+
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=1e-3)
 
