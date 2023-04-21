@@ -96,7 +96,7 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         pin_memory: bool = False,
         augmentation: BaseWaveformTransform = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
-        metric_per_class: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
+        metric_classwise: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
     ):
 
         if not isinstance(protocol, SegmentationProtocol):
@@ -118,7 +118,7 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         self.balance = balance
         self.weight = weight
         self.classes = classes
-        self._metric_per_class = metric_per_class
+        self._metric_classwise = metric_classwise
 
         # task specification depends on the data: we do not know in advance which
         # classes should be detected. therefore, we postpone the definition of
@@ -282,7 +282,7 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
             y_pred_labelled = y_pred[..., class_id][mask]
             y_true_labelled = y_true[..., class_id][mask]
 
-            metric = self.model.validation_metric_per_class[class_name]
+            metric = self.model.validation_metric_classwise[class_name]
             metric(
                 y_pred_labelled,
                 y_true_labelled,
@@ -323,7 +323,7 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
             # This case is handled by the per-class metric, see 'default_metric_per_class'
             return None
 
-    def default_metric_per_class(
+    def default_metric_classwise(
         self,
     ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
         return [
@@ -333,26 +333,26 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         ]
 
     @cached_property
-    def metric_per_class(self) -> MetricCollection:
-        if self._metric_per_class is None:
-            self._metric_per_class = self.default_metric_per_class()
+    def metric_classwise(self) -> MetricCollection:
+        if self._metric_classwise is None:
+            self._metric_classwise = self.default_metric_classwise()
 
-        return MetricCollection(self._metric_per_class, prefix=self.logging_prefix)
+        return MetricCollection(self._metric_classwise, prefix=self.logging_prefix)
 
     def setup_validation_metric(self):
         # setup validation metric
         super().setup_validation_metric()
 
         # and then setup validation metric per class
-        metric = self.metric_per_class
+        metric = self.metric_classwise
         if metric is None:
             return
 
-        self.model.validation_metric_per_class = torch.nn.ModuleDict().to(
+        self.model.validation_metric_classwise = torch.nn.ModuleDict().to(
             self.model.device
         )
         for class_name in self.classes:
-            self.model.validation_metric_per_class[class_name] = metric.clone(
+            self.model.validation_metric_classwise[class_name] = metric.clone(
                 prefix=self.logging_prefix, postfix=f"-{class_name}"
             )
 
