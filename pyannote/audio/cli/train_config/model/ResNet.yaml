@@ -1,0 +1,6 @@
+# @package _group_
+_target_: pyannote.audio.models.embedding.resnet.ResNet
+sincnet:
+  stride: 10
+feat_dim: 60
+embed_dim: 512
