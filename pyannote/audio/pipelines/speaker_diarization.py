@@ -118,7 +118,6 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         der_variant: dict = None,
         use_auth_token: Union[Text, None] = None,
     ):
-
         super().__init__()
 
         self.segmentation_model = segmentation
@@ -246,7 +245,6 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         # bringing a massive speed up to the optimization process (and hence allowing to use
         # a larger search space).
         if self.training:
-
             # we only re-use embeddings if they were extracted based on the same value of the
             # "segmentation.threshold" hyperparameter or if the segmentation model relies on
             # `powerset` mode
@@ -351,7 +349,6 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         # caching embeddings for subsequent trials
         # (see comments at the top of this method for more details)
         if self.training:
-
             if self._segmentation.model.specifications.powerset:
                 file["training_cache/embeddings"] = {
                     "embeddings": embeddings,
@@ -397,7 +394,6 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         for c, (cluster, (chunk, segmentation)) in enumerate(
             zip(hard_clusters, segmentations)
         ):
-
             # cluster is (local_num_speakers, )-shaped
             # segmentation is (num_frames, local_num_speakers)-shaped
             for k in np.unique(cluster):
@@ -421,6 +417,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         num_speakers: int = None,
         min_speakers: int = None,
         max_speakers: int = None,
+        return_embeddings: bool = False,
         hook: Optional[Callable] = None,
     ) -> Annotation:
         """Apply speaker diarization
@@ -435,6 +432,10 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             Minimum number of speakers. Has no effect when `num_speakers` is provided.
         max_speakers : int, optional
             Maximum number of speakers. Has no effect when `num_speakers` is provided.
+        return_embeddings : bool, optional
+            If `True`, return the embedding vector for each speaker (cluster centroids).
+            The return value is then a `dict` with `diarization` and `speaker_embeddings` fields.
+            Default: `False`.
         hook : callable, optional
             Callback called after each major steps of the pipeline as follows:
                 hook(step_name,      # human-readable name of current step
@@ -477,7 +478,10 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
         # exit early when no speaker is ever active
         if np.nanmax(count.data) == 0.0:
-            return Annotation(uri=file["uri"])
+            diarization = Annotation(uri=file["uri"])
+            if return_embeddings:
+                return {"diarization": diarization, "speaker_embeddings": {}}
+            return diarization
 
         # binarize segmentation
         if self._segmentation.model.specifications.powerset:
@@ -492,7 +496,6 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         if self.klustering == "OracleClustering":
             embeddings = None
         else:
-
             embeddings = self.get_embeddings(
                 file,
                 binarized_segmentations,
@@ -502,7 +505,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             hook("embeddings", embeddings)
             #   shape: (num_chunks, local_num_speakers, dimension)
 
-        hard_clusters, _ = self.clustering(
+        hard_clusters, _, centroids = self.clustering(
             embeddings=embeddings,
             segmentations=binarized_segmentations,
             num_clusters=num_speakers,
@@ -543,12 +546,24 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
         # when reference is not available, rename hypothesized speakers
         # to human-readable SPEAKER_00, SPEAKER_01, ...
-        return diarization.rename_labels(
-            {
-                label: expected_label
-                for label, expected_label in zip(diarization.labels(), self.classes())
+        label_map = {
+            label: expected_label
+            for label, expected_label in zip(diarization.labels(), self.classes())
+        }
+
+        diarization = diarization.rename_labels(label_map)
+
+        if not return_embeddings:
+            return diarization
+        else:
+            embedding_map = {}
+            for k, label in label_map.items():
+                if k < centroids.shape[0]:
+                    embedding_map[label] = centroids[k]
+            return {
+                "diarization": diarization,
+                "speaker_embeddings": embedding_map,
             }
-        )
 
     def get_metric(self) -> GreedyDiarizationErrorRate:
         return GreedyDiarizationErrorRate(**self.der_variant)

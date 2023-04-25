@@ -184,7 +184,7 @@ class BaseClustering(Pipeline):
             s=num_speakers,
         )
         soft_clusters = 2 - e2k_distance
-
+        
         # assign each embedding to the cluster with the most similar centroid
         if constrained:
             hard_clusters = self.constrained_argmax(soft_clusters)
@@ -194,7 +194,7 @@ class BaseClustering(Pipeline):
         # TODO: add a flag to revert argmax for trainign subset
         # hard_clusters[train_chunk_idx, train_speaker_idx] = train_clusters
 
-        return hard_clusters, soft_clusters
+        return hard_clusters, soft_clusters, centroids
 
     def __call__(
         self,
@@ -259,7 +259,7 @@ class BaseClustering(Pipeline):
             num_clusters=num_clusters,
         )
 
-        hard_clusters, soft_clusters = self.assign_embeddings(
+        hard_clusters, soft_clusters, centroids = self.assign_embeddings(
             embeddings,
             train_chunk_idx,
             train_speaker_idx,
@@ -267,7 +267,7 @@ class BaseClustering(Pipeline):
             constrained=self.constrained_assignment,
         )
 
-        return hard_clusters, soft_clusters
+        return hard_clusters, soft_clusters, centroids
 
 
 class AgglomerativeClustering(BaseClustering):
