@@ -109,8 +109,7 @@ class ResNet(Model):
         waveforms : torch.Tensor
             Batch of waveforms with shape (batch, channel, sample)
         """
-        filterbank = self.sincnet(waveforms).squeeze(dim=1)
-        print("filterbank dimension : ", filterbank.size())
+        filterbank = self.sincnet(waveforms)
         outputs = filterbank.unsqueeze_(1)
         outputs = F.relu(self.bn1(self.conv1(outputs)))
         # To retrieve only layers whose name is of the form "layer1.1" for instance:
