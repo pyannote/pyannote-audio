@@ -65,6 +65,6 @@ class BasicBlock(nn.Module):
         """
         outputs = F.relu(self.bn1(self.conv1(input_data)))
         outputs = F.relu(self.bn2(self.conv2(outputs)))
-        outputs += self.shorcut(input_data)
+        outputs = outputs + self.shorcut(input_data)
         outputs = F.relu(outputs)
         return outputs

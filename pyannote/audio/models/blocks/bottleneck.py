@@ -66,6 +66,6 @@ class Bottleneck(nn.Module):
         outputs = F.relu(self.bn2(self.conv2(outputs)))
         outputs = F.relu(self.bn3(self.conv3(outputs)))
         #out = self.se(out)
-        outputs += self.shortcut(input_data)
+        outputs = outputs + self.shortcut(input_data)
         outputs = F.relu(outputs)
         return outputs
