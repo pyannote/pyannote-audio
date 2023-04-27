@@ -538,18 +538,21 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         )
         diarization.uri = file["uri"]
 
-        # when reference is available, use it to map hypothesized speakers
-        # to reference speakers (this makes later error analysis easier
-        # but does not modify the actual output of the diarization pipeline)
         if "annotation" in file and file["annotation"]:
-            return self.optimal_mapping(file["annotation"], diarization)
+            # when reference is available, use it to map hypothesized speakers
+            # to reference speakers (this makes later error analysis easier
+            # but does not modify the actual output of the diarization pipeline)
+            label_map = self.optimal_mapping(
+                file["annotation"], diarization, mapping_only=True
+            )
 
-        # when reference is not available, rename hypothesized speakers
-        # to human-readable SPEAKER_00, SPEAKER_01, ...
-        label_map = {
-            label: expected_label
-            for label, expected_label in zip(diarization.labels(), self.classes())
-        }
+        else:
+            # when reference is not available, rename hypothesized speakers
+            # to human-readable SPEAKER_00, SPEAKER_01, ...
+            label_map = {
+                label: expected_label
+                for label, expected_label in zip(diarization.labels(), self.classes())
+            }
 
         diarization = diarization.rename_labels(label_map)
 

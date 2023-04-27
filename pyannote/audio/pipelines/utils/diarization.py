@@ -20,10 +20,11 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import Mapping, Tuple, Union
+from typing import Mapping, Tuple, Union, Dict
 
 import numpy as np
 from pyannote.core import Annotation, SlidingWindow, SlidingWindowFeature
+from pyannote.core.utils.types import Label
 from pyannote.metrics.diarization import DiarizationErrorRate
 
 from pyannote.audio.core.inference import Inference
@@ -74,8 +75,10 @@ class SpeakerDiarizationMixin:
 
     @staticmethod
     def optimal_mapping(
-        reference: Union[Mapping, Annotation], hypothesis: Annotation
-    ) -> Annotation:
+        reference: Union[Mapping, Annotation],
+        hypothesis: Annotation,
+        mapping_only: bool = False,
+    ) -> Union[Dict[Label, Label], Annotation]:
         """Find the optimal bijective mapping between reference and hypothesis labels
 
         Parameters
@@ -84,11 +87,13 @@ class SpeakerDiarizationMixin:
             Reference annotation. Can be an Annotation instance or
             a mapping with an "annotation" key.
         hypothesis : Annotation
+        mapping_only : bool, optional
+            Only return the mapping. Defaults to False.
 
         Returns
         -------
-        mapped : Annotation
-            Hypothesis mapped to reference speakers.
+        mapped : Dict[Label, Label] or Annotation
+            Hypothesis mapped to reference speakers, or the label mapping itself, if `mapping_only == True`
 
         """
         if isinstance(reference, Mapping):
@@ -100,6 +105,8 @@ class SpeakerDiarizationMixin:
         mapping = DiarizationErrorRate().optimal_mapping(
             reference, hypothesis, uem=annotated
         )
+        if mapping_only:
+            return mapping
         return hypothesis.rename_labels(mapping=mapping)
 
     # TODO: get rid of onset/offset (binarization should be applied before calling speaker_count)
