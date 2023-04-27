@@ -117,13 +117,11 @@ class SpeakerDiarizationMixin:
         else:
             return mapped_hypothesis
 
-    # TODO: get rid of onset/offset (binarization should be applied before calling speaker_count)
     # TODO: get rid of warm-up parameter (trimming should be applied before calling speaker_count)
     @staticmethod
     def speaker_count(
-        segmentations: SlidingWindowFeature,
-        onset: float = 0.5,
-        offset: float = None,
+        binarized_segmentations: SlidingWindowFeature,
+        max_speakers: Union[int, float],
         warm_up: Tuple[float, float] = (0.1, 0.1),
         frames: SlidingWindow = None,
     ) -> SlidingWindowFeature:
@@ -131,12 +129,10 @@ class SpeakerDiarizationMixin:
 
         Parameters
         ----------
-        segmentations : SlidingWindowFeature
-            (num_chunks, num_frames, num_classes)-shaped scores.
-        onset : float, optional
-           Onset threshold. Defaults to 0.5
-        offset : float, optional
-           Offset threshold. Defaults to `onset`.
+        binarized_segmentations : SlidingWindowFeature
+            (num_chunks, num_frames, num_classes)-shaped binarized scores.
+        max_speakers : int or np.inf
+            Maximum number of speakers allowed. Counts will not exceed this number
         warm_up : (float, float) tuple, optional
             Left/right warm up ratio of chunk duration.
             Defaults to (0.1, 0.1), i.e. 10% on both sides.
@@ -151,10 +147,7 @@ class SpeakerDiarizationMixin:
             (num_frames, 1)-shaped instantaneous speaker count
         """
 
-        binarized: SlidingWindowFeature = binarize(
-            segmentations, onset=onset, offset=offset, initial_state=False
-        )
-        trimmed = Inference.trim(binarized, warm_up=warm_up)
+        trimmed = Inference.trim(binarized_segmentations, warm_up=warm_up)
         count = Inference.aggregate(
             np.sum(trimmed, axis=-1, keepdims=True),
             frames=frames,
@@ -162,6 +155,7 @@ class SpeakerDiarizationMixin:
             missing=0.0,
             skip_average=False,
         )
+        count.data[count.data > max_speakers] = max_speakers
         count.data = np.rint(count.data).astype(np.uint8)
 
         return count
