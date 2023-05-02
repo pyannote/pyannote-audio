@@ -259,11 +259,10 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
             y_pred_labelled, y_true_labelled.type(torch.float)
         )
 
-        # log global metric
-        # TODO: allow using real multilabel metrics (when mask.all() ?)
+        # log global metric (multilabel)
         self.model.validation_metric(
-            y_pred_labelled,
-            y_true_labelled,
+            y_pred.reshape((-1, y_pred.shape[-1])),
+            y_true.reshape((-1, y_true.shape[-1])),
         )
         self.model.log_dict(
             self.model.validation_metric,
@@ -273,7 +272,7 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
             logger=True,
         )
 
-        # log metrics per class
+        # log metrics per class (binary)
         for class_id, class_name in enumerate(self.classes):
             mask: torch.Tensor = y_true[..., class_id] != -1
             if mask.sum() == 0:
@@ -296,6 +295,7 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
                 logger=True,
             )
 
+        # log losses
         self.model.log(
             f"{self.logging_prefix}ValLoss",
             loss,
@@ -315,9 +315,24 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
             # can't compute multilabel metrics anymore (torchmetrics doesn't allow
             # us to ignore specific classes for specific data points)
             return [
-                F1Score(task="binary"),
-                Precision(task="binary"),
-                Recall(task="binary"),
+                F1Score(
+                    task="multilabel",
+                    num_labels=len(self.classes),
+                    ignore_index=-1,
+                    average="macro",
+                ),
+                Precision(
+                    task="multilabel",
+                    num_labels=len(self.classes),
+                    ignore_index=-1,
+                    average="macro",
+                ),
+                Recall(
+                    task="multilabel",
+                    num_labels=len(self.classes),
+                    ignore_index=-1,
+                    average="macro",
+                ),
             ]
         else:
             # This case is handled by the per-class metric, see 'default_metric_per_class'
@@ -353,7 +368,7 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         )
         for class_name in self.classes:
             self.model.validation_metric_classwise[class_name] = metric.clone(
-                prefix=self.logging_prefix, postfix=f"-{class_name}"
+                prefix=f"{self.logging_prefix}{class_name}-"
             )
 
     @property
