@@ -318,19 +318,19 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
             return [
                 F1Score(
                     task="multilabel",
-                    num_labels=len(self.classes),
+                    num_labels=class_count,
                     ignore_index=-1,
                     average="macro",
                 ),
                 Precision(
                     task="multilabel",
-                    num_labels=len(self.classes),
+                    num_labels=class_count,
                     ignore_index=-1,
                     average="macro",
                 ),
                 Recall(
                     task="multilabel",
-                    num_labels=len(self.classes),
+                    num_labels=class_count,
                     ignore_index=-1,
                     average="macro",
                 ),
