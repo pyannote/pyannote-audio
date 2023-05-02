@@ -83,9 +83,9 @@ def listen(audio_file: AudioFile, segment: Segment = None) -> None:
         return
 
     if segment is None:
-        waveform, sr = Audio()(audio_file)
+        waveform, sr = Audio(mono="downmix")(audio_file)
     else:
-        waveform, sr = Audio().crop(audio_file, segment)
+        waveform, sr = Audio(mono="downmix").crop(audio_file, segment)
     return IPythonAudio(waveform.flatten(), rate=sr)
 
 
@@ -159,7 +159,7 @@ def preview(
     temp_dir = tempfile.mkdtemp(prefix="pyannote-audio-preview")
     video_path = f"{temp_dir}/{uri}.{video_ext}"
 
-    audio = Audio(sample_rate=16000, mono=True)
+    audio = Audio(sample_rate=16000, mono="downmix")
 
     if segment is None:
         duration = audio.get_duration(audio_file)

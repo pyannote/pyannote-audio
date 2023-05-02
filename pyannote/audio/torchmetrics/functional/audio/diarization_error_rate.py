@@ -124,8 +124,7 @@ def _der_compute(
         Diarization error rate.
     """
 
-    # TODO: handle corner case where speech_total == 0
-    return (false_alarm + missed_detection + speaker_confusion) / speech_total
+    return (false_alarm + missed_detection + speaker_confusion) / (speech_total + 1e-8)
 
 
 def diarization_error_rate(

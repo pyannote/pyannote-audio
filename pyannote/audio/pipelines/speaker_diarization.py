@@ -165,7 +165,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             self._embedding = PretrainedSpeakerEmbedding(
                 self.embedding, use_auth_token=use_auth_token
             )
-            self._audio = Audio(sample_rate=self._embedding.sample_rate, mono=True)
+            self._audio = Audio(sample_rate=self._embedding.sample_rate, mono="downmix")
             metric = self._embedding.metric
 
         try:
