@@ -40,6 +40,7 @@ from pyannote.audio import Audio, __version__
 from pyannote.audio.core.inference import BaseInference
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import CACHE_DIR, Model
+from pyannote.audio.utils.version import check_version
 
 PIPELINE_PARAMS_NAME = "config.yaml"
 
@@ -119,6 +120,11 @@ visit https://hf.co/{model_id} to accept the user conditions."""
         with open(config_yml, "r") as fp:
             config = yaml.load(fp, Loader=yaml.SafeLoader)
 
+        if "version" in config:
+            check_version(
+                "pyannote.audio", config["version"], __version__, what="Pipeline"
+            )
+
         # initialize pipeline
         pipeline_name = config["pipeline"]["name"]
         Klass = get_class_by_name(
@@ -173,7 +179,10 @@ visit https://hf.co/{model_id} to accept the user conditions."""
         # send pipeline to specified device
         if "device" in config:
             device = torch.device(config["device"])
-            pipeline.to(device)
+            try:
+                pipeline.to(device)
+            except RuntimeError as e:
+                print(e)
 
         return pipeline
 

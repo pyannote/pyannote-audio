@@ -80,7 +80,7 @@ def stream(
     context = getattr(pipeline, "context", 2.5)
 
     audio_for_prodigy = AudioForProdigy()
-    audio_for_pipeline = Audio(mono=True)
+    audio_for_pipeline = Audio(mono="downmix")
 
     chunks = get_chunks(source, chunk_duration=chunk)
     if randomize:

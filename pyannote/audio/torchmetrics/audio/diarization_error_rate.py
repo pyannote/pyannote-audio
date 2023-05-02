@@ -105,20 +105,17 @@ class DiarizationErrorRate(Metric):
 
 class SpeakerConfusionRate(DiarizationErrorRate):
     def compute(self):
-        # TODO: handler corner case where speech_total == 0
-        return self.speaker_confusion / self.speech_total
+        return self.speaker_confusion / (self.speech_total + 1e-8)
 
 
 class FalseAlarmRate(DiarizationErrorRate):
     def compute(self):
-        # TODO: handler corner case where speech_total == 0
-        return self.false_alarm / self.speech_total
+        return self.false_alarm / (self.speech_total + 1e-8)
 
 
 class MissedDetectionRate(DiarizationErrorRate):
     def compute(self):
-        # TODO: handler corner case where speech_total == 0
-        return self.missed_detection / self.speech_total
+        return self.missed_detection / (self.speech_total + 1e-8)
 
 
 class OptimalDiarizationErrorRate(Metric):
@@ -234,7 +231,7 @@ class OptimalSpeakerConfusionRate(OptimalDiarizationErrorRate):
             self.speech_total,
         )
         _, opt_threshold_idx = torch.min(der, dim=0)
-        return self.SpeakerConfusion[opt_threshold_idx] / self.speech_total
+        return self.SpeakerConfusion[opt_threshold_idx] / (self.speech_total + 1e-8)
 
 
 class OptimalFalseAlarmRate(OptimalDiarizationErrorRate):
@@ -246,7 +243,7 @@ class OptimalFalseAlarmRate(OptimalDiarizationErrorRate):
             self.speech_total,
         )
         _, opt_threshold_idx = torch.min(der, dim=0)
-        return self.FalseAlarm[opt_threshold_idx] / self.speech_total
+        return self.FalseAlarm[opt_threshold_idx] / (self.speech_total + 1e-8)
 
 
 class OptimalMissedDetectionRate(OptimalDiarizationErrorRate):
@@ -258,4 +255,4 @@ class OptimalMissedDetectionRate(OptimalDiarizationErrorRate):
             self.speech_total,
         )
         _, opt_threshold_idx = torch.min(der, dim=0)
-        return self.MissedDetection[opt_threshold_idx] / self.speech_total
+        return self.MissedDetection[opt_threshold_idx] / (self.speech_total + 1e-8)

@@ -35,7 +35,7 @@ from pyannote.audio import Audio
 
 class AudioForProdigy(Audio):
     def __init__(self):
-        super().__init__(sample_rate=16000, mono=True)
+        super().__init__(sample_rate=16000, mono="downmix")
 
     def crop(self, path: Path, excerpt: Segment) -> Text:
         waveform, _ = super().crop(path, excerpt)
@@ -122,7 +122,7 @@ def source_to_files(source: Path) -> List[Dict]:
 def get_chunks(source: Path, chunk_duration: Optional[float] = None):
 
     files = source_to_files(source)
-    audio = Audio()
+    audio = Audio(mono="downmix")
 
     for file in files:
 
