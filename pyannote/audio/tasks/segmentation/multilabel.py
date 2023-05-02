@@ -79,8 +79,12 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         torch_audiomentations waveform transform, used by dataloader
         during training.
     metric : optional
-        Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
-        Defaults to AUROC (area under the ROC curve).
+        Multilabel validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
+        Make sure to not compute the metric on targets == -1 (ignore_index=-1) if the validation set has missing labels.
+        Defaults to F1+Precision+Recall in macro mode.
+    metric_classwise: Union[Metric, Sequence[Metric], Dict[str, Metric]], optional
+        Validation metric(s) to compute for each class (binary). Can be anything supported by torchmetrics.MetricCollection.
+        Defaults to F1+Precision+Recall.
     """
 
     def __init__(
@@ -311,9 +315,6 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
     ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
         class_count = len(self.classes)
         if class_count > 1:  # multilabel
-            # task is binary because in case some targets are missing, we
-            # can't compute multilabel metrics anymore (torchmetrics doesn't allow
-            # us to ignore specific classes for specific data points)
             return [
                 F1Score(
                     task="multilabel",
@@ -335,7 +336,7 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
                 ),
             ]
         else:
-            # This case is handled by the per-class metric, see 'default_metric_per_class'
+            # Binary classification, this case is handled by the per-class metric, see 'default_metric_per_class'/'metric_classwise'
             return []
 
     def default_metric_classwise(
@@ -355,10 +356,10 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         return MetricCollection(self._metric_classwise, prefix=self.logging_prefix)
 
     def setup_validation_metric(self):
-        # setup validation metric
+        # setup global/multilabel validation metric
         super().setup_validation_metric()
 
-        # and then setup validation metric per class
+        # and then setup validation metric per class / classwise metrics
         metric = self.metric_classwise
         if metric is None:
             return
