@@ -22,6 +22,7 @@
 
 import warnings
 from functools import cached_property
+from pathlib import Path
 from typing import Text, Union
 
 import numpy as np
@@ -243,12 +244,17 @@ class SpeechBrainPretrainedSpeakerEmbedding(BaseInference):
         else:
             self.embedding = embedding
             self.revision = None
+
+        self.savedir = f"{CACHE_DIR}/speechbrain"
+        if Path(self.embedding).exists():
+            self.savedir = self.embedding
+
         self.device = device or torch.device("cpu")
         self.use_auth_token = use_auth_token
 
         self.classifier_ = SpeechBrain_EncoderClassifier.from_hparams(
             source=self.embedding,
-            savedir=f"{CACHE_DIR}/speechbrain",
+            savedir=self.savedir,
             run_opts={"device": self.device},
             use_auth_token=self.use_auth_token,
             revision=self.revision,
@@ -257,7 +263,7 @@ class SpeechBrainPretrainedSpeakerEmbedding(BaseInference):
     def to(self, device: torch.device):
         self.classifier_ = SpeechBrain_EncoderClassifier.from_hparams(
             source=self.embedding,
-            savedir=f"{CACHE_DIR}/speechbrain",
+            savedir=self.savedir,
             run_opts={"device": device},
             use_auth_token=self.use_auth_token,
             revision=self.revision,
