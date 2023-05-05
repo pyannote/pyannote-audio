@@ -28,6 +28,7 @@ import re
 import torch
 from torch import nn
 import torch.nn.functional as F
+from torchaudio.transforms import MelSpectrogram
 
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
@@ -45,19 +46,25 @@ class ResNet(Model):
     def __init__(self, block: Union[BasicBlock, Bottleneck],
                     num_blocks: List[int], sample_rate=16000,
                     num_channels=1, m_channels=32, feat_dim=60,
-                    embed_dim=512, task: Optional[Task] = None, sincnet=None,
-                    seg_part_insert : Union[str, None] = None):
+                    embed_dim=512, task: Optional[Task] = None, use_sincnet : bool = True,
+                    sincnet=None, seg_part_insert : Union[str, None] = None):
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
         self.inplanes = m_channels
         self.feat_dim = feat_dim
         self.embed_dim = embed_dim
-
-        # Define sincnet module:
-        sincnet = merge_dict(self.SINCNET_DEFAULTS, sincnet)
-        sincnet["sample_rate"] = sample_rate
-        self.save_hyperparameters("sincnet", "feat_dim", "embed_dim")
-        self.sincnet = SincNet(**self.hparams.sincnet)
+        self.use_sincnet = use_sincnet
         self.seg_part_insert = seg_part_insert
+
+        self.save_hyperparameters("feat_dim", "embed_dim")
+        if use_sincnet:
+            sincnet = merge_dict(self.SINCNET_DEFAULTS, sincnet)
+            sincnet["sample_rate"] = sample_rate
+            self.save_hyperparameters("sincnet")
+            self.sincnet = SincNet(**self.hparams.sincnet)
+        else:
+            self.features_extractor = MelSpectrogram(sample_rate=sample_rate,
+                                                     n_mels=feat_dim, n_fft=548,
+                                                     power=2, normalized=True)
         if block is BasicBlock:
             self.conv1 = nn.Conv2d(
                 1, m_channels, kernel_size=3, stride=1, padding=1, bias=False)
@@ -109,14 +116,20 @@ class ResNet(Model):
         waveforms : torch.Tensor
             Batch of waveforms with shape (batch, channel, sample)
         """
-        filterbank = self.sincnet(waveforms)
-        outputs = filterbank.unsqueeze_(1)
+        output_dim = {}
+        if self.use_sincnet:
+            filterbank = self.sincnet(waveforms)
+            outputs = filterbank.unsqueeze_(1)
+        else:
+            outputs = self.features_extractor(waveforms)
         outputs = F.relu(self.bn1(self.conv1(outputs)))
+        output_dim["conv1"] = outputs.size()
         # To retrieve only layers whose name is of the form "layer1.1" for instance:
         name_filter = re.compile('^layer[0-9]{1,}.[0-9]{1,}$')
         for name, block in [(name, block) for name, block in self.named_modules()
                             if name_filter.match(name)]:
             outputs = block(outputs)
+            output_dim[name] = outputs.size()
             if self.seg_part_insert is not None and self.seg_part_insert == name:
                 seg_part_input = outputs
         # TODO add segmentation part to the model
@@ -126,4 +139,5 @@ class ResNet(Model):
         outputs = torch.cat((torch.flatten(pooling_mean, start_dim=1),
                          torch.flatten(pooling_std, start_dim=1)), 1)
         embedding = self.embedding(outputs)
+        #print(output_dim)
         return embedding
