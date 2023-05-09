@@ -118,7 +118,6 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         self.segmentation_model = segmentation
         model: Model = get_model(segmentation, use_auth_token=use_auth_token)
 
-        self.segmentation_batch_size = segmentation_batch_size
         self.segmentation_step = segmentation_step
 
         self.embedding = embedding
@@ -135,7 +134,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             duration=segmentation_duration,
             step=self.segmentation_step * segmentation_duration,
             skip_aggregation=True,
-            batch_size=self.segmentation_batch_size,
+            batch_size=segmentation_batch_size,
         )
         self._frames: SlidingWindow = self._segmentation.model.introspection.frames
 
@@ -167,6 +166,14 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                 f'clustering must be one of [{", ".join(list(Clustering.__members__))}]'
             )
         self.clustering = Klustering.value(metric=metric)
+
+    @property
+    def segmentation_batch_size(self) -> int:
+        return self._segmentation.batch_size
+
+    @segmentation_batch_size.setter
+    def segmentation_batch_size(self, batch_size: int):
+        self._segmentation.batch_size = batch_size
 
     def default_parameters(self):
         raise NotImplementedError()
@@ -238,7 +245,6 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         # bringing a massive speed up to the optimization process (and hence allowing to use
         # a larger search space).
         if self.training:
-
             # we only re-use embeddings if they were extracted based on the same value of the
             # "segmentation.threshold" hyperparameter or if the segmentation model relies on
             # `powerset` mode
@@ -343,7 +349,6 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         # caching embeddings for subsequent trials
         # (see comments at the top of this method for more details)
         if self.training:
-
             if self._segmentation.model.specifications.powerset:
                 file["training_cache/embeddings"] = {
                     "embeddings": embeddings,
@@ -389,7 +394,6 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         for c, (cluster, (chunk, segmentation)) in enumerate(
             zip(hard_clusters, segmentations)
         ):
-
             # cluster is (local_num_speakers, )-shaped
             # segmentation is (num_frames, local_num_speakers)-shaped
             for k in np.unique(cluster):
@@ -484,7 +488,6 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         if self.klustering == "OracleClustering":
             embeddings = None
         else:
-
             embeddings = self.get_embeddings(
                 file,
                 binarized_segmentations,
