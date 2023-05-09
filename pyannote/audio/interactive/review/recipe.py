@@ -31,7 +31,7 @@ def review_stream(
 
     files = source_to_files(source)
     audio_for_prodigy = AudioForProdigy()
-    audio_for_pipeline = Audio(mono=True)
+    audio_for_pipeline = Audio(mono="downmix")
     chunks = get_chunks(source, chunk_duration=chunk)
     chunks = list(chunks)
 

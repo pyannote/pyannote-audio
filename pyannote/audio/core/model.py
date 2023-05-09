@@ -38,12 +38,12 @@ from huggingface_hub.utils import RepositoryNotFoundError
 from lightning_fabric.utilities.cloud_io import _load as pl_load
 from pyannote.core import SlidingWindow
 from pytorch_lightning.utilities.model_summary import ModelSummary
-from semver import VersionInfo
 from torch.utils.data import DataLoader
 
 from pyannote.audio import __version__
 from pyannote.audio.core.io import Audio
 from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
+from pyannote.audio.utils.version import check_version
 
 CACHE_DIR = os.getenv(
     "PYANNOTE_CACHE",
@@ -272,9 +272,7 @@ class Model(pl.LightningModule):
         self.save_hyperparameters("sample_rate", "num_channels")
 
         self.task = task
-        self.audio = Audio(
-            sample_rate=self.hparams.sample_rate, mono=self.hparams.num_channels == 1
-        )
+        self.audio = Audio(sample_rate=self.hparams.sample_rate, mono="downmix")
 
     @property
     def example_input_array(self) -> torch.Tensor:
@@ -414,41 +412,27 @@ class Model(pl.LightningModule):
             "specifications": self.specifications,
         }
 
-    @staticmethod
-    def check_version(library: Text, theirs: Text, mine: Text):
-
-        theirs = ".".join(theirs.split(".")[:3])
-        mine = ".".join(mine.split(".")[:3])
-
-        theirs = VersionInfo.parse(theirs)
-        mine = VersionInfo.parse(mine)
-        if theirs.major != mine.major:
-            warnings.warn(
-                f"Model was trained with {library} {theirs}, yours is {mine}. "
-                f"Bad things will probably happen unless you update {library} to {theirs.major}.x."
-            )
-        if theirs.minor > mine.minor:
-            warnings.warn(
-                f"Model was trained with {library} {theirs}, yours is {mine}. "
-                f"This should be OK but you might want to update {library}."
-            )
-
     def on_load_checkpoint(self, checkpoint: Dict[str, Any]):
 
-        self.check_version(
+        check_version(
             "pyannote.audio",
             checkpoint["pyannote.audio"]["versions"]["pyannote.audio"],
             __version__,
+            what="Model",
         )
 
-        self.check_version(
+        check_version(
             "torch",
             checkpoint["pyannote.audio"]["versions"]["torch"],
             torch.__version__,
+            what="Model",
         )
 
-        self.check_version(
-            "pytorch-lightning", checkpoint["pytorch-lightning_version"], pl.__version__
+        check_version(
+            "pytorch-lightning",
+            checkpoint["pytorch-lightning_version"],
+            pl.__version__,
+            what="Model",
         )
 
         self.specifications = checkpoint["pyannote.audio"]["specifications"]
