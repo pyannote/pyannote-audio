@@ -27,6 +27,8 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
+from pyannote.audio.models.blocks.se_block import SEBlock
+
 
 class Bottleneck(nn.Module):
     """ A residual block composed of three convolutional layers and one residual
@@ -34,7 +36,7 @@ class Bottleneck(nn.Module):
     """
     expansion = 4
 
-    def __init__(self, inplanes, outplanes, stride=1):
+    def __init__(self, inplanes, outplanes, stride=1, se : bool = False):
         super().__init__()
         self.conv1 = nn.Conv2d(inplanes, outplanes, kernel_size=1, bias=False)
         self.bn1 = nn.BatchNorm2d(outplanes)
@@ -44,6 +46,8 @@ class Bottleneck(nn.Module):
         self.conv3 = nn.Conv2d(outplanes, self.expansion *
                                outplanes, kernel_size=1, bias=False)
         self.bn3 = nn.BatchNorm2d(self.expansion * outplanes)
+        self.se_block = SEBlock(outplanes)
+        self.use_se = se
 
         self.shortcut = nn.Sequential()
         # Si une des dimensions est modififiées:
@@ -65,7 +69,8 @@ class Bottleneck(nn.Module):
         outputs = F.relu(self.bn1(self.conv1(input_data)))
         outputs = F.relu(self.bn2(self.conv2(outputs)))
         outputs = F.relu(self.bn3(self.conv3(outputs)))
-        #out = self.se(out)
+        if self.use_se:
+            outputs = self.se_block(outputs)
         outputs = outputs + self.shortcut(input_data)
         outputs = F.relu(outputs)
         return outputs

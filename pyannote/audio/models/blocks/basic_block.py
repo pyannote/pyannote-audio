@@ -27,6 +27,8 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
+from pyannote.audio.models.blocks.se_block import SEBlock
+
 
 class BasicBlock(nn.Module):
     """ A residual block composed of two convolutional layers and one residual
@@ -34,7 +36,7 @@ class BasicBlock(nn.Module):
     """
     expansion = 1
 
-    def __init__(self, inplanes: int, outplanes: int, stride: int = 1) -> None:
+    def __init__(self, inplanes: int, outplanes: int, stride: int = 1, se : bool = False) -> None:
         super().__init__()
         self.conv1 = nn.Conv2d(
             inplanes, outplanes, kernel_size=3, stride=stride, padding=1, bias=False)
@@ -42,14 +44,16 @@ class BasicBlock(nn.Module):
         self.conv2 = nn.Conv2d(outplanes, outplanes,
                                kernel_size=3, stride=1, padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(outplanes)
+        self.se_block = SEBlock(outplanes)
+        self.use_se = se
 
-        self.shorcut = nn.Sequential()
+        self.shortcut = nn.Sequential()
         # Only in the case where dimensions in input and output of this block are
         # different, in order to match these dimensions:
         if stride != 1 or inplanes != self.expansion * outplanes:
             # Convolution layer only used to match dimension between input and
             # output of this block
-            self.shorcut = nn.Sequential(nn.Conv2d(inplanes,
+            self.shortcut = nn.Sequential(nn.Conv2d(inplanes,
                                             self.expansion * outplanes,
                                             kernel_size=1,
                                             stride=stride,
@@ -65,6 +69,8 @@ class BasicBlock(nn.Module):
         """
         outputs = F.relu(self.bn1(self.conv1(input_data)))
         outputs = F.relu(self.bn2(self.conv2(outputs)))
-        outputs = outputs + self.shorcut(input_data)
+        if self.use_se:
+            outputs = self.se_block(outputs)
+        outputs = outputs + self.shortcut(input_data)
         outputs = F.relu(outputs)
         return outputs

@@ -46,12 +46,15 @@ class ResNet(Model):
     def __init__(self, block: Union[BasicBlock, Bottleneck],
                     num_blocks: List[int], sample_rate=16000,
                     num_channels=1, m_channels=32, feat_dim=60,
-                    embed_dim=512, task: Optional[Task] = None, use_sincnet : bool = True,
+                    embed_dim=512, task: Optional[Task] = None,
+                    se : bool = False,
+                    use_sincnet : bool = True,
                     sincnet=None, seg_part_insert : Union[str, None] = None):
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
         self.inplanes = m_channels
         self.feat_dim = feat_dim
         self.embed_dim = embed_dim
+        self.use_se = se
         self.use_sincnet = use_sincnet
         self.seg_part_insert = seg_part_insert
 
@@ -99,12 +102,12 @@ class ResNet(Model):
         else:
             raise ValueError()
 
-    def __make_layer(self, block, planes, num_blocks, stride, ) -> nn.Sequential:
+    def __make_layer(self, block, planes, num_blocks, stride) -> nn.Sequential:
         """"""
         strides = [stride] + [1]*(num_blocks - 1)
         layers = []
         for current_stride in strides:
-            layers.append(block(self.inplanes, planes, stride=current_stride))
+            layers.append(block(self.inplanes, planes, stride=current_stride, se=self.use_se))
             self.inplanes = planes * block.expansion
         return nn.Sequential(*layers)
 
