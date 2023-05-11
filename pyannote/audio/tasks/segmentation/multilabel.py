@@ -343,9 +343,9 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         self,
     ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
         return [
-            F1Score(task="binary"),
-            Precision(task="binary"),
-            Recall(task="binary"),
+            F1Score(task="binary", ignore_index=-1),
+            Precision(task="binary", ignore_index=-1),
+            Recall(task="binary", ignore_index=-1),
         ]
 
     @cached_property
