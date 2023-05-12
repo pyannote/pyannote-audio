@@ -63,6 +63,10 @@ class Resolution(Enum):
     CHUNK = 2  # model outputs just one vector for the whole chunk
 
 
+class UnknownSpecificationsError(Exception):
+    pass
+
+
 @dataclass
 class Specifications:
     problem: Problem
