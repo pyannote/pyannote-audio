@@ -13,7 +13,7 @@
 # copies or substantial portions of the Software.
 #
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIESOF MERCHANTABILITY,
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
 # AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
@@ -446,11 +446,6 @@ class SpeakerDiarization(SegmentationTask):
 
         return torch.from_numpy(np.stack(collated_y))
 
-    # def separation_loss(self, prediction, target):
-    #     mixit_loss = MixITLossWrapper(multisrc_neg_sisdr, generalized=True) 
-    #     return mixit_loss
-        
-
     def segmentation_loss(
         self,
         permutated_prediction: torch.Tensor,
@@ -563,13 +558,12 @@ class SpeakerDiarization(SegmentationTask):
         # corner case
         if not keep.any():
             return None
-        # TODO: pair up waveforms for MIXIT
+
+        # forward pass
         bsz = waveform.shape[0]
         mix1 = waveform[0::3].squeeze(1)
         mix2 = waveform[1::3].squeeze(1)
         moms = mix1 + mix2
-        # forward pass
-        # TODO: model should output predictions for estimated sources as well
         prediction, _ = self.model(waveform)
         _, prediction_sources = self.model(moms)
 
@@ -606,7 +600,6 @@ class SpeakerDiarization(SegmentationTask):
                 permutated_prediction, target, weight=weight
             )
 
-        # TODO: add also separation loss, warmup?
         mixit_loss = self.separation_loss(
             prediction_sources, torch.stack((mix1, mix2)).transpose(0, 1)
         )
