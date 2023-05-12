@@ -565,8 +565,8 @@ class SpeakerDiarization(SegmentationTask):
             return None
         # TODO: pair up waveforms for MIXIT
         bsz = waveform.shape[0]
-        mix1 = waveform[bsz // 2 :].squeeze(1)
-        mix2 = waveform[: bsz // 2].squeeze(1)
+        mix1 = waveform[0::2].squeeze(1)
+        mix2 = waveform[1::2].squeeze(1)
         moms = mix1 + mix2
         # forward pass
         # TODO: model should output predictions for estimated sources as well

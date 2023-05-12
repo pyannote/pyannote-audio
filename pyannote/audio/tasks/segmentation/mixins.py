@@ -124,6 +124,7 @@ class SegmentationTask(Task):
         while True:
             # select one file at random (with probability proportional to its annotated duration)
             file_id = file_ids[cum_prob_annotated_duration.searchsorted(rng.random())]
+            annotations = self.annotations[np.where(self.annotations["file_id"] == file_id)[0]]
 
             # generate `num_chunks_per_file` chunks from this file
             for _ in range(num_chunks_per_file):
@@ -156,7 +157,76 @@ class SegmentationTask(Task):
                 ]
                 start_time = rng.uniform(start, start + region_duration - duration)
 
-                yield self.prepare_chunk(file_id, start_time, duration)
+                # find speakers that already appeared and all annotations that contain them
+                chunk_annotations = annotations[
+                    (annotations["start"] < start_time+duration) & (annotations["end"] > start_time)
+                ]
+                previous_speaker_labels = list(np.unique(chunk_annotations["file_label_idx"]))
+                repeated_speaker_annotations = annotations[np.isin(annotations["file_label_idx"], previous_speaker_labels)]
+                
+                if repeated_speaker_annotations.size == 0:
+                    # if previous chunk has 0 speakers then just sample from all annotated regions again
+                    first_chunk = self.prepare_chunk(file_id, start_time, duration)
+                    first_chunk["meta"]["mixture_type"]="first_mixture"
+                    yield first_chunk
+
+                    # selected one annotated region at random (with probability proportional to its duration)
+                    annotated_region_index = np.random.choice(
+                        annotated_region_indices, p=cum_prob_annotated_regions_duration
+                    )
+
+                    # select one chunk at random in this annotated region
+                    _, _, start, end = self.annotated_regions[annotated_region_index]
+                    start_time = rng.uniform(start, end - duration)
+
+                    second_chunk = self.prepare_chunk(file_id, start_time, duration)
+                    second_chunk["meta"]["mixture_type"]="second_mixture"
+                    yield second_chunk
+
+                else:
+                    # merge segments that contain repeated speakers
+                    merged_repeated_segments = [[repeated_speaker_annotations["start"][0],repeated_speaker_annotations["end"][0]]]
+                    for _, start, end, _, _, _ in repeated_speaker_annotations:
+                        previous = merged_repeated_segments[-1]
+                        if start <= previous[1]:
+                            previous[1] = max(previous[1], end)
+                        else:
+                            merged_repeated_segments.append([start, end])
+                    
+                    # find segments that don't contain repeated speakers
+                    segments_without_repeat = []
+                    current_region_index = 0
+                    previous_time = self.annotated_regions["start"][annotated_region_indices[0]]
+                    for segment in merged_repeated_segments:
+                        if segment[0] > self.annotated_regions["end"][annotated_region_indices[current_region_index]]:
+                            current_region_index+=1
+                            previous_time = self.annotated_regions["start"][annotated_region_indices[current_region_index]]
+                        
+                        if segment[0] - previous_time > duration:
+                            segments_without_repeat.append((previous_time, segment[0], segment[0] - previous_time))
+                        previous_time = segment[1]
+                    
+                    dtype = [("start", "f"), ("end", "f"),("duration", "f")]
+                    segments_without_repeat = np.array(segments_without_repeat,dtype=dtype)
+
+                    if np.sum(segments_without_repeat["duration"]) != 0:
+
+                        # only yield chunks if it is possible to choose the second chunk so that yielded chunks are always paired
+
+                        first_chunk = self.prepare_chunk(file_id, start_time, duration)
+                        first_chunk["meta"]["mixture_type"]="first_mixture"
+                        yield first_chunk
+
+                        prob_segments_duration = segments_without_repeat["duration"] / np.sum(segments_without_repeat["duration"])
+                        segment = np.random.choice(
+                            segments_without_repeat, p=prob_segments_duration
+                        )
+
+                        start, end, _ = segment
+                        new_start_time = rng.uniform(start, end - duration)
+                        second_chunk = self.prepare_chunk(file_id, new_start_time, duration)
+                        second_chunk["meta"]["mixture_type"]="second_mixture"
+                        yield second_chunk
 
     def train__iter__(self):
         """Iterate over training samples
