@@ -194,6 +194,9 @@ class SpeakerDiarization(SegmentationTask):
                     "`vad_loss` cannot be used jointly with `max_speakers_per_frame`"
                 )
 
+        if batch_size % 3 != 0:
+            raise ValueError("`batch_size` must be divisible by 3 for mixtures of mixtures training")  
+
         self.max_speakers_per_chunk = max_speakers_per_chunk
         self.max_speakers_per_frame = max_speakers_per_frame
         self.weigh_by_cardinality = weigh_by_cardinality
