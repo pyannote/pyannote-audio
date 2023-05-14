@@ -567,8 +567,15 @@ class SpeakerDiarization(SegmentationTask):
         mix1 = waveform[0::3].squeeze(1)
         mix2 = waveform[1::3].squeeze(1)
         moms = mix1 + mix2
-        prediction, _ = self.model(waveform)
         _, prediction_sources = self.model(moms)
+
+        # don't use moms with more than max_speakers_per_chunk speakers for training speaker diarization
+        num_speakers: torch.Tensor = torch.sum(torch.any(target, dim=1), dim=1)
+        num_speakers[2::3] = num_speakers[::3] + num_speakers[1::3]
+        keep: torch.Tensor = num_speakers <= self.max_speakers_per_chunk
+        target = target[keep]
+        waveform = waveform[keep]
+        prediction, _ = self.model(waveform)
 
         batch_size, num_frames, _ = prediction.shape
         # (batch_size, num_frames, num_classes)
