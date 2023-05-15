@@ -20,25 +20,42 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-
 from typing import Optional
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from transformers import AutoModel
+import torchaudio
+from torchaudio.models import wav2vec2_model, Wav2Vec2Model
+from torchaudio.pipelines import Wav2Vec2Bundle
 
-class WavLM(nn.Module):
+#All torchaudio Self-Sup. models can be found at https://pytorch.org/audio/main/pipelines.html
+#ex : WAVLM_BASE, HUBERT_BASE, WAV2VEC2_BASE
 
-    def __init__(self):
+class SelfSupModel(nn.Module):
+
+    def __init__(self, model_name,layer_nb):
         super().__init__()
-
-        self.wvlm = AutoModel.from_pretrained('microsoft/wavlm-base') #Load the model
-
+        self.model_name = model_name
+        print("\nThe selected Self-Supervised Model is "+ model_name+".\n")
+        SelfSupModel.__name__ = model_name #Overwrite the class name to that of the selected model       
+        bundle = getattr(torchaudio.pipelines, model_name)
+        self.feat_size = bundle._params['encoder_embed_dim'] #Get the encoder feature size
+        torch.hub.set_dir("./models")
+        self.ssl_model = bundle.get_model() #Load the model
+        
+        if layer_nb == None :
+            print("\nLayer number not specified. Default to the first one (layer 0).\n")
+            self.layer_nb = 0
+        else :        
+            self.layer_nb = layer_nb
+            print("\nSelected frozen layer is "+ str(layer_nb) +". \n")
+               
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
         
         waveforms = torch.squeeze(waveforms,1) #waveforms : (batch, channel, sample) -> (batch,sample)
         with torch.no_grad():
-            outputs = self.wvlm(waveforms).extract_features #Compute the features and extract last hidden layer weights
+            features, _ = self.ssl_model.extract_features(waveforms)  #Compute the features and extract last hidden layer weights
+        outputs = features[self.layer_nb]
         
         return (outputs)

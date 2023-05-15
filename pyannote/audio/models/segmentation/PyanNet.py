@@ -9,7 +9,7 @@ from pyannote.core.utils.generators import pairwise
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
 from pyannote.audio.models.blocks.sincnet import SincNet
-from pyannote.audio.models.blocks.wavlm import WavLM
+from pyannote.audio.models.blocks.selfsup import SelfSupModel
 from pyannote.audio.utils.params import merge_dict
 
 
@@ -52,6 +52,7 @@ class PyanNet(Model):
     def __init__(
         self,
         model: str = None,
+        layer: int = None,
         sincnet: dict = None,
         lstm: dict = None,
         linear: dict = None,
@@ -69,14 +70,21 @@ class PyanNet(Model):
         linear = merge_dict(self.LINEAR_DEFAULTS, linear)
         self.save_hyperparameters("sincnet", "lstm", "linear")
         self.model = model
-
-        if model == "wavlm":
-          self.wavlm = WavLM()
-          feat_size = 512  
+        
+        #All torchaudio Self-Sup. models can be found at https://pytorch.org/audio/main/pipelines.html
+        print("\n##################################################################")
+        if model != None :
+          print("### A self-supervised model is used for the feature extraction ###")
+          print("##################################################################")
+          self.SelfSupervised = SelfSupModel(model,layer)
+          #feat_size = 768
+          feat_size = self.SelfSupervised.feat_size
         else :
           self.sincnet = SincNet(**self.hparams.sincnet)
-          feat_size = 60        
-
+          print("###   The SincNet module is used for the feature extraction    ### ")
+          feat_size = 60
+        
+        print("##################################################################\n")
         monolithic = lstm["monolithic"]
         if monolithic:
             multi_layer_lstm = dict(lstm)
@@ -152,20 +160,20 @@ class PyanNet(Model):
         -------
         scores : (batch, frame, classes)
         """
-        if self.model == "wavlm" :
-          outputs = self.wavlm(waveforms)
+        if self.model != None :
+          outputs = self.SelfSupervised(waveforms)
         else :
           outputs = self.sincnet(waveforms) 
 
         if self.hparams.lstm["monolithic"]:
-            if self.model == "wavlm":
+            if self.model != None :
               outputs, _ = self.lstm(outputs)
             else:
               outputs, _ = self.lstm(
               rearrange(outputs, "batch feature frame -> batch frame feature")
               )
         else:
-            if self.model != "wavlm":
+            if self.model == None :
               outputs = rearrange(outputs, "batch feature frame -> batch frame feature")
             for i, lstm in enumerate(self.lstm):
                 outputs, _ = lstm(outputs)
