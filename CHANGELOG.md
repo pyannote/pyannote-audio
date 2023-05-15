@@ -28,6 +28,7 @@
   - feat(task): add support for label scope in speaker diarization task
   - feat(task): add support for missing classes in multi-label segmentation task
   - improve(task): load metadata as tensors rather than pyannote.core instances
+  - improve(task): improve error message on missing specifications
 
 ### Fixes and improvements
 
