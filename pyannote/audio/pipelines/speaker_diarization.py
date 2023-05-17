@@ -542,8 +542,8 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             # when reference is available, use it to map hypothesized speakers
             # to reference speakers (this makes later error analysis easier
             # but does not modify the actual output of the diarization pipeline)
-            label_map = self.optimal_mapping(
-                file["annotation"], diarization, mapping_only=True
+            diarization, label_map = self.optimal_mapping(
+                file["annotation"], diarization, return_mapping=True
             )
 
         else:
@@ -553,8 +553,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                 label: expected_label
                 for label, expected_label in zip(diarization.labels(), self.classes())
             }
-
-        diarization = diarization.rename_labels(label_map)
+            diarization = diarization.rename_labels(label_map)
 
         if not return_embeddings:
             return diarization

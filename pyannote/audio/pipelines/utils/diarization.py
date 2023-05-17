@@ -77,8 +77,8 @@ class SpeakerDiarizationMixin:
     def optimal_mapping(
         reference: Union[Mapping, Annotation],
         hypothesis: Annotation,
-        mapping_only: bool = False,
-    ) -> Union[Dict[Label, Label], Annotation]:
+        return_mapping: bool = False,
+    ) -> Union[Annotation, Tuple[Annotation, Dict[Label, Label]]]:
         """Find the optimal bijective mapping between reference and hypothesis labels
 
         Parameters
@@ -87,8 +87,8 @@ class SpeakerDiarizationMixin:
             Reference annotation. Can be an Annotation instance or
             a mapping with an "annotation" key.
         hypothesis : Annotation
-        mapping_only : bool, optional
-            Only return the mapping. Defaults to False.
+        return_mapping : bool, optional
+            Return the label mapping itself along with the mapped annotation. Defaults to False.
 
         Returns
         -------
@@ -105,9 +105,11 @@ class SpeakerDiarizationMixin:
         mapping = DiarizationErrorRate().optimal_mapping(
             reference, hypothesis, uem=annotated
         )
-        if mapping_only:
-            return mapping
-        return hypothesis.rename_labels(mapping=mapping)
+        mapped_hypothesis = hypothesis.rename_labels(mapping=mapping)
+
+        if return_mapping:
+            return mapped_hypothesis, mapping
+        return mapped_hypothesis
 
     # TODO: get rid of onset/offset (binarization should be applied before calling speaker_count)
     # TODO: get rid of warm-up parameter (trimming should be applied before calling speaker_count)
