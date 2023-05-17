@@ -42,7 +42,13 @@ from torch.utils.data import DataLoader
 
 from pyannote.audio import __version__
 from pyannote.audio.core.io import Audio
-from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
+from pyannote.audio.core.task import (
+    Problem,
+    Resolution,
+    Specifications,
+    Task,
+    UnknownSpecificationsError,
+)
 from pyannote.audio.utils.version import check_version
 
 CACHE_DIR = os.getenv(
@@ -300,9 +306,28 @@ class Model(pl.LightningModule):
 
     @property
     def specifications(self):
-        if self.task is not None:
-            return self.task.specifications
-        return self._specifications
+        if self.task is None:
+            try:
+                specifications = self._specifications
+
+            except AttributeError as e:
+                raise UnknownSpecificationsError(
+                    "Model specifications are not available because it has not been assigned a task yet. "
+                    "Use `model.task = ...` to assign a task to the model."
+                ) from e
+
+        else:
+            try:
+                specifications = self.task.specifications
+
+            except AttributeError as e:
+                raise UnknownSpecificationsError(
+                    "Task specifications are not available. This is most likely because they depend on "
+                    "the content of the training subset. Use `model.task.setup()` to go over the training "
+                    "subset and fix this, or let lightning trainer do that for you in `trainer.fit(model)`."
+                ) from e
+
+        return specifications
 
     @specifications.setter
     def specifications(self, specifications):
