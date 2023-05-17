@@ -434,7 +434,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             Maximum number of speakers. Has no effect when `num_speakers` is provided.
         return_embeddings : bool, optional
             If `True`, return the embedding vector for each speaker (cluster centroids).
-            The return value is then a `dict` with `diarization` and `speaker_embeddings` fields.
+            The return value is then a tuple of `Annotation` and `Dict` of embedding vectors for each speaker.
             Default: `False`.
         hook : callable, optional
             Callback called after each major steps of the pipeline as follows:
@@ -480,7 +480,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         if np.nanmax(count.data) == 0.0:
             diarization = Annotation(uri=file["uri"])
             if return_embeddings:
-                return {"diarization": diarization, "speaker_embeddings": {}}
+                return diarization, {}
             return diarization
 
         # binarize segmentation
@@ -560,13 +560,14 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             return diarization
         else:
             embedding_map = {}
+            # TODO: The number of centroids may be smaller than the number of speakers
+            # in the annotation. This can happen if the number of active speakers
+            # obtained from `speaker_count` for some frames is larger than the number
+            # of clusters obtained from `clustering`. Will be fixed in the future
             for k, label in label_map.items():
                 if k < centroids.shape[0]:
                     embedding_map[label] = centroids[k]
-            return {
-                "diarization": diarization,
-                "speaker_embeddings": embedding_map,
-            }
+            return diarization, embedding_map
 
     def get_metric(self) -> GreedyDiarizationErrorRate:
         return GreedyDiarizationErrorRate(**self.der_variant)
