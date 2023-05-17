@@ -532,7 +532,10 @@ class OracleClustering(BaseClustering):
                 hard_clusters[c, i] = j
                 soft_clusters[c, i, j] = 1.0
 
-        return hard_clusters, soft_clusters
+        # return fake centroids, which are simply indices of ground truth clusters
+        centroids = np.expand_dims(np.arange(num_clusters), axis=1)
+
+        return hard_clusters, soft_clusters, centroids
 
 
 class Clustering(Enum):
