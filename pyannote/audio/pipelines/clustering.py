@@ -156,6 +156,7 @@ class BaseClustering(Pipeline):
         -------
         soft_clusters : (num_chunks, num_speakers, num_clusters)-shaped array
         hard_clusters : (num_chunks, num_speakers)-shaped array
+        centroids : (num_clusters, dimension)-shaped array
         """
 
         # TODO: option to add a new (dummy) cluster in case num_clusters < max(frame_speaker_count)
@@ -230,6 +231,8 @@ class BaseClustering(Pipeline):
         soft_clusters : (num_chunks, num_speakers, num_clusters) array
             Soft cluster assignment (the higher soft_clusters[c, s, k], the most likely
             the sth speaker of cth chunk belongs to kth cluster)
+        centroids : (num_clusters, dimension) array
+            Centroid vectors of each cluster
         """
 
         train_embeddings, train_chunk_idx, train_speaker_idx = self.filter_embeddings(
@@ -505,6 +508,8 @@ class OracleClustering(BaseClustering):
         soft_clusters : (num_chunks, num_speakers, num_clusters) array
             Soft cluster assignment (the higher soft_clusters[c, s, k], the most likely
             the sth speaker of cth chunk belongs to kth cluster)
+        centroids : (num_clusters, 1) array
+            Dummy cluster centroid vectors (each is one-dimensional and contains the cluster index)
         """
 
         num_chunks, num_frames, num_speakers = segmentations.data.shape
