@@ -9,6 +9,7 @@
   - BREAKING(pipeline): pipeline defaults to CPU (use `pipeline.to(device)`)
   - BREAKING(pipeline): remove `SpeakerSegmentation` pipeline (use `SpeakerDiarization` pipeline)
   - BREAKING(pipeline): remove support `FINCHClustering` and `HiddenMarkovModelClustering`
+  - BREAKING(pipeline): remove `segmentation_duration` parameter from `SpeakerDiarization` pipeline (defaults to `duration` of segmentation model)
   - BREAKING(setup): drop support for Python 3.7
   - BREAKING(io): channels are now 0-indexed (used to be 1-indexed)
   - BREAKING(io): multi-channel audio is no longer downmixed to mono by default.
@@ -20,12 +21,14 @@
 ### Features and improvements
 
   - feat(pipeline): send pipeline to device with `pipeline.to(device)`
+  - feat(pipeline): make `segmentation_batch_size` and `embedding_batch_size` mutable in `SpeakerDiarization` pipeline (they now default to `1`)
   - feat(task): add [powerset](https://arxiv.org/PLACEHOLDER) support to `SpeakerDiarization` task
   - feat(pipeline): add progress hook to pipelines
   - feat(pipeline): check version compatibility at load time
   - feat(task): add support for label scope in speaker diarization task
   - feat(task): add support for missing classes in multi-label segmentation task
   - improve(task): load metadata as tensors rather than pyannote.core instances
+  - improve(task): improve error message on missing specifications
 
 ### Fixes and improvements
 
