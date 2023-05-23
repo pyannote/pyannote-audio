@@ -36,6 +36,7 @@ from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Resolution
 from pyannote.audio.utils.permutation import mae_cost_func, permutate
 from pyannote.audio.utils.powerset import Powerset
+from pyannote.audio.utils.reproducibility import fix_reproducibility
 
 TaskName = Union[Text, None]
 
@@ -357,16 +358,7 @@ class Inference(BaseInference):
 
         """
 
-        if (self.device.type == "cuda") and (
-            torch.backends.cuda.matmul.allow_tf32 or torch.backends.cudnn.allow_tf32
-        ):
-            warnings.warn(
-                "TensorFloat-32 (TF32) is enabled, which might lead to "
-                "numerical instabilities. Please disable it by calling "
-                "`torch.backends.cuda.matmul.allow_tf32 = False` and "
-                "`torch.backends.cudnn.allow_tf32 = False`. For details, "
-                "see https://github.com/pyannote/pyannote-audio/issues/1370."
-            )
+        fix_reproducibility(self.device)
 
         waveform, sample_rate = self.model.audio(file)
 
@@ -420,16 +412,7 @@ class Inference(BaseInference):
         >>> inference.crop(file, extended_chunk).crop(chunk_of_interest, returns_data=False)
         """
 
-        if (self.device.type == "cuda") and (
-            torch.backends.cuda.matmul.allow_tf32 or torch.backends.cudnn.allow_tf32
-        ):
-            warnings.warn(
-                "TensorFloat-32 (TF32) is enabled, which might lead to "
-                "numerical instabilities. Please disable it by calling "
-                "`torch.backends.cuda.matmul.allow_tf32 = False` and "
-                "`torch.backends.cudnn.allow_tf32 = False`. For details, "
-                "see https://github.com/pyannote/pyannote-audio/issues/1370."
-            )
+        fix_reproducibility(self.device)
 
         if self.window == "sliding":
 
