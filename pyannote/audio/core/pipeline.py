@@ -40,6 +40,7 @@ from pyannote.audio import Audio, __version__
 from pyannote.audio.core.inference import BaseInference
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import CACHE_DIR, Model
+from pyannote.audio.utils.reproducibility import fix_reproducibility
 from pyannote.audio.utils.version import check_version
 
 PIPELINE_PARAMS_NAME = "config.yaml"
@@ -293,17 +294,7 @@ visit https://hf.co/{model_id} to accept the user conditions."""
         raise NotImplementedError()
 
     def __call__(self, file: AudioFile, **kwargs):
-        device = getattr(self, "device", torch.device("cpu"))
-        if (device.type == "cuda") and (
-            torch.backends.cuda.matmul.allow_tf32 or torch.backends.cudnn.allow_tf32
-        ):
-            warnings.warn(
-                "TensorFloat-32 (TF32) is enabled, which might lead to "
-                "numerical instabilities. Please disable it by calling "
-                "`torch.backends.cuda.matmul.allow_tf32 = False` and "
-                "`torch.backends.cudnn.allow_tf32 = False`. For details, "
-                "see https://github.com/pyannote/pyannote-audio/issues/1370."
-            )
+        fix_reproducibility(getattr(self, "device", torch.device("cpu")))
 
         if not self.instantiated:
             # instantiate with default parameters when available
