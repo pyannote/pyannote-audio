@@ -148,7 +148,6 @@ visit https://hf.co/{model_id} to accept the user conditions."""
         if "preprocessors" in config:
             preprocessors = {}
             for key, preprocessor in config.get("preprocessors", {}).items():
-
                 # preprocessors:
                 #    key:
                 #       name: package.module.ClassName
@@ -253,7 +252,6 @@ visit https://hf.co/{model_id} to accept the user conditions."""
         super().__setattr__(name, value)
 
     def __delattr__(self, name):
-
         if name in self._models:
             del self._models[name]
 
@@ -295,6 +293,18 @@ visit https://hf.co/{model_id} to accept the user conditions."""
         raise NotImplementedError()
 
     def __call__(self, file: AudioFile, **kwargs):
+        device = getattr(self, "device", torch.device("cpu"))
+        if (device.type == "cuda") and (
+            torch.backends.cuda.matmul.allow_tf32 or torch.backends.cudnn.allow_tf32
+        ):
+            warnings.warn(
+                "TensorFloat-32 (TF32) is enabled, which might lead to "
+                "numerical instabilities. Please disable it by calling "
+                "`torch.backends.cuda.matmul.allow_tf32 = False` and "
+                "`torch.backends.cudnn.allow_tf32 = False`. For details, "
+                "see https://github.com/pyannote/pyannote-audio/issues/1370."
+            )
+
         if not self.instantiated:
             # instantiate with default parameters when available
             try:
@@ -335,5 +345,7 @@ visit https://hf.co/{model_id} to accept the user conditions."""
 
         for _, inference in self._inferences.items():
             _ = inference.to(device)
+
+        self.device = device
 
         return self

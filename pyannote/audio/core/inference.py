@@ -356,6 +356,18 @@ class Inference(BaseInference):
             and `np.ndarray` if is set to "whole".
 
         """
+
+        if (self.device.type == "cuda") and (
+            torch.backends.cuda.matmul.allow_tf32 or torch.backends.cudnn.allow_tf32
+        ):
+            warnings.warn(
+                "TensorFloat-32 (TF32) is enabled, which might lead to "
+                "numerical instabilities. Please disable it by calling "
+                "`torch.backends.cuda.matmul.allow_tf32 = False` and "
+                "`torch.backends.cudnn.allow_tf32 = False`. For details, "
+                "see https://github.com/pyannote/pyannote-audio/issues/1370."
+            )
+
         waveform, sample_rate = self.model.audio(file)
 
         if self.window == "sliding":
@@ -407,6 +419,17 @@ class Inference(BaseInference):
         >>> extended_chunk = Segment(10 - warm_up, 15 + warm_up)
         >>> inference.crop(file, extended_chunk).crop(chunk_of_interest, returns_data=False)
         """
+
+        if (self.device.type == "cuda") and (
+            torch.backends.cuda.matmul.allow_tf32 or torch.backends.cudnn.allow_tf32
+        ):
+            warnings.warn(
+                "TensorFloat-32 (TF32) is enabled, which might lead to "
+                "numerical instabilities. Please disable it by calling "
+                "`torch.backends.cuda.matmul.allow_tf32 = False` and "
+                "`torch.backends.cudnn.allow_tf32 = False`. For details, "
+                "see https://github.com/pyannote/pyannote-audio/issues/1370."
+            )
 
         if self.window == "sliding":
 
