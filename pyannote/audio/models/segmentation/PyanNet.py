@@ -273,6 +273,7 @@ class PyanNet(Model):
         masked_tf_rep = masks * tf_rep.unsqueeze(1)
         decoded_sources = self.decoder(masked_tf_rep)
         decoded_sources = pad_x_to_y(decoded_sources, waveforms)
+        decoded_sources = decoded_sources.transpose(1, 2)
 
         outputs = rearrange(
             masks, "batch nsrc nfilters nframes -> batch nframes nfilters nsrc"
