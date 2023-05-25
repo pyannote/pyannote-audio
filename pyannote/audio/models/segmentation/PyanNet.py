@@ -81,7 +81,6 @@ class PyanNet(Model):
     }
     LINEAR_DEFAULTS = {"hidden_size": 128, "num_layers": 2}
     CONVNET_DEFAULTS = {
-        "n_src": 6,
         "n_blocks": 8,
         "n_repeats": 3,
         "bn_chan": 128,
@@ -92,7 +91,6 @@ class PyanNet(Model):
         "mask_act": "relu",
     }
     DPRNN_DEFAULTS = {
-        "n_src": 6,
         "n_repeats": 6,
         "bn_chan": 128,
         "hid_size": 128,
@@ -115,6 +113,7 @@ class PyanNet(Model):
         num_channels: int = 1,
         task: Optional[Task] = None,
         encoder_type: str = None,
+        n_sources: int = 6,
     ):
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
 
@@ -135,14 +134,14 @@ class PyanNet(Model):
         self.encoder, self.decoder = make_enc_dec(
             sample_rate=sample_rate, **self.hparams.encoder_decoder
         )
-        self.masker = DPRNN(n_feats_out, **self.hparams.dprnn)
+        self.masker = DPRNN(n_feats_out, n_src=n_sources, **self.hparams.dprnn)
         #self.convnet= TDConvNet(n_feats_out, **self.hparams.convnet)
 
         monolithic = lstm["monolithic"]
         if monolithic:
             multi_layer_lstm = dict(lstm)
             del multi_layer_lstm["monolithic"]
-            self.lstm = nn.LSTM(6 * n_feats_out, **multi_layer_lstm)
+            self.lstm = nn.LSTM(n_sources * n_feats_out, **multi_layer_lstm)
 
         else:
             num_layers = lstm["num_layers"]
