@@ -143,7 +143,6 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
         max_num_speakers: int = None,  # deprecated in favor of `max_speakers_per_chunk``
         loss: Literal["bce", "mse"] = None,  # deprecated
     ):
-
         super().__init__(
             protocol,
             duration=duration,
@@ -188,12 +187,10 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
         self.vad_loss = vad_loss
 
     def setup(self, stage: Optional[str] = None):
-
         super().setup(stage=stage)
 
         # estimate maximum number of speakers per chunk when not provided
         if self.max_speakers_per_chunk is None:
-
             training = self.metadata["subset"] == Subsets.index("train")
 
             num_unique_speakers = []
@@ -201,7 +198,6 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
             for file_id in track(
                 np.where(training)[0], description=progress_description
             ):
-
                 annotations = self.annotations[
                     np.where(self.annotations["file_id"] == file_id)[0]
                 ]
@@ -448,7 +444,6 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
         """
 
         if self.specifications.powerset:
-
             # `clamp_min` is needed to set non-speech weight to 1.
             class_weight = (
                 torch.clamp_min(self.model.powerset.cardinality, 1.0)
@@ -534,17 +529,6 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
         target = target[keep]
         waveform = waveform[keep]
 
-        # log effective batch size
-        self.model.log(
-            f"{self.logging_prefix}BatchSize",
-            keep.sum(),
-            prog_bar=False,
-            logger=True,
-            on_step=False,
-            on_epoch=True,
-            reduce_fx="mean",
-        )
-
         # corner case
         if not keep.any():
             return None
@@ -569,7 +553,6 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
         weight[:, num_frames - warm_up_right :] = 0.0
 
         if self.specifications.powerset:
-
             powerset = torch.nn.functional.one_hot(
                 torch.argmax(prediction, dim=-1),
                 self.model.powerset.num_powerset_classes,
@@ -590,7 +573,7 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
             )
 
         self.model.log(
-            f"{self.logging_prefix}TrainSegLoss",
+            "loss/train/segmentation",
             seg_loss,
             on_step=False,
             on_epoch=True,
@@ -602,7 +585,6 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
             vad_loss = 0.0
 
         else:
-
             # TODO: vad_loss probably does not make sense in powerset mode
             # because first class (empty set of labels) does exactly this...
             if self.specifications.powerset:
@@ -616,7 +598,7 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
                 )
 
             self.model.log(
-                f"{self.logging_prefix}TrainVADLoss",
+                "loss/train/vad",
                 vad_loss,
                 on_step=False,
                 on_epoch=True,
@@ -631,11 +613,11 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
             return None
 
         self.model.log(
-            f"{self.logging_prefix}TrainLoss",
+            "loss/train",
             loss,
             on_step=False,
             on_epoch=True,
-            prog_bar=True,
+            prog_bar=False,
             logger=True,
         )
 
@@ -647,20 +629,20 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
         """Returns diarization error rate and its components"""
 
         if self.specifications.powerset:
-            return [
-                DiarizationErrorRate(0.5),
-                SpeakerConfusionRate(0.5),
-                MissedDetectionRate(0.5),
-                FalseAlarmRate(0.5),
-            ]
+            return {
+                "DiarizationErrorRate": DiarizationErrorRate(0.5),
+                "DiarizationErrorRate/Confusion": SpeakerConfusionRate(0.5),
+                "DiarizationErrorRate/Miss": MissedDetectionRate(0.5),
+                "DiarizationErrorRate/FalseAlarm": FalseAlarmRate(0.5),
+            }
 
-        return [
-            OptimalDiarizationErrorRate(),
-            OptimalDiarizationErrorRateThreshold(),
-            OptimalSpeakerConfusionRate(),
-            OptimalMissedDetectionRate(),
-            OptimalFalseAlarmRate(),
-        ]
+        return {
+            "DiarizationErrorRate": OptimalDiarizationErrorRate(),
+            "DiarizationErrorRate/Threshold": OptimalDiarizationErrorRateThreshold(),
+            "DiarizationErrorRate/Confusion": OptimalSpeakerConfusionRate(),
+            "DiarizationErrorRate/Miss": OptimalMissedDetectionRate(),
+            "DiarizationErrorRate/FalseAlarm": OptimalFalseAlarmRate(),
+        }
 
     # TODO: no need to compute gradient in this method
     def validation_step(self, batch, batch_idx: int):
@@ -704,7 +686,6 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
         weight[:, num_frames - warm_up_right :] = 0.0
 
         if self.specifications.powerset:
-
             powerset = torch.nn.functional.one_hot(
                 torch.argmax(prediction, dim=-1),
                 self.model.powerset.num_powerset_classes,
@@ -728,7 +709,7 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
             )
 
         self.model.log(
-            f"{self.logging_prefix}ValSegLoss",
+            "loss/val/segmentation",
             seg_loss,
             on_step=False,
             on_epoch=True,
@@ -740,7 +721,6 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
             vad_loss = 0.0
 
         else:
-
             # TODO: vad_loss probably does not make sense in powerset mode
             # because first class (empty set of labels) does exactly this...
             if self.specifications.powerset:
@@ -754,7 +734,7 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
                 )
 
             self.model.log(
-                f"{self.logging_prefix}ValVADLoss",
+                "loss/val/vad",
                 vad_loss,
                 on_step=False,
                 on_epoch=True,
@@ -765,7 +745,7 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
         loss = seg_loss + vad_loss
 
         self.model.log(
-            f"{self.logging_prefix}ValLoss",
+            "loss/val",
             loss,
             on_step=False,
             on_epoch=True,
@@ -833,7 +813,6 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
 
         # plot each sample
         for sample_idx in range(num_samples):
-
             # find where in the grid it should be plotted
             row_idx = sample_idx // nrows
             col_idx = sample_idx % ncols
@@ -863,14 +842,12 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
 
         for logger in self.model.loggers:
             if isinstance(logger, TensorBoardLogger):
-                logger.experiment.add_figure(
-                    f"{self.logging_prefix}ValSamples", fig, self.model.current_epoch
-                )
+                logger.experiment.add_figure("samples", fig, self.model.current_epoch)
             elif isinstance(logger, MLFlowLogger):
                 logger.experiment.log_figure(
                     run_id=logger.run_id,
                     figure=fig,
-                    artifact_file=f"{self.logging_prefix}ValSamples_epoch{self.model.current_epoch}.png",
+                    artifact_file=f"samples_epoch{self.model.current_epoch}.png",
                 )
 
         plt.close(fig)
@@ -893,7 +870,6 @@ def main(protocol: str, subset: str = "test", model: str = "pyannote/segmentatio
     files = list(getattr(protocol, subset)())
 
     with Progress() as progress:
-
         main_task = progress.add_task(protocol.name, total=len(files))
         file_task = progress.add_task("Processing", total=1.0)
 

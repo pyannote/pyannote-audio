@@ -34,6 +34,7 @@
 
   - fix(pipeline): fix support for IOBase audio
   - fix(pipeline): fix corner case with no speaker
+  - improvement(task): shorten andd improve structure of Tensorboard tags
 
 ### Dependencies
 
