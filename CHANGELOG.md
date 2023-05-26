@@ -2,6 +2,15 @@
 
 ## Version 3.0 (xxxx-xx-xx)
 
+### Highlights
+
+- *"Harder"*. Fixed [major reproducibility issue](https://github.com/pyannote/pyannote-audio/issues/1370) with Ampere (A100) NVIDIA GPUs
+    In case you tried `pyannote.audio` pretrained pipelines in the past on Ampera (A100) NVIDIA GPUs
+    and were disappointed by the accuracy, please give it another try with this new version.
+- "Better".
+- "Faster".
+- "Stronger".
+
 ### Breaking changes
 
   - BREAKING(task): rename `Segmentation` task to `SpeakerDiarization`
@@ -32,6 +41,7 @@
 
 ### Fixes and improvements
 
+  - fix(pipeline): fix reproducibility issue with Ampere CUDA devices
   - fix(pipeline): fix support for IOBase audio
   - fix(pipeline): fix corner case with no speaker
   - improve(task): shorten and improve structure of Tensorboard tags
