@@ -25,37 +25,46 @@ from typing import Optional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torchaudio
-from torchaudio.models import wav2vec2_model, Wav2Vec2Model
-from torchaudio.pipelines import Wav2Vec2Bundle
-
-#All torchaudio Self-Sup. models can be found at https://pytorch.org/audio/main/pipelines.html
-#ex : WAVLM_BASE, HUBERT_BASE, WAV2VEC2_BASE
+from transformers import AutoModel, Wav2Vec2FeatureExtractor, AutoConfig
 
 class SelfSupModel(nn.Module):
 
-    def __init__(self, model_name,layer_nb):
+    def __init__(self, model,layer, cache):
         super().__init__()
-        self.model_name = model_name
-        print("\nThe selected Self-Supervised Model is "+ model_name+".\n")
-        SelfSupModel.__name__ = model_name #Overwrite the class name to that of the selected model       
-        bundle = getattr(torchaudio.pipelines, model_name)
-        self.feat_size = bundle._params['encoder_embed_dim'] #Get the encoder feature size
-        torch.hub.set_dir("./models")
-        self.ssl_model = bundle.get_model() #Load the model
+        self.model = model
+        print("\nThe selected Self-Supervised Model from HuggingFace is "+ model+".\n")
+        SelfSupModel.__name__ = model.rsplit('/', 1)[1] #Overwrite the class name to that of the selected model
+        if cache is not None :
+            print("Model and configuration file location is : "+str(cache))
+            config = AutoConfig.from_pretrained(model, cache_dir = cache)
+            config.cache_dir= cache
+        else :
+            config = AutoConfig.from_pretrained(model)
         
-        if layer_nb == None :
+        config.output_hidden_states = True
+
+        
+        self.ssl_model = AutoModel.from_pretrained(model, config = config, cache_dir = cache) #Load the model
+        self.ssl_model.eval()
+        
+        self.feat_size = config.hidden_size #Get the encoder feature size
+        self.processor = Wav2Vec2FeatureExtractor.from_pretrained(model, return_tensors="pt")
+
+        if layer == None :
             print("\nLayer number not specified. Default to the first one (layer 0).\n")
-            self.layer_nb = 0
+            self.layer = 0
         else :        
-            self.layer_nb = layer_nb
-            print("\nSelected frozen layer is "+ str(layer_nb) +". \n")
-               
+            self.layer = layer
+            print("\nSelected frozen layer is "+ str(layer) +". \n")
+
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
-        
         waveforms = torch.squeeze(waveforms,1) #waveforms : (batch, channel, sample) -> (batch,sample)
-        with torch.no_grad():
-            features, _ = self.ssl_model.extract_features(waveforms)  #Compute the features and extract last hidden layer weights
-        outputs = features[self.layer_nb]
+        if self.processor.do_normalize == True :
+            waveforms = F.layer_norm(waveforms, waveforms.shape)
         
+        with torch.no_grad():
+            features = self.ssl_model(waveforms)  #Compute the features and extract last hidden layer weights
+        
+        outputs = features.hidden_states[self.layer + 1]
+
         return (outputs)

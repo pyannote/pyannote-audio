@@ -21,5 +21,6 @@
 # SOFTWARE.
 
 from .PyanNet import PyanNet
+from .PyanHugg import PyanHugg
 
-__all__ = ["PyanNet"]
+__all__ = ["PyanNet","PyanHugg"]
