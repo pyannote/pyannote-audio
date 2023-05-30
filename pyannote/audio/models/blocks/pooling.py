@@ -55,26 +55,21 @@ class StatsPool(nn.Module):
         Returns
         -------
         output : (batch, 2 * channel) or (batch, speakers, 2 * channel) torch.Tensor
-            Concatenation of mean and (unbiased) standard deviation, eventually
+            Concatenation of mean and (unbiased) standard deviation, possibly
             for each speaker if 4D sequences tensor is provided in arguments.
         """
-        
-        if len(sequences.shape) == 3:
-            frames_dim = 2
-        else:
-            frames_dim = 3
 
         if weights is None:
-            mean = sequences.mean(dim=frames_dim)
-            std = sequences.std(dim=frames_dim, unbiased=True)
+            mean = sequences.mean(dim=-1)
+            std = sequences.std(dim=-1, unbiased=True)
 
         else:
             # Unsqueeze before frames dimension:
-            weights = weights.unsqueeze(dim=frames_dim - 1)
+            weights = weights.unsqueeze(dim=-1 - 1)
             # (batch, 1, frames) or (batch, speakers, 1, frames)
 
-            num_frames = sequences.shape[frames_dim]
-            num_weights = weights.shape[frames_dim]
+            num_frames = sequences.shape[-1]
+            num_weights = weights.shape[-1]
             if num_frames != num_weights:
                 warnings.warn(
                     f"Mismatch between frames ({num_frames}) and weights ({num_weights}) numbers."
@@ -83,13 +78,13 @@ class StatsPool(nn.Module):
                     weights, size=num_frames, mode="linear", align_corners=False
                 )
 
-            v1 = weights.sum(dim=frames_dim)
-            mean = torch.sum(sequences * weights, dim=frames_dim) / v1
+            v1 = weights.sum(dim=-1)
+            mean = torch.sum(sequences * weights, dim=-1) / v1
 
-            dx2 = torch.square(sequences - mean.unsqueeze(frames_dim))
-            v2 = torch.square(weights).sum(dim=frames_dim)
+            dx2 = torch.square(sequences - mean.unsqueeze(-1))
+            v2 = torch.square(weights).sum(dim=-1)
 
-            var = torch.sum(dx2 * weights, dim=frames_dim) / (v1 - v2 / v1)
+            var = torch.sum(dx2 * weights, dim=-1) / (v1 - v2 / v1)
             std = torch.sqrt(var)
 
-        return torch.cat([mean, std], dim=frames_dim - 1)
+        return torch.cat([mean, std], dim=-1 - 1)
