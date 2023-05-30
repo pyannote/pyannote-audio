@@ -47,16 +47,14 @@ class StatsPool(nn.Module):
 
         Parameters
         ----------
-        sequences : (batch, channel, frames) or (batch, speakers, channel, frame) 
-            torch.Tensor Sequences.
-        weights : (batch, frames) or (batch, speakers, frames) 
-            torch.Tensor, optional
+        sequences : (batch, channel, frames) or (batch, speakers, channel, frame) torch.Tensor
+            Sequences.
+        weights : (batch, frames) or (batch, speakers, frames) torch.Tensor, optional
             When provided, compute weighted mean and standard deviation.
 
         Returns
         -------
-        output : (batch, 2 * channel) or (batch, speakers, 2 * channel) 
-            torch.Tensor
+        output : (batch, 2 * channel) or (batch, speakers, 2 * channel) torch.Tensor
             Concatenation of mean and (unbiased) standard deviation, eventually
             for each speaker if 4D sequences tensor is provided in arguments.
         """
