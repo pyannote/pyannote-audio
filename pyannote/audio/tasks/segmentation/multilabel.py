@@ -95,7 +95,6 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         augmentation: BaseWaveformTransform = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
     ):
-
         if not isinstance(protocol, SegmentationProtocol):
             raise ValueError(
                 f"MultiLabelSegmentation task expects a SegmentationProtocol but you gave {type(protocol)}. "
@@ -121,7 +120,6 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         # specifications to setup()
 
     def setup(self, stage: Optional[str] = None):
-
         super().setup(stage=stage)
 
         self.specifications = Specifications(
@@ -208,7 +206,6 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         return sample
 
     def training_step(self, batch, batch_idx: int):
-
         X = batch["X"]
         y_pred = self.model(X)
         y_true = batch["y"]
@@ -228,17 +225,16 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
             return None
 
         self.model.log(
-            f"{self.logging_prefix}TrainLoss",
+            "loss/train",
             loss,
             on_step=False,
             on_epoch=True,
-            prog_bar=True,
+            prog_bar=False,
             logger=True,
         )
         return {"loss": loss}
 
     def validation_step(self, batch, batch_idx: int):
-
         X = batch["X"]
         y_pred = self.model(X)
         y_true = batch["y"]
@@ -256,7 +252,7 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         loss = F.binary_cross_entropy(y_pred, y_true.type(torch.float))
 
         self.model.log(
-            f"{self.logging_prefix}ValLoss",
+            "loss/val",
             loss,
             on_step=False,
             on_epoch=True,
@@ -284,4 +280,4 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         pytorch_lightning.callbacks.EarlyStopping
         """
 
-        return f"{self.logging_prefix}ValLoss", "min"
+        return "ValLoss", "min"

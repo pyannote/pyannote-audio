@@ -96,7 +96,6 @@ class Specifications:
 
     @cached_property
     def powerset(self):
-
         if self.powerset_max_classes is None:
             return False
 
@@ -300,18 +299,6 @@ class Task(pl.LightningDataModule):
             collate_fn=partial(self.collate_fn, stage="train"),
         )
 
-    @cached_property
-    def logging_prefix(self):
-
-        prefix = f"{self.__class__.__name__}-"
-        if hasattr(self.protocol, "name"):
-            # "." has a special meaning for pytorch-lightning checkpointing
-            # so we remove dots from protocol names
-            name_without_dots = "".join(self.protocol.name.split("."))
-            prefix += f"{name_without_dots}-"
-
-        return prefix
-
     def default_loss(
         self, specifications: Specifications, target, prediction, weight=None
     ) -> torch.Tensor:
@@ -406,11 +393,11 @@ class Task(pl.LightningDataModule):
             return None
 
         self.model.log(
-            f"{self.logging_prefix}{stage.capitalize()}Loss",
+            f"loss/{stage}",
             loss,
             on_step=False,
             on_epoch=True,
-            prog_bar=True,
+            prog_bar=False,
             logger=True,
         )
         return {"loss": loss}
@@ -458,7 +445,7 @@ class Task(pl.LightningDataModule):
         if self._metric is None:
             self._metric = self.default_metric()
 
-        return MetricCollection(self._metric, prefix=self.logging_prefix)
+        return MetricCollection(self._metric)
 
     def setup_validation_metric(self):
         metric = self.metric
