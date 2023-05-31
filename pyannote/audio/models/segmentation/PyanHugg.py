@@ -8,7 +8,6 @@ from pyannote.core.utils.generators import pairwise
 
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
-from pyannote.audio.models.blocks.sincnet import SincNet
 from pyannote.audio.models.blocks.selfsup import SelfSupModel
 from pyannote.audio.utils.params import merge_dict
 
@@ -16,7 +15,7 @@ from pyannote.audio.utils.params import merge_dict
 class PyanHugg(Model):
     """PyanHugg segmentation model
 
-    Self-Supervised Model (or SincNet if specified) > LSTM > Feed forward > Classifier
+    Self-Supervised Model > LSTM > Feed forward > Classifier
     
     All HuggingFace Self-Sup. models can be found at https://huggingface.co/models
     Tested (and currently working) models are : 
@@ -38,10 +37,7 @@ class PyanHugg(Model):
         "model": "microsoft/wavlm-base",
         "layer": 4,
         "cache": None,
-    }. If "model" is specified as "sincnet", SincNet block will be used instead.
-    sincnet : dict, optional
-        Keyword arugments passed to the SincNet block.
-        Defaults to {"stride": 1}.
+    }
     lstm : dict, optional
         Keyword arguments passed to the LSTM layer.
         Defaults to {"hidden_size": 128, "num_layers": 2, "bidirectional": True},
@@ -56,7 +52,6 @@ class PyanHugg(Model):
     
     
     
-    SINCNET_DEFAULTS = {"stride": 10}
     SSL_DEFAULTS = {
         "model": "microsoft/wavlm-base",
         "layer": 4,
@@ -74,7 +69,6 @@ class PyanHugg(Model):
     def __init__(
         self,
         selfsupervised: dict = None,
-        sincnet: dict = None,
         lstm: dict = None,
         linear: dict = None,
         sample_rate: int = 16000,
@@ -85,30 +79,21 @@ class PyanHugg(Model):
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
         
         selfsupervised = merge_dict(self.SSL_DEFAULTS, selfsupervised)
-        sincnet = merge_dict(self.SINCNET_DEFAULTS, sincnet)
-        sincnet["sample_rate"] = sample_rate
         lstm = merge_dict(self.LSTM_DEFAULTS, lstm)
         lstm["batch_first"] = True
         linear = merge_dict(self.LINEAR_DEFAULTS, linear)
-        if (selfsupervised["model"] == "sincnet") :
-            self.save_hyperparameters("sincnet", "lstm", "linear")
-        else :
-            self.save_hyperparameters("selfsupervised", "lstm", "linear")
+        self.save_hyperparameters("selfsupervised", "lstm", "linear")
         
         self.model = selfsupervised["model"]
         
+        
+
         #All HuggingFace Self-Sup. models can be found at https://huggingface.co/models
         print("\n##################################################################")
-        if selfsupervised["model"] is not "sincnet" :
-          print("### A self-supervised model is used for the feature extraction ###")
-          print("##################################################################")
-          self.selfsupervised = SelfSupModel(**self.hparams.selfsupervised)
-          feat_size = self.selfsupervised.feat_size
-        else :
-          self.sincnet = SincNet(**self.hparams.sincnet)
-          print("###   The SincNet module is used for the feature extraction    ### ")
-          feat_size = 60
-        
+        print("### A self-supervised model is used for the feature extraction ###")
+        print("##################################################################")
+        self.selfsupervised = SelfSupModel(**self.hparams.selfsupervised)
+        feat_size = self.selfsupervised.feat_size
         print("##################################################################\n")
         monolithic = lstm["monolithic"]
         if monolithic:
@@ -185,20 +170,11 @@ class PyanHugg(Model):
         -------
         scores : (batch, frame, classes)
         """
-        if self.model != "sincnet" :
-          outputs = self.selfsupervised(waveforms)
-        else :
-          outputs = self.sincnet(waveforms) 
+        outputs = self.selfsupervised(waveforms)
+        
         if self.hparams.lstm["monolithic"]:
-            if self.model != "sincnet" :
-              outputs, _ = self.lstm(outputs)
-            else:
-              outputs, _ = self.lstm(
-              rearrange(outputs, "batch feature frame -> batch frame feature")
-              )
+            outputs, _ = self.lstm(outputs)
         else:
-            if self.model == "sincnet" :
-              outputs = rearrange(outputs, "batch feature frame -> batch frame feature")
             for i, lstm in enumerate(self.lstm):
                 outputs, _ = lstm(outputs)
                 if i + 1 < self.hparams.lstm["num_layers"]:
