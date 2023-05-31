@@ -65,7 +65,7 @@ class StatsPool(nn.Module):
 
         else:
             # Unsqueeze before frames dimension:
-            weights = weights.unsqueeze(dim=-1 - 1)
+            weights = weights.unsqueeze(dim=-2)
             # (batch, 1, frames) or (batch, speakers, 1, frames)
 
             num_frames = sequences.shape[-1]
@@ -87,4 +87,4 @@ class StatsPool(nn.Module):
             var = torch.sum(dx2 * weights, dim=-1) / (v1 - v2 / v1)
             std = torch.sqrt(var)
 
-        return torch.cat([mean, std], dim=-1 - 1)
+        return torch.cat([mean, std], dim=-2)
