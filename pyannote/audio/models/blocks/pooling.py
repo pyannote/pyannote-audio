@@ -20,6 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+from re import A
 import warnings
 from typing import Optional
 
@@ -47,9 +48,9 @@ class StatsPool(nn.Module):
 
         Parameters
         ----------
-        sequences : (batch, channel, frames) or (batch, speakers, channel, frame) torch.Tensor
+        sequences : (batch, channel, frames) torch.Tensor
             Sequences.
-        weights : (batch, frames) or (batch, speakers, frames) torch.Tensor, optional
+        weights : (batch, weights) or (batch, speakers, weights) torch.Tensor, optional
             When provided, compute weighted mean and standard deviation.
 
         Returns
@@ -64,10 +65,15 @@ class StatsPool(nn.Module):
             std = sequences.std(dim=-1, unbiased=True)
 
         else:
-            # Unsqueeze before frames dimension:
-            weights = weights.unsqueeze(dim=-2)
-            # (batch, 1, frames) or (batch, speakers, 1, frames)
+            # Unsqueeze before frames dimension to match with waveforms dimensions
+            # if needed:
+            weight_dims = len(weights.shape)
 
+            if weight_dims == 2:
+                weights = weights.unsqueeze(dim=-2)
+
+
+            # (batch, 1, weights) or (batch, speakers, weights)
             num_frames = sequences.shape[-1]
             num_weights = weights.shape[-1]
             if num_frames != num_weights:
@@ -87,4 +93,8 @@ class StatsPool(nn.Module):
             var = torch.sum(dx2 * weights, dim=-1) / (v1 - v2 / v1)
             std = torch.sqrt(var)
 
-        return torch.cat([mean, std], dim=-2)
+            if weight_dims == 3:
+                mean = torch.unsqueeze(mean, -1)
+                std = torch.unsqueeze(std, -1)
+
+        return torch.cat([mean, std], dim=-1)
