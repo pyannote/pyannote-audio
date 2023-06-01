@@ -59,7 +59,6 @@ def test_stats_pool():
 
 
 
-test_stats_pool()
 
 
 
