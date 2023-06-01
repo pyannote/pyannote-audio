@@ -61,7 +61,7 @@ class StatsPool(nn.Module):
 
         if weights is None:
             mean = sequences.mean(dim=-1)
-            std = sequences.std(dim=-1, unbiased=True)
+            std = sequences.std(dim=-1, correction=1)
 
         else:
             # Unsqueeze before frames dimension to match with waveforms dimensions
