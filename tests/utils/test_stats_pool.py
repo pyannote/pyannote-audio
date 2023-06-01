@@ -20,10 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import decimal
-from math import sqrt
 import torch
-
 from pyannote.audio.models.blocks.pooling import StatsPool
 
 
@@ -55,10 +52,3 @@ def test_stats_pool():
     assert(torch.equal(torch.round(y0, decimals=4), torch.Tensor([[3., 1.4142], [1., 0.]])))
     assert(torch.equal(torch.round(y1, decimals=4), torch.Tensor([[2.0392, 1.4142], [1., 0.]])))
     assert(torch.equal(torch.round(y2, decimals=4), torch.Tensor([[[3.3333, 1.4142], [3.2, 1.4142]], [[1.0, 0.], [1.0, 0.0]]])))
-
-
-
-
-
-
-
