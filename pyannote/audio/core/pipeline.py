@@ -40,6 +40,7 @@ from pyannote.audio import Audio, __version__
 from pyannote.audio.core.inference import BaseInference
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import CACHE_DIR, Model
+from pyannote.audio.utils.reproducibility import fix_reproducibility
 from pyannote.audio.utils.version import check_version
 
 PIPELINE_PARAMS_NAME = "config.yaml"
@@ -148,7 +149,6 @@ visit https://hf.co/{model_id} to accept the user conditions."""
         if "preprocessors" in config:
             preprocessors = {}
             for key, preprocessor in config.get("preprocessors", {}).items():
-
                 # preprocessors:
                 #    key:
                 #       name: package.module.ClassName
@@ -253,7 +253,6 @@ visit https://hf.co/{model_id} to accept the user conditions."""
         super().__setattr__(name, value)
 
     def __delattr__(self, name):
-
         if name in self._models:
             del self._models[name]
 
@@ -295,6 +294,8 @@ visit https://hf.co/{model_id} to accept the user conditions."""
         raise NotImplementedError()
 
     def __call__(self, file: AudioFile, **kwargs):
+        fix_reproducibility(getattr(self, "device", torch.device("cpu")))
+
         if not self.instantiated:
             # instantiate with default parameters when available
             try:
@@ -335,5 +336,7 @@ visit https://hf.co/{model_id} to accept the user conditions."""
 
         for _, inference in self._inferences.items():
             _ = inference.to(device)
+
+        self.device = device
 
         return self

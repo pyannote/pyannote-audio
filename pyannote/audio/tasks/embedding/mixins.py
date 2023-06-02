@@ -76,7 +76,6 @@ class SupervisedRepresentationLearningTaskMixin:
         self.batch_size_ = batch_size
 
     def setup(self, stage: Optional[str] = None):
-
         # loop over the training set, remove annotated regions shorter than
         # chunk duration, and keep track of the reference annotations, per class.
 
@@ -87,9 +86,7 @@ class SupervisedRepresentationLearningTaskMixin:
 
         desc = f"Loading {self.protocol.name} training labels"
         for f in tqdm(iterable=self.protocol.train(), desc=desc, unit="file"):
-
             for klass in f["annotation"].labels():
-
                 # keep class's (long enough) speech turns...
                 speech_turns = [
                     segment
@@ -133,7 +130,6 @@ class SupervisedRepresentationLearningTaskMixin:
     def default_metric(
         self,
     ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
-
         return [
             EqualErrorRate(compute_on_cpu=True, distances=False),
             BinaryAUROC(compute_on_cpu=True),
@@ -159,7 +155,6 @@ class SupervisedRepresentationLearningTaskMixin:
         num_samples = 0
 
         while True:
-
             # shuffle classes so that we don't always have the same
             # groups of classes in a batch (which might be especially
             # problematic for contrast-based losses like contrastive
@@ -167,13 +162,11 @@ class SupervisedRepresentationLearningTaskMixin:
             rng.shuffle(classes)
 
             for klass in classes:
-
                 # class index in original sorted order
                 y = self.specifications.classes.index(klass)
 
                 # multiple chunks per class
                 for _ in range(self.num_chunks_per_class):
-
                     # select one file at random (with probability proportional to its class duration)
                     file, *_ = rng.choices(
                         self._train[klass],
@@ -227,7 +220,6 @@ class SupervisedRepresentationLearningTaskMixin:
         return max(self.batch_size, math.ceil(duration / avg_chunk_duration))
 
     def collate_fn(self, batch, stage="train"):
-
         collated = default_collate(batch)
 
         if stage == "train":
@@ -241,7 +233,6 @@ class SupervisedRepresentationLearningTaskMixin:
         return collated
 
     def training_step(self, batch, batch_idx: int):
-
         X, y = batch["X"], batch["y"]
         loss = self.model.loss_func(self.model(X), y)
 
@@ -250,18 +241,17 @@ class SupervisedRepresentationLearningTaskMixin:
             return None
 
         self.model.log(
-            f"{self.logging_prefix}TrainLoss",
+            "loss/train",
             loss,
             on_step=False,
             on_epoch=True,
-            prog_bar=True,
+            prog_bar=False,
             logger=True,
         )
 
         return {"loss": loss}
 
     def val__getitem__(self, idx):
-
         if isinstance(self.protocol, SpeakerVerificationProtocol):
             trial = self._validation[idx]
 
@@ -291,7 +281,6 @@ class SupervisedRepresentationLearningTaskMixin:
             pass
 
     def val__len__(self):
-
         if isinstance(self.protocol, SpeakerVerificationProtocol):
             return len(self._validation)
 
@@ -299,9 +288,7 @@ class SupervisedRepresentationLearningTaskMixin:
             return 0
 
     def validation_step(self, batch, batch_idx: int):
-
         if isinstance(self.protocol, SpeakerVerificationProtocol):
-
             with torch.no_grad():
                 emb1 = self.model(batch["X1"]).detach()
                 emb2 = self.model(batch["X2"]).detach()
