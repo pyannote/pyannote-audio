@@ -42,7 +42,7 @@ class SelfSupModel(nn.Module):
             config = AutoConfig.from_pretrained(model)
         
         config.output_hidden_states = True
-
+	config.num_hidden_layers = layer + 1
         
         self.ssl_model = AutoModel.from_pretrained(model, config = config, cache_dir = cache) #Load the model
         self.ssl_model.eval()
