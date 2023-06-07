@@ -324,8 +324,11 @@ visit https://hf.co/{model_id} to accept the user conditions."""
 
         return self.apply(file, **kwargs)
 
-    def to(self, device):
+    def to(self, device: torch.device):
         """Send pipeline to `device`"""
+
+        if not isinstance(device, torch.device):
+            raise TypeError(f"device must be torch.device, got {type(device).__name__}")
 
         for _, pipeline in self._pipelines.items():
             if hasattr(pipeline, "to"):
