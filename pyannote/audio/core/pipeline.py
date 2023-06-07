@@ -328,7 +328,9 @@ visit https://hf.co/{model_id} to accept the user conditions."""
         """Send pipeline to `device`"""
 
         if not isinstance(device, torch.device):
-            raise TypeError(f"device must be torch.device, got {type(device).__name__}")
+            raise TypeError(
+                f"`device` must be an instance of `torch.device`, got `{type(device).__name__}`"
+            )
 
         for _, pipeline in self._pipelines.items():
             if hasattr(pipeline, "to"):

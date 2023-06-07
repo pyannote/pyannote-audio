@@ -171,7 +171,9 @@ class Inference(BaseInference):
         """Send internal model to `device`"""
 
         if not isinstance(device, torch.device):
-            raise TypeError(f"device must be torch.device, got {type(device).__name__}")
+            raise TypeError(
+                f"`device` must be an instance of `torch.device`, got `{type(device).__name__}`"
+            )
 
         self.model.to(device)
         if self.model.specifications.powerset and not self.skip_conversion:
