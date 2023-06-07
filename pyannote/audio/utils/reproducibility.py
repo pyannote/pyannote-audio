@@ -35,8 +35,10 @@ class ReproducibilityWarning(UserWarning):
     ...
 
 
-def raise_reproducibility(device):
-    if is_cuda_tf32(device):
+def raise_reproducibility(device: torch.device):
+    if (device.type == "cuda") and (
+        torch.backends.cuda.matmul.allow_tf32 or torch.backends.cudnn.allow_tf32
+    ):
         raise ReproducibilityError(
             "Please disable TensorFloat-32 (TF32) by calling\n"
             "   >>> import torch\n"
@@ -47,8 +49,10 @@ def raise_reproducibility(device):
         )
 
 
-def warn_reproducibility(device):
-    if is_cuda_tf32(device):
+def warn_reproducibility(device: torch.device):
+    if (device.type == "cuda") and (
+        torch.backends.cuda.matmul.allow_tf32 or torch.backends.cudnn.allow_tf32
+    ):
         warnings.warn(
             ReproducibilityWarning(
                 "Please disable TensorFloat-32 (TF32) by calling\n"
@@ -61,8 +65,10 @@ def warn_reproducibility(device):
         )
 
 
-def fix_reproducibility(device):
-    if is_cuda_tf32(device):
+def fix_reproducibility(device: torch.device):
+    if (device.type == "cuda") and (
+        torch.backends.cuda.matmul.allow_tf32 or torch.backends.cudnn.allow_tf32
+    ):
         torch.backends.cuda.matmul.allow_tf32 = False
         torch.backends.cudnn.allow_tf32 = False
         warnings.warn(
@@ -75,14 +81,3 @@ def fix_reproducibility(device):
                 "See https://github.com/pyannote/pyannote-audio/issues/1370 for more details.\n"
             )
         )
-
-
-def is_cuda_tf32(device) -> bool:
-    device_type = None
-    if isinstance(device, torch.device):
-        device_type = device.type
-    elif isinstance(device, (int, str)):
-        device_type = torch.device(device).type
-    return device_type == "cuda" and (
-        torch.backends.cuda.matmul.allow_tf32 or torch.backends.cudnn.allow_tf32
-    )
