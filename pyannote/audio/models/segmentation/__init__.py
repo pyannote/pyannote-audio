@@ -22,5 +22,6 @@
 
 from .PyanNet import PyanNet
 from .SSeRiouSS import SSeRiouSS
+from .SepDiarNet import SepDiarNet
 
-__all__ = ["PyanNet", "SSeRiouSS"]
+__all__ = ["PyanNet", "SSeRiouSS", "SepDiarNet"]

@@ -22,14 +22,15 @@
 
 import math
 import warnings
+import random
 from collections import Counter
-from typing import Dict, Literal, Optional, Sequence, Text, Tuple, Union
+from typing import Dict, Literal, Sequence, Text, Tuple, Union
 
 import numpy as np
 import torch
 import torch.nn.functional
 from matplotlib import pyplot as plt
-from pyannote.core import Segment, SlidingWindowFeature
+from pyannote.core import Segment, SlidingWindow, SlidingWindowFeature
 from pyannote.database.protocol import SpeakerDiarizationProtocol
 from pyannote.database.protocol.protocol import Scope, Subset
 from pytorch_lightning.loggers import MLFlowLogger, TensorBoardLogger
@@ -37,8 +38,8 @@ from rich.progress import track
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchmetrics import Metric
 
-from pyannote.audio.core.task import Problem, Resolution, Specifications
-from pyannote.audio.tasks.segmentation.mixins import SegmentationTask
+from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
+from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
 from pyannote.audio.torchmetrics import (
     DiarizationErrorRate,
     FalseAlarmRate,
@@ -53,25 +54,20 @@ from pyannote.audio.torchmetrics import (
 from pyannote.audio.utils.loss import binary_cross_entropy, mse_loss, nll_loss
 from pyannote.audio.utils.permutation import permutate
 from pyannote.audio.utils.powerset import Powerset
+from asteroid.losses import MixITLossWrapper, multisrc_neg_sisdr
+from torch.utils.data._utils.collate import default_collate
 
 Subsets = list(Subset.__args__)
 Scopes = list(Scope.__args__)
 
 
-class SpeakerDiarization(SegmentationTask):
+class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
     """Speaker diarization
 
     Parameters
     ----------
     protocol : SpeakerDiarizationProtocol
         pyannote.database protocol
-    cache : str, optional
-        As (meta-)data preparation might take a very long time for large datasets,
-        it can be cached to disk for later (and faster!) re-use.
-        When `cache` does not exist, `Task.prepare_data()` generates training
-        and validation metadata from `protocol` and save them to disk.
-        When `cache` exists, `Task.prepare_data()` is skipped and (meta)-data
-        are loaded from disk. Defaults to a temporary path.
     duration : float, optional
         Chunks duration. Defaults to 2s.
     max_speakers_per_chunk : int, optional
@@ -93,10 +89,10 @@ class SpeakerDiarization(SegmentationTask):
         parts, only the remaining central part of each chunk is used for computing the
         loss during training, and for aggregating scores during inference.
         Defaults to 0. (i.e. no warm-up).
-    balance: Sequence[Text], optional
-        When provided, training samples are sampled uniformly with respect to these keys.
-        For instance, setting `balance` to ["database","subset"] will make sure that each
-        database & subset combination will be equally represented in the training samples.
+    balance: str, optional
+        When provided, training samples are sampled uniformly with respect to that key.
+        For instance, setting `balance` to "database" will make sure that each database
+        will be equally represented in the training samples.
     weight: str, optional
         When provided, use this key as frame-wise weight in loss function.
     batch_size : int, optional
@@ -117,6 +113,8 @@ class SpeakerDiarization(SegmentationTask):
     metric : optional
         Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
         Defaults to AUROC (area under the ROC curve).
+    mixit_loss_weight : float, optional
+        Factor that speaker separation loss is scaled by when calculating total loss.
 
     References
     ----------
@@ -134,24 +132,22 @@ class SpeakerDiarization(SegmentationTask):
     def __init__(
         self,
         protocol: SpeakerDiarizationProtocol,
-        cache: Optional[Union[str, None]] = None,
         duration: float = 2.0,
-        max_speakers_per_chunk: Optional[int] = None,
-        max_speakers_per_frame: Optional[int] = None,
+        max_speakers_per_chunk: int = None,
+        max_speakers_per_frame: int = None,
         weigh_by_cardinality: bool = False,
         warm_up: Union[float, Tuple[float, float]] = 0.0,
-        balance: Optional[Sequence[Text]] = None,
-        weight: Optional[Text] = None,
+        balance: Text = None,
+        weight: Text = None,
         batch_size: int = 32,
-        num_workers: Optional[int] = None,
+        num_workers: int = None,
         pin_memory: bool = False,
-        augmentation: Optional[BaseWaveformTransform] = None,
+        augmentation: BaseWaveformTransform = None,
         vad_loss: Literal["bce", "mse"] = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
-        max_num_speakers: Optional[
-            int
-        ] = None,  # deprecated in favor of `max_speakers_per_chunk``
+        max_num_speakers: int = None,  # deprecated in favor of `max_speakers_per_chunk``
         loss: Literal["bce", "mse"] = None,  # deprecated
+        mixit_loss_weight: float = 0.2,
     ):
         super().__init__(
             protocol,
@@ -162,7 +158,6 @@ class SpeakerDiarization(SegmentationTask):
             pin_memory=pin_memory,
             augmentation=augmentation,
             metric=metric,
-            cache=cache,
         )
 
         if not isinstance(protocol, SpeakerDiarizationProtocol):
@@ -190,41 +185,40 @@ class SpeakerDiarization(SegmentationTask):
                     "`vad_loss` cannot be used jointly with `max_speakers_per_frame`"
                 )
 
+        if batch_size % 3 != 0:
+            raise ValueError("`batch_size` must be divisible by 3 for mixtures of mixtures training")  
+
         self.max_speakers_per_chunk = max_speakers_per_chunk
         self.max_speakers_per_frame = max_speakers_per_frame
         self.weigh_by_cardinality = weigh_by_cardinality
         self.balance = balance
         self.weight = weight
         self.vad_loss = vad_loss
+        self.separation_loss = MixITLossWrapper(multisrc_neg_sisdr, generalized=True)
+        self.mixit_loss_weight = mixit_loss_weight
 
-    def setup(self, stage=None):
-        super().setup(stage)
+    def setup(self):
+        super().setup()
 
         # estimate maximum number of speakers per chunk when not provided
         if self.max_speakers_per_chunk is None:
-            training = self.prepared_data["audio-metadata"]["subset"] == Subsets.index(
-                "train"
-            )
+            training = self.metadata["subset"] == Subsets.index("train")
 
             num_unique_speakers = []
             progress_description = f"Estimating maximum number of speakers per {self.duration:g}s chunk in the training set"
             for file_id in track(
                 np.where(training)[0], description=progress_description
             ):
-                annotations = self.prepared_data["annotations-segments"][
-                    np.where(
-                        self.prepared_data["annotations-segments"]["file_id"] == file_id
-                    )[0]
+                annotations = self.annotations[
+                    np.where(self.annotations["file_id"] == file_id)[0]
                 ]
-                annotated_regions = self.prepared_data["annotations-regions"][
-                    np.where(
-                        self.prepared_data["annotations-regions"]["file_id"] == file_id
-                    )[0]
+                annotated_regions = self.annotated_regions[
+                    np.where(self.annotated_regions["file_id"] == file_id)[0]
                 ]
                 for region in annotated_regions:
                     # find annotations within current region
                     region_start = region["start"]
-                    region_end = region["start"] + region["duration"]
+                    region_end = region["end"]
                     region_annotations = annotations[
                         np.where(
                             (annotations["start"] >= region_start)
@@ -287,24 +281,29 @@ class SpeakerDiarization(SegmentationTask):
 
         # now that we know about the number of speakers upper bound
         # we can set task specifications
-        self.specifications = Specifications(
-            problem=Problem.MULTI_LABEL_CLASSIFICATION
-            if self.max_speakers_per_frame is None
-            else Problem.MONO_LABEL_CLASSIFICATION,
-            resolution=Resolution.FRAME,
+        speaker_diarization = Specifications(
             duration=self.duration,
-            min_duration=self.min_duration,
-            warm_up=self.warm_up,
+            resolution=Resolution.FRAME,
+            problem=Problem.MONO_LABEL_CLASSIFICATION,
+            permutation_invariant=True,
             classes=[f"speaker#{i+1}" for i in range(self.max_speakers_per_chunk)],
             powerset_max_classes=self.max_speakers_per_frame,
-            permutation_invariant=True,
         )
 
+        speaker_separation = Specifications(
+            duration=self.duration,
+            resolution=Resolution.FRAME,
+            problem=Problem.MONO_LABEL_CLASSIFICATION, # Doesn't matter
+            classes=[f"speaker#{i+1}" for i in range(self.max_speakers_per_chunk)],
+        )
+
+        self.specifications = (speaker_diarization, speaker_separation)
+
     def setup_loss_func(self):
-        if self.specifications.powerset:
+        if self.specifications[0].powerset:
             self.model.powerset = Powerset(
-                len(self.specifications.classes),
-                self.specifications.powerset_max_classes,
+                len(self.specifications[0].classes),
+                self.specifications[0].powerset_max_classes,
             )
 
     def prepare_chunk(self, file_id: int, start_time: float, duration: float):
@@ -335,7 +334,7 @@ class SpeakerDiarization(SegmentationTask):
         file = self.get_file(file_id)
 
         # get label scope
-        label_scope = Scopes[self.prepared_data["audio-metadata"][file_id]["scope"]]
+        label_scope = Scopes[self.metadata[file_id]["scope"]]
         label_scope_key = f"{label_scope}_label_idx"
 
         #
@@ -344,23 +343,26 @@ class SpeakerDiarization(SegmentationTask):
         sample = dict()
         sample["X"], _ = self.model.audio.crop(file, chunk, duration=duration)
 
+        # use model introspection to predict how many frames it will output
+        # TODO: this should be cached
+        num_samples = sample["X"].shape[1]
+        #resolution_samples = self.model.example_output[0].frames.step * self.model.example_output[0].num_frames / num_samples
+
         # gather all annotations of current file
-        annotations = self.prepared_data["annotations-segments"][
-            self.prepared_data["annotations-segments"]["file_id"] == file_id
-        ]
+        annotations = self.annotations[self.annotations["file_id"] == file_id]
 
         # gather all annotations with non-empty intersection with current chunk
         chunk_annotations = annotations[
             (annotations["start"] < chunk.end) & (annotations["end"] > chunk.start)
         ]
 
-        # discretize chunk annotations at model output resolution
-        step = self.model.receptive_field.step
-        half = 0.5 * self.model.receptive_field.duration
-        start = np.maximum(chunk_annotations["start"], chunk.start) - chunk.start - half
-        start_idx = np.floor(start / self.model.example_output.frames.step).astype(int)
-        end = np.minimum(chunk_annotations["end"], chunk.end) - chunk.start - half
-        end_idx = np.ceil(end / self.model.example_output.frames.step).astype(int)
+        # discretize chunk annotations at model output and input resolutions
+        start = np.maximum(chunk_annotations["start"], chunk.start) - chunk.start
+        start_idx = np.floor(start / self.model.example_output[0].frames.step).astype(int)
+        start_idx_samples = np.floor(start * 16000).astype(int)
+        end = np.minimum(chunk_annotations["end"], chunk.end) - chunk.start
+        end_idx = np.ceil(end / self.model.example_output[0].frames.step).astype(int)
+        end_idx_samples = np.floor(end * 16000).astype(int)
 
         # get list and number of labels for current scope
         labels = list(np.unique(chunk_annotations[label_scope_key]))
@@ -369,7 +371,9 @@ class SpeakerDiarization(SegmentationTask):
         if num_labels > self.max_speakers_per_chunk:
             pass
 
-        y = np.zeros((num_frames, num_labels), dtype=np.uint8)
+        # initial frame-level targets
+        y = np.zeros((self.model.example_output[0].num_frames, num_labels), dtype=np.uint8)
+        sample_level_labels = np.zeros((num_samples, num_labels), dtype=np.uint8)
 
         # map labels to indices
         mapping = {label: idx for idx, label in enumerate(labels)}
@@ -378,16 +382,230 @@ class SpeakerDiarization(SegmentationTask):
             start_idx, end_idx, chunk_annotations[label_scope_key]
         ):
             mapped_label = mapping[label]
-            y[start : end + 1, mapped_label] = 1
+            y[start:end, mapped_label] = 1
 
-        sample["y"] = SlidingWindowFeature(y, self.model.receptive_field, labels=labels)
-
-        metadata = self.prepared_data["audio-metadata"][file_id]
+        sample["y"] = SlidingWindowFeature(
+            y, self.model.example_output[0].frames, labels=labels
+        )
         
+        for start, end, label in zip(
+            start_idx_samples, end_idx_samples, chunk_annotations[label_scope_key]
+        ):
+            mapped_label = mapping[label]
+            sample_level_labels[start:end, mapped_label] = 1
+
+        # only frames with a single label should be used for mixit training
+        sample["X_separation_mask"] = torch.from_numpy(sample_level_labels.sum(axis=1) == 1)
+        metadata = self.metadata[file_id]
         sample["meta"] = {key: metadata[key] for key in metadata.dtype.names}
         sample["meta"]["file"] = file_id
 
         return sample
+
+    def train__iter__helper(self, rng: random.Random, **filters):
+        """Iterate over training samples with optional domain filtering
+
+        Parameters
+        ----------
+        rng : random.Random
+            Random number generator
+        filters : dict, optional
+            When provided (as {key: value} dict), filter training files so that
+            only files such as file[key] == value are used for generating chunks.
+
+        Yields
+        ------
+        chunk : dict
+            Training chunks.
+        """
+
+        # indices of training files that matches domain filters
+        training = self.metadata["subset"] == Subsets.index("train")
+        for key, value in filters.items():
+            training &= self.metadata[key] == value
+        file_ids = np.where(training)[0]
+
+        # turn annotated duration into a probability distribution
+        annotated_duration = self.annotated_duration[file_ids]
+        prob_annotated_duration = annotated_duration / np.sum(annotated_duration)
+
+        duration = self.duration
+
+        num_chunks_per_file = getattr(self, "num_chunks_per_file", 1)
+
+        while True:
+            # select one file at random (with probability proportional to its annotated duration)
+            file_id = np.random.choice(file_ids, p=prob_annotated_duration)
+            annotations = self.annotations[np.where(self.annotations["file_id"] == file_id)[0]]
+
+            # generate `num_chunks_per_file` chunks from this file
+            for _ in range(num_chunks_per_file):
+                # find indices of annotated regions in this file
+                annotated_region_indices = np.where(
+                    self.annotated_regions["file_id"] == file_id
+                )[0]
+
+                # turn annotated regions duration into a probability distribution
+                prob_annotated_regions_duration = self.annotated_regions["duration"][
+                    annotated_region_indices
+                ] / np.sum(self.annotated_regions["duration"][annotated_region_indices])
+
+                # selected one annotated region at random (with probability proportional to its duration)
+                annotated_region_index = np.random.choice(
+                    annotated_region_indices, p=prob_annotated_regions_duration
+                )
+
+                # select one chunk at random in this annotated region
+                _, _, start, end = self.annotated_regions[annotated_region_index]
+                start_time = rng.uniform(start, end - duration)
+
+                # find speakers that already appeared and all annotations that contain them
+                chunk_annotations = annotations[
+                    (annotations["start"] < start_time+duration) & (annotations["end"] > start_time)
+                ]
+                previous_speaker_labels = list(np.unique(chunk_annotations["file_label_idx"]))
+                repeated_speaker_annotations = annotations[np.isin(annotations["file_label_idx"], previous_speaker_labels)]
+                
+                if repeated_speaker_annotations.size == 0:
+                    # if previous chunk has 0 speakers then just sample from all annotated regions again
+                    first_chunk = self.prepare_chunk(file_id, start_time, duration)
+                    first_chunk["meta"]["mixture_type"]="first_mixture"
+                    yield first_chunk
+
+                    # selected one annotated region at random (with probability proportional to its duration)
+                    annotated_region_index = np.random.choice(
+                        annotated_region_indices, p=prob_annotated_regions_duration
+                    )
+
+                    # select one chunk at random in this annotated region
+                    _, _, start, end = self.annotated_regions[annotated_region_index]
+                    start_time = rng.uniform(start, end - duration)
+
+                    second_chunk = self.prepare_chunk(file_id, start_time, duration)
+                    second_chunk["meta"]["mixture_type"]="second_mixture"
+                    yield second_chunk
+
+                    # add previous two chunks to get a third one
+                    third_chunk = dict()
+                    third_chunk["X"] = first_chunk["X"] + second_chunk["X"]
+                    third_chunk["meta"] = first_chunk["meta"].copy()
+                    y = np.concatenate((first_chunk["y"].data, second_chunk["y"].data), axis=1)
+                    frames = first_chunk["y"].sliding_window
+                    labels = first_chunk["y"].labels + second_chunk["y"].labels
+                    third_chunk["y"] = SlidingWindowFeature(y, frames, labels=labels)
+                    third_chunk["meta"]["mixture_type"]="mom"
+
+                    # the whole mom should be used in the separation branch training
+                    third_chunk["X_separation_mask"] = torch.ones_like(first_chunk["X_separation_mask"])
+                    yield third_chunk
+                    
+                else:
+                    # merge segments that contain repeated speakers
+                    merged_repeated_segments = [[repeated_speaker_annotations["start"][0],repeated_speaker_annotations["end"][0]]]
+                    for _, start, end, _, _, _ in repeated_speaker_annotations:
+                        previous = merged_repeated_segments[-1]
+                        if start <= previous[1]:
+                            previous[1] = max(previous[1], end)
+                        else:
+                            merged_repeated_segments.append([start, end])
+                    
+                    # find segments that don't contain repeated speakers
+                    segments_without_repeat = []
+                    current_region_index = 0
+                    previous_time = self.annotated_regions["start"][annotated_region_indices[0]]
+                    for segment in merged_repeated_segments:
+                        if segment[0] > self.annotated_regions["end"][annotated_region_indices[current_region_index]]:
+                            current_region_index+=1
+                            previous_time = self.annotated_regions["start"][annotated_region_indices[current_region_index]]
+                        
+                        if segment[0] - previous_time > duration:
+                            segments_without_repeat.append((previous_time, segment[0], segment[0] - previous_time))
+                        previous_time = segment[1]
+                    
+                    dtype = [("start", "f"), ("end", "f"),("duration", "f")]
+                    segments_without_repeat = np.array(segments_without_repeat,dtype=dtype)
+
+                    if np.sum(segments_without_repeat["duration"]) != 0:
+
+                        # only yield chunks if it is possible to choose the second chunk so that yielded chunks are always paired
+
+                        first_chunk = self.prepare_chunk(file_id, start_time, duration)
+                        first_chunk["meta"]["mixture_type"]="first_mixture"
+                        yield first_chunk
+
+                        prob_segments_duration = segments_without_repeat["duration"] / np.sum(segments_without_repeat["duration"])
+                        segment = np.random.choice(
+                            segments_without_repeat, p=prob_segments_duration
+                        )
+
+                        start, end, _ = segment
+                        new_start_time = rng.uniform(start, end - duration)
+                        second_chunk = self.prepare_chunk(file_id, new_start_time, duration)
+                        second_chunk["meta"]["mixture_type"]="second_mixture"
+                        yield second_chunk
+
+                        #add previous two chunks to get a third one
+                        third_chunk = dict()
+                        third_chunk["X"] = first_chunk["X"] + second_chunk["X"]
+                        third_chunk["meta"] = first_chunk["meta"].copy()
+                        y = np.concatenate((first_chunk["y"].data, second_chunk["y"].data), axis=1)
+                        frames = first_chunk["y"].sliding_window
+                        labels = first_chunk["y"].labels + second_chunk["y"].labels
+                        third_chunk["y"] = SlidingWindowFeature(y, frames, labels=labels)
+                        third_chunk["meta"]["mixture_type"]="mom"
+
+                        # the whole mom should be used in the separation branch training
+                        third_chunk["X_separation_mask"] = torch.ones_like(first_chunk["X_separation_mask"])
+                        yield third_chunk
+
+    def collate_X_separation_mask(self, batch) -> torch.Tensor:
+        return default_collate([b["X_separation_mask"] for b in batch])
+
+    def collate_fn(self, batch, stage="train"):
+        """Collate function used for most segmentation tasks
+
+        This function does the following:
+        * stack waveforms into a (batch_size, num_channels, num_samples) tensor batch["X"])
+        * apply augmentation when in "train" stage
+        * convert targets into a (batch_size, num_frames, num_classes) tensor batch["y"]
+        * collate any other keys that might be present in the batch using pytorch default_collate function
+
+        Parameters
+        ----------
+        batch : list of dict
+            List of training samples.
+
+        Returns
+        -------
+        batch : dict
+            Collated batch as {"X": torch.Tensor, "y": torch.Tensor} dict.
+        """
+
+        # collate X
+        collated_X = self.collate_X(batch)
+
+        # collate y
+        collated_y = self.collate_y(batch)
+
+        # collate metadata
+        collated_meta = self.collate_meta(batch)
+
+        collated_X_separation_mask = self.collate_X_separation_mask(batch)
+
+        # apply augmentation (only in "train" stage)
+        self.augmentation.train(mode=(stage == "train"))
+        augmented = self.augmentation(
+            samples=collated_X,
+            sample_rate=self.model.hparams.sample_rate,
+            targets=collated_y.unsqueeze(1),
+        )
+
+        return {
+            "X": augmented.samples,
+            "y": augmented.targets.squeeze(1),
+            "meta": collated_meta,
+            "X_separation_mask" : collated_X_separation_mask
+        }
 
     def collate_y(self, batch) -> torch.Tensor:
         """
@@ -439,7 +657,7 @@ class SpeakerDiarization(SegmentationTask):
         self,
         permutated_prediction: torch.Tensor,
         target: torch.Tensor,
-        weight: Optional[torch.Tensor] = None,
+        weight: torch.Tensor = None,
     ) -> torch.Tensor:
         """Permutation-invariant segmentation loss
 
@@ -458,7 +676,7 @@ class SpeakerDiarization(SegmentationTask):
             Permutation-invariant segmentation loss
         """
 
-        if self.specifications.powerset:
+        if self.specifications[0].powerset:
             # `clamp_min` is needed to set non-speech weight to 1.
             class_weight = (
                 torch.clamp_min(self.model.powerset.cardinality, 1.0)
@@ -482,7 +700,7 @@ class SpeakerDiarization(SegmentationTask):
         self,
         permutated_prediction: torch.Tensor,
         target: torch.Tensor,
-        weight: Optional[torch.Tensor] = None,
+        weight: torch.Tensor = None,
     ) -> torch.Tensor:
         """Voice activity detection loss
 
@@ -549,7 +767,30 @@ class SpeakerDiarization(SegmentationTask):
             return None
 
         # forward pass
-        prediction = self.model(waveform)
+        bsz = waveform.shape[0]
+        num_samples = waveform.shape[2]
+        mix1 = waveform[0::3].squeeze(1)
+        mix2 = waveform[1::3].squeeze(1)
+        # extract parts with only one speaker from original mixtures
+        mix1_masks = batch["X_separation_mask"][0::3]
+        mix2_masks = batch["X_separation_mask"][1::3]
+        mix1_masked = mix1 * mix1_masks
+        mix2_masked = mix2 * mix2_masks
+
+        moms = mix1 + mix2
+        
+        _, predicted_sources_mom = self.model(moms)
+        _, predicted_sources_mix1 = self.model(mix1)
+        _, predicted_sources_mix2 = self.model(mix2)
+
+        # don't use moms with more than max_speakers_per_chunk speakers for training speaker diarization
+        num_speakers: torch.Tensor = torch.sum(torch.any(target, dim=1), dim=1)
+        num_speakers[2::3] = num_speakers[::3] + num_speakers[1::3]
+        keep: torch.Tensor = num_speakers <= self.max_speakers_per_chunk
+        target = target[keep]
+        waveform = waveform[keep]
+        prediction, _ = self.model(waveform)
+
         batch_size, num_frames, _ = prediction.shape
         # (batch_size, num_frames, num_classes)
 
@@ -567,7 +808,7 @@ class SpeakerDiarization(SegmentationTask):
         warm_up_right = round(self.warm_up[1] / self.duration * num_frames)
         weight[:, num_frames - warm_up_right :] = 0.0
 
-        if self.specifications.powerset:
+        if self.specifications[0].powerset:
             multilabel = self.model.powerset.to_multilabel(prediction)
             permutated_target, _ = permutate(multilabel, target)
             permutated_target_powerset = self.model.powerset.to_powerset(
@@ -582,6 +823,23 @@ class SpeakerDiarization(SegmentationTask):
             seg_loss = self.segmentation_loss(
                 permutated_prediction, target, weight=weight
             )
+        # contributions from original mixtures is weighed by the proportion of remaining frames
+        mixit_loss = self.separation_loss(
+            predicted_sources_mom.transpose(1, 2), torch.stack((mix1, mix2)).transpose(0, 1)
+        ) + self.separation_loss(
+            predicted_sources_mix1.transpose(1, 2), torch.stack((mix1_masked, torch.zeros_like(mix1))).transpose(0, 1)
+        ) * mix1_masks.sum() / num_samples / bsz * 3 + self.separation_loss(
+            predicted_sources_mix2.transpose(1, 2), torch.stack((mix2_masked, torch.zeros_like(mix2))).transpose(0, 1)
+        ) * mix2_masks.sum() / num_samples / bsz * 3
+
+        self.model.log(
+            "loss/train/separation",
+            mixit_loss,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=False,
+            logger=True,
+        )
 
         self.model.log(
             "loss/train/segmentation",
@@ -598,7 +856,7 @@ class SpeakerDiarization(SegmentationTask):
         else:
             # TODO: vad_loss probably does not make sense in powerset mode
             # because first class (empty set of labels) does exactly this...
-            if self.specifications.powerset:
+            if self.specifications[0].powerset:
                 vad_loss = self.voice_activity_detection_loss(
                     prediction, permutated_target_powerset, weight=weight
                 )
@@ -617,7 +875,7 @@ class SpeakerDiarization(SegmentationTask):
                 logger=True,
             )
 
-        loss = seg_loss + vad_loss
+        loss = (1 - self.mixit_loss_weight) * (seg_loss + vad_loss) + self.mixit_loss_weight * mixit_loss
 
         # skip batch if something went wrong for some reason
         if torch.isnan(loss):
@@ -639,7 +897,7 @@ class SpeakerDiarization(SegmentationTask):
     ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
         """Returns diarization error rate and its components"""
 
-        if self.specifications.powerset:
+        if self.specifications[0].powerset:
             return {
                 "DiarizationErrorRate": DiarizationErrorRate(0.5),
                 "DiarizationErrorRate/Confusion": SpeakerConfusionRate(0.5),
@@ -678,8 +936,14 @@ class SpeakerDiarization(SegmentationTask):
         # waveform = waveform[keep]
         # target = target[keep]
 
+        bsz = waveform.shape[0]
+        mix1 = waveform[bsz // 2 : 2 * (bsz // 2)].squeeze(1)
+        mix2 = waveform[: bsz // 2].squeeze(1)
+        moms = mix1 + mix2
+
         # forward pass
-        prediction = self.model(waveform)
+        prediction, _ = self.model(waveform)
+        _, predicted_sources_mom = self.model(moms)
         batch_size, num_frames, _ = prediction.shape
 
         # frames weight
@@ -696,7 +960,7 @@ class SpeakerDiarization(SegmentationTask):
         warm_up_right = round(self.warm_up[1] / self.duration * num_frames)
         weight[:, num_frames - warm_up_right :] = 0.0
 
-        if self.specifications.powerset:
+        if self.specifications[0].powerset:
             multilabel = self.model.powerset.to_multilabel(prediction)
             permutated_target, _ = permutate(multilabel, target)
 
@@ -715,6 +979,19 @@ class SpeakerDiarization(SegmentationTask):
                 permutated_prediction, target, weight=weight
             )
 
+        mixit_loss = self.separation_loss(
+            predicted_sources_mom.transpose(1, 2), torch.stack((mix1, mix2)).transpose(0, 1)
+        )
+
+        self.model.log(
+            "loss/val/separation",
+            mixit_loss,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=False,
+            logger=True,
+        )
+
         self.model.log(
             "loss/val/segmentation",
             seg_loss,
@@ -730,7 +1007,7 @@ class SpeakerDiarization(SegmentationTask):
         else:
             # TODO: vad_loss probably does not make sense in powerset mode
             # because first class (empty set of labels) does exactly this...
-            if self.specifications.powerset:
+            if self.specifications[0].powerset:
                 vad_loss = self.voice_activity_detection_loss(
                     prediction, permutated_target_powerset, weight=weight
                 )
@@ -749,7 +1026,7 @@ class SpeakerDiarization(SegmentationTask):
                 logger=True,
             )
 
-        loss = seg_loss + vad_loss
+        loss = (1 - self.mixit_loss_weight) * (seg_loss + vad_loss) + self.mixit_loss_weight * mixit_loss
 
         self.model.log(
             "loss/val",
@@ -760,7 +1037,7 @@ class SpeakerDiarization(SegmentationTask):
             logger=True,
         )
 
-        if self.specifications.powerset:
+        if self.specifications[0].powerset:
             self.model.validation_metric(
                 torch.transpose(
                     multilabel[:, warm_up_left : num_frames - warm_up_right], 1, 2
@@ -797,7 +1074,7 @@ class SpeakerDiarization(SegmentationTask):
 
         # visualize first 9 validation samples of first batch in Tensorboard/MLflow
 
-        if self.specifications.powerset:
+        if self.specifications[0].powerset:
             y = permutated_target.float().cpu().numpy()
             y_pred = multilabel.cpu().numpy()
         else:
@@ -880,7 +1157,7 @@ def main(protocol: str, subset: str = "test", model: str = "pyannote/segmentatio
         main_task = progress.add_task(protocol.name, total=len(files))
         file_task = progress.add_task("Processing", total=1.0)
 
-        def progress_hook(completed: Optional[int] = None, total: Optional[int] = None):
+        def progress_hook(completed: int = None, total: int = None):
             progress.update(file_task, completed=completed / total)
 
         inference = Inference(model, device=device)
