@@ -186,6 +186,11 @@ class Inference(BaseInference):
     def to(self, device: torch.device) -> "Inference":
         """Send internal model to `device`"""
 
+        if not isinstance(device, torch.device):
+            raise TypeError(
+                f"`device` must be an instance of `torch.device`, got `{type(device).__name__}`"
+            )
+
         self.model.to(device)
         self.conversion.to(device)
         self.device = device
