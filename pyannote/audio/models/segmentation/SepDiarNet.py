@@ -113,7 +113,7 @@ class SepDiarNet(Model):
         num_channels: int = 1,
         task: Optional[Task] = None,
         encoder_type: str = None,
-        n_sources: int = 6,
+        n_sources: int = 3,
     ):
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
 
