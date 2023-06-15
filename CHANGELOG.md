@@ -14,10 +14,10 @@
 ### Breaking changes
 
   - BREAKING(task): rename `Segmentation` task to `SpeakerDiarization`
-  - BREAKING(task): remove support for variable chunk duration
+  - BREAKING(task): remove support for variable chunk duration for segmentation tasks
   - BREAKING(pipeline): pipeline defaults to CPU (use `pipeline.to(device)`)
   - BREAKING(pipeline): remove `SpeakerSegmentation` pipeline (use `SpeakerDiarization` pipeline)
-  - BREAKING(pipeline): remove support `FINCHClustering` and `HiddenMarkovModelClustering`
+  - BREAKING(pipeline): remove support for `FINCHClustering` and `HiddenMarkovModelClustering`
   - BREAKING(pipeline): remove `segmentation_duration` parameter from `SpeakerDiarization` pipeline (defaults to `duration` of segmentation model)
   - BREAKING(setup): drop support for Python 3.7
   - BREAKING(io): channels are now 0-indexed (used to be 1-indexed)
@@ -26,9 +26,14 @@
     * replace `Audio()` by `Audio(mono="downmix")`;
     * replace `Audio(mono=True)` by `Audio(mono="downmix")`;
     * replace `Audio(mono=False)` by `Audio()`.
+  - BREAKING(model): get rid of (flaky) `Model.introspection`
+    If, for some weird reason, you wrote some custom code based on that,
+    you should instead rely on `Model.example_output`.
+
 
 ### Features and improvements
 
+  - feat(task): add support for multi-task models
   - feat(pipeline): send pipeline to device with `pipeline.to(device)`
   - feat(pipeline): make `segmentation_batch_size` and `embedding_batch_size` mutable in `SpeakerDiarization` pipeline (they now default to `1`)
   - feat(task): add [powerset](https://arxiv.org/PLACEHOLDER) support to `SpeakerDiarization` task
@@ -44,6 +49,7 @@
   - fix(pipeline): fix reproducibility issue with Ampere CUDA devices
   - fix(pipeline): fix support for IOBase audio
   - fix(pipeline): fix corner case with no speaker
+  - fix(train): prevent metadata preparation to happen twice
   - improve(task): shorten and improve structure of Tensorboard tags
 
 ### Dependencies

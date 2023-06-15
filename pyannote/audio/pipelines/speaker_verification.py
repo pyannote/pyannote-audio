@@ -64,7 +64,6 @@ class NeMoPretrainedSpeakerEmbedding(BaseInference):
         embedding: Text = "nvidia/speakerverification_en_titanet_large",
         device: torch.device = None,
     ):
-
         if not NEMO_IS_AVAILABLE:
             raise ImportError(
                 f"'NeMo' must be installed to use '{embedding}' embeddings. "
@@ -80,6 +79,11 @@ class NeMoPretrainedSpeakerEmbedding(BaseInference):
         self.model_.to(self.device)
 
     def to(self, device: torch.device):
+        if not isinstance(device, torch.device):
+            raise TypeError(
+                f"`device` must be an instance of `torch.device`, got `{type(device).__name__}`"
+            )
+
         self.model_.to(device)
         self.device = device
         return self
@@ -90,7 +94,6 @@ class NeMoPretrainedSpeakerEmbedding(BaseInference):
 
     @cached_property
     def dimension(self) -> int:
-
         input_signal = torch.rand(1, self.sample_rate).to(self.device)
         input_signal_length = torch.tensor([self.sample_rate]).to(self.device)
         _, embeddings = self.model_(
@@ -105,7 +108,6 @@ class NeMoPretrainedSpeakerEmbedding(BaseInference):
 
     @cached_property
     def min_num_samples(self) -> int:
-
         lower, upper = 2, round(0.5 * self.sample_rate)
         middle = (lower + upper) // 2
         while lower + 1 < upper:
@@ -152,7 +154,6 @@ class NeMoPretrainedSpeakerEmbedding(BaseInference):
             wav_lens = signals.shape[1] * torch.ones(batch_size)
 
         else:
-
             batch_size_masks, _ = masks.shape
             assert batch_size == batch_size_masks
 
@@ -229,7 +230,6 @@ class SpeechBrainPretrainedSpeakerEmbedding(BaseInference):
         device: torch.device = None,
         use_auth_token: Union[Text, None] = None,
     ):
-
         if not SPEECHBRAIN_IS_AVAILABLE:
             raise ImportError(
                 f"'speechbrain' must be installed to use '{embedding}' embeddings. "
@@ -255,6 +255,11 @@ class SpeechBrainPretrainedSpeakerEmbedding(BaseInference):
         )
 
     def to(self, device: torch.device):
+        if not isinstance(device, torch.device):
+            raise TypeError(
+                f"`device` must be an instance of `torch.device`, got `{type(device).__name__}`"
+            )
+
         self.classifier_ = SpeechBrain_EncoderClassifier.from_hparams(
             source=self.embedding,
             savedir=f"{CACHE_DIR}/speechbrain",
@@ -281,19 +286,19 @@ class SpeechBrainPretrainedSpeakerEmbedding(BaseInference):
 
     @cached_property
     def min_num_samples(self) -> int:
-
-        lower, upper = 2, round(0.5 * self.sample_rate)
-        middle = (lower + upper) // 2
-        while lower + 1 < upper:
-            try:
-                _ = self.classifier_.encode_batch(
-                    torch.randn(1, middle).to(self.device)
-                )
-                upper = middle
-            except RuntimeError:
-                lower = middle
-
+        with torch.inference_mode():
+            lower, upper = 2, round(0.5 * self.sample_rate)
             middle = (lower + upper) // 2
+            while lower + 1 < upper:
+                try:
+                    _ = self.classifier_.encode_batch(
+                        torch.randn(1, middle).to(self.device)
+                    )
+                    upper = middle
+                except RuntimeError:
+                    lower = middle
+
+                middle = (lower + upper) // 2
 
         return upper
 
@@ -324,7 +329,6 @@ class SpeechBrainPretrainedSpeakerEmbedding(BaseInference):
             wav_lens = signals.shape[1] * torch.ones(batch_size)
 
         else:
-
             batch_size_masks, _ = masks.shape
             assert batch_size == batch_size_masks
 
@@ -415,6 +419,11 @@ class PyannoteAudioPretrainedSpeakerEmbedding(BaseInference):
         self.model_.to(self.device)
 
     def to(self, device: torch.device):
+        if not isinstance(device, torch.device):
+            raise TypeError(
+                f"`device` must be an instance of `torch.device`, got `{type(device).__name__}`"
+            )
+
         self.model_.to(device)
         self.device = device
         return self
@@ -425,7 +434,7 @@ class PyannoteAudioPretrainedSpeakerEmbedding(BaseInference):
 
     @cached_property
     def dimension(self) -> int:
-        return self.model_.introspection.dimension
+        return self.model_.example_output.dimension
 
     @cached_property
     def metric(self) -> str:
@@ -433,12 +442,24 @@ class PyannoteAudioPretrainedSpeakerEmbedding(BaseInference):
 
     @cached_property
     def min_num_samples(self) -> int:
-        return self.model_.introspection.min_num_samples
+        with torch.inference_mode():
+            lower, upper = 2, round(0.5 * self.sample_rate)
+            middle = (lower + upper) // 2
+            while lower + 1 < upper:
+                try:
+                    _ = self.model_(torch.randn(1, 1, middle).to(self.device))
+                    upper = middle
+                except RuntimeError:
+                    lower = middle
+
+                middle = (lower + upper) // 2
+
+        return upper
 
     def __call__(
         self, waveforms: torch.Tensor, masks: torch.Tensor = None
     ) -> np.ndarray:
-        with torch.no_grad():
+        with torch.inference_mode():
             if masks is None:
                 embeddings = self.model_(waveforms.to(self.device))
             else:
@@ -557,7 +578,6 @@ class SpeakerEmbedding(Pipeline):
             )
 
     def apply(self, file: AudioFile) -> np.ndarray:
-
         device = self.embedding_model_.device
 
         # read audio file and send it to GPU
@@ -583,7 +603,6 @@ def main(
     embedding: str = "pyannote/embedding",
     segmentation: str = None,
 ):
-
     import typer
     from pyannote.database import FileFinder, get_protocol
     from pyannote.metrics.binary_classification import det_curve
@@ -601,7 +620,6 @@ def main(
     trials = getattr(protocol, f"{subset}_trial")()
 
     for t, trial in enumerate(tqdm(trials)):
-
         audio1 = trial["file1"]["audio"]
         if audio1 not in emb:
             emb[audio1] = pipeline(audio1)

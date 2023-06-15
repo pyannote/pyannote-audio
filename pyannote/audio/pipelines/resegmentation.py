@@ -88,7 +88,6 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
         der_variant: dict = None,
         use_auth_token: Union[Text, None] = None,
     ):
-
         super().__init__()
 
         self.segmentation = segmentation
@@ -96,7 +95,7 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
 
         model: Model = get_model(segmentation, use_auth_token=use_auth_token)
         self._segmentation = Inference(model)
-        self._frames = self._segmentation.model.introspection.frames
+        self._frames = self._segmentation.model.example_output.frames
 
         self._audio = model.audio
 

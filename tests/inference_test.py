@@ -1,13 +1,13 @@
 import numpy as np
 import pytest
 import pytorch_lightning as pl
+from pyannote.core import SlidingWindowFeature
+from pyannote.database import FileFinder, get_protocol
 
 from pyannote.audio import Inference, Model
 from pyannote.audio.core.task import Resolution
 from pyannote.audio.models.segmentation.debug import SimpleSegmentationModel
 from pyannote.audio.tasks import VoiceActivityDetection
-from pyannote.core import SlidingWindowFeature
-from pyannote.database import FileFinder, get_protocol
 
 HF_SAMPLE_MODEL_ID = "pyannote/TestModelForContinuousIntegration"
 
@@ -29,8 +29,8 @@ def trained():
     )
     vad = VoiceActivityDetection(protocol, duration=2.0, batch_size=16, num_workers=4)
     model = SimpleSegmentationModel(task=vad)
-    trainer = pl.Trainer(fast_dev_run=True)
-    trainer.fit(model, vad)
+    trainer = pl.Trainer(fast_dev_run=True, accelerator="cpu")
+    trainer.fit(model)
     return protocol, model
 
 
@@ -91,7 +91,6 @@ def test_on_file_path(trained):
 
 
 def test_skip_aggregation(pretrained_model, dev_file):
-
     inference = Inference(pretrained_model, skip_aggregation=True)
     scores = inference(dev_file)
     assert len(scores.data.shape) == 3

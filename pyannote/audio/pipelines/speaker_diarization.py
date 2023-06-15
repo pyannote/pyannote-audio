@@ -136,7 +136,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             skip_aggregation=True,
             batch_size=segmentation_batch_size,
         )
-        self._frames: SlidingWindow = self._segmentation.model.introspection.frames
+        self._frames: SlidingWindow = self._segmentation.model.example_output.frames
 
         if self._segmentation.model.specifications.powerset:
             self.segmentation = ParamDict(
