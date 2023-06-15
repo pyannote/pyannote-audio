@@ -28,6 +28,7 @@ pyannote.audio relies on torchaudio for reading and resampling.
 """
 
 import math
+import random
 import warnings
 from io import IOBase
 from pathlib import Path
@@ -79,12 +80,14 @@ class Audio:
     ----------
     sample_rate: int, optional
         Target sampling rate. Defaults to using native sampling rate.
-    mono : int, optional
-        Convert multi-channel to mono. Defaults to True.
+    mono : {'random', 'downmix'}, optional
+        In case of multi-channel audio, convert to single-channel audio
+        using one of the following strategies: select one channel at
+        'random' or 'downmix' by averaging all channels.
 
     Usage
     -----
-    >>> audio = Audio(sample_rate=16000, mono=True)
+    >>> audio = Audio(sample_rate=16000, mono='downmix')
     >>> waveform, sample_rate = audio({"audio": "/path/to/audio.wav"})
     >>> assert sample_rate == 16000
     >>> sample_rate = 44100
@@ -147,7 +150,6 @@ class Audio:
             raise ValueError(AudioFileDocString)
 
         if "waveform" in file:
-
             waveform: Union[np.ndarray, Tensor] = file["waveform"]
             if len(waveform.shape) != 2 or waveform.shape[0] > waveform.shape[1]:
                 raise ValueError(
@@ -163,7 +165,6 @@ class Audio:
             file.setdefault("uri", "waveform")
 
         elif "audio" in file:
-
             if isinstance(file["audio"], IOBase):
                 return file
 
@@ -174,15 +175,13 @@ class Audio:
             file.setdefault("uri", path.stem)
 
         else:
-
             raise ValueError(
                 "Neither 'waveform' nor 'audio' is available for this file."
             )
 
         return file
 
-    def __init__(self, sample_rate=None, mono=True):
-
+    def __init__(self, sample_rate=None, mono=None):
         super().__init__()
         self.sample_rate = sample_rate
         self.mono = mono
@@ -206,8 +205,13 @@ class Audio:
         """
 
         # downmix to mono
-        if self.mono and waveform.shape[0] > 1:
-            waveform = waveform.mean(dim=0, keepdim=True)
+        num_channels = waveform.shape[0]
+        if num_channels > 1:
+            if self.mono == "random":
+                channel = random.randint(0, num_channels - 1)
+                waveform = waveform[channel : channel + 1]
+            elif self.mono == "downmix":
+                waveform = waveform.mean(dim=0, keepdim=True)
 
         # resample
         if (self.sample_rate is not None) and (self.sample_rate != sample_rate):
@@ -249,6 +253,18 @@ class Audio:
 
         return frames / sample_rate
 
+    def get_num_samples(self, duration: float, sample_rate: int = None) -> int:
+        """Deterministic number of samples from duration and sample rate"""
+
+        sample_rate = sample_rate or self.sample_rate
+
+        if sample_rate is None:
+            raise ValueError(
+                "`sample_rate` must be provided to compute number of samples."
+            )
+
+        return math.floor(duration * sample_rate)
+
     def __call__(self, file: AudioFile) -> Tuple[Tensor, int]:
         """Obtain waveform
 
@@ -284,7 +300,7 @@ class Audio:
         channel = file.get("channel", None)
 
         if channel is not None:
-            waveform = waveform[channel - 1 : channel]
+            waveform = waveform[channel : channel + 1]
 
         return self.downmix_and_resample(waveform, sample_rate)
 
@@ -351,7 +367,6 @@ class Audio:
             num_frames = end_frame - start_frame
 
         if mode == "raise":
-
             if num_frames > frames:
                 raise ValueError(
                     f"requested fixed duration ({duration:6f}s, or {num_frames:d} frames) is longer "
@@ -392,7 +407,6 @@ class Audio:
                 if isinstance(file["audio"], IOBase):
                     file["audio"].seek(0)
             except RuntimeError:
-
                 if isinstance(file["audio"], IOBase):
                     msg = "torchaudio failed to seek-and-read in file-like object."
                     raise RuntimeError(msg)
@@ -413,7 +427,7 @@ class Audio:
                 file["sample_rate"] = sample_rate
 
         if channel is not None:
-            data = data[channel - 1 : channel, :]
+            data = data[channel : channel + 1, :]
 
         # pad with zeros
         if mode == "pad":

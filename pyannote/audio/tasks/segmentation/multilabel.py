@@ -25,7 +25,7 @@ from typing import Dict, List, Optional, Sequence, Text, Tuple, Union
 import numpy as np
 import torch
 import torch.nn.functional as F
-from pyannote.core import Segment, SlidingWindow, SlidingWindowFeature
+from pyannote.core import Segment, SlidingWindowFeature
 from pyannote.database import Protocol
 from pyannote.database.protocol import SegmentationProtocol
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
@@ -95,7 +95,6 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         augmentation: BaseWaveformTransform = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
     ):
-
         if not isinstance(protocol, SegmentationProtocol):
             raise ValueError(
                 f"MultiLabelSegmentation task expects a SegmentationProtocol but you gave {type(protocol)}. "
@@ -120,15 +119,15 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         # classes should be detected. therefore, we postpone the definition of
         # specifications to setup()
 
-    def setup(self, stage: Optional[str] = None):
-
-        super().setup(stage=stage)
+    def setup(self):
+        super().setup()
 
         self.specifications = Specifications(
             classes=self.classes,
             problem=Problem.MULTI_LABEL_CLASSIFICATION,
             resolution=Resolution.FRAME,
             duration=self.duration,
+            min_duration=self.min_duration,
             warm_up=self.warm_up,
         )
 
@@ -169,14 +168,6 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
 
         sample = dict()
         sample["X"], _ = self.model.audio.crop(file, chunk, duration=duration)
-
-        # TODO: this should be cached
-        # use model introspection to predict how many frames it will output
-        num_samples = sample["X"].shape[1]
-        num_frames, _ = self.model.introspection(num_samples)
-        resolution = duration / num_frames
-        frames = SlidingWindow(start=0.0, duration=resolution, step=resolution)
-
         # gather all annotations of current file
         annotations = self.annotations[self.annotations["file_id"] == file_id]
 
@@ -187,19 +178,23 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
 
         # discretize chunk annotations at model output resolution
         start = np.maximum(chunk_annotations["start"], chunk.start) - chunk.start
-        start_idx = np.floor(start / resolution).astype(int)
+        start_idx = np.floor(start / self.model.example_output.frames.step).astype(int)
         end = np.minimum(chunk_annotations["end"], chunk.end) - chunk.start
-        end_idx = np.ceil(end / resolution).astype(int)
+        end_idx = np.ceil(end / self.model.example_output.frames.step).astype(int)
 
         # frame-level targets (-1 for un-annotated classes)
-        y = -np.ones((num_frames, len(self.classes)), dtype=np.int8)
+        y = -np.ones(
+            (self.model.example_output.num_frames, len(self.classes)), dtype=np.int8
+        )
         y[:, self.annotated_classes[file_id]] = 0
         for start, end, label in zip(
             start_idx, end_idx, chunk_annotations["global_label_idx"]
         ):
             y[start:end, label] = 1
 
-        sample["y"] = SlidingWindowFeature(y, frames, labels=self.classes)
+        sample["y"] = SlidingWindowFeature(
+            y, self.model.example_output.frames, labels=self.classes
+        )
 
         metadata = self.metadata[file_id]
         sample["meta"] = {key: metadata[key] for key in metadata.dtype.names}
@@ -208,7 +203,6 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         return sample
 
     def training_step(self, batch, batch_idx: int):
-
         X = batch["X"]
         y_pred = self.model(X)
         y_true = batch["y"]
@@ -228,17 +222,16 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
             return None
 
         self.model.log(
-            f"{self.logging_prefix}TrainLoss",
+            "loss/train",
             loss,
             on_step=False,
             on_epoch=True,
-            prog_bar=True,
+            prog_bar=False,
             logger=True,
         )
         return {"loss": loss}
 
     def validation_step(self, batch, batch_idx: int):
-
         X = batch["X"]
         y_pred = self.model(X)
         y_true = batch["y"]
@@ -256,7 +249,7 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         loss = F.binary_cross_entropy(y_pred, y_true.type(torch.float))
 
         self.model.log(
-            f"{self.logging_prefix}ValLoss",
+            "loss/val",
             loss,
             on_step=False,
             on_epoch=True,
@@ -284,4 +277,4 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         pytorch_lightning.callbacks.EarlyStopping
         """
 
-        return f"{self.logging_prefix}ValLoss", "min"
+        return "ValLoss", "min"

@@ -40,6 +40,8 @@ from pyannote.audio import Audio, __version__
 from pyannote.audio.core.inference import BaseInference
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import CACHE_DIR, Model
+from pyannote.audio.utils.reproducibility import fix_reproducibility
+from pyannote.audio.utils.version import check_version
 
 PIPELINE_PARAMS_NAME = "config.yaml"
 
@@ -119,6 +121,11 @@ visit https://hf.co/{model_id} to accept the user conditions."""
         with open(config_yml, "r") as fp:
             config = yaml.load(fp, Loader=yaml.SafeLoader)
 
+        if "version" in config:
+            check_version(
+                "pyannote.audio", config["version"], __version__, what="Pipeline"
+            )
+
         # initialize pipeline
         pipeline_name = config["pipeline"]["name"]
         Klass = get_class_by_name(
@@ -142,7 +149,6 @@ visit https://hf.co/{model_id} to accept the user conditions."""
         if "preprocessors" in config:
             preprocessors = {}
             for key, preprocessor in config.get("preprocessors", {}).items():
-
                 # preprocessors:
                 #    key:
                 #       name: package.module.ClassName
@@ -173,7 +179,10 @@ visit https://hf.co/{model_id} to accept the user conditions."""
         # send pipeline to specified device
         if "device" in config:
             device = torch.device(config["device"])
-            pipeline.to(device)
+            try:
+                pipeline.to(device)
+            except RuntimeError as e:
+                print(e)
 
         return pipeline
 
@@ -244,7 +253,6 @@ visit https://hf.co/{model_id} to accept the user conditions."""
         super().__setattr__(name, value)
 
     def __delattr__(self, name):
-
         if name in self._models:
             del self._models[name]
 
@@ -286,6 +294,8 @@ visit https://hf.co/{model_id} to accept the user conditions."""
         raise NotImplementedError()
 
     def __call__(self, file: AudioFile, **kwargs):
+        fix_reproducibility(getattr(self, "device", torch.device("cpu")))
+
         if not self.instantiated:
             # instantiate with default parameters when available
             try:
@@ -314,8 +324,13 @@ visit https://hf.co/{model_id} to accept the user conditions."""
 
         return self.apply(file, **kwargs)
 
-    def to(self, device):
+    def to(self, device: torch.device):
         """Send pipeline to `device`"""
+
+        if not isinstance(device, torch.device):
+            raise TypeError(
+                f"`device` must be an instance of `torch.device`, got `{type(device).__name__}`"
+            )
 
         for _, pipeline in self._pipelines.items():
             if hasattr(pipeline, "to"):
@@ -326,5 +341,7 @@ visit https://hf.co/{model_id} to accept the user conditions."""
 
         for _, inference in self._inferences.items():
             _ = inference.to(device)
+
+        self.device = device
 
         return self

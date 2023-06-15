@@ -45,7 +45,6 @@ from pyannote.audio.core.io import get_torchaudio_info
 
 @hydra.main(config_path="train_config", config_name="config")
 def train(cfg: DictConfig) -> Optional[float]:
-
     # make sure to set the random seed before the instantiation of Trainer
     # so that each model initializes with the same weights when using DDP.
     seed = int(os.environ.get("PL_GLOBAL_SEED", "0"))
@@ -100,7 +99,11 @@ def train(cfg: DictConfig) -> Optional[float]:
 
     model.configure_optimizers = MethodType(configure_optimizers, model)
 
-    callbacks = [RichProgressBar(), LearningRateMonitor(logging_interval="step")]
+    # avoid creating big log files
+    callbacks = [
+        RichProgressBar(refresh_rate=20, leave=True),
+        LearningRateMonitor(),
+    ]
 
     if fine_tuning:
         # TODO: configure layer freezing
@@ -130,6 +133,7 @@ def train(cfg: DictConfig) -> Optional[float]:
             patience=100,
             strict=True,
             verbose=False,
+            check_finite=True,
         )
         callbacks.append(early_stopping)
 
