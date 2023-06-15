@@ -493,7 +493,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                 initial_state=False,
             )
 
-        if self.klustering == "OracleClustering":
+        if self.klustering == "OracleClustering" and not return_embeddings:
             embeddings = None
         else:
             embeddings = self.get_embeddings(

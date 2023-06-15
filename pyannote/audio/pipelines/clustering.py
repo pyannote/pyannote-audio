@@ -486,6 +486,7 @@ class OracleClustering(BaseClustering):
 
     def __call__(
         self,
+        embeddings: np.ndarray = None,
         segmentations: SlidingWindowFeature = None,
         file: AudioFile = None,
         frames: SlidingWindow = None,
@@ -495,6 +496,8 @@ class OracleClustering(BaseClustering):
 
         Parameters
         ----------
+        embeddings : (num_chunks, num_speakers, dimension) array, optional
+            Sequence of embeddings. If `None`, do not compute speaker centroids based on those embeddings.
         segmentations : (num_chunks, num_frames, num_speakers) array
             Binary segmentations.
         file : AudioFile
@@ -539,8 +542,21 @@ class OracleClustering(BaseClustering):
                 hard_clusters[c, i] = j
                 soft_clusters[c, i, j] = 1.0
 
-        # return fake centroids, which are simply indices of ground truth clusters
-        centroids = np.expand_dims(np.arange(num_clusters), axis=1)
+        if embeddings is None:
+            centroids = None
+        else:
+            train_embeddings, train_chunk_idx, train_speaker_idx = self.filter_embeddings(
+                embeddings,
+                segmentations=segmentations,
+            )
+
+            train_clusters = hard_clusters[train_chunk_idx, train_speaker_idx]
+            centroids = np.vstack(
+                [
+                    np.mean(train_embeddings[train_clusters == k], axis=0)
+                    for k in range(num_clusters)
+                ]
+            )
 
         return hard_clusters, soft_clusters, centroids
 
