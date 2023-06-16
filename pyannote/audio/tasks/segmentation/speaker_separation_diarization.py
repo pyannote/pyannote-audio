@@ -54,12 +54,107 @@ from pyannote.audio.torchmetrics import (
 from pyannote.audio.utils.loss import binary_cross_entropy, mse_loss, nll_loss
 from pyannote.audio.utils.permutation import permutate
 from pyannote.audio.utils.powerset import Powerset
-from asteroid.losses import MixITLossWrapper, multisrc_neg_sisdr
+from asteroid.losses import multisrc_neg_sisdr
 from torch.utils.data._utils.collate import default_collate
 
 Subsets = list(Subset.__args__)
 Scopes = list(Scope.__args__)
 
+from itertools import combinations
+from torch import nn
+
+class ModifiedMixITLossWrapper(nn.Module):
+    r"""Mixture invariant loss wrapper modifed to force alignment between separation and diarization.
+
+    Args:
+        loss_func: function with signature (est_targets, targets, **kwargs).
+        generalized (bool): Determines how MixIT is applied. If False ,
+            apply MixIT for any number of mixtures as soon as they contain
+            the same number of sources (:meth:`~MixITLossWrapper.best_part_mixit`.)
+            If True (default), apply MixIT for two mixtures, but those mixtures do not
+            necessarly have to contain the same number of sources.
+            See :meth:`~MixITLossWrapper.best_part_mixit_generalized`.
+        reduction (string, optional): Specifies the reduction to apply to
+            the output:
+            ``'none'`` | ``'mean'``. ``'none'``: no reduction will be applied,
+            ``'mean'``: the sum of the output will be divided by the number of
+            elements in the output.
+
+    For each of these modes, the best partition and reordering will be
+    automatically computed.
+
+    Examples:
+        >>> import torch
+        >>> from asteroid.losses import multisrc_mse
+        >>> mixtures = torch.randn(10, 2, 16000)
+        >>> est_sources = torch.randn(10, 4, 16000)
+        >>> # Compute MixIT loss based on pairwise losses
+        >>> loss_func = MixITLossWrapper(multisrc_mse)
+        >>> loss_val = loss_func(est_sources, mixtures)
+
+    References
+        [1] Scott Wisdom et al. "Unsupervised sound separation using
+        mixtures of mixtures." arXiv:2006.12701 (2020)
+    """
+
+    def __init__(self, loss_func, generalized=True, reduction="mean"):
+        super().__init__()
+        self.loss_func = loss_func
+        self.generalized = generalized
+        self.reduction = reduction
+
+    def forward(self, est_targets, targets, part_from_mix1, part_from_mix2, return_est=False, **kwargs):
+        r"""Find the best partition and return the loss.
+
+        Args:
+            est_targets: torch.Tensor. Expected shape :math:`(batch, nsrc, *)`.
+                The batch of target estimates.
+            targets: torch.Tensor. Expected shape :math:`(batch, nmix, ...)`.
+                The batch of training targets
+            return_est: Boolean. Whether to return the estimated mixtures
+                estimates (To compute metrics or to save example).
+            **kwargs: additional keyword argument that will be passed to the
+                loss function.
+
+        Returns:
+            - Best partition loss for each batch sample, average over
+              the batch. torch.Tensor(loss_value)
+            - The estimated mixtures (estimated sources summed according to the partition)
+              if return_est is True. torch.Tensor of shape :math:`(batch, nmix, ...)`.
+        """
+        # Check input dimensions
+        assert est_targets.shape[0] == targets.shape[0]
+        assert est_targets.shape[2] == targets.shape[2]
+
+        # if not self.generalized:
+        #     min_loss, min_loss_idx, parts = self.best_part_mixit(
+        #         self.loss_func, est_targets, targets, **kwargs
+        #     )
+        # else:
+        #     min_loss, min_loss_idx, parts = self.best_part_mixit_generalized(
+        #         self.loss_func, est_targets, targets, **kwargs
+        #     )
+        est_mixes = []
+        for i in range(est_targets.shape[0]):
+            # sum the sources according to the given partition
+            est_mix1 = est_targets[i, part_from_mix1[i], :].sum(0)
+            est_mix2 = est_targets[i, part_from_mix2[i], :].sum(0)
+            # get loss for the given partition
+            
+            est_mixes.append(torch.stack((est_mix1, est_mix2)))
+        est_mixes = torch.stack(est_mixes)
+        loss_partition = self.loss_func(est_mixes, targets, **kwargs)
+        if loss_partition.ndim != 1:
+            raise ValueError("Loss function return value should be of size (batch,).")
+
+        # Apply any reductions over the batch axis
+        returned_loss = loss_partition.mean() if self.reduction == "mean" else loss_partition
+        if not return_est:
+            return returned_loss
+
+        # Order and sum on the best partition to get the estimated mixtures
+        # reordered = self.reorder_source(est_targets, targets, min_loss_idx, parts)
+        return returned_loss, est_mixes
 
 class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
     """Speaker diarization
@@ -194,7 +289,7 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         self.balance = balance
         self.weight = weight
         self.vad_loss = vad_loss
-        self.separation_loss = MixITLossWrapper(multisrc_neg_sisdr, generalized=True)
+        self.separation_loss = ModifiedMixITLossWrapper(multisrc_neg_sisdr, generalized=True)
         self.mixit_loss_weight = mixit_loss_weight
 
     def setup(self):
@@ -470,6 +565,9 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
                     # if previous chunk has 0 speakers then just sample from all annotated regions again
                     first_chunk = self.prepare_chunk(file_id, start_time, duration)
                     first_chunk["meta"]["mixture_type"]="first_mixture"
+                    # in order to align separation and diarization branches we need to know which mixtures do speakers/sources originate from
+                    first_chunk["meta"]["sources_from_first_mixture"] = len(first_chunk["y"].labels)
+                    first_chunk["meta"]["sources_from_second_mixture"] = 0
                     yield first_chunk
 
                     # selected one annotated region at random (with probability proportional to its duration)
@@ -483,6 +581,8 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
 
                     second_chunk = self.prepare_chunk(file_id, start_time, duration)
                     second_chunk["meta"]["mixture_type"]="second_mixture"
+                    second_chunk["meta"]["sources_from_first_mixture"] = 0
+                    second_chunk["meta"]["sources_from_second_mixture"] = len(second_chunk["y"].labels)
                     yield second_chunk
 
                     # add previous two chunks to get a third one
@@ -494,6 +594,8 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
                     labels = first_chunk["y"].labels + second_chunk["y"].labels
                     third_chunk["y"] = SlidingWindowFeature(y, frames, labels=labels)
                     third_chunk["meta"]["mixture_type"]="mom"
+                    third_chunk["meta"]["sources_from_first_mixture"] = len(first_chunk["y"].labels)
+                    third_chunk["meta"]["sources_from_second_mixture"] = len(second_chunk["y"].labels)
 
                     # the whole mom should be used in the separation branch training
                     third_chunk["X_separation_mask"] = torch.ones_like(first_chunk["X_separation_mask"])
@@ -531,7 +633,9 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
 
                         first_chunk = self.prepare_chunk(file_id, start_time, duration)
                         first_chunk["meta"]["mixture_type"]="first_mixture"
-                        yield first_chunk
+                        first_chunk["meta"]["sources_from_first_mixture"] = len(first_chunk["y"].labels)
+                        first_chunk["meta"]["sources_from_second_mixture"] = 0
+                        #yield first_chunk
 
                         prob_segments_duration = segments_without_repeat["duration"] / np.sum(segments_without_repeat["duration"])
                         segment = np.random.choice(
@@ -542,7 +646,9 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
                         new_start_time = rng.uniform(start, end - duration)
                         second_chunk = self.prepare_chunk(file_id, new_start_time, duration)
                         second_chunk["meta"]["mixture_type"]="second_mixture"
-                        yield second_chunk
+                        second_chunk["meta"]["sources_from_first_mixture"] = 0
+                        second_chunk["meta"]["sources_from_second_mixture"] = len(second_chunk["y"].labels)
+                        #yield second_chunk
 
                         #add previous two chunks to get a third one
                         third_chunk = dict()
@@ -556,7 +662,13 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
 
                         # the whole mom should be used in the separation branch training
                         third_chunk["X_separation_mask"] = torch.ones_like(first_chunk["X_separation_mask"])
-                        yield third_chunk
+                        third_chunk["meta"]["sources_from_first_mixture"] = len(first_chunk["y"].labels)
+                        third_chunk["meta"]["sources_from_second_mixture"] = len(second_chunk["y"].labels)
+                        #third_chunk["sources_from_first_mixture"] = len(first_chunk["y"].labels)
+                        if len(labels) < 4:
+                            yield first_chunk
+                            yield second_chunk
+                            yield third_chunk
 
     def collate_X_separation_mask(self, batch) -> torch.Tensor:
         return default_collate([b["X_separation_mask"] for b in batch])
@@ -810,7 +922,7 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
 
         if self.specifications[0].powerset:
             multilabel = self.model.powerset.to_multilabel(prediction)
-            permutated_target, _ = permutate(multilabel, target)
+            permutated_target, permutations = permutate(multilabel, target)
             permutated_target_powerset = self.model.powerset.to_powerset(
                 permutated_target.float()
             )
@@ -819,17 +931,21 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
             )
 
         else:
-            permutated_prediction, _ = permutate(target, prediction)
+            permutated_prediction, permutations = permutate(target, prediction)
             seg_loss = self.segmentation_loss(
                 permutated_prediction, target, weight=weight
             )
+        # to find which predicted sources correspond to which mixtures, we need to invert the permutations
+        permutations_inverse = torch.argsort(torch.tensor(permutations))
+        predicted_sources_idx_mix1 = [[permutations_inverse[i][j] for j in range(batch["meta"]["sources_from_first_mixture"][i])] for i in range(batch_size)]
+        predicted_sources_idx_mix2 = [[permutations_inverse[i][j] for j in range(batch["meta"]["sources_from_first_mixture"][i],batch["meta"]["sources_from_second_mixture"][i])] for i in range(batch_size)]
         # contributions from original mixtures is weighed by the proportion of remaining frames
         mixit_loss = self.separation_loss(
-            predicted_sources_mom.transpose(1, 2), torch.stack((mix1, mix2)).transpose(0, 1)
+            predicted_sources_mom.transpose(1, 2), torch.stack((mix1, mix2)).transpose(0, 1), predicted_sources_idx_mix1[2::3], predicted_sources_idx_mix2[2::3]
         ) + self.separation_loss(
-            predicted_sources_mix1.transpose(1, 2), torch.stack((mix1_masked, torch.zeros_like(mix1))).transpose(0, 1)
+            predicted_sources_mix1.transpose(1, 2), torch.stack((mix1_masked, torch.zeros_like(mix1))).transpose(0, 1), predicted_sources_idx_mix1[0::3], predicted_sources_idx_mix2[0::3]
         ) * mix1_masks.sum() / num_samples / bsz * 3 + self.separation_loss(
-            predicted_sources_mix2.transpose(1, 2), torch.stack((mix2_masked, torch.zeros_like(mix2))).transpose(0, 1)
+            predicted_sources_mix2.transpose(1, 2), torch.stack((mix2_masked, torch.zeros_like(mix2))).transpose(0, 1), predicted_sources_idx_mix1[1::3], predicted_sources_idx_mix2[1::3]
         ) * mix2_masks.sum() / num_samples / bsz * 3
 
         self.model.log(
@@ -978,10 +1094,11 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
             seg_loss = self.segmentation_loss(
                 permutated_prediction, target, weight=weight
             )
-
-        mixit_loss = self.separation_loss(
-            predicted_sources_mom.transpose(1, 2), torch.stack((mix1, mix2)).transpose(0, 1)
-        )
+        # forced alignment mixit can't be implemented for validation because since data loading is different
+        mixit_loss = 0
+        # mixit_loss = self.separation_loss(
+        #     predicted_sources_mom.transpose(1, 2), torch.stack((mix1, mix2)).transpose(0, 1)
+        # )
 
         self.model.log(
             "loss/val/separation",
