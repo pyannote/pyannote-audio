@@ -568,7 +568,7 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
                     # in order to align separation and diarization branches we need to know which mixtures do speakers/sources originate from
                     first_chunk["meta"]["sources_from_first_mixture"] = len(first_chunk["y"].labels)
                     first_chunk["meta"]["sources_from_second_mixture"] = 0
-                    yield first_chunk
+                    # yield first_chunk
 
                     # selected one annotated region at random (with probability proportional to its duration)
                     annotated_region_index = np.random.choice(
@@ -583,7 +583,7 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
                     second_chunk["meta"]["mixture_type"]="second_mixture"
                     second_chunk["meta"]["sources_from_first_mixture"] = 0
                     second_chunk["meta"]["sources_from_second_mixture"] = len(second_chunk["y"].labels)
-                    yield second_chunk
+                    # yield second_chunk
 
                     # add previous two chunks to get a third one
                     third_chunk = dict()
@@ -599,7 +599,11 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
 
                     # the whole mom should be used in the separation branch training
                     third_chunk["X_separation_mask"] = torch.ones_like(first_chunk["X_separation_mask"])
-                    yield third_chunk
+
+                    if len(labels) < 4:
+                        yield first_chunk
+                        yield second_chunk
+                        yield third_chunk
                     
                 else:
                     # merge segments that contain repeated speakers
