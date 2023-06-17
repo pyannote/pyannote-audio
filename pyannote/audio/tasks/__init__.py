@@ -28,6 +28,8 @@ from .segmentation.overlapped_speech_detection import (  # isort:skip
 )
 from .embedding.arcface import SupervisedRepresentationLearningWithArcFace  # isort:skip
 
+from .joint_task.speaker_diarization_and_embedding import JointSpeakerDiarizationAndEmbedding
+
 # Segmentation has been renamed to SpeakerDiarization but we keep Segmentation here for backward compatibility
 Segmentation = SpeakerDiarization
 
@@ -41,4 +43,5 @@ __all__ = [
     "MultiLabelSegmentation",
     "SpeakerEmbedding",
     "Segmentation",
+    "JointSpeakerDiarizationAndEmbedding",
 ]
