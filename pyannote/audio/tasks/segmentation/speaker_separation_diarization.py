@@ -952,6 +952,12 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
             predicted_sources_mix2.transpose(1, 2), torch.stack((mix2_masked, torch.zeros_like(mix2))).transpose(0, 1), predicted_sources_idx_mix1[1::3], predicted_sources_idx_mix2[1::3]
         ) * mix2_masks.sum() / num_samples / bsz * 3
 
+        upscaled_permutated_target = torch.nn.functional.interpolate(permutated_target.transpose(1, 2), size=(80000)).transpose(1, 2)
+        forced_alignment_loss = (1 - 2 * upscaled_permutated_target[::3]) * predicted_sources_mix1 ** 2 +\
+            (1 - 2 * upscaled_permutated_target[1::3]) * predicted_sources_mix2 ** 2 +\
+            (1 - 2 * upscaled_permutated_target[2::3]) * predicted_sources_mom ** 2
+        forced_alignment_loss = forced_alignment_loss.mean() / 3
+
         self.model.log(
             "loss/train/separation",
             mixit_loss,
@@ -995,7 +1001,7 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
                 logger=True,
             )
 
-        loss = (1 - self.mixit_loss_weight) * (seg_loss + vad_loss) + self.mixit_loss_weight * mixit_loss
+        loss = (1 - self.mixit_loss_weight) * (seg_loss + vad_loss) + self.mixit_loss_weight * mixit_loss + forced_alignment_loss
 
         # skip batch if something went wrong for some reason
         if torch.isnan(loss):
