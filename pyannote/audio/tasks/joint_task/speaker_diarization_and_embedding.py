@@ -679,9 +679,9 @@ class JointSpeakerDiarizationAndEmbedding(Task):
         embedding_files_ids = file_ids[np.in1d(file_ids, self.embedding_database_files)]
 
         annotated_duration = self.annotated_duration[file_ids]
+        annotated_duration[embedding_files_ids] = 0
         prob_annotated_duration = annotated_duration / np.sum(annotated_duration)
         # set probability to sample a file from embedding database to 0
-        prob_annotated_duration[embedding_files_ids] = 0
 
         duration = self.duration
 
