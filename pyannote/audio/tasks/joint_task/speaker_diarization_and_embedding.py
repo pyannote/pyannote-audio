@@ -878,24 +878,18 @@ class JointSpeakerDiarizationAndEmbedding(Task):
             Permutation-invariant segmentation loss
         """
 
-        if self.specifications[Subtasks.index("diarization")].powerset:
-
-            # `clamp_min` is needed to set non-speech weight to 1.
-            class_weight = (
-                torch.clamp_min(self.model.powerset.cardinality, 1.0)
-                if self.weigh_by_cardinality
-                else None
-            )
-            seg_loss = nll_loss(
-                permutated_prediction,
-                torch.argmax(target, dim=-1),
-                class_weight=class_weight,
-                weight=weight,
-            )
-        else:
-            seg_loss = binary_cross_entropy(
-                permutated_prediction, target.float(), weight=weight
-            )
+        # `clamp_min` is needed to set non-speech weight to 1.
+        class_weight = (
+            torch.clamp_min(self.model.powerset.cardinality, 1.0)
+            if self.weigh_by_cardinality
+            else None
+        )
+        seg_loss = nll_loss(
+            permutated_prediction,
+            torch.argmax(target, dim=-1),
+            class_weight=class_weight,
+            weight=weight,
+        )
 
         return seg_loss
 
@@ -938,11 +932,10 @@ class JointSpeakerDiarizationAndEmbedding(Task):
 
     def setup_loss_func(self):
         diarization_spec = self.specifications[Subtasks.index("diarization")]
-        if diarization_spec.powerset:
-            self.model.powerset = Powerset(
-                len(diarization_spec.classes),
-                diarization_spec.powerset_max_classes,
-            )
+        self.model.powerset = Powerset(
+            len(diarization_spec.classes),
+            diarization_spec.powerset_max_classes,
+        )
 
     def compute_diarization_loss(self, batch : torch.Tensor):
         """"""
@@ -985,26 +978,18 @@ class JointSpeakerDiarizationAndEmbedding(Task):
         warm_up_right = round(self.warm_up[1] / self.duration * num_frames)
         weight[:, num_frames - warm_up_right :] = 0.0
 
-        if self.specifications[Subtasks.index("diarization")].powerset:
-
-            powerset = torch.nn.functional.one_hot(
-                torch.argmax(prediction, dim=-1),
-                self.model.powerset.num_powerset_classes,
-            ).float()
-            multilabel = self.model.powerset.to_multilabel(powerset)
-            permutated_target, _ = permutate(multilabel, target)
-            permutated_target_powerset = self.model.powerset.to_powerset(
-                permutated_target.float()
-            )
-            seg_loss = self.segmentation_loss(
-                prediction, permutated_target_powerset, weight=weight
-            )
-
-        else:
-            permutated_prediction, _ = permutate(target, prediction)
-            seg_loss = self.segmentation_loss(
-                permutated_prediction, target, weight=weight
-            )
+        powerset = torch.nn.functional.one_hot(
+            torch.argmax(prediction, dim=-1),
+            self.model.powerset.num_powerset_classes,
+        ).float()
+        multilabel = self.model.powerset.to_multilabel(powerset)
+        permutated_target, _ = permutate(multilabel, target)
+        permutated_target_powerset = self.model.powerset.to_powerset(
+            permutated_target.float()
+        )
+        seg_loss = self.segmentation_loss(
+            prediction, permutated_target_powerset, weight=weight
+        )
 
         self.model.log(
             f"{self.logging_prefix}TrainSegLoss",
@@ -1022,15 +1007,9 @@ class JointSpeakerDiarizationAndEmbedding(Task):
 
             # TODO: vad_loss probably does not make sense in powerset mode
             # because first class (empty set of labels) does exactly this...
-            if self.specifications[Subtasks.index("diarization")].powerset:
-                vad_loss = self.voice_activity_detection_loss(
-                    prediction, permutated_target_powerset, weight=weight
-                )
-
-            else:
-                vad_loss = self.voice_activity_detection_loss(
-                    permutated_prediction, target, weight=weight
-                )
+            vad_loss = self.voice_activity_detection_loss(
+                prediction, permutated_target_powerset, weight=weight
+            )
 
             self.model.log(
                 f"{self.logging_prefix}TrainVADLoss",
@@ -1105,23 +1084,11 @@ class JointSpeakerDiarizationAndEmbedding(Task):
         """Returns diarization error rate and its components for diarization subtask,
         and equal error rate for the embedding part
         """
-
-        if self.specifications[Subtasks.index("diarization")].powerset:
-            return {
-                "DiarizationErrorRate": DiarizationErrorRate(0.5),
-                "DiarizationErrorRate/Confusion": SpeakerConfusionRate(0.5),
-                "DiarizationErrorRate/Miss": MissedDetectionRate(0.5),
-                "DiarizationErrorRate/FalseAlarm": FalseAlarmRate(0.5),
-                "EqualErrorRate": EqualErrorRate(compute_on_cpu=True, distances=False),
-                "BinaryAUROC": BinaryAUROC(compute_on_cpu=True),
-            }
-
         return {
-            "DiarizationErrorRate": OptimalDiarizationErrorRate(),
-            "DiarizationErrorRate/Threshold": OptimalDiarizationErrorRateThreshold(),
-            "DiarizationErrorRate/Confusion": OptimalSpeakerConfusionRate(),
-            "DiarizationErrorRate/Miss": OptimalMissedDetectionRate(),
-            "DiarizationErrorRate/FalseAlarm": OptimalFalseAlarmRate(),
+            "DiarizationErrorRate": DiarizationErrorRate(0.5),
+            "DiarizationErrorRate/Confusion": SpeakerConfusionRate(0.5),
+            "DiarizationErrorRate/Miss": MissedDetectionRate(0.5),
+            "DiarizationErrorRate/FalseAlarm": FalseAlarmRate(0.5),
             "EqualErrorRate": EqualErrorRate(compute_on_cpu=True, distances=False),
             "BinaryAUROC": BinaryAUROC(compute_on_cpu=True),
         }
