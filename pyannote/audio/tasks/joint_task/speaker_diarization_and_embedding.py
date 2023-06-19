@@ -36,7 +36,7 @@ from torch.utils.data._utils.collate import default_collate
 
 from pyannote.core import Segment, SlidingWindow, SlidingWindowFeature
 from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
-from pyannote.audio.utils.loss import binary_cross_entropy, mse_loss, nll_loss
+from pyannote.audio.utils.loss import nll_loss
 from pyannote.audio.utils.permutation import permutate
 from pyannote.audio.utils.powerset import Powerset
 from pyannote.audio.utils.random import create_rng_for_worker
@@ -47,11 +47,6 @@ from pyannote.audio.torchmetrics import (
     DiarizationErrorRate,
     FalseAlarmRate,
     MissedDetectionRate,
-    OptimalDiarizationErrorRate,
-    OptimalDiarizationErrorRateThreshold,
-    OptimalFalseAlarmRate,
-    OptimalMissedDetectionRate,
-    OptimalSpeakerConfusionRate,
     SpeakerConfusionRate,
 )
 
