@@ -25,7 +25,7 @@ import itertools
 import random
 import numpy as np
 import torch
-from typing import Literal, Union, Sequence, Dict
+from typing import Literal, List, Text, Union, Sequence, Dict
 import warnings
 
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
@@ -113,8 +113,7 @@ class JointSpeakerDiarizationAndEmbedding(Task):
         # * diarization databases are those with file or database speaker label scope
         self.embedding_database_files = []
         self.diarization_database_files = []
-        self._train = {}
-    
+
     def get_file(self, file_id):
 
         file = dict()
@@ -205,8 +204,8 @@ class JointSpeakerDiarizationAndEmbedding(Task):
             # keep track of speaker label scope (file, database, or global) for speaker diarization protocols
             if isinstance(self.protocol, SpeakerDiarizationProtocol):
                 metadatum["scope"] = Scopes.index(file["scope"])
-                # add the file to the embedding or diarization list according to the file database speaker 
-                # labels scope 
+                # add the file to the embedding or diarization list according to the file database speaker
+                # labels scope
                 if file["scope"] == 'global':
                     self.embedding_database_files.append(file_id)
                 elif file["scope"] in ["database", "file"]:
@@ -363,10 +362,6 @@ class JointSpeakerDiarizationAndEmbedding(Task):
                         # update list of global-scope labels
                         if label not in unique_labels:
                             unique_labels.append(label)
-                        # add class to the list of classes:
-                        if label not in self._train:
-                            self._train[label] = list()
-                        self._train[label].append(file_id)
                         # and convert label to its (global-scope) index
                         global_label_idx = unique_labels.index(label)
 
@@ -491,7 +486,7 @@ class JointSpeakerDiarizationAndEmbedding(Task):
             duration=self.duration,
             resolution=Resolution.CHUNK,
             problem=Problem.REPRESENTATION,
-            classes=sorted(self._train),
+            classes=unique_labels,
         )
 
         self.specifications = (speaker_diarization, speaker_embedding)
@@ -581,6 +576,88 @@ class JointSpeakerDiarizationAndEmbedding(Task):
 
         return sample
 
+    def draw_diarization_chunk(self, file_ids : np.ndarray,
+                                 prob_annotated_duration : np.ndarray,
+                                 rng : random.Random,
+                                 duration : float,
+                                 ) -> tuple:
+        """Sample one chunk for the diarization task
+        
+        Parameters
+        ----------
+        file_ids: np.ndarray
+            array containing files id
+        prob_annotated_duration: np.ndarray
+            array of the same size than file_ids array, containing probability
+            to corresponding file to be drawn
+        rng : random.Random
+            Random number generator
+        duration: float
+            duration of the chunk to draw
+        """
+        # select one file at random (wiht probability proportional to its annotated duration)
+        file_id = np.random.choice(file_ids, p=prob_annotated_duration)
+        # find indices of annotated regions in this file
+        annotated_region_indices = np.where(
+            self.annotated_regions["file_id"] == file_id
+        )[0]
+
+        # turn annotated regions duration into a probability distribution
+        prob_annotaded_regions_duration = self.annotated_regions["duration"][
+            annotated_region_indices
+        ] / np.sum(self.annotated_regions["duration"][annotated_region_indices])
+
+        # seletect one annotated region at random (with probability proportional to its duration)
+        annotated_region_index = np.random.choice(annotated_region_indices,
+                                                  p=prob_annotaded_regions_duration
+                                                  )
+
+        # select one chunk at random in this annotated region
+        _, _, start, end = self.annotated_regions[annotated_region_index]
+        start_time = rng.uniform(start, end - duration)
+
+        return (file_id, start_time)
+
+    def draw_embedding_chunk(self, klass : Text,
+                               classes : List[Text],
+                               duration : float) -> tuple:
+        """Sample one chunk for the embedding task
+        
+        Parameters
+        ----------
+        klass: Text
+            current class of speakers from which to draw a sample
+        classes: List[Text]
+            list of all the global speaker labels, in the same order than the list
+            defined in the task specification
+        duration: float
+            duration of the chunk to draw
+        
+        Return
+        ------
+        tuple:
+            file_id:
+                the file id to which the sampled chunk belongs
+            start_time:
+                start time of the sampled chunk
+        """
+        # get index of the current class in the order of original class list
+        class_id = classes.index(klass)
+        # get segments for current class
+        class_segments_idx = self.annotations["global_label_idx"] == class_id
+        class_segments = self.annotations[class_segments_idx]
+
+        # sample one segment from all the class segments:
+        segments_duration = class_segments["end"] - class_segments["start"]
+        segments_total_duration = np.sum(segments_duration)
+        prob_segments = segments_duration / segments_total_duration
+        segment = np.random.choice(class_segments, p=prob_segments)
+
+        # sample chunk start time in order to intersect it with the sampled segment
+        start_time = np.random.uniform(segment["start"] - duration / 2, segment["start"])
+
+        return (segment["file_id"], start_time)
+
     def train__iter__helper(self, rng : random.Random, **filters):
         """Iterate over training samples with optional domain filtering
 
@@ -591,7 +668,7 @@ class JointSpeakerDiarizationAndEmbedding(Task):
         filters : dict, optional
             When provided (as {key : value} dict), filter training files so that
             only file such as file [key] == value are used for generating chunks
-        
+
         Yields
         ------
         chunk : dict
@@ -607,53 +684,40 @@ class JointSpeakerDiarizationAndEmbedding(Task):
         for key, value in filters.items():
             training &= self.metadata[key] == value
         file_ids = np.where(training)[0]
+        # get the subset of embedding database files from training files
+        embedding_files_ids = file_ids[np.in1d(file_ids, self.embedding_database_files)]
+
         annotated_duration = self.annotated_duration[file_ids]
         prob_annotated_duration = annotated_duration / np.sum(annotated_duration)
-        
+        # set probability to sample a file from embedding database to 0
+        prob_annotated_duration[embedding_files_ids] = 0
+
         duration = self.duration
 
-        embedding_classes = list(self.specifications[Subtasks.index("embedding")])
+        # make a copy of the original classes list, in order to not modify it when shuffling*
+        embedding_classes = self.specifications[Subtasks.index("embedding")].classes
+        shuffled_embedding_classes = list(embedding_classes)
         embedding_class_idx = 0
 
-        file_ids_diarization = file_ids[np.in1d(file_ids, self.diarization_database_files)]
-
         while True:
-            print("here")
-            # select one file at random (wiht probability proportional to its annotated duration)
-            # according to the ratio bewteen embedding and diarization dataset
+            # choose between diarization or embedding subtask according to a ratio
+            # between these two tasks
             if np.random.uniform() < self.database_ratio:
                 subtask = Subtasks.index("diarization")
-                file_id = np.random.choice(file_ids_diarization, p=prob_annotated_duration)
+                file_id, start_time = self.draw_diarization_chunk(file_ids, prob_annotated_duration, rng, duration)
             else:
                 subtask = Subtasks.index("embedding")
                 # shuffle embedding classes list and go through this shuffled list
                 # to make sure to see all the speakers during training
-                if embedding_class_idx == len(embedding_classes):
-                    rng.shuffle(embedding_classes)
+                if embedding_class_idx == len(shuffled_embedding_classes):
+                    rng.shuffle(shuffled_embedding_classes)
                     embedding_class_idx = 0
-                # get files id for current class and sample one of these files
-                class_files_ids = self._train[embedding_classes[embedding_class_idx]]
+                klass = shuffled_embedding_classes[embedding_class_idx]
                 embedding_class_idx += 1
-                file_id = np.random.choice(class_files_ids)
-
-
-            # find indices of annotated regions in this file
-            annotated_region_indices = np.where(
-                self.annotated_regions["file_id"] == file_id
-            )[0]
-
-            # turn annotated regions duration into a probability distribution
-            prob_annotaded_regions_duration = self.annotated_regions["duration"][
-                annotated_region_indices
-            ] / np.sum(self.annotated_regions["duration"][annotated_region_indices])
-
-            # seletect one annotated region at random (with probability proportional to its duration)
-            annotated_region_index = np.random.choice(annotated_region_indices, p=prob_annotaded_regions_duration
-            )
-
-            # select one chunk at random in this annotated region
-            _, _, start, end = self.annotated_regions[annotated_region_index]
-            start_time = rng.uniform(start, end - duration)
+                file_id, start_time = self.draw_embedding_chunk(klass,
+                                                                classes=embedding_classes,
+                                                                duration=duration)
+  
             sample = self.prepare_chunk(file_id, start_time, duration)
             sample["task"] = subtask
             yield sample
@@ -807,7 +871,7 @@ class JointSpeakerDiarizationAndEmbedding(Task):
         # corner case
         if not keep.any():
             return None
-        
+
         # forward pass
         prediction = self.model(waveform)
         batch_size, num_frames, _ = prediction.shape
@@ -917,14 +981,14 @@ class JointSpeakerDiarizationAndEmbedding(Task):
 
     def training_step(self, batch, batch_idx: int):
         """Compute loss for the joint task
-        
+
         Parameters
         ----------
         batch : (usually) dict of torch.Tensor
             current batch.
         batch_idx: int
             Batch index.
-        
+
         Returns
         -------
         loss : {str: torch.tensor}
@@ -943,7 +1007,7 @@ class JointSpeakerDiarizationAndEmbedding(Task):
     def default_metric(
         self,
     ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
-        """Returns diarization error rate and its components for diarization subtask, 
+        """Returns diarization error rate and its components for diarization subtask,
         and equal error rate for the embedding part
         """
 
