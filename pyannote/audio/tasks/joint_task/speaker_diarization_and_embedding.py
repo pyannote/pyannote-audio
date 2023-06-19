@@ -893,43 +893,6 @@ class JointSpeakerDiarizationAndEmbedding(Task):
 
         return seg_loss
 
-    def voice_activity_detection_loss(
-        self,
-        permutated_prediction: torch.Tensor,
-        target: torch.Tensor,
-        weight: torch.Tensor = None,
-    ) -> torch.Tensor:
-        """Voice activity detection loss
-
-        Parameters
-        ----------
-        permutated_prediction : (batch_size, num_frames, num_classes) torch.Tensor
-            Speaker activity predictions.
-        target : (batch_size, num_frames, num_speakers) torch.Tensor
-            Speaker activity.
-        weight : (batch_size, num_frames, 1) torch.Tensor, optional
-            Frames weight.
-
-        Returns
-        -------
-        vad_loss : torch.Tensor
-            Voice activity detection loss.
-        """
-
-        vad_prediction, _ = torch.max(permutated_prediction, dim=2, keepdim=True)
-        # (batch_size, num_frames, 1)
-
-        vad_target, _ = torch.max(target.float(), dim=2, keepdim=False)
-        # (batch_size, num_frames)
-
-        if self.vad_loss == "bce":
-            loss = binary_cross_entropy(vad_prediction, vad_target, weight=weight)
-
-        elif self.vad_loss == "mse":
-            loss = mse_loss(vad_prediction, vad_target, weight=weight)
-
-        return loss
-
     def setup_loss_func(self):
         diarization_spec = self.specifications[Subtasks.index("diarization")]
         self.model.powerset = Powerset(
@@ -944,6 +907,7 @@ class JointSpeakerDiarizationAndEmbedding(Task):
         num_speakers: torch.Tensor = torch.sum(torch.any(target, dim=1), dim=1)
         keep : torch.Tensor = num_speakers <= self.max_speakers_per_chunk
         target = target[keep]
+        # TODO using variable `waveform` before assignment
         waveform = waveform[keep]
 
         # log effective batch size
@@ -1000,27 +964,7 @@ class JointSpeakerDiarizationAndEmbedding(Task):
             logger=True,
         )
 
-        if self.vad_loss is None:
-            vad_loss = 0.0
-
-        else:
-
-            # TODO: vad_loss probably does not make sense in powerset mode
-            # because first class (empty set of labels) does exactly this...
-            vad_loss = self.voice_activity_detection_loss(
-                prediction, permutated_target_powerset, weight=weight
-            )
-
-            self.model.log(
-                f"{self.logging_prefix}TrainVADLoss",
-                vad_loss,
-                on_step=False,
-                on_epoch=True,
-                prog_bar=False,
-                logger=True,
-            )
-
-        loss = seg_loss + vad_loss
+        loss = seg_loss
         # skip batch if something went wrong for some reason
         if torch.isnan(loss):
             return None
