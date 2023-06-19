@@ -86,7 +86,7 @@ class JointSpeakerDiarizationAndEmbedding(Task):
             self,
             protocol,
             duration: float = 5.0,
-            max_speaker_per_chunk: int = 3,
+            max_speakers_per_chunk: int = 3,
             max_speakers_per_frame: int = 2,
             batch_size: int = 32,
             database_ratio : float = 0.5,
@@ -103,7 +103,7 @@ class JointSpeakerDiarizationAndEmbedding(Task):
             augmentation=augmentation,
         )
 
-        self.max_speaker_per_chunk = max_speaker_per_chunk
+        self.max_speakers_per_chunk = max_speakers_per_chunk
         self.max_speakers_per_frame = max_speakers_per_frame
         self.database_ratio = database_ratio
 
@@ -155,7 +155,6 @@ class JointSpeakerDiarizationAndEmbedding(Task):
         metadata_unique_values = defaultdict(list)
 
         metadata_unique_values["subset"] = Subsets
-        metadata_unique_values["subtask"] = ["diarization", "embedding"]
 
         if isinstance(self.protocol, SpeakerDiarizationProtocol):
             metadata_unique_values["scope"] = Scopes
@@ -479,7 +478,7 @@ class JointSpeakerDiarizationAndEmbedding(Task):
                 resolution=Resolution.FRAME,
                 problem=Problem.MONO_LABEL_CLASSIFICATION,
                 permutation_invariant=True,
-                classes=[f"speaker{i+1}" for i in range(self.max_speaker_per_chunk)],
+                classes=[f"speaker{i+1}" for i in range(self.max_speakers_per_chunk)],
                 powerset_max_classes=self.max_speakers_per_frame,
             )
         speaker_embedding = Specifications(
@@ -491,7 +490,7 @@ class JointSpeakerDiarizationAndEmbedding(Task):
 
         self.specifications = (speaker_diarization, speaker_embedding)
 
-    def prepare_chunk(self, file_id: int, start_time: float, duration: float):
+    def prepare_chunk(self, file_id: int, start_time: float, duration: float, subtask: int):
         """Prepare chunk
 
         Parameters
@@ -502,6 +501,9 @@ class JointSpeakerDiarizationAndEmbedding(Task):
             Chunk start time
         duration : float
             Chunk duration.
+        subtask: int
+            - 0 : diarization task
+            - 1 : embedding task
 
         Returns
         -------
@@ -528,13 +530,6 @@ class JointSpeakerDiarizationAndEmbedding(Task):
         sample = dict()
         sample["X"], _ = self.model.audio.crop(file, chunk, duration=duration)
 
-        # use model introspection to predict how many frames it will output
-        # TODO: this should be cached
-        num_samples = sample["X"].shape[1]
-        num_frames, _ = self.model.introspection(num_samples)
-        resolution = duration / num_frames
-        frames = SlidingWindow(start=0.0, duration=resolution, step=resolution)
-
         # gather all annotations of current file
         annotations = self.annotations[self.annotations["file_id"] == file_id]
 
@@ -545,9 +540,10 @@ class JointSpeakerDiarizationAndEmbedding(Task):
 
         # discretize chunk annotations at model output resolution
         start = np.maximum(chunk_annotations["start"], chunk.start) - chunk.start
-        start_idx = np.floor(start / resolution).astype(int)
+        # TODO handle tuple outputs from the model
+        start_idx = np.floor(start / self.model.example_output[0].frames.step).astype(int)
         end = np.minimum(chunk_annotations["end"], chunk.end) - chunk.start
-        end_idx = np.ceil(end / resolution).astype(int)
+        end_idx = np.ceil(end / self.model.example_output[0].frames.step).astype(int)
 
         # get list and number of labels for current scope
         labels = list(np.unique(chunk_annotations[label_scope_key]))
@@ -557,7 +553,7 @@ class JointSpeakerDiarizationAndEmbedding(Task):
             pass
 
         # initial frame-level targets
-        y = np.zeros((num_frames, num_labels), dtype=np.uint8)
+        y = np.zeros((self.model.example_output[0].num_frames, num_labels), dtype=np.uint8)
 
         # map labels to indices
         mapping = {label: idx for idx, label in enumerate(labels)}
@@ -568,11 +564,14 @@ class JointSpeakerDiarizationAndEmbedding(Task):
             mapped_label = mapping[label]
             y[start:end, mapped_label] = 1
 
-        sample["y"] = SlidingWindowFeature(y, frames, labels=labels)
+        sample["y"] = SlidingWindowFeature(
+            y, self.model.example_output[subtask].frames, labels=labels
+        )
 
         metadata = self.metadata[file_id]
         sample["meta"] = {key: metadata[key] for key in metadata.dtype.names}
         sample["meta"]["file"] = file_id
+        sample["task"] = subtask
 
         return sample
 
@@ -582,7 +581,7 @@ class JointSpeakerDiarizationAndEmbedding(Task):
                                  duration : float,
                                  ) -> tuple:
         """Sample one chunk for the diarization task
-        
+
         Parameters
         ----------
         file_ids: np.ndarray
@@ -622,7 +621,7 @@ class JointSpeakerDiarizationAndEmbedding(Task):
                                classes : List[Text],
                                duration : float) -> tuple:
         """Sample one chunk for the embedding task
-        
+
         Parameters
         ----------
         klass: Text
@@ -632,7 +631,7 @@ class JointSpeakerDiarizationAndEmbedding(Task):
             defined in the task specification
         duration: float
             duration of the chunk to draw
-        
+
         Return
         ------
         tuple:
@@ -676,10 +675,6 @@ class JointSpeakerDiarizationAndEmbedding(Task):
         """
 
         # indices of trainijng files that matches domain filters
-
-        # select file dataset (embedding or diarization) according to the probability
-        # to ratio between these two kind of dataset:
-
         training = self.metadata["subset"] == Subsets.index("train")
         for key, value in filters.items():
             training &= self.metadata[key] == value
@@ -694,7 +689,7 @@ class JointSpeakerDiarizationAndEmbedding(Task):
 
         duration = self.duration
 
-        # make a copy of the original classes list, in order to not modify it when shuffling*
+        # make a copy of the original classes list, in order to not modify it when shuffling
         embedding_classes = self.specifications[Subtasks.index("embedding")].classes
         shuffled_embedding_classes = list(embedding_classes)
         embedding_class_idx = 0
@@ -717,9 +712,8 @@ class JointSpeakerDiarizationAndEmbedding(Task):
                 file_id, start_time = self.draw_embedding_chunk(klass,
                                                                 classes=embedding_classes,
                                                                 duration=duration)
-  
-            sample = self.prepare_chunk(file_id, start_time, duration)
-            sample["task"] = subtask
+
+            sample = self.prepare_chunk(file_id, start_time, duration, subtask)
             yield sample
 
     def train__iter__(self):
@@ -750,15 +744,14 @@ class JointSpeakerDiarizationAndEmbedding(Task):
                 filters = {key : value for key, value in zip(balance, product)}
                 subchunks[product] = self.train__iter__helper(rng, **filters)
 
-            while True:
-                # select one subchunck generator at random (with uniform probability)
-                # so thath it is balanced on average
-                if balance is not None:
-                    chunks = subchunks[rng.choice(subchunks)]
+        while True:
+            # select one subchunck generator at random (with uniform probability)
+            # so thath it is balanced on average
+            if balance is not None:
+                chunks = subchunks[rng.choice(subchunks)]
 
-                # generate random chunk
-                print(chunks)
-                yield next(chunks)
+            # generate random chunk
+            yield next(chunks)
 
     def segmentation_loss(
         self,
@@ -854,7 +847,7 @@ class JointSpeakerDiarizationAndEmbedding(Task):
         X, y = batch["X"], batch["y"]
         # drop samples that contain too many speakers
         num_speakers: torch.Tensor = torch.sum(torch.any(target, dim=1), dim=1)
-        keep : torch.Tensor = num_speakers <= self.max_speaker_per_chunk
+        keep : torch.Tensor = num_speakers <= self.max_speakers_per_chunk
         target = target[keep]
         waveform = waveform[keep]
 
