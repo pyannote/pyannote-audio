@@ -32,6 +32,7 @@ from torch_audiomentations.core.transforms_interface import BaseWaveformTransfor
 from torchaudio.backend.common import AudioMetaData
 from torchmetrics import Metric
 from torchmetrics.classification import BinaryAUROC
+from torch.utils.data._utils.collate import default_collate
 
 from pyannote.core import Segment, SlidingWindow, SlidingWindowFeature
 from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
@@ -571,7 +572,7 @@ class JointSpeakerDiarizationAndEmbedding(Task):
         metadata = self.metadata[file_id]
         sample["meta"] = {key: metadata[key] for key in metadata.dtype.names}
         sample["meta"]["file"] = file_id
-        sample["task"] = subtask
+        sample["meta"]["subtask"] = subtask
 
         return sample
 
@@ -752,6 +753,107 @@ class JointSpeakerDiarizationAndEmbedding(Task):
 
             # generate random chunk
             yield next(chunks)
+
+    def collate_X(self, batch) -> torch.Tensor:
+        """Collate for data"""
+        return default_collate([b["X"] for b in batch])
+
+    def collate_y(self, batch) -> torch.Tensor:
+        """
+        Parameters
+        ----------
+        batch : list
+            List of samples to collate.
+            "y" field is expected to be a SlidingWindowFeature.
+
+        Returns
+        -------
+        y : torch.Tensor
+            Collated target tensor of shape (num_frames, self.max_speakers_per_chunk)
+            If one chunk has more than `self.max_speakers_per_chunk` speakers, we keep
+            the max_speakers_per_chunk most talkative ones. If it has less, we pad with
+            zeros (artificial inactive speakers).
+        """
+
+        collated_y = []
+        for b in batch:
+            y = b["y"].data
+            num_speakers = len(b["y"].labels)
+            if num_speakers > self.max_speakers_per_chunk:
+                # sort speakers in descending talkativeness order
+                indices = np.argsort(-np.sum(y, axis=0), axis=0)
+                # keep only the most talkative speakers
+                y = y[:, indices[: self.max_speakers_per_chunk]]
+
+                # TODO: we should also sort the speaker labels in the same way
+
+            elif num_speakers < self.max_speakers_per_chunk:
+                # create inactive speakers by zero padding
+                y = np.pad(
+                    y,
+                    ((0, 0), (0, self.max_speakers_per_chunk - num_speakers)),
+                    mode="constant",
+                )
+
+            else:
+                # we have exactly the right number of speakers
+                pass
+
+            collated_y.append(y)
+
+        return torch.from_numpy(np.stack(collated_y))
+
+    def collate_meta(self, batch) -> torch.Tensor:
+        """Collate for metadata"""
+        return default_collate([b["meta"] for b in batch])
+
+    def collate_fn(self, batch, stage="train"):
+        """Collate function used for most segmentation tasks
+
+        This function does the following:
+        * stack waveforms into a (batch_size, num_channels, num_samples) tensor batch["X"])
+        * apply augmentation when in "train" stage
+        * convert targets into a (batch_size, num_frames, num_classes) tensor batch["y"]
+        * collate any other keys that might be present in the batch using pytorch default_collate function
+
+        Parameters
+        ----------
+        batch : list of dict
+            List of training samples.
+
+        Returns
+        -------
+        batch : dict
+            Collated batch as {"X": torch.Tensor, "y": torch.Tensor} dict.
+        """
+
+        # collate X
+        collated_X = self.collate_X(batch)
+
+        # collate y
+        try:
+            collated_y = self.collate_y(batch)
+        except RuntimeError as e:
+            print(e)
+            print([b["y"].data for b in batch])
+
+        # collate metadata
+        collated_meta = self.collate_meta(batch)
+
+        # apply augmentation (only in "train" stage)
+        self.augmentation.train(mode=(stage == "train"))
+        augmented = self.augmentation(
+            samples=collated_X,
+            sample_rate=self.model.hparams.sample_rate,
+            targets=collated_y.unsqueeze(1),
+        )
+
+        return {
+            "X": augmented.samples,
+            "y": augmented.targets.squeeze(1),
+            "meta": collated_meta,
+        }
+
 
     def segmentation_loss(
         self,
