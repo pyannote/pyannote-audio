@@ -56,6 +56,7 @@ class PyanHugg(Model):
         "model": "microsoft/wavlm-base",
         "layer": 4,
         "cache": None,
+        "fairseq_ckpt": None,
     }
     LSTM_DEFAULTS = {
         "hidden_size": 128,
@@ -171,7 +172,6 @@ class PyanHugg(Model):
         scores : (batch, frame, classes)
         """
         outputs = self.selfsupervised(waveforms)
-        
         if self.hparams.lstm["monolithic"]:
             outputs, _ = self.lstm(outputs)
         else:
@@ -183,5 +183,5 @@ class PyanHugg(Model):
         if self.hparams.linear["num_layers"] > 0:
             for linear in self.linear:
                 outputs = F.leaky_relu(linear(outputs))
-
+                
         return self.activation(self.classifier(outputs))
