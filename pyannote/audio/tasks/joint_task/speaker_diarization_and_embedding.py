@@ -520,11 +520,10 @@ class JointSpeakerDiarizationAndEmbedding(Task):
         label_scope = Scopes[self.metadata[file_id]["scope"]]
         label_scope_key = f"{label_scope}_label_idx"
 
-        #
         chunk = Segment(start_time, start_time + duration)
 
         sample = dict()
-        sample["X"], _ = self.model.audio.crop(file, chunk, duration=duration)
+        sample["X"], _ = self.model.audio.crop(file, chunk, duration=duration, mode="pad")
 
         # gather all annotations of current file
         annotations = self.annotations[self.annotations["file_id"] == file_id]
