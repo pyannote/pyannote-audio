@@ -61,10 +61,6 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
     segmentation : Model, str, or dict, optional
         Pretrained segmentation model. Defaults to "pyannote/segmentation@2022.07".
         See pyannote.audio.pipelines.utils.get_model for supported format.
-    segmentation_duration: float, optional
-        The segmentation model is applied on a window sliding over the whole audio file.
-        `segmentation_duration` controls the duration of this window. Defaults to the
-        duration used when training the model (model.specifications.duration).
     segmentation_step: float, optional
         The segmentation model is applied on a window sliding over the whole audio file.
         `segmentation_step` controls the step of this window, provided as a ratio of its
@@ -79,9 +75,9 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         Clustering algorithm. See pyannote.audio.pipelines.clustering.Clustering
         for available options. Defaults to "AgglomerativeClustering".
     segmentation_batch_size : int, optional
-        Batch size used for speaker segmentation. Defaults to 32.
+        Batch size used for speaker segmentation. Defaults to 1.
     embedding_batch_size : int, optional
-        Batch size used for speaker embedding. Defaults to 32.
+        Batch size used for speaker embedding. Defaults to 1.
     der_variant : dict, optional
         Optimize for a variant of diarization error rate.
         Defaults to {"collar": 0.0, "skip_overlap": False}. This is used in `get_metric`
@@ -108,26 +104,20 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
     def __init__(
         self,
         segmentation: PipelineModel = "pyannote/segmentation@2022.07",
-        segmentation_duration: float = None,
         segmentation_step: float = 0.1,
         embedding: PipelineModel = "speechbrain/spkrec-ecapa-voxceleb@5c0be3875fda05e81f3c004ed8c7c06be308de1e",
         embedding_exclude_overlap: bool = False,
         clustering: str = "AgglomerativeClustering",
-        embedding_batch_size: int = 32,
-        segmentation_batch_size: int = 32,
+        embedding_batch_size: int = 1,
+        segmentation_batch_size: int = 1,
         der_variant: dict = None,
         use_auth_token: Union[Text, None] = None,
     ):
-
         super().__init__()
 
         self.segmentation_model = segmentation
         model: Model = get_model(segmentation, use_auth_token=use_auth_token)
 
-        self.segmentation_batch_size = segmentation_batch_size
-        self.segmentation_duration = (
-            segmentation_duration or model.specifications.duration
-        )
         self.segmentation_step = segmentation_step
 
         self.embedding = embedding
@@ -138,14 +128,15 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
         self.der_variant = der_variant or {"collar": 0.0, "skip_overlap": False}
 
+        segmentation_duration = model.specifications.duration
         self._segmentation = Inference(
             model,
-            duration=self.segmentation_duration,
-            step=self.segmentation_step * self.segmentation_duration,
+            duration=segmentation_duration,
+            step=self.segmentation_step * segmentation_duration,
             skip_aggregation=True,
-            batch_size=self.segmentation_batch_size,
+            batch_size=segmentation_batch_size,
         )
-        self._frames: SlidingWindow = self._segmentation.model.introspection.frames
+        self._frames: SlidingWindow = self._segmentation.model.example_output.frames
 
         if self._segmentation.model.specifications.powerset:
             self.segmentation = ParamDict(
@@ -175,6 +166,14 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                 f'clustering must be one of [{", ".join(list(Clustering.__members__))}]'
             )
         self.clustering = Klustering.value(metric=metric)
+
+    @property
+    def segmentation_batch_size(self) -> int:
+        return self._segmentation.batch_size
+
+    @segmentation_batch_size.setter
+    def segmentation_batch_size(self, batch_size: int):
+        self._segmentation.batch_size = batch_size
 
     def default_parameters(self):
         raise NotImplementedError()
@@ -246,7 +245,6 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         # bringing a massive speed up to the optimization process (and hence allowing to use
         # a larger search space).
         if self.training:
-
             # we only re-use embeddings if they were extracted based on the same value of the
             # "segmentation.threshold" hyperparameter or if the segmentation model relies on
             # `powerset` mode
@@ -351,7 +349,6 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         # caching embeddings for subsequent trials
         # (see comments at the top of this method for more details)
         if self.training:
-
             if self._segmentation.model.specifications.powerset:
                 file["training_cache/embeddings"] = {
                     "embeddings": embeddings,
@@ -397,7 +394,6 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         for c, (cluster, (chunk, segmentation)) in enumerate(
             zip(hard_clusters, segmentations)
         ):
-
             # cluster is (local_num_speakers, )-shaped
             # segmentation is (num_frames, local_num_speakers)-shaped
             for k in np.unique(cluster):
@@ -492,7 +488,6 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         if self.klustering == "OracleClustering":
             embeddings = None
         else:
-
             embeddings = self.get_embeddings(
                 file,
                 binarized_segmentations,
