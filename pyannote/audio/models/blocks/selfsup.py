@@ -25,10 +25,7 @@ from typing import Optional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import fairseq
-from fairseq import checkpoint_utils
 from transformers import AutoModel, Wav2Vec2FeatureExtractor, AutoConfig
-from fairseq import checkpoint_utils
 from torchaudio.models.wav2vec2.utils import import_fairseq_model
 
 class SelfSupModel(nn.Module):
@@ -36,6 +33,8 @@ class SelfSupModel(nn.Module):
     def __init__(self, model,layer, cache,fairseq_ckpt):
         super().__init__()
         if fairseq_ckpt != None :
+            import fairseq
+            from fairseq import checkpoint_utils
             #Load the fairseq checkpoint
             models, _, _ = fairseq.checkpoint_utils.load_model_ensemble_and_task([fairseq_ckpt])
             model = models[0]
