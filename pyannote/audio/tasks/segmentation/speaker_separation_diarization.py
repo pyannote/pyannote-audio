@@ -178,12 +178,6 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         or {1} powerset classes. Note that empty (non-speech) powerset class is
         assigned the same weight as mono-speaker classes. Defaults to False (i.e. use
         same weight for every class). Has no effect with `multi-label` training.
-    warm_up : float or (float, float), optional
-        Use that many seconds on the left- and rightmost parts of each chunk
-        to warm up the model. While the model does process those left- and right-most
-        parts, only the remaining central part of each chunk is used for computing the
-        loss during training, and for aggregating scores during inference.
-        Defaults to 0. (i.e. no warm-up).
     balance: str, optional
         When provided, training samples are sampled uniformly with respect to that key.
         For instance, setting `balance` to "database" will make sure that each database
@@ -202,9 +196,6 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
     augmentation : BaseWaveformTransform, optional
         torch_audiomentations waveform transform, used by dataloader
         during training.
-    vad_loss : {"bce", "mse"}, optional
-        Add voice activity detection loss.
-        Cannot be used in conjunction with `max_speakers_per_frame`.
     metric : optional
         Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
         Defaults to AUROC (area under the ROC curve).
@@ -231,14 +222,12 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         max_speakers_per_chunk: int = None,
         max_speakers_per_frame: int = None,
         weigh_by_cardinality: bool = False,
-        warm_up: Union[float, Tuple[float, float]] = 0.0,
         balance: Text = None,
         weight: Text = None,
         batch_size: int = 32,
         num_workers: int = None,
         pin_memory: bool = False,
         augmentation: BaseWaveformTransform = None,
-        vad_loss: Literal["bce", "mse"] = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
         max_num_speakers: int = None,  # deprecated in favor of `max_speakers_per_chunk``
         loss: Literal["bce", "mse"] = None,  # deprecated
@@ -247,7 +236,6 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         super().__init__(
             protocol,
             duration=duration,
-            warm_up=warm_up,
             batch_size=batch_size,
             num_workers=num_workers,
             pin_memory=pin_memory,
@@ -275,10 +263,6 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
                 raise ValueError(
                     f"`max_speakers_per_frame` must be 1 or more (you used {max_speakers_per_frame})."
                 )
-            if vad_loss is not None:
-                raise ValueError(
-                    "`vad_loss` cannot be used jointly with `max_speakers_per_frame`"
-                )
 
         if batch_size % 3 != 0:
             raise ValueError("`batch_size` must be divisible by 3 for mixtures of mixtures training")  
@@ -288,7 +272,6 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         self.weigh_by_cardinality = weigh_by_cardinality
         self.balance = balance
         self.weight = weight
-        self.vad_loss = vad_loss
         self.separation_loss = ModifiedMixITLossWrapper(multisrc_neg_sisdr, generalized=True)
         self.mixit_loss_weight = mixit_loss_weight
 
@@ -395,11 +378,10 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         self.specifications = (speaker_diarization, speaker_separation)
 
     def setup_loss_func(self):
-        if self.specifications[0].powerset:
-            self.model.powerset = Powerset(
-                len(self.specifications[0].classes),
-                self.specifications[0].powerset_max_classes,
-            )
+        self.model.powerset = Powerset(
+            len(self.specifications[0].classes),
+            self.specifications[0].powerset_max_classes,
+        )
 
     def prepare_chunk(self, file_id: int, start_time: float, duration: float):
         """Prepare chunk
@@ -792,62 +774,20 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
             Permutation-invariant segmentation loss
         """
 
-        if self.specifications[0].powerset:
-            # `clamp_min` is needed to set non-speech weight to 1.
-            class_weight = (
-                torch.clamp_min(self.model.powerset.cardinality, 1.0)
-                if self.weigh_by_cardinality
-                else None
-            )
-            seg_loss = nll_loss(
-                permutated_prediction,
-                torch.argmax(target, dim=-1),
-                class_weight=class_weight,
-                weight=weight,
-            )
-        else:
-            seg_loss = binary_cross_entropy(
-                permutated_prediction, target.float(), weight=weight
-            )
+        # `clamp_min` is needed to set non-speech weight to 1.
+        class_weight = (
+            torch.clamp_min(self.model.powerset.cardinality, 1.0)
+            if self.weigh_by_cardinality
+            else None
+        )
+        seg_loss = nll_loss(
+            permutated_prediction,
+            torch.argmax(target, dim=-1),
+            class_weight=class_weight,
+            weight=weight,
+        )
 
         return seg_loss
-
-    def voice_activity_detection_loss(
-        self,
-        permutated_prediction: torch.Tensor,
-        target: torch.Tensor,
-        weight: torch.Tensor = None,
-    ) -> torch.Tensor:
-        """Voice activity detection loss
-
-        Parameters
-        ----------
-        permutated_prediction : (batch_size, num_frames, num_classes) torch.Tensor
-            Speaker activity predictions.
-        target : (batch_size, num_frames, num_speakers) torch.Tensor
-            Speaker activity.
-        weight : (batch_size, num_frames, 1) torch.Tensor, optional
-            Frames weight.
-
-        Returns
-        -------
-        vad_loss : torch.Tensor
-            Voice activity detection loss.
-        """
-
-        vad_prediction, _ = torch.max(permutated_prediction, dim=2, keepdim=True)
-        # (batch_size, num_frames, 1)
-
-        vad_target, _ = torch.max(target.float(), dim=2, keepdim=False)
-        # (batch_size, num_frames)
-
-        if self.vad_loss == "bce":
-            loss = binary_cross_entropy(vad_prediction, vad_target, weight=weight)
-
-        elif self.vad_loss == "mse":
-            loss = mse_loss(vad_prediction, vad_target, weight=weight)
-
-        return loss
 
     def training_step(self, batch, batch_idx: int):
         """Compute permutation-invariant segmentation loss
@@ -918,27 +858,15 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         )
         # (batch_size, num_frames, 1)
 
-        # warm-up
-        warm_up_left = round(self.warm_up[0] / self.duration * num_frames)
-        weight[:, :warm_up_left] = 0.0
-        warm_up_right = round(self.warm_up[1] / self.duration * num_frames)
-        weight[:, num_frames - warm_up_right :] = 0.0
+        multilabel = self.model.powerset.to_multilabel(prediction)
+        permutated_target, permutations = permutate(multilabel, target)
+        permutated_target_powerset = self.model.powerset.to_powerset(
+            permutated_target.float()
+        )
+        seg_loss = self.segmentation_loss(
+            prediction, permutated_target_powerset, weight=weight
+        )
 
-        if self.specifications[0].powerset:
-            multilabel = self.model.powerset.to_multilabel(prediction)
-            permutated_target, permutations = permutate(multilabel, target)
-            permutated_target_powerset = self.model.powerset.to_powerset(
-                permutated_target.float()
-            )
-            seg_loss = self.segmentation_loss(
-                prediction, permutated_target_powerset, weight=weight
-            )
-
-        else:
-            permutated_prediction, permutations = permutate(target, prediction)
-            seg_loss = self.segmentation_loss(
-                permutated_prediction, target, weight=weight
-            )
         # to find which predicted sources correspond to which mixtures, we need to invert the permutations
         permutations_inverse = torch.argsort(torch.tensor(permutations))
         predicted_sources_idx_mix1 = [[permutations_inverse[i][j] for j in range(batch["meta"]["sources_from_first_mixture"][i])] for i in range(batch_size)]
@@ -976,32 +904,7 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
             logger=True,
         )
 
-        if self.vad_loss is None:
-            vad_loss = 0.0
-
-        else:
-            # TODO: vad_loss probably does not make sense in powerset mode
-            # because first class (empty set of labels) does exactly this...
-            if self.specifications[0].powerset:
-                vad_loss = self.voice_activity_detection_loss(
-                    prediction, permutated_target_powerset, weight=weight
-                )
-
-            else:
-                vad_loss = self.voice_activity_detection_loss(
-                    permutated_prediction, target, weight=weight
-                )
-
-            self.model.log(
-                "loss/train/vad",
-                vad_loss,
-                on_step=False,
-                on_epoch=True,
-                prog_bar=False,
-                logger=True,
-            )
-
-        loss = (1 - self.mixit_loss_weight) * (seg_loss + vad_loss) + self.mixit_loss_weight * mixit_loss + forced_alignment_loss
+        loss = (1 - self.mixit_loss_weight) * seg_loss + self.mixit_loss_weight * mixit_loss + forced_alignment_loss
 
         # skip batch if something went wrong for some reason
         if torch.isnan(loss):
@@ -1023,20 +926,11 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
     ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
         """Returns diarization error rate and its components"""
 
-        if self.specifications[0].powerset:
-            return {
-                "DiarizationErrorRate": DiarizationErrorRate(0.5),
-                "DiarizationErrorRate/Confusion": SpeakerConfusionRate(0.5),
-                "DiarizationErrorRate/Miss": MissedDetectionRate(0.5),
-                "DiarizationErrorRate/FalseAlarm": FalseAlarmRate(0.5),
-            }
-
         return {
-            "DiarizationErrorRate": OptimalDiarizationErrorRate(),
-            "DiarizationErrorRate/Threshold": OptimalDiarizationErrorRateThreshold(),
-            "DiarizationErrorRate/Confusion": OptimalSpeakerConfusionRate(),
-            "DiarizationErrorRate/Miss": OptimalMissedDetectionRate(),
-            "DiarizationErrorRate/FalseAlarm": OptimalFalseAlarmRate(),
+            "DiarizationErrorRate": DiarizationErrorRate(0.5),
+            "DiarizationErrorRate/Confusion": SpeakerConfusionRate(0.5),
+            "DiarizationErrorRate/Miss": MissedDetectionRate(0.5),
+            "DiarizationErrorRate/FalseAlarm": FalseAlarmRate(0.5),
         }
 
     # TODO: no need to compute gradient in this method
@@ -1080,30 +974,18 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         )
         # (batch_size, num_frames, 1)
 
-        # warm-up
-        warm_up_left = round(self.warm_up[0] / self.duration * num_frames)
-        weight[:, :warm_up_left] = 0.0
-        warm_up_right = round(self.warm_up[1] / self.duration * num_frames)
-        weight[:, num_frames - warm_up_right :] = 0.0
+        multilabel = self.model.powerset.to_multilabel(prediction)
+        permutated_target, _ = permutate(multilabel, target)
 
-        if self.specifications[0].powerset:
-            multilabel = self.model.powerset.to_multilabel(prediction)
-            permutated_target, _ = permutate(multilabel, target)
+        # FIXME: handle case where target have too many speakers?
+        # since we don't need
+        permutated_target_powerset = self.model.powerset.to_powerset(
+            permutated_target.float()
+        )
+        seg_loss = self.segmentation_loss(
+            prediction, permutated_target_powerset, weight=weight
+        )
 
-            # FIXME: handle case where target have too many speakers?
-            # since we don't need
-            permutated_target_powerset = self.model.powerset.to_powerset(
-                permutated_target.float()
-            )
-            seg_loss = self.segmentation_loss(
-                prediction, permutated_target_powerset, weight=weight
-            )
-
-        else:
-            permutated_prediction, _ = permutate(target, prediction)
-            seg_loss = self.segmentation_loss(
-                permutated_prediction, target, weight=weight
-            )
         # forced alignment mixit can't be implemented for validation because since data loading is different
         mixit_loss = 0
         # mixit_loss = self.separation_loss(
@@ -1128,32 +1010,7 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
             logger=True,
         )
 
-        if self.vad_loss is None:
-            vad_loss = 0.0
-
-        else:
-            # TODO: vad_loss probably does not make sense in powerset mode
-            # because first class (empty set of labels) does exactly this...
-            if self.specifications[0].powerset:
-                vad_loss = self.voice_activity_detection_loss(
-                    prediction, permutated_target_powerset, weight=weight
-                )
-
-            else:
-                vad_loss = self.voice_activity_detection_loss(
-                    permutated_prediction, target, weight=weight
-                )
-
-            self.model.log(
-                "loss/val/vad",
-                vad_loss,
-                on_step=False,
-                on_epoch=True,
-                prog_bar=False,
-                logger=True,
-            )
-
-        loss = (1 - self.mixit_loss_weight) * (seg_loss + vad_loss) + self.mixit_loss_weight * mixit_loss
+        loss = (1 - self.mixit_loss_weight) * seg_loss + self.mixit_loss_weight * mixit_loss
 
         self.model.log(
             "loss/val",
@@ -1164,24 +1021,15 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
             logger=True,
         )
 
-        if self.specifications[0].powerset:
-            self.model.validation_metric(
-                torch.transpose(
-                    multilabel[:, warm_up_left : num_frames - warm_up_right], 1, 2
-                ),
-                torch.transpose(
-                    target[:, warm_up_left : num_frames - warm_up_right], 1, 2
-                ),
-            )
-        else:
-            self.model.validation_metric(
-                torch.transpose(
-                    prediction[:, warm_up_left : num_frames - warm_up_right], 1, 2
-                ),
-                torch.transpose(
-                    target[:, warm_up_left : num_frames - warm_up_right], 1, 2
-                ),
-            )
+        self.model.validation_metric(
+            torch.transpose(
+                multilabel, 1, 2
+            ),
+            torch.transpose(
+                target, 1, 2
+            ),
+        )
+        
 
         self.model.log_dict(
             self.model.validation_metric,
@@ -1201,12 +1049,8 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
 
         # visualize first 9 validation samples of first batch in Tensorboard/MLflow
 
-        if self.specifications[0].powerset:
-            y = permutated_target.float().cpu().numpy()
-            y_pred = multilabel.cpu().numpy()
-        else:
-            y = target.float().cpu().numpy()
-            y_pred = permutated_prediction.cpu().numpy()
+        y = permutated_target.float().cpu().numpy()
+        y_pred = multilabel.cpu().numpy()
 
         # prepare 3 x 3 grid (or smaller if batch size is smaller)
         num_samples = min(self.batch_size, 9)
@@ -1240,10 +1084,6 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
             # plot predictions
             ax_hyp = axes[row_idx * 2 + 1, col_idx]
             sample_y_pred = y_pred[sample_idx]
-            ax_hyp.axvspan(0, warm_up_left, color="k", alpha=0.5, lw=0)
-            ax_hyp.axvspan(
-                num_frames - warm_up_right, num_frames, color="k", alpha=0.5, lw=0
-            )
             ax_hyp.plot(sample_y_pred)
             ax_hyp.set_ylim(-0.1, 1.1)
             ax_hyp.set_xlim(0, len(sample_y))
