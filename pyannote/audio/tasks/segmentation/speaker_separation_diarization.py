@@ -814,9 +814,6 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
 
         # drop samples that contain too many speakers
         num_speakers: torch.Tensor = torch.sum(torch.any(target, dim=1), dim=1)
-        keep: torch.Tensor = num_speakers <= self.max_speakers_per_chunk
-        target = target[keep]
-        waveform = waveform[keep]
 
         # corner case
         if not keep.any():
@@ -839,12 +836,6 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         _, predicted_sources_mix1 = self.model(mix1)
         _, predicted_sources_mix2 = self.model(mix2)
 
-        # don't use moms with more than max_speakers_per_chunk speakers for training speaker diarization
-        num_speakers: torch.Tensor = torch.sum(torch.any(target, dim=1), dim=1)
-        num_speakers[2::3] = num_speakers[::3] + num_speakers[1::3]
-        keep: torch.Tensor = num_speakers <= self.max_speakers_per_chunk
-        target = target[keep]
-        waveform = waveform[keep]
         prediction, _ = self.model(waveform)
 
         batch_size, num_frames, _ = prediction.shape
