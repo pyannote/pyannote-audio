@@ -88,6 +88,8 @@ class JointSpeakerDiarizationAndEmbedding(Task):
             database_ratio : float = 0.5,
             num_workers: int = None,
             pin_memory: bool = False,
+            margin : float = 28.6,
+            scale: float = 64.0,
             augmentation: BaseWaveformTransform = None
     ) -> None:
         super().__init__(
@@ -102,6 +104,8 @@ class JointSpeakerDiarizationAndEmbedding(Task):
         self.max_speakers_per_chunk = max_speakers_per_chunk
         self.max_speakers_per_frame = max_speakers_per_frame
         self.database_ratio = database_ratio
+        self.margin = margin
+        self.scale = scale
 
 
         # keep track of the use of database available in the meta protocol
@@ -886,13 +890,6 @@ class JointSpeakerDiarizationAndEmbedding(Task):
         )
 
         return seg_loss
-
-    def setup_loss_func(self):
-        diarization_spec = self.specifications[Subtasks.index("diarization")]
-        self.model.powerset = Powerset(
-            len(diarization_spec.classes),
-            diarization_spec.powerset_max_classes,
-        )
 
     def compute_diarization_loss(self, batch : torch.Tensor):
         """"""

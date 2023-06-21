@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020 CNRS
+# Copyright (c) 2023 CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -20,20 +20,28 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import Optional
+from typing import Literal, Optional
 from warnings import warn
 from einops import rearrange
 
 import torch
 from torch import nn
 import torch.nn.functional as F
+from pytorch_metric_learning.losses import ArcFaceLoss
 
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
 from pyannote.audio.models.blocks.sincnet import SincNet
 from pyannote.audio.models.blocks.pooling import StatsPool
 from pyannote.audio.utils.params import merge_dict
+from pyannote.audio.utils.powerset import Powerset
 from pyannote.core.utils.generators import pairwise
+
+
+# TODO deplace these two lines into uitls/multi_task
+Subtask = Literal["diarization", "embedding"]
+Subtasks = list(Subtask.__args__)
+
 
 class SpeakerEndToEndDiarization(Model):
     """Speaker End-to-End Diarization and Embedding model
@@ -172,10 +180,21 @@ class SpeakerEndToEndDiarization(Model):
                 2 if self.hparams.lstm["bidirectional"] else 1
             )
 
-        out_features = self.specifications.num_powerset_classes
-
+        diarization_spec = self.specifications[Subtasks.index("diarization")]
+        out_features = diarization_spec.num_powerset_classes
         self.classifier = nn.Linear(in_features, out_features)
-        self.activation = self.default_activation()
+
+        self.powerset = Powerset(
+            len(diarization_spec.classes),
+            diarization_spec.powerset_max_classes,
+        )
+
+        self.arc_face_loss = ArcFaceLoss(
+            len(self.specifications[Subtasks.index("embedding")].classes),
+            self.hparams["embedding_dim"],
+            margin=self.task.margin,
+            scale=self.task.scale,
+        )
 
 
     def forward(self, waveforms: torch.Tensor, weights: Optional[torch.Tensor] = None) -> torch.Tensor:
@@ -211,15 +230,14 @@ class SpeakerEndToEndDiarization(Model):
             for linear in self.linear:
                 diarization_outputs = F.leaky_relu(linear(diarization_outputs))
         diarization_outputs = self.classifier(diarization_outputs)
-        diarization_outputs = self.activation(diarization_outputs)
-    
+        diarization_outputs = F.log_softmax(diarization_outputs, dim=-1)
+        weights = self.powerset(diarization_outputs).transpose(1, 2)
+
         # embedding part:
         embedding_outputs = torch.clone(common_outputs)
         for tdnn_block in self.tdnn_blocks[tdnn_idx:]:
             embedding_outputs = tdnn_block(embedding_outputs)
-
-        # TODO : reinject diarization outputs into the pooling layers:
-        embedding_outputs = self.stats_pool(embedding_outputs)
+        embedding_outputs = self.stats_pool(embedding_outputs, weights=weights)
         embedding_outputs = self.embedding(embedding_outputs)
-    
+
         return (diarization_outputs, embedding_outputs)
