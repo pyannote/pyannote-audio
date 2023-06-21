@@ -65,12 +65,10 @@ class StatsPool(nn.Module):
 
         else:
             # Unsqueeze before frames dimension to match with waveforms dimensions
-            # if needed:
             weight_dims = len(weights.shape)
-
-            if weight_dims == 2:
-                weights = weights.unsqueeze(dim=-2)
-
+            weights = weights.unsqueeze(dim=-2)
+            if weight_dims == 3:
+                sequences = sequences.unsqueeze(dim=1)
 
             # (batch, 1, weights) or (batch, speakers, weights)
             num_frames = sequences.shape[-1]
@@ -91,9 +89,5 @@ class StatsPool(nn.Module):
 
             var = torch.sum(dx2 * weights, dim=-1) / (v1 - v2 / v1)
             std = torch.sqrt(var)
-
-            if weight_dims == 3:
-                mean = torch.unsqueeze(mean, -1)
-                std = torch.unsqueeze(std, -1)
 
         return torch.cat([mean, std], dim=-1)

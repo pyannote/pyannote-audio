@@ -27,8 +27,8 @@ from pyannote.audio.models.blocks.pooling import StatsPool
 def test_stats_pool():
 
     x = torch.Tensor([
-        [[2., 4.]],
-        [[1., 1.]]
+        [[2., 4.], [2., 4.]],
+        [[1., 1.], [1., 1.]]
     ])
 
     # 2D weights tensor
@@ -49,6 +49,7 @@ def test_stats_pool():
     y1 = stats_pool(x, w1)
     y2 = stats_pool(x, w2)
 
-    assert(torch.equal(torch.round(y0, decimals=4), torch.Tensor([[3., 1.4142], [1., 0.]])))
-    assert(torch.equal(torch.round(y1, decimals=4), torch.Tensor([[2.0392, 1.4142], [1., 0.]])))
-    assert(torch.equal(torch.round(y2, decimals=4), torch.Tensor([[[3.3333, 1.4142], [3.2, 1.4142]], [[1.0, 0.], [1.0, 0.0]]])))
+    assert(torch.equal(torch.round(y0, decimals=4), torch.Tensor([[3., 3., 1.4142, 1.4142], [1., 1., 0., 0.]])))
+    assert(torch.equal(torch.round(y1, decimals=4), torch.Tensor([[2.0392, 2.0392, 1.4142, 1.4142], [1., 1. , 0., 0.]])))
+    assert(torch.equal(torch.round(y2, decimals=4), torch.Tensor([[[3.3333, 3.3333, 1.4142, 1.4142], [3.2, 3.2, 1.4142, 1.4142]],
+                                                                  [[1., 1., 0., 0.], [1., 1., 0., 0.]]])))
