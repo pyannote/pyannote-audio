@@ -175,7 +175,9 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
                 )
 
         if batch_size % 2 != 0:
-            raise ValueError("`batch_size` must be divisible by 2 for mixtures of mixtures training")  
+            raise ValueError(
+                "`batch_size` must be divisible by 2 for mixtures of mixtures training"
+            )
 
         self.max_speakers_per_chunk = max_speakers_per_chunk
         self.max_speakers_per_frame = max_speakers_per_frame
@@ -282,7 +284,7 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         speaker_separation = Specifications(
             duration=self.duration,
             resolution=Resolution.FRAME,
-            problem=Problem.MONO_LABEL_CLASSIFICATION, # Doesn't matter
+            problem=Problem.MONO_LABEL_CLASSIFICATION,  # Doesn't matter
             classes=[f"speaker#{i+1}" for i in range(self.max_speakers_per_chunk)],
         )
 
@@ -345,7 +347,9 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
 
         # discretize chunk annotations at model output and input resolutions
         start = np.maximum(chunk_annotations["start"], chunk.start) - chunk.start
-        start_idx = np.floor(start / self.model.example_output[0].frames.step).astype(int)
+        start_idx = np.floor(start / self.model.example_output[0].frames.step).astype(
+            int
+        )
         end = np.minimum(chunk_annotations["end"], chunk.end) - chunk.start
         end_idx = np.ceil(end / self.model.example_output[0].frames.step).astype(int)
 
@@ -357,7 +361,9 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
             pass
 
         # initial frame-level targets
-        y = np.zeros((self.model.example_output[0].num_frames, num_labels), dtype=np.uint8)
+        y = np.zeros(
+            (self.model.example_output[0].num_frames, num_labels), dtype=np.uint8
+        )
 
         # map labels to indices
         mapping = {label: idx for idx, label in enumerate(labels)}
@@ -383,7 +389,9 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
                 sample_level_labels[start:end, mapped_label] = 1
 
             # only frames with a single label should be used for mixit training
-            sample["X_separation_mask"] = torch.from_numpy(sample_level_labels.sum(axis=1) == 1)
+            sample["X_separation_mask"] = torch.from_numpy(
+                sample_level_labels.sum(axis=1) == 1
+            )
 
         metadata = self.metadata[file_id]
         sample["meta"] = {key: metadata[key] for key in metadata.dtype.names}
@@ -425,7 +433,9 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         while True:
             # select one file at random (with probability proportional to its annotated duration)
             file_id = np.random.choice(file_ids, p=prob_annotated_duration)
-            annotations = self.annotations[np.where(self.annotations["file_id"] == file_id)[0]]
+            annotations = self.annotations[
+                np.where(self.annotations["file_id"] == file_id)[0]
+            ]
 
             # generate `num_chunks_per_file` chunks from this file
             for _ in range(num_chunks_per_file):
@@ -450,11 +460,16 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
 
                 # find speakers that already appeared and all annotations that contain them
                 chunk_annotations = annotations[
-                    (annotations["start"] < start_time+duration) & (annotations["end"] > start_time)
+                    (annotations["start"] < start_time + duration)
+                    & (annotations["end"] > start_time)
                 ]
-                previous_speaker_labels = list(np.unique(chunk_annotations["file_label_idx"]))
-                repeated_speaker_annotations = annotations[np.isin(annotations["file_label_idx"], previous_speaker_labels)]
-                
+                previous_speaker_labels = list(
+                    np.unique(chunk_annotations["file_label_idx"])
+                )
+                repeated_speaker_annotations = annotations[
+                    np.isin(annotations["file_label_idx"], previous_speaker_labels)
+                ]
+
                 if repeated_speaker_annotations.size == 0:
                     # if previous chunk has 0 speakers then just sample from all annotated regions again
                     first_chunk = self.prepare_chunk(file_id, start_time, duration)
@@ -475,45 +490,67 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
                     if len(labels) <= self.max_speakers_per_chunk:
                         yield first_chunk
                         yield second_chunk
-                    
+
                 else:
                     # merge segments that contain repeated speakers
-                    merged_repeated_segments = [[repeated_speaker_annotations["start"][0],repeated_speaker_annotations["end"][0]]]
+                    merged_repeated_segments = [
+                        [
+                            repeated_speaker_annotations["start"][0],
+                            repeated_speaker_annotations["end"][0],
+                        ]
+                    ]
                     for _, start, end, _, _, _ in repeated_speaker_annotations:
                         previous = merged_repeated_segments[-1]
                         if start <= previous[1]:
                             previous[1] = max(previous[1], end)
                         else:
                             merged_repeated_segments.append([start, end])
-                    
+
                     # find segments that don't contain repeated speakers
                     segments_without_repeat = []
                     current_region_index = 0
-                    previous_time = self.annotated_regions["start"][annotated_region_indices[0]]
+                    previous_time = self.annotated_regions["start"][
+                        annotated_region_indices[0]
+                    ]
                     for segment in merged_repeated_segments:
-                        if segment[0] > self.annotated_regions["end"][annotated_region_indices[current_region_index]]:
-                            current_region_index+=1
-                            previous_time = self.annotated_regions["start"][annotated_region_indices[current_region_index]]
-                        
+                        if (
+                            segment[0]
+                            > self.annotated_regions["end"][
+                                annotated_region_indices[current_region_index]
+                            ]
+                        ):
+                            current_region_index += 1
+                            previous_time = self.annotated_regions["start"][
+                                annotated_region_indices[current_region_index]
+                            ]
+
                         if segment[0] - previous_time > duration:
-                            segments_without_repeat.append((previous_time, segment[0], segment[0] - previous_time))
+                            segments_without_repeat.append(
+                                (previous_time, segment[0], segment[0] - previous_time)
+                            )
                         previous_time = segment[1]
-                    
-                    dtype = [("start", "f"), ("end", "f"),("duration", "f")]
-                    segments_without_repeat = np.array(segments_without_repeat,dtype=dtype)
+
+                    dtype = [("start", "f"), ("end", "f"), ("duration", "f")]
+                    segments_without_repeat = np.array(
+                        segments_without_repeat, dtype=dtype
+                    )
 
                     if np.sum(segments_without_repeat["duration"]) != 0:
                         # only yield chunks if it is possible to choose the second chunk so that yielded chunks are always paired
                         first_chunk = self.prepare_chunk(file_id, start_time, duration)
 
-                        prob_segments_duration = segments_without_repeat["duration"] / np.sum(segments_without_repeat["duration"])
+                        prob_segments_duration = segments_without_repeat[
+                            "duration"
+                        ] / np.sum(segments_without_repeat["duration"])
                         segment = np.random.choice(
                             segments_without_repeat, p=prob_segments_duration
                         )
 
                         start, end, _ = segment
                         new_start_time = rng.uniform(start, end - duration)
-                        second_chunk = self.prepare_chunk(file_id, new_start_time, duration)
+                        second_chunk = self.prepare_chunk(
+                            file_id, new_start_time, duration
+                        )
 
                         labels = first_chunk["y"].labels + second_chunk["y"].labels
                         if len(labels) <= self.max_speakers_per_chunk:
@@ -568,12 +605,12 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
                 "X": augmented.samples,
                 "y": augmented.targets.squeeze(1),
                 "meta": collated_meta,
-                "X_separation_mask" : collated_X_separation_mask
+                "X_separation_mask": collated_X_separation_mask,
             }
         return {
             "X": augmented.samples,
             "y": augmented.targets.squeeze(1),
-            "meta": collated_meta
+            "meta": collated_meta,
         }
 
     def collate_y(self, batch) -> torch.Tensor:
@@ -673,9 +710,21 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         num_active_speakers_mix2 = (target2.sum(dim=1) != 0).sum(dim=1)
         targets = []
         for i in range(batch_size):
-            target = torch.cat((target1[i][:, target1[i].sum(dim=0) != 0], target2[i][:, target2[i].sum(dim=0) != 0]), dim=1)
-            padding_dim = target1.shape[2] - num_active_speakers_mix1[i] - num_active_speakers_mix2[i]
-            padding_tensor = torch.zeros((target1.shape[1], padding_dim), device=target.device)
+            target = torch.cat(
+                (
+                    target1[i][:, target1[i].sum(dim=0) != 0],
+                    target2[i][:, target2[i].sum(dim=0) != 0],
+                ),
+                dim=1,
+            )
+            padding_dim = (
+                target1.shape[2]
+                - num_active_speakers_mix1[i]
+                - num_active_speakers_mix2[i]
+            )
+            padding_tensor = torch.zeros(
+                (target1.shape[1], padding_dim), device=target.device
+            )
             target = torch.cat((target, padding_tensor), dim=1)
             targets.append(target)
         targets = torch.stack(targets)
@@ -720,12 +769,17 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
             mix1_masked = mix1 * mix1_masks
             mix2_masked = mix2 * mix2_masks
 
-        mom, mom_target, num_active_speakers_mix1, num_active_speakers_mix2 = self.create_mixtures_of_mixtures(mix1, mix2, target[0::2], target[1::2])
+        (
+            mom,
+            mom_target,
+            num_active_speakers_mix1,
+            num_active_speakers_mix2,
+        ) = self.create_mixtures_of_mixtures(mix1, mix2, target[0::2], target[1::2])
         target = torch.cat((target[0::2], target[1::2], mom_target), dim=0)
 
         diarization, sources = self.model(torch.cat((mix1, mix2, mom), dim=0))
-        mix1_sources = sources[:bsz // 2]
-        mix2_sources = sources[bsz // 2:bsz]
+        mix1_sources = sources[: bsz // 2]
+        mix2_sources = sources[bsz // 2 : bsz]
         mom_sources = sources[bsz:]
 
         batch_size, num_frames, _ = diarization.shape
@@ -750,16 +804,27 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
 
         # to find which predicted sources correspond to which mixtures, we need to invert the permutations
         permutations_inverse = torch.argsort(torch.tensor(permutations))
-        speaker_idx_mix1 = [[permutations_inverse[i][j] for j in range(num_active_speakers_mix1[i])] for i in range(bsz//2)]
-        speaker_idx_mix2 = [[permutations_inverse[i][j] for j in range(num_active_speakers_mix1[i], num_active_speakers_mix2[i])] for i in range(bsz//2)]
+        speaker_idx_mix1 = [
+            [permutations_inverse[i][j] for j in range(num_active_speakers_mix1[i])]
+            for i in range(bsz // 2)
+        ]
+        speaker_idx_mix2 = [
+            [
+                permutations_inverse[i][j]
+                for j in range(num_active_speakers_mix1[i], num_active_speakers_mix2[i])
+            ]
+            for i in range(bsz // 2)
+        ]
         # contributions from original mixtures is weighed by the proportion of remaining frames
         est_mixes = []
-        for i in range(bsz//2):
+        for i in range(bsz // 2):
             est_mix1 = mom_sources[i, :, speaker_idx_mix1[i]].sum(1)
             est_mix2 = mom_sources[i, :, speaker_idx_mix2[i]].sum(1)
             est_mixes.append(torch.stack((est_mix1, est_mix2)))
         est_mixes = torch.stack(est_mixes)
-        mixit_loss = multisrc_neg_sisdr(est_mixes, torch.stack((mix1, mix2)).transpose(0, 1)).mean()
+        mixit_loss = multisrc_neg_sisdr(
+            est_mixes, torch.stack((mix1, mix2)).transpose(0, 1)
+        ).mean()
 
         if self.original_mixtures_for_separation:
             raise NotImplementedError
@@ -769,10 +834,14 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
             #     predicted_sources_mix2.transpose(1, 2), torch.stack((mix2_masked, torch.zeros_like(mix2))).transpose(0, 1), speaker_idx_mix1[1::3], speaker_idx_mix2[1::3]
             # ) * mix2_masks.sum() / num_samples / bsz * 3
 
-        upscaled_permutated_target = torch.nn.functional.interpolate(permutated_target.transpose(1, 2), size=(80000)).transpose(1, 2)
-        forced_alignment_loss = (1 - 2 * upscaled_permutated_target[:bsz//2]) * mix1_sources ** 2 +\
-            (1 - 2 * upscaled_permutated_target[bsz//2:bsz]) * mix2_sources ** 2 +\
-            (1 - 2 * upscaled_permutated_target[bsz:]) * mom_sources ** 2
+        upscaled_permutated_target = torch.nn.functional.interpolate(
+            permutated_target.transpose(1, 2), size=(80000)
+        ).transpose(1, 2)
+        forced_alignment_loss = (
+            (1 - 2 * upscaled_permutated_target[: bsz // 2]) * mix1_sources**2
+            + (1 - 2 * upscaled_permutated_target[bsz // 2 : bsz]) * mix2_sources**2
+            + (1 - 2 * upscaled_permutated_target[bsz:]) * mom_sources**2
+        )
         forced_alignment_loss = forced_alignment_loss.mean() / 3
 
         self.model.log(
@@ -793,7 +862,11 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
             logger=True,
         )
 
-        loss = (1 - self.mixit_loss_weight) * seg_loss + self.mixit_loss_weight * mixit_loss + forced_alignment_loss * self.forced_alignment_weight
+        loss = (
+            (1 - self.mixit_loss_weight) * seg_loss
+            + self.mixit_loss_weight * mixit_loss
+            + forced_alignment_loss * self.forced_alignment_weight
+        )
 
         # skip batch if something went wrong for some reason
         if torch.isnan(loss):
@@ -899,7 +972,9 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
             logger=True,
         )
 
-        loss = (1 - self.mixit_loss_weight) * seg_loss + self.mixit_loss_weight * mixit_loss
+        loss = (
+            1 - self.mixit_loss_weight
+        ) * seg_loss + self.mixit_loss_weight * mixit_loss
 
         self.model.log(
             "loss/val",
@@ -911,14 +986,9 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         )
 
         self.model.validation_metric(
-            torch.transpose(
-                multilabel, 1, 2
-            ),
-            torch.transpose(
-                target, 1, 2
-            ),
+            torch.transpose(multilabel, 1, 2),
+            torch.transpose(target, 1, 2),
         )
-        
 
         self.model.log_dict(
             self.model.validation_metric,
