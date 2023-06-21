@@ -699,13 +699,34 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
 
     def create_mixtures_of_mixtures(self, mix1, mix2, target1, target2):
         """
-        Creates mixtures of mixtures from two mixtures and their targets."""
-        # mapping1[i1] = i means that i1-th speaker of mix1/tgt1 has been mapped to i-th speaker of mom/tgt
-        # mapping2[i2] = i means that i2-th speaker of mix2/tgt2 has been mapped to i-th speaker of mom/tgt
-        # mapping1[i1] = None means that i1-th (inactive) speaker of mix1/tgt1 does not exist in mom/tgt
+        Creates mixtures of mixtures and corresponding diarization targets. 
+        Keeps track of how many speakers came from each mixture in order to 
+        reconstruct the original mixtures.
+
+        Parameters
+        ----------
+        mix1 : torch.Tensor
+            First mixture.
+        mix2 : torch.Tensor
+            Second mixture.
+        target1 : torch.Tensor
+            First mixture diarization targets.
+        target2 : torch.Tensor
+            Second mixture diarization targets.
+
+        Returns
+        -------
+        mom : torch.Tensor
+            Mixtures of mixtures.
+        targets : torch.Tensor
+            Diarization targets for mixtures of mixtures.
+        num_active_speakers_mix1 : torch.Tensor
+            Number of active speakers in the first mixture.
+        num_active_speakers_mix2 : torch.Tensor
+            Number of active speakers in the second mixture.
+        """
         batch_size = mix1.shape[0]
         mom = mix1 + mix2
-        # (batch_size, num_speakers, num_frames)
         num_active_speakers_mix1 = (target1.sum(dim=1) != 0).sum(dim=1)
         num_active_speakers_mix2 = (target2.sum(dim=1) != 0).sum(dim=1)
         targets = []
@@ -922,7 +943,8 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         # MoMs can't be created for batch size < 2
         if bsz < 2:
             return None
-        
+
+        # if bsz not even, then leave out last sample
         mix1 = waveform[bsz // 2 : 2 * (bsz // 2)].squeeze(1)
         mix2 = waveform[: bsz // 2].squeeze(1)
         moms = mix1 + mix2
