@@ -39,7 +39,7 @@ from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
 from pyannote.audio.utils.loss import nll_loss
 from pyannote.audio.utils.permutation import permutate
 from pyannote.audio.utils.random import create_rng_for_worker
-from pyannote.database.protocol import SegmentationProtocol, SpeakerDiarizationProtocol
+from pyannote.database.protocol import SpeakerDiarizationProtocol
 from pyannote.database.protocol.protocol import Scope, Subset
 from pyannote.audio.torchmetrics.classification import EqualErrorRate
 from pyannote.audio.torchmetrics import (
@@ -158,9 +158,6 @@ class JointSpeakerDiarizationAndEmbedding(Task):
         if isinstance(self.protocol, SpeakerDiarizationProtocol):
             metadata_unique_values["scope"] = Scopes
 
-        elif isinstance(self.protocol, SegmentationProtocol):
-            classes = getattr(self, "classes", list())
-
         # make sure classes attribute exists (and set to None if it did not exist)
         self.classes = getattr(self, "classes", None)
         if self.classes is None:
@@ -208,42 +205,6 @@ class JointSpeakerDiarizationAndEmbedding(Task):
                     self.embedding_database_files.append(file_id)
                 elif file["scope"] in ["database", "file"]:
                     self.diarization_database_files.append(file_id)
-
-            # keep track of list of classes for regular segmentation protocols
-            # Different files may be annotated using a different set of classes
-            # (e.g. one database for speech/music/noise, and another one for male/female/child)
-            if isinstance(self.protocol, SegmentationProtocol):
-
-                if "classes" in file:
-                    local_classes = file["classes"]
-                else:
-                    local_classes = file["annotation"].labels()
-
-                # if task was not initialized with a fixed list of classes,
-                # we build it as the union of all classes found in files
-                if self.classes is None:
-                    for klass in local_classes:
-                        if klass not in classes:
-                            classes.append(klass)
-                    annotated_classes.append(
-                        [classes.index(klass) for klass in local_classes]
-                    )
-
-                # if task was initialized with a fixed list of classes,
-                # we make sure that all files use a subset of these classes
-                # if they don't, we issue a warning and ignore the extra classes
-                else:
-                    extra_classes = set(local_classes) - set(self.classes)
-                    if extra_classes:
-                        warnings.warn(
-                            f"Ignoring extra classes ({', '.join(extra_classes)}) found for file {file['uri']} ({file['database']}). "
-                        )
-                    annotated_classes.append(
-                        [
-                            self.classes.index(klass)
-                            for klass in set(local_classes) & set(self.classes)
-                        ]
-                    )
 
             remaining_metadata_keys = set(file) - set(
                 [
@@ -414,18 +375,6 @@ class JointSpeakerDiarizationAndEmbedding(Task):
         # turn list of annotated regions into a single numpy array
         dtype = [("file_id", "i"), ("duration", "f"), ("start", "f"), ("end", "f")]
         self.annotated_regions = np.array(annotated_regions, dtype=dtype)
-
-        # convert annotated_classes (which is a list of list of classes, one list of classes per file)
-        # into a single (num_files x num_classes) numpy array:
-        #    * True indicates that this particular class was annotated for this particular file (though it may not be active in this file)
-        #    * False indicates that this particular class was not even annotated (i.e. its absence does not imply that it is not active in this file)
-        if isinstance(self.protocol, SegmentationProtocol) and self.classes is None:
-            self.classes = classes
-        self.annotated_classes = np.zeros(
-            (len(annotated_classes), len(self.classes)), dtype=np.bool_
-        )
-        for file_id, classes in enumerate(annotated_classes):
-            self.annotated_classes[file_id, classes] = True
 
         # turn list of annotations into a single numpy array
         dtype = [
