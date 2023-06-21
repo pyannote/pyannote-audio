@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020- CNRS
+# Copyright (c) 2023- CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -23,10 +23,10 @@
 from collections import defaultdict
 import itertools
 import random
-import numpy as np
-import torch
 from typing import Literal, List, Text, Union, Sequence, Dict
 import warnings
+import numpy as np
+import torch
 
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchaudio.backend.common import AudioMetaData
@@ -34,11 +34,10 @@ from torchmetrics import Metric
 from torchmetrics.classification import BinaryAUROC
 from torch.utils.data._utils.collate import default_collate
 
-from pyannote.core import Segment, SlidingWindow, SlidingWindowFeature
+from pyannote.core import Segment, SlidingWindowFeature
 from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
 from pyannote.audio.utils.loss import nll_loss
 from pyannote.audio.utils.permutation import permutate
-from pyannote.audio.utils.powerset import Powerset
 from pyannote.audio.utils.random import create_rng_for_worker
 from pyannote.database.protocol import SegmentationProtocol, SpeakerDiarizationProtocol
 from pyannote.database.protocol.protocol import Scope, Subset
@@ -673,7 +672,7 @@ class JointSpeakerDiarizationAndEmbedding(Task):
         Training chunks
         """
 
-        # indices of trainijng files that matches domain filters
+        # indices of training files that matches domain filters
         training = self.metadata["subset"] == Subsets.index("train")
         for key, value in filters.items():
             training &= self.metadata[key] == value
@@ -682,14 +681,16 @@ class JointSpeakerDiarizationAndEmbedding(Task):
         embedding_files_ids = file_ids[np.in1d(file_ids, self.embedding_database_files)]
 
         annotated_duration = self.annotated_duration[file_ids]
+        # set duration of files for the embedding part to zero, in order to not
+        # drawn them for diarization part
         annotated_duration[embedding_files_ids] = 0
         prob_annotated_duration = annotated_duration / np.sum(annotated_duration)
-        # set probability to sample a file from embedding database to 0
 
         duration = self.duration
 
-        # make a copy of the original classes list, in order to not modify it when shuffling
+        # make a copy of the original class list, so as not to modify it during shuffling
         embedding_classes = self.specifications[Subtasks.index("embedding")].classes
+        # use original order for the first run of the shuffled classes list:
         shuffled_embedding_classes = list(embedding_classes)
         embedding_class_idx = 0
 
@@ -698,7 +699,9 @@ class JointSpeakerDiarizationAndEmbedding(Task):
             # between these two tasks
             if np.random.uniform() < self.database_ratio:
                 subtask = Subtasks.index("diarization")
-                file_id, start_time = self.draw_diarization_chunk(file_ids, prob_annotated_duration, rng, duration)
+                file_id, start_time = self.draw_diarization_chunk(file_ids, prob_annotated_duration,
+                                                                  rng,
+                                                                  duration)
             else:
                 subtask = Subtasks.index("embedding")
                 # shuffle embedding classes list and go through this shuffled list
@@ -708,9 +711,7 @@ class JointSpeakerDiarizationAndEmbedding(Task):
                     embedding_class_idx = 0
                 klass = shuffled_embedding_classes[embedding_class_idx]
                 embedding_class_idx += 1
-                file_id, start_time = self.draw_embedding_chunk(klass,
-                                                                classes=embedding_classes,
-                                                                duration=duration)
+                file_id, start_time = self.draw_embedding_chunk(klass, embedding_classes, duration)
 
             sample = self.prepare_chunk(file_id, start_time, duration, subtask)
             yield sample
@@ -827,13 +828,8 @@ class JointSpeakerDiarizationAndEmbedding(Task):
 
         # collate X
         collated_X = self.collate_X(batch)
-
         # collate y
-        try:
-            collated_y = self.collate_y(batch)
-        except RuntimeError as e:
-            print(e)
-            print([b["y"].data for b in batch])
+        collated_y = self.collate_y(batch)
 
         # collate metadata
         collated_meta = self.collate_meta(batch)
