@@ -63,98 +63,6 @@ Scopes = list(Scope.__args__)
 from itertools import combinations
 from torch import nn
 
-class ModifiedMixITLossWrapper(nn.Module):
-    r"""Mixture invariant loss wrapper modifed to force alignment between separation and diarization.
-
-    Args:
-        loss_func: function with signature (est_targets, targets, **kwargs).
-        generalized (bool): Determines how MixIT is applied. If False ,
-            apply MixIT for any number of mixtures as soon as they contain
-            the same number of sources (:meth:`~MixITLossWrapper.best_part_mixit`.)
-            If True (default), apply MixIT for two mixtures, but those mixtures do not
-            necessarly have to contain the same number of sources.
-            See :meth:`~MixITLossWrapper.best_part_mixit_generalized`.
-        reduction (string, optional): Specifies the reduction to apply to
-            the output:
-            ``'none'`` | ``'mean'``. ``'none'``: no reduction will be applied,
-            ``'mean'``: the sum of the output will be divided by the number of
-            elements in the output.
-
-    For each of these modes, the best partition and reordering will be
-    automatically computed.
-
-    Examples:
-        >>> import torch
-        >>> from asteroid.losses import multisrc_mse
-        >>> mixtures = torch.randn(10, 2, 16000)
-        >>> est_sources = torch.randn(10, 4, 16000)
-        >>> # Compute MixIT loss based on pairwise losses
-        >>> loss_func = MixITLossWrapper(multisrc_mse)
-        >>> loss_val = loss_func(est_sources, mixtures)
-
-    References
-        [1] Scott Wisdom et al. "Unsupervised sound separation using
-        mixtures of mixtures." arXiv:2006.12701 (2020)
-    """
-
-    def __init__(self, loss_func, generalized=True, reduction="mean"):
-        super().__init__()
-        self.loss_func = loss_func
-        self.generalized = generalized
-        self.reduction = reduction
-
-    def forward(self, est_targets, targets, part_from_mix1, part_from_mix2, return_est=False, **kwargs):
-        r"""Find the best partition and return the loss.
-
-        Args:
-            est_targets: torch.Tensor. Expected shape :math:`(batch, nsrc, *)`.
-                The batch of target estimates.
-            targets: torch.Tensor. Expected shape :math:`(batch, nmix, ...)`.
-                The batch of training targets
-            return_est: Boolean. Whether to return the estimated mixtures
-                estimates (To compute metrics or to save example).
-            **kwargs: additional keyword argument that will be passed to the
-                loss function.
-
-        Returns:
-            - Best partition loss for each batch sample, average over
-              the batch. torch.Tensor(loss_value)
-            - The estimated mixtures (estimated sources summed according to the partition)
-              if return_est is True. torch.Tensor of shape :math:`(batch, nmix, ...)`.
-        """
-        # Check input dimensions
-        assert est_targets.shape[0] == targets.shape[0]
-        assert est_targets.shape[2] == targets.shape[2]
-
-        # if not self.generalized:
-        #     min_loss, min_loss_idx, parts = self.best_part_mixit(
-        #         self.loss_func, est_targets, targets, **kwargs
-        #     )
-        # else:
-        #     min_loss, min_loss_idx, parts = self.best_part_mixit_generalized(
-        #         self.loss_func, est_targets, targets, **kwargs
-        #     )
-        est_mixes = []
-        for i in range(est_targets.shape[0]):
-            # sum the sources according to the given partition
-            est_mix1 = est_targets[i, part_from_mix1[i], :].sum(0)
-            est_mix2 = est_targets[i, part_from_mix2[i], :].sum(0)
-            # get loss for the given partition
-            
-            est_mixes.append(torch.stack((est_mix1, est_mix2)))
-        est_mixes = torch.stack(est_mixes)
-        loss_partition = self.loss_func(est_mixes, targets, **kwargs)
-        if loss_partition.ndim != 1:
-            raise ValueError("Loss function return value should be of size (batch,).")
-
-        # Apply any reductions over the batch axis
-        returned_loss = loss_partition.mean() if self.reduction == "mean" else loss_partition
-        if not return_est:
-            return returned_loss
-
-        # Order and sum on the best partition to get the estimated mixtures
-        # reordered = self.reorder_source(est_targets, targets, min_loss_idx, parts)
-        return returned_loss, est_mixes
 
 class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
     """Speaker diarization
@@ -274,7 +182,6 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         self.weigh_by_cardinality = weigh_by_cardinality
         self.balance = balance
         self.weight = weight
-        self.separation_loss = ModifiedMixITLossWrapper(multisrc_neg_sisdr, generalized=True)
         self.mixit_loss_weight = mixit_loss_weight
         self.original_mixtures_for_separation = original_mixtures_for_separation
         self.forced_alignment_weight = forced_alignment_weight
