@@ -919,6 +919,10 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         # target = target[keep]
 
         bsz = waveform.shape[0]
+        # MoMs can't be created for batch size < 2
+        if bsz < 2:
+            return None
+        
         mix1 = waveform[bsz // 2 : 2 * (bsz // 2)].squeeze(1)
         mix2 = waveform[: bsz // 2].squeeze(1)
         moms = mix1 + mix2
