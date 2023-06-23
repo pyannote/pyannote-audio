@@ -491,7 +491,8 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         if np.nanmax(count.data) == 0.0:
             diarization = Annotation(uri=file["uri"])
             if return_embeddings:
-                return diarization, {}
+                return diarization, np.zeros((0, self._embedding.dimension))
+
             return diarization
 
         # binarize segmentation
