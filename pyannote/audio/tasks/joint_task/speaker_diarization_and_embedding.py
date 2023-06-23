@@ -89,6 +89,7 @@ class JointSpeakerDiarizationAndEmbedding(Task):
             pin_memory: bool = False,
             margin : float = 28.6,
             scale: float = 64.0,
+            alpha: float = 0.5,
             augmentation: BaseWaveformTransform = None
     ) -> None:
         super().__init__(
@@ -105,6 +106,7 @@ class JointSpeakerDiarizationAndEmbedding(Task):
         self.database_ratio = database_ratio
         self.margin = margin
         self.scale = scale
+        self.alpha = alpha
 
 
         # keep track of the use of database available in the meta protocol
@@ -949,7 +951,7 @@ class JointSpeakerDiarizationAndEmbedding(Task):
             {"loss": loss}
         """
 
-        alpha = 0.5
+        alpha = self.alpha
         if batch["task"] == "diarization":
             # compute diarization loss
             diarization_loss = self.compute_diarization_loss(batch=batch)
