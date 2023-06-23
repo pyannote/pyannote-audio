@@ -459,6 +459,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         embeddings : np.array, optional
             Representative speaker embeddings such that `embeddings[i]` is the
             speaker embedding for i-th speaker in diarization.labels().
+            Only returned when `return_embeddings` is True.
         """
 
         # setup hook (e.g. for debugging purposes)

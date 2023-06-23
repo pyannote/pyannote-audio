@@ -229,7 +229,7 @@ class BaseClustering(Pipeline):
         soft_clusters : (num_chunks, num_speakers, num_clusters) array
             Soft cluster assignment (the higher soft_clusters[c, s, k], the most likely
             the sth speaker of cth chunk belongs to kth cluster)
-        centroids : (num_clusters, dimension) array,
+        centroids : (num_clusters, dimension) array
             Centroid vectors of each cluster
         """
 
