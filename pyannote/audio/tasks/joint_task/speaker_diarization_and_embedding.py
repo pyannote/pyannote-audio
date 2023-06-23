@@ -113,7 +113,6 @@ class JointSpeakerDiarizationAndEmbedding(Task):
         # * embedding databases are those with global speaker label scope
         # * diarization databases are those with file or database speaker label scope
         self.embedding_database_files = []
-        self.diarization_database_files = []
 
     def get_file(self, file_id):
 
@@ -201,12 +200,9 @@ class JointSpeakerDiarizationAndEmbedding(Task):
             # keep track of speaker label scope (file, database, or global) for speaker diarization protocols
             if isinstance(self.protocol, SpeakerDiarizationProtocol):
                 metadatum["scope"] = Scopes.index(file["scope"])
-                # add the file to the embedding or diarization list according to the file database speaker
-                # labels scope
+                # keep track of files where speaker label scope is global for embedding subtask
                 if file["scope"] == 'global':
                     self.embedding_database_files.append(file_id)
-                elif file["scope"] in ["database", "file"]:
-                    self.diarization_database_files.append(file_id)
 
             remaining_metadata_keys = set(file) - set(
                 [
@@ -566,18 +562,14 @@ class JointSpeakerDiarizationAndEmbedding(Task):
 
         return (file_id, start_time)
 
-    def draw_embedding_chunk(self, klass : Text,
-                               classes : List[Text],
+    def draw_embedding_chunk(self, class_id : int,
                                duration : float) -> tuple:
         """Sample one chunk for the embedding task
 
         Parameters
         ----------
-        klass: Text
-            current class of speakers from which to draw a sample
-        classes: List[Text]
-            list of all the global speaker labels, in the same order than the list
-            defined in the task specification
+        class_id : int
+            class ID in the task speficiations
         duration: float
             duration of the chunk to draw
 
@@ -590,7 +582,6 @@ class JointSpeakerDiarizationAndEmbedding(Task):
                 start time of the sampled chunk
         """
         # get index of the current class in the order of original class list
-        class_id = classes.index(klass)
         # get segments for current class
         class_segments_idx = self.annotations["global_label_idx"] == class_id
         class_segments = self.annotations[class_segments_idx]
@@ -661,8 +652,9 @@ class JointSpeakerDiarizationAndEmbedding(Task):
                     rng.shuffle(shuffled_embedding_classes)
                     embedding_class_idx = 0
                 klass = shuffled_embedding_classes[embedding_class_idx]
+                class_id = embedding_classes.index(klass)
                 embedding_class_idx += 1
-                file_id, start_time = self.draw_embedding_chunk(klass, embedding_classes, duration)
+                file_id, start_time = self.draw_embedding_chunk(class_id, duration)
 
             sample = self.prepare_chunk(file_id, start_time, duration, subtask)
             yield sample
