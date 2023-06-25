@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020 CNRS
+# Copyright (c) 2023 CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -82,12 +82,12 @@ class StatsPool(nn.Module):
                 )
 
             v1 = weights.sum(dim=-1)
-            mean = torch.sum(sequences * weights, dim=-1) / v1
+            mean = torch.sum(sequences * weights, dim=-1) / (v1 + 1e-8)
 
             dx2 = torch.square(sequences - mean.unsqueeze(-1))
             v2 = torch.square(weights).sum(dim=-1)
 
-            var = torch.sum(dx2 * weights, dim=-1) / (v1 - v2 / v1)
+            var = torch.sum(dx2 * weights, dim=-1) / ((v1 - v2 / v1) + 1e-8)
             std = torch.sqrt(var)
 
         return torch.cat([mean, std], dim=-1)
