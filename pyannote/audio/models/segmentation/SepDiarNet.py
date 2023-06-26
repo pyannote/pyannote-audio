@@ -79,7 +79,7 @@ class SepDiarNet(Model):
         "monolithic": True,
         "dropout": 0.0,
     }
-    LINEAR_DEFAULTS = {"hidden_size": 128, "num_layers": 2}
+    LINEAR_DEFAULTS = {"hidden_size": 64, "num_layers": 2}
     CONVNET_DEFAULTS = {
         "n_blocks": 8,
         "n_repeats": 3,
@@ -114,6 +114,7 @@ class SepDiarNet(Model):
         task: Optional[Task] = None,
         encoder_type: str = None,
         n_sources: int = 3,
+        use_lstm: bool = False,
     ):
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
 
@@ -124,6 +125,7 @@ class SepDiarNet(Model):
         dprnn = merge_dict(self.DPRNN_DEFAULTS, dprnn)
         encoder_decoder = merge_dict(self.ENCODER_DECODER_DEFAULTS, encoder_decoder)
         self.n_src = n_sources
+        self.use_lstm = use_lstm
         self.save_hyperparameters("encoder_decoder", "lstm", "linear", "convnet", "dprnn")
 
         if encoder_decoder["fb_name"] == "free":
@@ -138,40 +140,45 @@ class SepDiarNet(Model):
         self.masker = DPRNN(n_feats_out, n_src=n_sources, **self.hparams.dprnn)
         #self.convnet= TDConvNet(n_feats_out, **self.hparams.convnet)
 
-        monolithic = lstm["monolithic"]
-        if monolithic:
-            multi_layer_lstm = dict(lstm)
-            del multi_layer_lstm["monolithic"]
-            self.lstm = nn.LSTM(n_feats_out, **multi_layer_lstm)
+        if use_lstm:
+            monolithic = lstm["monolithic"]
+            if monolithic:
+                multi_layer_lstm = dict(lstm)
+                del multi_layer_lstm["monolithic"]
+                self.lstm = nn.LSTM(n_feats_out, **multi_layer_lstm)
 
-        else:
-            num_layers = lstm["num_layers"]
-            if num_layers > 1:
-                self.dropout = nn.Dropout(p=lstm["dropout"])
+            else:
+                num_layers = lstm["num_layers"]
+                if num_layers > 1:
+                    self.dropout = nn.Dropout(p=lstm["dropout"])
 
-            one_layer_lstm = dict(lstm)
-            one_layer_lstm["num_layers"] = 1
-            one_layer_lstm["dropout"] = 0.0
-            del one_layer_lstm["monolithic"]
+                one_layer_lstm = dict(lstm)
+                one_layer_lstm["num_layers"] = 1
+                one_layer_lstm["dropout"] = 0.0
+                del one_layer_lstm["monolithic"]
 
-            self.lstm = nn.ModuleList(
-                [
-                    nn.LSTM(
-                        n_feats_out
-                        if i == 0
-                        else lstm["hidden_size"] * (2 if lstm["bidirectional"] else 1),
-                        **one_layer_lstm
-                    )
-                    for i in range(num_layers)
-                ]
-            )
+                self.lstm = nn.ModuleList(
+                    [
+                        nn.LSTM(
+                            n_feats_out
+                            if i == 0
+                            else lstm["hidden_size"] * (2 if lstm["bidirectional"] else 1),
+                            **one_layer_lstm
+                        )
+                        for i in range(num_layers)
+                    ]
+                )
 
         if linear["num_layers"] < 1:
             return
-
-        lstm_out_features: int = self.hparams.lstm["hidden_size"] * (
-            2 if self.hparams.lstm["bidirectional"] else 1
-        )
+        
+        if use_lstm:
+            lstm_out_features: int = self.hparams.lstm["hidden_size"] * (
+                2 if self.hparams.lstm["bidirectional"] else 1
+            )
+        else:
+            lstm_out_features = 64
+        
         self.linear = nn.ModuleList(
             [
                 nn.Linear(in_features, out_features)
@@ -228,14 +235,15 @@ class SepDiarNet(Model):
             masks, "batch nsrc nfilters nframes -> batch nsrc nframes nfilters"
         )
         outputs = torch.flatten(outputs, start_dim=0, end_dim=1)
-
-        if self.hparams.lstm["monolithic"]:
-            outputs, _ = self.lstm(outputs)
-        else:
-            for i, lstm in enumerate(self.lstm):
-                outputs, _ = lstm(outputs)
-                if i + 1 < self.hparams.lstm["num_layers"]:
-                    outputs = self.dropout(outputs)
+        
+        if self.use_lstm:
+            if self.hparams.lstm["monolithic"]:
+                outputs, _ = self.lstm(outputs)
+            else:
+                for i, lstm in enumerate(self.lstm):
+                    outputs, _ = lstm(outputs)
+                    if i + 1 < self.hparams.lstm["num_layers"]:
+                        outputs = self.dropout(outputs)
 
         if self.hparams.linear["num_layers"] > 0:
             for linear in self.linear:
