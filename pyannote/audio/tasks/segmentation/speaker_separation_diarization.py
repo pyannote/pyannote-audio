@@ -54,7 +54,7 @@ from pyannote.audio.torchmetrics import (
 from pyannote.audio.utils.loss import binary_cross_entropy, mse_loss, nll_loss
 from pyannote.audio.utils.permutation import permutate
 from pyannote.audio.utils.powerset import Powerset
-from asteroid.losses import multisrc_neg_sisdr
+from asteroid.losses import MixITLossWrapper, multisrc_neg_sisdr
 from torch.utils.data._utils.collate import default_collate
 
 Subsets = list(Subset.__args__)
@@ -142,6 +142,7 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         mixit_loss_weight: float = 0.5,
         original_mixtures_for_separation: bool = False,
         forced_alignment_weight: float = 0.0,
+        force_alignment = False,
     ):
         super().__init__(
             protocol,
@@ -184,7 +185,10 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         self.weigh_by_cardinality = weigh_by_cardinality
         self.balance = balance
         self.weight = weight
+        if not force_alignment:
+            self.separation_loss = MixITLossWrapper(multisrc_neg_sisdr, generalized=True)
         self.mixit_loss_weight = mixit_loss_weight
+        self.force_alignment = force_alignment
         self.original_mixtures_for_separation = original_mixtures_for_separation
         self.forced_alignment_weight = forced_alignment_weight
 
@@ -859,10 +863,12 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
             est_mix2 = mom_sources[i, :, speaker_idx_mix2[i]].sum(1)
             est_mixes.append(torch.stack((est_mix1, est_mix2)))
         est_mixes = torch.stack(est_mixes)
-        mixit_loss = multisrc_neg_sisdr(
-            est_mixes, torch.stack((mix1, mix2)).transpose(0, 1)
-        ).mean()
-
+        if self.force_alignment:
+            mixit_loss = multisrc_neg_sisdr(
+                est_mixes, torch.stack((mix1, mix2)).transpose(0, 1)
+            ).mean()
+        else:
+            mixit_loss = self.separation_loss(mom_sources.transpose(1, 2), torch.stack((mix1, mix2)).transpose(0, 1))
         if self.original_mixtures_for_separation:
             raise NotImplementedError
             # mixit_loss += self.separation_loss(
