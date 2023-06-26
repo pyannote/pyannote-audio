@@ -275,7 +275,9 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         speaker_diarization = Specifications(
             duration=self.duration,
             resolution=Resolution.FRAME,
-            problem=Problem.MONO_LABEL_CLASSIFICATION,
+            problem=Problem.MULTI_LABEL_CLASSIFICATION
+            if self.max_speakers_per_frame is None
+            else Problem.MONO_LABEL_CLASSIFICATION,
             permutation_invariant=True,
             classes=[f"speaker#{i+1}" for i in range(self.max_speakers_per_chunk)],
             powerset_max_classes=self.max_speakers_per_frame,
@@ -291,10 +293,11 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         self.specifications = (speaker_diarization, speaker_separation)
 
     def setup_loss_func(self):
-        self.model.powerset = Powerset(
-            len(self.specifications[0].classes),
-            self.specifications[0].powerset_max_classes,
-        )
+        if self.specifications[0].powerset:
+            self.model.powerset = Powerset(
+                len(self.specifications.classes),
+                self.specifications.powerset_max_classes,
+            )
 
     def prepare_chunk(self, file_id: int, start_time: float, duration: float):
         """Prepare chunk
@@ -683,17 +686,23 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         """
 
         # `clamp_min` is needed to set non-speech weight to 1.
-        class_weight = (
-            torch.clamp_min(self.model.powerset.cardinality, 1.0)
-            if self.weigh_by_cardinality
-            else None
-        )
-        seg_loss = nll_loss(
-            permutated_prediction,
-            torch.argmax(target, dim=-1),
-            class_weight=class_weight,
-            weight=weight,
-        )
+        if self.specifications[0].powerset:
+            # `clamp_min` is needed to set non-speech weight to 1.
+            class_weight = (
+                torch.clamp_min(self.model.powerset.cardinality, 1.0)
+                if self.weigh_by_cardinality
+                else None
+            )
+            seg_loss = nll_loss(
+                permutated_prediction,
+                torch.argmax(target, dim=-1),
+                class_weight=class_weight,
+                weight=weight,
+            )
+        else:
+            seg_loss = binary_cross_entropy(
+                permutated_prediction, target.float(), weight=weight
+            )
 
         return seg_loss
 
@@ -814,14 +823,21 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         )
         # (batch_size, num_frames, 1)
 
-        multilabel = self.model.powerset.to_multilabel(diarization)
-        permutated_target, permutations = permutate(multilabel, target)
-        permutated_target_powerset = self.model.powerset.to_powerset(
-            permutated_target.float()
-        )
-        seg_loss = self.segmentation_loss(
-            diarization, permutated_target_powerset, weight=weight
-        )
+        if self.specifications[0].powerset:
+            multilabel = self.model.powerset.to_multilabel(diarization)
+            permutated_target, permutations = permutate(multilabel, target)
+            permutated_target_powerset = self.model.powerset.to_powerset(
+                permutated_target.float()
+            )
+            seg_loss = self.segmentation_loss(
+                diarization, permutated_target_powerset, weight=weight
+            )
+
+        else:
+            permutated_target, permutations = permutate(target, diarization)
+            seg_loss = self.segmentation_loss(
+                permutated_target, target, weight=weight
+            )
 
         # to find which predicted sources correspond to which mixtures, we need to invert the permutations
         permutations_inverse = torch.argsort(torch.tensor(permutations))
@@ -909,11 +925,20 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
     ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
         """Returns diarization error rate and its components"""
 
+        if self.specifications[0].powerset:
+            return {
+                "DiarizationErrorRate": DiarizationErrorRate(0.5),
+                "DiarizationErrorRate/Confusion": SpeakerConfusionRate(0.5),
+                "DiarizationErrorRate/Miss": MissedDetectionRate(0.5),
+                "DiarizationErrorRate/FalseAlarm": FalseAlarmRate(0.5),
+            }
+
         return {
-            "DiarizationErrorRate": DiarizationErrorRate(0.5),
-            "DiarizationErrorRate/Confusion": SpeakerConfusionRate(0.5),
-            "DiarizationErrorRate/Miss": MissedDetectionRate(0.5),
-            "DiarizationErrorRate/FalseAlarm": FalseAlarmRate(0.5),
+            "DiarizationErrorRate": OptimalDiarizationErrorRate(),
+            "DiarizationErrorRate/Threshold": OptimalDiarizationErrorRateThreshold(),
+            "DiarizationErrorRate/Confusion": OptimalSpeakerConfusionRate(),
+            "DiarizationErrorRate/Miss": OptimalMissedDetectionRate(),
+            "DiarizationErrorRate/FalseAlarm": OptimalFalseAlarmRate(),
         }
 
     # TODO: no need to compute gradient in this method
@@ -962,17 +987,24 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         )
         # (batch_size, num_frames, 1)
 
-        multilabel = self.model.powerset.to_multilabel(prediction)
-        permutated_target, _ = permutate(multilabel, target)
+        if self.specifications[0].powerset:
+            multilabel = self.model.powerset.to_multilabel(prediction)
+            permutated_target, _ = permutate(multilabel, target)
 
-        # FIXME: handle case where target have too many speakers?
-        # since we don't need
-        permutated_target_powerset = self.model.powerset.to_powerset(
-            permutated_target.float()
-        )
-        seg_loss = self.segmentation_loss(
-            prediction, permutated_target_powerset, weight=weight
-        )
+            # FIXME: handle case where target have too many speakers?
+            # since we don't need
+            permutated_target_powerset = self.model.powerset.to_powerset(
+                permutated_target.float()
+            )
+            seg_loss = self.segmentation_loss(
+                prediction, permutated_target_powerset, weight=weight
+            )
+
+        else:
+            permutated_prediction, _ = permutate(target, prediction)
+            seg_loss = self.segmentation_loss(
+                permutated_prediction, target, weight=weight
+            )
 
         # forced alignment mixit can't be implemented for validation because since data loading is different
         mixit_loss = 0
@@ -1011,10 +1043,17 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
             logger=True,
         )
 
-        self.model.validation_metric(
-            torch.transpose(multilabel, 1, 2),
-            torch.transpose(target, 1, 2),
-        )
+        if self.specifications[0].powerset:
+            self.model.validation_metric(
+                torch.transpose(multilabel, 1, 2),
+                torch.transpose(target, 1, 2),
+            )
+        else:
+            self.model.validation_metric(
+                torch.transpose(prediction, 1, 2),
+                torch.transpose(target, 1, 2),
+            )
+
 
         self.model.log_dict(
             self.model.validation_metric,
@@ -1034,8 +1073,12 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
 
         # visualize first 9 validation samples of first batch in Tensorboard/MLflow
 
-        y = permutated_target.float().cpu().numpy()
-        y_pred = multilabel.cpu().numpy()
+        if self.specifications[0].powerset:
+            y = permutated_target.float().cpu().numpy()
+            y_pred = multilabel.cpu().numpy()
+        else:
+            y = target.float().cpu().numpy()
+            y_pred = permutated_prediction.cpu().numpy()
 
         # prepare 3 x 3 grid (or smaller if batch size is smaller)
         num_samples = min(self.batch_size, 9)

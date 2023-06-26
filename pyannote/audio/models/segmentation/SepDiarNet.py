@@ -123,6 +123,7 @@ class SepDiarNet(Model):
         convnet = merge_dict(self.CONVNET_DEFAULTS, convnet)
         dprnn = merge_dict(self.DPRNN_DEFAULTS, dprnn)
         encoder_decoder = merge_dict(self.ENCODER_DECODER_DEFAULTS, encoder_decoder)
+        self.n_src = n_sources
         self.save_hyperparameters("encoder_decoder", "lstm", "linear", "convnet", "dprnn")
 
         if encoder_decoder["fb_name"] == "free":
@@ -141,7 +142,7 @@ class SepDiarNet(Model):
         if monolithic:
             multi_layer_lstm = dict(lstm)
             del multi_layer_lstm["monolithic"]
-            self.lstm = nn.LSTM(n_sources * n_feats_out, **multi_layer_lstm)
+            self.lstm = nn.LSTM(n_feats_out, **multi_layer_lstm)
 
         else:
             num_layers = lstm["num_layers"]
@@ -156,7 +157,7 @@ class SepDiarNet(Model):
             self.lstm = nn.ModuleList(
                 [
                     nn.LSTM(
-                        6 * n_feats_out
+                        n_feats_out
                         if i == 0
                         else lstm["hidden_size"] * (2 if lstm["bidirectional"] else 1),
                         **one_layer_lstm
@@ -196,7 +197,7 @@ class SepDiarNet(Model):
         #     raise ValueError("PyanNet does not support multi-tasking.")
 
         # if self.specifications.powerset:
-        out_features = self.specifications[0].num_powerset_classes
+        out_features = 1
         # else:
         #     out_features = len(self.specifications.classes)
 
@@ -214,7 +215,7 @@ class SepDiarNet(Model):
         -------
         scores : (batch, frame, classes)
         """
-
+        bsz = waveforms.shape[0]
         tf_rep = self.encoder(waveforms)
         masks = self.masker(tf_rep)
 
@@ -224,9 +225,9 @@ class SepDiarNet(Model):
         decoded_sources = decoded_sources.transpose(1, 2)
 
         outputs = rearrange(
-            masks, "batch nsrc nfilters nframes -> batch nframes nfilters nsrc"
+            masks, "batch nsrc nfilters nframes -> batch nsrc nframes nfilters"
         )
-        outputs = torch.flatten(outputs, start_dim=2, end_dim=3)
+        outputs = torch.flatten(outputs, start_dim=0, end_dim=1)
 
         if self.hparams.lstm["monolithic"]:
             outputs, _ = self.lstm(outputs)
@@ -239,5 +240,8 @@ class SepDiarNet(Model):
         if self.hparams.linear["num_layers"] > 0:
             for linear in self.linear:
                 outputs = F.leaky_relu(linear(outputs))
+        outputs = self.classifier(outputs)
+        outputs = outputs.reshape(bsz, 3, -1)
+        outputs = outputs.transpose(1, 2)
 
-        return self.activation[0](self.classifier(outputs)), decoded_sources
+        return self.activation[0](outputs), decoded_sources
