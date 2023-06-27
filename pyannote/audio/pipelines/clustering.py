@@ -189,9 +189,12 @@ class BaseClustering(Pipeline):
             hard_clusters = self.constrained_argmax(soft_clusters)
         else:
             hard_clusters = np.argmax(soft_clusters, axis=2)
-
-        # TODO: add a flag to revert argmax for trainign subset
-        # hard_clusters[train_chunk_idx, train_speaker_idx] = train_clusters
+            # revert to actual cluster for training subset
+            reassigned_ratio = np.mean(
+                hard_clusters[train_chunk_idx, train_speaker_idx] != train_clusters
+            )
+            print("Reassigned ratio:", reassigned_ratio, flush=True)
+            hard_clusters[train_chunk_idx, train_speaker_idx] = train_clusters
 
         return hard_clusters, soft_clusters, centroids
 
