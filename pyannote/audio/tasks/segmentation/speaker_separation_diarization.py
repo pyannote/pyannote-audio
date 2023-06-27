@@ -852,7 +852,7 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         speaker_idx_mix2 = [
             [
                 permutations_inverse[i][j]
-                for j in range(num_active_speakers_mix1[i], num_active_speakers_mix2[i])
+                for j in range(num_active_speakers_mix1[i], num_active_speakers_mix1[i] + num_active_speakers_mix2[i])
             ]
             for i in range(bsz // 2)
         ]
