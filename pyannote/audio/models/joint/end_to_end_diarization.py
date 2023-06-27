@@ -27,7 +27,6 @@ from einops import rearrange
 import torch
 from torch import nn
 import torch.nn.functional as F
-from pytorch_metric_learning.losses import ArcFaceLoss
 
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
@@ -189,14 +188,6 @@ class SpeakerEndToEndDiarization(Model):
             diarization_spec.powerset_max_classes,
         )
 
-        self.arc_face_loss = ArcFaceLoss(
-            len(self.specifications[Subtasks.index("embedding")].classes),
-            self.hparams["embedding_dim"],
-            margin=self.task.margin,
-            scale=self.task.scale,
-        )
-
-
     def forward(self, waveforms: torch.Tensor, weights: Optional[torch.Tensor] = None) -> torch.Tensor:
         """
 
@@ -234,7 +225,7 @@ class SpeakerEndToEndDiarization(Model):
         weights = self.powerset(diarization_outputs).transpose(1, 2)
 
         # embedding part:
-        embedding_outputs = torch.clone(common_outputs)
+        embedding_outputs = common_outputs
         for tdnn_block in self.tdnn_blocks[tdnn_idx:]:
             embedding_outputs = tdnn_block(embedding_outputs)
         embedding_outputs = self.stats_pool(embedding_outputs, weights=weights)

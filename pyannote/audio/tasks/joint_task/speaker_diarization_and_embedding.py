@@ -33,6 +33,7 @@ from torchaudio.backend.common import AudioMetaData
 from torchmetrics import Metric
 from torchmetrics.classification import BinaryAUROC
 from torch.utils.data._utils.collate import default_collate
+from pytorch_metric_learning.losses import ArcFaceLoss
 
 from pyannote.core import Segment, SlidingWindowFeature
 from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
@@ -83,6 +84,7 @@ class JointSpeakerDiarizationAndEmbedding(Task):
             duration: float = 5.0,
             max_speakers_per_chunk: int = 3,
             max_speakers_per_frame: int = 2,
+            weigh_by_cardinality: bool = False,
             batch_size: int = 32,
             database_ratio : float = 0.5,
             num_workers: int = None,
@@ -101,6 +103,7 @@ class JointSpeakerDiarizationAndEmbedding(Task):
             augmentation=augmentation,
         )
 
+        self.weigh_by_cardinality = weigh_by_cardinality
         self.max_speakers_per_chunk = max_speakers_per_chunk
         self.max_speakers_per_frame = max_speakers_per_frame
         self.database_ratio = database_ratio
@@ -512,7 +515,6 @@ class JointSpeakerDiarizationAndEmbedding(Task):
         sample["y"] = SlidingWindowFeature(
             y, self.model.example_output[subtask].frames, labels=labels
         )
-
         metadata = self.metadata[file_id]
         sample["meta"] = {key: metadata[key] for key in metadata.dtype.names}
         sample["meta"]["file"] = file_id
@@ -717,22 +719,24 @@ class JointSpeakerDiarizationAndEmbedding(Task):
             zeros (artificial inactive speakers).
         """
 
-        collated_y = []
+        collated_y_dia = []
+        collate_y_emb = []
+
         for b in batch:
-            y = b["y"].data
-            num_speakers = len(b["y"].labels)
+            y_dia = b["y"].data
+            labels = b["y"].labels
+            num_speakers = len(labels)
             if num_speakers > self.max_speakers_per_chunk:
                 # sort speakers in descending talkativeness order
-                indices = np.argsort(-np.sum(y, axis=0), axis=0)
+                indices = np.argsort(-np.sum(y_dia, axis=0), axis=0)
                 # keep only the most talkative speakers
-                y = y[:, indices[: self.max_speakers_per_chunk]]
-
+                y_dia = y_dia[:, indices[: self.max_speakers_per_chunk]]
                 # TODO: we should also sort the speaker labels in the same way
 
             elif num_speakers < self.max_speakers_per_chunk:
                 # create inactive speakers by zero padding
-                y = np.pad(
-                    y,
+                y_dia = np.pad(
+                    y_dia,
                     ((0, 0), (0, self.max_speakers_per_chunk - num_speakers)),
                     mode="constant",
                 )
@@ -741,9 +745,16 @@ class JointSpeakerDiarizationAndEmbedding(Task):
                 # we have exactly the right number of speakers
                 pass
 
-            collated_y.append(y)
+            # embedding reference
+            y_emb = np.full((self.max_speakers_per_chunk,), -1, dtype=np.int)
+            if b["meta"]["scope"] > 1:
+                y_emb[: len(labels)] = labels[:]
 
-        return torch.from_numpy(np.stack(collated_y))
+            collated_y_dia.append(y_dia)
+            collate_y_emb.append(y_emb)
+
+        return (torch.from_numpy(np.stack(collated_y_dia)),
+                torch.from_numpy(np.stack(collate_y_emb)).squeeze(1))
 
     def collate_meta(self, batch) -> torch.Tensor:
         """Collate for metadata"""
@@ -772,7 +783,7 @@ class JointSpeakerDiarizationAndEmbedding(Task):
         # collate X
         collated_X = self.collate_X(batch)
         # collate y
-        collated_y = self.collate_y(batch)
+        collated_y_dia, collate_y_emb = self.collate_y(batch)
 
         # collate metadata
         collated_meta = self.collate_meta(batch)
@@ -782,15 +793,23 @@ class JointSpeakerDiarizationAndEmbedding(Task):
         augmented = self.augmentation(
             samples=collated_X,
             sample_rate=self.model.hparams.sample_rate,
-            targets=collated_y.unsqueeze(1),
+            targets=collated_y_dia.unsqueeze(1),
         )
 
         return {
             "X": augmented.samples,
-            "y": augmented.targets.squeeze(1),
+            "y_dia": augmented.targets.squeeze(1),
+            "y_emb": collate_y_emb,
             "meta": collated_meta,
         }
 
+    def setup_loss_func(self):
+        self.model.arc_face_loss = ArcFaceLoss(
+            len(self.specifications[Subtasks.index("embedding")].classes),
+            self.model.hparams["embedding_dim"],
+            margin=self.margin,
+            scale=self.scale,
+        )
 
     def segmentation_loss(
         self,
@@ -830,102 +849,77 @@ class JointSpeakerDiarizationAndEmbedding(Task):
 
         return seg_loss
 
-    def compute_diarization_loss(self, batch : torch.Tensor):
+    def compute_diarization_loss(self, dia_chunks_idx, dia_prediction, permutated_target):
         """"""
-        X, y = batch["X"], batch["y"]
-        # drop samples that contain too many speakers
-        num_speakers: torch.Tensor = torch.sum(torch.any(target, dim=1), dim=1)
-        keep : torch.Tensor = num_speakers <= self.max_speakers_per_chunk
-        target = target[keep]
-        # TODO using variable `waveform` before assignment
-        waveform = waveform[keep]
 
-        # log effective batch size
+        # Get chunks corresponding to the diarization subtask
+        diarization_chunks = dia_prediction[dia_chunks_idx]
+        # Get the permutated reference corresponding to diarization subtask
+        permutated_target_dia = permutated_target[dia_chunks_idx]
+        # Compute segmentation loss
+        diarization_loss = self.segmentation_loss(diarization_chunks,
+                                                  permutated_target_dia)
         self.model.log(
-            f"{self.logging_prefix}BatchSize",
-            keep.sum(),
-            prog_bar=False,
-            logger=True,
-            on_step=False,
-            on_epoch=True,
-            reduce_fx="mean",
-        )
-        # corner case
-        if not keep.any():
-            return None
-
-        # forward pass
-        prediction = self.model(waveform)
-        batch_size, num_frames, _ = prediction.shape
-        # (batch_size, num_frames, num_classes)
-        # frames weight
-        weight_key = getattr(self, "weight", None)
-        weight = batch.get(
-            weight_key,
-            torch.ones(batch_size, num_frames, 1, device=self.model.device),
-        )
-        # (batch_size, num_frames, 1)
-
-        # warm-up
-        warm_up_left = round(self.warm_up[0] / self.duration * num_frames)
-        weight[:, :warm_up_left] = 0.0
-        warm_up_right = round(self.warm_up[1] / self.duration * num_frames)
-        weight[:, num_frames - warm_up_right :] = 0.0
-
-        powerset = torch.nn.functional.one_hot(
-            torch.argmax(prediction, dim=-1),
-            self.model.powerset.num_powerset_classes,
-        ).float()
-        multilabel = self.model.powerset.to_multilabel(powerset)
-        permutated_target, _ = permutate(multilabel, target)
-        permutated_target_powerset = self.model.powerset.to_powerset(
-            permutated_target.float()
-        )
-        seg_loss = self.segmentation_loss(
-            prediction, permutated_target_powerset, weight=weight
-        )
-
-        self.model.log(
-            f"{self.logging_prefix}TrainSegLoss",
-            seg_loss,
+            "loss/val",
+            diarization_loss,
             on_step=False,
             on_epoch=True,
             prog_bar=False,
             logger=True,
         )
 
-        loss = seg_loss
-        # skip batch if something went wrong for some reason
-        if torch.isnan(loss):
-            return None
-
-        self.model.log(
-            f"{self.logging_prefix}TrainLoss",
-            loss,
+        self.model.log_dict(
+            self.model.validation_metric,
             on_step=False,
             on_epoch=True,
             prog_bar=True,
             logger=True,
         )
-        return {"loss": loss}
+        return diarization_loss
 
-    def compute_embedding_loss(self, batch : torch.Tensor):
-        X, y = batch["X", batch["y"]]
-        loss = self.model.loss_func(self.model(X), y)
+    def compute_embedding_loss(self, emb_chunks_idx, emb_prediction, target_emb , permut_map):
+        """"""
+
+        global_spks_id = []
+        embeddings = torch.Tensor(device=self.model.device)
+
+        emb_chunks = emb_prediction[emb_chunks_idx]
+        # (num_emb_chunks, num_spk, emb_dim)
+        target_chunks_classes = target_emb[emb_chunks_idx]
+        # (num_emb_chunk, num_spk)
+        permut_map_emb = permut_map[emb_chunks_idx]
+        # (num_emb_chunk, num_spk)
+
+        for chunk_id in range(emb_chunks.shape[0]):
+            current_chunk_target = target_chunks_classes[chunk_id]
+
+            # for each active speaker in the chunk
+            for chunk_spk_id in np.argwhere(current_chunk_target != -1).reshape((-1,)):
+                # get permutation map for current chunk
+                permut_map_chunk = permut_map_emb[chunk_id]
+                # get embedding index in the prediction
+                emb_idx = np.where(permut_map_chunk == int(chunk_spk_id))[0]
+                global_spks_id.append(int(current_chunk_target[chunk_spk_id]))
+                chunk_spk_emb = emb_chunks[chunk_id, emb_idx , :]
+                # add current embedding to the tensor of embeddings
+                embeddings = torch.concat((embeddings,chunk_spk_emb), dim=0)
+
+        global_spks_id = torch.tensor(global_spks_id, device=self.model.device, dtype=torch.int64)
+        embedding_loss = self.model.arc_face_loss(embeddings, global_spks_id)
 
         # skip batch if something went wrong for some reason
-        if torch.isnan(loss):
+        if torch.isnan(embedding_loss):
             return None
 
         self.model.log(
-            f"{self.logging_prefix}TrainLoss",
-            loss,
+            "loss/val/arcface",
+            embedding_loss,
             on_step=False,
             on_epoch=True,
             prog_bar=True,
             logger=True,
         )
-        return {"loss": loss}
+        return embedding_loss
 
     def training_step(self, batch, batch_idx: int):
         """Compute loss for the joint task
@@ -942,15 +936,51 @@ class JointSpeakerDiarizationAndEmbedding(Task):
         loss : {str: torch.tensor}
             {"loss": loss}
         """
-
         alpha = self.alpha
-        if batch["task"] == "diarization":
-            # compute diarization loss
-            diarization_loss = self.compute_diarization_loss(batch=batch)
-        if batch["task"] == "embedding":
-            # compute embedding loss
-            embedding_loss = self.compute_embedding_loss(batch=batch)
-        loss = alpha * diarization_loss + (1 - alpha) * embedding_loss
+        # batch waveforms (batch_size, num_channels, num_samples)
+        waveform = batch["X"]
+        # batch diarization references (batch_size, num_channels, num_speakers)
+        target_dia = batch["y_dia"]
+        # batch embedding references (batch, num_speakers)
+        target_emb = batch["y_emb"]
+
+        # drop samples that contain too many speakers
+        num_speakers: torch.Tensor = torch.sum(torch.any(target_dia, dim=1), dim=1)
+        keep: torch.Tensor = num_speakers <= self.max_speakers_per_chunk
+        target_dia = target_dia[keep]
+        target_emb = target_emb[keep]
+        waveform = waveform[keep]
+
+        # corner case
+        if not keep.any():
+            return None
+
+        # forward pass
+        dia_prediction, emb_prediction = self.model(waveform)
+        # (batch_size, num_frames, num_spk), (batch_size, num_spk, emb_size)
+
+        # get the best permutation
+        dia_multilabel = self.model.powerset.to_multilabel(dia_prediction)
+        permutated_target, permut_map = permutate(dia_multilabel, target_dia)
+        permut_map = np.array(permut_map)
+
+        permutated_target_powerset = self.model.powerset.to_powerset(
+            permutated_target.float()
+        )
+
+        # Get chunk indexes in the batch for each subtask
+        emb_chunks_idx = np.nonzero(torch.any(target_emb != -1, axis=1)).reshape((-1,))
+        dia_chunks_idx = np.nonzero(torch.all(target_emb == -1, axis=1)).reshape((-1,))
+
+        dia_loss = self.compute_diarization_loss(dia_chunks_idx, dia_prediction, permutated_target_powerset)
+
+        emb_loss = 0
+        # if batch contains embedding subtask chunks, then compute embedding loss on these chunks:
+        if emb_chunks_idx.any():
+            emb_loss = self.compute_embedding_loss(emb_chunks_idx, emb_prediction, target_emb, permut_map)
+
+        loss = alpha * dia_loss + (1 - alpha) * emb_loss
+        return {"loss": loss}
 
     def default_metric(
         self,
