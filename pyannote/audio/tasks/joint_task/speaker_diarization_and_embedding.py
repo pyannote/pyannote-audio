@@ -879,32 +879,18 @@ class JointSpeakerDiarizationAndEmbedding(Task):
 
     def compute_embedding_loss(self, emb_chunks_idx, emb_prediction, target_emb , permut_map):
         """"""
-
-        global_spks_id = []
-        embeddings = torch.Tensor(device=self.model.device)
-
-        emb_chunks = emb_prediction[emb_chunks_idx]
-        # (num_emb_chunks, num_spk, emb_dim)
-        target_chunks_classes = target_emb[emb_chunks_idx]
-        # (num_emb_chunk, num_spk)
         permut_map_emb = permut_map[emb_chunks_idx]
         # (num_emb_chunk, num_spk)
+        
+        # get all active speakers in embedding task chunks target
+        chunks_spk_id = torch.argwhere(target_emb != -1)[:, 1]
+        # Get corresponding embeddings indexes in chunks predictions
+        emb_idx = torch.where(permut_map_emb == chunks_spk_id.reshape((-1, 1)))
+        # Get the speaker embeddings
+        embeddings = emb_prediction[emb_idx[0], emb_idx[1]]
+        # Get global speaker idx
+        global_spks_id = target_emb[chunks_spk_id[:, 0], chunks_spk_id[:, 1]]
 
-        for chunk_id in range(emb_chunks.shape[0]):
-            current_chunk_target = target_chunks_classes[chunk_id]
-
-            # for each active speaker in the chunk
-            for chunk_spk_id in np.argwhere(current_chunk_target != -1).reshape((-1,)):
-                # get permutation map for current chunk
-                permut_map_chunk = permut_map_emb[chunk_id]
-                # get embedding index in the prediction
-                emb_idx = np.where(permut_map_chunk == int(chunk_spk_id))[0]
-                global_spks_id.append(int(current_chunk_target[chunk_spk_id]))
-                chunk_spk_emb = emb_chunks[chunk_id, emb_idx , :]
-                # add current embedding to the tensor of embeddings
-                embeddings = torch.concat((embeddings,chunk_spk_emb), dim=0)
-
-        global_spks_id = torch.tensor(global_spks_id, device=self.model.device, dtype=torch.int64)
         embedding_loss = self.model.arc_face_loss(embeddings, global_spks_id)
 
         # skip batch if something went wrong for some reason
@@ -962,15 +948,15 @@ class JointSpeakerDiarizationAndEmbedding(Task):
         # get the best permutation
         dia_multilabel = self.model.powerset.to_multilabel(dia_prediction)
         permutated_target, permut_map = permutate(dia_multilabel, target_dia)
-        permut_map = np.array(permut_map)
+        permut_map = torch.tensor(data=permut_map, device=self.model.device)
 
         permutated_target_powerset = self.model.powerset.to_powerset(
             permutated_target.float()
         )
 
         # Get chunk indexes in the batch for each subtask
-        emb_chunks_idx = np.nonzero(torch.any(target_emb != -1, axis=1)).reshape((-1,))
-        dia_chunks_idx = np.nonzero(torch.all(target_emb == -1, axis=1)).reshape((-1,))
+        emb_chunks_idx = torch.nonzero(torch.any(target_emb != -1, axis=1)).reshape((-1,))
+        dia_chunks_idx = torch.nonzero(torch.all(target_emb == -1, axis=1)).reshape((-1,))
 
         dia_loss = self.compute_diarization_loss(dia_chunks_idx, dia_prediction, permutated_target_powerset)
 
