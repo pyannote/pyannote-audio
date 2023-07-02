@@ -107,7 +107,7 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
     metric : optional
         Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
         Defaults to AUROC (area under the ROC curve).
-    mixit_loss_weight : float, optional
+    separation_loss_weight : float, optional
         Factor that speaker separation loss is scaled by when calculating total loss.
 
     References
@@ -139,7 +139,7 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
         max_num_speakers: int = None,  # deprecated in favor of `max_speakers_per_chunk``
         loss: Literal["bce", "mse"] = None,  # deprecated
-        mixit_loss_weight: float = 0.5,
+        separation_loss_weight: float = 0.5,
         original_mixtures_for_separation: bool = False,
         forced_alignment_weight: float = 0.0,
         force_alignment = False,
@@ -187,7 +187,7 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         self.weight = weight
         if not force_alignment:
             self.separation_loss = MixITLossWrapper(multisrc_neg_sisdr, generalized=True)
-        self.mixit_loss_weight = mixit_loss_weight
+        self.separation_loss_weight = separation_loss_weight
         self.force_alignment = force_alignment
         self.original_mixtures_for_separation = original_mixtures_for_separation
         self.forced_alignment_weight = forced_alignment_weight
@@ -864,14 +864,14 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
             est_mixes.append(torch.stack((est_mix1, est_mix2)))
         est_mixes = torch.stack(est_mixes)
         if self.force_alignment:
-            mixit_loss = multisrc_neg_sisdr(
+            separation_loss = multisrc_neg_sisdr(
                 est_mixes, torch.stack((mix1, mix2)).transpose(0, 1)
             ).mean()
         else:
-            mixit_loss = self.separation_loss(mom_sources.transpose(1, 2), torch.stack((mix1, mix2)).transpose(0, 1))
+            separation_loss = self.separation_loss(mom_sources.transpose(1, 2), torch.stack((mix1, mix2)).transpose(0, 1))
         if self.original_mixtures_for_separation:
             raise NotImplementedError
-            # mixit_loss += self.separation_loss(
+            # separation_loss += self.separation_loss(
             #     predicted_sources_mix1.transpose(1, 2), torch.stack((mix1_masked, torch.zeros_like(mix1))).transpose(0, 1), speaker_idx_mix1[0::3], speaker_idx_mix2[0::3]
             # ) * mix1_masks.sum() / num_samples / bsz * 3 + self.separation_loss(
             #     predicted_sources_mix2.transpose(1, 2), torch.stack((mix2_masked, torch.zeros_like(mix2))).transpose(0, 1), speaker_idx_mix1[1::3], speaker_idx_mix2[1::3]
@@ -889,7 +889,7 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
 
         self.model.log(
             "loss/train/separation",
-            mixit_loss,
+            separation_loss,
             on_step=False,
             on_epoch=True,
             prog_bar=False,
@@ -906,8 +906,8 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         )
 
         loss = (
-            (1 - self.mixit_loss_weight) * seg_loss
-            + self.mixit_loss_weight * mixit_loss
+            (1 - self.separation_loss_weight) * seg_loss
+            + self.separation_loss_weight * separation_loss
             + forced_alignment_loss * self.forced_alignment_weight
         )
 
@@ -1013,14 +1013,14 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
             )
 
         # forced alignment mixit can't be implemented for validation because since data loading is different
-        mixit_loss = 0
-        # mixit_loss = self.separation_loss(
+        separation_loss = 0
+        # separation_loss = self.separation_loss(
         #     mom_sources.transpose(1, 2), torch.stack((mix1, mix2)).transpose(0, 1)
         # )
 
         self.model.log(
             "loss/val/separation",
-            mixit_loss,
+            separation_loss,
             on_step=False,
             on_epoch=True,
             prog_bar=False,
@@ -1037,8 +1037,8 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         )
 
         loss = (
-            1 - self.mixit_loss_weight
-        ) * seg_loss + self.mixit_loss_weight * mixit_loss
+            1 - self.separation_loss_weight
+        ) * seg_loss + self.separation_loss_weight * separation_loss
 
         self.model.log(
             "loss/val",
