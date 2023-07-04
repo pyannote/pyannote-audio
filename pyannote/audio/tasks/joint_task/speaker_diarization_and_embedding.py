@@ -440,7 +440,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
 
         self.specifications = (speaker_diarization, speaker_embedding)
 
-    def prepare_chunk(self, file_id: int, start_time: float, duration: float, subtask: int):
+    def prepare_chunk(self, file_id: int, start_time: float, duration: float):
         """Prepare chunk
 
         Parameters
@@ -514,12 +514,11 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
             y[start:end, mapped_label] = 1
 
         sample["y"] = SlidingWindowFeature(
-            y, self.model.example_output[subtask].frames, labels=labels
+            y, self.model.example_output[0].frames, labels=labels
         )
         metadata = self.metadata[file_id]
         sample["meta"] = {key: metadata[key] for key in metadata.dtype.names}
         sample["meta"]["file"] = file_id
-        sample["meta"]["subtask"] = subtask
 
         return sample
 
@@ -659,7 +658,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
                 embedding_class_idx += 1
                 file_id, start_time = self.draw_embedding_chunk(class_id, duration)
 
-            sample = self.prepare_chunk(file_id, start_time, duration, subtask)
+            sample = self.prepare_chunk(file_id, start_time, duration)
             yield sample
 
     def train__iter__(self):
