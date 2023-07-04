@@ -64,6 +64,9 @@ class StatsPool(nn.Module):
             std = sequences.std(dim=-1, correction=1)
 
         else:
+            # fix the error setting the weights of previous layers to NaN during a backward step,
+            # in the case where the weights for a speaker are all zero
+            weights = weights + 1e-16
             # Unsqueeze before frames dimension to match with waveforms dimensions
             weight_dims = len(weights.shape)
             weights = weights.unsqueeze(dim=-2)
