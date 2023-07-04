@@ -21,10 +21,12 @@
 # SOFTWARE.
 
 from collections import defaultdict
+import math
 import itertools
 import random
 from typing import Literal, Union, Sequence, Dict
 import warnings
+from matplotlib import pyplot as plt
 import numpy as np
 import torch
 
@@ -34,6 +36,7 @@ from torchmetrics import Metric
 from torchmetrics.classification import BinaryAUROC
 from torch.utils.data._utils.collate import default_collate
 from pytorch_metric_learning.losses import ArcFaceLoss
+from pytorch_lightning.loggers import MLFlowLogger, TensorBoardLogger
 
 from pyannote.core import Segment, SlidingWindowFeature
 from pyannote.audio.core.task import Problem, Resolution, Specifications
@@ -881,14 +884,16 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         """"""
         permut_map_emb = permut_map[emb_chunks_idx]
         # (num_emb_chunk, num_spk)
-        
+        emb_chunks = emb_prediction[emb_chunks_idx]
+
+        # TODO : to be simplified 
         # get all active speakers in embedding task chunks target
-        chunks_spk_id = torch.argwhere(target_emb != -1)[:, 1]
-        # Get corresponding embeddings indexes in chunks predictions
-        emb_idx = torch.where(permut_map_emb == chunks_spk_id.reshape((-1, 1)))
-        # Get the speaker embeddings
-        embeddings = emb_prediction[emb_idx[0], emb_idx[1]]
-        # Get global speaker idx
+        chunks_spk_id = torch.argwhere(target_emb != -1)
+        # get corresponding embeddings indexes in chunks predictions
+        emb_idx = torch.where(permut_map_emb == chunks_spk_id[:, 1].reshape((-1, 1)))
+        # get the speaker embeddings
+        embeddings = emb_chunks[emb_idx[0], emb_idx[1]]
+        # get global speaker idx
         global_spks_id = target_emb[chunks_spk_id[:, 0], chunks_spk_id[:, 1]]
 
         embedding_loss = self.model.arc_face_loss(embeddings, global_spks_id)
@@ -954,7 +959,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
             permutated_target.float()
         )
 
-        # Get chunk indexes in the batch for each subtask
+        # get chunk indexes in the batch for each subtask
         emb_chunks_idx = torch.nonzero(torch.any(target_emb != -1, axis=1)).reshape((-1,))
         dia_chunks_idx = torch.nonzero(torch.all(target_emb == -1, axis=1)).reshape((-1,))
 
@@ -962,13 +967,13 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
 
         emb_loss = 0
         # if batch contains embedding subtask chunks, then compute embedding loss on these chunks:
-        if emb_chunks_idx.any():
+        if emb_chunks_idx.shape[0] > 0:
             emb_loss = self.compute_embedding_loss(emb_chunks_idx, emb_prediction, target_emb, permut_map)
 
         loss = alpha * dia_loss + (1 - alpha) * emb_loss
         return {"loss": loss}
-    
-        # TODO: no need to compute gradient in this method
+
+    # TODO: no need to compute gradient in this method
     def validation_step(self, batch, batch_idx: int):
         """Compute validation loss and metric
 
@@ -981,8 +986,9 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         """
 
         # target
-        target = batch["y"]
+        target_dia = batch["y_dia"]
         # (batch_size, num_frames, num_speakers)
+        target_emb = batch["y_emb"]
 
         waveform = batch["X"]
         # (batch_size, num_channels, num_samples)
@@ -992,41 +998,20 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         # target = target[keep]
 
         # forward pass
-        prediction = self.model(waveform)
-        batch_size, num_frames, _ = prediction.shape
+        dia_prediction, emb_prediction = self.model(waveform)
+        batch_size, num_frames, _ = dia_prediction.shape
 
-        # frames weight
-        weight_key = getattr(self, "weight", None)
-        weight = batch.get(
-            weight_key,
-            torch.ones(batch_size, num_frames, 1, device=self.model.device),
+        multilabel = self.model.powerset.to_multilabel(dia_prediction)
+        permutated_target, _ = permutate(multilabel, target_dia)
+
+        # FIXME: handle case where target have too many speakers?
+        # since we don't need
+        permutated_target_powerset = self.model.powerset.to_powerset(
+            permutated_target.float()
         )
-        # (batch_size, num_frames, 1)
-
-        # warm-up
-        warm_up_left = round(self.warm_up[0] / self.duration * num_frames)
-        weight[:, :warm_up_left] = 0.0
-        warm_up_right = round(self.warm_up[1] / self.duration * num_frames)
-        weight[:, num_frames - warm_up_right :] = 0.0
-
-        if self.specifications.powerset:
-            multilabel = self.model.powerset.to_multilabel(prediction)
-            permutated_target, _ = permutate(multilabel, target)
-
-            # FIXME: handle case where target have too many speakers?
-            # since we don't need
-            permutated_target_powerset = self.model.powerset.to_powerset(
-                permutated_target.float()
-            )
-            seg_loss = self.segmentation_loss(
-                prediction, permutated_target_powerset, weight=weight
-            )
-
-        else:
-            permutated_prediction, _ = permutate(target, prediction)
-            seg_loss = self.segmentation_loss(
-                permutated_prediction, target, weight=weight
-            )
+        seg_loss = self.segmentation_loss(
+            dia_prediction, permutated_target_powerset,
+        )
 
         self.model.log(
             "loss/val/segmentation",
@@ -1037,32 +1022,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
             logger=True,
         )
 
-        if self.vad_loss is None:
-            vad_loss = 0.0
-
-        else:
-            # TODO: vad_loss probably does not make sense in powerset mode
-            # because first class (empty set of labels) does exactly this...
-            if self.specifications.powerset:
-                vad_loss = self.voice_activity_detection_loss(
-                    prediction, permutated_target_powerset, weight=weight
-                )
-
-            else:
-                vad_loss = self.voice_activity_detection_loss(
-                    permutated_prediction, target, weight=weight
-                )
-
-            self.model.log(
-                "loss/val/vad",
-                vad_loss,
-                on_step=False,
-                on_epoch=True,
-                prog_bar=False,
-                logger=True,
-            )
-
-        loss = seg_loss + vad_loss
+        loss = seg_loss
 
         self.model.log(
             "loss/val",
@@ -1073,24 +1033,14 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
             logger=True,
         )
 
-        if self.specifications.powerset:
-            self.model.validation_metric(
-                torch.transpose(
-                    multilabel[:, warm_up_left : num_frames - warm_up_right], 1, 2
-                ),
-                torch.transpose(
-                    target[:, warm_up_left : num_frames - warm_up_right], 1, 2
-                ),
-            )
-        else:
-            self.model.validation_metric(
-                torch.transpose(
-                    prediction[:, warm_up_left : num_frames - warm_up_right], 1, 2
-                ),
-                torch.transpose(
-                    target[:, warm_up_left : num_frames - warm_up_right], 1, 2
-                ),
-            )
+        self.model.validation_metric(
+            torch.transpose(
+                multilabel, 1, 2
+            ),
+            torch.transpose(
+                target_dia, 1, 2
+            ),
+        )
 
         self.model.log_dict(
             self.model.validation_metric,
@@ -1110,12 +1060,8 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
 
         # visualize first 9 validation samples of first batch in Tensorboard/MLflow
 
-        if self.specifications.powerset:
-            y = permutated_target.float().cpu().numpy()
-            y_pred = multilabel.cpu().numpy()
-        else:
-            y = target.float().cpu().numpy()
-            y_pred = permutated_prediction.cpu().numpy()
+        y = permutated_target.float().cpu().numpy()
+        y_pred = multilabel.cpu().numpy()
 
         # prepare 3 x 3 grid (or smaller if batch size is smaller)
         num_samples = min(self.batch_size, 9)
@@ -1149,10 +1095,6 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
             # plot predictions
             ax_hyp = axes[row_idx * 2 + 1, col_idx]
             sample_y_pred = y_pred[sample_idx]
-            ax_hyp.axvspan(0, warm_up_left, color="k", alpha=0.5, lw=0)
-            ax_hyp.axvspan(
-                num_frames - warm_up_right, num_frames, color="k", alpha=0.5, lw=0
-            )
             ax_hyp.plot(sample_y_pred)
             ax_hyp.set_ylim(-0.1, 1.1)
             ax_hyp.set_xlim(0, len(sample_y))
@@ -1184,6 +1126,6 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
             "DiarizationErrorRate/Confusion": SpeakerConfusionRate(0.5),
             "DiarizationErrorRate/Miss": MissedDetectionRate(0.5),
             "DiarizationErrorRate/FalseAlarm": FalseAlarmRate(0.5),
-            "EqualErrorRate": EqualErrorRate(compute_on_cpu=True, distances=False),
-            "BinaryAUROC": BinaryAUROC(compute_on_cpu=True),
+            #"EqualErrorRate": EqualErrorRate(compute_on_cpu=True, distances=False),
+            #"BinaryAUROC": BinaryAUROC(compute_on_cpu=True),
         }
