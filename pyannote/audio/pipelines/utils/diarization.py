@@ -121,7 +121,7 @@ class SpeakerDiarizationMixin:
     @staticmethod
     def speaker_count(
         binarized_segmentations: SlidingWindowFeature,
-        max_speakers: Union[int, float],
+        max_speakers: Union[int, float] = np.inf,
         warm_up: Tuple[float, float] = (0.1, 0.1),
         frames: SlidingWindow = None,
     ) -> SlidingWindowFeature:
