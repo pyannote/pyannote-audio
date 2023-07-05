@@ -21,6 +21,7 @@
 # SOFTWARE.
 
 from collections import defaultdict
+from einops import rearrange
 import math
 import itertools
 import random
@@ -863,7 +864,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         diarization_loss = self.segmentation_loss(diarization_chunks,
                                                   permutated_target_dia)
         self.model.log(
-            "loss/val",
+            "loss/train/segmentation",
             diarization_loss,
             on_step=False,
             on_epoch=True,
@@ -880,30 +881,23 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         )
         return diarization_loss
 
-    def compute_embedding_loss(self, emb_chunks_idx, emb_prediction, target_emb , permut_map):
+    def compute_embedding_loss(self, emb_chunks, emb_prediction, target_emb):
         """"""
-        permut_map_emb = permut_map[emb_chunks_idx]
-        # (num_emb_chunk, num_spk)
-        emb_chunks = emb_prediction[emb_chunks_idx]
 
-        # TODO : to be simplified 
-        # get all active speakers in embedding task chunks target
-        chunks_spk_id = torch.argwhere(target_emb != -1)
-        # get corresponding embeddings indexes in chunks predictions
-        emb_idx = torch.where(permut_map_emb == chunks_spk_id[:, 1].reshape((-1, 1)))
-        # get the speaker embeddings
-        embeddings = emb_chunks[emb_idx[0], emb_idx[1]]
-        # get global speaker idx
-        global_spks_id = target_emb[chunks_spk_id[:, 0], chunks_spk_id[:, 1]]
-
-        embedding_loss = self.model.arc_face_loss(embeddings, global_spks_id)
+        # Get speaker representations from the embedding subtask
+        embeddings = emb_prediction[emb_chunks]
+        # Get corresponding target label
+        targets = target_emb[emb_chunks]
+        print(targets)
+        # compute the loss
+        embedding_loss = self.model.arc_face_loss(embeddings, targets)
 
         # skip batch if something went wrong for some reason
         if torch.isnan(embedding_loss):
             return None
 
         self.model.log(
-            "loss/val/arcface",
+            "loss/train/arcface",
             embedding_loss,
             on_step=False,
             on_epoch=True,
@@ -952,23 +946,29 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
 
         # get the best permutation
         dia_multilabel = self.model.powerset.to_multilabel(dia_prediction)
-        permutated_target, permut_map = permutate(dia_multilabel, target_dia)
-        permut_map = torch.tensor(data=permut_map, device=self.model.device)
+        permutated_target_dia, permut_map = permutate(dia_multilabel, target_dia)
+        permutated_target_emb = target_emb[torch.arange(target_emb.shape[0]).unsqueeze(1),
+                                               permut_map]
+
+        emb_prediction = rearrange(emb_prediction, "b s e -> (b s) e")
+        permutated_target_emb = rearrange(permutated_target_emb, "b s -> (b s)")
 
         permutated_target_powerset = self.model.powerset.to_powerset(
-            permutated_target.float()
+            permutated_target_dia.float()
         )
 
-        # get chunk indexes in the batch for each subtask
-        emb_chunks_idx = torch.nonzero(torch.any(target_emb != -1, axis=1)).reshape((-1,))
-        dia_chunks_idx = torch.nonzero(torch.all(target_emb == -1, axis=1)).reshape((-1,))
+        # get embedding chunks position in current batch
+        emb_chunks = permutated_target_emb != -1
+        # get diarization chunks position in current batch (that correspond to non embedding chunks)
+        dia_chunks  = torch.nonzero(torch.all(target_emb == -1, axis=1)).reshape((-1,))
+        #dia_chunks = emb_chunks == False
 
-        dia_loss = self.compute_diarization_loss(dia_chunks_idx, dia_prediction, permutated_target_powerset)
+        dia_loss = self.compute_diarization_loss(dia_chunks, dia_prediction, permutated_target_powerset)
 
         emb_loss = 0
         # if batch contains embedding subtask chunks, then compute embedding loss on these chunks:
-        if emb_chunks_idx.shape[0] > 0:
-            emb_loss = self.compute_embedding_loss(emb_chunks_idx, emb_prediction, target_emb, permut_map)
+        if emb_chunks.shape[0] > 0:
+            emb_loss = self.compute_embedding_loss(emb_chunks, emb_prediction, permutated_target_emb)
 
         loss = alpha * dia_loss + (1 - alpha) * emb_loss
         return {"loss": loss}
