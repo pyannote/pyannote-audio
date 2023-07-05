@@ -21,7 +21,6 @@
 # SOFTWARE.
 
 from typing import Optional
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -41,14 +40,15 @@ class SelfSupModel(nn.Module):
             model.eval()
             model_name = model.__class__.__name__
             print("\nThe pre trained model "+model_name+" from fairseq is loaded.")
+            SelfSupModel.__name__ = model_name
             
-            SelfSupModel.__name__ = model_name         
             #Convert the fairseq model to torchaudio to facilitate feature extraction from any layer.
+            if model.__class__.__name__ is not "Wav2Vec2Model" :
+                model.__class__.__name__ = "Wav2Vec2Model"
+            self.feat_size = model.cfg.encoder_embed_dim
             model = import_fairseq_model(model).eval()
             self.ssl_model = model
-            self.feat_size = 768
             self.pretraining = True 
-            #TODO : Remove unused encoders from the architecture
 
         else :
             self.model = model
@@ -77,7 +77,19 @@ class SelfSupModel(nn.Module):
         else :        
             self.layer = layer
             print("\nSelected frozen layer is "+ str(layer) +". \n")
-            
+        
+        #self.feat_layer_mean = [7,8,9]
+    
+    def mean_mat(self,features,feat_list):
+        num_feat = len(feat_list)
+        stack_feat = []
+        for layer in feat_list:
+            stack_feat.append(features[layer])
+        stack_feat = torch.stack(stack_feat)
+        feat_sum = torch.sum(stack_feat, dim=0)
+        mean_feat = feat_sum / num_feat
+        return(mean_feat)
+    
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
         waveforms = torch.squeeze(waveforms,1) #waveforms : (batch, channel, sample) -> (batch,sample)
         if self.pretraining == False :
@@ -85,12 +97,13 @@ class SelfSupModel(nn.Module):
                 waveforms = F.layer_norm(waveforms, waveforms.shape)
 
             with torch.no_grad():
-                features = self.ssl_model(waveforms)  #Compute the features and extract last hidden layer weights
+                features = self.ssl_model(waveforms)  #Compute the features and extract hidden layers
 
             outputs = features.hidden_states[self.layer + 1]
         else : 
             with torch.no_grad():
-                feat,_ = self.ssl_model.extract_features(waveforms)
+                feat,_ = self.ssl_model.extract_features(waveforms,None,self.layer+1)
+                
             outputs = feat[self.layer]
                 
         return (outputs)
