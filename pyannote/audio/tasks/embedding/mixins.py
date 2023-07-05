@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 import math
-from typing import Dict, Optional, Sequence, Union
+from typing import Dict, Sequence, Union
 
 import torch
 import torch.nn.functional as F
@@ -75,21 +75,15 @@ class SupervisedRepresentationLearningTaskMixin:
     def batch_size(self, batch_size: int):
         self.batch_size_ = batch_size
 
-    def setup(self, stage: Optional[str] = None):
-
+    def setup(self):
         # loop over the training set, remove annotated regions shorter than
         # chunk duration, and keep track of the reference annotations, per class.
-
-        # FIXME: it looks like this time consuming step is called multiple times.
-        # it should not be...
 
         self._train = dict()
 
         desc = f"Loading {self.protocol.name} training labels"
         for f in tqdm(iterable=self.protocol.train(), desc=desc, unit="file"):
-
             for klass in f["annotation"].labels():
-
                 # keep class's (long enough) speech turns...
                 speech_turns = [
                     segment
@@ -121,6 +115,7 @@ class SupervisedRepresentationLearningTaskMixin:
             problem=Problem.REPRESENTATION,
             resolution=Resolution.CHUNK,
             duration=self.duration,
+            min_duration=self.min_duration,
             classes=sorted(self._train),
         )
 
@@ -133,7 +128,6 @@ class SupervisedRepresentationLearningTaskMixin:
     def default_metric(
         self,
     ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
-
         return [
             EqualErrorRate(compute_on_cpu=True, distances=False),
             BinaryAUROC(compute_on_cpu=True),
@@ -155,11 +149,11 @@ class SupervisedRepresentationLearningTaskMixin:
 
         classes = list(self.specifications.classes)
 
+        # select batch-wise duration at random
         batch_duration = rng.uniform(self.min_duration, self.duration)
         num_samples = 0
 
         while True:
-
             # shuffle classes so that we don't always have the same
             # groups of classes in a batch (which might be especially
             # problematic for contrast-based losses like contrastive
@@ -167,13 +161,11 @@ class SupervisedRepresentationLearningTaskMixin:
             rng.shuffle(classes)
 
             for klass in classes:
-
                 # class index in original sorted order
                 y = self.specifications.classes.index(klass)
 
                 # multiple chunks per class
                 for _ in range(self.num_chunks_per_class):
-
                     # select one file at random (with probability proportional to its class duration)
                     file, *_ = rng.choices(
                         self._train[klass],
@@ -227,7 +219,6 @@ class SupervisedRepresentationLearningTaskMixin:
         return max(self.batch_size, math.ceil(duration / avg_chunk_duration))
 
     def collate_fn(self, batch, stage="train"):
-
         collated = default_collate(batch)
 
         if stage == "train":
@@ -241,7 +232,6 @@ class SupervisedRepresentationLearningTaskMixin:
         return collated
 
     def training_step(self, batch, batch_idx: int):
-
         X, y = batch["X"], batch["y"]
         loss = self.model.loss_func(self.model(X), y)
 
@@ -250,18 +240,17 @@ class SupervisedRepresentationLearningTaskMixin:
             return None
 
         self.model.log(
-            f"{self.logging_prefix}TrainLoss",
+            "loss/train",
             loss,
             on_step=False,
             on_epoch=True,
-            prog_bar=True,
+            prog_bar=False,
             logger=True,
         )
 
         return {"loss": loss}
 
     def val__getitem__(self, idx):
-
         if isinstance(self.protocol, SpeakerVerificationProtocol):
             trial = self._validation[idx]
 
@@ -291,7 +280,6 @@ class SupervisedRepresentationLearningTaskMixin:
             pass
 
     def val__len__(self):
-
         if isinstance(self.protocol, SpeakerVerificationProtocol):
             return len(self._validation)
 
@@ -299,9 +287,7 @@ class SupervisedRepresentationLearningTaskMixin:
             return 0
 
     def validation_step(self, batch, batch_idx: int):
-
         if isinstance(self.protocol, SpeakerVerificationProtocol):
-
             with torch.no_grad():
                 emb1 = self.model(batch["X1"]).detach()
                 emb2 = self.model(batch["X2"]).detach()
