@@ -631,8 +631,15 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         annotated_duration = self.annotated_duration[file_ids]
         # set duration of files for the embedding part to zero, in order to not
         # drawn them for diarization part
-        annotated_duration[embedding_files_ids] = 0
-        prob_annotated_duration = annotated_duration / np.sum(annotated_duration)
+        annotated_duration[embedding_files_ids] = 0.
+        # test if there is at least one file for the diarization subtask to avoid
+        # to prevent probabilities from summing to zero
+        if np.any(annotated_duration != 0.):
+            prob_annotated_duration = annotated_duration / np.sum(annotated_duration)
+        else:
+            # There is only files for the embedding subtask
+            self.database_ratio = 0.
+            self.alpha = 0.
 
         duration = self.duration
 
@@ -888,7 +895,6 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         embeddings = emb_prediction[emb_chunks]
         # Get corresponding target label
         targets = target_emb[emb_chunks]
-        print(targets)
         # compute the loss
         embedding_loss = self.model.arc_face_loss(embeddings, targets)
 
@@ -963,7 +969,10 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         dia_chunks  = torch.nonzero(torch.all(target_emb == -1, axis=1)).reshape((-1,))
         #dia_chunks = emb_chunks == False
 
-        dia_loss = self.compute_diarization_loss(dia_chunks, dia_prediction, permutated_target_powerset)
+        dia_loss = 0
+        #if batch contains diarization subtask chunks, then compute diarization loss on these chunks:
+        if dia_chunks.shape[0] > 0:
+            self.compute_diarization_loss(dia_chunks, dia_prediction, permutated_target_powerset)
 
         emb_loss = 0
         # if batch contains embedding subtask chunks, then compute embedding loss on these chunks:
