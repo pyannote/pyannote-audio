@@ -89,10 +89,19 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
     Usage
     -----
-    >>> pipeline = SpeakerDiarization()
+    # perform (unconstrained) diarization
     >>> diarization = pipeline("/path/to/audio.wav")
+
+    # perform diarization, targetting exactly 4 speakers
     >>> diarization = pipeline("/path/to/audio.wav", num_speakers=4)
+
+    # perform diarization, with at least 2 speakers and at most 10 speakers
     >>> diarization = pipeline("/path/to/audio.wav", min_speakers=2, max_speakers=10)
+
+    # perform diarization and get one representative embedding per speaker
+    >>> diarization, embeddings = pipeline("/path/to/audio.wav", return_embedding=True)
+    >>> for s, speaker in enumerate(diarization.labels()):
+    ...     # embeddings[s] is the embedding of speaker `speaker`
 
     Hyper-parameters
     ----------------
@@ -417,6 +426,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         num_speakers: int = None,
         min_speakers: int = None,
         max_speakers: int = None,
+        return_embeddings: bool = False,
         hook: Optional[Callable] = None,
     ) -> Annotation:
         """Apply speaker diarization
@@ -431,6 +441,8 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             Minimum number of speakers. Has no effect when `num_speakers` is provided.
         max_speakers : int, optional
             Maximum number of speakers. Has no effect when `num_speakers` is provided.
+        return_embeddings : bool, optional
+            Return representative speaker embeddings.
         hook : callable, optional
             Callback called after each major steps of the pipeline as follows:
                 hook(step_name,      # human-readable name of current step
@@ -444,6 +456,10 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         -------
         diarization : Annotation
             Speaker diarization
+        embeddings : np.array, optional
+            Representative speaker embeddings such that `embeddings[i]` is the
+            speaker embedding for i-th speaker in diarization.labels().
+            Only returned when `return_embeddings` is True.
         """
 
         # setup hook (e.g. for debugging purposes)
@@ -466,6 +482,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             if self._segmentation.model.specifications.powerset
             else self.segmentation.threshold,
             frames=self._frames,
+            warm_up=(0.0, 0.0),
         )
         hook("speaker_counting", count)
         #   shape: (num_frames, 1)
@@ -473,7 +490,11 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
         # exit early when no speaker is ever active
         if np.nanmax(count.data) == 0.0:
-            return Annotation(uri=file["uri"])
+            diarization = Annotation(uri=file["uri"])
+            if return_embeddings:
+                return diarization, np.zeros((0, self._embedding.dimension))
+
+            return diarization
 
         # binarize segmentation
         if self._segmentation.model.specifications.powerset:
@@ -485,7 +506,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                 initial_state=False,
             )
 
-        if self.klustering == "OracleClustering":
+        if self.klustering == "OracleClustering" and not return_embeddings:
             embeddings = None
         else:
             embeddings = self.get_embeddings(
@@ -497,7 +518,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             hook("embeddings", embeddings)
             #   shape: (num_chunks, local_num_speakers, dimension)
 
-        hard_clusters, _ = self.clustering(
+        hard_clusters, _, centroids = self.clustering(
             embeddings=embeddings,
             segmentations=binarized_segmentations,
             num_clusters=num_speakers,
@@ -506,7 +527,8 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             file=file,  # <== for oracle clustering
             frames=self._frames,  # <== for oracle clustering
         )
-        #   hard_clusters: (num_chunks, num_speakers)
+        # hard_clusters: (num_chunks, num_speakers)
+        # centroids: (num_speakers, dimension)
 
         # reconstruct discrete diarization from raw hard clusters
 
@@ -530,20 +552,52 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         )
         diarization.uri = file["uri"]
 
-        # when reference is available, use it to map hypothesized speakers
-        # to reference speakers (this makes later error analysis easier
-        # but does not modify the actual output of the diarization pipeline)
-        if "annotation" in file and file["annotation"]:
-            return self.optimal_mapping(file["annotation"], diarization)
+        # at this point, `diarization` speaker labels are integers
+        # from 0 to `num_speakers - 1`, aligned with `centroids` rows.
 
-        # when reference is not available, rename hypothesized speakers
-        # to human-readable SPEAKER_00, SPEAKER_01, ...
-        return diarization.rename_labels(
-            {
+        if "annotation" in file and file["annotation"]:
+            # when reference is available, use it to map hypothesized speakers
+            # to reference speakers (this makes later error analysis easier
+            # but does not modify the actual output of the diarization pipeline)
+            _, mapping = self.optimal_mapping(
+                file["annotation"], diarization, return_mapping=True
+            )
+
+            # in case there are more speakers in the hypothesis than in
+            # the reference, those extra speakers are missing from `mapping`.
+            # we add them back here
+            mapping = {key: mapping.get(key, key) for key in diarization.labels()}
+
+        else:
+            # when reference is not available, rename hypothesized speakers
+            # to human-readable SPEAKER_00, SPEAKER_01, ...
+            mapping = {
                 label: expected_label
                 for label, expected_label in zip(diarization.labels(), self.classes())
             }
-        )
+
+        diarization = diarization.rename_labels(mapping=mapping)
+
+        # at this point, `diarization` speaker labels are strings (or mix of
+        # strings and integers when reference is available and some hypothesis
+        # speakers are not present in the reference)
+
+        if not return_embeddings:
+            return diarization
+
+        # re-order centroids so that they match
+        # the order given by diarization.labels()
+        inverse_mapping = {label: index for index, label in mapping.items()}
+        centroids = centroids[
+            [inverse_mapping[label] for label in diarization.labels()]
+        ]
+
+        # FIXME: the number of centroids may be smaller than the number of speakers
+        # in the annotation. This can happen if the number of active speakers
+        # obtained from `speaker_count` for some frames is larger than the number
+        # of clusters obtained from `clustering`. Will be fixed in the future
+
+        return diarization, centroids
 
     def get_metric(self) -> GreedyDiarizationErrorRate:
         return GreedyDiarizationErrorRate(**self.der_variant)
