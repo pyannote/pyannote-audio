@@ -12,18 +12,11 @@ from pyannote.audio.models.blocks.selfsup import SelfSupModel
 from pyannote.audio.utils.params import merge_dict
 
 
-class PyanHugg(Model):
+class PyanSup(Model):
     """PyanHugg segmentation model
 
     Self-Supervised Model > LSTM > Feed forward > Classifier
-    
-    All HuggingFace Self-Sup. models can be found at https://huggingface.co/models
-    Tested (and currently working) models are : 
-     - "microsoft/wavlm-base"
-     - "microsoft/wavlm-large"
-     - "facebook/hubert-base-ls960"
-     - "facebook/wav2vec2-base-960h"
-     
+
     Parameters
     ----------
     sample_rate : int, optional
@@ -32,11 +25,11 @@ class PyanHugg(Model):
         Number of channels. Defaults to mono (1).
     
     selfsupervised : dict, optional
-        Keyword arugments passed to the selfsupervised block.
+        Keyword arugments passed to the selfsupervised block. name and cfg are used to reconstruct the feature extractor from the dictionary of the checkpoint. Layer corresponds to the layer that serves for the feature extraction.
         Defaults to {
-        "model": "microsoft/wavlm-base",
-        "layer": 4,
-        "cache": None,
+        "name": None,
+        "layer": None,
+        "cfg": None,
     }
     lstm : dict, optional
         Keyword arguments passed to the LSTM layer.
@@ -53,10 +46,9 @@ class PyanHugg(Model):
     
     
     SSL_DEFAULTS = {
-        "model": "microsoft/wavlm-base",
-        "layer": 4,
-        "cache": None,
-        "fairseq_ckpt": None,
+        "name": None,
+        "layer": None,
+        "cfg": None,
     }
     LSTM_DEFAULTS = {
         "hidden_size": 128,
@@ -69,6 +61,7 @@ class PyanHugg(Model):
 
     def __init__(
         self,
+        ckpt: str = None,
         selfsupervised: dict = None,
         lstm: dict = None,
         linear: dict = None,
@@ -83,19 +76,21 @@ class PyanHugg(Model):
         lstm = merge_dict(self.LSTM_DEFAULTS, lstm)
         lstm["batch_first"] = True
         linear = merge_dict(self.LINEAR_DEFAULTS, linear)
-        self.save_hyperparameters("selfsupervised", "lstm", "linear")
+        self.save_hyperparameters("lstm", "linear") #A first merge is done using the default parameters specified
         
-        self.model = selfsupervised["model"]
-        
-        
-
-        #All HuggingFace Self-Sup. models can be found at https://huggingface.co/models
         print("\n##################################################################")
         print("### A self-supervised model is used for the feature extraction ###")
         print("##################################################################")
-        self.selfsupervised = SelfSupModel(**self.hparams.selfsupervised)
+        
+        self.selfsupervised = SelfSupModel(ckpt,**selfsupervised)
+        selfsupervised['name'] = self.selfsupervised.model_name
+        selfsupervised['cfg'] = self.selfsupervised.config
+        
+        self.save_hyperparameters("selfsupervised")
         feat_size = self.selfsupervised.feat_size
+        
         print("##################################################################\n")
+        
         monolithic = lstm["monolithic"]
         if monolithic:
             multi_layer_lstm = dict(lstm)
@@ -141,8 +136,7 @@ class PyanHugg(Model):
                     * self.hparams.linear["num_layers"]
                 )
             ]
-        )
-
+        )  
     def build(self):
 
         if self.hparams.linear["num_layers"] > 0:
