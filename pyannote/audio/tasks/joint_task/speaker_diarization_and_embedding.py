@@ -734,15 +734,24 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         collate_y_emb = []
 
         for b in batch:
+            # diarization reference
             y_dia = b["y"].data
             labels = b["y"].labels
             num_speakers = len(labels)
+            # embedding reference
+            y_emb = np.full((self.max_speakers_per_chunk,), -1, dtype=np.int)
+
             if num_speakers > self.max_speakers_per_chunk:
                 # sort speakers in descending talkativeness order
                 indices = np.argsort(-np.sum(y_dia, axis=0), axis=0)
                 # keep only the most talkative speakers
                 y_dia = y_dia[:, indices[: self.max_speakers_per_chunk]]
                 # TODO: we should also sort the speaker labels in the same way
+
+                # if current chunck is for the embedding subtask
+                if b["meta"]["scope"] > 1:
+                    labels = np.array(labels)
+                    y_emb = labels[indices[: self.max_speakers_per_chunk]]
 
             elif num_speakers < self.max_speakers_per_chunk:
                 # create inactive speakers by zero padding
@@ -751,15 +760,12 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
                     ((0, 0), (0, self.max_speakers_per_chunk - num_speakers)),
                     mode="constant",
                 )
+                if b["meta"]["scope"] > 1:
+                    y_emb[: num_speakers] = labels[:]
 
             else:
-                # we have exactly the right number of speakers
-                pass
-
-            # embedding reference
-            y_emb = np.full((self.max_speakers_per_chunk,), -1, dtype=np.int)
-            if b["meta"]["scope"] > 1:
-                y_emb[: len(labels)] = labels[:]
+                if b["meta"]["scope"] > 1:
+                    y_emb[: num_speakers] = labels[:]
 
             collated_y_dia.append(y_dia)
             collate_y_emb.append(y_emb)
