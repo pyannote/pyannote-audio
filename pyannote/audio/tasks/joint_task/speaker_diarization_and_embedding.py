@@ -877,17 +877,9 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         diarization_loss = self.segmentation_loss(diarization_chunks,
                                                   permutated_target_dia)
         self.model.log(
-            "loss/train/segmentation",
+            "loss/train/dia",
             diarization_loss,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=False,
-            logger=True,
-        )
-
-        self.model.log_dict(
-            self.model.validation_metric,
-            on_step=False,
+            on_step=True,
             on_epoch=True,
             prog_bar=True,
             logger=True,
@@ -911,7 +903,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         self.model.log(
             "loss/train/arcface",
             embedding_loss,
-            on_step=False,
+            on_step=True,
             on_epoch=True,
             prog_bar=True,
             logger=True,
@@ -982,7 +974,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
 
         emb_loss = 0
         # if batch contains embedding subtask chunks, then compute embedding loss on these chunks:
-        if emb_chunks.shape[0] > 0:
+        if emb_chunks.any():
             emb_loss = self.compute_embedding_loss(emb_chunks, emb_prediction, permutated_target_emb)
 
         loss = alpha * dia_loss + (1 - alpha) * emb_loss
@@ -1029,19 +1021,8 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         )
 
         self.model.log(
-            "loss/val/segmentation",
+            "loss/val/dia",
             seg_loss,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=False,
-            logger=True,
-        )
-
-        loss = seg_loss
-
-        self.model.log(
-            "loss/val",
-            loss,
             on_step=False,
             on_epoch=True,
             prog_bar=False,
