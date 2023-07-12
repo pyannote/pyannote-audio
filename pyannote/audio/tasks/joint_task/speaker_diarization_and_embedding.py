@@ -991,14 +991,13 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         emb_chunks = permutated_target_emb != -1
         # get diarization chunks position in current batch (that correspond to non embedding chunks)
         dia_chunks  = torch.nonzero(torch.all(target_emb == -1, axis=1)).reshape((-1,))
-        #dia_chunks = emb_chunks == False
 
-        dia_loss = 0
+        dia_loss = torch.tensor(0)
         #if batch contains diarization subtask chunks, then compute diarization loss on these chunks:
         if dia_chunks.shape[0] > 0:
-            self.compute_diarization_loss(dia_chunks, dia_prediction, permutated_target_powerset)
+            dia_loss = self.compute_diarization_loss(dia_chunks, dia_prediction, permutated_target_powerset)
 
-        emb_loss = 0
+        emb_loss = torch.tensor(0)
         # if batch contains embedding subtask chunks, then compute embedding loss on these chunks:
         if emb_chunks.any():
             emb_loss = self.compute_embedding_loss(emb_chunks, emb_prediction, permutated_target_emb)
