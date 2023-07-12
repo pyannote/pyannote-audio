@@ -30,13 +30,13 @@
     If, for some weird reason, you wrote some custom code based on that,
     you should instead rely on `Model.example_output`.
 
-
 ### Features and improvements
 
   - feat(task): add support for multi-task models
   - feat(pipeline): send pipeline to device with `pipeline.to(device)`
   - feat(pipeline): make `segmentation_batch_size` and `embedding_batch_size` mutable in `SpeakerDiarization` pipeline (they now default to `1`)
   - feat(task): add [powerset](https://arxiv.org/PLACEHOLDER) support to `SpeakerDiarization` task
+  - feat(pipeline): add `return_embeddings` option to `SpeakerDiarization` pipeline
   - feat(pipeline): add progress hook to pipelines
   - feat(pipeline): check version compatibility at load time
   - feat(task): add support for label scope in speaker diarization task
@@ -88,7 +88,7 @@
 
   - last release before complete rewriting
 
-## Version 1.0.1 (2018--07-19)
+## Version 1.0.1 (2018-07-19)
 
   - fix: fix regression in Precomputed.__call__ (#110, #105)
 
