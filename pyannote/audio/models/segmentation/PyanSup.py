@@ -62,6 +62,8 @@ class PyanSup(Model):
     def __init__(
         self,
         ckpt: str = None,
+        torchaudio_ssl: str = None, #Specify a torchaudio SSL model (list here : https://pytorch.org/audio/main/pipelines.html). Ex : "WAVLM_BASE","HUBERT_BASE","WAV2VEC2_LARGE",...
+        torchaudio_cache: str = None, #Specify location of the model
         selfsupervised: dict = None,
         lstm: dict = None,
         linear: dict = None,
@@ -81,11 +83,9 @@ class PyanSup(Model):
         print("\n##################################################################")
         print("### A self-supervised model is used for the feature extraction ###")
         print("##################################################################")
-        
-        self.selfsupervised = SelfSupModel(ckpt,**selfsupervised)
+        self.selfsupervised = SelfSupModel(ckpt,torchaudio_ssl,torchaudio_cache,**selfsupervised)
         selfsupervised['name'] = self.selfsupervised.model_name
         selfsupervised['cfg'] = self.selfsupervised.config
-        
         self.save_hyperparameters("selfsupervised")
         feat_size = self.selfsupervised.feat_size
         
@@ -179,3 +179,4 @@ class PyanSup(Model):
                 outputs = F.leaky_relu(linear(outputs))
                 
         return self.activation(self.classifier(outputs))
+
