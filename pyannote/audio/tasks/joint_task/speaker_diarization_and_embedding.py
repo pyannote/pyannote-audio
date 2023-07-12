@@ -709,10 +709,6 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
             # generate random chunk
             yield next(chunks)
 
-    def collate_X(self, batch) -> torch.Tensor:
-        """Collate for data"""
-        return default_collate([b["X"] for b in batch])
-
     def collate_y(self, batch) -> torch.Tensor:
         """
         Parameters
@@ -772,10 +768,6 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
 
         return (torch.from_numpy(np.stack(collated_y_dia)),
                 torch.from_numpy(np.stack(collate_y_emb)).squeeze(1))
-
-    def collate_meta(self, batch) -> torch.Tensor:
-        """Collate for metadata"""
-        return default_collate([b["meta"] for b in batch])
 
     def collate_fn(self, batch, stage="train"):
         """Collate function used for most segmentation tasks
