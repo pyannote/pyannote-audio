@@ -866,49 +866,83 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
 
         return seg_loss
 
-    def compute_diarization_loss(self, dia_chunks_idx, dia_prediction, permutated_target):
-        """"""
+    def compute_diarization_loss(self, dia_chunks, dia_prediction, permutated_target):
+        """Compute loss for the speaker diarization subtask
+
+        Parameters
+        ----------
+        dia_chunks : torch.Tensor
+            tensor specifying the chunks assigned to the speaker diarization
+            task in the current batch. Shape of (batch_size,)
+        dia_prediction : torch.Tensor
+            speaker diarization output predicted by the model for the current batch.
+            Shape of (batch_size, num_spk, num_frames)
+        permutated_target: torch.Tensor
+            permutated target for the current batch. Shape of (batch_size, num_spk, num_frames)
+
+        Returns
+        -------
+        dia_loss : torch.Tensor
+            Permutation-invariant diarization loss
+        """
 
         # Get chunks corresponding to the diarization subtask
-        diarization_chunks = dia_prediction[dia_chunks_idx]
+        chunks_prediction = dia_prediction[dia_chunks]
         # Get the permutated reference corresponding to diarization subtask
-        permutated_target_dia = permutated_target[dia_chunks_idx]
+        permutated_target_dia = permutated_target[dia_chunks]
         # Compute segmentation loss
-        diarization_loss = self.segmentation_loss(diarization_chunks,
+        dia_loss = self.segmentation_loss(chunks_prediction,
                                                   permutated_target_dia)
         self.model.log(
             "loss/train/dia",
-            diarization_loss,
+            dia_loss,
             on_step=True,
             on_epoch=True,
             prog_bar=True,
             logger=True,
         )
-        return diarization_loss
+        return dia_loss
 
     def compute_embedding_loss(self, emb_chunks, emb_prediction, target_emb):
-        """"""
+        """Compute loss for the speaker embeddings extraction subtask
+
+        Parameters
+        ----------
+        emb_chunks : torch.Tensor
+            tensor specifying the chunks assigned to the speaker embeddings extraction
+            task in the current batch. Shape of (batch_size,)
+        emb_prediction : torch.Tensor
+            speaker embeddings predicted by the model for the current batch.
+            Shape of (batch_size * num_spk, embedding_dim)
+        target_emb : torch.Tensor
+            target embeddings for the current batch
+            Shape of (batch_size * num_spk,)
+        Returns
+        -------
+        emb_loss : torch.Tensor
+            arcface loss for the current batch
+        """
 
         # Get speaker representations from the embedding subtask
         embeddings = emb_prediction[emb_chunks]
         # Get corresponding target label
         targets = target_emb[emb_chunks]
         # compute the loss
-        embedding_loss = self.model.arc_face_loss(embeddings, targets)
+        emb_loss = self.model.arc_face_loss(embeddings, targets)
 
         # skip batch if something went wrong for some reason
-        if torch.isnan(embedding_loss):
+        if torch.isnan(emb_loss):
             return None
 
         self.model.log(
             "loss/train/arcface",
-            embedding_loss,
+            emb_loss,
             on_step=True,
             on_epoch=True,
             prog_bar=True,
             logger=True,
         )
-        return embedding_loss
+        return emb_loss
 
     def training_step(self, batch, batch_idx: int):
         """Compute loss for the joint task
