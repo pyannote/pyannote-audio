@@ -55,7 +55,8 @@ class SelfSupModel(nn.Module):
                 name,config,ordered_dict = self.dict_pretrained(ckpt)
         self.model_name = name
         SelfSupModel.__name__ = self.model_name #Assign name of the class
-        if name is "WAVLM_BASE" or "WAVLM_LARGE": #Only wavlm_model has two additional arguments
+        print("show name"+str(name))
+        if name is "WAVLM_BASE" or name is "WAVLM_LARGE": #Only wavlm_model has two additional arguments
             model = wavlm_model(**config)
         else:
             model = wav2vec2_model(**config)
