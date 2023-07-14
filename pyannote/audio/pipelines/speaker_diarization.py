@@ -25,6 +25,8 @@
 import functools
 import itertools
 import math
+import textwrap
+import warnings
 from typing import Callable, Optional, Text, Union
 
 import numpy as np
@@ -533,11 +535,18 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
         # number of detected clusters is the number of different speakers
         num_different_speakers = centroids.shape[0]
-        # quick sanity check
-        assert (
-            num_different_speakers >= min_speakers
-            and num_different_speakers <= max_speakers
-        )
+
+        # detected number of speakers can still be out of bounds
+        # (specifically, lower than `min_speakers`), since there could be too few embeddings
+        # to make enough clusters with a given minimum cluster size.
+        if num_different_speakers < min_speakers or num_different_speakers > max_speakers:
+            warnings.warn(textwrap.dedent(
+                f"""The detected number of speakers ({num_different_speakers}) is outside
+                the given bounds [{min_speakers}, {max_speakers}]. This can happen if the
+                given audio file is too short to contain {min_speakers} or more speakers.
+                Try to lower the desired minimal number of speakers.
+                """
+            ))
 
         # during counting, we could possibly overcount the number of instantaneous
         # speakers due to segmentation errors, so we cap the maximum instantaneous number
