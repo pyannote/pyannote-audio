@@ -28,6 +28,7 @@ from enum import Enum
 from typing import Tuple
 
 import numpy as np
+import sklearn.cluster
 from einops import rearrange
 from pyannote.core import SlidingWindow, SlidingWindowFeature
 from pyannote.pipeline import Pipeline
@@ -464,6 +465,64 @@ class AgglomerativeClustering(BaseClustering):
         return clusters
 
 
+class OPTICS(BaseClustering):
+    def __init__(
+        self,
+        metric: str = "cosine",
+        max_num_embeddings: int = np.inf,
+        constrained_assignment: bool = False,
+    ):
+        super().__init__(
+            metric=metric,
+            max_num_embeddings=max_num_embeddings,
+            constrained_assignment=constrained_assignment,
+        )
+
+        self.min_samples = Integer(1, 20)
+        self.max_eps = Uniform(0.0, 2.0)
+        self.xi = Uniform(0.0, 1.0)
+
+    def cluster(
+        self,
+        embeddings: np.ndarray,
+        min_clusters: int,
+        max_clusters: int,
+        num_clusters: int = None,
+        **kwargs,
+    ):
+        num_embeddings, _ = embeddings.shape
+
+        optics = sklearn.cluster.OPTICS(
+            min_samples=self.min_samples,
+            max_eps=self.max_eps,
+            metric=self.metric,
+            cluster_method="xi",
+            xi=self.xi,
+            predecessor_correction=True,
+            min_cluster_size=None,
+            algorithm="auto",
+            leaf_size=30,
+            memory=None,
+            n_jobs=None,
+        )
+
+        optics.fit(embeddings)
+
+        clusters = optics.labels_
+        num_clusters = np.max(clusters) + 1
+
+        centroids = np.vstack(
+            [np.mean(embeddings[clusters == k], axis=0) for k in range(num_clusters)]
+        )
+
+        unassigned = clusters == -1
+        clusters[unassigned] = np.argmin(
+            cdist(embeddings[unassigned], centroids, metric=self.metric), axis=1
+        )
+
+        return clusters
+
+
 class OracleClustering(BaseClustering):
     """Oracle clustering"""
 
@@ -551,4 +610,5 @@ class OracleClustering(BaseClustering):
 
 class Clustering(Enum):
     AgglomerativeClustering = AgglomerativeClustering
+    OPTICS = OPTICS
     OracleClustering = OracleClustering
