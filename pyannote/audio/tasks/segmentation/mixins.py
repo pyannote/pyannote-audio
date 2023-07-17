@@ -487,6 +487,9 @@ class SegmentationTaskMixin:
             for product in itertools.product(
                 *[self.metadata_unique_values[key] for key in balance]
             ):
+                # we iterate on the cartesian product of the values in metadata_unique_values
+                # eg: for balance=["database", "split"], with 2 databases and 2 splits:
+                # ("DIHARD", "A"), ("DIHARD", "B"), ("REPERE", "A"), ("REPERE", "B")
                 filters = {key: value for key, value in zip(balance, product)}
                 subchunks[product] = self.train__iter__helper(rng, **filters)
 
