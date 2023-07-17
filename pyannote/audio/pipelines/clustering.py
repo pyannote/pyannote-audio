@@ -25,16 +25,20 @@
 
 import random
 from enum import Enum
+from functools import lru_cache
 from typing import Tuple
 
 import numpy as np
 from einops import rearrange
 from pyannote.core import SlidingWindow, SlidingWindowFeature
+from pyannote.core.utils.distance import pdist, to_condensed, to_squared
+from pyannote.core.utils.hierarchy import _average_pooling_func
 from pyannote.pipeline import Pipeline
 from pyannote.pipeline.parameter import Categorical, Integer, Uniform
 from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.optimize import linear_sum_assignment
-from scipy.spatial.distance import cdist
+from scipy.spatial.distance import cdist, squareform
+from scipy.stats import ttest_rel
 
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.pipelines.utils import oracle_segmentation
@@ -464,6 +468,313 @@ class AgglomerativeClustering(BaseClustering):
         return clusters
 
 
+class ConstrainedAgglomerativeClustering(BaseClustering):
+    """Agglomerative clustering
+
+    Parameters
+    ----------
+    metric : {"cosine", "euclidean", ...}, optional
+        Distance metric to use. Defaults to "cosine".
+
+    Hyper-parameters
+    ----------------
+    """
+
+    def __init__(
+        self,
+        metric: str = "cosine",
+        max_num_embeddings: int = np.inf,
+        constrained_assignment: bool = False,
+    ):
+        super().__init__(
+            metric=metric,
+            max_num_embeddings=max_num_embeddings,
+            constrained_assignment=constrained_assignment,
+        )
+
+        self.distance_threshold = Uniform(0.6, 1.0)
+        self.constraint_threshold = Uniform(0.0, 0.2)
+        self.min_cluster_size = Integer(1, 20)
+
+    @lru_cache(maxsize=None)
+    def pvalue(
+        self,
+        breakable: int,
+        broken_before: int,
+        broken_after: int,
+    ) -> float:
+        """
+        Compute p-value for the null hypothesis that the number of broken constraints increases
+
+        Parameters
+        ----------
+        breakable : int
+            Number of constraints
+        broken_before : int
+            Number of broken constraints before merge
+        broken_after: int
+            Number of broken constraints after merge
+
+        Returns
+        -------
+        p_value : float
+            p-value for the null hypothesis that the number of broken constraints increases
+        """
+
+        if broken_before == broken_after:
+            return 1.0
+
+        return ttest_rel(
+            [0] * (breakable - broken_before) + [1] * broken_before,
+            [0] * (breakable - broken_after) + [1] * broken_after,
+            alternative="less",
+        ).pvalue
+
+    def cluster(
+        self,
+        embeddings: np.ndarray,
+        min_clusters: int,
+        max_clusters: int,
+        num_clusters: int = None,
+        chunk_idx: np.ndarray = None,
+        **kwargs,
+    ):
+        """
+
+        Parameters
+        ----------
+        embeddings : (num_embeddings, dimension) array
+            Embeddings
+        min_clusters : int
+            Minimum number of clusters
+        max_clusters : int
+            Maximum number of clusters
+        num_clusters : int, optional
+            Actual number of clusters. Default behavior is to estimate it based
+            on values provided for `min_clusters`,  `max_clusters`, and `threshold`.
+
+        Returns
+        -------
+        clusters : (num_embeddings, ) array
+            0-indexed cluster indices.
+        """
+
+        self.pvalue.cache_clear()
+
+        # obtain number of original observations
+        num_embeddings, dimension = embeddings.shape
+
+        if num_embeddings == 1:
+            return np.zeros((1,), dtype=np.uint8)
+
+        # heuristic to reduce self.min_cluster_size when num_embeddings is very small
+        # (0.1 value is kind of arbitrary, though)
+        min_cluster_size = min(
+            self.min_cluster_size, max(1, round(0.1 * num_embeddings))
+        )
+
+        n = num_embeddings
+        X = embeddings
+
+        # compute similarity matrix
+        d = pdist(X, metric=self.metric)
+
+        # convert condensed pdist matrix for the `n` original observation to a
+        # condensed pdist matrix for the `2n-1` clusters (including the `n`
+        # original observations) that will exist at some point during the process.
+
+        distance = np.infty * np.ones((2 * n - 1) * (2 * n - 2) // 2)
+        distance[
+            to_condensed(2 * n - 1, *to_squared(n, np.arange(n * (n - 1) // 2)))
+        ] = d
+
+        # clusters[j] contains the index of the cluster to which
+        # the jth observation is currently assigned
+        clusters = np.arange(n)
+
+        # size[k] contains the current size of kth cluster
+        size = np.zeros(2 * n - 1, dtype=np.int16)
+        size[:n] = 1
+
+        # centroids[k] contains the centroid of kth cluster
+        centroids = np.zeros((2 * n - 1, dimension))
+        # at the beginning, each observation is assigned to its own cluster
+        centroids[:n, :] = X
+
+        # clustering tree (aka dendrogram)
+        # dendrogram[i, 0] and dendrogram[i, 1] are merged at ith iteration
+        # dendrogram[i, 2] is the distance between dendrogram[i, 0] and dendrogram[i, 1]
+        # dendrogram[i, 3] is the total number of original observation in the newly formed cluster
+        dendrogram = np.zeros((n - 1, 4))
+
+        # cannot-link constraints (False/0: free to link, True/1: cannot link)
+        constraints = pdist(chunk_idx, metric="equal")
+        breakable = np.sum(constraints)
+
+        # breaking[u, v] is the number of "cannot-link" constraints
+        # that merging clusters u and v would break
+        breaking = np.zeros((2 * n - 1, 2 * n - 1), dtype=int)
+        breaking[:n, :n] = squareform(constraints)
+
+        # current number of broken constraints
+        broken = np.zeros((1,), dtype=int)
+
+        def merge(u, v, iteration):
+            """Merge two clusters
+
+            Parameters
+            ----------
+            u, v : int
+                Indices of clusters to merge.
+            iteration : int
+                Current clustering iteration.
+
+            Returns
+            -------
+            uv : int
+                Indices of resulting cluster.
+
+            """
+            #            global broken
+            # print(broken)
+
+            # merge clusters index in condensed matrices
+            uv = to_condensed(2 * n - 1, u, v)
+
+            # keep track of ...
+            # ... which clusters are merged at this iteration
+            dendrogram[iteration, 0] = v if size[v] > size[u] else v
+            dendrogram[iteration, 1] = u if dendrogram[iteration, 0] == v else v
+
+            # ... their distance
+            dendrogram[iteration, 2] = distance[uv]
+
+            # ... the size of the newly formed cluster
+            dendrogram[iteration, 3] = size[u] + size[v]
+            size[n + iteration] = size[u] + size[v]
+
+            # ... the number of broken constraints
+            broken[0] += breaking[u, v]
+
+            # compute "representation" of newly formed cluster
+            centroids[n + iteration] = _average_pooling_func(u, v, S=size, C=centroids)
+
+            # merged clusters are now empty...
+            size[u] = 0
+            size[v] = 0
+
+            # move observations of merged clusters into the newly formed cluster
+            clusters[clusters == u] = n + iteration
+            clusters[clusters == v] = n + iteration
+
+            breaking_by_row = breaking[u, :] + breaking[v, :]
+            breaking_by_col = breaking[:, u] + breaking[:, v]
+            breaking[n + iteration, :] = breaking_by_row
+            breaking[:, n + iteration] = breaking_by_col
+            breaking[u, :] = 0
+            breaking[v, :] = 0
+            breaking[:, u] = 0
+            breaking[:, v] = 0
+
+            # compute distance to newly formed cluster
+            # (only for clusters that still exists, i.e. those that are not empty)
+            empty = size[: n + iteration] == 0
+            i_ = to_condensed(
+                2 * n - 1, n + iteration, np.arange(n + iteration)[~empty]
+            )
+            distance[i_] = cdist(
+                centroids[np.newaxis, n + iteration, :],
+                centroids[: n + iteration, :][~empty, :],
+                metric=self.metric,
+            )
+
+            # condensed indices of all (u, _) and (v, _) pairs
+            _u = to_condensed(2 * n - 1, u, np.arange(u))
+            u_ = to_condensed(2 * n - 1, u, np.arange(u + 1, n + iteration))
+            _v = to_condensed(2 * n - 1, v, np.arange(v))
+            v_ = to_condensed(2 * n - 1, v, np.arange(v + 1, n + iteration))
+
+            # distance to merged clusters u and v no longer exist
+            distance[_u] = distance[u_] = distance[_v] = distance[v_] = np.infty
+
+            # is this needed
+            k = to_condensed(2 * n - 1, n + iteration, np.arange(n + iteration)[empty])
+            distance[k] = np.infty
+
+            return np.array(clusters)
+
+        iteration = 0
+
+        # iterate until one cluster remains
+        current_clusters = np.array(clusters)
+
+        while iteration < n - 1:
+            while True:
+                # find two most similar clusters
+                k = np.argmin(distance)
+                u, v = to_squared(2 * n - 1, k)
+
+                # if there are too far apart, stop
+                if distance[k] > self.distance_threshold:
+                    break
+
+                pvalue = self.pvalue(breakable, broken[0], broken[0] + breaking[u, v])
+
+                # if they are breaking too many constraints, try next best pair
+                if pvalue < self.constraint_threshold:
+                    distance[k] = np.infty
+                else:
+                    break
+
+            if distance[k] > self.distance_threshold:
+                break
+
+            current_clusters = merge(u, v, iteration)
+
+            iteration += 1
+
+        # convert clusters to 0-based indices
+        _, clusters = np.unique(current_clusters, return_inverse=True)
+
+        # split clusters into two categories based on their number of items:
+        # large clusters vs. small clusters
+        cluster_unique, cluster_counts = np.unique(
+            clusters,
+            return_counts=True,
+        )
+        large_clusters = cluster_unique[cluster_counts >= min_cluster_size]
+        num_large_clusters = len(large_clusters)
+
+        if num_large_clusters == 0:
+            clusters[:] = 0
+            return clusters
+
+        small_clusters = cluster_unique[cluster_counts < min_cluster_size]
+        if len(small_clusters) == 0:
+            return clusters
+
+        # re-assign each small cluster to the most similar large cluster based on their respective centroids
+        large_centroids = np.vstack(
+            [
+                np.mean(embeddings[clusters == large_k], axis=0)
+                for large_k in large_clusters
+            ]
+        )
+        small_centroids = np.vstack(
+            [
+                np.mean(embeddings[clusters == small_k], axis=0)
+                for small_k in small_clusters
+            ]
+        )
+        centroids_cdist = cdist(large_centroids, small_centroids, metric=self.metric)
+        for small_k, large_k in enumerate(np.argmin(centroids_cdist, axis=0)):
+            clusters[clusters == small_clusters[small_k]] = large_clusters[large_k]
+
+        # re-number clusters from 0 to num_large_clusters
+        _, clusters = np.unique(clusters, return_inverse=True)
+        return clusters
+
+
 class OracleClustering(BaseClustering):
     """Oracle clustering"""
 
@@ -551,4 +862,5 @@ class OracleClustering(BaseClustering):
 
 class Clustering(Enum):
     AgglomerativeClustering = AgglomerativeClustering
+    ConstrainedAgglomerativeClustering = ConstrainedAgglomerativeClustering
     OracleClustering = OracleClustering
