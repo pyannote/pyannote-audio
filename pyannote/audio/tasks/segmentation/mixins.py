@@ -485,7 +485,7 @@ class SegmentationTaskMixin:
             # create a subchunk generator for each combination of "balance" keys
             subchunks = dict()
             for product in itertools.product(
-                [self.metadata_unique_values[key] for key in balance]
+                *[self.metadata_unique_values[key] for key in balance]
             ):
                 filters = {key: value for key, value in zip(balance, product)}
                 subchunks[product] = self.train__iter__helper(rng, **filters)
