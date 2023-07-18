@@ -497,7 +497,7 @@ class SegmentationTaskMixin:
             # select one subchunk generator at random (with uniform probability)
             # so that it is balanced on average
             if balance is not None:
-                chunks = subchunks[rng.choice(subchunks)]
+                chunks = subchunks[rng.choice(list(subchunks))]
 
             # generate random chunk
             yield next(chunks)
