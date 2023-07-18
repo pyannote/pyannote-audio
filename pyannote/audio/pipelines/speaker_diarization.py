@@ -99,7 +99,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
     >>> diarization = pipeline("/path/to/audio.wav", min_speakers=2, max_speakers=10)
 
     # perform diarization and get one representative embedding per speaker
-    >>> diarization, embeddings = pipeline("/path/to/audio.wav", return_embedding=True)
+    >>> diarization, embeddings = pipeline("/path/to/audio.wav", return_embeddings=True)
     >>> for s, speaker in enumerate(diarization.labels()):
     ...     # embeddings[s] is the embedding of speaker `speaker`
 
