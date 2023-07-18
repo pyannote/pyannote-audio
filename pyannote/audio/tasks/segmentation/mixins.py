@@ -421,7 +421,7 @@ class SegmentationTaskMixin:
         # indices of training files that matches domain filters
         training = self.metadata["subset"] == Subsets.index("train")
         for key, value in filters.items():
-            training &= self.metadata[key] == value
+            training &= self.metadata[key] == self.metadata_unique_values[key].index(value)
         file_ids = np.where(training)[0]
 
         # turn annotated duration into a probability distribution
