@@ -888,7 +888,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         self.model.log(
             "loss/train/dia",
             dia_loss,
-            on_step=True,
+            on_step=False,
             on_epoch=True,
             prog_bar=True,
             logger=True,
@@ -929,7 +929,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         self.model.log(
             "loss/train/arcface",
             emb_loss,
-            on_step=True,
+            on_step=False,
             on_epoch=True,
             prog_bar=True,
             logger=True,
@@ -972,7 +972,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
 
         # forward pass
         dia_prediction, emb_prediction = self.model(waveform)
-        # (batch_size, num_frames, num_spk), (batch_size, num_spk, emb_size)
+        # (batch_size, num_frames, num_cls), (batch_size, num_spk, emb_size)
 
         # get the best permutation
         dia_multilabel = self.model.powerset.to_multilabel(dia_prediction)
@@ -980,8 +980,14 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         permutated_target_emb = target_emb[torch.arange(target_emb.shape[0]).unsqueeze(1),
                                                permut_map]
 
-        emb_prediction = rearrange(emb_prediction, "b s e -> (b s) e")
-        permutated_target_emb = rearrange(permutated_target_emb, "b s -> (b s)")
+        # filter out the speaker in the reference that were not found by the diarization
+        # part of the model, to not compute the embedding loss on these speaker:
+        active_spk_mask = torch.any(rearrange(dia_multilabel, "b f s -> b s f"), dim=2)
+        # (batch_size, num_spk)
+        emb_prediction = emb_prediction[active_spk_mask]
+        # (num_active_spk_found_in_all_the_chunks, emb_size)
+        permutated_target_emb = permutated_target_emb[active_spk_mask]
+        # (num_activate_spk_found,)
 
         permutated_target_powerset = self.model.powerset.to_powerset(
             permutated_target_dia.float()
