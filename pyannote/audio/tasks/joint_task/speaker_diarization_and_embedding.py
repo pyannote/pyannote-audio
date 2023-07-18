@@ -599,7 +599,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         segment = np.random.choice(class_segments, p=prob_segments)
 
         # sample chunk start time in order to intersect it with the sampled segment
-        start_time = np.random.uniform(max(segment["start"] - duration / 2, 0), segment["start"])
+        start_time = np.random.uniform(max(segment["start"] - duration, 0), segment["end"])
 
         return (segment["file_id"], start_time)
 
