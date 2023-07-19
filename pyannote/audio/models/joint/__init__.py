@@ -20,6 +20,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from .end_to_end_diarization import SpeakerEndToEndDiarization
+from .end_to_end_diarization import SpeakerEndToEndDiarization, SpeakerEndToEndDiarizationV2
 
-__all__ = ["SpeakerEndToEndDiarization"]
+__all__ = ["SpeakerEndToEndDiarization", "SpeakerEndToEndDiarizationV2"]
