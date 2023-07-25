@@ -113,8 +113,9 @@ class SepDiarNet(Model):
         num_channels: int = 1,
         task: Optional[Task] = None,
         encoder_type: str = None,
-        n_sources: int = 3,
+        n_sources: int = 5,
         use_lstm: bool = False,
+        lr: float = 1e-3,
     ):
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
 
@@ -127,6 +128,8 @@ class SepDiarNet(Model):
         self.n_src = n_sources
         self.use_lstm = use_lstm
         self.save_hyperparameters("encoder_decoder", "lstm", "linear", "convnet", "dprnn")
+        self.learning_rate = lr
+        self.n_sources = n_sources
 
         if encoder_decoder["fb_name"] == "free":
             n_feats_out = encoder_decoder["n_filters"]
@@ -211,6 +214,9 @@ class SepDiarNet(Model):
         self.classifier = nn.Linear(in_features, out_features)
         self.activation = self.default_activation()
 
+    def configure_optimizers(self):
+        return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
+
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
         """Pass forward
 
@@ -249,7 +255,7 @@ class SepDiarNet(Model):
             for linear in self.linear:
                 outputs = F.leaky_relu(linear(outputs))
         outputs = self.classifier(outputs)
-        outputs = outputs.reshape(bsz, 3, -1)
+        outputs = outputs.reshape(bsz, self.n_sources, -1)
         outputs = outputs.transpose(1, 2)
 
         return self.activation[0](outputs), decoded_sources
