@@ -551,8 +551,8 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
     def setup_loss_func(self):
         if self.specifications[0].powerset:
             self.model.powerset = Powerset(
-                len(self.specifications.classes),
-                self.specifications.powerset_max_classes,
+                len(self.specifications[0].classes),
+                self.specifications[0].powerset_max_classes,
             )
 
     def prepare_chunk(self, file_id: int, start_time: float, duration: float):
