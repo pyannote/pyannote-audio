@@ -104,6 +104,7 @@ class SpeakerEndToEndDiarization(Model):
                             out_channels=out_channel,
                             kernel_size=kernel_size,
                             dilation=dilation,
+                            padding="same",
                         ),
                         nn.LeakyReLU(),
                         nn.BatchNorm1d(out_channel),
@@ -169,8 +170,6 @@ class SpeakerEndToEndDiarization(Model):
         # linear module for the embedding part:
         self.embedding = nn.Linear(in_channel * 2, embedding_dim)
 
-
-
     def build(self):
         if self.hparams.linear["num_layers"] > 0:
             in_features = self.hparams.linear["hidden_size"]
@@ -233,6 +232,7 @@ class SpeakerEndToEndDiarization(Model):
 
         return (diarization_outputs, embedding_outputs)
 
+
 class SpeakerEndToEndDiarizationV2(Model):
 
     SINCNET_DEFAULTS = {"stride": 10}
@@ -293,6 +293,7 @@ class SpeakerEndToEndDiarizationV2(Model):
                             out_channels=out_channel,
                             kernel_size=kernel_size,
                             dilation=dilation,
+                            padding="same"
                         ),
                         nn.LeakyReLU(),
                         nn.BatchNorm1d(out_channel),
@@ -426,12 +427,7 @@ class SpeakerEndToEndDiarizationV2(Model):
         for tdnn_block in self.tdnn_blocks[tdnn_idx:]:
             emb_outputs = tdnn_block(emb_outputs)
 
-        # there is a change in the number of frames in the embeddings section compared with the
-        # diarization section, due to the application of kernels in the last tdnn layers after separation:
         emb_outputs = rearrange(emb_outputs, "b c f -> b f c")
-        frame_dim_diff = lstm_outputs.shape[1] - emb_outputs.shape[1]
-        if frame_dim_diff != 0:
-            lstm_outputs = lstm_outputs[:, frame_dim_diff // 2 : -(frame_dim_diff // 2), :]
         # Concatenation of last tdnn layer outputs with the last diarization lstm outputs:
         emb_outputs = torch.cat((emb_outputs, lstm_outputs), dim=2)
         _, emb_outputs = self.encoder(emb_outputs)
