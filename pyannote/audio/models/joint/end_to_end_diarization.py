@@ -234,6 +234,7 @@ class SpeakerEndToEndDiarization(Model):
 
 
 class SpeakerEndToEndDiarizationV2(Model):
+    """This version uses a LSTM encoder in the embedding branch instead StatsPool block"""
 
     SINCNET_DEFAULTS = {"stride": 10}
     LSTM_DEFAULTS = {
@@ -355,7 +356,7 @@ class SpeakerEndToEndDiarizationV2(Model):
         )
 
         # linear module for the embedding part:
-        self.embedding = nn.Linear(self.hparams.lstm["hidden_size"], embedding_dim)
+        self.embedding = nn.Linear(2 * self.last_tdnn_out_channels, embedding_dim)
 
     def build(self):
         if self.hparams.linear["num_layers"] > 0:
@@ -380,9 +381,9 @@ class SpeakerEndToEndDiarizationV2(Model):
         self.encoder = nn.LSTM(
             # number of channel in the outputs of the last TDNN layer + lstm_out_features
             input_size= self.last_tdnn_out_channels + lstm_out_features,
-            hidden_size=  len(diarization_spec.classes * self.hparams.lstm["hidden_size"]),
+            hidden_size=  len(diarization_spec.classes) * self.last_tdnn_out_channels,
             batch_first=True,
-            bidirectional=False,
+            bidirectional=True,
         )
 
     def forward(self, waveforms: torch.Tensor, weights: Optional[torch.Tensor] = None) -> torch.Tensor:
@@ -431,8 +432,9 @@ class SpeakerEndToEndDiarizationV2(Model):
         # Concatenation of last tdnn layer outputs with the last diarization lstm outputs:
         emb_outputs = torch.cat((emb_outputs, lstm_outputs), dim=2)
         _, emb_outputs = self.encoder(emb_outputs)
-        emb_outputs = emb_outputs[0].squeeze(0)
-        emb_outputs = torch.reshape(emb_outputs, (emb_outputs.shape[0], self.powerset.num_classes, -1))
+        emb_outputs = rearrange(emb_outputs[0], "l b h -> b (l h)")
+        emb_outputs = torch.reshape(emb_outputs,
+                                    (emb_outputs.shape[0], self.powerset.num_classes, -1))
         emb_outputs = self.embedding(emb_outputs)
 
         return (dia_outputs, emb_outputs)
