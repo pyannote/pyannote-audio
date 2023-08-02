@@ -190,8 +190,9 @@ class BaseClustering(Pipeline):
         else:
             hard_clusters = np.argmax(soft_clusters, axis=2)
 
-        # TODO: add a flag to revert argmax for trainign subset
-        # hard_clusters[train_chunk_idx, train_speaker_idx] = train_clusters
+        # NOTE: train_embeddings might be reassigned to a different cluster
+        # in the process. based on experiments, this seems to lead to better
+        # results than sticking to the original assignment.
 
         return hard_clusters, soft_clusters, centroids
 
