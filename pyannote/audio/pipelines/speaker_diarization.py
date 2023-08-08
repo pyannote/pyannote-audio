@@ -493,7 +493,6 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         # estimate frame-level number of instantaneous speakers
         count = self.speaker_count(
             binarized_segmentations,
-            max_speakers,
             frames=self._frames,
             warm_up=(0.0, 0.0),
         )
@@ -550,8 +549,8 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
         # during counting, we could possibly overcount the number of instantaneous
         # speakers due to segmentation errors, so we cap the maximum instantaneous number
-        # of speakers by the number of detected clusters
-        count.data = np.minimum(count.data, num_different_speakers)
+        # of speakers by the `max_speakers` value
+        count.data = np.minimum(count.data, max_speakers)
 
         # reconstruct discrete diarization from raw hard clusters
 

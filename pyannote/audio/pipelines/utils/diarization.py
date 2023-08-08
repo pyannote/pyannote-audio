@@ -121,7 +121,6 @@ class SpeakerDiarizationMixin:
     @staticmethod
     def speaker_count(
         binarized_segmentations: SlidingWindowFeature,
-        max_speakers: Union[int, float] = np.inf,
         warm_up: Tuple[float, float] = (0.1, 0.1),
         frames: SlidingWindow = None,
     ) -> SlidingWindowFeature:
@@ -131,8 +130,6 @@ class SpeakerDiarizationMixin:
         ----------
         binarized_segmentations : SlidingWindowFeature
             (num_chunks, num_frames, num_classes)-shaped binarized scores.
-        max_speakers : int or np.inf
-            Maximum number of speakers allowed. Counts will not exceed this number
         warm_up : (float, float) tuple, optional
             Left/right warm up ratio of chunk duration.
             Defaults to (0.1, 0.1), i.e. 10% on both sides.
@@ -155,7 +152,6 @@ class SpeakerDiarizationMixin:
             missing=0.0,
             skip_average=False,
         )
-        count.data[count.data > max_speakers] = max_speakers
         count.data = np.rint(count.data).astype(np.uint8)
 
         return count
