@@ -533,7 +533,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         # centroids: (num_speakers, dimension)
 
         # number of detected clusters is the number of different speakers
-        num_different_speakers = centroids.shape[0]
+        num_different_speakers = int(np.max(hard_clusters) + 1)
 
         # detected number of speakers can still be out of bounds
         # (specifically, lower than `min_speakers`), since there could be too few embeddings
@@ -607,13 +607,17 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         if not return_embeddings:
             return diarization
 
+        # this can happen when we use OracleClustering
+        if centroids is None:
+            return diarization, None
+
         # The number of centroids may be smaller than the number of speakers
         # in the annotation. This can happen if the number of active speakers
         # obtained from `speaker_count` for some frames is larger than the number
         # of clusters obtained from `clustering`. In this case, we append zero embeddings
         # for extra speakers
         if len(diarization.labels()) > centroids.shape[0]:
-            centroids = np.pad(centroids, (0, len(diarization.labels()) - centroids.shape[0]))
+            centroids = np.pad(centroids, ((0, len(diarization.labels()) - centroids.shape[0]), (0, 0)))
 
         # re-order centroids so that they match
         # the order given by diarization.labels()
