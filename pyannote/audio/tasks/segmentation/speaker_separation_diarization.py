@@ -1080,35 +1080,25 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         # (batch_size, num_frames, 1)
 
         if self.specifications[0].powerset:
-            multilabel = self.model.powerset.to_multilabel(diarization)
-            permutated_target, permutations = permutate(multilabel, target)
-            permutated_target_powerset = self.model.powerset.to_powerset(
-                permutated_target.float()
-            )
-            seg_loss = self.segmentation_loss(
-                diarization, permutated_target_powerset, weight=weight
-            )
+            raise NotImplementedError("Forced alignment requires multilabel diarization")
 
         else:
             # last 2 sources should only contain noise so we force diarization outputs to 0
-            permutated_target, permutations = permutate(target, diarization[:, :, :3])
-            permutated_target = torch.cat((permutated_target, diarization[:, :, 3:]), dim=2)
+            permutated_diarization, permutations = permutate(target, diarization[:, :, :3])
             target = torch.cat((target, torch.zeros(batch_size, num_frames, 2, device=target.device)), dim=2)
-
+            permutated_diarization = torch.cat((permutated_diarization, diarization[:, :, 3:]), dim=2)
             seg_loss = self.segmentation_loss(
-                permutated_target, target, weight=weight
+                permutated_diarization, target, weight=weight
             )
 
         if self.force_alignment:
-            # to find which predicted sources correspond to which mixtures, we need to invert the permutations
-            permutations_inverse = torch.argsort(torch.tensor(permutations))
             speaker_idx_mix1 = [
-                [permutations_inverse[i][j] for j in range(num_active_speakers_mix1[i])]
+                [permutations[i][j] for j in range(num_active_speakers_mix1[i])]
                 for i in range(bsz // 2)
             ]
             speaker_idx_mix2 = [
                 [
-                    permutations_inverse[i][j]
+                    permutations[i][j]
                     for j in range(num_active_speakers_mix1[i], num_active_speakers_mix1[i] + num_active_speakers_mix2[i])
                 ]
                 for i in range(bsz // 2)
@@ -1146,9 +1136,6 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
             #     predicted_sources_mix2.transpose(1, 2), torch.stack((mix2_masked, torch.zeros_like(mix2))).transpose(0, 1), speaker_idx_mix1[1::3], speaker_idx_mix2[1::3]
             # ) * mix2_masks.sum() / num_samples / bsz * 3
 
-        upscaled_permutated_target = torch.nn.functional.interpolate(
-            permutated_target.transpose(1, 2), size=(80000)
-        ).transpose(1, 2)
         # forced_alignment_loss = (
         #     (1 - 2 * upscaled_permutated_target[: bsz // 2]) * mix1_sources**2
         #     + (1 - 2 * upscaled_permutated_target[bsz // 2 : bsz]) * mix2_sources**2
