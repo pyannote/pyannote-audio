@@ -1271,19 +1271,35 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         # target = target[keep]
 
         bsz = waveform.shape[0]
+        num_samples = waveform.shape[2]
         # MoMs can't be created for batch size < 2
         if bsz < 2:
             return None
+        # if bsz not even, then leave out last sample
+        if bsz % 2 != 0:
+            waveform = waveform[:-1]
 
         # if bsz not even, then leave out last sample
-        mix1 = waveform[bsz // 2 : 2 * (bsz // 2)].squeeze(1)
-        mix2 = waveform[: bsz // 2].squeeze(1)
-        moms = mix1 + mix2
+        mix1 = waveform[0::2].squeeze(1)
+        mix2 = waveform[1::2].squeeze(1)
+        if self.original_mixtures_for_separation:
+            # extract parts with only one speaker from original mixtures
+            mix1_masks = batch["X_separation_mask"][0::2]
+            mix2_masks = batch["X_separation_mask"][1::2]
+            mix1_masked = mix1 * mix1_masks
+            mix2_masked = mix2 * mix2_masks
+
+        (
+            mom,
+            mom_target,
+            num_active_speakers_mix1,
+            num_active_speakers_mix2,
+        ) = self.create_mixtures_of_mixtures(mix1, mix2, target[0::2], target[1::2])
 
         # forward pass
-        prediction, _ = self.model(waveform)
-        _, mom_sources = self.model(moms)
-        batch_size, num_frames, _ = prediction.shape
+        diarization, _ = self.model(waveform)
+        _, mom_sources = self.model(mom)
+        batch_size, num_frames, _ = diarization.shape
 
         # frames weight
         weight_key = getattr(self, "weight", None)
@@ -1294,29 +1310,56 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         # (batch_size, num_frames, 1)
 
         if self.specifications[0].powerset:
-            multilabel = self.model.powerset.to_multilabel(prediction)
-            permutated_target, _ = permutate(multilabel, target)
-
-            # FIXME: handle case where target have too many speakers?
-            # since we don't need
-            permutated_target_powerset = self.model.powerset.to_powerset(
-                permutated_target.float()
-            )
-            seg_loss = self.segmentation_loss(
-                prediction, permutated_target_powerset, weight=weight
-            )
+            raise NotImplementedError("Forced alignment requires multilabel diarization")
 
         else:
-            permutated_prediction, _ = permutate(target, prediction)
+            # last 2 sources should only contain noise so we force diarization outputs to 0
+            permutated_diarization, permutations = permutate(target, diarization[:, :, :3])
+            target = torch.cat((target, torch.zeros(batch_size, num_frames, 2, device=target.device)), dim=2)
+            permutated_diarization = torch.cat((permutated_diarization, diarization[:, :, 3:]), dim=2)
             seg_loss = self.segmentation_loss(
-                permutated_prediction, target, weight=weight
+                permutated_diarization, target, weight=weight
             )
 
-        # forced alignment mixit can't be implemented for validation because since data loading is different
-        separation_loss = 0
-        # separation_loss = self.separation_loss(
-        #     mom_sources.transpose(1, 2), torch.stack((mix1, mix2)).transpose(0, 1)
-        # )
+        if self.force_alignment:
+            speaker_idx_mix1 = [
+                [permutations[i][j] for j in range(num_active_speakers_mix1[i])]
+                for i in range(bsz // 2)
+            ]
+            speaker_idx_mix2 = [
+                [
+                    permutations[i][j]
+                    for j in range(num_active_speakers_mix1[i], num_active_speakers_mix1[i] + num_active_speakers_mix2[i])
+                ]
+                for i in range(bsz // 2)
+            ]
+            
+            est_mixes = []
+            for i in range(bsz // 2):
+                est_mix1 = mom_sources[i, :, speaker_idx_mix1[i]].sum(1) + mom_sources[i,:,3]
+                est_mix2 = mom_sources[i, :, speaker_idx_mix2[i]].sum(1) + mom_sources[i,:,4]
+                est_mix3 = mom_sources[i, :, speaker_idx_mix1[i]].sum(1) + mom_sources[i,:,4]
+                est_mix4 = mom_sources[i, :, speaker_idx_mix2[i]].sum(1) + mom_sources[i,:,3]
+                sep_loss_first_part = multisrc_neg_sisdr(
+                    torch.stack((est_mix1, est_mix2)).unsqueeze(0), torch.stack((mix1[i], mix2[i])).unsqueeze(0)
+                )
+                sep_loss_second_part  = multisrc_neg_sisdr(
+                    torch.stack((est_mix3, est_mix4)).unsqueeze(0), torch.stack((mix1[i], mix2[i])).unsqueeze(0)
+                )
+                if sep_loss_first_part < sep_loss_second_part:
+                    est_mixes.append(torch.stack((est_mix1, est_mix2)))
+                else:
+                    est_mixes.append(torch.stack((est_mix3, est_mix4)))
+            est_mixes = torch.stack(est_mixes)
+            separation_loss = multisrc_neg_sisdr(
+                est_mixes, torch.stack((mix1, mix2)).transpose(0, 1)
+            ).mean()
+            _, mixit_partitions = self.separation_loss(mom_sources[:,:,:3].transpose(1, 2), torch.stack((mix1, mix2)).transpose(0, 1))
+        else:
+            separation_loss, _ = self.separation_loss(mom_sources[:,:,:3].transpose(1, 2), torch.stack((mix1, mix2)).transpose(0, 1))
+
+        if self.original_mixtures_for_separation:
+            raise NotImplementedError
 
         self.model.log(
             "loss/val/separation",
@@ -1350,13 +1393,10 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         )
 
         if self.specifications[0].powerset:
-            self.model.validation_metric(
-                torch.transpose(multilabel, 1, 2),
-                torch.transpose(target, 1, 2),
-            )
+            raise NotImplementedError("Forced alignment requires multilabel diarization")
         else:
             self.model.validation_metric(
-                torch.transpose(prediction, 1, 2),
+                torch.transpose(diarization, 1, 2),
                 torch.transpose(target, 1, 2),
             )
 
@@ -1380,11 +1420,10 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         # visualize first 9 validation samples of first batch in Tensorboard/MLflow
 
         if self.specifications[0].powerset:
-            y = permutated_target.float().cpu().numpy()
-            y_pred = multilabel.cpu().numpy()
+            raise NotImplementedError("Forced alignment requires multilabel diarization")
         else:
             y = target.float().cpu().numpy()
-            y_pred = permutated_prediction.cpu().numpy()
+            y_pred = permutated_diarization.cpu().numpy()
 
         # prepare 3 x 3 grid (or smaller if batch size is smaller)
         num_samples = min(self.batch_size, 9)
