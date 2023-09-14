@@ -55,7 +55,7 @@ from pyannote.audio.torchmetrics import (
 from pyannote.audio.utils.loss import binary_cross_entropy, mse_loss, nll_loss
 from pyannote.audio.utils.permutation import permutate
 from pyannote.audio.utils.powerset import Powerset
-from asteroid.losses import MixITLossWrapper, multisrc_neg_sisdr
+from asteroid.losses import MixITLossWrapper, multisrc_neg_sisdr, PITLossWrapper, pairwise_neg_sisdr
 from torch.utils.data._utils.collate import default_collate
 
 Subsets = list(Subset.__args__)
@@ -438,6 +438,7 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         self.balance = balance
         self.weight = weight
         self.separation_loss = CustomMixITLossWrapper(multisrc_neg_sisdr, generalized=True)
+        self.pit_sep_loss = PITLossWrapper(pairwise_neg_sisdr, pit_from="pw_mtx")
         self.separation_loss_weight = separation_loss_weight
         self.force_alignment = force_alignment
         self.original_mixtures_for_separation = original_mixtures_for_separation
@@ -1110,10 +1111,10 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
                 est_mix2 = mom_sources[i, :, speaker_idx_mix2[i]].sum(1) + mom_sources[i,:,4]
                 est_mix3 = mom_sources[i, :, speaker_idx_mix1[i]].sum(1) + mom_sources[i,:,4]
                 est_mix4 = mom_sources[i, :, speaker_idx_mix2[i]].sum(1) + mom_sources[i,:,3]
-                sep_loss_first_part = multisrc_neg_sisdr(
+                sep_loss_first_part = self.pit_sep_loss(
                     torch.stack((est_mix1, est_mix2)).unsqueeze(0), torch.stack((mix1[i], mix2[i])).unsqueeze(0)
                 )
-                sep_loss_second_part  = multisrc_neg_sisdr(
+                sep_loss_second_part  = self.pit_sep_loss(
                     torch.stack((est_mix3, est_mix4)).unsqueeze(0), torch.stack((mix1[i], mix2[i])).unsqueeze(0)
                 )
                 if sep_loss_first_part < sep_loss_second_part:
@@ -1121,7 +1122,7 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
                 else:
                     est_mixes.append(torch.stack((est_mix3, est_mix4)))
             est_mixes = torch.stack(est_mixes)
-            separation_loss = multisrc_neg_sisdr(
+            separation_loss = self.pit_sep_loss(
                 est_mixes, torch.stack((mix1, mix2)).transpose(0, 1)
             ).mean()
             _, mixit_partitions = self.separation_loss(mom_sources[:,:,:3].transpose(1, 2), torch.stack((mix1, mix2)).transpose(0, 1))
@@ -1340,10 +1341,10 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
                 est_mix2 = mom_sources[i, :, speaker_idx_mix2[i]].sum(1) + mom_sources[i,:,4]
                 est_mix3 = mom_sources[i, :, speaker_idx_mix1[i]].sum(1) + mom_sources[i,:,4]
                 est_mix4 = mom_sources[i, :, speaker_idx_mix2[i]].sum(1) + mom_sources[i,:,3]
-                sep_loss_first_part = multisrc_neg_sisdr(
+                sep_loss_first_part = self.pit_sep_loss(
                     torch.stack((est_mix1, est_mix2)).unsqueeze(0), torch.stack((mix1[i], mix2[i])).unsqueeze(0)
                 )
-                sep_loss_second_part  = multisrc_neg_sisdr(
+                sep_loss_second_part  = self.pit_sep_loss(
                     torch.stack((est_mix3, est_mix4)).unsqueeze(0), torch.stack((mix1[i], mix2[i])).unsqueeze(0)
                 )
                 if sep_loss_first_part < sep_loss_second_part:
@@ -1351,7 +1352,7 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
                 else:
                     est_mixes.append(torch.stack((est_mix3, est_mix4)))
             est_mixes = torch.stack(est_mixes)
-            separation_loss = multisrc_neg_sisdr(
+            separation_loss = self.pit_sep_loss(
                 est_mixes, torch.stack((mix1, mix2)).transpose(0, 1)
             ).mean()
             _, mixit_partitions = self.separation_loss(mom_sources[:,:,:3].transpose(1, 2), torch.stack((mix1, mix2)).transpose(0, 1))
