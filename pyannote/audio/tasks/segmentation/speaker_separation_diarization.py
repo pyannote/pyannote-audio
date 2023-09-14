@@ -411,6 +411,7 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         forced_alignment_weight: float = 0.0,
         force_alignment: bool = False,
         log_alignment_accuracy: bool = False,
+        add_noise_sources: bool = False,
     ):
         super().__init__(
             protocol,
@@ -460,6 +461,7 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         self.original_mixtures_for_separation = original_mixtures_for_separation
         self.forced_alignment_weight = forced_alignment_weight
         self.log_alignment_accuracy = log_alignment_accuracy
+        self.add_noise_sources = add_noise_sources
 
     def setup(self):
         super().setup()
@@ -1314,10 +1316,14 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
             raise NotImplementedError("Forced alignment requires multilabel diarization")
 
         else:
-            # last 2 sources should only contain noise so we force diarization outputs to 0
-            permutated_diarization, permutations = permutate(target, diarization[:, :, :3])
-            target = torch.cat((target, torch.zeros(batch_size, num_frames, 2, device=target.device)), dim=2)
-            permutated_diarization = torch.cat((permutated_diarization, diarization[:, :, 3:]), dim=2)
+            if self.add_noise_sources:
+                # last 2 sources should only contain noise so we force diarization outputs to 0
+                permutated_diarization, permutations = permutate(target, diarization[:, :, :3])
+                target = torch.cat((target, torch.zeros(batch_size, num_frames, 2, device=target.device)), dim=2)
+                permutated_diarization = torch.cat((permutated_diarization, diarization[:, :, 3:]), dim=2)
+            else:
+                permutated_diarization, permutations = permutate(target, diarization)
+
             seg_loss = self.segmentation_loss(
                 permutated_diarization, target, weight=weight
             )
@@ -1337,20 +1343,25 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
             
             est_mixes = []
             for i in range(bsz // 2):
-                est_mix1 = mom_sources[i, :, speaker_idx_mix1[i]].sum(1) + mom_sources[i,:,3]
-                est_mix2 = mom_sources[i, :, speaker_idx_mix2[i]].sum(1) + mom_sources[i,:,4]
-                est_mix3 = mom_sources[i, :, speaker_idx_mix1[i]].sum(1) + mom_sources[i,:,4]
-                est_mix4 = mom_sources[i, :, speaker_idx_mix2[i]].sum(1) + mom_sources[i,:,3]
-                sep_loss_first_part = self.pit_sep_loss(
-                    torch.stack((est_mix1, est_mix2)).unsqueeze(0), torch.stack((mix1[i], mix2[i])).unsqueeze(0)
-                )
-                sep_loss_second_part  = self.pit_sep_loss(
-                    torch.stack((est_mix3, est_mix4)).unsqueeze(0), torch.stack((mix1[i], mix2[i])).unsqueeze(0)
-                )
-                if sep_loss_first_part < sep_loss_second_part:
-                    est_mixes.append(torch.stack((est_mix1, est_mix2)))
+                if self.add_noise_sources:
+                    est_mix1 = mom_sources[i, :, speaker_idx_mix1[i]].sum(1) + mom_sources[i,:,3]
+                    est_mix2 = mom_sources[i, :, speaker_idx_mix2[i]].sum(1) + mom_sources[i,:,4]
+                    est_mix3 = mom_sources[i, :, speaker_idx_mix1[i]].sum(1) + mom_sources[i,:,4]
+                    est_mix4 = mom_sources[i, :, speaker_idx_mix2[i]].sum(1) + mom_sources[i,:,3]
+                    sep_loss_first_part = self.pit_sep_loss(
+                        torch.stack((est_mix1, est_mix2)).unsqueeze(0), torch.stack((mix1[i], mix2[i])).unsqueeze(0)
+                    )
+                    sep_loss_second_part  = self.pit_sep_loss(
+                        torch.stack((est_mix3, est_mix4)).unsqueeze(0), torch.stack((mix1[i], mix2[i])).unsqueeze(0)
+                    )
+                    if sep_loss_first_part < sep_loss_second_part:
+                        est_mixes.append(torch.stack((est_mix1, est_mix2)))
+                    else:
+                        est_mixes.append(torch.stack((est_mix3, est_mix4)))
                 else:
-                    est_mixes.append(torch.stack((est_mix3, est_mix4)))
+                    est_mix1 = mom_sources[i, :, speaker_idx_mix1[i]].sum(1)
+                    est_mix2 = mom_sources[i, :, speaker_idx_mix2[i]].sum(1)
+                    est_mixes.append(torch.stack((est_mix1, est_mix2)))
             est_mixes = torch.stack(est_mixes)
             separation_loss = self.pit_sep_loss(
                 est_mixes, torch.stack((mix1, mix2)).transpose(0, 1)
