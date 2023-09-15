@@ -28,6 +28,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import torchaudio
+import torchaudio.compliance.kaldi as kaldi
 from torch.nn.utils.rnn import pad_sequence
 
 from pyannote.audio import Inference, Model, Pipeline
@@ -57,6 +58,13 @@ try:
 except ImportError:
     NEMO_IS_AVAILABLE = False
 
+try:
+    import onnxruntime as ort
+
+    ONNX_IS_AVAILABLE = True
+except ImportError:
+    ONNX_IS_AVAILABLE = False
+
 
 class NeMoPretrainedSpeakerEmbedding(BaseInference):
     def __init__(
@@ -64,7 +72,6 @@ class NeMoPretrainedSpeakerEmbedding(BaseInference):
         embedding: Text = "nvidia/speakerverification_en_titanet_large",
         device: torch.device = None,
     ):
-
         if not NEMO_IS_AVAILABLE:
             raise ImportError(
                 f"'NeMo' must be installed to use '{embedding}' embeddings. "
@@ -80,6 +87,11 @@ class NeMoPretrainedSpeakerEmbedding(BaseInference):
         self.model_.to(self.device)
 
     def to(self, device: torch.device):
+        if not isinstance(device, torch.device):
+            raise TypeError(
+                f"`device` must be an instance of `torch.device`, got `{type(device).__name__}`"
+            )
+
         self.model_.to(device)
         self.device = device
         return self
@@ -90,7 +102,6 @@ class NeMoPretrainedSpeakerEmbedding(BaseInference):
 
     @cached_property
     def dimension(self) -> int:
-
         input_signal = torch.rand(1, self.sample_rate).to(self.device)
         input_signal_length = torch.tensor([self.sample_rate]).to(self.device)
         _, embeddings = self.model_(
@@ -105,7 +116,6 @@ class NeMoPretrainedSpeakerEmbedding(BaseInference):
 
     @cached_property
     def min_num_samples(self) -> int:
-
         lower, upper = 2, round(0.5 * self.sample_rate)
         middle = (lower + upper) // 2
         while lower + 1 < upper:
@@ -152,7 +162,6 @@ class NeMoPretrainedSpeakerEmbedding(BaseInference):
             wav_lens = signals.shape[1] * torch.ones(batch_size)
 
         else:
-
             batch_size_masks, _ = masks.shape
             assert batch_size == batch_size_masks
 
@@ -229,7 +238,6 @@ class SpeechBrainPretrainedSpeakerEmbedding(BaseInference):
         device: torch.device = None,
         use_auth_token: Union[Text, None] = None,
     ):
-
         if not SPEECHBRAIN_IS_AVAILABLE:
             raise ImportError(
                 f"'speechbrain' must be installed to use '{embedding}' embeddings. "
@@ -255,6 +263,11 @@ class SpeechBrainPretrainedSpeakerEmbedding(BaseInference):
         )
 
     def to(self, device: torch.device):
+        if not isinstance(device, torch.device):
+            raise TypeError(
+                f"`device` must be an instance of `torch.device`, got `{type(device).__name__}`"
+            )
+
         self.classifier_ = SpeechBrain_EncoderClassifier.from_hparams(
             source=self.embedding,
             savedir=f"{CACHE_DIR}/speechbrain",
@@ -281,19 +294,19 @@ class SpeechBrainPretrainedSpeakerEmbedding(BaseInference):
 
     @cached_property
     def min_num_samples(self) -> int:
-
-        lower, upper = 2, round(0.5 * self.sample_rate)
-        middle = (lower + upper) // 2
-        while lower + 1 < upper:
-            try:
-                _ = self.classifier_.encode_batch(
-                    torch.randn(1, middle).to(self.device)
-                )
-                upper = middle
-            except RuntimeError:
-                lower = middle
-
+        with torch.inference_mode():
+            lower, upper = 2, round(0.5 * self.sample_rate)
             middle = (lower + upper) // 2
+            while lower + 1 < upper:
+                try:
+                    _ = self.classifier_.encode_batch(
+                        torch.randn(1, middle).to(self.device)
+                    )
+                    upper = middle
+                except RuntimeError:
+                    lower = middle
+
+                middle = (lower + upper) // 2
 
         return upper
 
@@ -324,7 +337,6 @@ class SpeechBrainPretrainedSpeakerEmbedding(BaseInference):
             wav_lens = signals.shape[1] * torch.ones(batch_size)
 
         else:
-
             batch_size_masks, _ = masks.shape
             assert batch_size == batch_size_masks
 
@@ -367,6 +379,214 @@ class SpeechBrainPretrainedSpeakerEmbedding(BaseInference):
         )
 
         embeddings[too_short.cpu().numpy()] = np.NAN
+
+        return embeddings
+
+
+class WeSpeakerPretrainedSpeakerEmbedding(BaseInference):
+    """Pretrained WeSpeaker speaker embedding
+
+    Parameters
+    ----------
+    embedding : str
+        Path to WeSpeaker pretrained speaker embedding
+    device : torch.device, optional
+        Device
+
+    Usage
+    -----
+    >>> get_embedding = WeSpeakerPretrainedSpeakerEmbedding("wespeaker.xxxx.onnx")
+    >>> assert waveforms.ndim == 3
+    >>> batch_size, num_channels, num_samples = waveforms.shape
+    >>> assert num_channels == 1
+    >>> embeddings = get_embedding(waveforms)
+    >>> assert embeddings.ndim == 2
+    >>> assert embeddings.shape[0] == batch_size
+
+    >>> assert binary_masks.ndim == 1
+    >>> assert binary_masks.shape[0] == batch_size
+    >>> embeddings = get_embedding(waveforms, masks=binary_masks)
+    """
+
+    def __init__(
+        self,
+        embedding: Text = "speechbrain/spkrec-ecapa-voxceleb",
+        device: torch.device = None,
+    ):
+        if not ONNX_IS_AVAILABLE:
+            raise ImportError(
+                f"'onnxruntime' must be installed to use '{embedding}' embeddings. "
+            )
+
+        super().__init__()
+
+        self.embedding = embedding
+
+        self.to(device or torch.device("cpu"))
+
+    def to(self, device: torch.device):
+        if not isinstance(device, torch.device):
+            raise TypeError(
+                f"`device` must be an instance of `torch.device`, got `{type(device).__name__}`"
+            )
+
+        if device.type == "cpu":
+            providers = ["CPUExecutionProvider"]
+        elif device.type == "cuda":
+            providers = ["CUDAExecutionProvider"]
+        else:
+            warnings.warn(
+                f"Unsupported device type: {device.type}, falling back to CPU"
+            )
+            device = torch.device("cpu")
+            providers = ["CPUExecutionProvider"]
+
+        sess_options = ort.SessionOptions()
+        sess_options.inter_op_num_threads = 1
+        sess_options.intra_op_num_threads = 1
+        self.session_ = ort.InferenceSession(
+            self.embedding, sess_options=sess_options, providers=providers
+        )
+
+        self.device = device
+        return self
+
+    @cached_property
+    def sample_rate(self) -> int:
+        return 16000
+
+    @cached_property
+    def dimension(self) -> int:
+        dummy_waveforms = torch.rand(1, 1, 16000)
+        features = self.compute_fbank(dummy_waveforms)
+        embeddings = self.session_.run(
+            output_names=["embs"], input_feed={"feats": features.numpy()}
+        )[0]
+        _, dimension = embeddings.shape
+        return dimension
+
+    @cached_property
+    def metric(self) -> str:
+        return "cosine"
+
+    @cached_property
+    def min_num_samples(self) -> int:
+        lower, upper = 2, round(0.5 * self.sample_rate)
+        middle = (lower + upper) // 2
+        while lower + 1 < upper:
+            try:
+                features = self.compute_fbank(torch.randn(1, 1, middle))
+
+            except AssertionError:
+                lower = middle
+                middle = (lower + upper) // 2
+                continue
+
+            embeddings = self.session_.run(
+                output_names=["embs"], input_feed={"feats": features.numpy()}
+            )[0]
+
+            if np.any(np.isnan(embeddings)):
+                lower = middle
+            else:
+                upper = middle
+            middle = (lower + upper) // 2
+
+        return upper
+
+    @cached_property
+    def min_num_frames(self) -> int:
+        return self.compute_fbank(torch.randn(1, 1, self.min_num_samples)).shape[1]
+
+    def compute_fbank(
+        self,
+        waveforms: torch.Tensor,
+        num_mel_bins: int = 80,
+        frame_length: int = 25,
+        frame_shift: int = 10,
+        dither: float = 0.0,
+    ) -> torch.Tensor:
+        """Extract fbank features
+
+        Parameters
+        ----------
+        waveforms : (batch_size, num_channels, num_samples)
+
+        Returns
+        -------
+        fbank : (batch_size, num_frames, num_mel_bins)
+
+        Source: https://github.com/wenet-e2e/wespeaker/blob/45941e7cba2c3ea99e232d02bedf617fc71b0dad/wespeaker/bin/infer_onnx.py#L30C1-L50
+        """
+
+        waveforms = waveforms * (1 << 15)
+        features = torch.stack(
+            [
+                kaldi.fbank(
+                    waveform,
+                    num_mel_bins=num_mel_bins,
+                    frame_length=frame_length,
+                    frame_shift=frame_shift,
+                    dither=dither,
+                    sample_frequency=self.sample_rate,
+                    window_type="hamming",
+                    use_energy=False,
+                )
+                for waveform in waveforms
+            ]
+        )
+        return features - torch.mean(features, dim=1, keepdim=True)
+
+    def __call__(
+        self, waveforms: torch.Tensor, masks: torch.Tensor = None
+    ) -> np.ndarray:
+        """
+
+        Parameters
+        ----------
+        waveforms : (batch_size, num_channels, num_samples)
+            Only num_channels == 1 is supported.
+        masks : (batch_size, num_samples), optional
+
+        Returns
+        -------
+        embeddings : (batch_size, dimension)
+
+        """
+
+        batch_size, num_channels, num_samples = waveforms.shape
+        assert num_channels == 1
+
+        features = self.compute_fbank(waveforms)
+        _, num_frames, _ = features.shape
+
+        if masks is None:
+            embeddings = self.session_.run(
+                output_names=["embs"], input_feed={"feats": features.numpy()}
+            )[0]
+
+            return embeddings
+
+        batch_size_masks, _ = masks.shape
+        assert batch_size == batch_size_masks
+
+        imasks = F.interpolate(
+            masks.unsqueeze(dim=1), size=num_frames, mode="nearest"
+        ).squeeze(dim=1)
+
+        imasks = imasks > 0.5
+
+        embeddings = np.NAN * np.zeros((batch_size, self.dimension))
+
+        for f, (feature, imask) in enumerate(zip(features, imasks)):
+            masked_feature = feature[imask]
+            if masked_feature.shape[0] < self.min_num_frames:
+                continue
+
+            embeddings[f] = self.session_.run(
+                output_names=["embs"],
+                input_feed={"feats": masked_feature.numpy()[None]},
+            )[0][0]
 
         return embeddings
 
@@ -415,6 +635,11 @@ class PyannoteAudioPretrainedSpeakerEmbedding(BaseInference):
         self.model_.to(self.device)
 
     def to(self, device: torch.device):
+        if not isinstance(device, torch.device):
+            raise TypeError(
+                f"`device` must be an instance of `torch.device`, got `{type(device).__name__}`"
+            )
+
         self.model_.to(device)
         self.device = device
         return self
@@ -425,7 +650,7 @@ class PyannoteAudioPretrainedSpeakerEmbedding(BaseInference):
 
     @cached_property
     def dimension(self) -> int:
-        return self.model_.introspection.dimension
+        return self.model_.example_output.dimension
 
     @cached_property
     def metric(self) -> str:
@@ -433,12 +658,24 @@ class PyannoteAudioPretrainedSpeakerEmbedding(BaseInference):
 
     @cached_property
     def min_num_samples(self) -> int:
-        return self.model_.introspection.min_num_samples
+        with torch.inference_mode():
+            lower, upper = 2, round(0.5 * self.sample_rate)
+            middle = (lower + upper) // 2
+            while lower + 1 < upper:
+                try:
+                    _ = self.model_(torch.randn(1, 1, middle).to(self.device))
+                    upper = middle
+                except RuntimeError:
+                    lower = middle
+
+                middle = (lower + upper) // 2
+
+        return upper
 
     def __call__(
         self, waveforms: torch.Tensor, masks: torch.Tensor = None
     ) -> np.ndarray:
-        with torch.no_grad():
+        with torch.inference_mode():
             if masks is None:
                 embeddings = self.model_(waveforms.to(self.device))
             else:
@@ -493,6 +730,9 @@ def PretrainedSpeakerEmbedding(
 
     elif isinstance(embedding, str) and "nvidia" in embedding:
         return NeMoPretrainedSpeakerEmbedding(embedding, device=device)
+
+    elif isinstance(embedding, str) and "wespeaker" in embedding:
+        return WeSpeakerPretrainedSpeakerEmbedding(embedding, device=device)
 
     else:
         return PyannoteAudioPretrainedSpeakerEmbedding(
@@ -557,7 +797,6 @@ class SpeakerEmbedding(Pipeline):
             )
 
     def apply(self, file: AudioFile) -> np.ndarray:
-
         device = self.embedding_model_.device
 
         # read audio file and send it to GPU
@@ -583,7 +822,6 @@ def main(
     embedding: str = "pyannote/embedding",
     segmentation: str = None,
 ):
-
     import typer
     from pyannote.database import FileFinder, get_protocol
     from pyannote.metrics.binary_classification import det_curve
@@ -601,7 +839,6 @@ def main(
     trials = getattr(protocol, f"{subset}_trial")()
 
     for t, trial in enumerate(tqdm(trials)):
-
         audio1 = trial["file1"]["audio"]
         if audio1 not in emb:
             emb[audio1] = pipeline(audio1)
