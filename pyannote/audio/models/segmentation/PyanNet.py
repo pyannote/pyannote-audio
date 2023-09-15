@@ -80,7 +80,6 @@ class PyanNet(Model):
         num_channels: int = 1,
         task: Optional[Task] = None,
     ):
-
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
 
         sincnet = merge_dict(self.SINCNET_DEFAULTS, sincnet)
@@ -140,13 +139,15 @@ class PyanNet(Model):
         )
 
     def build(self):
-
         if self.hparams.linear["num_layers"] > 0:
             in_features = self.hparams.linear["hidden_size"]
         else:
             in_features = self.hparams.lstm["hidden_size"] * (
                 2 if self.hparams.lstm["bidirectional"] else 1
             )
+
+        if isinstance(self.specifications, tuple):
+            raise ValueError("PyanNet does not support multi-tasking.")
 
         if self.specifications.powerset:
             out_features = self.specifications.num_powerset_classes

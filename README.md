@@ -1,4 +1,7 @@
-# Neural speaker diarization with `pyannote.audio`
+> [!IMPORTANT]
+> I propose (paid) scientific [consulting services](https://herve.niderb.fr/consulting.html) to companies willing to make the most of their data and open-source speech processing toolkits (and `pyannote` in particular). 
+
+# Speaker diarization with `pyannote.audio`
 
 `pyannote.audio` is an open-source toolkit written in Python for speaker diarization. Based on [PyTorch](pytorch.org) machine learning framework, it provides a set of trainable end-to-end neural building blocks that can be combined and jointly optimized to build speaker diarization pipelines.
 
@@ -126,9 +129,8 @@ pip install -e .[dev,testing]
 pre-commit install
 ```
 
-Tests rely on a set of debugging files available in [`test/data`](test/data) directory.
-Set `PYANNOTE_DATABASE_CONFIG` environment variable to `test/data/database.yml` before running tests:
+## Test
 
 ```bash
-PYANNOTE_DATABASE_CONFIG=tests/data/database.yml pytest
+pytest
 ```

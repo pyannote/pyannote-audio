@@ -256,7 +256,7 @@ def preview(
     return IPythonVideo(video_path, embed=True)
 
 
-def preview_training_samples(
+def BROKEN_preview_training_samples(
     model: Model,
     blank: float = 1.0,
     video_fps: int = 5,

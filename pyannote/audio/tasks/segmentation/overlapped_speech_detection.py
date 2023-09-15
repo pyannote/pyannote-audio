@@ -24,7 +24,7 @@
 from typing import Dict, Sequence, Text, Tuple, Union
 
 import numpy as np
-from pyannote.core import Segment, SlidingWindow, SlidingWindowFeature
+from pyannote.core import Segment, SlidingWindowFeature
 from pyannote.database import Protocol
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchmetrics import Metric
@@ -106,7 +106,6 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
         augmentation: BaseWaveformTransform = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
     ):
-
         super().__init__(
             protocol,
             duration=duration,
@@ -122,6 +121,7 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
             problem=Problem.BINARY_CLASSIFICATION,
             resolution=Resolution.FRAME,
             duration=self.duration,
+            min_duration=self.min_duration,
             warm_up=self.warm_up,
             classes=[
                 "overlap",
@@ -162,13 +162,6 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
         sample = dict()
         sample["X"], _ = self.model.audio.crop(file, chunk, duration=duration)
 
-        # use model introspection to predict how many frames it will output
-        # TODO: this should be cached
-        num_samples = sample["X"].shape[1]
-        num_frames, _ = self.model.introspection(num_samples)
-        resolution = duration / num_frames
-        frames = SlidingWindow(start=0.0, duration=resolution, step=resolution)
-
         # gather all annotations of current file
         annotations = self.annotations[self.annotations["file_id"] == file_id]
 
@@ -179,17 +172,19 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
 
         # discretize chunk annotations at model output resolution
         start = np.maximum(chunk_annotations["start"], chunk.start) - chunk.start
-        start_idx = np.floor(start / resolution).astype(int)
+        start_idx = np.floor(start / self.model.example_output.frames.step).astype(int)
         end = np.minimum(chunk_annotations["end"], chunk.end) - chunk.start
-        end_idx = np.ceil(end / resolution).astype(int)
+        end_idx = np.ceil(end / self.model.example_output.frames.step).astype(int)
 
         # frame-level targets
-        y = np.zeros((num_frames, 1), dtype=np.uint8)
+        y = np.zeros((self.model.example_output.num_frames, 1), dtype=np.uint8)
         for start, end in zip(start_idx, end_idx):
             y[start:end, 0] += 1
         y = 1 * (y > 1)
 
-        sample["y"] = SlidingWindowFeature(y, frames, labels=["speech"])
+        sample["y"] = SlidingWindowFeature(
+            y, self.model.example_output.frames, labels=["speech"]
+        )
 
         metadata = self.metadata[file_id]
         sample["meta"] = {key: metadata[key] for key in metadata.dtype.names}
