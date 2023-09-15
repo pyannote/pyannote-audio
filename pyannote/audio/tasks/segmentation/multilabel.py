@@ -277,4 +277,4 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         pytorch_lightning.callbacks.EarlyStopping
         """
 
-        return "ValLoss", "min"
+        return "loss/val", "min"
