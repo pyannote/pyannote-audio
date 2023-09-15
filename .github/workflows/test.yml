@@ -29,12 +29,4 @@ jobs:
           pip install -e .[dev,testing]
       - name: Test with pytest
         run: |
-          export PYANNOTE_DATABASE_CONFIG=$GITHUB_WORKSPACE/tests/data/database.yml
-          pytest --cov-report=xml
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v1
-        with:
-          file: ./coverage.xml
-          env_vars: PYTHON
-          name: codecov-pyannote-audio
-          fail_ci_if_error: false
+          pytest

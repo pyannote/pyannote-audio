@@ -85,25 +85,29 @@ class Powerset(nn.Module):
         return cardinality
 
     def to_multilabel(self, powerset: torch.Tensor) -> torch.Tensor:
-        """Convert (hard) predictions from powerset to multi-label
+        """Convert predictions from (soft) powerset to (hard) multi-label
 
         Parameter
         ---------
         powerset : (batch_size, num_frames, num_powerset_classes) torch.Tensor
-            Hard predictions in "powerset" space.
+            Soft predictions in "powerset" space.
 
         Returns
         -------
         multi_label : (batch_size, num_frames, num_classes) torch.Tensor
             Hard predictions in "multi-label" space.
-
-        Note
-        ----
-        This method will not complain if `powerset` is provided a soft predictions
-        (e.g. the output of a softmax-ed classifier). However, in that particular
-        case, the resulting soft multi-label output will not make much sense.
         """
-        return torch.matmul(powerset, self.mapping)
+
+        hard_powerset = torch.nn.functional.one_hot(
+            torch.argmax(powerset, dim=-1),
+            self.num_powerset_classes,
+        ).float()
+
+        return torch.matmul(hard_powerset, self.mapping)
+
+    def forward(self, powerset: torch.Tensor) -> torch.Tensor:
+        """Alias for `to_multilabel`"""
+        return self.to_multilabel(powerset)
 
     def to_powerset(self, multilabel: torch.Tensor) -> torch.Tensor:
         """Convert (hard) predictions from multi-label to powerset
