@@ -80,11 +80,12 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         during training.
     metric : optional
         Multilabel validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
-        Make sure to not compute the metric on targets == -1 (ignore_index=-1) if the validation set has missing labels.
-        Defaults to F1+Precision+Recall+Accuracy in macro mode.
+        Make sure the metric's ignore_index==-1 if your data contains un-annotated frames.
+        Defaults to F1, Precision, Recall & Accuracy in macro mode.
     metric_classwise: Union[Metric, Sequence[Metric], Dict[str, Metric]], optional
         Validation metric(s) to compute for each class (binary). Can be anything supported by torchmetrics.MetricCollection.
-        Defaults to F1+Precision+Recall.
+        No need for ignore_index=-1 here, as the metric is computed only on the labelled frames.
+        Defaults to F1, Precision, Recall & Accuracy.
     """
 
     def __init__(
@@ -308,26 +309,32 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
     ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
         class_count = len(self.classes)
         if class_count > 1:  # multilabel
-            return [
-                F1Score(
+            return {
+                "F1": F1Score(
                     task="multilabel",
                     num_labels=class_count,
                     ignore_index=-1,
                     average="macro",
                 ),
-                Precision(
+                "Precision": Precision(
                     task="multilabel",
                     num_labels=class_count,
                     ignore_index=-1,
                     average="macro",
                 ),
-                Recall(
+                "Recall": Recall(
                     task="multilabel",
                     num_labels=class_count,
                     ignore_index=-1,
                     average="macro",
                 ),
-            ]
+                "Accuracy": Accuracy(
+                    task="multilabel",
+                    num_labels=class_count,
+                    ignore_index=-1,
+                    average="macro",
+                ),
+            }
         else:
             # Binary classification, this case is handled by the per-class metric, see 'default_metric_per_class'/'metric_classwise'
             return []
@@ -341,7 +348,6 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
             "Recall": Recall(task="binary"),
             "Accuracy": Accuracy(task="binary"),
         }
-
 
     @cached_property
     def metric_classwise(self) -> MetricCollection:
