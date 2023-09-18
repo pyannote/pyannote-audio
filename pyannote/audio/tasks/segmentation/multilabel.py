@@ -31,7 +31,7 @@ from pyannote.core import Segment, SlidingWindowFeature
 from pyannote.database import Protocol
 from pyannote.database.protocol import SegmentationProtocol
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
-from torchmetrics import F1Score, Metric, MetricCollection, Precision, Recall
+from torchmetrics import Accuracy, F1Score, Metric, MetricCollection, Precision, Recall
 
 from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
@@ -81,7 +81,7 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
     metric : optional
         Multilabel validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
         Make sure to not compute the metric on targets == -1 (ignore_index=-1) if the validation set has missing labels.
-        Defaults to F1+Precision+Recall in macro mode.
+        Defaults to F1+Precision+Recall+Accuracy in macro mode.
     metric_classwise: Union[Metric, Sequence[Metric], Dict[str, Metric]], optional
         Validation metric(s) to compute for each class (binary). Can be anything supported by torchmetrics.MetricCollection.
         Defaults to F1+Precision+Recall.
@@ -335,18 +335,20 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
     def default_metric_classwise(
         self,
     ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
-        return [
-            F1Score(task="binary"),
-            Precision(task="binary"),
-            Recall(task="binary"),
-        ]
+        return {
+            "F1": F1Score(task="binary"),
+            "Precision": Precision(task="binary"),
+            "Recall": Recall(task="binary"),
+            "Accuracy": Accuracy(task="binary"),
+        }
+
 
     @cached_property
     def metric_classwise(self) -> MetricCollection:
         if self._metric_classwise is None:
             self._metric_classwise = self.default_metric_classwise()
 
-        return MetricCollection(self._metric_classwise, prefix=self.logging_prefix)
+        return MetricCollection(self._metric_classwise)
 
     def setup_validation_metric(self):
         # setup global/multilabel validation metric
@@ -362,7 +364,7 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         )
         for class_name in self.classes:
             self.model.validation_metric_classwise[class_name] = metric.clone(
-                prefix=f"{self.logging_prefix}{class_name}-"
+                prefix=f"{class_name}/"
             )
 
     @property
