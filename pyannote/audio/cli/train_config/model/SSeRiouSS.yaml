@@ -1,0 +1,13 @@
+# @package _group_
+_target_: pyannote.audio.models.segmentation.SSeRiouSS
+wav2vec: WAVLM_BASE
+wav2vec_layer: -1
+lstm:
+  hidden_size: 128
+  num_layers: 4
+  bidirectional: true
+  monolithic: true
+  dropout: 0.5
+linear:
+  hidden_size: 128
+  num_layers: 2

@@ -32,15 +32,16 @@
 
 ### Features and improvements
 
+  - feat(task): add [powerset](https://www.isca-speech.org/archive/interspeech_2023/plaquet23_interspeech.html) support to `SpeakerDiarization` task
   - feat(task): add support for multi-task models
-  - feat(pipeline): send pipeline to device with `pipeline.to(device)`
-  - feat(pipeline): make `segmentation_batch_size` and `embedding_batch_size` mutable in `SpeakerDiarization` pipeline (they now default to `1`)
-  - feat(task): add [powerset](https://arxiv.org/PLACEHOLDER) support to `SpeakerDiarization` task
-  - feat(pipeline): add `return_embeddings` option to `SpeakerDiarization` pipeline
-  - feat(pipeline): add progress hook to pipelines
-  - feat(pipeline): check version compatibility at load time
   - feat(task): add support for label scope in speaker diarization task
   - feat(task): add support for missing classes in multi-label segmentation task
+  - feat(model): add segmentation model based on torchaudio self-supervised representation
+  - feat(pipeline): send pipeline to device with `pipeline.to(device)`
+  - feat(pipeline): add `return_embeddings` option to `SpeakerDiarization` pipeline
+  - feat(pipeline): make `segmentation_batch_size` and `embedding_batch_size` mutable in `SpeakerDiarization` pipeline (they now default to `1`)
+  - feat(pipeline): add progress hook to pipelines
+  - feat(pipeline): check version compatibility at load time
   - improve(task): load metadata as tensors rather than pyannote.core instances
   - improve(task): improve error message on missing specifications
 
