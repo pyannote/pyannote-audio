@@ -65,12 +65,11 @@ class SepDiarNet(Model):
         i.e. two linear layers with 128 units each.
     """
 
-    SINCNET_DEFAULTS = {"stride": 10}
     ENCODER_DECODER_DEFAULTS = {
         "fb_name": "stft",
         "kernel_size": 512,
-        "n_filters": 512,
-        "stride": 256,
+        "n_filters": 64,
+        "stride": 32,
     }
     LSTM_DEFAULTS = {
         "hidden_size": 128,
@@ -113,7 +112,7 @@ class SepDiarNet(Model):
         num_channels: int = 1,
         task: Optional[Task] = None,
         encoder_type: str = None,
-        n_sources: int = 5,
+        n_sources: int = 3,
         use_lstm: bool = False,
         lr: float = 1e-3,
     ):
