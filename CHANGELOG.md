@@ -32,7 +32,6 @@
 
 ### Features and improvements
 
-  - feat(task): add support for multi-task models
   - feat(task): add [powerset](https://www.isca-speech.org/archive/interspeech_2023/plaquet23_interspeech.html) support to `SpeakerDiarization` task
   - feat(task): add support for multi-task models
   - feat(task): add support for label scope in speaker diarization task
@@ -52,6 +51,7 @@
   - fix(pipeline): fix support for IOBase audio
   - fix(pipeline): fix corner case with no speaker
   - fix(train): prevent metadata preparation to happen twice
+  - fix(task): fix support for "balance" option
   - improve(task): shorten and improve structure of Tensorboard tags
 
 ### Dependencies
