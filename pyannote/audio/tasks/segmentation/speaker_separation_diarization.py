@@ -213,6 +213,7 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         self.original_mixtures_for_separation = original_mixtures_for_separation
         self.forced_alignment_weight = forced_alignment_weight
         self.add_noise_sources = add_noise_sources
+        self.mixit_loss = MixITLossWrapper(multisrc_neg_sisdr, generalized=True)
 
     def setup(self):
         super().setup()
@@ -1050,55 +1051,55 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
 
         seg_loss = self.segmentation_loss(permutated_diarization, target, weight=weight)
 
-        speaker_idx_mix1 = [
-            [permutations[i][j] for j in range(num_active_speakers_mix1[i])]
-            for i in range(bsz // 2)
-        ]
-        speaker_idx_mix2 = [
-            [
-                permutations[i][j]
-                for j in range(
-                    num_active_speakers_mix1[i],
-                    num_active_speakers_mix1[i] + num_active_speakers_mix2[i],
-                )
-            ]
-            for i in range(bsz // 2)
-        ]
+        # speaker_idx_mix1 = [
+        #     [permutations[i][j] for j in range(num_active_speakers_mix1[i])]
+        #     for i in range(bsz // 2)
+        # ]
+        # speaker_idx_mix2 = [
+        #     [
+        #         permutations[i][j]
+        #         for j in range(
+        #             num_active_speakers_mix1[i],
+        #             num_active_speakers_mix1[i] + num_active_speakers_mix2[i],
+        #         )
+        #     ]
+        #     for i in range(bsz // 2)
+        # ]
 
-        est_mixes = []
-        for i in range(bsz // 2):
-            if self.add_noise_sources:
-                est_mix1 = (
-                    mom_sources[i, :, speaker_idx_mix1[i]].sum(1) + mom_sources[i, :, 3]
-                )
-                est_mix2 = (
-                    mom_sources[i, :, speaker_idx_mix2[i]].sum(1) + mom_sources[i, :, 4]
-                )
-                est_mix3 = (
-                    mom_sources[i, :, speaker_idx_mix1[i]].sum(1) + mom_sources[i, :, 4]
-                )
-                est_mix4 = (
-                    mom_sources[i, :, speaker_idx_mix2[i]].sum(1) + mom_sources[i, :, 3]
-                )
-                sep_loss_first_part = self.pit_sep_loss(
-                    torch.stack((est_mix1, est_mix2)).unsqueeze(0),
-                    torch.stack((mix1[i], mix2[i])).unsqueeze(0),
-                )
-                sep_loss_second_part = self.pit_sep_loss(
-                    torch.stack((est_mix3, est_mix4)).unsqueeze(0),
-                    torch.stack((mix1[i], mix2[i])).unsqueeze(0),
-                )
-                if sep_loss_first_part < sep_loss_second_part:
-                    est_mixes.append(torch.stack((est_mix1, est_mix2)))
-                else:
-                    est_mixes.append(torch.stack((est_mix3, est_mix4)))
-            else:
-                est_mix1 = mom_sources[i, :, speaker_idx_mix1[i]].sum(1)
-                est_mix2 = mom_sources[i, :, speaker_idx_mix2[i]].sum(1)
-                est_mixes.append(torch.stack((est_mix1, est_mix2)))
-        est_mixes = torch.stack(est_mixes)
-        separation_loss = self.pit_sep_loss(
-            est_mixes, torch.stack((mix1, mix2)).transpose(0, 1)
+        # est_mixes = []
+        # for i in range(bsz // 2):
+        #     if self.add_noise_sources:
+        #         est_mix1 = (
+        #             mom_sources[i, :, speaker_idx_mix1[i]].sum(1) + mom_sources[i, :, 3]
+        #         )
+        #         est_mix2 = (
+        #             mom_sources[i, :, speaker_idx_mix2[i]].sum(1) + mom_sources[i, :, 4]
+        #         )
+        #         est_mix3 = (
+        #             mom_sources[i, :, speaker_idx_mix1[i]].sum(1) + mom_sources[i, :, 4]
+        #         )
+        #         est_mix4 = (
+        #             mom_sources[i, :, speaker_idx_mix2[i]].sum(1) + mom_sources[i, :, 3]
+        #         )
+        #         sep_loss_first_part = self.pit_sep_loss(
+        #             torch.stack((est_mix1, est_mix2)).unsqueeze(0),
+        #             torch.stack((mix1[i], mix2[i])).unsqueeze(0),
+        #         )
+        #         sep_loss_second_part = self.pit_sep_loss(
+        #             torch.stack((est_mix3, est_mix4)).unsqueeze(0),
+        #             torch.stack((mix1[i], mix2[i])).unsqueeze(0),
+        #         )
+        #         if sep_loss_first_part < sep_loss_second_part:
+        #             est_mixes.append(torch.stack((est_mix1, est_mix2)))
+        #         else:
+        #             est_mixes.append(torch.stack((est_mix3, est_mix4)))
+        #     else:
+        #         est_mix1 = mom_sources[i, :, speaker_idx_mix1[i]].sum(1)
+        #         est_mix2 = mom_sources[i, :, speaker_idx_mix2[i]].sum(1)
+        #         est_mixes.append(torch.stack((est_mix1, est_mix2)))
+        # est_mixes = torch.stack(est_mixes)
+        separation_loss = self.mixit_loss(
+            mom_sources.transpose(1, 2), torch.stack((mix1, mix2)).transpose(0, 1)
         ).mean()
 
         if self.original_mixtures_for_separation:
