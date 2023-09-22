@@ -149,52 +149,12 @@ class SepDiarNet(Model):
             diarization_scaling, stride=diarization_scaling
         )
 
-        if use_lstm:
-            monolithic = lstm["monolithic"]
-            if monolithic:
-                multi_layer_lstm = dict(lstm)
-                del multi_layer_lstm["monolithic"]
-                self.lstm = nn.LSTM(n_feats_out, **multi_layer_lstm)
-
-            else:
-                num_layers = lstm["num_layers"]
-                if num_layers > 1:
-                    self.dropout = nn.Dropout(p=lstm["dropout"])
-
-                one_layer_lstm = dict(lstm)
-                one_layer_lstm["num_layers"] = 1
-                one_layer_lstm["dropout"] = 0.0
-                del one_layer_lstm["monolithic"]
-
-                self.lstm = nn.ModuleList(
-                    [
-                        nn.LSTM(
-                            n_feats_out
-                            if i == 0
-                            else lstm["hidden_size"]
-                            * (2 if lstm["bidirectional"] else 1),
-                            **one_layer_lstm
-                        )
-                        for i in range(num_layers)
-                    ]
-                )
-
-        if linear["num_layers"] < 1:
-            return
-
-        if use_lstm:
-            lstm_out_features: int = self.hparams.lstm["hidden_size"] * (
-                2 if self.hparams.lstm["bidirectional"] else 1
-            )
-        else:
-            lstm_out_features = 64
-
         self.linear = nn.ModuleList(
             [
                 nn.Linear(in_features, out_features)
                 for in_features, out_features in pairwise(
                     [
-                        lstm_out_features,
+                        encoder_decoder["n_filters"],
                     ]
                     + [self.hparams.linear["hidden_size"]]
                     * self.hparams.linear["num_layers"]
@@ -203,15 +163,7 @@ class SepDiarNet(Model):
         )
 
     def build(self):
-        if self.hparams.linear["num_layers"] > 0:
-            in_features = self.hparams.linear["hidden_size"]
-        else:
-            in_features = self.hparams.lstm["hidden_size"] * (
-                2 if self.hparams.lstm["bidirectional"] else 1
-            )
-
-        out_features = 1
-        self.classifier = nn.Linear(in_features, out_features)
+        self.classifier = nn.Linear(1, 1)
         self.activation = self.default_activation()
 
     def configure_optimizers(self):
@@ -236,23 +188,18 @@ class SepDiarNet(Model):
         decoded_sources = self.decoder(masked_tf_rep)
         decoded_sources = pad_x_to_y(decoded_sources, waveforms)
         decoded_sources = decoded_sources.transpose(1, 2)
-
+        # shape: (batch, nframes, nsrc, nfilters)       
         outputs = torch.flatten(masks, start_dim=0, end_dim=1)
         outputs = self.average_pool(outputs)
         outputs = outputs.transpose(1, 2)
-        if self.use_lstm:
-            if self.hparams.lstm["monolithic"]:
-                outputs, _ = self.lstm(outputs)
-            else:
-                for i, lstm in enumerate(self.lstm):
-                    outputs, _ = lstm(outputs)
-                    if i + 1 < self.hparams.lstm["num_layers"]:
-                        outputs = self.dropout(outputs)
+        # shape (batch, nframes, nfilters)
 
         if self.hparams.linear["num_layers"] > 0:
             for linear in self.linear:
                 outputs = F.leaky_relu(linear(outputs))
-        outputs = self.classifier(outputs)
+        outputs = outputs.sum(dim=2)
+        outputs = self.classifier(outputs.unsqueeze(-1))
+        
         outputs = outputs.reshape(bsz, self.n_sources, -1)
         outputs = outputs.transpose(1, 2)
 
