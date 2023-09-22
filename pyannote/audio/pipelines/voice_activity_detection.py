@@ -149,7 +149,7 @@ class VoiceActivityDetection(Pipeline):
                 "min_duration_off": 0.067,
             }
 
-        elif self.segmentation == "pyannote/segmentation-3.0.0":
+        elif self.segmentation == "pyannote/segmentation-3.0":
             return {
                 "min_duration_on": 0.0,
                 "min_duration_off": 0.0,
