@@ -188,8 +188,8 @@ class SepDiarNet(Model):
         decoded_sources = self.decoder(masked_tf_rep)
         decoded_sources = pad_x_to_y(decoded_sources, waveforms)
         decoded_sources = decoded_sources.transpose(1, 2)
-        # shape: (batch, nframes, nsrc, nfilters)       
-        outputs = torch.flatten(masks, start_dim=0, end_dim=1)
+        outputs = torch.flatten(masked_tf_rep, start_dim=0, end_dim=1)
+        # shape (batch * nsrc, nfilters, nframes)
         outputs = self.average_pool(outputs)
         outputs = outputs.transpose(1, 2)
         # shape (batch, nframes, nfilters)
@@ -197,7 +197,7 @@ class SepDiarNet(Model):
         if self.hparams.linear["num_layers"] > 0:
             for linear in self.linear:
                 outputs = F.leaky_relu(linear(outputs))
-        outputs = outputs.sum(dim=2)
+        outputs = (outputs**2).sum(dim=2)
         outputs = self.classifier(outputs.unsqueeze(-1))
         
         outputs = outputs.reshape(bsz, self.n_sources, -1)
