@@ -78,7 +78,7 @@ class SepDiarNet(Model):
         "monolithic": True,
         "dropout": 0.0,
     }
-    LINEAR_DEFAULTS = {"hidden_size": 64, "num_layers": 2}
+    LINEAR_DEFAULTS = {"hidden_size": 64, "num_layers": 0}
     CONVNET_DEFAULTS = {
         "n_blocks": 8,
         "n_repeats": 3,
@@ -149,6 +149,10 @@ class SepDiarNet(Model):
             diarization_scaling, stride=diarization_scaling
         )
 
+        if self.use_lstm:
+            del lstm["monolithic"]
+            multi_layer_lstm = dict(lstm)
+            self.lstm = nn.LSTM(n_feats_out, **multi_layer_lstm)
         self.linear = nn.ModuleList(
             [
                 nn.Linear(in_features, out_features)
@@ -163,7 +167,10 @@ class SepDiarNet(Model):
         )
 
     def build(self):
-        self.classifier = nn.Linear(1, 1)
+        if self.use_lstm or self.hparams.linear["num_layers"] > 0:
+            self.classifier = nn.Linear(64, 1)
+        else:
+            self.classifier = nn.Linear(1, 1)
         self.activation = self.default_activation()
 
     def configure_optimizers(self):
@@ -193,12 +200,14 @@ class SepDiarNet(Model):
         outputs = self.average_pool(outputs)
         outputs = outputs.transpose(1, 2)
         # shape (batch, nframes, nfilters)
-
+        if self.use_lstm:
+            outputs, _ = self.lstm(outputs)
         if self.hparams.linear["num_layers"] > 0:
             for linear in self.linear:
                 outputs = F.leaky_relu(linear(outputs))
-        outputs = (outputs**2).sum(dim=2)
-        outputs = self.classifier(outputs.unsqueeze(-1))
+        if not self.use_lstm and self.hparams.linear["num_layers"] == 0:
+            outputs = (outputs**2).sum(dim=2).unsqueeze(-1)
+        outputs = self.classifier(outputs)
         
         outputs = outputs.reshape(bsz, self.n_sources, -1)
         outputs = outputs.transpose(1, 2)
