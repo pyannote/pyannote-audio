@@ -72,8 +72,8 @@ class SepDiarNet(Model):
         "stride": 32,
     }
     LSTM_DEFAULTS = {
-        "hidden_size": 128,
-        "num_layers": 4,
+        "hidden_size": 64,
+        "num_layers": 2,
         "bidirectional": True,
         "monolithic": True,
         "dropout": 0.0,
@@ -148,17 +148,21 @@ class SepDiarNet(Model):
         self.average_pool = nn.AvgPool1d(
             diarization_scaling, stride=diarization_scaling
         )
-
+        lstm_out_features = n_feats_out
         if self.use_lstm:
             del lstm["monolithic"]
             multi_layer_lstm = dict(lstm)
             self.lstm = nn.LSTM(n_feats_out, **multi_layer_lstm)
+            lstm_out_features = lstm["hidden_size"] * (
+                2 if lstm["bidirectional"] else 1
+            )
+        
         self.linear = nn.ModuleList(
             [
                 nn.Linear(in_features, out_features)
                 for in_features, out_features in pairwise(
                     [
-                        encoder_decoder["n_filters"],
+                        lstm_out_features,
                     ]
                     + [self.hparams.linear["hidden_size"]]
                     * self.hparams.linear["num_layers"]
@@ -212,4 +216,4 @@ class SepDiarNet(Model):
         outputs = outputs.reshape(bsz, self.n_sources, -1)
         outputs = outputs.transpose(1, 2)
 
-        return self.activation[0](outputs), decoded_sources
+        return self.activation[0](outputs)
