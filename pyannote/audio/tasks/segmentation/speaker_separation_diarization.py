@@ -1111,7 +1111,9 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
             for i, num in enumerate(num_active_speakers_mix2):
                 if num == 1:
                     additional_separation_loss.append(min([singlesrc_neg_sisdr(mix2_sources[i,:,j].unsqueeze(0), mix2[i].unsqueeze(0)) for j in range(3)]))
-            separation_loss += torch.stack(additional_separation_loss).mean()
+            # check if the array is empty
+            if additional_separation_loss:
+                separation_loss += torch.stack(additional_separation_loss).mean()
             # separation_loss += self.separation_loss(
             #     predicted_sources_mix1.transpose(1, 2), torch.stack((mix1_masked, torch.zeros_like(mix1))).transpose(0, 1), speaker_idx_mix1[0::3], speaker_idx_mix2[0::3]
             # ) * mix1_masks.sum() / num_samples / bsz * 3 + self.separation_loss(
