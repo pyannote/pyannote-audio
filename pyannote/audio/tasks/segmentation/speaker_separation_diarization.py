@@ -61,6 +61,7 @@ from asteroid.losses import (
     multisrc_neg_sisdr,
     PITLossWrapper,
     pairwise_neg_sisdr,
+    singlesrc_neg_sisdr,
 )
 from torch.utils.data._utils.collate import default_collate
 
@@ -164,7 +165,7 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         max_num_speakers: int = None,  # deprecated in favor of `max_speakers_per_chunk``
         loss: Literal["bce", "mse"] = None,  # deprecated
         separation_loss_weight: float = 0.5,
-        original_mixtures_for_separation: bool = False,
+        original_mixtures_for_separation: bool = True,
         forced_alignment_weight: float = 0.0,
         add_noise_sources: bool = False,
     ):
@@ -401,20 +402,20 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
             y, self.model.example_output[0].frames, labels=labels
         )
 
-        if self.original_mixtures_for_separation:
-            start_idx_samples = np.floor(start * 16000).astype(int)
-            end_idx_samples = np.floor(end * 16000).astype(int)
-            sample_level_labels = np.zeros((num_samples, num_labels), dtype=np.uint8)
-            for start, end, label in zip(
-                start_idx_samples, end_idx_samples, chunk_annotations[label_scope_key]
-            ):
-                mapped_label = mapping[label]
-                sample_level_labels[start:end, mapped_label] = 1
+        # if self.original_mixtures_for_separation:
+        #     start_idx_samples = np.floor(start * 16000).astype(int)
+        #     end_idx_samples = np.floor(end * 16000).astype(int)
+        #     sample_level_labels = np.zeros((num_samples, num_labels), dtype=np.uint8)
+        #     for start, end, label in zip(
+        #         start_idx_samples, end_idx_samples, chunk_annotations[label_scope_key]
+        #     ):
+        #         mapped_label = mapping[label]
+        #         sample_level_labels[start:end, mapped_label] = 1
 
-            # only frames with a single label should be used for mixit training
-            sample["X_separation_mask"] = torch.from_numpy(
-                sample_level_labels.sum(axis=1) == 1
-            )
+        #     # only frames with a single label should be used for mixit training
+        #     sample["X_separation_mask"] = torch.from_numpy(
+        #         sample_level_labels.sum(axis=1) == 1
+        #     )
 
         metadata = self.metadata[file_id]
         sample["meta"] = {key: metadata[key] for key in metadata.dtype.names}
@@ -826,8 +827,8 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         # collate metadata
         collated_meta = self.collate_meta(batch)
 
-        if self.original_mixtures_for_separation:
-            collated_X_separation_mask = self.collate_X_separation_mask(batch)
+        # if self.original_mixtures_for_separation:
+        #     collated_X_separation_mask = self.collate_X_separation_mask(batch)
 
         # apply augmentation (only in "train" stage)
         self.augmentation.train(mode=(stage == "train"))
@@ -837,13 +838,13 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
             targets=collated_y.unsqueeze(1),
         )
 
-        if self.original_mixtures_for_separation:
-            return {
-                "X": augmented.samples,
-                "y": augmented.targets.squeeze(1),
-                "meta": collated_meta,
-                "X_separation_mask": collated_X_separation_mask,
-            }
+        # if self.original_mixtures_for_separation:
+        #     return {
+        #         "X": augmented.samples,
+        #         "y": augmented.targets.squeeze(1),
+        #         "meta": collated_meta,
+        #         "X_separation_mask": collated_X_separation_mask,
+        #     }
         return {
             "X": augmented.samples,
             "y": augmented.targets.squeeze(1),
@@ -1003,12 +1004,12 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         num_samples = waveform.shape[2]
         mix1 = waveform[0::2].squeeze(1)
         mix2 = waveform[1::2].squeeze(1)
-        if self.original_mixtures_for_separation:
-            # extract parts with only one speaker from original mixtures
-            mix1_masks = batch["X_separation_mask"][0::2]
-            mix2_masks = batch["X_separation_mask"][1::2]
-            mix1_masked = mix1 * mix1_masks
-            mix2_masked = mix2 * mix2_masks
+        # if self.original_mixtures_for_separation:
+        #     # extract parts with only one speaker from original mixtures
+        #     mix1_masks = batch["X_separation_mask"][0::2]
+        #     mix2_masks = batch["X_separation_mask"][1::2]
+        #     mix1_masked = mix1 * mix1_masks
+        #     mix2_masked = mix2 * mix2_masks
 
         (
             mom,
@@ -1103,7 +1104,14 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         ).mean()
 
         if self.original_mixtures_for_separation:
-            raise NotImplementedError
+            additional_separation_loss = []
+            for i, num in enumerate(num_active_speakers_mix1):
+                if num == 1:
+                    additional_separation_loss.append(min([singlesrc_neg_sisdr(mix1_sources[i,:,j].unsqueeze(0), mix1[i].unsqueeze(0)) for j in range(3)]))
+            for i, num in enumerate(num_active_speakers_mix2):
+                if num == 1:
+                    additional_separation_loss.append(min([singlesrc_neg_sisdr(mix2_sources[i,:,j].unsqueeze(0), mix2[i].unsqueeze(0)) for j in range(3)]))
+            separation_loss += torch.stack(additional_separation_loss).mean()
             # separation_loss += self.separation_loss(
             #     predicted_sources_mix1.transpose(1, 2), torch.stack((mix1_masked, torch.zeros_like(mix1))).transpose(0, 1), speaker_idx_mix1[0::3], speaker_idx_mix2[0::3]
             # ) * mix1_masks.sum() / num_samples / bsz * 3 + self.separation_loss(
