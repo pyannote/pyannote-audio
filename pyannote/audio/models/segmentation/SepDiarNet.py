@@ -216,4 +216,4 @@ class SepDiarNet(Model):
         outputs = outputs.reshape(bsz, self.n_sources, -1)
         outputs = outputs.transpose(1, 2)
 
-        return self.activation[0](outputs)
+        return self.activation[0](outputs), decoded_sources
