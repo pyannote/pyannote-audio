@@ -1,4 +1,4 @@
-Using `pyannote.audio` open-source toolkit in production?
+Using `pyannote.audio` open-source toolkit in production?  
 Make the most of it thanks to our [consulting services](https://herve.niderb.fr/consulting.html).
 
 
