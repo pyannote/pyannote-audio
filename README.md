@@ -74,7 +74,6 @@ pip install -qq https://github.com/pyannote/pyannote-audio/archive/refs/heads/de
     - 2021-08-05 > ["Streaming voice activity detection with pyannote.audio"](https://herve.niderb.fr/fastpages/2021/08/05/Streaming-voice-activity-detection-with-pyannote.html)
 - Miscellaneous
     - [Training with `pyannote-audio-train` command line tool](tutorials/training_with_cli.md)
-    - [Annotating your own data with Prodigy](tutorials/prodigy.md)
     - [Speaker verification](tutorials/speaker_verification.ipynb)
     - Visualization and debugging
 
