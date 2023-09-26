@@ -79,7 +79,8 @@ for turn, _, speaker in diarization.itertracks(yield_label=True):
 
 ## Benchmark
 
-Out of the box, `pyannote.audio` speaker diarization [pipeline](https://hf.co/pyannote/speaker-diarization-3.0) v3.0 is expected to be much better (and faster) than v2.x. Those numbers are diarization error rates (in %):
+Out of the box, `pyannote.audio` speaker diarization [pipeline](https://hf.co/pyannote/speaker-diarization-3.0) v3.0 is expected to be much better (and faster) than v2.x.  
+Those numbers are diarization error rates (in %):
 
 | Dataset \ Version      | v1.1 | v2.0 | [v2.1](https://hf.co/pyannote/speaker-diarization-2.1) | [v3.0](https://hf.co/pyannote/speaker-diarization-3.0) |  <a href="mailto:herve-at-niderb-dot-fr?subject=Premium pyannote.audio pipeline&body=Looks like I got your attention! Drop me an email for more details. Hervé.">Premium</a>  |
 | ---------------------- | ---- | ---- | ------ | ------ | --------- |
