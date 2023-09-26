@@ -1,9 +1,7 @@
 Using `pyannote.audio` open-source toolkit in production?  
 Make the most of it thanks to our [consulting services](https://herve.niderb.fr/consulting.html).
 
-
-# `pyannote.audio` speaker diarization toolkit [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pyannote/pyannote-audio/blob/develop/tutorials/intro.ipynb)
-
+# `pyannote.audio` speaker diarization toolkit
 
 `pyannote.audio` is an open-source toolkit written in Python for speaker diarization. Based on [PyTorch](pytorch.org) machine learning framework, it comes with state-of-the-art [pretrained models and pipelines](https://hf.co/pyannote), that can be further finetuned to your own data for even better performance.
 
