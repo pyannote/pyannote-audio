@@ -14,7 +14,7 @@ Make the most of it thanks to our [consulting services](https://herve.niderb.fr/
 
 1. Install [`pyannote.audio`](https://github.com/pyannote/pyannote-audio) `3.0` with `pip install pyannote.audio`
 2. Accept [`pyannote/segmentation-3.0`](https://hf.co/pyannote/segmentation-3.0) user conditions
-3. Accept [`pyannote/speaker-diarization-3.0`](https://hf.co/pyannote-speaker-diarization-3.0) user conditions
+3. Accept [`pyannote/speaker-diarization-3.0`](https://hf.co/pyannote/speaker-diarization-3.0) user conditions
 4. Create access token at [`hf.co/settings/tokens`](https://hf.co/settings/tokens).
 
 
