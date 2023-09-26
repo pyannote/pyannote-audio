@@ -1,6 +1,6 @@
 # Changelog
 
-## Version 3.0.0 (2023-xx-xx)
+## Version 3.0.0 (2023-09-26)
 
 ### Features and improvements
 
