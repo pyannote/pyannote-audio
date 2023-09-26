@@ -1,24 +1,30 @@
 # Changelog
 
-## Version 3.0 (xxxx-xx-xx)
+## Version 3.0.0 (2023-xx-xx)
 
-### Highlights
+### Features and improvements
 
-- *"Harder"*. Fixed [major reproducibility issue](https://github.com/pyannote/pyannote-audio/issues/1370) with Ampere (A100) NVIDIA GPUs
-    In case you tried `pyannote.audio` pretrained pipelines in the past on Ampera (A100) NVIDIA GPUs
-    and were disappointed by the accuracy, please give it another try with this new version.
-- "Better".
-- "Faster".
-- "Stronger".
+  - feat(pipeline): send pipeline to device with `pipeline.to(device)`
+  - feat(pipeline): add `return_embeddings` option to `SpeakerDiarization` pipeline
+  - feat(pipeline): make `segmentation_batch_size` and `embedding_batch_size` mutable in `SpeakerDiarization` pipeline (they now default to `1`)
+  - feat(pipeline): add progress hook to pipelines
+  - feat(task): add [powerset](https://www.isca-speech.org/archive/interspeech_2023/plaquet23_interspeech.html) support to `SpeakerDiarization` task
+  - feat(task): add support for multi-task models
+  - feat(task): add support for label scope in speaker diarization task
+  - feat(task): add support for missing classes in multi-label segmentation task
+  - feat(model): add segmentation model based on torchaudio self-supervised representation
+  - feat(pipeline): check version compatibility at load time
+  - improve(task): load metadata as tensors rather than pyannote.core instances
+  - improve(task): improve error message on missing specifications
 
 ### Breaking changes
 
   - BREAKING(task): rename `Segmentation` task to `SpeakerDiarization`
-  - BREAKING(task): remove support for variable chunk duration for segmentation tasks
   - BREAKING(pipeline): pipeline defaults to CPU (use `pipeline.to(device)`)
   - BREAKING(pipeline): remove `SpeakerSegmentation` pipeline (use `SpeakerDiarization` pipeline)
-  - BREAKING(pipeline): remove support for `FINCHClustering` and `HiddenMarkovModelClustering`
   - BREAKING(pipeline): remove `segmentation_duration` parameter from `SpeakerDiarization` pipeline (defaults to `duration` of segmentation model)
+  - BREAKING(task): remove support for variable chunk duration for segmentation tasks
+  - BREAKING(pipeline): remove support for `FINCHClustering` and `HiddenMarkovModelClustering`
   - BREAKING(setup): drop support for Python 3.7
   - BREAKING(io): channels are now 0-indexed (used to be 1-indexed)
   - BREAKING(io): multi-channel audio is no longer downmixed to mono by default.
@@ -29,21 +35,8 @@
   - BREAKING(model): get rid of (flaky) `Model.introspection`
     If, for some weird reason, you wrote some custom code based on that,
     you should instead rely on `Model.example_output`.
+  - BREAKING(interactive): remove support for Prodigy recipes
 
-### Features and improvements
-
-  - feat(task): add [powerset](https://www.isca-speech.org/archive/interspeech_2023/plaquet23_interspeech.html) support to `SpeakerDiarization` task
-  - feat(task): add support for multi-task models
-  - feat(task): add support for label scope in speaker diarization task
-  - feat(task): add support for missing classes in multi-label segmentation task
-  - feat(model): add segmentation model based on torchaudio self-supervised representation
-  - feat(pipeline): send pipeline to device with `pipeline.to(device)`
-  - feat(pipeline): add `return_embeddings` option to `SpeakerDiarization` pipeline
-  - feat(pipeline): make `segmentation_batch_size` and `embedding_batch_size` mutable in `SpeakerDiarization` pipeline (they now default to `1`)
-  - feat(pipeline): add progress hook to pipelines
-  - feat(pipeline): check version compatibility at load time
-  - improve(task): load metadata as tensors rather than pyannote.core instances
-  - improve(task): improve error message on missing specifications
 
 ### Fixes and improvements
 
@@ -54,7 +47,7 @@
   - fix(task): fix support for "balance" option
   - improve(task): shorten and improve structure of Tensorboard tags
 
-### Dependencies
+### Dependencies update
 
   - setup: switch to torch 2.0+, torchaudio 2.0+, soundfile 0.12+, lightning 2.0+, torchmetrics 0.11+
   - setup: switch to pyannote.core 5.0+, pyannote.database 5.0+, and pyannote.pipeline 3.0+
