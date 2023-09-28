@@ -1,5 +1,9 @@
 # Changelog
 
+## Version 3.0.1 (2023-09-28)
+
+  - fix(pipeline): fix WeSpeaker GPU support
+
 ## Version 3.0.0 (2023-09-26)
 
 ### Features and improvements
