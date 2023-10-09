@@ -415,6 +415,7 @@ class JointSpeakerDiarizationAndSeparation(SpeakerDiarizationMixin, Pipeline):
         min_speakers: int = None,
         max_speakers: int = None,
         hook: Optional[Callable] = None,
+        zero: bool = False,
     ) -> Annotation:
         """Apply speaker diarization
 
@@ -506,16 +507,6 @@ class JointSpeakerDiarizationAndSeparation(SpeakerDiarizationMixin, Pipeline):
 
         hard_clusters[inactive_speakers] = -2
 
-        clustered_separations = self.reconstruct(separations, hard_clusters)
-        sources = Inference.aggregate(
-            clustered_separations,
-            frames=self._separation_frames,
-            hamming=True,
-            missing=0.0,
-            skip_average=True,
-        )
-        # shape is (num_frames, num_speakers)
-
         clustered_segmentations = self.reconstruct(segmentations, hard_clusters)
         discrete_diarization = self.to_diarization(clustered_segmentations, count)
         hook("discrete_diarization", discrete_diarization)
@@ -527,6 +518,21 @@ class JointSpeakerDiarizationAndSeparation(SpeakerDiarizationMixin, Pipeline):
             min_duration_off=self.segmentation.min_duration_off,
         )
         diarization.uri = file["uri"]
+
+        clustered_separations = self.reconstruct(separations, hard_clusters)
+        sources = Inference.aggregate(
+            clustered_separations,
+            frames=self._separation_frames,
+            hamming=True,
+            missing=0.0,
+            skip_average=True,
+        )
+        # shape is (num_frames, num_speakers)
+
+        # zero-out sources when speaker is inactive
+        # WARNING: this should be rewritten to avoid huge memory consumption
+        if zero:
+            sources.data = sources.data * discrete_diarization.align(sources).data
 
         # when reference is available, use it to map hypothesized speakers
         # to reference speakers (this makes later error analysis easier
