@@ -217,9 +217,12 @@ class Model(pl.LightningModule):
             self.specifications, __example_output, example_output
         )
 
+    def prepare_data(self):
+        self.task.prepare_data()
+    
     def setup(self, stage=None):
         if stage == "fit":
-            self.task.setup_metadata()
+            self.task.setup()
 
         # list of layers before adding task-dependent layers
         before = set((name, id(module)) for name, module in self.named_modules())

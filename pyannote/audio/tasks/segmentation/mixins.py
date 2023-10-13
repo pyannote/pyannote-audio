@@ -30,6 +30,7 @@ from typing import Dict, Sequence, Union
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import pickle
 from pyannote.database.protocol import SegmentationProtocol, SpeakerDiarizationProtocol
 from pyannote.database.protocol.protocol import Scope, Subset
 from pytorch_lightning.loggers import MLFlowLogger, TensorBoardLogger
@@ -73,317 +74,30 @@ class SegmentationTaskMixin:
 
     def setup(self):
         """Setup"""
-
-        # duration of training chunks
-        # TODO: handle variable duration case
-        duration = getattr(self, "duration", 0.0)
-
-        # list of possible values for each metadata key
-        metadata_unique_values = defaultdict(list)
-
-        metadata_unique_values["subset"] = Subsets
-
-        if isinstance(self.protocol, SpeakerDiarizationProtocol):
-            metadata_unique_values["scope"] = Scopes
-
-        elif isinstance(self.protocol, SegmentationProtocol):
-            classes = getattr(self, "classes", list())
-
-        # make sure classes attribute exists (and set to None if it did not exist)
-        self.classes = getattr(self, "classes", None)
-        if self.classes is None:
-            classes = list()
-            # metadata_unique_values["classes"] = list(classes)
-
-        audios = list()  # list of path to audio files
-        audio_infos = list()
-        audio_encodings = list()
-        metadata = list()  # list of metadata
-
-        annotated_duration = list()  # total duration of annotated regions (per file)
-        annotated_regions = list()  # annotated regions
-        annotations = list()  # actual annotations
-        annotated_classes = list()  # list of annotated classes (per file)
-        unique_labels = list()
-
-        if self.has_validation:
-            files_iter = itertools.chain(
-                self.protocol.train(), self.protocol.development()
-            )
-        else:
-            files_iter = self.protocol.train()
-
-        for file_id, file in enumerate(files_iter):
-            # gather metadata and update metadata_unique_values so that each metadatum
-            # (e.g. source database or label) is represented by an integer.
-            metadatum = dict()
-
-            # keep track of source database and subset (train, development, or test)
-            if file["database"] not in metadata_unique_values["database"]:
-                metadata_unique_values["database"].append(file["database"])
-            metadatum["database"] = metadata_unique_values["database"].index(
-                file["database"]
-            )
-            metadatum["subset"] = Subsets.index(file["subset"])
-
-            # keep track of speaker label scope (file, database, or global) for speaker diarization protocols
-            if isinstance(self.protocol, SpeakerDiarizationProtocol):
-                metadatum["scope"] = Scopes.index(file["scope"])
-
-            # keep track of list of classes for regular segmentation protocols
-            # Different files may be annotated using a different set of classes
-            # (e.g. one database for speech/music/noise, and another one for male/female/child)
-            if isinstance(self.protocol, SegmentationProtocol):
-                if "classes" in file:
-                    local_classes = file["classes"]
-                else:
-                    local_classes = file["annotation"].labels()
-
-                # if task was not initialized with a fixed list of classes,
-                # we build it as the union of all classes found in files
-                if self.classes is None:
-                    for klass in local_classes:
-                        if klass not in classes:
-                            classes.append(klass)
-                    annotated_classes.append(
-                        [classes.index(klass) for klass in local_classes]
-                    )
-
-                # if task was initialized with a fixed list of classes,
-                # we make sure that all files use a subset of these classes
-                # if they don't, we issue a warning and ignore the extra classes
-                else:
-                    extra_classes = set(local_classes) - set(self.classes)
-                    if extra_classes:
-                        warnings.warn(
-                            f"Ignoring extra classes ({', '.join(extra_classes)}) found for file {file['uri']} ({file['database']}). "
-                        )
-                    annotated_classes.append(
-                        [
-                            self.classes.index(klass)
-                            for klass in set(local_classes) & set(self.classes)
-                        ]
-                    )
-
-            remaining_metadata_keys = set(file) - set(
-                [
-                    "uri",
-                    "database",
-                    "subset",
-                    "audio",
-                    "torchaudio.info",
-                    "scope",
-                    "classes",
-                    "annotation",
-                    "annotated",
-                ]
-            )
-
-            # keep track of any other (integer or string) metadata provided by the protocol
-            # (e.g. a "domain" key for domain-adversarial training)
-            for key in remaining_metadata_keys:
-                value = file[key]
-
-                if isinstance(value, str):
-                    if value not in metadata_unique_values[key]:
-                        metadata_unique_values[key].append(value)
-                    metadatum[key] = metadata_unique_values[key].index(value)
-
-                elif isinstance(value, int):
-                    metadatum[key] = value
-
-                else:
-                    warnings.warn(
-                        f"Ignoring '{key}' metadata because of its type ({type(value)}). Only str and int are supported for now.",
-                        category=UserWarning,
-                    )
-
-            metadata.append(metadatum)
-
-            database_unique_labels = list()
-
-            # reset list of file-scoped labels
-            file_unique_labels = list()
-
-            # path to audio file
-            audios.append(str(file["audio"]))
-
-            # audio info
-            audio_info = file["torchaudio.info"]
-            audio_infos.append(
-                (
-                    audio_info.sample_rate,  # sample rate
-                    audio_info.num_frames,  # number of frames
-                    audio_info.num_channels,  # number of channels
-                    audio_info.bits_per_sample,  # bits per sample
-                )
-            )
-            audio_encodings.append(audio_info.encoding)  # encoding
-
-            # annotated regions and duration
-            _annotated_duration = 0.0
-            for segment in file["annotated"]:
-                # skip annotated regions that are shorter than training chunk duration
-                if segment.duration < duration:
-                    continue
-
-                # append annotated region
-                annotated_region = (
-                    file_id,
-                    segment.duration,
-                    segment.start,
-                    segment.end,
-                )
-                annotated_regions.append(annotated_region)
-
-                # increment annotated duration
-                _annotated_duration += segment.duration
-
-            # append annotated duration
-            annotated_duration.append(_annotated_duration)
-
-            # annotations
-            for segment, _, label in file["annotation"].itertracks(yield_label=True):
-                # "scope" is provided by speaker diarization protocols to indicate
-                # whether speaker labels are local to the file ('file'), consistent across
-                # all files in a database ('database'), or globally consistent ('global')
-
-                if "scope" in file:
-                    # 0 = 'file'
-                    # 1 = 'database'
-                    # 2 = 'global'
-                    scope = Scopes.index(file["scope"])
-
-                    # update list of file-scope labels
-                    if label not in file_unique_labels:
-                        file_unique_labels.append(label)
-                    # and convert label to its (file-scope) index
-                    file_label_idx = file_unique_labels.index(label)
-
-                    database_label_idx = global_label_idx = -1
-
-                    if scope > 0:  # 'database' or 'global'
-                        # update list of database-scope labels
-                        if label not in database_unique_labels:
-                            database_unique_labels.append(label)
-
-                        # and convert label to its (database-scope) index
-                        database_label_idx = database_unique_labels.index(label)
-
-                    if scope > 1:  # 'global'
-                        # update list of global-scope labels
-                        if label not in unique_labels:
-                            unique_labels.append(label)
-                        # and convert label to its (global-scope) index
-                        global_label_idx = unique_labels.index(label)
-
-                # basic segmentation protocols do not provide "scope" information
-                # as classes are global by definition
-
-                else:
-                    try:
-                        file_label_idx = (
-                            database_label_idx
-                        ) = global_label_idx = classes.index(label)
-                    except ValueError:
-                        # skip labels that are not in the list of classes
-                        continue
-
-                annotations.append(
-                    (
-                        file_id,  # index of file
-                        segment.start,  # start time
-                        segment.end,  # end time
-                        file_label_idx,  # file-scope label index
-                        database_label_idx,  # database-scope label index
-                        global_label_idx,  # global-scope index
-                    )
-                )
-
-        # since not all metadata keys are present in all files, fallback to -1 when a key is missing
-        metadata = [
-            tuple(metadatum.get(key, -1) for key in metadata_unique_values)
-            for metadatum in metadata
-        ]
-        dtype = [(key, "i") for key in metadata_unique_values]
-        self.metadata = np.array(metadata, dtype=dtype)
-
-        # NOTE: read with str(self.audios[file_id], encoding='utf-8')
-        self.audios = np.array(audios, dtype=np.string_)
-
-        # turn list of files metadata into a single numpy array
-        # TODO: improve using https://github.com/pytorch/pytorch/issues/13246#issuecomment-617140519
-
-        dtype = [
-            ("sample_rate", "i"),
-            ("num_frames", "i"),
-            ("num_channels", "i"),
-            ("bits_per_sample", "i"),
-        ]
-        self.audio_infos = np.array(audio_infos, dtype=dtype)
-        self.audio_encodings = np.array(audio_encodings, dtype=np.string_)
-
-        self.annotated_duration = np.array(annotated_duration)
-
-        # turn list of annotated regions into a single numpy array
-        dtype = [("file_id", "i"), ("duration", "f"), ("start", "f"), ("end", "f")]
-        self.annotated_regions = np.array(annotated_regions, dtype=dtype)
-
-        # convert annotated_classes (which is a list of list of classes, one list of classes per file)
-        # into a single (num_files x num_classes) numpy array:
-        #    * True indicates that this particular class was annotated for this particular file (though it may not be active in this file)
-        #    * False indicates that this particular class was not even annotated (i.e. its absence does not imply that it is not active in this file)
-        if isinstance(self.protocol, SegmentationProtocol) and self.classes is None:
-            self.classes = classes
-        self.annotated_classes = np.zeros(
-            (len(annotated_classes), len(self.classes)), dtype=np.bool_
-        )
-        for file_id, classes in enumerate(annotated_classes):
-            self.annotated_classes[file_id, classes] = True
-
-        # turn list of annotations into a single numpy array
-        dtype = [
-            ("file_id", "i"),
-            ("start", "f"),
-            ("end", "f"),
-            ("file_label_idx", "i"),
-            ("database_label_idx", "i"),
-            ("global_label_idx", "i"),
-        ]
-        self.annotations = np.array(annotations, dtype=dtype)
-
-        self.metadata_unique_values = metadata_unique_values
-
-        if not self.has_validation:
-            return
-
-        validation_chunks = list()
-
-        # obtain indexes of files in the validation subset
-        validation_file_ids = np.where(
-            self.metadata["subset"] == Subsets.index("development")
-        )[0]
-
-        # iterate over files in the validation subset
-        for file_id in validation_file_ids:
-            # get annotated regions in file
-            annotated_regions = self.annotated_regions[
-                self.annotated_regions["file_id"] == file_id
-            ]
-
-            # iterate over annotated regions
-            for annotated_region in annotated_regions:
-                # number of chunks in annotated region
-                num_chunks = round(annotated_region["duration"] // duration)
-
-                # iterate over chunks
-                for c in range(num_chunks):
-                    start_time = annotated_region["start"] + c * duration
-                    validation_chunks.append((file_id, start_time, duration))
-
-        dtype = [("file_id", "i"), ("start", "f"), ("duration", "f")]
-        self.validation_chunks = np.array(validation_chunks, dtype=dtype)
-
+        if not self.has_setup_metadata:
+            # load data cached by prepare_data method into the task:
+            try:
+                with open(self.cache_path, 'rb') as data_file:
+                    data_dict = pickle.load(data_file)
+                    self.metadata = data_dict["metadata"]
+                    self.audios = data_dict["audios"]
+                    self.audio_infos= data_dict["audio_infos"]
+                    self.audio_encodings = data_dict["audio_encodings"]
+                    self.annotated_duration = data_dict["annotated_duration"]
+                    self.annotated_regions = data_dict["annotated_regions"]
+                    self.annotated_classes = data_dict["annotated_classes"]
+                    self.annotations = data_dict["annotations"]
+                    self.metadata_unique_values = data_dict["metadata_unique_values"]
+                    if isinstance(self.protocol, SegmentationProtocol):
+                        self.classes = data_dict["classes"]
+                    if self.has_validation:
+                        self.validation_chunks = data_dict["validation_chunks"]
+            except FileNotFoundError:
+                print("Cached data for protocol not found. Ensure that prepare_data was \
+                      executed correctly and that the path to the task cache is correct")
+                raise
+            self.has_setup_metadata = True
+    
     def default_metric(
         self,
     ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
