@@ -20,6 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import time
 from copy import deepcopy
 from typing import Any, Mapping, Optional, Text
 
@@ -64,11 +65,9 @@ class ProgressHook:
     """
 
     def __init__(self, transient: bool = False):
-        super().__init__()
         self.transient = transient
 
     def __enter__(self):
-
         self.progress = Progress(
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
@@ -90,7 +89,6 @@ class ProgressHook:
         total: Optional[int] = None,
         completed: Optional[int] = None,
     ):
-
         if completed is None:
             completed = total = 1
 
@@ -103,3 +101,79 @@ class ProgressHook:
         # force refresh when completed
         if completed >= total:
             self.progress.refresh()
+
+
+class TimingHook:
+    """Hook to compute processing time of internal steps
+
+    Parameters
+    ----------
+    file_key: str, optional
+        Key used to store processing time in `file`.
+        Defaults to "timing_hook".
+
+    Usage
+    -----
+    >>> with TimingHook() as hook:
+    ...     output = pipeline(file, hook=hook)
+    # file["timing_hook"]  contains processing time for each step
+    """
+
+    def __init__(self, file_key: str = "timing_hook"):
+        self.file_key = file_key
+
+    def __enter__(self):
+        self._pipeline_start_time = time.time()
+        self._start_time = dict()
+        self._end_time = dict()
+        return self
+
+    def __exit__(self, *args):
+        _pipeline_end_time = time.time()
+        processing_time = dict()
+        processing_time["total"] = _pipeline_end_time - self._pipeline_start_time
+        for step_name, _start_time in self._start_time.items():
+            _end_time = self._end_time[step_name]
+            processing_time[step_name] = _end_time - _start_time
+
+        self._file[self.file_key] = processing_time
+
+    def __call__(
+        self,
+        step_name: Text,
+        step_artifact: Any,
+        file: Optional[Mapping] = None,
+        total: Optional[int] = None,
+        completed: Optional[int] = None,
+    ):
+        if not hasattr(self, "_file"):
+            self._file = file
+
+        if completed is None:
+            return
+
+        if completed == 0:
+            self._start_time[step_name] = time.time()
+
+        if completed >= total:
+            self._end_time[step_name] = time.time()
+
+
+class Hooks:
+    def __init__(self, hooks: list):
+        self.hooks = hooks
+
+    def __enter__(self):
+        for hook in self.hooks:
+            if hasattr(hook, "__enter__"):
+                hook.__enter__()
+        return self
+
+    def __exit__(self, *args):
+        for hook in self.hooks:
+            if hasattr(hook, "__exit__"):
+                hook.__exit__(*args)
+
+    def __call__(self, *args: Any, **kwds: Any) -> Any:
+        for hook in self.hooks:
+            hook(*args, **kwds)
