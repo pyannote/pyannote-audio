@@ -160,7 +160,16 @@ class TimingHook:
 
 
 class Hooks:
-    def __init__(self, hooks: list):
+    """List of hooks
+
+    Usage
+    -----
+    >>> with Hooks(ProgessHook(), TimingHook()) as hook:
+    ...     output = pipeline("audio.wav", hook=hook)
+
+    """
+
+    def __init__(self, *hooks):
         self.hooks = hooks
 
     def __enter__(self):
