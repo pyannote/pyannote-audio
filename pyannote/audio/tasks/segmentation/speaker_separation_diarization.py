@@ -402,21 +402,6 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
             y, self.model.example_output[0].frames, labels=labels
         )
 
-        # if self.original_mixtures_for_separation:
-        #     start_idx_samples = np.floor(start * 16000).astype(int)
-        #     end_idx_samples = np.floor(end * 16000).astype(int)
-        #     sample_level_labels = np.zeros((num_samples, num_labels), dtype=np.uint8)
-        #     for start, end, label in zip(
-        #         start_idx_samples, end_idx_samples, chunk_annotations[label_scope_key]
-        #     ):
-        #         mapped_label = mapping[label]
-        #         sample_level_labels[start:end, mapped_label] = 1
-
-        #     # only frames with a single label should be used for mixit training
-        #     sample["X_separation_mask"] = torch.from_numpy(
-        #         sample_level_labels.sum(axis=1) == 1
-        #     )
-
         metadata = self.metadata[file_id]
         sample["meta"] = {key: metadata[key] for key in metadata.dtype.names}
         sample["meta"]["file"] = file_id
@@ -1004,12 +989,6 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         num_samples = waveform.shape[2]
         mix1 = waveform[0::2].squeeze(1)
         mix2 = waveform[1::2].squeeze(1)
-        # if self.original_mixtures_for_separation:
-        #     # extract parts with only one speaker from original mixtures
-        #     mix1_masks = batch["X_separation_mask"][0::2]
-        #     mix2_masks = batch["X_separation_mask"][1::2]
-        #     mix1_masked = mix1 * mix1_masks
-        #     mix2_masked = mix2 * mix2_masks
 
         (
             mom,
@@ -1052,80 +1031,32 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
 
         seg_loss = self.segmentation_loss(permutated_diarization, target, weight=weight)
 
-        # speaker_idx_mix1 = [
-        #     [permutations[i][j] for j in range(num_active_speakers_mix1[i])]
-        #     for i in range(bsz // 2)
-        # ]
-        # speaker_idx_mix2 = [
-        #     [
-        #         permutations[i][j]
-        #         for j in range(
-        #             num_active_speakers_mix1[i],
-        #             num_active_speakers_mix1[i] + num_active_speakers_mix2[i],
-        #         )
-        #     ]
-        #     for i in range(bsz // 2)
-        # ]
-
-        # est_mixes = []
-        # for i in range(bsz // 2):
-        #     if self.add_noise_sources:
-        #         est_mix1 = (
-        #             mom_sources[i, :, speaker_idx_mix1[i]].sum(1) + mom_sources[i, :, 3]
-        #         )
-        #         est_mix2 = (
-        #             mom_sources[i, :, speaker_idx_mix2[i]].sum(1) + mom_sources[i, :, 4]
-        #         )
-        #         est_mix3 = (
-        #             mom_sources[i, :, speaker_idx_mix1[i]].sum(1) + mom_sources[i, :, 4]
-        #         )
-        #         est_mix4 = (
-        #             mom_sources[i, :, speaker_idx_mix2[i]].sum(1) + mom_sources[i, :, 3]
-        #         )
-        #         sep_loss_first_part = self.pit_sep_loss(
-        #             torch.stack((est_mix1, est_mix2)).unsqueeze(0),
-        #             torch.stack((mix1[i], mix2[i])).unsqueeze(0),
-        #         )
-        #         sep_loss_second_part = self.pit_sep_loss(
-        #             torch.stack((est_mix3, est_mix4)).unsqueeze(0),
-        #             torch.stack((mix1[i], mix2[i])).unsqueeze(0),
-        #         )
-        #         if sep_loss_first_part < sep_loss_second_part:
-        #             est_mixes.append(torch.stack((est_mix1, est_mix2)))
-        #         else:
-        #             est_mixes.append(torch.stack((est_mix3, est_mix4)))
-        #     else:
-        #         est_mix1 = mom_sources[i, :, speaker_idx_mix1[i]].sum(1)
-        #         est_mix2 = mom_sources[i, :, speaker_idx_mix2[i]].sum(1)
-        #         est_mixes.append(torch.stack((est_mix1, est_mix2)))
-        # est_mixes = torch.stack(est_mixes)
         separation_loss = self.mixit_loss(
             mom_sources.transpose(1, 2), torch.stack((mix1, mix2)).transpose(0, 1)
         ).mean()
 
         if self.original_mixtures_for_separation:
-            additional_separation_loss = []
             for i, num in enumerate(num_active_speakers_mix1):
                 if num == 1:
-                    additional_separation_loss.append(min([singlesrc_neg_sisdr(mix1_sources[i,:,j].unsqueeze(0), mix1[i].unsqueeze(0)) for j in range(3)]))
+                    separation_loss += min(
+                        [
+                            singlesrc_neg_sisdr(
+                                mix1_sources[i, :, j].unsqueeze(0), mix1[i].unsqueeze(0)
+                            )
+                            for j in range(3)
+                        ]
+                    ).item()
             for i, num in enumerate(num_active_speakers_mix2):
                 if num == 1:
-                    additional_separation_loss.append(min([singlesrc_neg_sisdr(mix2_sources[i,:,j].unsqueeze(0), mix2[i].unsqueeze(0)) for j in range(3)]))
-            # check if the array is empty
-            if additional_separation_loss:
-                separation_loss += torch.stack(additional_separation_loss).mean()
-            # separation_loss += self.separation_loss(
-            #     predicted_sources_mix1.transpose(1, 2), torch.stack((mix1_masked, torch.zeros_like(mix1))).transpose(0, 1), speaker_idx_mix1[0::3], speaker_idx_mix2[0::3]
-            # ) * mix1_masks.sum() / num_samples / bsz * 3 + self.separation_loss(
-            #     predicted_sources_mix2.transpose(1, 2), torch.stack((mix2_masked, torch.zeros_like(mix2))).transpose(0, 1), speaker_idx_mix1[1::3], speaker_idx_mix2[1::3]
-            # ) * mix2_masks.sum() / num_samples / bsz * 3
+                    separation_loss += min(
+                        [
+                            singlesrc_neg_sisdr(
+                                mix2_sources[i, :, j].unsqueeze(0), mix2[i].unsqueeze(0)
+                            )
+                            for j in range(3)
+                        ]
+                    ).item()
 
-        # forced_alignment_loss = (
-        #     (1 - 2 * upscaled_permutated_target[: bsz // 2]) * mix1_sources**2
-        #     + (1 - 2 * upscaled_permutated_target[bsz // 2 : bsz]) * mix2_sources**2
-        #     + (1 - 2 * upscaled_permutated_target[bsz:]) * mom_sources**2
-        # )
-        # forced_alignment_loss = forced_alignment_loss.mean() / 3
         forced_alignment_loss = 0
         return (
             seg_loss,
