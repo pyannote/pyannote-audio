@@ -1,5 +1,11 @@
 # Changelog
 
+## `develop` branch
+
+  - feat(pipeline): add `TimingHook` for profiling processing time
+  - feat(pipeline): add support for list of hooks with `Hooks`
+  - fix(pipeline): add missing "embedding" hook call in `SpeakerDiarization`
+
 ## Version 3.0.1 (2023-09-28)
 
   - fix(pipeline): fix WeSpeaker GPU support
