@@ -155,7 +155,7 @@ def nll_loss(
     num_classes = prediction.shape[2]
 
     losses = F.nll_loss(
-        prediction.view(-1, num_classes),
+        prediction.reshape(-1, num_classes),
         # (batch_size x num_frames, num_classes)
         target.view(-1),
         # (batch_size x num_frames, )
