@@ -7,6 +7,7 @@
 - feat(pipeline): add support for list of hooks with `Hooks`
 - BREAKING(pipeline): remove `logging_hook` (use `ArtifactHook` instead)
 - fix(pipeline): add missing "embedding" hook call in `SpeakerDiarization`
+- feat(utils): add `"soft"` option to `Powerset.to_multilabel`
 
 ## Version 3.0.1 (2023-09-28)
 
