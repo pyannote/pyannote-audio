@@ -212,6 +212,13 @@ class Hooks:
             if hasattr(hook, "__exit__"):
                 hook.__exit__(*args)
 
-    def __call__(self, *args: Any, **kwds: Any) -> Any:
+    def __call__(
+        self,
+        step_name: Text,
+        step_artifact: Any,
+        file: Optional[Mapping] = None,
+        total: Optional[int] = None,
+        completed: Optional[int] = None,
+    ):
         for hook in self.hooks:
-            hook(*args, **kwds)
+            hook(step_name, step_artifact, file=file, total=total, completed=completed)
