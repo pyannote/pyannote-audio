@@ -606,7 +606,7 @@ class WeSpeakerPretrainedSpeakerEmbedding(BaseInference):
 
             embeddings[f] = self.session_.run(
                 output_names=["embs"],
-                input_feed={"feats": masked_feature.numpy()[None]},
+                input_feed={"feats": masked_feature.cpu().numpy()[None]},
             )[0][0]
 
         return embeddings
