@@ -583,7 +583,7 @@ class WeSpeakerPretrainedSpeakerEmbedding(BaseInference):
 
         if masks is None:
             embeddings = self.session_.run(
-                output_names=["embs"], input_feed={"feats": features.numpy()}
+                output_names=["embs"], input_feed={"feats": features.cpu().numpy()}
             )[0]
 
             return embeddings
