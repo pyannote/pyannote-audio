@@ -29,11 +29,11 @@ from pyannote.database import Protocol
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchmetrics import Metric
 
-from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
-from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
+from pyannote.audio.core.task import Problem, Resolution, Specifications
+from pyannote.audio.tasks.segmentation.mixins import SegmentationTask
 
 
-class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
+class OverlappedSpeechDetection(SegmentationTask):
     """Overlapped speech detection
 
     Overlapped speech detection is the task of detecting regions where at least
@@ -163,7 +163,7 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
         sample["X"], _ = self.model.audio.crop(file, chunk, duration=duration)
 
         # gather all annotations of current file
-        annotations = self.annotations[self.annotations["file_id"] == file_id]
+        annotations = self.prepared_data["annotations"][self.prepared_data["annotations"]["file_id"] == file_id]
 
         # gather all annotations with non-empty intersection with current chunk
         chunk_annotations = annotations[
@@ -186,7 +186,7 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
             y, self.model.example_output.frames, labels=["speech"]
         )
 
-        metadata = self.metadata[file_id]
+        metadata = self.prepared_data["metadata"][file_id]
         sample["meta"] = {key: metadata[key] for key in metadata.dtype.names}
         sample["meta"]["file"] = file_id
 

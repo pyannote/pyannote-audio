@@ -23,15 +23,11 @@
 import itertools
 import math
 import random
-import warnings
-from collections import defaultdict
 from typing import Dict, Sequence, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-import pickle
-from pyannote.database.protocol import SegmentationProtocol, SpeakerDiarizationProtocol
 from pyannote.database.protocol.protocol import Scope, Subset
 from pytorch_lightning.loggers import MLFlowLogger, TensorBoardLogger
 from torch.utils.data._utils.collate import default_collate
@@ -39,23 +35,23 @@ from torchaudio.backend.common import AudioMetaData
 from torchmetrics import Metric
 from torchmetrics.classification import BinaryAUROC, MulticlassAUROC, MultilabelAUROC
 
-from pyannote.audio.core.task import Problem
+from pyannote.audio.core.task import Problem, Task
 from pyannote.audio.utils.random import create_rng_for_worker
 
 Subsets = list(Subset.__args__)
 Scopes = list(Scope.__args__)
 
 
-class SegmentationTaskMixin:
+class SegmentationTask(Task):
     """Methods common to most segmentation tasks"""
 
     def get_file(self, file_id):
         file = dict()
 
-        file["audio"] = str(self.audios[file_id], encoding="utf-8")
+        file["audio"] = str(self.prepared_data["audios"][file_id], encoding="utf-8")
 
-        _audio_info = self.audio_infos[file_id]
-        _encoding = self.audio_encodings[file_id]
+        _audio_info = self.prepared_data["audio_infos"][file_id]
+        _encoding = self.prepared_data["audio_encodings"][file_id]
 
         sample_rate = _audio_info["sample_rate"]
         num_frames = _audio_info["num_frames"]
@@ -72,32 +68,6 @@ class SegmentationTaskMixin:
 
         return file
 
-    def setup(self):
-        """Setup"""
-        if not self.has_setup_metadata:
-            # load data cached by prepare_data method into the task:
-            try:
-                with open(self.cache_path, 'rb') as data_file:
-                    data_dict = pickle.load(data_file)
-                    self.metadata = data_dict["metadata"]
-                    self.audios = data_dict["audios"]
-                    self.audio_infos= data_dict["audio_infos"]
-                    self.audio_encodings = data_dict["audio_encodings"]
-                    self.annotated_duration = data_dict["annotated_duration"]
-                    self.annotated_regions = data_dict["annotated_regions"]
-                    self.annotated_classes = data_dict["annotated_classes"]
-                    self.annotations = data_dict["annotations"]
-                    self.metadata_unique_values = data_dict["metadata_unique_values"]
-                    if isinstance(self.protocol, SegmentationProtocol):
-                        self.classes = data_dict["classes"]
-                    if self.has_validation:
-                        self.validation_chunks = data_dict["validation_chunks"]
-            except FileNotFoundError:
-                print("Cached data for protocol not found. Ensure that prepare_data was \
-                      executed correctly and that the path to the task cache is correct")
-                raise
-            self.has_setup_metadata = True
-    
     def default_metric(
         self,
     ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
@@ -133,13 +103,13 @@ class SegmentationTaskMixin:
         """
 
         # indices of training files that matches domain filters
-        training = self.metadata["subset"] == Subsets.index("train")
+        training = self.prepared_data["metadata"]["subset"] == Subsets.index("train")
         for key, value in filters.items():
-            training &= self.metadata[key] == self.metadata_unique_values[key].index(value)
+            training &= self.prepared_data["metadata"][key] == self.prepared_data["metadata_unique_values"][key].index(value)
         file_ids = np.where(training)[0]
 
         # turn annotated duration into a probability distribution
-        annotated_duration = self.annotated_duration[file_ids]
+        annotated_duration = self.prepared_data["annotated_duration"][file_ids]
         prob_annotated_duration = annotated_duration / np.sum(annotated_duration)
 
         duration = self.duration
@@ -154,13 +124,13 @@ class SegmentationTaskMixin:
             for _ in range(num_chunks_per_file):
                 # find indices of annotated regions in this file
                 annotated_region_indices = np.where(
-                    self.annotated_regions["file_id"] == file_id
+                    self.prepared_data["annotated_regions"]["file_id"] == file_id
                 )[0]
 
                 # turn annotated regions duration into a probability distribution
-                prob_annotated_regions_duration = self.annotated_regions["duration"][
+                prob_annotated_regions_duration = self.prepared_data["annotated_regions"]["duration"][
                     annotated_region_indices
-                ] / np.sum(self.annotated_regions["duration"][annotated_region_indices])
+                ] / np.sum(self.prepared_data["annotated_regions"]["duration"][annotated_region_indices])
 
                 # selected one annotated region at random (with probability proportional to its duration)
                 annotated_region_index = np.random.choice(
@@ -168,7 +138,7 @@ class SegmentationTaskMixin:
                 )
 
                 # select one chunk at random in this annotated region
-                _, _, start, end = self.annotated_regions[annotated_region_index]
+                _, _, start, end = self.prepared_data["annotated_regions"][annotated_region_index]
                 start_time = rng.uniform(start, end - duration)
 
                 yield self.prepare_chunk(file_id, start_time, duration)
@@ -199,7 +169,7 @@ class SegmentationTaskMixin:
             # create a subchunk generator for each combination of "balance" keys
             subchunks = dict()
             for product in itertools.product(
-                *[self.metadata_unique_values[key] for key in balance]
+                *[self.prepared_data["metadata_unique_values"][key] for key in balance]
             ):
                 # we iterate on the cartesian product of the values in metadata_unique_values
                 # eg: for balance=["database", "split"], with 2 databases and 2 splits:
@@ -271,11 +241,11 @@ class SegmentationTaskMixin:
     def train__len__(self):
         # Number of training samples in one epoch
 
-        duration = np.sum(self.annotated_duration)
+        duration = np.sum(self.prepared_data["annotated_duration"])
         return max(self.batch_size, math.ceil(duration / self.duration))
 
     def val__getitem__(self, idx):
-        validation_chunk = self.validation_chunks[idx]
+        validation_chunk = self.prepared_data["validation_chunks"][idx]
         return self.prepare_chunk(
             validation_chunk["file_id"],
             validation_chunk["start"],
@@ -283,7 +253,7 @@ class SegmentationTaskMixin:
         )
 
     def val__len__(self):
-        return len(self.validation_chunks)
+        return len(self.prepared_data["validation_chunks"])
 
     def validation_step(self, batch, batch_idx: int):
         """Compute validation area under the ROC curve

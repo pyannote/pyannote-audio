@@ -37,8 +37,8 @@ from rich.progress import track
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchmetrics import Metric
 
-from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
-from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
+from pyannote.audio.core.task import Problem, Resolution, Specifications
+from pyannote.audio.tasks.segmentation.mixins import SegmentationTask
 from pyannote.audio.torchmetrics import (
     DiarizationErrorRate,
     FalseAlarmRate,
@@ -58,7 +58,7 @@ Subsets = list(Subset.__args__)
 Scopes = list(Scope.__args__)
 
 
-class SpeakerDiarization(SegmentationTaskMixin, Task):
+class SpeakerDiarization(SegmentationTask):
     """Speaker diarization
 
     Parameters
@@ -191,18 +191,18 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
 
         # estimate maximum number of speakers per chunk when not provided
         if self.max_speakers_per_chunk is None:
-            training = self.metadata["subset"] == Subsets.index("train")
+            training = self.prepared_data["metadata"]["subset"] == Subsets.index("train")
 
             num_unique_speakers = []
             progress_description = f"Estimating maximum number of speakers per {self.duration:g}s chunk in the training set"
             for file_id in track(
                 np.where(training)[0], description=progress_description
             ):
-                annotations = self.annotations[
-                    np.where(self.annotations["file_id"] == file_id)[0]
+                annotations = self.prepared_data["annotations"][
+                    np.where(self.prepared_data["annotations"]["file_id"] == file_id)[0]
                 ]
-                annotated_regions = self.annotated_regions[
-                    np.where(self.annotated_regions["file_id"] == file_id)[0]
+                annotated_regions = self.prepared_data["annotated_regions"][
+                    np.where(self.prepared_data["annotated_regions"]["file_id"] == file_id)[0]
                 ]
                 for region in annotated_regions:
                     # find annotations within current region
@@ -318,7 +318,7 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
         file = self.get_file(file_id)
 
         # get label scope
-        label_scope = Scopes[self.metadata[file_id]["scope"]]
+        label_scope = Scopes[self.prepared_data["metadata"][file_id]["scope"]]
         label_scope_key = f"{label_scope}_label_idx"
 
         #
@@ -328,7 +328,7 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
         sample["X"], _ = self.model.audio.crop(file, chunk, duration=duration)
 
         # gather all annotations of current file
-        annotations = self.annotations[self.annotations["file_id"] == file_id]
+        annotations = self.prepared_data["annotations"][self.prepared_data["annotations"]["file_id"] == file_id]
 
         # gather all annotations with non-empty intersection with current chunk
         chunk_annotations = annotations[
@@ -364,7 +364,7 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
             y, self.model.example_output.frames, labels=labels
         )
 
-        metadata = self.metadata[file_id]
+        metadata = self.prepared_data["metadata"][file_id]
         sample["meta"] = {key: metadata[key] for key in metadata.dtype.names}
         sample["meta"]["file"] = file_id
 

@@ -54,6 +54,7 @@ from pyannote.audio.utils.protocol import check_protocol
 Subsets = list(Subset.__args__)
 Scopes = list(Scope.__args__)
 
+
 # Type of machine learning problem
 class Problem(Enum):
     BINARY_CLASSIFICATION = 0
@@ -225,7 +226,7 @@ class Task(pl.LightningDataModule):
         pin_memory: bool = False,
         augmentation: BaseWaveformTransform = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
-        cache_path = "./cache/task_cache/protocle_data.pickle"
+        cache_path="./cache/task_cache/prepared_data.pickle"
     ):
         super().__init__()
 
@@ -266,6 +267,7 @@ class Task(pl.LightningDataModule):
         self.augmentation = augmentation or Identity(output_type="dict")
         self._metric = metric
         self.cache_path = cache_path
+        self.prepared_data = {}
 
     def prepare_data(self):
         """Use this to download and prepare data
@@ -284,8 +286,8 @@ class Task(pl.LightningDataModule):
             # data was already created, do nothing
             return
         else:
-            #create the repo
-            os.makedirs(self.cache_path[:self.cache_path.rfind('/')]) 
+            # create the repo
+            os.makedirs(self.cache_path[:self.cache_path.rfind('/')], exist_ok=True)
         # duration of training chunks
         # TODO: handle variable duration case
         duration = getattr(self, "duration", 0.0)
@@ -518,11 +520,11 @@ class Task(pl.LightningDataModule):
             for metadatum in metadata
         ]
         dtype = [(key, "i") for key in metadata_unique_values]
-        
+
         # save all protocol data in a dict
-        data_dict = {}
-        data_dict["metadata"] = np.array(metadata, dtype=dtype)
-        data_dict["audios"] = np.array(audios, dtype=np.string_)
+        prepared_data = {}
+        prepared_data["metadata"] = np.array(metadata, dtype=dtype)
+        prepared_data["audios"] = np.array(audios, dtype=np.string_)
 
         # turn list of files metadata into a single numpy array
         # TODO: improve using https://github.com/pytorch/pytorch/issues/13246#issuecomment-617140519
@@ -532,27 +534,27 @@ class Task(pl.LightningDataModule):
             ("num_channels", "i"),
             ("bits_per_sample", "i"),
         ]
-        data_dict["audio_infos"] = np.array(audio_infos, dtype=dtype)
-        data_dict["audio_encodings"] = np.array(audio_encodings, dtype=np.string_)
-        data_dict["annotated_duration"] = np.array(annotated_duration)
-    
+        prepared_data["audio_infos"] = np.array(audio_infos, dtype=dtype)
+        prepared_data["audio_encodings"] = np.array(audio_encodings, dtype=np.string_)
+        prepared_data["annotated_duration"] = np.array(annotated_duration)
+
         # turn list of annotated regions into a single numpy array
         dtype = [("file_id", "i"), ("duration", "f"), ("start", "f"), ("end", "f")]
         annotated_regions_array = np.array(annotated_regions, dtype=dtype)
-        data_dict["annotated_regions"] = annotated_regions_array
-        
+        prepared_data["annotated_regions"] = annotated_regions_array
+
         # convert annotated_classes (which is a list of list of classes, one list of classes per file)
         # into a single (num_files x num_classes) numpy array:
         #    * True indicates that this particular class was annotated for this particular file (though it may not be active in this file)
         #    * False indicates that this particular class was not even annotated (i.e. its absence does not imply that it is not active in this file)
         if isinstance(self.protocol, SegmentationProtocol) and self.classes is None:
-            data_dict["classes"] = classes
+            prepared_data["classes"] = classes
         annotated_classes_array = np.zeros(
             (len(annotated_classes), len(classes)), dtype=np.bool_
         )
         for file_id, classes in enumerate(annotated_classes):
             annotated_classes_array[file_id, classes] = True
-        data_dict["annotated_classes"] = annotated_classes_array
+        prepared_data["annotated_classes"] = annotated_classes_array
 
         # turn list of annotations into a single numpy array
         dtype = [
@@ -564,17 +566,17 @@ class Task(pl.LightningDataModule):
             ("global_label_idx", "i"),
         ]
 
-        data_dict["annotations"] = np.array(annotations, dtype=dtype)
-        data_dict["metadata_unique_values"] = metadata_unique_values
-        
+        prepared_data["annotations"] = np.array(annotations, dtype=dtype)
+        prepared_data["metadata_unique_values"] = metadata_unique_values
+
         if not self.has_validation:
             return
 
         validation_chunks = list()
-        
+
         # obtain indexes of files in the validation subset
         validation_file_ids = np.where(
-            data_dict["metadata"]["subset"] == Subsets.index("development")
+            prepared_data["metadata"]["subset"] == Subsets.index("development")
         )[0]
 
         # iterate over files in the validation subset
@@ -595,17 +597,30 @@ class Task(pl.LightningDataModule):
                     validation_chunks.append((file_id, start_time, duration))
 
         dtype = [("file_id", "i"), ("start", "f"), ("duration", "f")]
-        data_dict["validation_chunks"] = np.array(validation_chunks, dtype=dtype)
-        
+        prepared_data["validation_chunks"] = np.array(validation_chunks, dtype=dtype)
+
         # cache generated protocol data on disk
         with open(self.cache_path, 'wb') as data_file:
-            pickle.dump(data_dict, data_file)
+            pickle.dump(prepared_data, data_file)
+
+    def setup(self):
+        """Setup"""
+        if not self.has_setup_metadata:
+            # load data cached by prepare_data method into the task:
+            try:
+                with open(self.cache_path, 'rb') as data_file:
+                    self.prepared_data = pickle.load(data_file)
+            except FileNotFoundError:
+                print("Cached data for protocol not found. Ensure that prepare_data was \
+                      executed correctly and that the path to the task cache is correct")
+                raise
+            self.has_setup_metadata = True
 
     @property
     def specifications(self) -> Union[Specifications, Tuple[Specifications]]:
         # setup metadata on-demand the first time specifications are requested and missing
         if not hasattr(self, "_specifications"):
-            self.setup_metadata()
+            self.setup()
         return self._specifications
 
     @specifications.setter

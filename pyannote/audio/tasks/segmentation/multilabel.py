@@ -31,11 +31,11 @@ from pyannote.database.protocol import SegmentationProtocol
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchmetrics import Metric
 
-from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
-from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
+from pyannote.audio.core.task import Problem, Resolution, Specifications
+from pyannote.audio.tasks.segmentation.mixins import SegmentationTask
 
 
-class MultiLabelSegmentation(SegmentationTaskMixin, Task):
+class MultiLabelSegmentation(SegmentationTask):
     """Generic multi-label segmentation
 
     Multi-label segmentation is the process of detecting temporal intervals
@@ -123,7 +123,7 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         super().setup()
 
         self.specifications = Specifications(
-            classes=self.classes,
+            classes=self.prepared_data["classes"],
             problem=Problem.MULTI_LABEL_CLASSIFICATION,
             resolution=Resolution.FRAME,
             duration=self.duration,
@@ -169,7 +169,7 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         sample = dict()
         sample["X"], _ = self.model.audio.crop(file, chunk, duration=duration)
         # gather all annotations of current file
-        annotations = self.annotations[self.annotations["file_id"] == file_id]
+        annotations = self.prepared_data["annotations"][self.prepared_data["annotations"]["file_id"] == file_id]
 
         # gather all annotations with non-empty intersection with current chunk
         chunk_annotations = annotations[
@@ -184,9 +184,9 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
 
         # frame-level targets (-1 for un-annotated classes)
         y = -np.ones(
-            (self.model.example_output.num_frames, len(self.classes)), dtype=np.int8
+            (self.model.example_output.num_frames, len(self.prepared_data["classes"])), dtype=np.int8
         )
-        y[:, self.annotated_classes[file_id]] = 0
+        y[:, self.prepared_data["annotated_classes"][file_id]] = 0
         for start, end, label in zip(
             start_idx, end_idx, chunk_annotations["global_label_idx"]
         ):
@@ -196,7 +196,7 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
             y, self.model.example_output.frames, labels=self.classes
         )
 
-        metadata = self.metadata[file_id]
+        metadata = self.prepared_data["metadata"][file_id]
         sample["meta"] = {key: metadata[key] for key in metadata.dtype.names}
         sample["meta"]["file"] = file_id
 
