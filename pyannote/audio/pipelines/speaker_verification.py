@@ -481,7 +481,7 @@ class WeSpeakerPretrainedSpeakerEmbedding(BaseInference):
         dummy_waveforms = torch.rand(1, 1, 16000)
         features = self.compute_fbank(dummy_waveforms)
         embeddings = self.session_.run(
-            output_names=["embs"], input_feed={"feats": features.numpy()}
+            output_names=["embs"], input_feed={"feats": features.cpu().numpy()}
         )[0]
         _, dimension = embeddings.shape
         return dimension
@@ -504,7 +504,7 @@ class WeSpeakerPretrainedSpeakerEmbedding(BaseInference):
                 continue
 
             embeddings = self.session_.run(
-                output_names=["embs"], input_feed={"feats": features.numpy()}
+                output_names=["embs"], input_feed={"feats": features.cpu().numpy()}
             )[0]
 
             if np.any(np.isnan(embeddings)):
@@ -583,7 +583,7 @@ class WeSpeakerPretrainedSpeakerEmbedding(BaseInference):
 
         if masks is None:
             embeddings = self.session_.run(
-                output_names=["embs"], input_feed={"feats": features.numpy()}
+                output_names=["embs"], input_feed={"feats": features.cpu().numpy()}
             )[0]
 
             return embeddings
@@ -606,7 +606,7 @@ class WeSpeakerPretrainedSpeakerEmbedding(BaseInference):
 
             embeddings[f] = self.session_.run(
                 output_names=["embs"],
-                input_feed={"feats": masked_feature.numpy()[None]},
+                input_feed={"feats": masked_feature.cpu().numpy()[None]},
             )[0][0]
 
         return embeddings

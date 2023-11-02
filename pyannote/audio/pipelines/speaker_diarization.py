@@ -338,6 +338,10 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         for i, batch in enumerate(batches, 1):
             waveforms, masks = zip(*filter(lambda b: b[0] is not None, batch))
 
+            if torch.cuda.is_available():
+                waveforms = tuple([x.cuda() for x in waveforms])
+                masks = tuple([x.cuda() for x in masks])
+
             waveform_batch = torch.vstack(waveforms)
             # (batch_size, 1, num_samples) torch.Tensor
 
