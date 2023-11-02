@@ -332,6 +332,9 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
         embedding_batches = []
 
+        if hook is not None:
+            hook("embeddings", None, total=batch_count, completed=0)
+
         for i, batch in enumerate(batches, 1):
             waveforms, masks = zip(*filter(lambda b: b[0] is not None, batch))
 
