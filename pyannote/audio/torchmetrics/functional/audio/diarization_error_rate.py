@@ -32,6 +32,7 @@ from pyannote.audio.utils.permutation import permutate
 def _der_update(
     preds: torch.Tensor,
     target: torch.Tensor,
+    per_frame: bool = False,
     threshold: Union[torch.Tensor, float] = 0.5,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Compute components of diarization error rate
@@ -53,7 +54,6 @@ def _der_update(
     speech_total : torch.Tensor
         Diarization error rate components accumulated over the whole batch.
     """
-
     # make threshold a (num_thresholds,) tensor
     scalar_threshold = isinstance(threshold, Number)
     if scalar_threshold:
@@ -86,6 +86,9 @@ def _der_update(
 
     speaker_confusion = torch.sum((hypothesis != target) * hypothesis, 1) - false_alarm
     # (batch_size, num_frames, num_thresholds)
+    
+    if per_frame:
+        return torch.sum(false_alarm, 0)[:,0], torch.sum(missed_detection, 0)[:,0], torch.sum(speaker_confusion, 0)[:,0], 1.0 * torch.sum(target)
 
     false_alarm = torch.sum(torch.sum(false_alarm, 1), 0)
     missed_detection = torch.sum(torch.sum(missed_detection, 1), 0)
@@ -107,6 +110,7 @@ def _der_compute(
     missed_detection: torch.Tensor,
     speaker_confusion: torch.Tensor,
     speech_total: torch.Tensor,
+    per_frame: bool = False,
 ) -> torch.Tensor:
     """Compute diarization error rate from its components
 
@@ -123,7 +127,8 @@ def _der_compute(
     der : (num_thresholds, )-shaped torch.Tensor
         Diarization error rate.
     """
-
+    if per_frame:
+        return false_alarm, missed_detection, speaker_confusion, speech_total
     return (false_alarm + missed_detection + speaker_confusion) / (speech_total + 1e-8)
 
 

@@ -49,10 +49,11 @@ class DiarizationErrorRate(Metric):
     higher_is_better = False
     is_differentiable = False
 
-    def __init__(self, threshold: float = 0.5):
+    def __init__(self, threshold: float = 0.5, per_frame: bool = False):
         super().__init__()
 
         self.threshold = threshold
+        self.per_frame = per_frame
 
         self.add_state("false_alarm", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state(
@@ -85,14 +86,17 @@ class DiarizationErrorRate(Metric):
         speech_total : torch.Tensor
             Diarization error rate components accumulated over the whole batch.
         """
-
-        false_alarm, missed_detection, speaker_confusion, speech_total = _der_update(
+        if self.per_frame:
+            self.false_alarm, self.missed_detection, self.speaker_confusion, self.speech_total =  _der_update(preds, target, 
+                                                                                                              per_frame = self.per_frame, threshold=self.threshold)
+        else:
+            false_alarm, missed_detection, speaker_confusion, speech_total = _der_update(
             preds, target, threshold=self.threshold
-        )
-        self.false_alarm += false_alarm
-        self.missed_detection += missed_detection
-        self.speaker_confusion += speaker_confusion
-        self.speech_total += speech_total
+            )
+            self.false_alarm += false_alarm
+            self.missed_detection += missed_detection
+            self.speaker_confusion += speaker_confusion
+            self.speech_total += speech_total
 
     def compute(self):
         return _der_compute(
@@ -100,6 +104,7 @@ class DiarizationErrorRate(Metric):
             self.missed_detection,
             self.speaker_confusion,
             self.speech_total,
+            self.per_frame
         )
 
 
