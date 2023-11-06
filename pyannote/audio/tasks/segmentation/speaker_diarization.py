@@ -438,17 +438,6 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
         seg_loss : torch.Tensor
             Permutation-invariant segmentation loss
         """
-        
-        latency = 0 # will be a parameter of the task (in s)
-        nbframes = permutated_prediction.shape[1]
-        delay =  int(np.round(nbframes * latency / self.duration)) # round to the nearest integer (in nb of frames)
-        #delay =  int(np.floor(nbframes * latency / self.duration)) # round down
-
-        # Leftpadding the targets
-        #target = target[:, :nbframes-delay, :]
-        #padding = target[:, 0, :].unsqueeze(1).expand(target.size(0), delay, target.size(2))
-        #target = torch.cat((padding,target), dim=1)
-
 
         if self.specifications.powerset:
             # `clamp_min` is needed to set non-speech weight to 1.
@@ -458,12 +447,9 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
                 else None
             )
 
-            print(torch.argmax(target, dim=-1).size())
             seg_loss = nll_loss(
-                permutated_prediction[:, delay:, :],
-                torch.argmax(target[:, :nbframes-delay, :], dim=-1),
-                #permutated_prediction,
-                #torch.argmax(target, dim=-1),
+                permutated_prediction,
+                torch.argmax(target, dim=-1),
                 class_weight=class_weight,
                 weight=weight,
             )
@@ -563,13 +549,18 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
         warm_up_right = round(self.warm_up[1] / self.duration * num_frames)
         weight[:, num_frames - warm_up_right :] = 0.0
 
+        latency = 0.1 # will be a parameter of the task (in s)
+        delay =  int(np.floor(num_frames * latency / self.duration)) # round down
+
+        prediction = prediction[:, delay:, :]
+        target = target[:, :num_frames-delay, :]
+
         if self.specifications.powerset:
             multilabel = self.model.powerset.to_multilabel(prediction)
             permutated_target, _ = permutate(multilabel, target)
             permutated_target_powerset = self.model.powerset.to_powerset(
                 permutated_target.float()
             )
-            print("training step speakerdi task")
             seg_loss = self.segmentation_loss(
                 prediction, permutated_target_powerset, weight=weight
             )
@@ -702,7 +693,6 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
             permutated_target_powerset = self.model.powerset.to_powerset(
                 permutated_target.float()
             )
-            print("validation step speakerdi task")
             seg_loss = self.segmentation_loss(
                 prediction, permutated_target_powerset, weight=weight
             )
