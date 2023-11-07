@@ -3,10 +3,13 @@ from pyannote.database import FileFinder, get_protocol
 from pytorch_lightning import Trainer
 
 from pyannote.audio.models.segmentation.debug import SimpleSegmentationModel
+from pyannote.audio.models.embedding.debug import SimpleEmbeddingModel
 from pyannote.audio.tasks import (
     OverlappedSpeechDetection,
     SpeakerDiarization,
     VoiceActivityDetection,
+    MultiLabelSegmentation,
+    SupervisedRepresentationLearningWithArcFace,
 )
 
 
@@ -20,6 +23,20 @@ def protocol():
 def test_train_segmentation(protocol):
     segmentation = SpeakerDiarization(protocol)
     model = SimpleSegmentationModel(task=segmentation)
+    trainer = Trainer(fast_dev_run=True, accelerator="cpu")
+    trainer.fit(model)
+
+
+def test_train_multilabel_segmentation(protocol):
+    multilabel_segmentation = MultiLabelSegmentation(protocol)
+    model = SimpleSegmentationModel(task=multilabel_segmentation)
+    trainer = Trainer(fast_dev_run=True, accelerator="cpu")
+    trainer.fit(model)
+
+
+def test_train_supervised_representation_with_arcface(protocol):
+    supervised_representation_with_arface = SupervisedRepresentationLearningWithArcFace(protocol)
+    model = SimpleEmbeddingModel(task=supervised_representation_with_arface)
     trainer = Trainer(fast_dev_run=True, accelerator="cpu")
     trainer.fit(model)
 
