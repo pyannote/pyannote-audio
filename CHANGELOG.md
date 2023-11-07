@@ -8,6 +8,7 @@
 - BREAKING(pipeline): remove `logging_hook` (use `ArtifactHook` instead)
 - fix(pipeline): add missing "embedding" hook call in `SpeakerDiarization`
 - feat(utils): add `"soft"` option to `Powerset.to_multilabel`
+- improve(pipeline): compute `fbank` on GPU when requested
 
 ## Version 3.0.1 (2023-09-28)
 
