@@ -279,7 +279,7 @@ class Task(pl.LightningDataModule):
 
         Notes
         -----
-        Called only once.
+        Called only once on the main process (and only on it).
         """
 
         if os.path.exists(self.cache_path):
@@ -598,8 +598,11 @@ class Task(pl.LightningDataModule):
 
         dtype = [("file_id", "i"), ("start", "f"), ("duration", "f")]
         prepared_data["validation_chunks"] = np.array(validation_chunks, dtype=dtype)
+        
+        self.prepared_data = prepared_data
+        self.has_setup_metadata = True
 
-        # cache generated protocol data on disk
+        # save preparated data on the disk
         with open(self.cache_path, 'wb') as data_file:
             pickle.dump(prepared_data, data_file)
 
