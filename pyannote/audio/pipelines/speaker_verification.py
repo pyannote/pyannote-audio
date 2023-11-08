@@ -556,6 +556,7 @@ class WeSpeakerPretrainedSpeakerEmbedding(BaseInference):
                 for waveform in waveforms
             ]
         )
+
         return features - torch.mean(features, dim=1, keepdim=True)
 
     def __call__(
@@ -578,12 +579,12 @@ class WeSpeakerPretrainedSpeakerEmbedding(BaseInference):
         batch_size, num_channels, num_samples = waveforms.shape
         assert num_channels == 1
 
-        features = self.compute_fbank(waveforms)
+        features = self.compute_fbank(waveforms.to(self.device))
         _, num_frames, _ = features.shape
 
         if masks is None:
             embeddings = self.session_.run(
-                output_names=["embs"], input_feed={"feats": features.numpy()}
+                output_names=["embs"], input_feed={"feats": features.numpy(force=True)}
             )[0]
 
             return embeddings
@@ -606,7 +607,7 @@ class WeSpeakerPretrainedSpeakerEmbedding(BaseInference):
 
             embeddings[f] = self.session_.run(
                 output_names=["embs"],
-                input_feed={"feats": masked_feature.numpy()[None]},
+                input_feed={"feats": masked_feature.numpy(force=True)[None]},
             )[0][0]
 
         return embeddings
