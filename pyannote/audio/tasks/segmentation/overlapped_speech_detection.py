@@ -88,6 +88,8 @@ class OverlappedSpeechDetection(SegmentationTask):
     metric : optional
         Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
         Defaults to AUROC (area under the ROC curve).
+    cache_path : str, optional
+        path to directory where to write or load task caches
     """
 
     OVERLAP_DEFAULTS = {"probability": 0.5, "snr_min": 0.0, "snr_max": 10.0}
@@ -105,6 +107,7 @@ class OverlappedSpeechDetection(SegmentationTask):
         pin_memory: bool = False,
         augmentation: BaseWaveformTransform = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
+        cache_path=None,
     ):
         super().__init__(
             protocol,
@@ -115,6 +118,7 @@ class OverlappedSpeechDetection(SegmentationTask):
             pin_memory=pin_memory,
             augmentation=augmentation,
             metric=metric,
+            cache_path=cache_path,
         )
 
         self.specifications = Specifications(

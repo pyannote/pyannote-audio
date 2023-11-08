@@ -110,6 +110,8 @@ class SpeakerDiarization(SegmentationTask):
     metric : optional
         Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
         Defaults to AUROC (area under the ROC curve).
+    cache_path : str, optional
+        path to directory where to write or load task caches
 
     References
     ----------
@@ -140,6 +142,7 @@ class SpeakerDiarization(SegmentationTask):
         augmentation: BaseWaveformTransform = None,
         vad_loss: Literal["bce", "mse"] = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
+        cache_path=None,
         max_num_speakers: int = None,  # deprecated in favor of `max_speakers_per_chunk``
         loss: Literal["bce", "mse"] = None,  # deprecated
     ):
@@ -152,6 +155,7 @@ class SpeakerDiarization(SegmentationTask):
             pin_memory=pin_memory,
             augmentation=augmentation,
             metric=metric,
+            cache_path=cache_path,
         )
 
         if not isinstance(protocol, SpeakerDiarizationProtocol):

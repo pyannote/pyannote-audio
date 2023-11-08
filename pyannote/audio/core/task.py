@@ -26,7 +26,7 @@ from __future__ import annotations
 import itertools
 import multiprocessing
 import numpy as np
-import os
+from pathlib import Path
 import pickle
 import sys
 import warnings
@@ -53,7 +53,6 @@ from pyannote.audio.utils.protocol import check_protocol
 
 Subsets = list(Subset.__args__)
 Scopes = list(Scope.__args__)
-
 
 # Type of machine learning problem
 class Problem(Enum):
@@ -226,7 +225,7 @@ class Task(pl.LightningDataModule):
         pin_memory: bool = False,
         augmentation: BaseWaveformTransform = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
-        cache_path="./cache/task_cache/prepared_data.pickle"
+        cache_path=None
     ):
         super().__init__()
 
@@ -281,13 +280,15 @@ class Task(pl.LightningDataModule):
         -----
         Called only once on the main process (and only on it).
         """
-
-        if os.path.exists(self.cache_path):
-            # data was already created, do nothing
-            return
-        else:
-            # create the repo
-            os.makedirs(self.cache_path[:self.cache_path.rfind('/')], exist_ok=True)
+        if self.cache_path is not None:
+            cache_path = Path(self.cache_path)
+            if cache_path.exists():
+                # data was already created, do nothing
+                return
+            # create a new cache directory at the path specified by the user
+            else:
+                cache_rep = Path(self.cache_path[: self.cache_path.rfind('/')])
+                cache_rep.mkdir(parents=True, exist_ok=True)
         # duration of training chunks
         # TODO: handle variable duration case
         duration = getattr(self, "duration", 0.0)
@@ -603,19 +604,30 @@ class Task(pl.LightningDataModule):
         self.has_setup_metadata = True
 
         # save preparated data on the disk
-        with open(self.cache_path, 'wb') as data_file:
-            pickle.dump(prepared_data, data_file)
+        if self.cache_path is not None:
+            with open(self.cache_path, 'wb') as cache_file:
+                pickle.dump(prepared_data, cache_file)
 
-    def setup(self):
+        self.has_prepared_data = True
+
+    def setup(self, stage=None):
         """Setup"""
         if not self.has_setup_metadata:
+            # if no cache directory was provided by the user and task data was not already prepared
+            if self.cache_path is None and not self.has_prepared_data:
+                warnings.warn("""No path to the directory containing the cache of prepared data
+                              has been specified. Data preparation will therefore be carried out
+                              on each process used for training. To speed up data preparation, you
+                              can specify a cache directory when instantiating the task.""", stacklevel=1)
+                self.prepare_data()
+                return
             # load data cached by prepare_data method into the task:
             try:
-                with open(self.cache_path, 'rb') as data_file:
-                    self.prepared_data = pickle.load(data_file)
+                with open(self.cache_path, 'rb') as cache_file:
+                    self.prepared_data = pickle.load(cache_file)
             except FileNotFoundError:
-                print("Cached data for protocol not found. Ensure that prepare_data was \
-                      executed correctly and that the path to the task cache is correct")
+                print("""Cached data for protocol not found. Ensure that prepare_data was
+                      executed correctly and that the path to the task cache is correct""")
                 raise
             self.has_setup_metadata = True
 
@@ -631,6 +643,14 @@ class Task(pl.LightningDataModule):
         self, specifications: Union[Specifications, Tuple[Specifications]]
     ):
         self._specifications = specifications
+
+    @property
+    def has_prepared_data(self):
+        return getattr(self, "_has_prepared_data", False)
+
+    @has_prepared_data.setter
+    def has_prepared_data(self, value: bool):
+        self._has_setup_metadata = value
 
     @property
     def has_setup_metadata(self):
