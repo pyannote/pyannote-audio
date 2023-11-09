@@ -304,11 +304,16 @@ class Task(pl.LightningDataModule):
         elif isinstance(self.protocol, SegmentationProtocol):
             classes = getattr(self, "classes", list())
 
+        # save all protocol data in a dict
+        prepared_data = {}
+
         # make sure classes attribute exists (and set to None if it did not exist)
-        self.classes = getattr(self, "classes", None)
-        if self.classes is None:
+        prepared_data["classes"] = getattr(self, "classes", None)
+        if prepared_data["classes"] is None:
             classes = list()
             # metadata_unique_values["classes"] = list(classes)
+        else:
+            classes = prepared_data["classes"]
 
         audios = list()  # list of path to audio files
         audio_infos = list()
@@ -356,7 +361,7 @@ class Task(pl.LightningDataModule):
 
                 # if task was not initialized with a fixed list of classes,
                 # we build it as the union of all classes found in files
-                if self.classes is None:
+                if prepared_data["classes"] is None:
                     for klass in local_classes:
                         if klass not in classes:
                             classes.append(klass)
@@ -368,15 +373,15 @@ class Task(pl.LightningDataModule):
                 # we make sure that all files use a subset of these classes
                 # if they don't, we issue a warning and ignore the extra classes
                 else:
-                    extra_classes = set(local_classes) - set(self.classes)
+                    extra_classes = set(local_classes) - set(prepared_data["classes"])
                     if extra_classes:
                         warnings.warn(
                             f"Ignoring extra classes ({', '.join(extra_classes)}) found for file {file['uri']} ({file['database']}). "
                         )
                     annotated_classes.append(
                         [
-                            self.classes.index(klass)
-                            for klass in set(local_classes) & set(self.classes)
+                            prepared_data["classes"].index(klass)
+                            for klass in set(local_classes) & set(prepared_data["classes"])
                         ]
                     )
 
@@ -522,8 +527,6 @@ class Task(pl.LightningDataModule):
         ]
         dtype = [(key, "i") for key in metadata_unique_values]
 
-        # save all protocol data in a dict
-        prepared_data = {}
         prepared_data["metadata"] = np.array(metadata, dtype=dtype)
         prepared_data["audios"] = np.array(audios, dtype=np.string_)
 
@@ -548,7 +551,7 @@ class Task(pl.LightningDataModule):
         # into a single (num_files x num_classes) numpy array:
         #    * True indicates that this particular class was annotated for this particular file (though it may not be active in this file)
         #    * False indicates that this particular class was not even annotated (i.e. its absence does not imply that it is not active in this file)
-        if isinstance(self.protocol, SegmentationProtocol) and self.classes is None:
+        if isinstance(self.protocol, SegmentationProtocol) and prepared_data["classes"] is None:
             prepared_data["classes"] = classes
         annotated_classes_array = np.zeros(
             (len(annotated_classes), len(classes)), dtype=np.bool_
