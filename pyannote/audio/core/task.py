@@ -225,7 +225,7 @@ class Task(pl.LightningDataModule):
         pin_memory: bool = False,
         augmentation: BaseWaveformTransform = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
-        cache_path=None
+        cache_path: Optional[Union[str, None]] = None
     ):
         super().__init__()
 
@@ -278,7 +278,7 @@ class Task(pl.LightningDataModule):
 
         Notes
         -----
-        Called only once on the main process (and only on it).
+        Called only once on the main process (and only on it), for global_rank 0.
         """
         if self.cache_path is not None:
             cache_path = Path(self.cache_path)
@@ -611,7 +611,7 @@ class Task(pl.LightningDataModule):
         self.has_prepared_data = True
 
     def setup(self, stage=None):
-        """Setup"""
+        """Setup data on each device"""
         if not self.has_setup_metadata:
             # if no cache directory was provided by the user and task data was not already prepared
             if self.cache_path is None and not self.has_prepared_data:

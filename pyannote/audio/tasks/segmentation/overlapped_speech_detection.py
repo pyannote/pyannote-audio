@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 
-from typing import Dict, Sequence, Text, Tuple, Union
+from typing import Dict, Optional, Sequence, Text, Tuple, Union
 
 import numpy as np
 from pyannote.core import Segment, SlidingWindowFeature
@@ -89,7 +89,7 @@ class OverlappedSpeechDetection(SegmentationTask):
         Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
         Defaults to AUROC (area under the ROC curve).
     cache_path : str, optional
-        path to directory where to write or load task caches
+        path to file where to write or load task caches
     """
 
     OVERLAP_DEFAULTS = {"probability": 0.5, "snr_min": 0.0, "snr_max": 10.0}
@@ -107,7 +107,7 @@ class OverlappedSpeechDetection(SegmentationTask):
         pin_memory: bool = False,
         augmentation: BaseWaveformTransform = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
-        cache_path=None,
+        cache_path: Optional[Union[str, None]] = None,
     ):
         super().__init__(
             protocol,

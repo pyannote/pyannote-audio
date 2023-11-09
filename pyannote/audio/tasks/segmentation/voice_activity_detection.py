@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import Dict, Sequence, Text, Tuple, Union
+from typing import Dict, Optional, Sequence, Text, Tuple, Union
 
 import numpy as np
 from pyannote.core import Segment, SlidingWindowFeature
@@ -75,7 +75,7 @@ class VoiceActivityDetection(SegmentationTask):
         Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
         Defaults to AUROC (area under the ROC curve).
     cache_path : str, optional
-        path to directory where to write or load task caches
+        path to file where to write or load task caches
     """
 
     def __init__(
@@ -90,7 +90,7 @@ class VoiceActivityDetection(SegmentationTask):
         pin_memory: bool = False,
         augmentation: BaseWaveformTransform = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
-        cache_path=None,
+        cache_path: Optional[Union[str, None]] = None,
     ):
         super().__init__(
             protocol,

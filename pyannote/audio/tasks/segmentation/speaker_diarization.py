@@ -23,7 +23,7 @@
 import math
 import warnings
 from collections import Counter
-from typing import Dict, Literal, Sequence, Text, Tuple, Union
+from typing import Dict, Literal, Optional, Sequence, Text, Tuple, Union
 
 import numpy as np
 import torch
@@ -111,7 +111,7 @@ class SpeakerDiarization(SegmentationTask):
         Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
         Defaults to AUROC (area under the ROC curve).
     cache_path : str, optional
-        path to directory where to write or load task caches
+        path to file where to write or load task caches
 
     References
     ----------
@@ -142,7 +142,7 @@ class SpeakerDiarization(SegmentationTask):
         augmentation: BaseWaveformTransform = None,
         vad_loss: Literal["bce", "mse"] = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
-        cache_path=None,
+        cache_path: Optional[Union[str, None]] = None,
         max_num_speakers: int = None,  # deprecated in favor of `max_speakers_per_chunk``
         loss: Literal["bce", "mse"] = None,  # deprecated
     ):
