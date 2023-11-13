@@ -687,7 +687,7 @@ class PyannoteAudioPretrainedSpeakerEmbedding(BaseInference):
                 try:
                     _ = self.model_(torch.randn(1, 1, middle).to(self.device))
                     upper = middle
-                except RuntimeError:
+                except Exception:
                     lower = middle
 
                 middle = (lower + upper) // 2
