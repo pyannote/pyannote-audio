@@ -386,7 +386,7 @@ class SpeechBrainPretrainedSpeakerEmbedding(BaseInference):
         return embeddings
 
 
-class WeSpeakerPretrainedSpeakerEmbedding(BaseInference):
+class ONNXWeSpeakerPretrainedSpeakerEmbedding(BaseInference):
     """Pretrained WeSpeaker speaker embedding
 
     Parameters
@@ -398,7 +398,7 @@ class WeSpeakerPretrainedSpeakerEmbedding(BaseInference):
 
     Usage
     -----
-    >>> get_embedding = WeSpeakerPretrainedSpeakerEmbedding("hbredin/wespeaker-voxceleb-resnet34-LM")
+    >>> get_embedding = ONNXWeSpeakerPretrainedSpeakerEmbedding("hbredin/wespeaker-voxceleb-resnet34-LM")
     >>> assert waveforms.ndim == 3
     >>> batch_size, num_channels, num_samples = waveforms.shape
     >>> assert num_channels == 1
@@ -418,7 +418,7 @@ class WeSpeakerPretrainedSpeakerEmbedding(BaseInference):
     ):
         if not ONNX_IS_AVAILABLE:
             raise ImportError(
-                f"'onnxruntime' must be installed to use '{embedding}' embeddings. "
+                f"'onnxruntime' must be installed to use '{embedding}' embeddings."
             )
 
         super().__init__()
@@ -745,7 +745,12 @@ def PretrainedSpeakerEmbedding(
     >>> embeddings = get_embedding(waveforms, masks=masks)
     """
 
-    if isinstance(embedding, str) and "speechbrain" in embedding:
+    if isinstance(embedding, str) and "pyannote" in embedding:
+        return PyannoteAudioPretrainedSpeakerEmbedding(
+            embedding, device=device, use_auth_token=use_auth_token
+        )
+
+    elif isinstance(embedding, str) and "speechbrain" in embedding:
         return SpeechBrainPretrainedSpeakerEmbedding(
             embedding, device=device, use_auth_token=use_auth_token
         )
@@ -754,9 +759,10 @@ def PretrainedSpeakerEmbedding(
         return NeMoPretrainedSpeakerEmbedding(embedding, device=device)
 
     elif isinstance(embedding, str) and "wespeaker" in embedding:
-        return WeSpeakerPretrainedSpeakerEmbedding(embedding, device=device)
+        return ONNXWeSpeakerPretrainedSpeakerEmbedding(embedding, device=device)
 
     else:
+        # fallback to pyannote in case we are loading a local model
         return PyannoteAudioPretrainedSpeakerEmbedding(
             embedding, device=device, use_auth_token=use_auth_token
         )
