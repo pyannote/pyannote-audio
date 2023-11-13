@@ -2,6 +2,7 @@
 
 ## `develop` branch
 
+- feat(pipeline): add WeSpeaker embedding wrapper
 - feat(pipeline): add `TimingHook` for profiling processing time
 - feat(pipeline): add `ArtifactHook` for saving internal steps
 - feat(pipeline): add support for list of hooks with `Hooks`
