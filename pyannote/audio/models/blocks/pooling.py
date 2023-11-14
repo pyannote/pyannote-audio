@@ -63,9 +63,7 @@ class StatsPool(nn.Module):
         weights = weights.unsqueeze(dim=1)
         # (batch, 1, frames)
 
-        # TODO: handle all zero weights (to avoid further division by zero)
-
-        v1 = weights.sum(dim=2)
+        v1 = weights.sum(dim=2) + 1e-8
         mean = torch.sum(sequences * weights, dim=2) / v1
 
         dx2 = torch.square(sequences - mean.unsqueeze(2))

@@ -106,3 +106,26 @@ def test_stats_pool_frame_mismatch():
         torch.round(y, decimals=4),
         torch.Tensor([[2.0, 2.0, 0.0, 0.0], [1.0, 1.0, 0.0, 0.0]]),
     )
+
+
+def test_stats_pool_all_zero_weights():
+    x = torch.Tensor([[[2.0, 4.0], [2.0, 4.0]], [[1.0, 1.0], [1.0, 1.0]]])
+    # (batch = 2, features = 2, frames = 2)
+
+    w = torch.Tensor(
+        [
+            [0.5, 0.01],
+            [0.0, 0.0],  # all zero weights
+        ]
+    )
+    # (batch = 2, frames = 2)
+
+    stats_pool = StatsPool()
+
+    y = stats_pool(x, weights=w)
+    # (batch = 2, features = 4)
+
+    assert torch.equal(
+        torch.round(y, decimals=4),
+        torch.Tensor([[2.0392, 2.0392, 1.4142, 1.4142], [0.0, 0.0, 0.0, 0.0]]),
+    )
