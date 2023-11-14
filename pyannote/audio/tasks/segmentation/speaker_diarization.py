@@ -86,10 +86,10 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
         parts, only the remaining central part of each chunk is used for computing the
         loss during training, and for aggregating scores during inference.
         Defaults to 0. (i.e. no warm-up).
-    balance: str, optional
-        When provided, training samples are sampled uniformly with respect to that key.
-        For instance, setting `balance` to "database" will make sure that each database
-        will be equally represented in the training samples.
+    balance: Sequence[Text], optional
+        When provided, training samples are sampled uniformly with respect to these keys.
+        For instance, setting `balance` to ["database","subset"] will make sure that each
+        database & subset combination will be equally represented in the training samples.
     weight: str, optional
         When provided, use this key as frame-wise weight in loss function.
     batch_size : int, optional
@@ -132,7 +132,7 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
         max_speakers_per_frame: int = None,
         weigh_by_cardinality: bool = False,
         warm_up: Union[float, Tuple[float, float]] = 0.0,
-        balance: Text = None,
+        balance: Sequence[Text] = None,
         weight: Text = None,
         batch_size: int = 32,
         num_workers: int = None,

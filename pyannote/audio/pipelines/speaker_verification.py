@@ -22,6 +22,7 @@
 
 import warnings
 from functools import cached_property
+from pathlib import Path
 from typing import Text, Union
 
 import numpy as np
@@ -29,6 +30,8 @@ import torch
 import torch.nn.functional as F
 import torchaudio
 import torchaudio.compliance.kaldi as kaldi
+from huggingface_hub import hf_hub_download
+from huggingface_hub.utils import RepositoryNotFoundError
 from torch.nn.utils.rnn import pad_sequence
 
 from pyannote.audio import Inference, Model, Pipeline
@@ -383,7 +386,7 @@ class SpeechBrainPretrainedSpeakerEmbedding(BaseInference):
         return embeddings
 
 
-class WeSpeakerPretrainedSpeakerEmbedding(BaseInference):
+class ONNXWeSpeakerPretrainedSpeakerEmbedding(BaseInference):
     """Pretrained WeSpeaker speaker embedding
 
     Parameters
@@ -395,7 +398,7 @@ class WeSpeakerPretrainedSpeakerEmbedding(BaseInference):
 
     Usage
     -----
-    >>> get_embedding = WeSpeakerPretrainedSpeakerEmbedding("wespeaker.xxxx.onnx")
+    >>> get_embedding = ONNXWeSpeakerPretrainedSpeakerEmbedding("hbredin/wespeaker-voxceleb-resnet34-LM")
     >>> assert waveforms.ndim == 3
     >>> batch_size, num_channels, num_samples = waveforms.shape
     >>> assert num_channels == 1
@@ -410,15 +413,26 @@ class WeSpeakerPretrainedSpeakerEmbedding(BaseInference):
 
     def __init__(
         self,
-        embedding: Text = "speechbrain/spkrec-ecapa-voxceleb",
+        embedding: Text = "hbredin/wespeaker-voxceleb-resnet34-LM",
         device: torch.device = None,
     ):
         if not ONNX_IS_AVAILABLE:
             raise ImportError(
-                f"'onnxruntime' must be installed to use '{embedding}' embeddings. "
+                f"'onnxruntime' must be installed to use '{embedding}' embeddings."
             )
 
         super().__init__()
+
+        if not Path(embedding).exists():
+            try:
+                embedding = hf_hub_download(
+                    repo_id=embedding,
+                    filename="speaker-embedding.onnx",
+                )
+            except RepositoryNotFoundError:
+                raise ValueError(
+                    f"Could not find '{embedding}' on huggingface.co nor on local disk."
+                )
 
         self.embedding = embedding
 
@@ -433,7 +447,14 @@ class WeSpeakerPretrainedSpeakerEmbedding(BaseInference):
         if device.type == "cpu":
             providers = ["CPUExecutionProvider"]
         elif device.type == "cuda":
-            providers = ["CUDAExecutionProvider"]
+            providers = [
+                (
+                    "CUDAExecutionProvider",
+                    {
+                        "cudnn_conv_algo_search": "DEFAULT",  # EXHAUSTIVE / HEURISTIC / DEFAULT
+                    },
+                )
+            ]
         else:
             warnings.warn(
                 f"Unsupported device type: {device.type}, falling back to CPU"
@@ -535,6 +556,7 @@ class WeSpeakerPretrainedSpeakerEmbedding(BaseInference):
                 for waveform in waveforms
             ]
         )
+
         return features - torch.mean(features, dim=1, keepdim=True)
 
     def __call__(
@@ -557,12 +579,12 @@ class WeSpeakerPretrainedSpeakerEmbedding(BaseInference):
         batch_size, num_channels, num_samples = waveforms.shape
         assert num_channels == 1
 
-        features = self.compute_fbank(waveforms)
+        features = self.compute_fbank(waveforms.to(self.device))
         _, num_frames, _ = features.shape
 
         if masks is None:
             embeddings = self.session_.run(
-                output_names=["embs"], input_feed={"feats": features.numpy()}
+                output_names=["embs"], input_feed={"feats": features.numpy(force=True)}
             )[0]
 
             return embeddings
@@ -585,7 +607,7 @@ class WeSpeakerPretrainedSpeakerEmbedding(BaseInference):
 
             embeddings[f] = self.session_.run(
                 output_names=["embs"],
-                input_feed={"feats": masked_feature.numpy()[None]},
+                input_feed={"feats": masked_feature.numpy(force=True)[None]},
             )[0][0]
 
         return embeddings
@@ -723,7 +745,12 @@ def PretrainedSpeakerEmbedding(
     >>> embeddings = get_embedding(waveforms, masks=masks)
     """
 
-    if isinstance(embedding, str) and "speechbrain" in embedding:
+    if isinstance(embedding, str) and "pyannote" in embedding:
+        return PyannoteAudioPretrainedSpeakerEmbedding(
+            embedding, device=device, use_auth_token=use_auth_token
+        )
+
+    elif isinstance(embedding, str) and "speechbrain" in embedding:
         return SpeechBrainPretrainedSpeakerEmbedding(
             embedding, device=device, use_auth_token=use_auth_token
         )
@@ -732,9 +759,10 @@ def PretrainedSpeakerEmbedding(
         return NeMoPretrainedSpeakerEmbedding(embedding, device=device)
 
     elif isinstance(embedding, str) and "wespeaker" in embedding:
-        return WeSpeakerPretrainedSpeakerEmbedding(embedding, device=device)
+        return ONNXWeSpeakerPretrainedSpeakerEmbedding(embedding, device=device)
 
     else:
+        # fallback to pyannote in case we are loading a local model
         return PyannoteAudioPretrainedSpeakerEmbedding(
             embedding, device=device, use_auth_token=use_auth_token
         )
