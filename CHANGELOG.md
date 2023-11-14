@@ -14,6 +14,7 @@
 - BREAKING(pipeline): rename `WeSpeakerPretrainedSpeakerEmbedding` to `ONNXWeSpeakerPretrainedSpeakerEmbedding`
 - BREAKING(setup): remove `onnxruntime` dependency.
   You can still use ONNX `hbredin/wespeaker-voxceleb-resnet34-LM` but you will have to install `onnxruntime` yourself.
+- feat(model): add support for multi-speaker statistics pooling
 
 ## Version 3.0.1 (2023-09-28)
 
