@@ -533,14 +533,15 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         # centroids: (num_speakers, dimension)
 
         # number of detected clusters is the number of different speakers
-        num_different_speakers = int(np.max(hard_clusters) + 1)
+        num_different_speakers = np.max(hard_clusters) + 1
 
         # detected number of speakers can still be out of bounds
         # (specifically, lower than `min_speakers`), since there could be too few embeddings
         # to make enough clusters with a given minimum cluster size.
         if num_different_speakers < min_speakers or num_different_speakers > max_speakers:
             warnings.warn(textwrap.dedent(
-                f"""The detected number of speakers ({num_different_speakers}) is outside
+                f"""
+                The detected number of speakers ({num_different_speakers}) is outside
                 the given bounds [{min_speakers}, {max_speakers}]. This can happen if the
                 given audio file is too short to contain {min_speakers} or more speakers.
                 Try to lower the desired minimal number of speakers.
