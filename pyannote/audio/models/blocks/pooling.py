@@ -26,6 +26,7 @@ from typing import Optional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from einops import rearrange
 
 
 class StatsPool(nn.Module):
@@ -40,6 +41,41 @@ class StatsPool(nn.Module):
 
     """
 
+    def _pool(self, sequences: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:
+        """Helper function to compute statistics pooling
+
+        Assumes that weights are already interpolated to match the number of frames
+        in sequences and that they encode the activation of only one speaker.
+
+        Parameters
+        ----------
+        sequences : (batch, features, frames) torch.Tensor
+            Sequences of features.
+        weights : (batch, frames) torch.Tensor
+            (Already interpolated) weights.
+
+        Returns
+        -------
+        output : (batch, 2 * features) torch.Tensor
+            Concatenation of mean and (unbiased) standard deviation.
+        """
+
+        weights = weights.unsqueeze(dim=1)
+        # (batch, 1, frames)
+
+        # TODO: handle all zero weights (to avoid further division by zero)
+
+        v1 = weights.sum(dim=2)
+        mean = torch.sum(sequences * weights, dim=2) / v1
+
+        dx2 = torch.square(sequences - mean.unsqueeze(2))
+        v2 = torch.square(weights).sum(dim=2)
+
+        var = torch.sum(dx2 * weights, dim=2) / (v1 - v2 / v1)
+        std = torch.sqrt(var)
+
+        return torch.cat([mean, std], dim=1)
+
     def forward(
         self, sequences: torch.Tensor, weights: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
@@ -51,12 +87,12 @@ class StatsPool(nn.Module):
             Sequences of features.
         weights : (batch, frames) or (batch, speakers, frames) torch.Tensor, optional
             Compute weighted mean and standard deviation, using provided `weights`.
-        
+
         Note
         ----
         `sequences` and `weights` might use a different number of frames, in which case `weights`
         are interpolated linearly to reach the number of frames in `sequences`.
-            
+
         Returns
         -------
         output : (batch, 2 * features) or (batch, speakers, 2 * features) torch.Tensor
@@ -68,36 +104,32 @@ class StatsPool(nn.Module):
         if weights is None:
             mean = sequences.mean(dim=-1)
             std = sequences.std(dim=-1, correction=1)
+            return torch.cat([mean, std], dim=-1)
 
+        if weights.dim() == 2:
+            has_speaker_dimension = False
+            weights = weights.unsqueeze(dim=1)
+            # (batch, frames) -> (batch, 1, frames)
         else:
-            # fix the error setting the weights of previous layers to NaN during a backward step,
-            # in the case where the weights for a speaker are all zero
-            weights = weights + 1e-16
-            # Unsqueeze before frames dimension to match with waveforms dimensions
-            weight_dims = len(weights.shape)
-            weights = weights.unsqueeze(dim=-2)
-            if weight_dims == 3:
-                sequences = sequences.unsqueeze(dim=1)
+            has_speaker_dimension = True
 
-            # (batch, 1, weights) or (batch, speakers, weights)
-            num_frames = sequences.shape[-1]
-            num_weights = weights.shape[-1]
-            if num_frames != num_weights:
-                warnings.warn(
-                    f"Mismatch between frames ({num_frames}) and weights ({num_weights}) numbers."
-                )
-                weights = F.interpolate(
-                    weights, size=num_frames, mode="linear", align_corners=False
-                )
+        # interpolate weights if needed
+        _, _, num_frames = sequences.shape
+        _, _, num_weights = weights.shape
+        if num_frames != num_weights:
+            warnings.warn(
+                f"Mismatch between frames ({num_frames}) and weights ({num_weights}) numbers."
+            )
+            weights = F.interpolate(
+                weights, size=num_frames, mode="linear", align_corners=False
+            )
 
-            # add an epsilon value to avoid division by zero when the sum of the weights is 0
-            v1 = weights.sum(dim=-1) + 1e-8
-            mean = torch.sum(sequences * weights, dim=-1) / v1
+        output = rearrange(
+            torch.vmap(self._pool, in_dims=(None, 1))(sequences, weights),
+            "speakers batch features -> batch speakers features",
+        )
 
-            dx2 = torch.square(sequences - mean.unsqueeze(-1))
-            v2 = torch.square(weights).sum(dim=-1)
+        if not has_speaker_dimension:
+            return output.squeeze(dim=1)
 
-            var = torch.sum(dx2 * weights, dim=-1) / ((v1 - v2 / v1) + 1e-8)
-            std = torch.sqrt(var)
-
-        return torch.cat([mean, std], dim=-1)
+        return output

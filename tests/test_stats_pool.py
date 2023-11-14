@@ -21,35 +21,88 @@
 # SOFTWARE.
 
 import torch
+
 from pyannote.audio.models.blocks.pooling import StatsPool
 
 
-def test_stats_pool():
-
-    x = torch.Tensor([
-        [[2., 4.], [2., 4.]],
-        [[1., 1.], [1., 1.]]
-    ])
-
-    # 2D weights tensor
-    w1 = torch.Tensor([
-        [0.5, 0.01],
-        [0.2, 0.1],
-    ])
-
-    # two speaker tensor
-    w2 = torch.Tensor([
-        [[0.1, 0.2], [0.2, 0.3]],
-        [[0.001, 0.001], [0.2, 0.3]]
-    ])
+def test_stats_pool_weightless():
+    x = torch.Tensor([[[2.0, 4.0], [2.0, 4.0]], [[1.0, 1.0], [1.0, 1.0]]])
+    # (batch = 2, features = 2, frames = 2)
 
     stats_pool = StatsPool()
 
-    y0 = stats_pool(x)
-    y1 = stats_pool(x, w1)
-    y2 = stats_pool(x, w2)
+    y = stats_pool(x)
+    # (batch = 2, features = 4)
 
-    assert(torch.equal(torch.round(y0, decimals=4), torch.Tensor([[3., 3., 1.4142, 1.4142], [1., 1., 0., 0.]])))
-    assert(torch.equal(torch.round(y1, decimals=4), torch.Tensor([[2.0392, 2.0392, 1.4142, 1.4142], [1., 1. , 0., 0.]])))
-    assert(torch.equal(torch.round(y2, decimals=4), torch.Tensor([[[3.3333, 3.3333, 1.4142, 1.4142], [3.2, 3.2, 1.4142, 1.4142]],
-                                                                  [[1., 1., 0., 0.], [1., 1., 0., 0.]]])))
+    assert torch.equal(
+        torch.round(y, decimals=4),
+        torch.Tensor([[3.0, 3.0, 1.4142, 1.4142], [1.0, 1.0, 0.0, 0.0]]),
+    )
+
+
+def test_stats_pool_one_speaker():
+    x = torch.Tensor([[[2.0, 4.0], [2.0, 4.0]], [[1.0, 1.0], [1.0, 1.0]]])
+    # (batch = 2, features = 2, frames = 2)
+
+    w = torch.Tensor(
+        [
+            [0.5, 0.01],
+            [0.2, 0.1],
+        ]
+    )
+    # (batch = 2, frames = 2)
+
+    stats_pool = StatsPool()
+
+    y = stats_pool(x, weights=w)
+    # (batch = 2, features = 4)
+
+    assert torch.equal(
+        torch.round(y, decimals=4),
+        torch.Tensor([[2.0392, 2.0392, 1.4142, 1.4142], [1.0, 1.0, 0.0, 0.0]]),
+    )
+
+
+def test_stats_pool_multi_speaker():
+    x = torch.Tensor([[[2.0, 4.0], [2.0, 4.0]], [[1.0, 1.0], [1.0, 1.0]]])
+    # (batch = 2, features = 2, frames = 2)
+
+    w = torch.Tensor([[[0.1, 0.2], [0.2, 0.3]], [[0.001, 0.001], [0.2, 0.3]]])
+    # (batch = 2, speakers = 2, frames = 2)
+
+    stats_pool = StatsPool()
+
+    y = stats_pool(x, weights=w)
+    # (batch = 2, speakers = 2, features = 4)
+
+    assert torch.equal(
+        torch.round(y, decimals=4),
+        torch.Tensor(
+            [
+                [[3.3333, 3.3333, 1.4142, 1.4142], [3.2, 3.2, 1.4142, 1.4142]],
+                [[1.0, 1.0, 0.0, 0.0], [1.0, 1.0, 0.0, 0.0]],
+            ]
+        ),
+    )
+
+
+def test_stats_pool_frame_mismatch():
+    x = torch.Tensor([[[2.0, 2.0], [2.0, 2.0]], [[1.0, 1.0], [1.0, 1.0]]])
+    # (batch = 2, features = 2, frames = 2)
+
+    stats_pool = StatsPool()
+    w = torch.Tensor(
+        [
+            [0.5, 0.5, 0.0],
+            [0.0, 0.5, 0.5],
+        ]
+    )
+    # (batch = 2, frames = 3)
+
+    y = stats_pool(x, weights=w)
+    # (batch = 2, features = 4)
+
+    assert torch.equal(
+        torch.round(y, decimals=4),
+        torch.Tensor([[2.0, 2.0, 0.0, 0.0], [1.0, 1.0, 0.0, 0.0]]),
+    )
