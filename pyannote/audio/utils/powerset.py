@@ -111,9 +111,9 @@ class Powerset(nn.Module):
 
         return torch.matmul(powerset_probs, self.mapping)
 
-    def forward(self, powerset: torch.Tensor) -> torch.Tensor:
+    def forward(self, powerset: torch.Tensor, soft: bool = False) -> torch.Tensor:
         """Alias for `to_multilabel`"""
-        return self.to_multilabel(powerset)
+        return self.to_multilabel(powerset, soft=soft)
 
     def to_powerset(self, multilabel: torch.Tensor) -> torch.Tensor:
         """Convert (hard) predictions from multi-label to powerset

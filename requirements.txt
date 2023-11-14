@@ -3,7 +3,6 @@ einops >=0.6.0
 huggingface_hub >= 0.13.0
 lightning >= 2.0.1
 omegaconf >=2.1,<3.0
-onnxruntime-gpu >= 1.16.0
 pyannote.core >= 5.0.0
 pyannote.database >= 5.0.1
 pyannote.metrics >= 3.2
