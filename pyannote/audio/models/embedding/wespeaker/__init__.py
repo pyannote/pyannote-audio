@@ -21,6 +21,7 @@
 # SOFTWARE.
 
 
+from functools import partial
 from typing import Optional
 
 import torch
@@ -37,20 +38,39 @@ class BaseWeSpeakerResNet(Model):
         self,
         sample_rate: int = 16000,
         num_channels: int = 1,
-        task: Optional[Task] = None,
-    ):
-        super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
-
-        self.save_hyperparameters("sample_rate", "num_channels")
-
-    def compute_fbank(
-        self,
-        waveforms: torch.Tensor,
         num_mel_bins: int = 80,
         frame_length: int = 25,
         frame_shift: int = 10,
         dither: float = 0.0,
-    ) -> torch.Tensor:
+        window_type: str = "hamming",
+        use_energy: bool = False,
+        task: Optional[Task] = None,
+    ):
+        super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
+
+        self.save_hyperparameters(
+            "sample_rate",
+            "num_channels",
+            "num_mel_bins",
+            "frame_length",
+            "frame_shift",
+            "dither",
+            "window_type",
+            "use_energy",
+        )
+
+        self._fbank = partial(
+            kaldi.fbank,
+            num_mel_bins=self.hparams.num_mel_bins,
+            frame_length=self.hparams.frame_length,
+            frame_shift=self.hparams.frame_shift,
+            dither=self.hparams.dither,
+            sample_frequency=self.hparams.sample_rate,
+            window_type=self.hparams.window_type,
+            use_energy=self.hparams.use_energy,
+        )
+
+    def compute_fbank(self, waveforms: torch.Tensor) -> torch.Tensor:
         """Extract fbank features
 
         Parameters
@@ -66,26 +86,12 @@ class BaseWeSpeakerResNet(Model):
 
         waveforms = waveforms * (1 << 15)
 
-        # fall back to CPU for FFT computatino when using MPS
-        # until FFT is implemented in MPS
+        # fall back to CPU for FFT computation when using MPS
+        # until FFT is fixed in MPS
         device = waveforms.device
         fft_device = torch.device("cpu") if device.type == "mps" else device
 
-        features = torch.stack(
-            [
-                kaldi.fbank(
-                    waveform.to(fft_device),
-                    num_mel_bins=num_mel_bins,
-                    frame_length=frame_length,
-                    frame_shift=frame_shift,
-                    dither=dither,
-                    sample_frequency=self.hparams.sample_rate,
-                    window_type="hamming",
-                    use_energy=False,
-                ).to(device)
-                for waveform in waveforms
-            ]
-        )
+        features = torch.vmap(self._fbank)(waveforms.to(fft_device)).to(device)
 
         return features - torch.mean(features, dim=1, keepdim=True)
 
