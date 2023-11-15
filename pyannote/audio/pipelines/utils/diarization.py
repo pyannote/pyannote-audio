@@ -197,7 +197,7 @@ class SpeakerDiarizationMixin:
             min_duration_off=min_duration_off,
         )
 
-        return binarize(discrete_diarization)
+        return binarize(discrete_diarization).rename_tracks(generator="string")
 
     @staticmethod
     def to_diarization(
