@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020-2021 CNRS
+# Copyright (c) 2020 CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -20,28 +20,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from .segmentation.multilabel import MultiLabelSegmentation  # isort:skip
-from .segmentation.speaker_diarization import SpeakerDiarization  # isort:skip
-from .segmentation.voice_activity_detection import VoiceActivityDetection  # isort:skip
-from .segmentation.overlapped_speech_detection import (  # isort:skip
-    OverlappedSpeechDetection,
-)
-from .embedding.arcface import SupervisedRepresentationLearningWithArcFace  # isort:skip
+from .end_to_end_diarization import SpeakerEndToEndDiarization, SpeakerEndToEndDiarizationV2
 
-from .joint_task.speaker_diarization_and_embedding import JointSpeakerDiarizationAndEmbedding
-
-# Segmentation has been renamed to SpeakerDiarization but we keep Segmentation here for backward compatibility
-Segmentation = SpeakerDiarization
-
-# SpeakerEmbedding is more human-friendly
-SpeakerEmbedding = SupervisedRepresentationLearningWithArcFace
-
-__all__ = [
-    "SpeakerDiarization",
-    "VoiceActivityDetection",
-    "OverlappedSpeechDetection",
-    "MultiLabelSegmentation",
-    "SpeakerEmbedding",
-    "Segmentation",
-    "JointSpeakerDiarizationAndEmbedding",
-]
+__all__ = ["SpeakerEndToEndDiarization", "SpeakerEndToEndDiarizationV2"]

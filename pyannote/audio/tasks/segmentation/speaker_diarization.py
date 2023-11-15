@@ -23,7 +23,7 @@
 import math
 import warnings
 from collections import Counter
-from typing import Dict, Literal, Optional, Sequence, Text, Tuple, Union
+from typing import Dict, Literal, Sequence, Text, Tuple, Union
 
 import numpy as np
 import torch
