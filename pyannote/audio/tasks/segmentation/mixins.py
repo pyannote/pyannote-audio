@@ -23,11 +23,6 @@
 import itertools
 import math
 import random
-<<<<<<< HEAD
-=======
-import warnings
-from collections import defaultdict
->>>>>>> feat/joint-diarization-and-embedding
 from typing import Dict, Sequence, Union
 
 import matplotlib.pyplot as plt
