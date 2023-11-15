@@ -117,10 +117,28 @@ class WeSpeakerResNet34(BaseWeSpeakerResNet):
         self,
         sample_rate: int = 16000,
         num_channels: int = 1,
+        num_mel_bins: int = 80,
+        frame_length: int = 25,
+        frame_shift: int = 10,
+        dither: float = 0.0,
+        window_type: str = "hamming",
+        use_energy: bool = False,
         task: Optional[Task] = None,
     ):
-        super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
-        self.resnet = ResNet34(80, 256, pooling_func="TSTP", two_emb_layer=False)
+        super().__init__(
+            sample_rate=sample_rate,
+            num_channels=num_channels,
+            num_mel_bins=num_mel_bins,
+            frame_length=frame_length,
+            frame_shift=frame_shift,
+            dither=dither,
+            window_type=window_type,
+            use_energy=use_energy,
+            task=task,
+        )
+        self.resnet = ResNet34(
+            num_mel_bins, 256, pooling_func="TSTP", two_emb_layer=False
+        )
 
 
 class WeSpeakerResNet152(BaseWeSpeakerResNet):
@@ -128,10 +146,28 @@ class WeSpeakerResNet152(BaseWeSpeakerResNet):
         self,
         sample_rate: int = 16000,
         num_channels: int = 1,
+        num_mel_bins: int = 80,
+        frame_length: int = 25,
+        frame_shift: int = 10,
+        dither: float = 0.0,
+        window_type: str = "hamming",
+        use_energy: bool = False,
         task: Optional[Task] = None,
     ):
-        super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
-        self.resnet = ResNet152(80, 256, pooling_func="TSTP", two_emb_layer=False)
+        super().__init__(
+            sample_rate=sample_rate,
+            num_channels=num_channels,
+            num_mel_bins=num_mel_bins,
+            frame_length=frame_length,
+            frame_shift=frame_shift,
+            dither=dither,
+            window_type=window_type,
+            use_energy=use_energy,
+            task=task,
+        )
+        self.resnet = ResNet152(
+            num_mel_bins, 256, pooling_func="TSTP", two_emb_layer=False
+        )
 
 
 class WeSpeakerResNet221(BaseWeSpeakerResNet):
@@ -139,10 +175,28 @@ class WeSpeakerResNet221(BaseWeSpeakerResNet):
         self,
         sample_rate: int = 16000,
         num_channels: int = 1,
+        num_mel_bins: int = 80,
+        frame_length: int = 25,
+        frame_shift: int = 10,
+        dither: float = 0.0,
+        window_type: str = "hamming",
+        use_energy: bool = False,
         task: Optional[Task] = None,
     ):
-        super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
-        self.resnet = ResNet221(80, 256, pooling_func="TSTP", two_emb_layer=False)
+        super().__init__(
+            sample_rate=sample_rate,
+            num_channels=num_channels,
+            num_mel_bins=num_mel_bins,
+            frame_length=frame_length,
+            frame_shift=frame_shift,
+            dither=dither,
+            window_type=window_type,
+            use_energy=use_energy,
+            task=task,
+        )
+        self.resnet = ResNet221(
+            num_mel_bins, 256, pooling_func="TSTP", two_emb_layer=False
+        )
 
 
 class WeSpeakerResNet293(BaseWeSpeakerResNet):
@@ -150,10 +204,28 @@ class WeSpeakerResNet293(BaseWeSpeakerResNet):
         self,
         sample_rate: int = 16000,
         num_channels: int = 1,
+        num_mel_bins: int = 80,
+        frame_length: int = 25,
+        frame_shift: int = 10,
+        dither: float = 0.0,
+        window_type: str = "hamming",
+        use_energy: bool = False,
         task: Optional[Task] = None,
     ):
-        super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
-        self.resnet = ResNet293(80, 256, pooling_func="TSTP", two_emb_layer=False)
+        super().__init__(
+            sample_rate=sample_rate,
+            num_channels=num_channels,
+            num_mel_bins=num_mel_bins,
+            frame_length=frame_length,
+            frame_shift=frame_shift,
+            dither=dither,
+            window_type=window_type,
+            use_energy=use_energy,
+            task=task,
+        )
+        self.resnet = ResNet293(
+            num_mel_bins, 256, pooling_func="TSTP", two_emb_layer=False
+        )
 
 
 __all__ = [
