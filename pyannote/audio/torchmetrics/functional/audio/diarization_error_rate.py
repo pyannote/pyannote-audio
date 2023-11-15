@@ -33,6 +33,7 @@ def _der_update(
     preds: torch.Tensor,
     target: torch.Tensor,
     per_frame: bool = False,
+    per_chunk: bool = False,
     threshold: Union[torch.Tensor, float] = 0.5,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Compute components of diarization error rate
@@ -89,7 +90,8 @@ def _der_update(
     
     if per_frame:
         return torch.sum(false_alarm, 0)[:,0], torch.sum(missed_detection, 0)[:,0], torch.sum(speaker_confusion, 0)[:,0], 1.0 * torch.sum(target)
-
+    if per_chunk:
+        return torch.sum(false_alarm, 1)[:,0], torch.sum(missed_detection, 1)[:,0], torch.sum(speaker_confusion, 1)[:,0], 1.0 * torch.sum(target)
     false_alarm = torch.sum(torch.sum(false_alarm, 1), 0)
     missed_detection = torch.sum(torch.sum(missed_detection, 1), 0)
     speaker_confusion = torch.sum(torch.sum(speaker_confusion, 1), 0)
@@ -111,6 +113,7 @@ def _der_compute(
     speaker_confusion: torch.Tensor,
     speech_total: torch.Tensor,
     per_frame: bool = False,
+    per_chunk: bool = False,
 ) -> torch.Tensor:
     """Compute diarization error rate from its components
 
@@ -128,6 +131,8 @@ def _der_compute(
         Diarization error rate.
     """
     if per_frame:
+        return false_alarm, missed_detection, speaker_confusion, speech_total
+    if per_chunk:
         return false_alarm, missed_detection, speaker_confusion, speech_total
     return (false_alarm + missed_detection + speaker_confusion) / (speech_total + 1e-8)
 
