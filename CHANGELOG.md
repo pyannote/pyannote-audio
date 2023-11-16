@@ -2,6 +2,7 @@
 
 ## `develop` branch
 
+- feat(pipeline): add WeSpeaker embedding wrapper
 - feat(pipeline): add `TimingHook` for profiling processing time
 - feat(pipeline): add `ArtifactHook` for saving internal steps
 - feat(pipeline): add support for list of hooks with `Hooks`
@@ -13,6 +14,7 @@
 - BREAKING(pipeline): rename `WeSpeakerPretrainedSpeakerEmbedding` to `ONNXWeSpeakerPretrainedSpeakerEmbedding`
 - BREAKING(setup): remove `onnxruntime` dependency.
   You can still use ONNX `hbredin/wespeaker-voxceleb-resnet34-LM` but you will have to install `onnxruntime` yourself.
+- feat(model): add support for multi-speaker statistics pooling
 
 ## Version 3.0.1 (2023-09-28)
 

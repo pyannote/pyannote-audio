@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020 CNRS
+# Copyright (c) 2020- CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -26,6 +26,7 @@ from typing import Optional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from einops import rearrange
 
 
 class StatsPool(nn.Module):
@@ -40,6 +41,39 @@ class StatsPool(nn.Module):
 
     """
 
+    def _pool(self, sequences: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:
+        """Helper function to compute statistics pooling
+
+        Assumes that weights are already interpolated to match the number of frames
+        in sequences and that they encode the activation of only one speaker.
+
+        Parameters
+        ----------
+        sequences : (batch, features, frames) torch.Tensor
+            Sequences of features.
+        weights : (batch, frames) torch.Tensor
+            (Already interpolated) weights.
+
+        Returns
+        -------
+        output : (batch, 2 * features) torch.Tensor
+            Concatenation of mean and (unbiased) standard deviation.
+        """
+
+        weights = weights.unsqueeze(dim=1)
+        # (batch, 1, frames)
+
+        v1 = weights.sum(dim=2) + 1e-8
+        mean = torch.sum(sequences * weights, dim=2) / v1
+
+        dx2 = torch.square(sequences - mean.unsqueeze(2))
+        v2 = torch.square(weights).sum(dim=2)
+
+        var = torch.sum(dx2 * weights, dim=2) / (v1 - v2 / v1 + 1e-8)
+        std = torch.sqrt(var)
+
+        return torch.cat([mean, std], dim=1)
+
     def forward(
         self, sequences: torch.Tensor, weights: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
@@ -47,42 +81,51 @@ class StatsPool(nn.Module):
 
         Parameters
         ----------
-        sequences : (batch, channel, frames) torch.Tensor
-            Sequences.
-        weights : (batch, frames) torch.Tensor, optional
-            When provided, compute weighted mean and standard deviation.
+        sequences : (batch, features, frames) torch.Tensor
+            Sequences of features.
+        weights : (batch, frames) or (batch, speakers, frames) torch.Tensor, optional
+            Compute weighted mean and standard deviation, using provided `weights`.
+
+        Note
+        ----
+        `sequences` and `weights` might use a different number of frames, in which case `weights`
+        are interpolated linearly to reach the number of frames in `sequences`.
 
         Returns
         -------
-        output : (batch, 2 * channel) torch.Tensor
-            Concatenation of mean and (unbiased) standard deviation.
+        output : (batch, 2 * features) or (batch, speakers, 2 * features) torch.Tensor
+            Concatenation of mean and (unbiased) standard deviation. When `weights` are
+            provided with the `speakers` dimension, `output` is computed for each speaker
+            separately and returned as (batch, speakers, 2 * channel)-shaped tensor.
         """
 
         if weights is None:
-            mean = sequences.mean(dim=2)
-            std = sequences.std(dim=2, unbiased=True)
+            mean = sequences.mean(dim=-1)
+            std = sequences.std(dim=-1, correction=1)
+            return torch.cat([mean, std], dim=-1)
 
-        else:
+        if weights.dim() == 2:
+            has_speaker_dimension = False
             weights = weights.unsqueeze(dim=1)
-            # (batch, 1, frames)
+            # (batch, frames) -> (batch, 1, frames)
+        else:
+            has_speaker_dimension = True
 
-            num_frames = sequences.shape[2]
-            num_weights = weights.shape[2]
-            if num_frames != num_weights:
-                warnings.warn(
-                    f"Mismatch between frames ({num_frames}) and weights ({num_weights}) numbers."
-                )
-                weights = F.interpolate(
-                    weights, size=num_frames, mode="linear", align_corners=False
-                )
+        # interpolate weights if needed
+        _, _, num_frames = sequences.shape
+        _, _, num_weights = weights.shape
+        if num_frames != num_weights:
+            warnings.warn(
+                f"Mismatch between frames ({num_frames}) and weights ({num_weights}) numbers."
+            )
+            weights = F.interpolate(weights, size=num_frames, mode="nearest")
 
-            v1 = weights.sum(dim=2)
-            mean = torch.sum(sequences * weights, dim=2) / v1
+        output = rearrange(
+            torch.vmap(self._pool, in_dims=(None, 1))(sequences, weights),
+            "speakers batch features -> batch speakers features",
+        )
 
-            dx2 = torch.square(sequences - mean.unsqueeze(2))
-            v2 = torch.square(weights).sum(dim=2)
+        if not has_speaker_dimension:
+            return output.squeeze(dim=1)
 
-            var = torch.sum(dx2 * weights, dim=2) / (v1 - v2 / v1)
-            std = torch.sqrt(var)
-
-        return torch.cat([mean, std], dim=1)
+        return output
