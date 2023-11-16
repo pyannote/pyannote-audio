@@ -24,6 +24,12 @@ import warnings
 from typing import Optional
 
 import torch
+if torch.__version__ >= "2.0.0":
+    # Use torch.vmap for torch 2.0 or newer
+    from torch import vmap
+else:
+    # Use functorch.vmap for torch 1.12 or older
+    from functorch import vmap
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
@@ -121,7 +127,7 @@ class StatsPool(nn.Module):
             weights = F.interpolate(weights, size=num_frames, mode="nearest")
 
         output = rearrange(
-            torch.vmap(self._pool, in_dims=(None, 1))(sequences, weights),
+            vmap(self._pool, in_dims=(None, 1))(sequences, weights),
             "speakers batch features -> batch speakers features",
         )
 
