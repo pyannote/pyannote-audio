@@ -15,6 +15,7 @@
 
 - fix(pipeline): add missing "embedding" hook call in `SpeakerDiarization`
 - fix(pipeline): fix `AgglomerativeClustering` to honor `num_clusters` when provided
+- fix(pipeline): fix frame-wise speaker count exceeding `max_speakers` or detected `num_speakers` in `SpeakerDiarization` pipeline
 
 ### Improvements
 
@@ -26,6 +27,8 @@
 - BREAKING(setup): remove `onnxruntime` dependency.
   You can still use ONNX `hbredin/wespeaker-voxceleb-resnet34-LM` but you will have to install `onnxruntime` yourself.
 - BREAKING(pipeline): remove `logging_hook` (use `ArtifactHook` instead)
+- BREAKING(pipeline): remove `onset` and `offset` parameter in `SpeakerDiarizationMixin.speaker_count`  
+  You should now binarize segmentations before passing them to `speaker_count`
 
 ## Version 3.0.1 (2023-09-28)
 
