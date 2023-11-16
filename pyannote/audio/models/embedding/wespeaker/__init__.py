@@ -27,6 +27,13 @@ from typing import Optional
 import torch
 import torchaudio.compliance.kaldi as kaldi
 
+if torch.__version__ >= "2.0.0":
+    # Use torch.vmap for torch 2.0 or newer
+    from torch import vmap
+else:
+    # Use functorch.vmap for torch 1.12 or older
+    from functorch import vmap
+
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
 
@@ -91,7 +98,7 @@ class BaseWeSpeakerResNet(Model):
         device = waveforms.device
         fft_device = torch.device("cpu") if device.type == "mps" else device
 
-        features = torch.vmap(self._fbank)(waveforms.to(fft_device)).to(device)
+        features = vmap(self._fbank)(waveforms.to(fft_device)).to(device)
 
         return features - torch.mean(features, dim=1, keepdim=True)
 
