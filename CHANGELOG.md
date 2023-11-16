@@ -16,7 +16,7 @@
 - fix(pipeline): add missing "embedding" hook call in `SpeakerDiarization`
 - fix(pipeline): fix `AgglomerativeClustering` to honor `num_clusters` when provided
 
-## Improvements
+### Improvements
 
 - improve(pipeline): compute `fbank` on GPU when requested
 
