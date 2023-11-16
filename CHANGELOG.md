@@ -2,19 +2,30 @@
 
 ## `develop` branch
 
-- feat(pipeline): add WeSpeaker embedding wrapper
+### New features
+
+- feat(model): add WeSpeaker embedding wrapper based on PyTorch
+- feat(model): add support for multi-speaker statistics pooling
 - feat(pipeline): add `TimingHook` for profiling processing time
 - feat(pipeline): add `ArtifactHook` for saving internal steps
 - feat(pipeline): add support for list of hooks with `Hooks`
-- BREAKING(pipeline): remove `logging_hook` (use `ArtifactHook` instead)
-- fix(pipeline): add missing "embedding" hook call in `SpeakerDiarization`
 - feat(utils): add `"soft"` option to `Powerset.to_multilabel`
-- improve(pipeline): compute `fbank` on GPU when requested
+
+### Fixes
+
+- fix(pipeline): add missing "embedding" hook call in `SpeakerDiarization`
 - fix(pipeline): fix `AgglomerativeClustering` to honor `num_clusters` when provided
+
+## Improvements
+
+- improve(pipeline): compute `fbank` on GPU when requested
+
+### Breaking changes
+
 - BREAKING(pipeline): rename `WeSpeakerPretrainedSpeakerEmbedding` to `ONNXWeSpeakerPretrainedSpeakerEmbedding`
 - BREAKING(setup): remove `onnxruntime` dependency.
   You can still use ONNX `hbredin/wespeaker-voxceleb-resnet34-LM` but you will have to install `onnxruntime` yourself.
-- feat(model): add support for multi-speaker statistics pooling
+- BREAKING(pipeline): remove `logging_hook` (use `ArtifactHook` instead)
 
 ## Version 3.0.1 (2023-09-28)
 
