@@ -23,11 +23,11 @@ jobs:
       - name: Install libsndfile
         if: matrix.os == 'ubuntu-latest'
         run: |
+          sudo apt-get update
           sudo apt-get install libsndfile1
       - name: Install pyannote.audio
         run: |
           pip install -e .[dev,testing]
       - name: Test with pytest
         run: |
-          export PYANNOTE_DATABASE_CONFIG=$GITHUB_WORKSPACE/tests/data/database.yml
           pytest

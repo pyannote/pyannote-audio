@@ -25,7 +25,7 @@ import math
 import random
 import warnings
 from collections import defaultdict
-from typing import Dict, Optional, Sequence, Union
+from typing import Dict, Sequence, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -71,14 +71,8 @@ class SegmentationTaskMixin:
 
         return file
 
-    def setup(self, stage: Optional[str] = None):
-        """Setup method
-
-        Parameters
-        ----------
-        stage : {'fit', 'validate', 'test'}, optional
-            Setup stage. Defaults to 'fit'.
-        """
+    def setup(self):
+        """Setup"""
 
         # duration of training chunks
         # TODO: handle variable duration case
@@ -427,7 +421,7 @@ class SegmentationTaskMixin:
         # indices of training files that matches domain filters
         training = self.metadata["subset"] == Subsets.index("train")
         for key, value in filters.items():
-            training &= self.metadata[key] == value
+            training &= self.metadata[key] == self.metadata_unique_values[key].index(value)
         file_ids = np.where(training)[0]
 
         # turn annotated duration into a probability distribution
@@ -491,8 +485,11 @@ class SegmentationTaskMixin:
             # create a subchunk generator for each combination of "balance" keys
             subchunks = dict()
             for product in itertools.product(
-                [self.metadata_unique_values[key] for key in balance]
+                *[self.metadata_unique_values[key] for key in balance]
             ):
+                # we iterate on the cartesian product of the values in metadata_unique_values
+                # eg: for balance=["database", "split"], with 2 databases and 2 splits:
+                # ("DIHARD", "A"), ("DIHARD", "B"), ("REPERE", "A"), ("REPERE", "B")
                 filters = {key: value for key, value in zip(balance, product)}
                 subchunks[product] = self.train__iter__helper(rng, **filters)
 
@@ -500,7 +497,7 @@ class SegmentationTaskMixin:
             # select one subchunk generator at random (with uniform probability)
             # so that it is balanced on average
             if balance is not None:
-                chunks = subchunks[rng.choice(subchunks)]
+                chunks = subchunks[rng.choice(list(subchunks))]
 
             # generate random chunk
             yield next(chunks)

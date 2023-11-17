@@ -20,10 +20,11 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import Mapping, Tuple, Union
+from typing import Dict, Mapping, Tuple, Union
 
 import numpy as np
 from pyannote.core import Annotation, SlidingWindow, SlidingWindowFeature
+from pyannote.core.utils.types import Label
 from pyannote.metrics.diarization import DiarizationErrorRate
 
 from pyannote.audio.core.inference import Inference
@@ -74,8 +75,10 @@ class SpeakerDiarizationMixin:
 
     @staticmethod
     def optimal_mapping(
-        reference: Union[Mapping, Annotation], hypothesis: Annotation
-    ) -> Annotation:
+        reference: Union[Mapping, Annotation],
+        hypothesis: Annotation,
+        return_mapping: bool = False,
+    ) -> Union[Annotation, Tuple[Annotation, Dict[Label, Label]]]:
         """Find the optimal bijective mapping between reference and hypothesis labels
 
         Parameters
@@ -84,13 +87,19 @@ class SpeakerDiarizationMixin:
             Reference annotation. Can be an Annotation instance or
             a mapping with an "annotation" key.
         hypothesis : Annotation
+            Hypothesized annotation.
+        return_mapping : bool, optional
+            Return the label mapping itself along with the mapped annotation. Defaults to False.
 
         Returns
         -------
         mapped : Annotation
             Hypothesis mapped to reference speakers.
-
+        mapping : dict, optional
+            Mapping between hypothesis (key) and reference (value) labels
+            Only returned if `return_mapping` is True.
         """
+
         if isinstance(reference, Mapping):
             reference = reference["annotation"]
             annotated = reference["annotated"] if "annotated" in reference else None
@@ -100,15 +109,18 @@ class SpeakerDiarizationMixin:
         mapping = DiarizationErrorRate().optimal_mapping(
             reference, hypothesis, uem=annotated
         )
-        return hypothesis.rename_labels(mapping=mapping)
+        mapped_hypothesis = hypothesis.rename_labels(mapping=mapping)
 
-    # TODO: get rid of onset/offset (binarization should be applied before calling speaker_count)
+        if return_mapping:
+            return mapped_hypothesis, mapping
+
+        else:
+            return mapped_hypothesis
+
     # TODO: get rid of warm-up parameter (trimming should be applied before calling speaker_count)
     @staticmethod
     def speaker_count(
-        segmentations: SlidingWindowFeature,
-        onset: float = 0.5,
-        offset: float = None,
+        binarized_segmentations: SlidingWindowFeature,
         warm_up: Tuple[float, float] = (0.1, 0.1),
         frames: SlidingWindow = None,
     ) -> SlidingWindowFeature:
@@ -116,12 +128,8 @@ class SpeakerDiarizationMixin:
 
         Parameters
         ----------
-        segmentations : SlidingWindowFeature
-            (num_chunks, num_frames, num_classes)-shaped scores.
-        onset : float, optional
-           Onset threshold. Defaults to 0.5
-        offset : float, optional
-           Offset threshold. Defaults to `onset`.
+        binarized_segmentations : SlidingWindowFeature
+            (num_chunks, num_frames, num_classes)-shaped binarized scores.
         warm_up : (float, float) tuple, optional
             Left/right warm up ratio of chunk duration.
             Defaults to (0.1, 0.1), i.e. 10% on both sides.
@@ -136,10 +144,7 @@ class SpeakerDiarizationMixin:
             (num_frames, 1)-shaped instantaneous speaker count
         """
 
-        binarized: SlidingWindowFeature = binarize(
-            segmentations, onset=onset, offset=offset, initial_state=False
-        )
-        trimmed = Inference.trim(binarized, warm_up=warm_up)
+        trimmed = Inference.trim(binarized_segmentations, warm_up=warm_up)
         count = Inference.aggregate(
             np.sum(trimmed, axis=-1, keepdims=True),
             frames=frames,
@@ -171,7 +176,8 @@ class SpeakerDiarizationMixin:
         Returns
         -------
         continuous_diarization : Annotation
-            Continuous diarization
+            Continuous diarization, with speaker labels as integers,
+            corresponding to the speaker indices in the discrete diarization.
         """
 
         binarize = Binarize(
@@ -181,7 +187,7 @@ class SpeakerDiarizationMixin:
             min_duration_off=min_duration_off,
         )
 
-        return binarize(discrete_diarization)
+        return binarize(discrete_diarization).rename_tracks(generator="string")
 
     @staticmethod
     def to_diarization(

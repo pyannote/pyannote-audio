@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020-2021 CNRS
+# Copyright (c) 2020- CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -21,19 +21,12 @@
 # SOFTWARE.
 
 
-from .wespeaker import (
-    WeSpeakerResNet34,
-    WeSpeakerResNet152,
-    WeSpeakerResNet221,
-    WeSpeakerResNet293,
-)
-from .xvector import XVectorMFCC, XVectorSincNet
+def pytest_sessionstart(session):
+    """
+    Called after the Session object has been created and
+    before performing collection and entering the run test loop.
+    """
 
-__all__ = [
-    "XVectorSincNet",
-    "XVectorMFCC",
-    "WeSpeakerResNet34",
-    "WeSpeakerResNet152",
-    "WeSpeakerResNet221",
-    "WeSpeakerResNet293",
-]
+    from pyannote.database import registry
+
+    registry.load_database("tests/data/database.yml")

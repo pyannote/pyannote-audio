@@ -121,14 +121,18 @@ class VoiceActivityDetection(Pipeline):
 
         # load model and send it to GPU (when available and not already on GPU)
         model = get_model(segmentation, use_auth_token=use_auth_token)
+
         inference_kwargs["pre_aggregation_hook"] = lambda scores: np.max(
             scores, axis=-1, keepdims=True
         )
         self._segmentation = Inference(model, **inference_kwargs)
 
-        #  hyper-parameters used for hysteresis thresholding
-        self.onset = Uniform(0.0, 1.0)
-        self.offset = Uniform(0.0, 1.0)
+        if model.specifications.powerset:
+            self.onset = self.offset = 0.5
+        else:
+            #  hyper-parameters used for hysteresis thresholding
+            self.onset = Uniform(0.0, 1.0)
+            self.offset = Uniform(0.0, 1.0)
 
         # hyper-parameters used for post-processing i.e. removing short speech regions
         # or filling short gaps between speech regions
@@ -136,14 +140,21 @@ class VoiceActivityDetection(Pipeline):
         self.min_duration_off = Uniform(0.0, 1.0)
 
     def default_parameters(self):
-        # parameters optimized on DIHARD 3 development set
         if self.segmentation == "pyannote/segmentation":
+            # parameters optimized for DIHARD 3 development set
             return {
                 "onset": 0.767,
                 "offset": 0.377,
                 "min_duration_on": 0.136,
                 "min_duration_off": 0.067,
             }
+
+        elif self.segmentation == "pyannote/segmentation-3.0.0":
+            return {
+                "min_duration_on": 0.0,
+                "min_duration_off": 0.0,
+            }
+
         raise NotImplementedError()
 
     def classes(self):
@@ -289,7 +300,6 @@ class AdaptiveVoiceActivityDetection(Pipeline):
         self.learning_rate = LogUniform(1e-6, 1)
 
     def apply(self, file: AudioFile) -> Annotation:
-
         # create a copy of file
         file = dict(file)
 

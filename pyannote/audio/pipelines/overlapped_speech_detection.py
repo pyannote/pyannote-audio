@@ -128,15 +128,19 @@ class OverlappedSpeechDetection(Pipeline):
         # load model
         model = get_model(segmentation, use_auth_token=use_auth_token)
 
-        if model.introspection.dimension > 1:
+        if model.example_output.dimension > 1:
             inference_kwargs["pre_aggregation_hook"] = lambda scores: np.partition(
                 scores, -2, axis=-1
             )[:, :, -2, np.newaxis]
         self._segmentation = Inference(model, **inference_kwargs)
 
-        #  hyper-parameters used for hysteresis thresholding
-        self.onset = Uniform(0.0, 1.0)
-        self.offset = Uniform(0.0, 1.0)
+        if model.specifications.powerset:
+            self.onset = self.offset = 0.5
+
+        else:
+            #  hyper-parameters used for hysteresis thresholding
+            self.onset = Uniform(0.0, 1.0)
+            self.offset = Uniform(0.0, 1.0)
 
         # hyper-parameters used for post-processing i.e. removing short overlapped regions
         # or filling short gaps between overlapped regions
@@ -152,14 +156,21 @@ class OverlappedSpeechDetection(Pipeline):
         self.recall = recall
 
     def default_parameters(self):
-        # parameters optimized on DIHARD 3 development set
         if self.segmentation == "pyannote/segmentation":
+            # parameters optimized on DIHARD 3 development set
             return {
                 "onset": 0.430,
                 "offset": 0.320,
                 "min_duration_on": 0.091,
                 "min_duration_off": 0.144,
             }
+
+        elif self.segmentation == "pyannote/segmentation-3.0.0":
+            return {
+                "min_duration_on": 0.0,
+                "min_duration_off": 0.0,
+            }
+
         raise NotImplementedError()
 
     def classes(self):

@@ -1,0 +1,21 @@
+Copyright (c) 2021 Shuai Wang (wsstriving@gmail.com)
+2022 Zhengyang Chen (chenzhengyang117@gmail.com)
+2023 Bing Han (hanbing97@sjtu.edu.cn)
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+File `resnet.py` has been borrowed from WeSpeaker that is available under the Apache License, Version 2.0.
+
+The original file is available at https://github.com/wenet-e2e/wespeaker/blob/c20d765295359e681321625fbefc1a02e8794163/wespeaker/models/resnet.py
+
+Neither Shuai Wang (@wsstriving on Github) nor myself (Hervé Bredin, or @hbredin on Github) are lawyers, but we both agreed that putting this license file in this directory is enough to comply with the license. See https://github.com/pyannote/pyannote-audio/issues/1537#issuecomment-1808029836. If you know better about this potential MIT/Apache 2.0 compatibility issue, please let us know.

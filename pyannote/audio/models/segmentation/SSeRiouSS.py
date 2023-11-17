@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020 CNRS
+# Copyright (c) 2023- CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -21,24 +21,23 @@
 # SOFTWARE.
 
 
-from typing import Optional
+from typing import Optional, Union
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from einops import rearrange
+import torchaudio
 from pyannote.core.utils.generators import pairwise
 
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
-from pyannote.audio.models.blocks.sincnet import SincNet
 from pyannote.audio.utils.params import merge_dict
 
 
-class PyanNet(Model):
-    """PyanNet segmentation model
+class SSeRiouSS(Model):
+    """Self-Supervised Representation for Speaker Segmentation
 
-    SincNet > LSTM > Feed forward > Classifier
+    wav2vec > LSTM > Feed forward > Classifier
 
     Parameters
     ----------
@@ -46,12 +45,14 @@ class PyanNet(Model):
         Audio sample rate. Defaults to 16kHz (16000).
     num_channels : int, optional
         Number of channels. Defaults to mono (1).
-    sincnet : dict, optional
-        Keyword arugments passed to the SincNet block.
-        Defaults to {"stride": 1}.
+    wav2vec: dict or str, optional
+        Defaults to "WAVLM_BASE".
+    wav2vec_layer: int, optional
+        Index of layer to use as input to the LSTM.
+        Defaults (-1) to use average of all layers (with learnable weights).
     lstm : dict, optional
         Keyword arguments passed to the LSTM layer.
-        Defaults to {"hidden_size": 128, "num_layers": 2, "bidirectional": True},
+        Defaults to {"hidden_size": 128, "num_layers": 4, "bidirectional": True},
         i.e. two bidirectional layers with 128 units each.
         Set "monolithic" to False to split monolithic multi-layer LSTM into multiple mono-layer LSTMs.
         This may proove useful for probing LSTM internals.
@@ -61,10 +62,11 @@ class PyanNet(Model):
         i.e. two linear layers with 128 units each.
     """
 
-    SINCNET_DEFAULTS = {"stride": 10}
+    WAV2VEC_DEFAULTS = "WAVLM_BASE"
+
     LSTM_DEFAULTS = {
         "hidden_size": 128,
-        "num_layers": 2,
+        "num_layers": 4,
         "bidirectional": True,
         "monolithic": True,
         "dropout": 0.0,
@@ -73,7 +75,8 @@ class PyanNet(Model):
 
     def __init__(
         self,
-        sincnet: dict = None,
+        wav2vec: Union[dict, str] = None,
+        wav2vec_layer: int = -1,
         lstm: dict = None,
         linear: dict = None,
         sample_rate: int = 16000,
@@ -82,20 +85,51 @@ class PyanNet(Model):
     ):
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
 
-        sincnet = merge_dict(self.SINCNET_DEFAULTS, sincnet)
-        sincnet["sample_rate"] = sample_rate
+        if isinstance(wav2vec, str):
+            # `wav2vec` is one of the supported pipelines from torchaudio (e.g. "WAVLM_BASE")
+            if hasattr(torchaudio.pipelines, wav2vec):
+                bundle = getattr(torchaudio.pipelines, wav2vec)
+                if sample_rate != bundle._sample_rate:
+                    raise ValueError(
+                        f"Expected {bundle._sample_rate}Hz, found {sample_rate}Hz."
+                    )
+                wav2vec_dim = bundle._params["encoder_embed_dim"]
+                wav2vec_num_layers = bundle._params["encoder_num_layers"]
+                self.wav2vec = bundle.get_model()
+
+            # `wav2vec` is a path to a self-supervised representation checkpoint
+            else:
+                _checkpoint = torch.load(wav2vec)
+                wav2vec = _checkpoint.pop("config")
+                self.wav2vec = torchaudio.models.wav2vec2_model(**wav2vec)
+                state_dict = _checkpoint.pop("state_dict")
+                self.wav2vec.load_state_dict(state_dict)
+                wav2vec_dim = wav2vec["encoder_embed_dim"]
+                wav2vec_num_layers = wav2vec["encoder_num_layers"]
+
+        # `wav2vec` is a config dictionary understood by `wav2vec2_model`
+        # this branch is typically used by Model.from_pretrained(...)
+        elif isinstance(wav2vec, dict):
+            self.wav2vec = torchaudio.models.wav2vec2_model(**wav2vec)
+            wav2vec_dim = wav2vec["encoder_embed_dim"]
+            wav2vec_num_layers = wav2vec["encoder_num_layers"]
+
+        if wav2vec_layer < 0:
+            self.wav2vec_weights = nn.Parameter(
+                data=torch.ones(wav2vec_num_layers), requires_grad=True
+            )
+
         lstm = merge_dict(self.LSTM_DEFAULTS, lstm)
         lstm["batch_first"] = True
         linear = merge_dict(self.LINEAR_DEFAULTS, linear)
-        self.save_hyperparameters("sincnet", "lstm", "linear")
 
-        self.sincnet = SincNet(**self.hparams.sincnet)
+        self.save_hyperparameters("wav2vec", "wav2vec_layer", "lstm", "linear")
 
         monolithic = lstm["monolithic"]
         if monolithic:
             multi_layer_lstm = dict(lstm)
             del multi_layer_lstm["monolithic"]
-            self.lstm = nn.LSTM(60, **multi_layer_lstm)
+            self.lstm = nn.LSTM(wav2vec_dim, **multi_layer_lstm)
 
         else:
             num_layers = lstm["num_layers"]
@@ -110,10 +144,10 @@ class PyanNet(Model):
             self.lstm = nn.ModuleList(
                 [
                     nn.LSTM(
-                        60
+                        wav2vec_dim
                         if i == 0
                         else lstm["hidden_size"] * (2 if lstm["bidirectional"] else 1),
-                        **one_layer_lstm
+                        **one_layer_lstm,
                     )
                     for i in range(num_layers)
                 ]
@@ -147,7 +181,7 @@ class PyanNet(Model):
             )
 
         if isinstance(self.specifications, tuple):
-            raise ValueError("PyanNet does not support multi-tasking.")
+            raise ValueError("SSeRiouSS model does not support multi-tasking.")
 
         if self.specifications.powerset:
             out_features = self.specifications.num_powerset_classes
@@ -169,14 +203,25 @@ class PyanNet(Model):
         scores : (batch, frame, classes)
         """
 
-        outputs = self.sincnet(waveforms)
+        num_layers = (
+            None if self.hparams.wav2vec_layer < 0 else self.hparams.wav2vec_layer
+        )
 
-        if self.hparams.lstm["monolithic"]:
-            outputs, _ = self.lstm(
-                rearrange(outputs, "batch feature frame -> batch frame feature")
+        with torch.no_grad():
+            outputs, _ = self.wav2vec.extract_features(
+                waveforms.squeeze(1), num_layers=num_layers
+            )
+
+        if num_layers is None:
+            outputs = torch.stack(outputs, dim=-1) @ F.softmax(
+                self.wav2vec_weights, dim=0
             )
         else:
-            outputs = rearrange(outputs, "batch feature frame -> batch frame feature")
+            outputs = outputs[-1]
+
+        if self.hparams.lstm["monolithic"]:
+            outputs, _ = self.lstm(outputs)
+        else:
             for i, lstm in enumerate(self.lstm):
                 outputs, _ = lstm(outputs)
                 if i + 1 < self.hparams.lstm["num_layers"]:

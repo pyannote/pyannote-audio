@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020-2021 CNRS
+# Copyright (c) 2020- CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -24,6 +24,8 @@ from __future__ import annotations
 
 import os
 import warnings
+from dataclasses import dataclass
+from functools import cached_property
 from importlib import import_module
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Text, Tuple, Union
@@ -49,6 +51,7 @@ from pyannote.audio.core.task import (
     Task,
     UnknownSpecificationsError,
 )
+from pyannote.audio.utils.multi_task import map_with_specifications
 from pyannote.audio.utils.version import check_version
 
 CACHE_DIR = os.getenv(
@@ -59,195 +62,16 @@ HF_PYTORCH_WEIGHTS_NAME = "pytorch_model.bin"
 HF_LIGHTNING_CONFIG_NAME = "config.yaml"
 
 
+# NOTE: needed to backward compatibility to load models trained before pyannote.audio 3.x
 class Introspection:
-    """Model introspection
+    pass
 
-    Parameters
-    ----------
-    min_num_samples: int
-        Minimum number of input samples
-    min_num_frames: int
-        Corresponding minimum number of output frames
-    inc_num_samples: int
-        Number of input samples leading to an increase of number of output frames
-    inc_num_frames: int
-        Corresponding increase in number of output frames
+
+@dataclass
+class Output:
+    num_frames: int
     dimension: int
-        Output dimension
-    sample_rate: int
-        Expected input sample rate
-
-    Usage
-    -----
-    >>> introspection = Introspection.from_model(model)
-    >>> isinstance(introspection.frames, SlidingWindow)
-    >>> num_samples = 16000 # 1s at 16kHz
-    >>> num_frames, dimension = introspection(num_samples)
-    """
-
-    def __init__(
-        self,
-        min_num_samples: int,
-        min_num_frames: int,
-        inc_num_samples: int,
-        inc_num_frames: int,
-        dimension: int,
-        sample_rate: int,
-    ):
-        super().__init__()
-        self.min_num_samples = min_num_samples
-        self.min_num_frames = min_num_frames
-        self.inc_num_samples = inc_num_samples
-        self.inc_num_frames = inc_num_frames
-        self.dimension = dimension
-        self.sample_rate = sample_rate
-
-    @classmethod
-    def from_model(cls, model: "Model", task: str = None) -> Introspection:
-
-        specifications = model.specifications
-        if task is not None:
-            specifications = specifications[task]
-
-        example_input_array = model.example_input_array
-        batch_size, num_channels, num_samples = example_input_array.shape
-        example_input_array = torch.randn(
-            (batch_size, num_channels, num_samples),
-            dtype=example_input_array.dtype,
-            layout=example_input_array.layout,
-            device=example_input_array.device,
-            requires_grad=False,
-        )
-
-        # dichotomic search of "min_num_samples"
-        lower, upper, min_num_samples = 1, num_samples, None
-        while True:
-            num_samples = (lower + upper) // 2
-            try:
-                with torch.no_grad():
-                    frames = model(example_input_array[:, :, :num_samples])
-                if task is not None:
-                    frames = frames[task]
-            except Exception:
-                lower = num_samples
-            else:
-                min_num_samples = num_samples
-                if specifications.resolution == Resolution.FRAME:
-                    _, min_num_frames, dimension = frames.shape
-                elif specifications.resolution == Resolution.CHUNK:
-                    _, dimension = frames.shape
-                else:
-                    # should never happen
-                    pass
-                upper = num_samples
-
-            if lower + 1 == upper:
-                break
-
-        # if "min_num_samples" is still None at this point, it means that
-        # the forward pass always failed and raised an exception. most likely,
-        # it means that there is a problem with the model definition.
-        # we try again without catching the exception to help the end user debug
-        # their model
-        if min_num_samples is None:
-            frames = model(example_input_array)
-
-        # corner case for chunk-level tasks
-        if specifications.resolution == Resolution.CHUNK:
-            return cls(
-                min_num_samples=min_num_samples,
-                min_num_frames=1,
-                inc_num_samples=0,
-                inc_num_frames=0,
-                dimension=dimension,
-                sample_rate=model.hparams.sample_rate,
-            )
-
-        # search reasonable upper bound for "inc_num_samples"
-        while True:
-            num_samples = 2 * min_num_samples
-            example_input_array = torch.randn(
-                (batch_size, num_channels, num_samples),
-                dtype=example_input_array.dtype,
-                layout=example_input_array.layout,
-                device=example_input_array.device,
-                requires_grad=False,
-            )
-            with torch.no_grad():
-                frames = model(example_input_array)
-            if task is not None:
-                frames = frames[task]
-            num_frames = frames.shape[1]
-            if num_frames > min_num_frames:
-                break
-
-        # dichotomic search of "inc_num_samples"
-        lower, upper = min_num_samples, num_samples
-        while True:
-            num_samples = (lower + upper) // 2
-            example_input_array = torch.randn(
-                (batch_size, num_channels, num_samples),
-                dtype=example_input_array.dtype,
-                layout=example_input_array.layout,
-                device=example_input_array.device,
-                requires_grad=False,
-            )
-            with torch.no_grad():
-                frames = model(example_input_array)
-            if task is not None:
-                frames = frames[task]
-            num_frames = frames.shape[1]
-            if num_frames > min_num_frames:
-                inc_num_frames = num_frames - min_num_frames
-                inc_num_samples = num_samples - min_num_samples
-                upper = num_samples
-            else:
-                lower = num_samples
-
-            if lower + 1 == upper:
-                break
-
-        return cls(
-            min_num_samples=min_num_samples,
-            min_num_frames=min_num_frames,
-            inc_num_samples=inc_num_samples,
-            inc_num_frames=inc_num_frames,
-            dimension=dimension,
-            sample_rate=model.hparams.sample_rate,
-        )
-
-    def __call__(self, num_samples: int) -> Tuple[int, int]:
-        """Predict output shape, given number of input samples
-
-        Parameters
-        ----------
-        num_samples : int
-            Number of input samples.
-
-        Returns
-        -------
-        num_frames : int
-            Number of output frames
-        dimension : int
-            Dimension of output frames
-        """
-
-        if num_samples < self.min_num_samples:
-            return 0, self.dimension
-
-        return (
-            self.min_num_frames
-            + self.inc_num_frames
-            * ((num_samples - self.min_num_samples + 1) // self.inc_num_samples),
-            self.dimension,
-        )
-
-    @property
-    def frames(self) -> SlidingWindow:
-        # HACK to support model trained before 'sample_rate' was an Introspection attribute
-        sample_rate = getattr(self, "sample_rate", 16000)
-        step = (self.inc_num_samples / self.inc_num_frames) / sample_rate
-        return SlidingWindow(start=0.0, step=step, duration=step)
+    frames: SlidingWindow
 
 
 class Model(pl.LightningModule):
@@ -281,31 +105,26 @@ class Model(pl.LightningModule):
         self.audio = Audio(sample_rate=self.hparams.sample_rate, mono="downmix")
 
     @property
-    def example_input_array(self) -> torch.Tensor:
-        batch_size = 3 if self.task is None else self.task.batch_size
-        duration = 2.0 if self.task is None else self.task.duration
-
-        return torch.randn(
-            (
-                batch_size,
-                self.hparams.num_channels,
-                int(self.hparams.sample_rate * duration),
-            ),
-            device=self.device,
-        )
-
-    @property
-    def task(self):
+    def task(self) -> Task:
         return self._task
 
     @task.setter
-    def task(self, task):
-        self._task = task
-        del self.introspection
+    def task(self, task: Task):
+        # reset (cached) properties when task changes
         del self.specifications
+        try:
+            del self.example_output
+        except AttributeError:
+            pass
+        self._task = task
+
+    def build(self):
+        # use this method to add task-dependent layers to the model
+        # (e.g. the final classification and activation layers)
+        pass
 
     @property
-    def specifications(self):
+    def specifications(self) -> Union[Specifications, Tuple[Specifications]]:
         if self.task is None:
             try:
                 specifications = self._specifications
@@ -330,7 +149,22 @@ class Model(pl.LightningModule):
         return specifications
 
     @specifications.setter
-    def specifications(self, specifications):
+    def specifications(
+        self, specifications: Union[Specifications, Tuple[Specifications]]
+    ):
+        if not isinstance(specifications, (Specifications, tuple)):
+            raise ValueError(
+                "Only regular specifications or tuple of specifications are supported."
+            )
+
+        durations = set(s.duration for s in specifications)
+        if len(durations) > 1:
+            raise ValueError("All tasks must share the same (maximum) duration.")
+
+        min_durations = set(s.min_duration for s in specifications)
+        if len(min_durations) > 1:
+            raise ValueError("All tasks must share the same minimum duration.")
+
         self._specifications = specifications
 
     @specifications.deleter
@@ -338,39 +172,54 @@ class Model(pl.LightningModule):
         if hasattr(self, "_specifications"):
             del self._specifications
 
-    def build(self):
-        # use this method to add task-dependent layers to the model
-        # (e.g. the final classification and activation layers)
-        pass
+    def __example_input_array(self, duration: Optional[float] = None) -> torch.Tensor:
+        duration = duration or next(iter(self.specifications)).duration
+        return torch.randn(
+            (
+                1,
+                self.hparams.num_channels,
+                self.audio.get_num_samples(duration),
+            ),
+            device=self.device,
+        )
 
     @property
-    def introspection(self) -> Introspection:
-        """Introspection
+    def example_input_array(self) -> torch.Tensor:
+        return self.__example_input_array()
 
-        Returns
-        -------
-        introspection: Introspection
-            Model introspection
-        """
+    @cached_property
+    def example_output(self) -> Union[Output, Tuple[Output]]:
+        """Example output"""
+        example_input_array = self.__example_input_array()
+        with torch.inference_mode():
+            example_output = self(example_input_array)
 
-        if not hasattr(self, "_introspection"):
-            self._introspection = Introspection.from_model(self)
+        def __example_output(
+            example_output: torch.Tensor,
+            specifications: Specifications = None,
+        ) -> Output:
+            if specifications.resolution == Resolution.FRAME:
+                _, num_frames, dimension = example_output.shape
+                frame_duration = specifications.duration / num_frames
+                frames = SlidingWindow(step=frame_duration, duration=frame_duration)
+            else:
+                _, dimension = example_output.shape
+                num_frames = None
+                frames = None
 
-        return self._introspection
+            return Output(
+                num_frames=num_frames,
+                dimension=dimension,
+                frames=frames,
+            )
 
-    @introspection.setter
-    def introspection(self, introspection):
-        self._introspection = introspection
-
-    @introspection.deleter
-    def introspection(self):
-        if hasattr(self, "_introspection"):
-            del self._introspection
+        return map_with_specifications(
+            self.specifications, __example_output, example_output
+        )
 
     def setup(self, stage=None):
-
         if stage == "fit":
-            self.task.setup()
+            self.task.setup_metadata()
 
         # list of layers before adding task-dependent layers
         before = set((name, id(module)) for name, module in self.named_modules())
@@ -411,8 +260,8 @@ class Model(pl.LightningModule):
             # setup custom validation metrics
             self.task.setup_validation_metric()
 
-            # this is to make sure introspection is performed here, once and for all
-            _ = self.introspection
+            # cache for later (and to avoid later CUDA error with multiprocessing)
+            _ = self.example_output
 
         # list of layers after adding task-dependent layers
         after = set((name, id(module)) for name, module in self.named_modules())
@@ -421,7 +270,6 @@ class Model(pl.LightningModule):
         self.task_dependent = list(name for name, _ in after - before)
 
     def on_save_checkpoint(self, checkpoint):
-
         # put everything pyannote.audio-specific under pyannote.audio
         # to avoid any future conflicts with pytorch-lightning updates
         checkpoint["pyannote.audio"] = {
@@ -433,12 +281,10 @@ class Model(pl.LightningModule):
                 "module": self.__class__.__module__,
                 "class": self.__class__.__name__,
             },
-            "introspection": self.introspection,
             "specifications": self.specifications,
         }
 
     def on_load_checkpoint(self, checkpoint: Dict[str, Any]):
-
         check_version(
             "pyannote.audio",
             checkpoint["pyannote.audio"]["versions"]["pyannote.audio"],
@@ -462,43 +308,17 @@ class Model(pl.LightningModule):
 
         self.specifications = checkpoint["pyannote.audio"]["specifications"]
 
+        # add task-dependent (e.g. final classifier) layers
         self.setup()
 
-        self.introspection = checkpoint["pyannote.audio"]["introspection"]
-
-    def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, waveforms: torch.Tensor, **kwargs
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor]]:
         msg = "Class {self.__class__.__name__} should define a `forward` method."
         raise NotImplementedError(msg)
 
-    def helper_default_activation(self, specifications: Specifications) -> nn.Module:
-        """Helper function for default_activation
-
-        Parameters
-        ----------
-        specifications: Specifications
-            Task specification.
-
-        Returns
-        -------
-        activation : nn.Module
-            Default activation function.
-        """
-
-        if specifications.problem == Problem.BINARY_CLASSIFICATION:
-            return nn.Sigmoid()
-
-        elif specifications.problem == Problem.MONO_LABEL_CLASSIFICATION:
-            return nn.LogSoftmax(dim=-1)
-
-        elif specifications.problem == Problem.MULTI_LABEL_CLASSIFICATION:
-            return nn.Sigmoid()
-
-        else:
-            msg = "TODO: implement default activation for other types of problems"
-            raise NotImplementedError(msg)
-
     # convenience function to automate the choice of the final activation function
-    def default_activation(self) -> nn.Module:
+    def default_activation(self) -> Union[nn.Module, Tuple[nn.Module]]:
         """Guess default activation function according to task specification
 
             * sigmoid for binary classification
@@ -507,10 +327,25 @@ class Model(pl.LightningModule):
 
         Returns
         -------
-        activation : nn.Module
+        activation : (tuple of) nn.Module
             Activation.
         """
-        return self.helper_default_activation(self.specifications)
+
+        def __default_activation(specifications: Specifications = None) -> nn.Module:
+            if specifications.problem == Problem.BINARY_CLASSIFICATION:
+                return nn.Sigmoid()
+
+            elif specifications.problem == Problem.MONO_LABEL_CLASSIFICATION:
+                return nn.LogSoftmax(dim=-1)
+
+            elif specifications.problem == Problem.MULTI_LABEL_CLASSIFICATION:
+                return nn.Sigmoid()
+
+            else:
+                msg = "TODO: implement default activation for other types of problems"
+                raise NotImplementedError(msg)
+
+        return map_with_specifications(self.specifications, __default_activation)
 
     # training data logic is delegated to the task because the
     # model does not really need to know how it is being used.
@@ -535,9 +370,7 @@ class Model(pl.LightningModule):
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=1e-3)
 
-    def _helper_up_to(
-        self, module_name: Text, requires_grad: bool = False
-    ) -> List[Text]:
+    def __up_to(self, module_name: Text, requires_grad: bool = False) -> List[Text]:
         """Helper function for freeze_up_to and unfreeze_up_to"""
 
         tokens = module_name.split(".")
@@ -594,7 +427,7 @@ class Model(pl.LightningModule):
         If your model does not follow a sequential structure, you might
         want to use freeze_by_name for more control.
         """
-        return self._helper_up_to(module_name, requires_grad=False)
+        return self.__up_to(module_name, requires_grad=False)
 
     def unfreeze_up_to(self, module_name: Text) -> List[Text]:
         """Unfreeze model up to specific module
@@ -619,9 +452,9 @@ class Model(pl.LightningModule):
         If your model does not follow a sequential structure, you might
         want to use freeze_by_name for more control.
         """
-        return self._helper_up_to(module_name, requires_grad=True)
+        return self.__up_to(module_name, requires_grad=True)
 
-    def _helper_by_name(
+    def __by_name(
         self,
         modules: Union[List[Text], Text],
         recurse: bool = True,
@@ -636,7 +469,6 @@ class Model(pl.LightningModule):
             modules = [modules]
 
         for name, module in ModelSummary(self, max_depth=-1).named_modules:
-
             if name not in modules:
                 continue
 
@@ -678,7 +510,7 @@ class Model(pl.LightningModule):
         ValueError if at least one of `modules` does not exist.
         """
 
-        return self._helper_by_name(
+        return self.__by_name(
             modules,
             recurse=recurse,
             requires_grad=False,
@@ -709,7 +541,7 @@ class Model(pl.LightningModule):
         ValueError if at least one of `modules` does not exist.
         """
 
-        return self._helper_by_name(modules, recurse=recurse, requires_grad=True)
+        return self.__by_name(modules, recurse=recurse, requires_grad=True)
 
     @classmethod
     def from_pretrained(
@@ -826,7 +658,6 @@ visit https://hf.co/{model_id} to accept the user conditions."""
             # HACK do not use it. Fails silently in case model does not
             # HACK have a config.yaml file.
             try:
-
                 _ = hf_hub_download(
                     model_id,
                     HF_LIGHTNING_CONFIG_NAME,
