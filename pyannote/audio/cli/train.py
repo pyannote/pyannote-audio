@@ -115,7 +115,7 @@ def train(cfg: DictConfig) -> Optional[float]:
     checkpoint = ModelCheckpoint(
         monitor=monitor,
         mode=direction,
-        save_top_k=None if monitor is None else 1,
+        save_top_k=None if monitor is None else 10,
         every_n_epochs=1,
         save_last=True,
         save_weights_only=False,

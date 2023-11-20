@@ -253,7 +253,6 @@ class BaseClustering(Pipeline):
             hard_clusters = np.zeros((num_chunks, num_speakers), dtype=np.int8)
             soft_clusters = np.ones((num_chunks, num_speakers, 1))
             centroids = np.mean(train_embeddings, axis=0, keepdims=True)
-
             return hard_clusters, soft_clusters, centroids
 
         train_clusters = self.cluster(
