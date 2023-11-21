@@ -286,9 +286,7 @@ class Task(pl.LightningDataModule):
                 # data was already created, do nothing
                 return
             # create a new cache directory at the path specified by the user
-            else:
-                cache_rep = Path(self.cache_path[: self.cache_path.rfind('/')])
-                cache_rep.mkdir(parents=True, exist_ok=True)
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
         # duration of training chunks
         # TODO: handle variable duration case
         duration = getattr(self, "duration", 0.0)
@@ -615,24 +613,26 @@ class Task(pl.LightningDataModule):
 
     def setup(self, stage=None):
         """Setup data on each device"""
-        if not self.has_setup_metadata:
-            # if no cache directory was provided by the user and task data was not already prepared
-            if self.cache_path is None and not self.has_prepared_data:
-                warnings.warn("""No path to the directory containing the cache of prepared data
-                              has been specified. Data preparation will therefore be carried out
-                              on each process used for training. To speed up data preparation, you
-                              can specify a cache directory when instantiating the task.""", stacklevel=1)
-                self.prepare_data()
-                return
-            # load data cached by prepare_data method into the task:
-            try:
-                with open(self.cache_path, 'rb') as cache_file:
-                    self.prepared_data = pickle.load(cache_file)
-            except FileNotFoundError:
-                print("""Cached data for protocol not found. Ensure that prepare_data was
-                      executed correctly and that the path to the task cache is correct""")
-                raise
-            self.has_setup_metadata = True
+        # if all data was assigned to the task, nothing to do
+        if self.has_setup_metadata:
+            return
+        # if no cache directory was provided by the user and task data was not already prepared
+        if self.cache_path is None and not self.has_prepared_data:
+            warnings.warn("No path to the directory containing the cache of prepared data"
+                            " has been specified. Data preparation will therefore be carried out"
+                            " on each process used for training. To speed up data preparation, you"
+                            " can specify a cache directory when instantiating the task.", stacklevel=1)
+            self.prepare_data()
+            return
+        # load data cached by prepare_data method into the task:
+        try:
+            with open(self.cache_path, 'rb') as cache_file:
+                self.prepared_data = pickle.load(cache_file)
+        except FileNotFoundError:
+            print("""Cached data for protocol not found. Ensure that prepare_data was
+                    executed correctly and that the path to the task cache is correct""")
+            raise
+        self.has_setup_metadata = True
 
     @property
     def specifications(self) -> Union[Specifications, Tuple[Specifications]]:
