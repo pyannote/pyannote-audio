@@ -115,6 +115,7 @@ class SepDiarNet(Model):
         n_sources: int = 3,
         use_lstm: bool = False,
         lr: float = 1e-3,
+        gradient_clip_val: float = 5.0,
     ):
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
 
@@ -174,6 +175,7 @@ class SepDiarNet(Model):
                 )
             ]
         )
+        self.gradient_clip_val = gradient_clip_val
         self.automatic_optimization = False
 
     def build(self):
