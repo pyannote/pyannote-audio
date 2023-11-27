@@ -27,7 +27,6 @@ import itertools
 import multiprocessing
 import numpy as np
 from pathlib import Path
-import pickle
 import sys
 import warnings
 from dataclasses import dataclass
@@ -283,7 +282,7 @@ class Task(pl.LightningDataModule):
         if self.cache_path is not None:
             cache_path = Path(self.cache_path)
             if cache_path.exists():
-                # data was already created, do nothing
+                # data was already created, nothing to do
                 return
             # create a new cache directory at the path specified by the user
             cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -450,7 +449,6 @@ class Task(pl.LightningDataModule):
                     file_id,
                     segment.duration,
                     segment.start,
-                    segment.end,
                 )
                 annotated_regions.append(annotated_region)
 
@@ -523,27 +521,32 @@ class Task(pl.LightningDataModule):
             tuple(metadatum.get(key, -1) for key in metadata_unique_values)
             for metadatum in metadata
         ]
-        dtype = [(key, "i") for key in metadata_unique_values]
+        dtype = [(key, "b") for key in metadata_unique_values]
 
         prepared_data["metadata"] = np.array(metadata, dtype=dtype)
+        metadata.clear()
         prepared_data["audios"] = np.array(audios, dtype=np.string_)
+        audios.clear()
 
         # turn list of files metadata into a single numpy array
         # TODO: improve using https://github.com/pytorch/pytorch/issues/13246#issuecomment-617140519
         dtype = [
             ("sample_rate", "i"),
             ("num_frames", "i"),
-            ("num_channels", "i"),
-            ("bits_per_sample", "i"),
+            ("num_channels", "B"),
+            ("bits_per_sample", "B"),
         ]
         prepared_data["audio_infos"] = np.array(audio_infos, dtype=dtype)
+        audio_infos.clear()
         prepared_data["audio_encodings"] = np.array(audio_encodings, dtype=np.string_)
+        audio_encodings.clear()
         prepared_data["annotated_duration"] = np.array(annotated_duration)
+        annotated_duration.clear()
 
         # turn list of annotated regions into a single numpy array
-        dtype = [("file_id", "i"), ("duration", "f"), ("start", "f"), ("end", "f")]
-        annotated_regions_array = np.array(annotated_regions, dtype=dtype)
-        prepared_data["annotated_regions"] = annotated_regions_array
+        dtype = [("file_id", "i"), ("duration", "f"), ("start", "f")]
+        prepared_data["annotated_regions"] = np.array(annotated_regions, dtype=dtype)
+        annotated_regions.clear()
 
         # convert annotated_classes (which is a list of list of classes, one list of classes per file)
         # into a single (num_files x num_classes) numpy array:
@@ -557,6 +560,8 @@ class Task(pl.LightningDataModule):
         for file_id, classes in enumerate(annotated_classes):
             annotated_classes_array[file_id, classes] = True
         prepared_data["annotated_classes"] = annotated_classes_array
+        annotated_classes.clear()
+        del annotated_classes_array
 
         # turn list of annotations into a single numpy array
         dtype = [
@@ -569,45 +574,46 @@ class Task(pl.LightningDataModule):
         ]
 
         prepared_data["annotations"] = np.array(annotations, dtype=dtype)
+        annotations.clear()
         prepared_data["metadata_unique_values"] = metadata_unique_values
+        metadata_unique_values.clear()
 
-        if not self.has_validation:
-            return
+        if self.has_validation:
+            validation_chunks = list()
 
-        validation_chunks = list()
+            # obtain indexes of files in the validation subset
+            validation_file_ids = np.where(
+                prepared_data["metadata"]["subset"] == Subsets.index("development")
+            )[0]
 
-        # obtain indexes of files in the validation subset
-        validation_file_ids = np.where(
-            prepared_data["metadata"]["subset"] == Subsets.index("development")
-        )[0]
+            # iterate over files in the validation subset
+            for file_id in validation_file_ids:
+                # get annotated regions in file
+                annotated_regions = prepared_data["annotated_regions"][
+                    prepared_data["annotated_regions"]["file_id"] == file_id
+                ]
 
-        # iterate over files in the validation subset
-        for file_id in validation_file_ids:
-            # get annotated regions in file
-            annotated_regions = annotated_regions_array[
-                annotated_regions_array["file_id"] == file_id
-            ]
+                # iterate over annotated regions
+                for annotated_region in annotated_regions:
+                    # number of chunks in annotated region
+                    num_chunks = round(annotated_region["duration"] // duration)
 
-            # iterate over annotated regions
-            for annotated_region in annotated_regions:
-                # number of chunks in annotated region
-                num_chunks = round(annotated_region["duration"] // duration)
+                    # iterate over chunks
+                    for c in range(num_chunks):
+                        start_time = annotated_region["start"] + c * duration
+                        validation_chunks.append((file_id, start_time, duration))
 
-                # iterate over chunks
-                for c in range(num_chunks):
-                    start_time = annotated_region["start"] + c * duration
-                    validation_chunks.append((file_id, start_time, duration))
+            dtype = [("file_id", "i"), ("start", "f"), ("duration", "f")]
+            prepared_data["validation_chunks"] = np.array(validation_chunks, dtype=dtype)
+            validation_chunks.clear()
 
-        dtype = [("file_id", "i"), ("start", "f"), ("duration", "f")]
-        prepared_data["validation_chunks"] = np.array(validation_chunks, dtype=dtype)
-        
         self.prepared_data = prepared_data
         self.has_setup_metadata = True
 
         # save preparated data on the disk
         if self.cache_path is not None:
             with open(self.cache_path, 'wb') as cache_file:
-                pickle.dump(prepared_data, cache_file)
+                np.savez_compressed(cache_file, **prepared_data)
 
         self.has_prepared_data = True
 
@@ -627,12 +633,13 @@ class Task(pl.LightningDataModule):
         # load data cached by prepare_data method into the task:
         try:
             with open(self.cache_path, 'rb') as cache_file:
-                self.prepared_data = pickle.load(cache_file)
+                self.prepared_data = dict(np.load(cache_file, allow_pickle=True))
         except FileNotFoundError:
             print("""Cached data for protocol not found. Ensure that prepare_data was
                     executed correctly and that the path to the task cache is correct""")
             raise
         self.has_setup_metadata = True
+
 
     @property
     def specifications(self) -> Union[Specifications, Tuple[Specifications]]:
@@ -649,6 +656,8 @@ class Task(pl.LightningDataModule):
 
     @property
     def has_prepared_data(self):
+        # This flag indicates if data for this task was generated, and
+        # optionally saved on the disk
         return getattr(self, "_has_prepared_data", False)
 
     @has_prepared_data.setter
@@ -657,6 +666,8 @@ class Task(pl.LightningDataModule):
 
     @property
     def has_setup_metadata(self):
+        # This flag indicates if data was assigned to this task, directly from prepared
+        # data or by reading in a cached file on the disk
         return getattr(self, "_has_setup_metadata", False)
 
     @has_setup_metadata.setter

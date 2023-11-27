@@ -138,8 +138,8 @@ class SegmentationTask(Task):
                 )
 
                 # select one chunk at random in this annotated region
-                _, _, start, end = self.prepared_data["annotated_regions"][annotated_region_index]
-                start_time = rng.uniform(start, end - duration)
+                _, region_duration, start = self.prepared_data["annotated_regions"][annotated_region_index]
+                start_time = rng.uniform(start, start + region_duration - duration)
 
                 yield self.prepare_chunk(file_id, start_time, duration)
 
