@@ -25,7 +25,7 @@ from einops import rearrange
 import math
 import itertools
 import random
-from typing import Literal, Union, Sequence, Dict
+from typing import Dict, Literal, Optional, Sequence, Union
 import warnings
 from matplotlib import pyplot as plt
 import numpy as np
@@ -97,7 +97,8 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
             margin : float = 28.6,
             scale: float = 64.0,
             alpha: float = 0.5,
-            augmentation: BaseWaveformTransform = None
+            augmentation: BaseWaveformTransform = None,
+            cache_path: Optional[Union[str, None]] = None,
     ) -> None:
         super().__init__(
             protocol,
@@ -106,6 +107,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
             num_workers=num_workers,
             pin_memory=pin_memory,
             augmentation=augmentation,
+            cache_path=cache_path,
         )
 
         self.weigh_by_cardinality = weigh_by_cardinality
@@ -116,11 +118,10 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         self.scale = scale
         self.alpha = alpha
 
-
         # keep track of the use of database available in the meta protocol
         # * embedding databases are those with global speaker label scope
         # * diarization databases are those with file or database speaker label scope
-        self.embedding_database_files = []
+        self.global_files_id = []
 
     def get_file(self, file_id):
 
@@ -155,277 +156,10 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
             Setup stage. Defaults to 'fit'.
         """
 
-        # duration of training chunks
-        # TODO: handle variable duration case
-        duration = getattr(self, "duration", 0.0)
-
-        # list of possible values for each metadata key
-        metadata_unique_values = defaultdict(list)
-
-        metadata_unique_values["subset"] = Subsets
-
-        if isinstance(self.protocol, SpeakerDiarizationProtocol):
-            metadata_unique_values["scope"] = Scopes
-
-        # make sure classes attribute exists (and set to None if it did not exist)
-        self.classes = getattr(self, "classes", None)
-        if self.classes is None:
-            classes = list()
-            # metadata_unique_values["classes"] = list(classes)
-
-        audios = list()  # list of path to audio files
-        audio_infos = list()
-        audio_encodings = list()
-        metadata = list()  # list of metadata
-
-        annotated_duration = list()  # total duration of annotated regions (per file)
-        annotated_regions = list()  # annotated regions
-        annotations = list()  # actual annotations
-        annotated_classes = list()  # list of annotated classes (per file)
-        unique_labels = list()
-
-        if self.has_validation:
-            files_iter = itertools.chain(
-                self.protocol.train(), self.protocol.development()
-            )
-        else:
-            files_iter = self.protocol.train()
-
-        for file_id, file in enumerate(files_iter):
-
-            # gather metadata and update metadata_unique_values so that each metadatum
-            # (e.g. source database or label) is represented by an integer.
-            metadatum = dict()
-
-            # keep track of source database and subset (train, development, or test)
-            if file["database"] not in metadata_unique_values["database"]:
-                metadata_unique_values["database"].append(file["database"])
-            metadatum["database"] = metadata_unique_values["database"].index(
-                file["database"]
-            )
-            metadatum["subset"] = Subsets.index(file["subset"])
-
-            # keep track of speaker label scope (file, database, or global) for speaker diarization protocols
-            if isinstance(self.protocol, SpeakerDiarizationProtocol):
-                metadatum["scope"] = Scopes.index(file["scope"])
-                # keep track of files where speaker label scope is global for embedding subtask
-                if file["scope"] == 'global':
-                    self.embedding_database_files.append(file_id)
-
-            remaining_metadata_keys = set(file) - set(
-                [
-                    "uri",
-                    "database",
-                    "subset",
-                    "audio",
-                    "torchaudio.info",
-                    "scope",
-                    "classes",
-                    "annotation",
-                    "annotated",
-                ]
-            )
-
-            # keep track of any other (integer or string) metadata provided by the protocol
-            # (e.g. a "domain" key for domain-adversarial training)
-            for key in remaining_metadata_keys:
-
-                value = file[key]
-
-                if isinstance(value, str):
-                    if value not in metadata_unique_values[key]:
-                        metadata_unique_values[key].append(value)
-                    metadatum[key] = metadata_unique_values[key].index(value)
-
-                elif isinstance(value, int):
-                    metadatum[key] = value
-
-                else:
-                    warnings.warn(
-                        f"Ignoring '{key}' metadata because of its type ({type(value)}). Only str and int are supported for now.",
-                        category=UserWarning,
-                    )
-
-            metadata.append(metadatum)
-
-            database_unique_labels = list()
-
-            # reset list of file-scoped labels
-            file_unique_labels = list()
-
-            # path to audio file
-            audios.append(str(file["audio"]))
-
-            # audio info
-            audio_info = file["torchaudio.info"]
-            audio_infos.append(
-                (
-                    audio_info.sample_rate,  # sample rate
-                    audio_info.num_frames,  # number of frames
-                    audio_info.num_channels,  # number of channels
-                    audio_info.bits_per_sample,  # bits per sample
-                )
-            )
-            audio_encodings.append(audio_info.encoding)  # encoding
-
-            # annotated regions and duration
-            _annotated_duration = 0.0
-            for segment in file["annotated"]:
-
-                # skip annotated regions that are shorter than training chunk duration
-                if segment.duration < duration:
-                    continue
-
-                # append annotated region
-                annotated_region = (
-                    file_id,
-                    segment.duration,
-                    segment.start,
-                    segment.end,
-                )
-                annotated_regions.append(annotated_region)
-
-                # increment annotated duration
-                _annotated_duration += segment.duration
-
-            # append annotated duration
-            annotated_duration.append(_annotated_duration)
-
-            # annotations
-            for segment, _, label in file["annotation"].itertracks(yield_label=True):
-
-                # "scope" is provided by speaker diarization protocols to indicate
-                # whether speaker labels are local to the file ('file'), consistent across
-                # all files in a database ('database'), or globally consistent ('global')
-
-                if "scope" in file:
-
-                    # 0 = 'file'
-                    # 1 = 'database'
-                    # 2 = 'global'
-                    scope = Scopes.index(file["scope"])
-
-                    # update list of file-scope labels
-                    if label not in file_unique_labels:
-                        file_unique_labels.append(label)
-                    # and convert label to its (file-scope) index
-                    file_label_idx = file_unique_labels.index(label)
-
-                    database_label_idx = global_label_idx = -1
-
-                    if scope > 0:  # 'database' or 'global'
-
-                        # update list of database-scope labels
-                        if label not in database_unique_labels:
-                            database_unique_labels.append(label)
-
-                        # and convert label to its (database-scope) index
-                        database_label_idx = database_unique_labels.index(label)
-
-                    if scope > 1:  # 'global'
-
-                        # update list of global-scope labels
-                        if label not in unique_labels:
-                            unique_labels.append(label)
-                        # and convert label to its (global-scope) index
-                        global_label_idx = unique_labels.index(label)
-
-                # basic segmentation protocols do not provide "scope" information
-                # as classes are global by definition
-
-                else:
-                    try:
-                        file_label_idx = (
-                            database_label_idx
-                        ) = global_label_idx = classes.index(label)
-                    except ValueError:
-                        # skip labels that are not in the list of classes
-                        continue
-
-                annotations.append(
-                    (
-                        file_id,  # index of file
-                        segment.start,  # start time
-                        segment.end,  # end time
-                        file_label_idx,  # file-scope label index
-                        database_label_idx,  # database-scope label index
-                        global_label_idx,  # global-scope index
-                    )
-                )
-
-        # since not all metadata keys are present in all files, fallback to -1 when a key is missing
-        metadata = [
-            tuple(metadatum.get(key, -1) for key in metadata_unique_values)
-            for metadatum in metadata
-        ]
-        dtype = [(key, "i") for key in metadata_unique_values]
-        self.metadata = np.array(metadata, dtype=dtype)
-
-        # NOTE: read with str(self.audios[file_id], encoding='utf-8')
-        self.audios = np.array(audios, dtype=np.string_)
-
-        # turn list of files metadata into a single numpy array
-        # TODO: improve using https://github.com/pytorch/pytorch/issues/13246#issuecomment-617140519
-
-        dtype = [
-            ("sample_rate", "i"),
-            ("num_frames", "i"),
-            ("num_channels", "i"),
-            ("bits_per_sample", "i"),
-        ]
-        self.audio_infos = np.array(audio_infos, dtype=dtype)
-        self.audio_encodings = np.array(audio_encodings, dtype=np.string_)
-
-        self.annotated_duration = np.array(annotated_duration)
-
-        # turn list of annotated regions into a single numpy array
-        dtype = [("file_id", "i"), ("duration", "f"), ("start", "f"), ("end", "f")]
-        self.annotated_regions = np.array(annotated_regions, dtype=dtype)
-
-        # turn list of annotations into a single numpy array
-        dtype = [
-            ("file_id", "i"),
-            ("start", "f"),
-            ("end", "f"),
-            ("file_label_idx", "i"),
-            ("database_label_idx", "i"),
-            ("global_label_idx", "i"),
-        ]
-        self.annotations = np.array(annotations, dtype=dtype)
-
-        self.metadata_unique_values = metadata_unique_values
-
-        if not self.has_validation:
-            return
-
-        validation_chunks = list()
-
-        # obtain indexes of files in the validation subset
-        validation_file_ids = np.where(
-            self.metadata["subset"] == Subsets.index("development")
-        )[0]
-
-        # iterate over files in the validation subset
-        for file_id in validation_file_ids:
-
-            # get annotated regions in file
-            annotated_regions = self.annotated_regions[
-                self.annotated_regions["file_id"] == file_id
-            ]
-
-            # iterate over annotated regions
-            for annotated_region in annotated_regions:
-
-                # number of chunks in annotated region
-                num_chunks = round(annotated_region["duration"] // duration)
-
-                # iterate over chunks
-                for c in range(num_chunks):
-                    start_time = annotated_region["start"] + c * duration
-                    validation_chunks.append((file_id, start_time, duration))
-
-        dtype = [("file_id", "i"), ("start", "f"), ("duration", "f")]
-        self.validation_chunks = np.array(validation_chunks, dtype=dtype)
+        super().setup()
+        global_scope_mask = self.prepared_data["annotations"]["global_label_idx"] > -1
+        self.global_files_id = np.unique(self.prepared_data["annotations"]["file_id"][global_scope_mask])
+        global_classes = np.unique(self.prepared_data["annotations"]["global_label_idx"][global_scope_mask])
 
         speaker_diarization = Specifications(
                 duration=self.duration,
@@ -439,9 +173,8 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
             duration=self.duration,
             resolution=Resolution.CHUNK,
             problem=Problem.REPRESENTATION,
-            classes=unique_labels,
+            classes=global_classes,
         )
-
         self.specifications = (speaker_diarization, speaker_embedding)
 
     def prepare_chunk(self, file_id: int, start_time: float, duration: float):
@@ -653,21 +386,18 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
             # choose between diarization or embedding subtask according to a ratio
             # between these two tasks
             if np.random.uniform() < self.database_ratio:
-                subtask = Subtasks.index("diarization")
                 file_id, start_time = self.draw_diarization_chunk(file_ids, prob_annotated_duration,
                                                                   rng,
                                                                   duration)
             else:
-                subtask = Subtasks.index("embedding")
                 # shuffle embedding classes list and go through this shuffled list
                 # to make sure to see all the speakers during training
                 if embedding_class_idx == len(shuffled_embedding_classes):
                     rng.shuffle(shuffled_embedding_classes)
                     embedding_class_idx = 0
                 klass = shuffled_embedding_classes[embedding_class_idx]
-                class_id = embedding_classes.index(klass)
                 embedding_class_idx += 1
-                file_id, start_time = self.draw_embedding_chunk(class_id, duration)
+                file_id, start_time = self.draw_embedding_chunk(klass, duration)
 
             sample = self.prepare_chunk(file_id, start_time, duration)
             yield sample
