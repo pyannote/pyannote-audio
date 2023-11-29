@@ -211,7 +211,7 @@ class SpeakerDiarization(SegmentationTask):
                 for region in annotated_regions:
                     # find annotations within current region
                     region_start = region["start"]
-                    region_end = region["end"]
+                    region_end = region["start"] + region["duration"]
                     region_annotations = annotations[
                         np.where(
                             (annotations["start"] >= region_start)
