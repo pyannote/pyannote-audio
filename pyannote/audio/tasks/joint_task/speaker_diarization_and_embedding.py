@@ -103,6 +103,9 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         super().__init__(
             protocol,
             duration=duration,
+            max_speakers_per_chunk=max_speakers_per_chunk,
+            max_speakers_per_frame=max_speakers_per_frame,
+            weigh_by_cardinality=weigh_by_cardinality,
             batch_size=batch_size,
             num_workers=num_workers,
             pin_memory=pin_memory,
@@ -110,14 +113,10 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
             cache_path=cache_path,
         )
 
-        self.weigh_by_cardinality = weigh_by_cardinality
-        self.max_speakers_per_chunk = max_speakers_per_chunk
-        self.max_speakers_per_frame = max_speakers_per_frame
         self.database_ratio = database_ratio
         self.margin = margin
         self.scale = scale
         self.alpha = alpha
-
         # keep track of the use of database available in the meta protocol
         # * embedding databases are those with global speaker label scope
         # * diarization databases are those with file or database speaker label scope
