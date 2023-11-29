@@ -126,10 +126,10 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
 
         file = dict()
 
-        file["audio"] = str(self.audios[file_id], encoding="utf-8")
+        file["audio"] = str(self.prepared_data["audios"][file_id], encoding="utf-8")
 
-        _audio_info = self.audio_infos[file_id]
-        _encoding = self.audio_encodings[file_id]
+        _audio_info = self.prepared_data["audio_infos"][file_id]
+        _encoding = self.prepared_data["audio_encodings"][file_id]
 
         sample_rate = _audio_info["sample_rate"]
         num_frames = _audio_info["num_frames"]
@@ -207,7 +207,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         file = self.get_file(file_id)
 
         # get label scope
-        label_scope = Scopes[self.metadata[file_id]["scope"]]
+        label_scope = Scopes[self.prepared_data["metadata"][file_id]["scope"]]
         label_scope_key = f"{label_scope}_label_idx"
 
         chunk = Segment(start_time, start_time + duration)
@@ -216,7 +216,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         sample["X"], _ = self.model.audio.crop(file, chunk, duration=duration, mode="pad")
 
         # gather all annotations of current file
-        annotations = self.annotations[self.annotations["file_id"] == file_id]
+        annotations = self.prepared_data["annotations"][self.prepared_data["annotations"]["file_id"] == file_id]
 
         # gather all annotations with non-empty intersection with current chunk
         chunk_annotations = annotations[
@@ -252,7 +252,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         sample["y"] = SlidingWindowFeature(
             y, self.model.example_output[0].frames, labels=labels
         )
-        metadata = self.metadata[file_id]
+        metadata = self.prepared_data["metadata"][file_id]
         sample["meta"] = {key: metadata[key] for key in metadata.dtype.names}
         sample["meta"]["file"] = file_id
 
@@ -281,13 +281,13 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         file_id = np.random.choice(file_ids, p=prob_annotated_duration)
         # find indices of annotated regions in this file
         annotated_region_indices = np.where(
-            self.annotated_regions["file_id"] == file_id
+            self.prepared_data["annotated_regions"]["file_id"] == file_id
         )[0]
 
         # turn annotated regions duration into a probability distribution
-        prob_annotaded_regions_duration = self.annotated_regions["duration"][
+        prob_annotaded_regions_duration = self.prepared_data["annotated_regions"]["duration"][
             annotated_region_indices
-        ] / np.sum(self.annotated_regions["duration"][annotated_region_indices])
+        ] / np.sum(self.prepared_data["annotated_regions"]["duration"][annotated_region_indices])
 
         # seletect one annotated region at random (with probability proportional to its duration)
         annotated_region_index = np.random.choice(annotated_region_indices,
@@ -295,8 +295,8 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
                                                   )
 
         # select one chunk at random in this annotated region
-        _, _, start, end = self.annotated_regions[annotated_region_index]
-        start_time = rng.uniform(start, end - duration)
+        _, region_duration, start = self.prepared_data["annotated_regions"][annotated_region_index]
+        start_time = rng.uniform(start, start + region_duration - duration)
 
         return (file_id, start_time)
 
@@ -321,8 +321,8 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         """
         # get index of the current class in the order of original class list
         # get segments for current class
-        class_segments_idx = self.annotations["global_label_idx"] == class_id
-        class_segments = self.annotations[class_segments_idx]
+        class_segments_idx = self.prepared_data["annotations"]["global_label_idx"] == class_id
+        class_segments = self.prepared_data["annotations"][class_segments_idx]
 
         # sample one segment from all the class segments:
         segments_duration = class_segments["end"] - class_segments["start"]
@@ -353,14 +353,14 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         """
 
         # indices of training files that matches domain filters
-        training = self.metadata["subset"] == Subsets.index("train")
+        training = self.prepared_data["metadata"]["subset"] == Subsets.index("train")
         for key, value in filters.items():
-            training &= self.metadata[key] == value
+            training &= self.prepared_data["metadata"][key] == value
         file_ids = np.where(training)[0]
         # get the subset of embedding database files from training files
-        embedding_files_ids = file_ids[np.in1d(file_ids, self.embedding_database_files)]
+        embedding_files_ids = file_ids[np.in1d(file_ids, self.global_files_id)]
 
-        annotated_duration = self.annotated_duration[file_ids]
+        annotated_duration = self.prepared_data["annotated_duration"][file_ids]
         # set duration of files for the embedding part to zero, in order to not
         # drawn them for diarization part
         annotated_duration[embedding_files_ids] = 0.
@@ -425,7 +425,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         else:
             # create
             subchunks = dict()
-            for product in itertools.product([self.metadata_unique_values[key] for key in balance]):
+            for product in itertools.product([self.prepared_data["metadata_unique_values"][key] for key in balance]):
                 filters = {key : value for key, value in zip(balance, product)}
                 subchunks[product] = self.train__iter__helper(rng, **filters)
 
@@ -464,7 +464,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
             labels = b["y"].labels
             num_speakers = len(labels)
             # embedding reference
-            y_emb = np.full((self.max_speakers_per_chunk,), -1, dtype=np.int)
+            y_emb = np.full((self.max_speakers_per_chunk,), -1, dtype=int)
 
             if num_speakers > self.max_speakers_per_chunk:
                 # sort speakers in descending talkativeness order
