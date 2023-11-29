@@ -39,6 +39,7 @@ from pyannote.audio.pipelines.utils import (
     get_model,
 )
 from pyannote.audio.utils.permutation import mae_cost_func, permutate
+from pyannote.audio.utils.signal import binarize
 
 
 class Resegmentation(SpeakerDiarizationMixin, Pipeline):
@@ -181,11 +182,17 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
 
         hook("segmentation", segmentations)
 
-        # estimate frame-level number of instantaneous speakers
-        count = self.speaker_count(
+        # binarize segmentations before speaker counting
+        binarized_segmentations: SlidingWindowFeature = binarize(
             segmentations,
             onset=self.onset,
             offset=self.offset,
+            initial_state=False,
+        )
+
+        # estimate frame-level number of instantaneous speakers
+        count = self.speaker_count(
+            binarized_segmentations,
             warm_up=(self.warm_up, self.warm_up),
             frames=self._frames,
         )
