@@ -576,7 +576,6 @@ class Task(pl.LightningDataModule):
         prepared_data["annotations"] = np.array(annotations, dtype=dtype)
         annotations.clear()
         prepared_data["metadata_unique_values"] = metadata_unique_values
-        metadata_unique_values.clear()
 
         if self.has_validation:
             validation_chunks = list()
