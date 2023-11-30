@@ -33,20 +33,49 @@ from rich.progress import (
 )
 
 
-def logging_hook(
-    step_name: Text,
-    step_artifact: Any,
-    file: Optional[Mapping] = None,
-    completed: Optional[int] = None,
-    total: Optional[int] = None,
-):
-    """Hook to save step_artifact as file[step_name]
+class ArtifactHook:
+    """Hook to save artifacts of each internal step
 
-    Useful for debugging purposes
+    Parameters
+    ----------
+    artifacts: list of str, optional
+        List of steps to save. Defaults to all steps.
+    file_key: str, optional
+        Key used to store artifacts in `file`.
+        Defaults to "artifact".
+
+    Usage
+    -----
+    >>> with ArtifactHook() as hook:
+    ...     output = pipeline(file, hook=hook)
+    # file["artifact"] contains a dict with artifacts of each step
+
     """
 
-    if completed is None:
-        file[step_name] = deepcopy(step_artifact)
+    def __init__(self, *artifacts, file_key: str = "artifact"):
+        self.artifacts = artifacts
+        self.file_key = file_key
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        pass
+
+    def __call__(
+        self,
+        step_name: Text,
+        step_artifact: Any,
+        file: Optional[Mapping] = None,
+        total: Optional[int] = None,
+        completed: Optional[int] = None,
+    ):
+        if (step_artifact is None) or (
+            self.artifacts and step_name not in self.artifacts
+        ):
+            return
+
+        file.setdefault(self.file_key, dict())[step_name] = deepcopy(step_artifact)
 
 
 class ProgressHook:
@@ -119,7 +148,7 @@ class TimingHook:
     # file["timing_hook"]  contains processing time for each step
     """
 
-    def __init__(self, file_key: str = "timing_hook"):
+    def __init__(self, file_key: str = "timing"):
         self.file_key = file_key
 
     def __enter__(self):
@@ -164,7 +193,7 @@ class Hooks:
 
     Usage
     -----
-    >>> with Hooks(ProgessHook(), TimingHook()) as hook:
+    >>> with Hooks(ProgessHook(), TimingHook(), ArtifactHook()) as hook:
     ...     output = pipeline("audio.wav", hook=hook)
 
     """
@@ -183,6 +212,13 @@ class Hooks:
             if hasattr(hook, "__exit__"):
                 hook.__exit__(*args)
 
-    def __call__(self, *args: Any, **kwds: Any) -> Any:
+    def __call__(
+        self,
+        step_name: Text,
+        step_artifact: Any,
+        file: Optional[Mapping] = None,
+        total: Optional[int] = None,
+        completed: Optional[int] = None,
+    ):
         for hook in self.hooks:
-            hook(*args, **kwds)
+            hook(step_name, step_artifact, file=file, total=total, completed=completed)

@@ -253,7 +253,6 @@ class BaseClustering(Pipeline):
             hard_clusters = np.zeros((num_chunks, num_speakers), dtype=np.int8)
             soft_clusters = np.ones((num_chunks, num_speakers, 1))
             centroids = np.mean(train_embeddings, axis=0, keepdims=True)
-
             return hard_clusters, soft_clusters, centroids
 
         train_clusters = self.cluster(
@@ -386,7 +385,8 @@ class AgglomerativeClustering(BaseClustering):
         elif num_large_clusters > max_clusters:
             num_clusters = max_clusters
 
-        if num_clusters is not None:
+        # look for perfect candidate if necessary
+        if num_clusters is not None and num_large_clusters != num_clusters:
             # switch stopping criterion from "inter-cluster distance" stopping to "iteration index"
             _dendrogram = np.copy(dendrogram)
             _dendrogram[:, 2] = np.arange(num_embeddings - 1)
