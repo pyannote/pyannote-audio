@@ -279,6 +279,38 @@ class Task(pl.LightningDataModule):
         -----
         Called only once on the main process (and only on it), for global_rank 0.
         """
+
+        def get_smallest_type(value: int, unsigned: Optional[bool]=False) -> str:
+            """Return the most suitable type for storing the
+            value passed in parameter in memory.
+
+            Parameters
+            ----------
+            value: int
+                value whose type is best suited to storage in memory
+            unsigned: bool, optional
+                positive integer mode only. Default to False
+            Returns
+            -------
+            str:
+                numpy formatted type
+                (see https://numpy.org/doc/stable/reference/arrays.dtypes.html)
+            """
+            if unsigned:
+                if value < 0:
+                    raise ValueError(
+                        f"negative value ({value}) is incompatible with unsigned types"
+                    )
+                # unsigned byte (8 bits), unsigned short (16 bits), unsigned int (32 bits)
+                types_list = [(255, 'B'), (65_535, 'u2'), (4_294_967_296, 'u4')]
+            else:
+                # signe byte (8 bits), signed short (16 bits), signed int (32 bits):
+                types_list = [(127, 'b'), (32_768, 'i2'), (2_147_483_648, 'i')]
+            filtered_list = [(max_val, type) for max_val, type in types_list if max_val > abs(value)]
+            if not filtered_list:
+                return 'u8' if unsigned else 'i8' # unsigned or signed long (64 bits)
+            return filtered_list[0][1]
+
         if self.cache_path is not None:
             cache_path = Path(self.cache_path)
             if cache_path.exists():
@@ -521,7 +553,9 @@ class Task(pl.LightningDataModule):
             tuple(metadatum.get(key, -1) for key in metadata_unique_values)
             for metadatum in metadata
         ]
-        dtype = [(key, "b") for key in metadata_unique_values]
+        dtype = [
+            (key, get_smallest_type(max(m[i] for m in metadata))) for i, key in enumerate(metadata_unique_values)
+        ]
 
         prepared_data["metadata"] = np.array(metadata, dtype=dtype)
         metadata.clear()
@@ -531,8 +565,8 @@ class Task(pl.LightningDataModule):
         # turn list of files metadata into a single numpy array
         # TODO: improve using https://github.com/pytorch/pytorch/issues/13246#issuecomment-617140519
         dtype = [
-            ("sample_rate", "i"),
-            ("num_frames", "i"),
+            ("sample_rate", get_smallest_type(max(ai[0] for ai in audio_infos), unsigned=True)),
+            ("num_frames",  get_smallest_type(max(ai[1] for ai in audio_infos), unsigned=True)),
             ("num_channels", "B"),
             ("bits_per_sample", "B"),
         ]
@@ -544,7 +578,11 @@ class Task(pl.LightningDataModule):
         annotated_duration.clear()
 
         # turn list of annotated regions into a single numpy array
-        dtype = [("file_id", "i"), ("duration", "f"), ("start", "f")]
+        dtype = [
+            ("file_id", get_smallest_type(max(ar[0] for ar in annotated_regions), unsigned=True)),
+            ("duration", "f"),
+            ("start", "f")
+        ]
         prepared_data["annotated_regions"] = np.array(annotated_regions, dtype=dtype)
         annotated_regions.clear()
 
@@ -565,12 +603,12 @@ class Task(pl.LightningDataModule):
 
         # turn list of annotations into a single numpy array
         dtype = [
-            ("file_id", "i"),
+            ("file_id", get_smallest_type(max(a[0] for a in annotations), unsigned=True)),
             ("start", "f"),
             ("end", "f"),
-            ("file_label_idx", "i"),
-            ("database_label_idx", "i"),
-            ("global_label_idx", "i"),
+            ("file_label_idx", get_smallest_type(max(a[3] for a in annotations))),
+            ("database_label_idx", get_smallest_type(max(a[4] for a in annotations))),
+            ("global_label_idx", get_smallest_type(max(a[5] for a in annotations))),
         ]
 
         prepared_data["annotations"] = np.array(annotations, dtype=dtype)
@@ -602,7 +640,11 @@ class Task(pl.LightningDataModule):
                         start_time = annotated_region["start"] + c * duration
                         validation_chunks.append((file_id, start_time, duration))
 
-            dtype = [("file_id", "i"), ("start", "f"), ("duration", "f")]
+            dtype = [
+                ("file_id", get_smallest_type(max(v[0] for v in validation_chunks), unsigned=True)),
+                ("start", "f"),
+                ("duration", "f")
+            ]
             prepared_data["validation_chunks"] = np.array(validation_chunks, dtype=dtype)
             validation_chunks.clear()
 
