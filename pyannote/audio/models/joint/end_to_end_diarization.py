@@ -20,7 +20,8 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import Literal, Optional
+import os
+from typing import List, Literal, Optional, Union
 from warnings import warn
 from einops import rearrange
 
@@ -40,6 +41,60 @@ from pyannote.core.utils.generators import pairwise
 # TODO deplace these two lines into uitls/multi_task
 Subtask = Literal["diarization", "embedding"]
 Subtasks = list(Subtask.__args__)
+
+
+class WeSpeakerBasesEndToEndDiarization(Model):
+    """
+    WeSpeaker-based joint speaker diarization and speaker
+    embedding extraction model
+    """
+    def __init__(
+                self,
+                sincnet: dict = None,
+                lstm: dict = None,
+                linear: dict = None,
+                sample_rate=16000,
+                embedding_dim=256,
+                num_channels=1,
+                task: Optional[Union[Task, None]] = None,
+            ):
+        super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
+
+        # speakers embedding extraction submodel:
+        self.resnet34 = Model.from_pretrained("pyannote/wespeaker-voxceleb-resnet34-LM")
+        self.embedding_dim = embedding_dim
+        self.save_hyperparameters("embedding_dim")
+
+        # speaker segmentation submodel:
+        self.pyannet = Model.from_pretrained(
+            "pyannote/segmentation-3.0",
+            use_auth_token=os.environ["HUGGINGFACE_TOKEN"],
+            strict=False
+        )
+
+    def build(self):
+        """"""
+        dia_specs = self.specifications[Subtasks.index("diarization")]
+        self.pyannet.specifications = dia_specs
+        self.pyannet.build()
+        self.powerset = Powerset(
+            len(dia_specs.classes),
+            dia_specs.powerset_max_classes,
+        )
+
+    def forward(self, waveformms: torch.Tensor) -> torch.Tensor:
+        """
+
+        Parameters
+        ----------
+        waveforms : torch.Tensor
+            Batch of waveforms with shape (batch, channel, sample)
+        """
+        dia_outputs = self.pyannet(waveformms)
+        weights = self.powerset.to_multilabel(dia_outputs)
+        weights = rearrange(weights, "b f s -> b s f")
+        emb_outputs = self.resnet34(waveformms, weights)
+        return (dia_outputs, emb_outputs)
 
 
 class SpeakerEndToEndDiarization(Model):
