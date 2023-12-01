@@ -2,6 +2,14 @@
 
 ## `develop` branch
 
+### TL;DR
+
+Providing `num_speakers` to [`pyannote/speaker-diarization-3.1`](https://hf.co/pyannote/speaker-diarization-3.1) now [works as expected](https://github.com/pyannote/pyannote-audio/issues/1567).
+
+### Fixes
+
+- fix(pipeline): fix support for setting `num_speakers` in [`pyannote/speaker-diarization-3.1`](https://hf.co/pyannote/speaker-diarization-3.1) pipeline
+
 ## Version 3.1.0 (2023-11-16)
 
 ### TL;DR
