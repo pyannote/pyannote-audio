@@ -49,12 +49,13 @@ class DiarizationErrorRate(Metric):
     higher_is_better = False
     is_differentiable = False
 
-    def __init__(self, threshold: float = 0.5, per_frame: bool = False, per_chunk: bool = False):
+    def __init__(self, threshold: float = 0.5, per_frame: bool = False, per_chunk: bool = False, streaming_permutation: bool = False):
         super().__init__()
 
         self.threshold = threshold
         self.per_frame = per_frame
         self.per_chunk = per_chunk
+        self.streaming_permutation = streaming_permutation
 
         self.add_state("false_alarm", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state(
@@ -89,13 +90,13 @@ class DiarizationErrorRate(Metric):
         """
         if self.per_frame:
             self.false_alarm, self.missed_detection, self.speaker_confusion, self.speech_total =  _der_update(preds, target, 
-                                                                                                              per_frame = self.per_frame, threshold=self.threshold)
+                                                                                                              per_frame = self.per_frame, streaming_permutation=self.streaming_permutation,threshold=self.threshold)
         elif self.per_chunk:
             self.false_alarm, self.missed_detection, self.speaker_confusion, self.speech_total =  _der_update(preds, target, 
-                                                                                                              per_chunk=self.per_chunk, threshold=self.threshold)
+                                                                                                              per_chunk=self.per_chunk, streaming_permutation=self.streaming_permutation, threshold=self.threshold)
         else:
             false_alarm, missed_detection, speaker_confusion, speech_total = _der_update(
-            preds, target, threshold=self.threshold
+            preds, target, threshold=self.threshold, streaming_permutation=self.streaming_permutation,
             )
             self.false_alarm += false_alarm
             self.missed_detection += missed_detection
@@ -108,8 +109,9 @@ class DiarizationErrorRate(Metric):
             self.missed_detection,
             self.speaker_confusion,
             self.speech_total,
-            self.per_frame,
-            self.per_chunk
+            per_frame=self.per_frame,
+            per_chunk=self.per_chunk,
+            streaming_permutation=self.streaming_permutation
         )
 
 

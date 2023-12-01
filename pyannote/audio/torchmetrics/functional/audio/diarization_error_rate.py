@@ -23,7 +23,7 @@
 
 from numbers import Number
 from typing import Optional, Tuple, Union
-
+import numpy as np
 import torch
 
 from pyannote.audio.utils.permutation import permutate
@@ -34,6 +34,7 @@ def _der_update(
     target: torch.Tensor,
     per_frame: bool = False,
     per_chunk: bool = False,
+    streaming_permutation: bool = False,
     threshold: Union[torch.Tensor, float] = 0.5,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Compute components of diarization error rate
@@ -55,25 +56,50 @@ def _der_update(
     speech_total : torch.Tensor
         Diarization error rate components accumulated over the whole batch.
     """
-    # make threshold a (num_thresholds,) tensor
     scalar_threshold = isinstance(threshold, Number)
     if scalar_threshold:
         threshold = torch.tensor([threshold], dtype=preds.dtype, device=preds.device)
 
+    num_speakers = preds.size(1)
+    num_frames = preds.size(2)
+    step =  int(np.floor(num_frames * 0.1)) # round down
     # find the optimal mapping between target and (soft) predictions
     permutated_preds, _ = permutate(
         torch.transpose(target, 1, 2), torch.transpose(preds, 1, 2)
     )
-    permutated_preds = torch.transpose(permutated_preds, 1, 2)
+
+    # find the permutation without using the end of the chunk
+    _ , other_predictions = permutate(
+        torch.transpose(target[:,:,:num_frames-step], 1, 2), torch.transpose(preds[:,:,:num_frames-step], 1, 2)
+    )    
+
+    # use permutation to permutate the predictions
+
+    preds_with_other_permutation = torch.zeros(target.size(), device=target.device)
+    equal=0
+    notequal=0
+    for i in range(preds_with_other_permutation.size(0)):
+        for j in range(len(other_predictions[i])):
+            preds_with_other_permutation[i,j,:] = preds[i,other_predictions[i][j],:]
+        if torch.equal(permutated_preds[i],torch.transpose(preds_with_other_permutation[i], 0, 1)):
+            equal+=1
+        else:
+            notequal+=1
+
+    if streaming_permutation:
+        print(notequal*100/preds_with_other_permutation.size(0))
+        permutated_preds = preds_with_other_permutation
+    else:
+        permutated_preds = torch.transpose(permutated_preds, 1, 2)
     # (batch_size, num_speakers, num_frames)
 
     # turn continuous [0, 1] predictions into binary {0, 1} decisions
     hypothesis = (permutated_preds.unsqueeze(-1) > threshold).float()
     # (batch_size, num_speakers, num_frames, num_thresholds)
-
+    print(hypothesis.size())
     target = target.unsqueeze(-1)
     # (batch_size, num_speakers, num_frames, 1)
-
+    print(target.size())
     detection_error = torch.sum(hypothesis, 1) - torch.sum(target, 1)
     # (batch_size, num_frames, num_thresholds)
 
@@ -114,6 +140,7 @@ def _der_compute(
     speech_total: torch.Tensor,
     per_frame: bool = False,
     per_chunk: bool = False,
+    streaming_permutation: bool = False,
 ) -> torch.Tensor:
     """Compute diarization error rate from its components
 
