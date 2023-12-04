@@ -658,7 +658,7 @@ class Task(pl.LightningDataModule):
 
         self.has_prepared_data = True
 
-    def setup(self, stage=None):
+    def setup(self):
         """Setup data on each device"""
         # if all data was assigned to the task, nothing to do
         if self.has_setup_metadata:
@@ -668,7 +668,8 @@ class Task(pl.LightningDataModule):
             warnings.warn("No path to the directory containing the cache of prepared data"
                             " has been specified. Data preparation will therefore be carried out"
                             " on each process used for training. To speed up data preparation, you"
-                            " can specify a cache directory when instantiating the task.", stacklevel=1)
+                            " can specify a cache directory when instantiating the task.",
+                            stacklevel=1)
             self.prepare_data()
             return
         # load data cached by prepare_data method into the task:
