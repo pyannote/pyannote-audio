@@ -336,6 +336,7 @@ class Task(pl.LightningDataModule):
         # save all protocol data in a dict
         prepared_data = {}
 
+        prepared_data["protocol_name"] = self.protocol.name
         # make sure classes attribute exists (and set to None if it did not exist)
         prepared_data["classes"] = getattr(self, "classes", None)
         if prepared_data["classes"] is None:
@@ -599,7 +600,6 @@ class Task(pl.LightningDataModule):
             annotated_classes_array[file_id, classes] = True
         prepared_data["annotated_classes"] = annotated_classes_array
         annotated_classes.clear()
-        del annotated_classes_array
 
         # turn list of annotations into a single numpy array
         dtype = [
@@ -679,6 +679,12 @@ class Task(pl.LightningDataModule):
             print("""Cached data for protocol not found. Ensure that prepare_data was
                     executed correctly and that the path to the task cache is correct""")
             raise
+        # checks that the task current protocol matches the cached protocol
+        if self.protocol.name != self.prepared_data["protocol_name"]:
+            raise ValueError(
+                f"Protocol specified for the task ({self.protocol.name}) "
+                f"does not correspond to the cached one ({self.prepared_data['protocol_name']})"
+            )
         self.has_setup_metadata = True
 
 
