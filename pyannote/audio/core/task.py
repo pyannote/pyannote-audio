@@ -566,8 +566,8 @@ class Task(pl.LightningDataModule):
         # turn list of files metadata into a single numpy array
         # TODO: improve using https://github.com/pytorch/pytorch/issues/13246#issuecomment-617140519
         dtype = [
-            ("sample_rate", get_smallest_type(max(ai[0] for ai in audio_infos), unsigned=True)),
-            ("num_frames",  get_smallest_type(max(ai[1] for ai in audio_infos), unsigned=True)),
+            ("sample_rate", get_smallest_type(max(ai[0] for ai in audio_infos))),
+            ("num_frames",  get_smallest_type(max(ai[1] for ai in audio_infos))),
             ("num_channels", "B"),
             ("bits_per_sample", "B"),
         ]
@@ -580,7 +580,7 @@ class Task(pl.LightningDataModule):
 
         # turn list of annotated regions into a single numpy array
         dtype = [
-            ("file_id", get_smallest_type(max(ar[0] for ar in annotated_regions), unsigned=True)),
+            ("file_id", get_smallest_type(max(ar[0] for ar in annotated_regions))),
             ("duration", "f"),
             ("start", "f")
         ]
@@ -603,7 +603,7 @@ class Task(pl.LightningDataModule):
 
         # turn list of annotations into a single numpy array
         dtype = [
-            ("file_id", get_smallest_type(max(a[0] for a in annotations), unsigned=True)),
+            ("file_id", get_smallest_type(max(a[0] for a in annotations))),
             ("start", "f"),
             ("end", "f"),
             ("file_label_idx", get_smallest_type(max(a[3] for a in annotations))),
@@ -641,7 +641,7 @@ class Task(pl.LightningDataModule):
                         validation_chunks.append((file_id, start_time, duration))
 
             dtype = [
-                ("file_id", get_smallest_type(max(v[0] for v in validation_chunks), unsigned=True)),
+                ("file_id", get_smallest_type(max(v[0] for v in validation_chunks))),
                 ("start", "f"),
                 ("duration", "f")
             ]
@@ -687,7 +687,6 @@ class Task(pl.LightningDataModule):
                 f"does not correspond to the cached one ({self.prepared_data['protocol_name']})"
             )
         self.has_setup_metadata = True
-
 
     @property
     def specifications(self) -> Union[Specifications, Tuple[Specifications]]:
