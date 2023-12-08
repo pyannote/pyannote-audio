@@ -359,13 +359,14 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
             training &= self.prepared_data["metadata"][key] == value
         file_ids = np.where(training)[0]
         # get the subset of embedding database files from training files
-        embedding_files_ids = file_ids[np.in1d(file_ids, self.global_files_id)]
+        embedding_files_ids = file_ids[np.isin(file_ids, self.global_files_id)]
 
         annotated_duration = self.prepared_data["annotated_duration"][file_ids]
         # set duration of files for the embedding part to zero, in order to not
         # drawn them for diarization part
         annotated_duration[embedding_files_ids] = 0.
-        # test if there is at least one file for the diarization subtask to avoid
+
+        # test if there is at least one file for the diarization subtask
         # to prevent probabilities from summing to zero
         if np.any(annotated_duration != 0.):
             prob_annotated_duration = annotated_duration / np.sum(annotated_duration)
@@ -377,10 +378,10 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
 
         duration = self.duration
 
-        # make a copy of the original class list, so as not to modify it during shuffling
-        embedding_classes = self.specifications[Subtasks.index("embedding")].classes
         # use original order for the first run of the shuffled classes list:
-        shuffled_embedding_classes = list(embedding_classes)
+        shuffled_embedding_classes = list(
+            self.specifications[Subtasks.index("embedding")].classes
+        )
         embedding_class_idx = 0
 
         while True:
@@ -647,11 +648,14 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         """
 
         # Get speaker representations from the embedding subtask
-        embeddings = emb_prediction[emb_chunks]
+        embeddings = rearrange(emb_prediction[emb_chunks], "b s e -> (b s) e")
         # Get corresponding target label
-        targets = target_emb[emb_chunks]
+        targets = rearrange(target_emb[emb_chunks], "b s -> (b s)")
+        # compute loss only on global scope speaker embedding
+        valid_emb = targets != -1
+        
         # compute the loss
-        emb_loss = self.model.arc_face_loss(embeddings, targets)
+        emb_loss = self.model.arc_face_loss(embeddings[valid_emb, :], targets[valid_emb])
 
         # skip batch if something went wrong for some reason
         if torch.isnan(emb_loss):
@@ -689,6 +693,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         target_dia = batch["y_dia"]
         # batch embedding references (batch, num_speakers)
         target_emb = batch["y_emb"]
+        meta = batch["meta"]
 
         # drop samples that contain too many speakers
         num_speakers: torch.Tensor = torch.sum(torch.any(target_dia, dim=1), dim=1)
@@ -713,21 +718,19 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
 
         # filter out the speaker in the reference that were not found by the diarization
         # part of the model, to not compute the embedding loss on these speaker:
-        active_spk_mask = torch.any(rearrange(dia_multilabel, "b f s -> b s f"), dim=2)
+        # active_spk_mask = torch.any(rearrange(dia_multilabel, "b f s -> b s f"), dim=2)
         # (batch_size, num_spk)
-        emb_prediction = emb_prediction[active_spk_mask]
+        # emb_prediction = emb_prediction[active_spk_mask]
         # (num_active_spk_found_in_all_the_chunks, emb_size)
-        permutated_target_emb = permutated_target_emb[active_spk_mask]
+        # permutated_target_emb = permutated_target_emb[permutated_target_emb != 1]
         # (num_activate_spk_found,)
 
         permutated_target_powerset = self.model.powerset.to_powerset(
             permutated_target_dia.float()
         )
-
-        # get embedding chunks position in current batch
-        emb_chunks = permutated_target_emb != -1
-        # get diarization chunks position in current batch (that correspond to non embedding chunks)
-        dia_chunks  = torch.nonzero(torch.all(target_emb == -1, axis=1)).reshape((-1,))
+        # get embedding and diarization chunks position in current batch
+        emb_chunks = batch["meta"]["scope"] == 2  # global scope for embedding task
+        dia_chunks = batch["meta"]["scope"] < 2  # file and database scope for diarization task
 
         dia_loss = torch.tensor(0)
         #if batch contains diarization subtask chunks, then compute diarization loss on these chunks:
