@@ -734,7 +734,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
 
         dia_loss = torch.tensor(0)
         #if batch contains diarization subtask chunks, then compute diarization loss on these chunks:
-        if dia_chunks.shape[0] > 0:
+        if dia_chunks.any():
             dia_loss = self.compute_diarization_loss(dia_chunks, dia_prediction, permutated_target_powerset)
 
         emb_loss = torch.tensor(0)
