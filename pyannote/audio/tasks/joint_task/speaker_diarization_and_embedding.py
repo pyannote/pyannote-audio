@@ -91,7 +91,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
             max_speakers_per_frame: int = 2,
             weigh_by_cardinality: bool = False,
             batch_size: int = 32,
-            database_ratio : float = 0.5,
+            dia_task_rate : float = 0.5,
             num_workers: int = None,
             pin_memory: bool = False,
             margin : float = 28.6,
@@ -100,6 +100,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
             augmentation: BaseWaveformTransform = None,
             cache_path: Optional[Union[str, None]] = None,
     ) -> None:
+        """TODO Add docstring"""
         super().__init__(
             protocol,
             duration=duration,
@@ -113,7 +114,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
             cache_path=cache_path,
         )
 
-        self.database_ratio = database_ratio
+        self.dia_task_rate = dia_task_rate
         self.margin = margin
         self.scale = scale
         self.alpha = alpha
@@ -369,8 +370,9 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         if np.any(annotated_duration != 0.):
             prob_annotated_duration = annotated_duration / np.sum(annotated_duration)
         else:
-            # There is only files for the embedding subtask
-            self.database_ratio = 0.
+            # There is only files for the embedding subtask, so only train on
+            # this task
+            self.dia_task_rate = 0.
             self.alpha = 0.
 
         duration = self.duration
@@ -384,7 +386,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         while True:
             # choose between diarization or embedding subtask according to a ratio
             # between these two tasks
-            if np.random.uniform() < self.database_ratio:
+            if np.random.uniform() < self.dia_task_rate:
                 file_id, start_time = self.draw_diarization_chunk(file_ids, prob_annotated_duration,
                                                                   rng,
                                                                   duration)
