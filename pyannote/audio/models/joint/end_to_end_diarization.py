@@ -69,14 +69,11 @@ class WeSpeakerBasesEndToEndDiarization(Model):
         self.pyannet = Model.from_pretrained(
             "pyannote/segmentation-3.0",
             use_auth_token=os.environ["HUGGINGFACE_TOKEN"],
-            strict=False
         )
 
     def build(self):
         """"""
         dia_specs = self.specifications[Subtasks.index("diarization")]
-        self.pyannet.specifications = dia_specs
-        self.pyannet.build()
         self.powerset = Powerset(
             len(dia_specs.classes),
             dia_specs.powerset_max_classes,
@@ -91,7 +88,7 @@ class WeSpeakerBasesEndToEndDiarization(Model):
             Batch of waveforms with shape (batch, channel, sample)
         """
         dia_outputs = self.pyannet(waveformms)
-        weights = self.powerset.to_multilabel(dia_outputs)
+        weights = self.powerset.to_multilabel(dia_outputs, soft=True)
         weights = rearrange(weights, "b f s -> b s f")
         emb_outputs = self.resnet34(waveformms, weights)
         return (dia_outputs, emb_outputs)
@@ -236,7 +233,6 @@ class SpeakerEndToEndDiarization(Model):
         diarization_spec = self.specifications[Subtasks.index("diarization")]
         out_features = diarization_spec.num_powerset_classes
         self.classifier = nn.Linear(in_features, out_features)
-
         self.powerset = Powerset(
             len(diarization_spec.classes),
             diarization_spec.powerset_max_classes,
