@@ -622,8 +622,6 @@ class Task(pl.LightningDataModule):
             with open(self.cache, "wb") as cache_file:
                 np.savez_compressed(cache_file, **self.prepared_data)
 
-        self.has_prepared_data = True
-
     def post_prepare_data(self):
         return dict()
 
@@ -636,7 +634,7 @@ class Task(pl.LightningDataModule):
 
             return
 
-        if (not self.cache) and (not self.has_prepared_data):
+        if not self.cache:
             # if no cache directory was provided by the user and task data was not already prepared
             # this happens when ...
 
@@ -681,16 +679,6 @@ class Task(pl.LightningDataModule):
         self, specifications: Union[Specifications, Tuple[Specifications]]
     ):
         self._specifications = specifications
-
-    @property
-    def has_prepared_data(self):
-        # This flag indicates if data for this task was generated, and
-        # optionally saved on the disk
-        return getattr(self, "_has_prepared_data", False)
-
-    @has_prepared_data.setter
-    def has_prepared_data(self, value: bool):
-        self._has_setup_metadata = value
 
     @property
     def has_setup_metadata(self):
