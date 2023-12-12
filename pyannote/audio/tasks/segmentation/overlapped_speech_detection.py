@@ -88,7 +88,7 @@ class OverlappedSpeechDetection(SegmentationTask):
     metric : optional
         Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
         Defaults to AUROC (area under the ROC curve).
-    cache_path : str, optional
+    cache : str, optional
         path to file where to write or load task caches
     """
 
@@ -107,7 +107,7 @@ class OverlappedSpeechDetection(SegmentationTask):
         pin_memory: bool = False,
         augmentation: BaseWaveformTransform = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
-        cache_path: Optional[Union[str, None]] = None,
+        cache: Optional[Union[str, None]] = None,
     ):
         super().__init__(
             protocol,
@@ -118,7 +118,7 @@ class OverlappedSpeechDetection(SegmentationTask):
             pin_memory=pin_memory,
             augmentation=augmentation,
             metric=metric,
-            cache_path=cache_path,
+            cache=cache,
         )
 
         self.specifications = Specifications(
@@ -167,7 +167,9 @@ class OverlappedSpeechDetection(SegmentationTask):
         sample["X"], _ = self.model.audio.crop(file, chunk, duration=duration)
 
         # gather all annotations of current file
-        annotations = self.prepared_data["annotations"][self.prepared_data["annotations"]["file_id"] == file_id]
+        annotations = self.prepared_data["annotations-segments"][
+            self.prepared_data["annotations-segments"]["file_id"] == file_id
+        ]
 
         # gather all annotations with non-empty intersection with current chunk
         chunk_annotations = annotations[
@@ -190,7 +192,7 @@ class OverlappedSpeechDetection(SegmentationTask):
             y, self.model.example_output.frames, labels=["speech"]
         )
 
-        metadata = self.prepared_data["metadata"][file_id]
+        metadata = self.prepared_data["audio-metadata"][file_id]
         sample["meta"] = {key: metadata[key] for key in metadata.dtype.names}
         sample["meta"]["file"] = file_id
 

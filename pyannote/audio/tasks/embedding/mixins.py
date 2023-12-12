@@ -119,12 +119,6 @@ class SupervisedRepresentationLearningTaskMixin:
             classes=sorted(self._train),
         )
 
-        if not self.has_validation:
-            return
-
-        if isinstance(self.protocol, SpeakerVerificationProtocol):
-            self._validation = list(self.protocol.development_trial())
-
     def default_metric(
         self,
     ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
@@ -250,9 +244,14 @@ class SupervisedRepresentationLearningTaskMixin:
 
         return {"loss": loss}
 
+    def prepare_validation(self):
+        if isinstance(self.protocol, SpeakerVerificationProtocol):
+            return {"validation": list(self.protocol.development_trial())}
+        return dict()
+
     def val__getitem__(self, idx):
         if isinstance(self.protocol, SpeakerVerificationProtocol):
-            trial = self._validation[idx]
+            trial = self.prepared_data["validation"][idx]
 
             data = dict()
             for idx in [1, 2]:
@@ -281,7 +280,7 @@ class SupervisedRepresentationLearningTaskMixin:
 
     def val__len__(self):
         if isinstance(self.protocol, SpeakerVerificationProtocol):
-            return len(self._validation)
+            return len(self.prepared_data["validation"])
 
         elif isinstance(self.protocol, SpeakerDiarizationProtocol):
             return 0

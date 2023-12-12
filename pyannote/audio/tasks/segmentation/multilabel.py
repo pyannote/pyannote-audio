@@ -20,6 +20,8 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import itertools
+import textwrap
 from typing import Dict, List, Optional, Sequence, Text, Tuple, Union
 
 import numpy as np
@@ -79,7 +81,7 @@ class MultiLabelSegmentation(SegmentationTask):
     metric : optional
         Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
         Defaults to AUROC (area under the ROC curve).
-    cache_path : str, optional
+    cache : str, optional
         path to file where to write or load task caches
     """
 
@@ -96,7 +98,7 @@ class MultiLabelSegmentation(SegmentationTask):
         pin_memory: bool = False,
         augmentation: BaseWaveformTransform = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
-        cache_path: Optional[Union[str, None]] = None,
+        cache: Optional[Union[str, None]] = None,
     ):
         if not isinstance(protocol, SegmentationProtocol):
             raise ValueError(
@@ -112,7 +114,7 @@ class MultiLabelSegmentation(SegmentationTask):
             pin_memory=pin_memory,
             augmentation=augmentation,
             metric=metric,
-            cache_path=cache_path,
+            cache=cache,
         )
 
         self.balance = balance
@@ -123,11 +125,120 @@ class MultiLabelSegmentation(SegmentationTask):
         # classes should be detected. therefore, we postpone the definition of
         # specifications to setup()
 
+    def post_prepare_data(self):
+        # as different files may be annotated using a different set of classes
+        # (e.g. one database for speech/music/noise, and another one for
+        # male/female/child), we keep track of this information. this is used
+        # to know whether a missing class is considered a negative example (0) or
+        # simple an unknown example (-1)
+
+        post_prepared_data = dict()
+
+        if self.classes is None and not self.has_classes:
+            msg = textwrap.dedent(
+                """
+                Could not infer list of classes. Either provide a list of classes when
+                instantiating the task, or make sure that the training protocol provides
+                a 'classes' entry. See https://github.com/pyannote/pyannote-database#segmentation
+                for more details.
+                """
+            )
+
+        if self.has_validation:
+            files_iter = itertools.chain(
+                self.protocol.train(), self.protocol.development()
+            )
+        else:
+            files_iter = self.protocol.train()
+
+        if self.classes is None:
+            classes = list()  # overall list of classes
+            annotated_classes = list()  # list of annotated classes (per file)
+
+            for file in files_iter:
+                file_classes = file.get("classes", None)
+
+                if not file_classes:
+                    msg = textwrap.dedent(
+                        f"""
+                        File "{file['uri']}" (from {file['database']} database) does not
+                        provide a 'classes' entry. Please make sure the corresponding
+                        training protocol provides a 'classes' entry for all files. See
+                        https://github.com/pyannote/pyannote-database#segmentation for more
+                        details.
+                        """
+                    )
+                    raise ValueError(msg)
+
+                for klass in file_classes:
+                    if klass not in classes:
+                        classes.append(klass)
+                annotated_classes.append(
+                    [classes.index(klass) for klass in file_classes]
+                )
+
+            post_prepared_data["classes-list"] = np.array(classes, dtype=np.string_)
+            self.classes = classes
+
+        else:
+            annotated_classes = list()  # list of annotated classes (per file)
+            for file in files_iter:
+                file_classes = file.get("classes", None)
+
+                if not file_classes:
+                    msg = textwrap.dedent(
+                        f"""
+                        File "{file['uri']}" (from {file['database']} database) does not
+                        provide a 'classes' entry. Please make sure the corresponding
+                        training protocol provides a 'classes' entry for all files. See
+                        https://github.com/pyannote/pyannote-database#segmentation for more
+                        details.
+                        """
+                    )
+                    raise ValueError(msg)
+
+                extra_classes = set(file_classes) - set(self.classes)
+                if extra_classes:
+                    msg = textwrap.dedent(
+                        f"""
+                        File "{file['uri']}" (from {file['database']} database) provides
+                        extra classes ({', '.join(extra_classes)}) that are ignored.
+                        """
+                    )
+                    print(msg)
+
+                annotated_classes.append(
+                    [
+                        self.classes.index(klass)
+                        for klass in set(file_classes) & set(self.classes)
+                    ]
+                )
+
+            post_prepared_data["classes-list"] = np.array(
+                self.classes, dtype=np.string_
+            )
+
+        # convert annotated_classes (which is a list of list of classes, one list of classes per file)
+        # into a single (num_files x num_classes) numpy array:
+        #    * True indicates that this particular class was annotated for this particular file
+        #    (though it may not be active in this file)
+        #    * False indicates that this particular class was not even annotated (i.e. its absence
+        #    does not imply that it is not active in this file)
+        annotated_classes_array = np.zeros(
+            (len(annotated_classes), len(self.classes)), dtype=np.bool_
+        )
+        for file_id, classes in enumerate(annotated_classes):
+            annotated_classes_array[file_id, classes] = True
+        post_prepared_data["classes-annotated"] = annotated_classes_array
+        annotated_classes.clear()
+
+        return post_prepared_data
+
     def setup(self):
         super().setup()
 
         self.specifications = Specifications(
-            classes=self.prepared_data["classes"],
+            classes=self.prepared_data["classes-list"],
             problem=Problem.MULTI_LABEL_CLASSIFICATION,
             resolution=Resolution.FRAME,
             duration=self.duration,
@@ -173,7 +284,9 @@ class MultiLabelSegmentation(SegmentationTask):
         sample = dict()
         sample["X"], _ = self.model.audio.crop(file, chunk, duration=duration)
         # gather all annotations of current file
-        annotations = self.prepared_data["annotations"][self.prepared_data["annotations"]["file_id"] == file_id]
+        annotations = self.prepared_data["annotations-segments"][
+            self.prepared_data["annotations-segments"]["file_id"] == file_id
+        ]
 
         # gather all annotations with non-empty intersection with current chunk
         chunk_annotations = annotations[
@@ -188,9 +301,13 @@ class MultiLabelSegmentation(SegmentationTask):
 
         # frame-level targets (-1 for un-annotated classes)
         y = -np.ones(
-            (self.model.example_output.num_frames, len(self.prepared_data["classes"])), dtype=np.int8
+            (
+                self.model.example_output.num_frames,
+                len(self.prepared_data["classes-list"]),
+            ),
+            dtype=np.int8,
         )
-        y[:, self.prepared_data["annotated_classes"][file_id]] = 0
+        y[:, self.prepared_data["classes-annotated"][file_id]] = 0
         for start, end, label in zip(
             start_idx, end_idx, chunk_annotations["global_label_idx"]
         ):
@@ -200,7 +317,7 @@ class MultiLabelSegmentation(SegmentationTask):
             y, self.model.example_output.frames, labels=self.classes
         )
 
-        metadata = self.prepared_data["metadata"][file_id]
+        metadata = self.prepared_data["audio-metadata"][file_id]
         sample["meta"] = {key: metadata[key] for key in metadata.dtype.names}
         sample["meta"]["file"] = file_id
 

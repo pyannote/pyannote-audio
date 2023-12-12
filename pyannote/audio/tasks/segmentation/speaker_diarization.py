@@ -110,7 +110,7 @@ class SpeakerDiarization(SegmentationTask):
     metric : optional
         Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
         Defaults to AUROC (area under the ROC curve).
-    cache_path : str, optional
+    cache : str, optional
         path to file where to write or load task caches
 
     References
@@ -142,7 +142,7 @@ class SpeakerDiarization(SegmentationTask):
         augmentation: BaseWaveformTransform = None,
         vad_loss: Literal["bce", "mse"] = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
-        cache_path: Optional[Union[str, None]] = None,
+        cache: Optional[Union[str, None]] = None,
         max_num_speakers: int = None,  # deprecated in favor of `max_speakers_per_chunk``
         loss: Literal["bce", "mse"] = None,  # deprecated
     ):
@@ -155,7 +155,7 @@ class SpeakerDiarization(SegmentationTask):
             pin_memory=pin_memory,
             augmentation=augmentation,
             metric=metric,
-            cache_path=cache_path,
+            cache=cache,
         )
 
         if not isinstance(protocol, SpeakerDiarizationProtocol):
@@ -195,18 +195,24 @@ class SpeakerDiarization(SegmentationTask):
 
         # estimate maximum number of speakers per chunk when not provided
         if self.max_speakers_per_chunk is None:
-            training = self.prepared_data["metadata"]["subset"] == Subsets.index("train")
+            training = self.prepared_data["audio-metadata"]["subset"] == Subsets.index(
+                "train"
+            )
 
             num_unique_speakers = []
             progress_description = f"Estimating maximum number of speakers per {self.duration:g}s chunk in the training set"
             for file_id in track(
                 np.where(training)[0], description=progress_description
             ):
-                annotations = self.prepared_data["annotations"][
-                    np.where(self.prepared_data["annotations"]["file_id"] == file_id)[0]
+                annotations = self.prepared_data["annotations-segments"][
+                    np.where(
+                        self.prepared_data["annotations-segments"]["file_id"] == file_id
+                    )[0]
                 ]
-                annotated_regions = self.prepared_data["annotated_regions"][
-                    np.where(self.prepared_data["annotated_regions"]["file_id"] == file_id)[0]
+                annotated_regions = self.prepared_data["annotations-regions"][
+                    np.where(
+                        self.prepared_data["annotations-regions"]["file_id"] == file_id
+                    )[0]
                 ]
                 for region in annotated_regions:
                     # find annotations within current region
@@ -322,7 +328,7 @@ class SpeakerDiarization(SegmentationTask):
         file = self.get_file(file_id)
 
         # get label scope
-        label_scope = Scopes[self.prepared_data["metadata"][file_id]["scope"]]
+        label_scope = Scopes[self.prepared_data["audio-metadata"][file_id]["scope"]]
         label_scope_key = f"{label_scope}_label_idx"
 
         #
@@ -332,7 +338,9 @@ class SpeakerDiarization(SegmentationTask):
         sample["X"], _ = self.model.audio.crop(file, chunk, duration=duration)
 
         # gather all annotations of current file
-        annotations = self.prepared_data["annotations"][self.prepared_data["annotations"]["file_id"] == file_id]
+        annotations = self.prepared_data["annotations-segments"][
+            self.prepared_data["annotations-segments"]["file_id"] == file_id
+        ]
 
         # gather all annotations with non-empty intersection with current chunk
         chunk_annotations = annotations[
@@ -368,7 +376,7 @@ class SpeakerDiarization(SegmentationTask):
             y, self.model.example_output.frames, labels=labels
         )
 
-        metadata = self.prepared_data["metadata"][file_id]
+        metadata = self.prepared_data["audio-metadata"][file_id]
         sample["meta"] = {key: metadata[key] for key in metadata.dtype.names}
         sample["meta"]["file"] = file_id
 
