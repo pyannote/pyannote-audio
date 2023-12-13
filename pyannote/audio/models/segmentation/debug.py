@@ -26,6 +26,7 @@ from typing import Optional
 import torch
 import torch.nn as nn
 from einops import rearrange
+from pyannote.core import SlidingWindow
 from torchaudio.transforms import MFCC
 
 from pyannote.audio.core.model import Model
@@ -84,6 +85,34 @@ class SimpleSegmentationModel(Model):
             if center
             else 1 + (num_samples - n_fft) // hop_length
         )
+
+    def receptive_field(self) -> SlidingWindow:
+        """Compute receptive field
+
+        Returns
+        -------
+        receptive field : SlidingWindow
+
+        Source
+        ------
+        https://distill.pub/2019/computing-receptive-fields/
+
+        """
+
+        raise NotImplementedError("TODO")
+
+        # time of the first sample in the receptive field of the first frame
+        # should be 0.0 unless some kind of padding is used
+        # in which case it should be - padding / sample_rate
+        start = ... / self.sample_rate
+
+        # duration of the receptive field of each output frame
+        duration = ... / self.sample_rate
+
+        # step between the receptive field region of two consecutive output frames
+        step = ... / self.sample_rate
+
+        return SlidingWindow(start=start, duration=duration, step=step)
 
     def build(self):
         # define task-dependent layers

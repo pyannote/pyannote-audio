@@ -28,6 +28,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from asteroid_filterbanks import Encoder, ParamSincFB
+from pyannote.core import SlidingWindow
 
 from pyannote.audio.utils.frame import conv1d_num_frames
 
@@ -37,10 +38,11 @@ class SincNet(nn.Module):
         super().__init__()
 
         if sample_rate != 16000:
-            raise NotImplementedError("PyanNet only supports 16kHz audio for now.")
+            raise NotImplementedError("SincNet only supports 16kHz audio for now.")
             # TODO: add support for other sample rate. it should be enough to multiply
             # kernel_size by (sample_rate / 16000). but this needs to be double-checked.
 
+        self.sample_rate = sample_rate
         self.stride = stride
 
         self.wav_norm1d = nn.InstanceNorm1d(1, affine=True)
@@ -94,6 +96,34 @@ class SincNet(nn.Module):
             num_frames = conv1d_num_frames(num_frames, kernel_size=k, stride=s)
 
         return num_frames
+
+    def receptive_field(self) -> SlidingWindow:
+        """Compute receptive field
+
+        Returns
+        -------
+        receptive field : SlidingWindow
+
+        Source
+        ------
+        https://distill.pub/2019/computing-receptive-fields/
+
+        """
+
+        raise NotImplementedError("TODO")
+
+        # time of the first sample in the receptive field of the first frame
+        # should be 0.0 unless some kind of padding is used
+        # in which case it should be - padding / sample_rate
+        start = ... / self.sample_rate
+
+        # duration of the receptive field of each output frame
+        duration = ... / self.sample_rate
+
+        # step between the receptive field region of two consecutive output frames
+        step = ... / self.sample_rate
+
+        return SlidingWindow(start=start, duration=duration, step=step)
 
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
         """Pass forward

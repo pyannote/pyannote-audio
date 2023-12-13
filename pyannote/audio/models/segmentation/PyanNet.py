@@ -27,6 +27,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
+from pyannote.core import SlidingWindow
 from pyannote.core.utils.generators import pairwise
 
 from pyannote.audio.core.model import Model
@@ -172,6 +173,20 @@ class PyanNet(Model):
         """
 
         return self.sincnet.num_frames(num_samples)
+
+    def receptive_field(self) -> SlidingWindow:
+        """Compute receptive field
+
+        Returns
+        -------
+        receptive field : SlidingWindow
+
+        Source
+        ------
+        https://distill.pub/2019/computing-receptive-fields/
+
+        """
+        return self.sincnet.receptive_field()
 
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
         """Pass forward
