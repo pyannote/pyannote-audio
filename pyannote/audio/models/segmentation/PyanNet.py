@@ -157,6 +157,22 @@ class PyanNet(Model):
         self.classifier = nn.Linear(in_features, out_features)
         self.activation = self.default_activation()
 
+    def num_frames(self, num_samples: int) -> int:
+        """Compute number of output frames for a given number of input samples
+
+        Parameters
+        ----------
+        num_samples : int
+            Number of input samples
+
+        Returns
+        -------
+        num_frames : int
+            Number of output frames
+        """
+
+        return self.sincnet.num_frames(num_samples)
+
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
         """Pass forward
 

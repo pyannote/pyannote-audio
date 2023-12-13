@@ -29,6 +29,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from asteroid_filterbanks import Encoder, ParamSincFB
 
+from pyannote.audio.utils.frame import conv1d_num_frames
+
 
 class SincNet(nn.Module):
     def __init__(self, sample_rate: int = 16000, stride: int = 1):
@@ -70,6 +72,29 @@ class SincNet(nn.Module):
         self.pool1d.append(nn.MaxPool1d(3, stride=3, padding=0, dilation=1))
         self.norm1d.append(nn.InstanceNorm1d(60, affine=True))
 
+    def num_frames(self, num_samples: int) -> int:
+        """Compute number of output frames for a given number of input samples
+
+        Parameters
+        ----------
+        num_samples : int
+            Number of input samples
+
+        Returns
+        -------
+        num_frames : int
+            Number of output frames
+        """
+
+        kernel_size = [251, 3, 5, 3, 5, 3]
+        stride = [self.stride, 3, 1, 3, 1, 3]
+
+        num_frames = num_samples
+        for k, s in zip(kernel_size, stride):
+            num_frames = conv1d_num_frames(num_frames, kernel_size=k, stride=s)
+
+        return num_frames
+
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
         """Pass forward
 
@@ -83,7 +108,6 @@ class SincNet(nn.Module):
         for c, (conv1d, pool1d, norm1d) in enumerate(
             zip(self.conv1d, self.pool1d, self.norm1d)
         ):
-
             outputs = conv1d(outputs)
 
             # https://github.com/mravanelli/SincNet/issues/4
