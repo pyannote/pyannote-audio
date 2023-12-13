@@ -33,6 +33,7 @@ from enum import Enum
 from functools import cached_property, partial
 from numbers import Number
 from pathlib import Path
+from tempfile import mktemp
 from typing import Dict, List, Literal, Optional, Sequence, Text, Tuple, Union
 
 import numpy as np
@@ -45,6 +46,8 @@ from torch.utils.data import DataLoader, Dataset, IterableDataset
 from torch_audiomentations import Identity
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchmetrics import Metric, MetricCollection
+
+from lightning.fabric import Fabric
 
 from pyannote.audio.utils.loss import binary_cross_entropy, nll_loss
 from pyannote.audio.utils.protocol import check_protocol
@@ -296,7 +299,7 @@ class Task(pl.LightningDataModule):
         self.has_classes = checks["has_classes"]
 
         # metadata cache
-        self.cache = Path(cache) if cache else cache
+        self.cache = Path(cache) if cache else Path(mktemp())
         self.prepared_data = {}
 
         # batching
@@ -615,47 +618,27 @@ class Task(pl.LightningDataModule):
         self.prepared_data.update(self.prepare_validation())
         self.prepared_data.update(self.post_prepare_data())
 
-        self.has_setup_metadata = True
-
         # save preparated data on the disk
-        if self.cache:
-            with open(self.cache, "wb") as cache_file:
-                np.savez_compressed(cache_file, **self.prepared_data)
+        with open(self.cache, "wb") as cache_file:
+            np.savez_compressed(cache_file, **self.prepared_data)
 
     def post_prepare_data(self):
         return dict()
 
     def setup(self):
-        """Setup data on each device"""
+        """Setup data cached by prepare_data into the task on each device"""
 
-        if self.has_setup_metadata:
-            # if metadata was already generated/assigned to the task, we stop here.
-            # this happens when ...
+        fabric = Fabric()
+        fabric.launch()
+        self.cache = fabric.broadcast(self.cache)
 
-            return
-
-        if not self.cache:
-            # if no cache directory was provided by the user and task data was not already prepared
-            # this happens when ...
-
-            warnings.warn(
-                "No path to the directory containing the cache of prepared data"
-                " has been specified. Data preparation will therefore be carried out"
-                " on each process used for training. To speed up data preparation, you"
-                " can specify a cache directory when instantiating the task.",
-                stacklevel=1,
-            )
-            self.prepare_data()
-            return
-
-        # load data cached by prepare_data method into the task:
         try:
             with open(self.cache, "rb") as cache_file:
                 self.prepared_data = dict(np.load(cache_file, allow_pickle=True))
         except FileNotFoundError:
             print(
-                """Cached data for protocol not found. Ensure that prepare_data was
-                    executed correctly and that the path to the task cache is correct"""
+            """Cached data for protocol not found. Ensure that prepare_data was
+                executed correctly and that the path to the task cache is correct"""
             )
             raise
 
@@ -665,7 +648,6 @@ class Task(pl.LightningDataModule):
                 f"Protocol specified for the task ({self.protocol.name}) "
                 f"does not correspond to the cached one ({self.prepared_data['protocol']})"
             )
-        self.has_setup_metadata = True
 
     @property
     def specifications(self) -> Union[Specifications, Tuple[Specifications]]:
@@ -679,16 +661,6 @@ class Task(pl.LightningDataModule):
         self, specifications: Union[Specifications, Tuple[Specifications]]
     ):
         self._specifications = specifications
-
-    @property
-    def has_setup_metadata(self):
-        # This flag indicates if data was assigned to this task, directly from prepared
-        # data or by reading in a cached file on the disk
-        return getattr(self, "_has_setup_metadata", False)
-
-    @has_setup_metadata.setter
-    def has_setup_metadata(self, value: bool):
-        self._has_setup_metadata = value
 
     def setup_loss_func(self):
         pass
