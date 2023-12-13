@@ -57,6 +57,34 @@ class SimpleSegmentationModel(Model):
             bidirectional=True,
         )
 
+    def num_frames(self, num_samples: int) -> int:
+        """Compute number of output frames for a given number of input samples
+
+        Parameters
+        ----------
+        num_samples : int
+            Number of input samples
+
+        Returns
+        -------
+        num_frames : int
+            Number of output frames
+
+        Source
+        ------
+        https://pytorch.org/docs/stable/generated/torch.stft.html#torch.stft
+
+        """
+
+        hop_length = self.mfcc.MelSpectrogram.spectrogram.hop_length
+        n_fft = self.mfcc.MelSpectrogram.spectrogram.n_fft
+        center = self.mfcc.MelSpectrogram.spectrogram.center
+        return (
+            1 + num_samples // hop_length
+            if center
+            else 1 + (num_samples - n_fft) // hop_length
+        )
+
     def build(self):
         # define task-dependent layers
 
