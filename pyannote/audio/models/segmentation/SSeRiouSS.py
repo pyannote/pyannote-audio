@@ -31,6 +31,7 @@ from pyannote.core.utils.generators import pairwise
 
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
+from pyannote.audio.utils.frame import conv1d_num_frames
 from pyannote.audio.utils.params import merge_dict
 
 
@@ -190,6 +191,32 @@ class SSeRiouSS(Model):
 
         self.classifier = nn.Linear(in_features, out_features)
         self.activation = self.default_activation()
+
+    def num_frames(self, num_samples: int) -> int:
+        """Compute number of output frames for a given number of input samples
+
+        Parameters
+        ----------
+        num_samples : int
+            Number of input samples
+
+        Returns
+        -------
+        num_frames : int
+            Number of output frames
+        """
+
+        num_frames = num_samples
+        for conv_layer in self.wav2vec.feature_extractor.conv_layers:
+            num_frames = conv1d_num_frames(
+                num_frames,
+                kernel_size=conv_layer.kernel_size,
+                stride=conv_layer.stride,
+                padding=conv_layer.conv.padding[0],
+                dilation=conv_layer.conv.dilation[0],
+            )
+
+        return num_frames
 
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
         """Pass forward
