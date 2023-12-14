@@ -472,9 +472,8 @@ class Model(pl.LightningModule):
         if isinstance(modules, str):
             modules = [modules]
 
-        for name, module in ModelSummary(self, max_depth=-1).named_modules:
-            if name not in modules:
-                continue
+        for name in modules:
+            module = getattr(self, name)
 
             for parameter in module.parameters(recurse=True):
                 parameter.requires_grad = requires_grad

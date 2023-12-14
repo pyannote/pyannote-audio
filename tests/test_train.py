@@ -222,7 +222,7 @@ def test_finetune_freeze_with_task_that_needs_setup_for_specs(protocol):
 
     segmentation = SpeakerDiarization(protocol)
     model.task = segmentation
-    model.freeze_up_to("mfcc")
+    model.freeze_by_name("mfcc")
     trainer = Trainer(fast_dev_run=True, accelerator="cpu")
     trainer.fit(model)
 
@@ -236,7 +236,7 @@ def test_finetune_freeze_with_task_that_needs_setup_for_specs_and_with_cache(pro
 
         segmentation = SpeakerDiarization(protocol, cache=CACHE_FILE_PATH)
         model.task = segmentation
-        model.freeze_up_to("mfcc")
+        model.freeze_by_name("mfcc")
         trainer = Trainer(fast_dev_run=True, accelerator="cpu")
         trainer.fit(model)
     except:
@@ -253,7 +253,7 @@ def test_finetune_freeze_with_task_that_does_not_need_setup_for_specs(protocol):
 
     vad = VoiceActivityDetection(protocol)
     model.task = vad
-    model.freeze_up_to("mfcc")
+    model.freeze_by_name("mfcc")
     trainer = Trainer(fast_dev_run=True, accelerator="cpu")
     trainer.fit(model)
 
@@ -269,7 +269,7 @@ def test_finetune_freeze_with_task_that_does_not_need_setup_for_specs_and_with_c
 
         vad = VoiceActivityDetection(protocol, cache=CACHE_FILE_PATH)
         model.task = vad
-        model.freeze_up_to("mfcc")
+        model.freeze_by_name("mfcc")
         trainer = Trainer(fast_dev_run=True, accelerator="cpu")
         trainer.fit(model)
     except:
@@ -286,7 +286,7 @@ def test_transfer_freeze_with_task_that_does_not_need_setup_for_specs(protocol):
 
     voice_activity_detection = VoiceActivityDetection(protocol)
     model.task = voice_activity_detection
-    model.freeze_up_to("mfcc")
+    model.freeze_by_name("mfcc")
     trainer = Trainer(fast_dev_run=True, accelerator="cpu")
     trainer.fit(model)
 
@@ -299,6 +299,6 @@ def test_transfer_freeze_with_task_that_needs_setup_for_specs(protocol):
 
     segmentation = SpeakerDiarization(protocol)
     model.task = segmentation
-    model.freeze_up_to("mfcc")
+    model.freeze_by_name("mfcc")
     trainer = Trainer(fast_dev_run=True, accelerator="cpu")
     trainer.fit(model)
