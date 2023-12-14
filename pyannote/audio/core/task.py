@@ -360,13 +360,12 @@ class Task(pl.LightningDataModule):
 
         """
 
-        if self.cache:
-            if self.cache.exists():
-                # data was already created, nothing to do
-                return
+        if self.cache.exists():
+            # data was already created, nothing to do
+            return
 
-            # create parent directory if needed
-            self.cache.parent.mkdir(parents=True, exist_ok=True)
+        # create parent directory if needed
+        self.cache.parent.mkdir(parents=True, exist_ok=True)
 
         # list of possible values for each metadata key
         # (will become .prepared_data["metadata"]["unique_values"])
