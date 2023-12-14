@@ -88,6 +88,11 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
     metric : optional
         Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
         Defaults to AUROC (area under the ROC curve).
+    val_monitor : Tuple[Text, Text], optional
+        Tuple (monitor, mode) with `monitor` the name of the quantity (eg 'loss/val')
+        to monitor, `mode` either 'min' or 'max' (mini/maximizing the quantity).
+        Useful for model checkpointing or early stopping.
+        Defaults to the first metric of the task.
     """
 
     OVERLAP_DEFAULTS = {"probability": 0.5, "snr_min": 0.0, "snr_max": 10.0}
@@ -105,6 +110,7 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
         pin_memory: bool = False,
         augmentation: BaseWaveformTransform = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
+        val_monitor: Tuple[Text, Text] = None,
     ):
         super().__init__(
             protocol,
@@ -115,6 +121,7 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
             pin_memory=pin_memory,
             augmentation=augmentation,
             metric=metric,
+            val_monitor=val_monitor,
         )
 
         self.specifications = Specifications(

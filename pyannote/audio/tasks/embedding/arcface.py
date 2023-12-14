@@ -23,7 +23,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, Sequence, Union
+from typing import Dict, Sequence, Text, Tuple, Union
 
 import pytorch_metric_learning.losses
 from pyannote.database import Protocol
@@ -73,6 +73,11 @@ class SupervisedRepresentationLearningWithArcFace(
     metric : optional
         Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
         Defaults to AUROC (area under the ROC curve).
+    val_monitor : Tuple[Text, Text], optional
+        Tuple (monitor, mode) with `monitor` the name of the quantity (eg 'loss/val')
+        to monitor, `mode` either 'min' or 'max' (mini/maximizing the quantity).
+        Useful for model checkpointing or early stopping.
+        Defaults to the first metric of the task.
     """
 
     #  TODO: add a ".metric" property that tells how speaker embedding trained with this approach
@@ -92,8 +97,8 @@ class SupervisedRepresentationLearningWithArcFace(
         pin_memory: bool = False,
         augmentation: BaseWaveformTransform = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
+        val_monitor: Tuple[Text, Text] = None,
     ):
-
         self.num_chunks_per_class = num_chunks_per_class
         self.num_classes_per_batch = num_classes_per_batch
 
@@ -109,10 +114,10 @@ class SupervisedRepresentationLearningWithArcFace(
             pin_memory=pin_memory,
             augmentation=augmentation,
             metric=metric,
+            val_monitor=val_monitor,
         )
 
     def setup_loss_func(self):
-
         _, embedding_size = self.model(self.model.example_input_array).shape
 
         self.model.loss_func = pytorch_metric_learning.losses.ArcFaceLoss(
