@@ -244,10 +244,9 @@ class SupervisedRepresentationLearningTaskMixin:
 
         return {"loss": loss}
 
-    def prepare_validation(self):
+    def prepare_validation(self, prepared_dict : Dict):
         if isinstance(self.protocol, SpeakerVerificationProtocol):
-            return {"validation": list(self.protocol.development_trial())}
-        return dict()
+            prepared_dict["validation"] = list(self.protocol.development_trial())
 
     def val__getitem__(self, idx):
         if isinstance(self.protocol, SpeakerVerificationProtocol):

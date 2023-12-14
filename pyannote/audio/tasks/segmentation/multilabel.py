@@ -125,14 +125,12 @@ class MultiLabelSegmentation(SegmentationTask):
         # classes should be detected. therefore, we postpone the definition of
         # specifications to setup()
 
-    def post_prepare_data(self):
+    def post_prepare_data(self, prepared_data : Dict):
         # as different files may be annotated using a different set of classes
         # (e.g. one database for speech/music/noise, and another one for
         # male/female/child), we keep track of this information. this is used
         # to know whether a missing class is considered a negative example (0) or
         # simple an unknown example (-1)
-
-        post_prepared_data = dict()
 
         if self.classes is None and not self.has_classes:
             msg = textwrap.dedent(
@@ -177,7 +175,7 @@ class MultiLabelSegmentation(SegmentationTask):
                     [classes.index(klass) for klass in file_classes]
                 )
 
-            post_prepared_data["classes-list"] = np.array(classes, dtype=np.string_)
+            prepared_data["classes-list"] = np.array(classes, dtype=np.string_)
             self.classes = classes
 
         else:
@@ -214,7 +212,7 @@ class MultiLabelSegmentation(SegmentationTask):
                     ]
                 )
 
-            post_prepared_data["classes-list"] = np.array(
+            prepared_data["classes-list"] = np.array(
                 self.classes, dtype=np.string_
             )
 
@@ -229,10 +227,8 @@ class MultiLabelSegmentation(SegmentationTask):
         )
         for file_id, classes in enumerate(annotated_classes):
             annotated_classes_array[file_id, classes] = True
-        post_prepared_data["classes-annotated"] = annotated_classes_array
+        prepared_data["classes-annotated"] = annotated_classes_array
         annotated_classes.clear()
-
-        return post_prepared_data
 
     def setup(self):
         super().setup()

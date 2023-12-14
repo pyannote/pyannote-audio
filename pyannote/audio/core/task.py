@@ -577,53 +577,53 @@ class Task(pl.LightningDataModule):
         ]
 
         # save all protocol data in a dict
-        self.prepared_data = {}
+        prepared_data = {}
 
         # keep track of protocol name
-        self.prepared_data["protocol"] = self.protocol.name
+        prepared_data["protocol"] = self.protocol.name
 
-        self.prepared_data["audio-path"] = np.array(audios, dtype=np.string_)
+        prepared_data["audio-path"] = np.array(audios, dtype=np.string_)
         audios.clear()
 
-        self.prepared_data["audio-metadata"] = np.array(metadata, dtype=metadata_dtype)
+        prepared_data["audio-metadata"] = np.array(metadata, dtype=metadata_dtype)
         metadata.clear()
 
-        self.prepared_data["audio-info"] = np.array(audio_infos, dtype=info_dtype)
+        prepared_data["audio-info"] = np.array(audio_infos, dtype=info_dtype)
         audio_infos.clear()
 
-        self.prepared_data["audio-encoding"] = np.array(
+        prepared_data["audio-encoding"] = np.array(
             audio_encodings, dtype=np.string_
         )
         audio_encodings.clear()
 
-        self.prepared_data["audio-annotated"] = np.array(annotated_duration)
+        prepared_data["audio-annotated"] = np.array(annotated_duration)
         annotated_duration.clear()
 
-        self.prepared_data["annotations-regions"] = np.array(
+        prepared_data["annotations-regions"] = np.array(
             annotated_regions, dtype=region_dtype
         )
         annotated_regions.clear()
 
-        self.prepared_data["annotations-segments"] = np.array(
+        prepared_data["annotations-segments"] = np.array(
             annotations, dtype=segment_dtype
         )
         annotations.clear()
 
-        self.prepared_data["metadata-values"] = metadata_unique_values
-        self.prepared_data["metadata-labels"] = np.array(
+        prepared_data["metadata-values"] = metadata_unique_values
+        prepared_data["metadata-labels"] = np.array(
             unique_labels, dtype=np.string_
         )
         unique_labels.clear()
 
-        self.prepared_data.update(self.prepare_validation())
-        self.prepared_data.update(self.post_prepare_data())
+        self.prepare_validation(prepared_data)
+        self.post_prepare_data(prepared_data)
 
         # save preparated data on the disk
         with open(self.cache, "wb") as cache_file:
-            np.savez_compressed(cache_file, **self.prepared_data)
+            np.savez_compressed(cache_file, **prepared_data)
 
-    def post_prepare_data(self):
-        return dict()
+    def post_prepare_data(self, prepared_data : Dict):
+        pass
 
     def setup(self):
         """Setup data cached by prepare_data into the task on each device"""

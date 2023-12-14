@@ -254,20 +254,20 @@ class SegmentationTask(Task):
         duration = np.sum(self.prepared_data["audio-annotated"])
         return max(self.batch_size, math.ceil(duration / self.duration))
 
-    def prepare_validation(self):
+    def prepare_validation(self, prepared_data : Dict):
         validation_chunks = list()
 
         # obtain indexes of files in the validation subset
         validation_file_ids = np.where(
-            self.prepared_data["audio-metadata"]["subset"]
+            prepared_data["audio-metadata"]["subset"]
             == Subsets.index("development")
         )[0]
 
         # iterate over files in the validation subset
         for file_id in validation_file_ids:
             # get annotated regions in file
-            annotated_regions = self.prepared_data["annotations-regions"][
-                self.prepared_data["annotations-regions"]["file_id"] == file_id
+            annotated_regions = prepared_data["annotations-regions"][
+                prepared_data["annotations-regions"]["file_id"] == file_id
             ]
 
             # iterate over annotated regions
@@ -289,10 +289,8 @@ class SegmentationTask(Task):
             ("duration", "f"),
         ]
 
-        validation = np.array(validation_chunks, dtype=dtype)
+        prepared_data["validation"] = np.array(validation_chunks, dtype=dtype)
         validation_chunks.clear()
-
-        return {"validation": validation}
 
     def val__getitem__(self, idx):
         validation_chunk = self.prepared_data["validation"][idx]
