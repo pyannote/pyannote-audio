@@ -16,6 +16,7 @@ def setup_tasks(task):
 
 def create_dl(model, task):
     m = model(task=task)
+    m.prepare_data()
     m.setup("fit")
     return task.train_dataloader()
 
