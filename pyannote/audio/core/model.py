@@ -222,6 +222,7 @@ class Model(pl.LightningModule):
     
     def setup(self, stage=None):
         if stage == "fit":
+            self.task.trainer = self.trainer
             self.task.setup()
 
         # list of layers before adding task-dependent layers
