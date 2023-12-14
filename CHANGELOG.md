@@ -1,5 +1,9 @@
 # Changelog
 
+## develop
+
+- feat(pipeline): add `Waveform` and `SampleRate` preprocessors
+
 ## Version 3.1.1 (2023-12-01)
 
 ### TL;DR
