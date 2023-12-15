@@ -90,10 +90,14 @@ class SincNet(nn.Module):
 
         kernel_size = [251, 3, 5, 3, 5, 3]
         stride = [self.stride, 3, 1, 3, 1, 3]
+        padding = [0, 0, 0, 0, 0, 0]
+        dilation = [1, 1, 1, 1, 1, 1]
 
         num_frames = num_samples
-        for k, s in zip(kernel_size, stride):
-            num_frames = conv1d_num_frames(num_frames, kernel_size=k, stride=s)
+        for k, s, p, d in zip(kernel_size, stride, padding, dilation):
+            num_frames = conv1d_num_frames(
+                num_frames, kernel_size=k, stride=s, padding=p, dilation=d
+            )
 
         return num_frames
 
