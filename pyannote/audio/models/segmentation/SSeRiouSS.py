@@ -32,7 +32,7 @@ from pyannote.core.utils.generators import pairwise
 
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
-from pyannote.audio.utils.frame import conv1d_num_frames
+from pyannote.audio.utils.frame import conv1d_num_frames, conv1d_receptive_field_size
 from pyannote.audio.utils.params import merge_dict
 
 
@@ -219,6 +219,32 @@ class SSeRiouSS(Model):
 
         return num_frames
 
+    def receptive_field_size(self, num_frames: int = 1) -> int:
+        """Compute receptive field size
+
+        Parameters
+        ----------
+        num_frames : int, optional
+            Number of frames in the output signal
+
+        Returns
+        -------
+        receptive_field_size : int
+            Receptive field size
+        """
+
+        receptive_field_size = num_frames
+        for conv_layer in reversed(self.wav2vec.feature_extractor.conv_layers):
+            receptive_field_size = conv1d_receptive_field_size(
+                num_frames=receptive_field_size,
+                kernel_size=conv_layer.kernel_size,
+                stride=conv_layer.stride,
+                padding=conv_layer.conv.padding[0],
+                dilation=conv_layer.conv.dilation[0],
+            )
+
+        return receptive_field_size
+
     def receptive_field(self) -> SlidingWindow:
         """Compute receptive field
 
@@ -232,20 +258,16 @@ class SSeRiouSS(Model):
 
         """
 
-        raise NotImplementedError("TODO")
-
-        # time of the first sample in the receptive field of the first frame
-        # should be 0.0 unless some kind of padding is used
-        # in which case it should be - padding / sample_rate
-        start = ... / self.sample_rate
-
         # duration of the receptive field of each output frame
-        duration = ... / self.sample_rate
+        duration = self.receptive_field_size() / self.hparams.sample_rate
 
         # step between the receptive field region of two consecutive output frames
-        step = ... / self.sample_rate
+        step = (
+            self.receptive_field_size(num_frames=2)
+            - self.receptive_field_size(num_frames=1)
+        ) / self.hparams.sample_rate
 
-        return SlidingWindow(start=start, duration=duration, step=step)
+        return SlidingWindow(start=0.0, duration=duration, step=step)
 
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
         """Pass forward

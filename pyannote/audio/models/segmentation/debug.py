@@ -86,6 +86,29 @@ class SimpleSegmentationModel(Model):
             else 1 + (num_samples - n_fft) // hop_length
         )
 
+    def receptive_field_size(self, num_frames: int = 1) -> int:
+        """Compute receptive field size
+
+        Parameters
+        ----------
+        num_frames : int, optional
+            Number of frames in the output signal
+
+        Returns
+        -------
+        receptive_field_size : int
+            Receptive field size
+        """
+
+        hop_length = self.mfcc.MelSpectrogram.spectrogram.hop_length
+        n_fft = self.mfcc.MelSpectrogram.spectrogram.n_fft
+        center = self.mfcc.MelSpectrogram.spectrogram.center
+
+        if center:
+            return (num_frames - 1) * hop_length
+        else:
+            return (num_frames - 1) * hop_length + n_fft
+
     def receptive_field(self) -> SlidingWindow:
         """Compute receptive field
 
@@ -99,20 +122,17 @@ class SimpleSegmentationModel(Model):
 
         """
 
-        raise NotImplementedError("TODO")
-
-        # time of the first sample in the receptive field of the first frame
-        # should be 0.0 unless some kind of padding is used
-        # in which case it should be - padding / sample_rate
-        start = ... / self.sample_rate
-
         # duration of the receptive field of each output frame
-        duration = ... / self.sample_rate
+        duration = (
+            self.mfcc.MelSpectrogram.spectrogram.win_length / self.hparams.sample_rate
+        )
 
         # step between the receptive field region of two consecutive output frames
-        step = ... / self.sample_rate
+        step = (
+            self.mfcc.MelSpectrogram.spectrogram.hop_length / self.hparams.sample_rate
+        )
 
-        return SlidingWindow(start=start, duration=duration, step=step)
+        return SlidingWindow(start=0.0, duration=duration, step=step)
 
     def build(self):
         # define task-dependent layers

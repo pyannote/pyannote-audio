@@ -52,3 +52,29 @@ def conv1d_num_frames(num_samples, kernel_size=5, stride=1, padding=0, dilation=
     return math.floor(
         1 + (num_samples + 2 * padding - dilation * (kernel_size - 1) - 1) / stride
     )
+
+
+def conv1d_receptive_field_size(
+    num_frames=1, kernel_size=5, stride=1, padding=0, dilation=1
+):
+    """Compute receptive field size for `num_frames` frames after 1D convolution
+
+    Parameters
+    ----------
+    num_frames : int, optional
+        Number of frames in the output signal
+    kernel_size : int
+        Kernel size
+    stride : int
+        Stride
+    padding : int
+        Padding
+    dilation : int
+        Dilation
+
+    Returns
+    -------
+    receptive_field : int
+        Receptive field size
+    """
+    return (num_frames - 1) * stride - 2 * padding + dilation * (kernel_size - 1) + 1

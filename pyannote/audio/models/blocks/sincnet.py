@@ -30,7 +30,7 @@ import torch.nn.functional as F
 from asteroid_filterbanks import Encoder, ParamSincFB
 from pyannote.core import SlidingWindow
 
-from pyannote.audio.utils.frame import conv1d_num_frames
+from pyannote.audio.utils.frame import conv1d_num_frames, conv1d_receptive_field_size
 
 
 class SincNet(nn.Module):
@@ -97,6 +97,37 @@ class SincNet(nn.Module):
 
         return num_frames
 
+    def receptive_field_size(self, num_frames: int = 1) -> int:
+        """Compute receptive field size
+
+        Parameters
+        ----------
+        num_frames : int, optional
+            Number of frames in the output signal
+
+        Returns
+        -------
+        receptive_field_size : int
+            Receptive field size
+        """
+
+        kernel_size = [251, 3, 5, 3, 5, 3]
+        stride = [self.stride, 3, 1, 3, 1, 3]
+        padding = [0, 0, 0, 0, 0, 0]
+        dilation = [1, 1, 1, 1, 1, 1]
+
+        receptive_field_size = num_frames
+        for k, s, p, d in reversed(list(zip(kernel_size, stride, padding, dilation))):
+            receptive_field_size = conv1d_receptive_field_size(
+                num_frames=receptive_field_size,
+                kernel_size=k,
+                stride=s,
+                padding=p,
+                dilation=d,
+            )
+
+        return receptive_field_size
+
     def receptive_field(self) -> SlidingWindow:
         """Compute receptive field
 
@@ -110,20 +141,16 @@ class SincNet(nn.Module):
 
         """
 
-        raise NotImplementedError("TODO")
-
-        # time of the first sample in the receptive field of the first frame
-        # should be 0.0 unless some kind of padding is used
-        # in which case it should be - padding / sample_rate
-        start = ... / self.sample_rate
-
         # duration of the receptive field of each output frame
-        duration = ... / self.sample_rate
+        duration = self.receptive_field_size() / self.sample_rate
 
         # step between the receptive field region of two consecutive output frames
-        step = ... / self.sample_rate
+        step = (
+            self.receptive_field_size(num_frames=2)
+            - self.receptive_field_size(num_frames=1)
+        ) / self.sample_rate
 
-        return SlidingWindow(start=start, duration=duration, step=step)
+        return SlidingWindow(start=0.0, duration=duration, step=step)
 
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
         """Pass forward
