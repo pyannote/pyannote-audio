@@ -219,16 +219,14 @@ class Model(pl.LightningModule):
 
     def prepare_data(self):
         self.task.prepare_data()
-    
+
     def setup(self, stage=None):
         if stage == "fit":
+            # let the task know about the trainer (e.g for broadcasting)
+            self.task.trainer = self.trainer
 
-            try:
-                self.task.trainer = self.trainer
-            except RuntimeError:
-                self.task.trainer = None
-
-            self.task.setup()
+        if self.task:
+            self.task.setup(stage)
 
         # list of layers before adding task-dependent layers
         before = set((name, id(module)) for name, module in self.named_modules())
@@ -261,7 +259,7 @@ class Model(pl.LightningModule):
                 module.to(self.device)
 
         # add (trainable) loss function (e.g. ArcFace has its own set of trainable weights)
-        if stage == "fit":
+        if self.task:
             # let task know about the model
             self.task.model = self
             # setup custom loss function

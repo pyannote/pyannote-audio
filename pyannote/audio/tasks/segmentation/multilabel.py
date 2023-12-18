@@ -230,8 +230,8 @@ class MultiLabelSegmentation(SegmentationTask):
         prepared_data["classes-annotated"] = annotated_classes_array
         annotated_classes.clear()
 
-    def setup(self):
-        super().setup()
+    def setup(self, stage=None):
+        super().setup(stage)
 
         self.specifications = Specifications(
             classes=self.prepared_data["classes-list"],

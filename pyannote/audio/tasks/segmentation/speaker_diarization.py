@@ -190,8 +190,8 @@ class SpeakerDiarization(SegmentationTask):
         self.weight = weight
         self.vad_loss = vad_loss
 
-    def setup(self):
-        super().setup()
+    def setup(self, stage=None):
+        super().setup(stage)
 
         # estimate maximum number of speakers per chunk when not provided
         if self.max_speakers_per_chunk is None:
