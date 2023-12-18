@@ -27,10 +27,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchaudio
+from pyannote.core import SlidingWindow
 from pyannote.core.utils.generators import pairwise
 
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
+from pyannote.audio.utils.frame import conv1d_num_frames, conv1d_receptive_field_size
 from pyannote.audio.utils.params import merge_dict
 
 
@@ -190,6 +192,82 @@ class SSeRiouSS(Model):
 
         self.classifier = nn.Linear(in_features, out_features)
         self.activation = self.default_activation()
+
+    def num_frames(self, num_samples: int) -> int:
+        """Compute number of output frames for a given number of input samples
+
+        Parameters
+        ----------
+        num_samples : int
+            Number of input samples
+
+        Returns
+        -------
+        num_frames : int
+            Number of output frames
+        """
+
+        num_frames = num_samples
+        for conv_layer in self.wav2vec.feature_extractor.conv_layers:
+            num_frames = conv1d_num_frames(
+                num_frames,
+                kernel_size=conv_layer.kernel_size,
+                stride=conv_layer.stride,
+                padding=conv_layer.conv.padding[0],
+                dilation=conv_layer.conv.dilation[0],
+            )
+
+        return num_frames
+
+    def receptive_field_size(self, num_frames: int = 1) -> int:
+        """Compute receptive field size
+
+        Parameters
+        ----------
+        num_frames : int, optional
+            Number of frames in the output signal
+
+        Returns
+        -------
+        receptive_field_size : int
+            Receptive field size
+        """
+
+        receptive_field_size = num_frames
+        for conv_layer in reversed(self.wav2vec.feature_extractor.conv_layers):
+            receptive_field_size = conv1d_receptive_field_size(
+                num_frames=receptive_field_size,
+                kernel_size=conv_layer.kernel_size,
+                stride=conv_layer.stride,
+                padding=conv_layer.conv.padding[0],
+                dilation=conv_layer.conv.dilation[0],
+            )
+
+        return receptive_field_size
+
+    def receptive_field(self) -> SlidingWindow:
+        """Compute receptive field
+
+        Returns
+        -------
+        receptive field : SlidingWindow
+
+        Source
+        ------
+        https://distill.pub/2019/computing-receptive-fields/
+
+        """
+
+        # duration of the receptive field of each output frame
+        duration = self.receptive_field_size() / self.hparams.sample_rate
+
+        # step between the receptive field region of two consecutive output frames
+        step = (
+            self.receptive_field_size(num_frames=2)
+            - self.receptive_field_size(num_frames=1)
+        ) / self.hparams.sample_rate
+
+        return SlidingWindow(start=0.0, duration=duration, step=step)
 
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
         """Pass forward
