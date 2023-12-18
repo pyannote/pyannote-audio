@@ -26,6 +26,7 @@ from typing import Optional
 import torch
 import torch.nn as nn
 from einops import rearrange
+from pyannote.core import SlidingWindow
 from torchaudio.transforms import MFCC
 
 from pyannote.audio.core.model import Model
@@ -56,6 +57,82 @@ class SimpleSegmentationModel(Model):
             batch_first=True,
             bidirectional=True,
         )
+
+    def num_frames(self, num_samples: int) -> int:
+        """Compute number of output frames for a given number of input samples
+
+        Parameters
+        ----------
+        num_samples : int
+            Number of input samples
+
+        Returns
+        -------
+        num_frames : int
+            Number of output frames
+
+        Source
+        ------
+        https://pytorch.org/docs/stable/generated/torch.stft.html#torch.stft
+
+        """
+
+        hop_length = self.mfcc.MelSpectrogram.spectrogram.hop_length
+        n_fft = self.mfcc.MelSpectrogram.spectrogram.n_fft
+        center = self.mfcc.MelSpectrogram.spectrogram.center
+        return (
+            1 + num_samples // hop_length
+            if center
+            else 1 + (num_samples - n_fft) // hop_length
+        )
+
+    def receptive_field_size(self, num_frames: int = 1) -> int:
+        """Compute receptive field size
+
+        Parameters
+        ----------
+        num_frames : int, optional
+            Number of frames in the output signal
+
+        Returns
+        -------
+        receptive_field_size : int
+            Receptive field size
+        """
+
+        hop_length = self.mfcc.MelSpectrogram.spectrogram.hop_length
+        n_fft = self.mfcc.MelSpectrogram.spectrogram.n_fft
+        center = self.mfcc.MelSpectrogram.spectrogram.center
+
+        if center:
+            return (num_frames - 1) * hop_length
+        else:
+            return (num_frames - 1) * hop_length + n_fft
+
+    def receptive_field(self) -> SlidingWindow:
+        """Compute receptive field
+
+        Returns
+        -------
+        receptive field : SlidingWindow
+
+        Source
+        ------
+        https://distill.pub/2019/computing-receptive-fields/
+
+        """
+
+        # duration of the receptive field of each output frame
+        duration = (
+            self.mfcc.MelSpectrogram.spectrogram.win_length / self.hparams.sample_rate
+        )
+
+        # step between the receptive field region of two consecutive output frames
+        step = (
+            self.mfcc.MelSpectrogram.spectrogram.hop_length / self.hparams.sample_rate
+        )
+
+        return SlidingWindow(start=0.0, duration=duration, step=step)
 
     def build(self):
         # define task-dependent layers
