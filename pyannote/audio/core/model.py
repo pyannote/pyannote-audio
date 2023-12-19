@@ -262,10 +262,12 @@ class Model(pl.LightningModule):
         if self.task:
             # let task know about the model
             self.task.model = self
-            # setup custom loss function
-            self.task.setup_loss_func()
-            # setup custom validation metrics
-            self.task.setup_validation_metric()
+            # setup loss function and validation metric on training and validation only
+            if stage in ["fit", "validate"]:
+                # setup custom loss function
+                self.task.setup_loss_func()
+                # setup custom validation metrics
+                self.task.setup_validation_metric()
 
             # cache for later (and to avoid later CUDA error with multiprocessing)
             _ = self.example_output
