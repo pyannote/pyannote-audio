@@ -438,7 +438,7 @@ class SegmentationTaskMixin:
 
         while True:
             # select one file at random (with probability proportional to its annotated duration)
-            file_id = cum_prob_annotated_duration.searchsorted(rng.random())
+            file_id = file_ids[cum_prob_annotated_duration.searchsorted(rng.random())]
 
             # generate `num_chunks_per_file` chunks from this file
             for _ in range(num_chunks_per_file):
@@ -456,9 +456,9 @@ class SegmentationTaskMixin:
                 )
 
                 # selected one annotated region at random (with probability proportional to its duration)
-                annotated_region_index = (
+                annotated_region_index = annotated_region_indices[
                     cum_prob_annotated_regions_duration.searchsorted(rng.random())
-                )
+                ]
 
                 # select one chunk at random in this annotated region
                 _, _, start, end = self.annotated_regions[annotated_region_index]
