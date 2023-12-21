@@ -171,6 +171,7 @@ def get_dtype(value: int, unsigned: Optional[bool] = False) -> str:
         value whose type is best suited to storage in memory
     unsigned: bool, optional
         positive integer mode only. Default to False
+
     Returns
     -------
     str:
