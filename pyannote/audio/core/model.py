@@ -222,7 +222,8 @@ class Model(pl.LightningModule):
 
     def setup(self, stage=None):
         if stage == "fit":
-            # let the task know about the trainer (e.g for broadcasting)
+            # let the task know about the trainer (e.g for broadcasting
+            # cache path between multi-GPU training processes).
             self.task.trainer = self.trainer
 
         if self.task:
