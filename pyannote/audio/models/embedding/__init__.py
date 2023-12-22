@@ -21,6 +21,19 @@
 # SOFTWARE.
 
 
+from .wespeaker import (
+    WeSpeakerResNet34,
+    WeSpeakerResNet152,
+    WeSpeakerResNet221,
+    WeSpeakerResNet293,
+)
 from .xvector import XVectorMFCC, XVectorSincNet
 
-__all__ = ["XVectorSincNet", "XVectorMFCC"]
+__all__ = [
+    "XVectorSincNet",
+    "XVectorMFCC",
+    "WeSpeakerResNet34",
+    "WeSpeakerResNet152",
+    "WeSpeakerResNet221",
+    "WeSpeakerResNet293",
+]

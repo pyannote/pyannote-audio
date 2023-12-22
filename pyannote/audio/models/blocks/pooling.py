@@ -69,7 +69,7 @@ class StatsPool(nn.Module):
         dx2 = torch.square(sequences - mean.unsqueeze(2))
         v2 = torch.square(weights).sum(dim=2)
 
-        var = torch.sum(dx2 * weights, dim=2) / (v1 - v2 / v1)
+        var = torch.sum(dx2 * weights, dim=2) / (v1 - v2 / v1 + 1e-8)
         std = torch.sqrt(var)
 
         return torch.cat([mean, std], dim=1)
@@ -118,9 +118,7 @@ class StatsPool(nn.Module):
             warnings.warn(
                 f"Mismatch between frames ({num_frames}) and weights ({num_weights}) numbers."
             )
-            weights = F.interpolate(
-                weights, size=num_frames, mode="linear", align_corners=False
-            )
+            weights = F.interpolate(weights, size=num_frames, mode="nearest")
 
         output = rearrange(
             torch.vmap(self._pool, in_dims=(None, 1))(sequences, weights),

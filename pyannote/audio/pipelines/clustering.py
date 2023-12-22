@@ -97,7 +97,13 @@ class BaseClustering(Pipeline):
         speaker_idx : (num_embeddings, ) array
         """
 
-        chunk_idx, speaker_idx = np.where(~np.any(np.isnan(embeddings), axis=2))
+        # whether speaker is active
+        active = np.sum(segmentations.data, axis=1) > 0
+        # whether speaker embedding extraction went fine
+        valid = ~np.any(np.isnan(embeddings), axis=2)
+
+        # indices of embeddings that are both active and valid
+        chunk_idx, speaker_idx = np.where(active * valid)
 
         # sample max_num_embeddings embeddings
         num_embeddings = len(chunk_idx)
@@ -240,6 +246,7 @@ class BaseClustering(Pipeline):
         )
 
         num_embeddings, _ = train_embeddings.shape
+
         num_clusters, min_clusters, max_clusters = self.set_num_clusters(
             num_embeddings,
             num_clusters=num_clusters,
@@ -253,7 +260,6 @@ class BaseClustering(Pipeline):
             hard_clusters = np.zeros((num_chunks, num_speakers), dtype=np.int8)
             soft_clusters = np.ones((num_chunks, num_speakers, 1))
             centroids = np.mean(train_embeddings, axis=0, keepdims=True)
-
             return hard_clusters, soft_clusters, centroids
 
         train_clusters = self.cluster(
