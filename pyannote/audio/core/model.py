@@ -202,8 +202,14 @@ class Model(pl.LightningModule):
                 _, num_frames, dimension = example_output.shape
                 frame_duration = specifications.duration / num_frames
                 frames = SlidingWindow(step=frame_duration, duration=frame_duration)
+            # else chunk resolution (Resolution.CHUNK)
             else:
-                _, dimension = example_output.shape
+                # if the model outputs only one embedding (mono-speaker case):
+                if len(example_output.shape) == 2:
+                    _, dimension = example_output.shape
+                # if the model returns multiple embeddings (multi-speaker case):
+                else:
+                    _, _, dimension = example_output.shape
                 num_frames = None
                 frames = None
 
@@ -217,9 +223,12 @@ class Model(pl.LightningModule):
             self.specifications, __example_output, example_output
         )
 
+    def prepare_data(self):
+        self.task.prepare_data()
+    
     def setup(self, stage=None):
         if stage == "fit":
-            self.task.setup_metadata()
+            self.task.setup()
 
         # list of layers before adding task-dependent layers
         before = set((name, id(module)) for name, module in self.named_modules())
