@@ -1,9 +1,10 @@
 # Changelog
 
-## develop branch
+## develop
 
 ### New features
 
+- feat(pipeline): add `Waveform` and `SampleRate` preprocessors
 - feat(model): add `num_frames` and `receptive_field` to segmentation models
 
 ## Version 3.1.1 (2023-12-01)
