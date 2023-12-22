@@ -33,7 +33,7 @@ from enum import Enum
 from functools import cached_property, partial
 from numbers import Number
 from pathlib import Path
-from tempfile import mktemp
+from tempfile import mkstemp
 from typing import Dict, List, Literal, Optional, Sequence, Text, Tuple, Union
 
 import numpy as np
@@ -46,7 +46,6 @@ from torch.utils.data import DataLoader, Dataset, IterableDataset
 from torch_audiomentations import Identity
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchmetrics import Metric, MetricCollection
-
 
 from pyannote.audio.utils.loss import binary_cross_entropy, nll_loss
 from pyannote.audio.utils.protocol import check_protocol
@@ -299,7 +298,7 @@ class Task(pl.LightningDataModule):
         self.has_classes = checks["has_classes"]
 
         # metadata cache
-        self.cache = Path(cache) if cache else Path(mktemp())
+        self.cache = Path(cache) if cache else cache
         self.prepared_data = {}
 
         # batching
@@ -360,12 +359,16 @@ class Task(pl.LightningDataModule):
 
         """
 
-        if self.cache.exists():
-            # data was already created, nothing to do
-            return
-
-        # create parent directory if needed
-        self.cache.parent.mkdir(parents=True, exist_ok=True)
+        if self.cache:
+            if self.cache.exists():
+                # data was already created, nothing to do
+                return
+            # create parent directory if needed
+            self.cache.parent.mkdir(parents=True, exist_ok=True)
+        else:
+            # if no cache was provided by user, create a temporary file
+            # in system directory used for temp files
+            self.cache = Path(mkstemp()[1])
 
         # list of possible values for each metadata key
         # (will become .prepared_data["metadata"]["unique_values"])
@@ -590,9 +593,7 @@ class Task(pl.LightningDataModule):
         prepared_data["audio-info"] = np.array(audio_infos, dtype=info_dtype)
         audio_infos.clear()
 
-        prepared_data["audio-encoding"] = np.array(
-            audio_encodings, dtype=np.string_
-        )
+        prepared_data["audio-encoding"] = np.array(audio_encodings, dtype=np.string_)
         audio_encodings.clear()
 
         prepared_data["audio-annotated"] = np.array(annotated_duration)
@@ -609,9 +610,7 @@ class Task(pl.LightningDataModule):
         annotations.clear()
 
         prepared_data["metadata-values"] = metadata_unique_values
-        prepared_data["metadata-labels"] = np.array(
-            unique_labels, dtype=np.string_
-        )
+        prepared_data["metadata-labels"] = np.array(unique_labels, dtype=np.string_)
         unique_labels.clear()
 
         self.prepare_validation(prepared_data)
@@ -638,7 +637,7 @@ class Task(pl.LightningDataModule):
         except FileNotFoundError:
             print(
                 "Cached data for protocol not found. Ensure that prepare_data() was called",
-                " and executed correctly or/and that the path to the task cache is correct."
+                " and executed correctly or/and that the path to the task cache is correct.",
             )
             raise
 
