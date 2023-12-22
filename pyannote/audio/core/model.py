@@ -142,7 +142,7 @@ class Model(pl.LightningModule):
             except AttributeError as e:
                 raise UnknownSpecificationsError(
                     "Task specifications are not available. This is most likely because they depend on "
-                    "the content of the training subset. Use `model.task.prepare_data()` and `model.task.setup()` "
+                    "the content of the training subset. Use `model.prepare_data()` and `model.setup()` "
                     "to go over the training subset and fix this, or let lightning trainer do that for you in `trainer.fit(model)`."
                 ) from e
 
@@ -226,6 +226,8 @@ class Model(pl.LightningModule):
             # cache path between multi-GPU training processes).
             self.task.trainer = self.trainer
 
+        # setup the task if defined (only on training and validation stages,
+        # but not for basic inference)
         if self.task:
             self.task.setup(stage)
 
@@ -263,12 +265,10 @@ class Model(pl.LightningModule):
         if self.task:
             # let task know about the model
             self.task.model = self
-            # setup loss function and validation metric on training and validation only
-            if stage in ["fit", "validate"]:
-                # setup custom loss function
-                self.task.setup_loss_func()
-                # setup custom validation metrics
-                self.task.setup_validation_metric()
+            # setup custom loss function
+            self.task.setup_loss_func()
+            # setup custom validation metrics
+            self.task.setup_validation_metric()
 
             # cache for later (and to avoid later CUDA error with multiprocessing)
             _ = self.example_output
