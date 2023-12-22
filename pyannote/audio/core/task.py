@@ -359,7 +359,7 @@ class Task(pl.LightningDataModule):
             self.cache = Path(mkstemp()[1])
 
         # list of possible values for each metadata key
-        # (will become .prepared_data["metadata-values"])
+        # (will become .prepared_data[""])
         metadata_unique_values = defaultdict(list)
         metadata_unique_values["subset"] = Subsets
         metadata_unique_values["scope"] = Scopes
@@ -373,6 +373,7 @@ class Task(pl.LightningDataModule):
         annotated_regions = list()  # annotated regions
         annotations = list()  # actual annotations
         unique_labels = list()
+        database_unique_labels = {}
 
         if self.has_validation:
             files_iter = itertools.chain(
@@ -432,10 +433,6 @@ class Task(pl.LightningDataModule):
 
             metadata.append(metadatum)
 
-            # FIXME. this should be initialize as a dictionary outside of the loop
-            # or maybe removed altogether?
-            database_unique_labels = list()
-
             # reset list of file-scoped labels
             file_unique_labels = list()
 
@@ -494,11 +491,14 @@ class Task(pl.LightningDataModule):
 
                 if scope > 0:  # 'database' or 'global'
                     # update list of database-scope labels
-                    if label not in database_unique_labels:
-                        database_unique_labels.append(label)
+                    database = file["database"]
+                    if database not in database_unique_labels:
+                        database_unique_labels[database] = []
+                    if label not in database_unique_labels[database]:
+                        database_unique_labels[database].append(label)
 
                     # and convert label to its (database-scope) index
-                    database_label_idx = database_unique_labels.index(label)
+                    database_label_idx = database_unique_labels[database].index(label)
 
                 if scope > 1:  # 'global'
                     # update list of global-scope labels
