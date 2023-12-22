@@ -49,7 +49,17 @@ class MultiLabelSegmentation(SegmentationTask):
     Parameters
     ----------
     protocol : Protocol
-        pyannote.database protocol
+    cache : str, optional
+        When `cache` is not specified, calling `Task.prepare_data()` will
+        generate training and validation metadata from `protocol` (which
+        might take a very long time for large datasets) and save them to
+        a temporary cache.
+        later (and faster!) re-use.
+        When `cache` is specified, if it does not already exist, `Task.prepare_data()`
+        will generate training and validation metadata from `protocol`, then
+        save them into `cache` for later (and faster!) re-use.
+        In both cases, calling `Task.setup()` will assign cached data to
+        `Task.prepared_data` attribute.
     classes : List[str], optional
         List of classes. Defaults to the list of classes available in the training set.
     duration : float, optional
@@ -81,13 +91,12 @@ class MultiLabelSegmentation(SegmentationTask):
     metric : optional
         Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
         Defaults to AUROC (area under the ROC curve).
-    cache : str, optional
-        path to file where to write or load task caches
     """
 
     def __init__(
         self,
         protocol: Protocol,
+        cache: Optional[Union[str, None]] = None,
         classes: Optional[List[str]] = None,
         duration: float = 2.0,
         warm_up: Union[float, Tuple[float, float]] = 0.0,
@@ -98,7 +107,6 @@ class MultiLabelSegmentation(SegmentationTask):
         pin_memory: bool = False,
         augmentation: BaseWaveformTransform = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
-        cache: Optional[Union[str, None]] = None,
     ):
         if not isinstance(protocol, SegmentationProtocol):
             raise ValueError(
@@ -125,7 +133,7 @@ class MultiLabelSegmentation(SegmentationTask):
         # classes should be detected. therefore, we postpone the definition of
         # specifications to setup()
 
-    def post_prepare_data(self, prepared_data : Dict):
+    def post_prepare_data(self, prepared_data: Dict):
         # as different files may be annotated using a different set of classes
         # (e.g. one database for speech/music/noise, and another one for
         # male/female/child), we keep track of this information. this is used
@@ -212,9 +220,7 @@ class MultiLabelSegmentation(SegmentationTask):
                     ]
                 )
 
-            prepared_data["classes-list"] = np.array(
-                self.classes, dtype=np.string_
-            )
+            prepared_data["classes-list"] = np.array(self.classes, dtype=np.string_)
 
         # convert annotated_classes (which is a list of list of classes, one list of classes per file)
         # into a single (num_files x num_classes) numpy array:

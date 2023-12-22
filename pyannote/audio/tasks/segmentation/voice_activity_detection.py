@@ -45,6 +45,17 @@ class VoiceActivityDetection(SegmentationTask):
     ----------
     protocol : Protocol
         pyannote.database protocol
+    cache : str, optional
+        When `cache` is not specified, calling `Task.prepare_data()` will
+        generate training and validation metadata from `protocol` (which
+        might take a very long time for large datasets) and save them to
+        a temporary cache.
+        later (and faster!) re-use.
+        When `cache` is specified, if it does not already exist, `Task.prepare_data()`
+        will generate training and validation metadata from `protocol`, then
+        save them into `cache` for later (and faster!) re-use.
+        In both cases, calling `Task.setup()` will assign cached data to
+        `Task.prepared_data` attribute.
     duration : float, optional
         Chunks duration. Defaults to 2s.
     warm_up : float or (float, float), optional
@@ -74,13 +85,12 @@ class VoiceActivityDetection(SegmentationTask):
     metric : optional
         Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
         Defaults to AUROC (area under the ROC curve).
-    cache : str, optional
-        path to file where to write or load task caches
     """
 
     def __init__(
         self,
         protocol: Protocol,
+        cache: Optional[Union[str, None]] = None,
         duration: float = 2.0,
         warm_up: Union[float, Tuple[float, float]] = 0.0,
         balance: Sequence[Text] = None,
@@ -90,7 +100,6 @@ class VoiceActivityDetection(SegmentationTask):
         pin_memory: bool = False,
         augmentation: BaseWaveformTransform = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
-        cache: Optional[Union[str, None]] = None,
     ):
         super().__init__(
             protocol,

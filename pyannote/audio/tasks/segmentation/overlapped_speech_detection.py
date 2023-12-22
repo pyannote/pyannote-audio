@@ -51,6 +51,17 @@ class OverlappedSpeechDetection(SegmentationTask):
     ----------
     protocol : Protocol
         pyannote.database protocol
+    cache : str, optional
+        When `cache` is not specified, calling `Task.prepare_data()` will
+        generate training and validation metadata from `protocol` (which
+        might take a very long time for large datasets) and save them to
+        a temporary cache.
+        later (and faster!) re-use.
+        When `cache` is specified, if it does not already exist, `Task.prepare_data()`
+        will generate training and validation metadata from `protocol`, then
+        save them into `cache` for later (and faster!) re-use.
+        In both cases, calling `Task.setup()` will assign cached data to
+        `Task.prepared_data` attribute.
     duration : float, optional
         Chunks duration. Defaults to 2s.
     warm_up : float or (float, float), optional
@@ -88,8 +99,6 @@ class OverlappedSpeechDetection(SegmentationTask):
     metric : optional
         Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
         Defaults to AUROC (area under the ROC curve).
-    cache : str, optional
-        path to file where to write or load task caches
     """
 
     OVERLAP_DEFAULTS = {"probability": 0.5, "snr_min": 0.0, "snr_max": 10.0}

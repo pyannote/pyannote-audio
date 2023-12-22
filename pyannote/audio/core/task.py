@@ -214,16 +214,16 @@ class Task(pl.LightningDataModule):
     protocol : Protocol
         pyannote.database protocol
     cache : str, optional
-        When `cache` does not exist, calling `Task.prepare_data()` will
+        When `cache` is not specified, calling `Task.prepare_data()` will
         generate training and validation metadata from `protocol` (which
-        might take a very long time for large datasets), assign them to
-        `Task.prepared_data` attribute, and save them to `cache` file for
+        might take a very long time for large datasets) and save them to
+        a temporary cache.
         later (and faster!) re-use.
-        When `cache` exists, `Task.prepare_data()` will load metadata from
-        `cache` file and assign them to `Task.prepared_data` attribute
-        (which should usually be much faster).
-        Default behavior is to generate metadata from `protocol`, assign them
-        to `Task.prepared_data` and NOT save them to disk
+        When `cache` is specified, if it does not already exist, `Task.prepare_data()`
+        will generate training and validation metadata from `protocol`, then
+        save them into `cache` for later (and faster!) re-use.
+        In both cases, calling `Task.setup()` will assign cached data to
+        `Task.prepared_data` attribute.
     duration : float, optional
         Chunks duration in seconds. Defaults to two seconds (2.).
     min_duration : float, optional
@@ -256,18 +256,6 @@ class Task(pl.LightningDataModule):
     ----------
     specifications : Specifications or tuple of Specifications
         Task specifications (available after `Task.setup` has been called.)
-
-    Notes
-    -----
-
-    task(protocol, cache="cache.npz")
-    model = MyModel(task=task)
-
-    model.setup()
-    task.prepare_data()
-
-
-
 
     """
 
@@ -371,7 +359,7 @@ class Task(pl.LightningDataModule):
             self.cache = Path(mkstemp()[1])
 
         # list of possible values for each metadata key
-        # (will become .prepared_data["metadata"]["unique_values"])
+        # (will become .prepared_data["metadata-values"])
         metadata_unique_values = defaultdict(list)
         metadata_unique_values["subset"] = Subsets
         metadata_unique_values["scope"] = Scopes
