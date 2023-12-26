@@ -20,6 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import platform
 import warnings
 from typing import Optional
 
@@ -40,6 +41,13 @@ class StatsPool(nn.Module):
     https://en.wikipedia.org/wiki/Weighted_arithmetic_mean
 
     """
+
+    def __init__(self):
+        super().__init__()
+        self.interpolation_mode = "linear"
+        if platform.system() == "Darwin":
+            # "linear" interpolation is not supported on MPS
+            self.interpolation_mode = "nearest"
 
     def _pool(self, sequences: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:
         """Helper function to compute statistics pooling
@@ -118,7 +126,9 @@ class StatsPool(nn.Module):
             warnings.warn(
                 f"Mismatch between frames ({num_frames}) and weights ({num_weights}) numbers."
             )
-            weights = F.interpolate(weights, size=num_frames, mode="nearest")
+            weights = F.interpolate(
+                weights, size=num_frames, mode=self.interpolation_mode
+            )
 
         output = rearrange(
             torch.vmap(self._pool, in_dims=(None, 1))(sequences, weights),
