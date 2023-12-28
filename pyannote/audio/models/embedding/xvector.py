@@ -31,6 +31,7 @@ from pyannote.audio.core.task import Task
 from pyannote.audio.models.blocks.pooling import StatsPool
 from pyannote.audio.models.blocks.sincnet import SincNet
 from pyannote.audio.utils.params import merge_dict
+from pyannote.audio.utils.frame import conv1d_num_frames
 
 
 class XVectorMFCC(Model):
@@ -57,11 +58,11 @@ class XVectorMFCC(Model):
         self.tdnns = nn.ModuleList()
         in_channel = self.hparams.mfcc["n_mfcc"]
         out_channels = [512, 512, 512, 512, 1500]
-        kernel_sizes = [5, 3, 3, 1, 1]
-        dilations = [1, 2, 3, 1, 1]
+        self.kernel_sizes = [5, 3, 3, 1, 1]
+        self.dilations = [1, 2, 3, 1, 1]
 
         for out_channel, kernel_size, dilation in zip(
-            out_channels, kernel_sizes, dilations
+            out_channels, self.kernel_sizes, self.dilations
         ):
             self.tdnns.extend(
                 [
@@ -80,6 +81,32 @@ class XVectorMFCC(Model):
         self.stats_pool = StatsPool()
 
         self.embedding = nn.Linear(in_channel * 2, self.hparams.dimension)
+
+    def num_frames(self, num_samples: int) -> int:
+        """Compute number of output frames (before statistics pooling) for a given number of input samples
+
+        Parameters
+        ----------
+        num_samples : int
+            Number of input samples
+        Returns
+        -------
+        num_frames : int
+            Number of output frames
+        """
+        # Determine number of frames after MFCC
+        centered = self.mfcc.MelSpectrogram.spectrogram.center
+        win_length = 0 if centered else self.mfcc.MelSpectrogram.win_length
+        hop_length = self.mfcc.MelSpectrogram.hop_length
+        num_frames = (num_samples - win_length) // hop_length + 1
+
+        # Determine number of frames after TDNNs
+        for k, d in zip(self.kernel_sizes, self.dilations):
+            num_frames = conv1d_num_frames(
+                num_frames, kernel_size=k, stride=1, padding=0, dilation=d
+            )
+
+        return num_frames
 
     def forward(
         self, waveforms: torch.Tensor, weights: torch.Tensor = None
@@ -125,11 +152,11 @@ class XVectorSincNet(Model):
 
         self.tdnns = nn.ModuleList()
         out_channels = [512, 512, 512, 512, 1500]
-        kernel_sizes = [5, 3, 3, 1, 1]
-        dilations = [1, 2, 3, 1, 1]
+        self.kernel_sizes = [5, 3, 3, 1, 1]
+        self.dilations = [1, 2, 3, 1, 1]
 
         for out_channel, kernel_size, dilation in zip(
-            out_channels, kernel_sizes, dilations
+            out_channels, self.kernel_sizes, self.dilations
         ):
             self.tdnns.extend(
                 [
@@ -148,6 +175,26 @@ class XVectorSincNet(Model):
         self.stats_pool = StatsPool()
 
         self.embedding = nn.Linear(in_channel * 2, self.hparams.dimension)
+
+    def num_frames(self, num_samples: int) -> int:
+        """Compute number of output frames (before statistics pooling) for a given number of input samples
+
+        Parameters
+        ----------
+        num_samples : int
+            Number of input samples
+        Returns
+        -------
+        num_frames : int
+            Number of output frames
+        """
+        num_frames = self.sincnet.num_frames(num_samples)
+        for k, d in zip(self.kernel_sizes, self.dilations):
+            num_frames = conv1d_num_frames(
+                num_frames, kernel_size=k, stride=1, padding=0, dilation=d
+            )
+
+        return num_frames
 
     def forward(
         self, waveforms: torch.Tensor, weights: torch.Tensor = None
