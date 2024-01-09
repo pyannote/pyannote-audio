@@ -139,7 +139,7 @@ class SupervisedRepresentationLearningTaskMixin:
         """
 
         # create worker-specific random number generator
-        rng = create_rng_for_worker(self.model.current_epoch)
+        rng = create_rng_for_worker(self.model)
 
         classes = list(self.specifications.classes)
 
@@ -244,7 +244,7 @@ class SupervisedRepresentationLearningTaskMixin:
 
         return {"loss": loss}
 
-    def prepare_validation(self, prepared_dict : Dict):
+    def prepare_validation(self, prepared_dict: Dict):
         if isinstance(self.protocol, SpeakerVerificationProtocol):
             prepared_dict["validation"] = list(self.protocol.development_trial())
 
