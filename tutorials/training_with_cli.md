@@ -2,7 +2,7 @@
 
 *This tutorial is a very preliminary draft. Expect hiccups and missing details.*
 
-`pyannote.audio` provides a command line tool called `pyannote-audio-train` 
+`pyannote.audio` provides a command line tool called `pyannote-audio-train`
 that allows to train models directly from your terminal. It relies on extra
 dependencies installed using th `[cli]` suffix:
 
@@ -28,10 +28,11 @@ pyannote-audio-train \
 ```python
 from pyannote.audio.tasks import VoiceActivityDetection
 from pyannote.audio.models.segmentation import PyanNet
-from pyannote.database import get_protocol
+from pyannote.database import registry, FileFinder()
 from pytorch_lightning import Trainer
 
-protocol = get_protocol("AMI.SpeakerDiarization.only_words")
+registry.load_database("AMI-diarization-setup/pyannote/database.yml")
+protocol = registry.get_protocol("AMI.SpeakerDiarization.only_words", preprocessors={"audio": FileFinder()})
 task = VoiceActivityDetection(protocol)
 model = PyanNet(task=task)
 trainer = Trainer()
@@ -40,8 +41,8 @@ trainer.fit(model)
 
 ## Hydra-based configuration
 
-`pyannote-audio-train` relies on [`Hydra`](https://hydra.cc) to configure the 
-training process. Adding `--cfg job` option to the previous command will let 
+`pyannote-audio-train` relies on [`Hydra`](https://hydra.cc) to configure the
+training process. Adding `--cfg job` option to the previous command will let
 you know about the actual configuration used for training:
 
 
@@ -123,7 +124,7 @@ Here, we launch a grid of (3 x 2 =) six different jobs:
 * mono-directional or bidirectional LSTMs
 
 ```bash
-pyannote-audio-train 
+pyannote-audio-train
     --multirun hydra/launcher=submitit_slurm \
     model=PyanNet +model.lstm.num_layers=2,3,4 +model.lstm.bidirectional=true,false \
     task=VoiceActivityDetection \
