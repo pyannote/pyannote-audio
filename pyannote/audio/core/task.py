@@ -598,7 +598,16 @@ class Task(pl.LightningDataModule):
         annotations.clear()
 
         prepared_data["metadata-values"] = metadata_unique_values
-        prepared_data["metadata-labels"] = np.array(unique_labels, dtype=np.string_)
+
+        for database, labels in database_unique_labels.items():
+            prepared_data[f"metadata-{database}-labels"] = np.array(
+                labels, dtype=np.string_
+            )
+        database_unique_labels.clear()
+
+        prepared_data["metadata-global-labels"] = np.array(
+            unique_labels, dtype=np.string_
+        )
         unique_labels.clear()
 
         self.prepare_validation(prepared_data)
