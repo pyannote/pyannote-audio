@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from enum import Enum
 from functools import cached_property, partial
 from numbers import Number
-from typing import Dict, List, Literal, Optional, Sequence, Text, Tuple, Union
+from typing import Dict, Iterable, List, Literal, Optional, Sequence, Text, Tuple, Union
 
 import pytorch_lightning as pl
 import scipy.special
@@ -196,11 +196,17 @@ class Task(pl.LightningDataModule):
     metric : optional
         Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
         Defaults to value returned by `default_metric` method.
+    val_monitor : Tuple[Text, Text], optional
+        Tuple (monitor, mode) with `monitor` the name of the quantity (eg 'loss/val')
+        to monitor, `mode` either 'min' or 'max' (mini/maximizing the quantity).
+        Useful for model checkpointing or early stopping.
+        Defaults to the first metric of the task.
+
 
     Attributes
     ----------
     specifications : Specifications or tuple of Specifications
-        Task specifications (available after `Task.setup` has been called.)
+        Task specifications (available after `Task.setup` has been called.)
     """
 
     def __init__(
@@ -214,6 +220,7 @@ class Task(pl.LightningDataModule):
         pin_memory: bool = False,
         augmentation: BaseWaveformTransform = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
+        val_monitor: Tuple[Text, Text] = None,
     ):
         super().__init__()
 
@@ -249,10 +256,29 @@ class Task(pl.LightningDataModule):
             )
             num_workers = 0
 
+        # sanitize val_monitor
+        if val_monitor is not None:
+            val_monitor_errmsg = (
+                f"val_monitor must be a tuple of length 2 (monitor, mode)"
+                f", with mode=='min' or 'max' got {val_monitor}."
+            )
+            if not isinstance(val_monitor, Iterable):
+                raise ValueError(val_monitor_errmsg)
+
+            # force convert val_monitor to tuple and check it's valid
+            val_monitor = tuple(val_monitor)
+            if (
+                len(val_monitor) != 2
+                or not isinstance(val_monitor[0], str)
+                or val_monitor[1] not in ["min", "max"]
+            ):
+                raise ValueError(val_monitor_errmsg)
+
         self.num_workers = num_workers
         self.pin_memory = pin_memory
         self.augmentation = augmentation or Identity(output_type="dict")
         self._metric = metric
+        self._val_monitor = tuple(val_monitor) if val_monitor is not None else None
 
     def prepare_data(self):
         """Use this to download and prepare data
@@ -509,5 +535,11 @@ class Task(pl.LightningDataModule):
         pytorch_lightning.callbacks.EarlyStopping
         """
 
-        name, metric = next(iter(self.metric.items()))
-        return name, "max" if metric.higher_is_better else "min"
+        if self._val_monitor is None:
+            name, metric = next(iter(self.metric.items()))
+            self.val_monitor = (name, "max" if metric.higher_is_better else "min")
+        return self._val_monitor
+
+    @val_monitor.setter
+    def val_monitor(self, value: Tuple[Text, Text]):
+        self._val_monitor = value
