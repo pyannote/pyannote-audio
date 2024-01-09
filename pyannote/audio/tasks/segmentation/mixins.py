@@ -107,14 +107,16 @@ class SegmentationTask(Task):
             "train"
         )
         for key, value in filters.items():
-            training &= self.prepared_data["audio-metadata"][key] == self.prepared_data[
-                "metadata"
-            ][key].index(value)
+            training &= self.metadata[key] == self.metadata_unique_values[key].index(
+                value
+            )
         file_ids = np.where(training)[0]
 
         # turn annotated duration into a probability distribution
-        annotated_duration = self.prepared_data["audio-annotated"][file_ids]
-        prob_annotated_duration = annotated_duration / np.sum(annotated_duration)
+        annotated_duration = self.annotated_duration[file_ids]
+        cum_prob_annotated_duration = np.cumsum(
+            annotated_duration / np.sum(annotated_duration)
+        )
 
         duration = self.duration
 
@@ -122,7 +124,7 @@ class SegmentationTask(Task):
 
         while True:
             # select one file at random (with probability proportional to its annotated duration)
-            file_id = np.random.choice(file_ids, p=prob_annotated_duration)
+            file_id = file_ids[cum_prob_annotated_duration.searchsorted(rng.random())]
 
             # generate `num_chunks_per_file` chunks from this file
             for _ in range(num_chunks_per_file):
@@ -132,18 +134,17 @@ class SegmentationTask(Task):
                 )[0]
 
                 # turn annotated regions duration into a probability distribution
-                prob_annotated_regions_duration = self.prepared_data[
-                    "annotations-regions"
-                ]["duration"][annotated_region_indices] / np.sum(
-                    self.prepared_data["annotations-regions"]["duration"][
-                        annotated_region_indices
-                    ]
+                cum_prob_annotated_regions_duration = np.cumsum(
+                    self.annotated_regions["duration"][annotated_region_indices]
+                    / np.sum(
+                        self.annotated_regions["duration"][annotated_region_indices]
+                    )
                 )
 
                 # selected one annotated region at random (with probability proportional to its duration)
-                annotated_region_index = np.random.choice(
-                    annotated_region_indices, p=prob_annotated_regions_duration
-                )
+                annotated_region_index = annotated_region_indices[
+                    cum_prob_annotated_regions_duration.searchsorted(rng.random())
+                ]
 
                 # select one chunk at random in this annotated region
                 _, region_duration, start = self.prepared_data["annotations-regions"][
@@ -169,7 +170,7 @@ class SegmentationTask(Task):
         """
 
         # create worker-specific random number generator
-        rng = create_rng_for_worker(self.model.current_epoch)
+        rng = create_rng_for_worker(self.model)
 
         balance = getattr(self, "balance", None)
         if balance is None:
