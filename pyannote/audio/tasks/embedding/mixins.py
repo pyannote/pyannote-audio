@@ -139,7 +139,7 @@ class SupervisedRepresentationLearningTaskMixin:
         """
 
         # create worker-specific random number generator
-        rng = create_rng_for_worker(self.model)
+        rng = create_rng_for_worker(self.model.current_epoch)
 
         classes = list(self.specifications.classes)
 

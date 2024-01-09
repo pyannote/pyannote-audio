@@ -7,10 +7,6 @@
 - feat(pipeline): add `Waveform` and `SampleRate` preprocessors
 - feat(model): add `num_frames` and `receptive_field` to segmentation models
 
-### Fixes
-
-- fix(task): fix random generators
-
 ## Version 3.1.1 (2023-12-01)
 
 ### TL;DR
