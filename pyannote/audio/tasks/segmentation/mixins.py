@@ -25,7 +25,7 @@ import math
 import random
 import warnings
 from collections import defaultdict
-from typing import Dict, Sequence, Union
+from typing import Dict, Iterable, Sequence, Text, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -47,6 +47,7 @@ Scopes = list(Scope.__args__)
 
 class SegmentationTaskMixin:
     """Methods common to most segmentation tasks"""
+
 
     def get_file(self, file_id):
         file = dict()
@@ -500,11 +501,43 @@ class SegmentationTaskMixin:
                 filters = {key: value for key, value in zip(balance, product)}
                 subchunks[product] = self.train__iter__helper(rng, **filters)
 
+        # Compute the balance weights.
+        # To get the weights of each subchunk generator,
+        # for each subchunk generator we look for the longest matching
+        # (tuple) prefix in the balance_weights.
+        balance_weights: Dict[Tuple[Text], float] = getattr(
+            self, "balance_weights", None
+        )
+        subchunks_weights_cumsum = None
+        if balance_weights is not None:
+            subchunks_weights = []
+            for subchunk_key in subchunks.keys():
+                matching_weight = 1.0  # default weight
+                matching_best = 0
+                for weight_key in balance_weights.keys():
+                    # if we find a weight entry whose key is a prefix of the subchunk_tuple
+                    # and if it's the longest matching prefix we found yet, use it
+                    if (
+                        subchunk_key[: len(weight_key)] == weight_key
+                        and len(weight_key) > matching_best
+                    ):
+                        matching_best = len(weight_key)
+                        matching_weight = balance_weights[weight_key]
+                subchunks_weights.append(matching_weight)
+            subchunks_weights_cumsum = list(itertools.accumulate(subchunks_weights))
+
         while True:
             # select one subchunk generator at random (with uniform probability)
             # so that it is balanced on average
             if balance is not None:
-                chunks = subchunks[rng.choice(list(subchunks))]
+                if subchunks_weights_cumsum is not None:
+                    chunks = subchunks[
+                        rng.choices(
+                            list(subchunks), cum_weights=subchunks_weights_cumsum
+                        )[0]
+                    ]
+                else:
+                    chunks = subchunks[rng.choice(list(subchunks))]
 
             # generate random chunk
             yield next(chunks)

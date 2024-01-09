@@ -90,6 +90,13 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
         When provided, training samples are sampled uniformly with respect to these keys.
         For instance, setting `balance` to ["database","subset"] will make sure that each
         database & subset combination will be equally represented in the training samples.
+    balance_weights: Dict[Tuple[Text], float], optional
+        `balance` must be provided. Assigns weights to combinations of balance keys.
+        For example, item `('A') = 2.0` with `balance=['database']` means the 'A' database
+        will be sampled twice as much as the other databases. With `balance=['database','subset']`,
+        the item still acts the same and disregard the subset.
+        Will always use the longest matching item (eg ('A','train') over ('A')).
+        Defaults to uniform weights (& non specified weights default to 1.0).
     weight: str, optional
         When provided, use this key as frame-wise weight in loss function.
     batch_size : int, optional
@@ -133,6 +140,7 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
         weigh_by_cardinality: bool = False,
         warm_up: Union[float, Tuple[float, float]] = 0.0,
         balance: Sequence[Text] = None,
+        balance_weights: Dict[Tuple[Text], float] = None,
         weight: Text = None,
         batch_size: int = 32,
         num_workers: int = None,
@@ -179,10 +187,14 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
                     "`vad_loss` cannot be used jointly with `max_speakers_per_frame`"
                 )
 
+        if balance_weights is not None:
+            balance_weights = self._get_fixed_balance_weights(balance, balance_weights)
+
         self.max_speakers_per_chunk = max_speakers_per_chunk
         self.max_speakers_per_frame = max_speakers_per_frame
         self.weigh_by_cardinality = weigh_by_cardinality
         self.balance = balance
+        self.balance_weights = balance_weights
         self.weight = weight
         self.vad_loss = vad_loss
 
