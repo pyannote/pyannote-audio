@@ -138,3 +138,39 @@ class Powerset(nn.Module):
             torch.argmax(torch.matmul(multilabel, self.mapping.T), dim=-1),
             num_classes=self.num_powerset_classes,
         )
+
+    def permutate_powerset(
+        self, t: torch.Tensor, permutation: torch.Tensor
+    ) -> torch.Tensor:
+        """Permutate a powerset tensor according to a multilabel permutation.
+
+        Parameters
+        ----------
+        t : torch.Tensor
+            Tensor to permutate, expected shape (..., num_powerset_classes)
+        permutation : torch.Tensor
+            Permutation tensor in multilabel.
+            Expected shape (num_multilabel_classes, )
+
+        Returns
+        -------
+        torch.Tensor
+            The permuted tensor, same shape as input.
+        """
+        # t =(B, N)
+        # permutation = (Nml, )
+        mapping = self.mapping
+        permutated_mapping = self.mapping[:, permutation]
+        # (Nml, N) -> (B, Nml, N)
+
+        # create mapping-shaped 2**N tensor
+        arange = torch.arange(mapping.shape[1], device=mapping.device, dtype=torch.int)
+        powers2 = (2**arange).tile((self.mapping.shape[0], 1))
+
+        indexing_og = torch.sum(self.mapping * powers2, dim=-1).long()
+        indexing_new = torch.sum(permutated_mapping * powers2, dim=-1).long()
+
+        ps_permutation = (
+            (indexing_og[None] == indexing_new[:, None]).int().argmax(dim=0)
+        )
+        return t[..., ps_permutation]
