@@ -143,6 +143,8 @@ class Powerset(nn.Module):
         self, t: torch.Tensor, permutation: torch.Tensor
     ) -> torch.Tensor:
         """Permutate a powerset tensor according to a multilabel permutation.
+        Similar to doing `to_powerset(to_multilabel(t)[..., permutation])`, but
+        this method preserves soft values in the powerset space.
 
         Parameters
         ----------
