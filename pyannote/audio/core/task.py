@@ -347,7 +347,8 @@ class Task(pl.LightningDataModule):
         """
 
         if self.cache:
-            if self.cache.exists():
+            # check if cache exists and is not empty:
+            if self.cache.exists() and self.cache.stat().st_size > 0:
                 # data was already created, nothing to do
                 return
             # create parent directory if needed
