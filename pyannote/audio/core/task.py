@@ -218,7 +218,6 @@ class Task(pl.LightningDataModule):
         generate training and validation metadata from `protocol` (which
         might take a very long time for large datasets) and save them to
         a temporary cache.
-        later (and faster!) re-use.
         When `cache` is specified, if it does not already exist, `Task.prepare_data()`
         will generate training and validation metadata from `protocol`, then
         save them into `cache` for later (and faster!) re-use.
@@ -320,12 +319,7 @@ class Task(pl.LightningDataModule):
         self._metric = metric
 
     def prepare_data(self):
-        """Use this to download and prepare data
-
-        This is where we might end up downloading datasets
-        and transform them so that they are ready to be used
-        with pyannote.database. but for now, the API assume
-        that we directly provide a pyannote.database.Protocol.
+        """Use this to prepare data from task protocol
 
         Notes
         -----
@@ -335,13 +329,18 @@ class Task(pl.LightningDataModule):
         with the following dictionary structure:
 
         prepared_data = {
+            'protocol': name of the protocol
             'audio-path': array of N paths to audio
+            'audio-metadata': array of N audio infos such as audio subset, scope and database
             'audio-info': array of N audio torchaudio.info struct
             'audio-encoding': array of N audio encodings
             'audio-annotated': array of N annotated duration (usually equals file duration but might be shorter if file is not fully annotated)
             'audio-metadata': array of N metadata struct
             'annotations-regions': array of M annotated regions
             'annotations-segments': array of M' annotated segments
+            'metadata-values': dict of lists of values for subset, scope and database
+            'metadata-`database-name`-labels': array of `database-name` labels. Each database with database scope labels has it own array.
+            'metadata-labes': array of global scope labels
         }
 
         """
@@ -616,6 +615,20 @@ class Task(pl.LightningDataModule):
             np.savez_compressed(cache_file, **prepared_data)
 
     def post_prepare_data(self, prepared_data: Dict):
+        """Method for completing `prepared_data` with task-specific data.
+        For instance, for a classification task, this could be a list of
+        possible classes.
+
+        Parameters
+        ----------
+        prepared_data: dict
+            dictionnary containing protocol data prepared by
+            `prepare_data()`
+        Note
+        ----
+        This method does not return anything. Thus, user have to directly modify
+        `prepared_data`, for updates to be taken into account
+        """
         pass
 
     def setup(self, stage=None):

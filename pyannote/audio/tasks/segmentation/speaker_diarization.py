@@ -70,7 +70,6 @@ class SpeakerDiarization(SegmentationTask):
         generate training and validation metadata from `protocol` (which
         might take a very long time for large datasets) and save them to
         a temporary cache.
-        later (and faster!) re-use.
         When `cache` is specified, if it does not already exist, `Task.prepare_data()`
         will generate training and validation metadata from `protocol`, then
         save them into `cache` for later (and faster!) re-use.
