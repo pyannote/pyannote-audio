@@ -287,7 +287,6 @@ class Task(pl.LightningDataModule):
 
         # metadata cache
         self.cache = Path(cache) if cache else cache
-        self.prepared_data = {}
 
         # batching
         self.duration = duration
