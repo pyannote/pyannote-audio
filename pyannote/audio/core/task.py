@@ -611,7 +611,7 @@ class Task(pl.LightningDataModule):
         self.prepare_validation(prepared_data)
         self.post_prepare_data(prepared_data)
 
-        # save preparated data on the disk
+        # save prepared data on the disk
         with open(self.cache, "wb") as cache_file:
             np.savez_compressed(cache_file, **prepared_data)
 
