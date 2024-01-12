@@ -49,16 +49,13 @@ class MultiLabelSegmentation(SegmentationTask):
     Parameters
     ----------
     protocol : Protocol
-    cache : str, optional
-        When `cache` is not specified, calling `Task.prepare_data()` will
-        generate training and validation metadata from `protocol` (which
-        might take a very long time for large datasets) and save them to
-        a temporary cache.
-        When `cache` is specified, if it does not already exist, `Task.prepare_data()`
-        will generate training and validation metadata from `protocol`, then
-        save them into `cache` for later (and faster!) re-use.
-        In both cases, calling `Task.setup()` will assign cached data to
-        `Task.prepared_data` attribute.
+   cache : str, optional
+        As (meta-)data preparation might take a very long time for large datasets,
+        it can be cached to disk for later (and faster!) re-use. 
+        When `cache` does not exist, `Task.prepare_data()` generates training
+        and validation metadata from `protocol` and save them to disk.
+        When `cache` exists, `Task.prepare_data()` is skipped and (meta)-data
+        are loaded from disk. Defaults to a temporary path. 
     classes : List[str], optional
         List of classes. Defaults to the list of classes available in the training set.
     duration : float, optional
