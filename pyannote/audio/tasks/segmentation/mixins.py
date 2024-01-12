@@ -48,7 +48,7 @@ class SegmentationTask(Task):
     def get_file(self, file_id):
         file = dict()
 
-        file["audio"] = str(self.prepared_data["audio-path"][file_id], encoding="utf-8")
+        file["audio"] = self.prepared_data["audio-path"][file_id]
 
         _audio_info = self.prepared_data["audio-info"][file_id]
         _encoding = self.prepared_data["audio-encoding"][file_id]
