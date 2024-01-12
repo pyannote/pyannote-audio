@@ -332,7 +332,6 @@ class Task(pl.LightningDataModule):
             'audio-info': array of N audio torchaudio.info struct
             'audio-encoding': array of N audio encodings
             'audio-annotated': array of N annotated duration (usually equals file duration but might be shorter if file is not fully annotated)
-            'audio-metadata': array of N metadata struct
             'annotations-regions': array of M annotated regions
             'annotations-segments': array of M' annotated segments
             'metadata-values': dict of lists of values for subset, scope and database
