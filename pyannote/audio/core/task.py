@@ -339,8 +339,8 @@ class Task(pl.LightningDataModule):
             'annotations-regions': array of M annotated regions
             'annotations-segments': array of M' annotated segments
             'metadata-values': dict of lists of values for subset, scope and database
-            'metadata-`database-name`-labels': array of `database-name` labels. Each database with database scope labels has it own array.
-            'metadata-labes': array of global scope labels
+            'metadata-`database-name`-labels': array of `database-name` labels. Each database with "database" scope labels has it own array.
+            'metadata-labels': array of global scope labels
         }
 
         """
