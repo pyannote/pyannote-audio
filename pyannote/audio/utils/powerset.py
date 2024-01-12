@@ -139,30 +139,37 @@ class Powerset(nn.Module):
             num_classes=self.num_powerset_classes,
         )
 
-    def permutate_powerset(
-        self, t: torch.Tensor, permutation: torch.Tensor
-    ) -> torch.Tensor:
-        """Permutate a powerset tensor according to a multilabel permutation.
-        Similar to doing `to_powerset(to_multilabel(t)[..., permutation])`, but
-        this method preserves soft values in the powerset space.
+    def permutation_powerset(self, permutation_ml: torch.Tensor) -> torch.Tensor:
+        """Find the equivalent to a multilabel permutation in the powerset class space.
 
         Parameters
         ----------
-        t : torch.Tensor
-            Tensor to permutate, expected shape (..., num_powerset_classes)
-        permutation : torch.Tensor
-            Permutation tensor in multilabel.
-            Expected shape (num_multilabel_classes, )
+        permutation_ml: torch.Tensor
+            A multilabel permutation, (num_classes,)-shaped.
 
         Returns
         -------
         torch.Tensor
-            The permuted tensor, same shape as input.
+            The corresponding powerset permutation, (num_powerset_classes,)-shaped.
+
+        Example
+        ---------
+        With Powerset(2,2), the powerset classes are [nonspeech, spk1, spk2, spk1+spk2],
+        while the multilabel 'classes' are [spk1, spk2].
+        If we get for the equivalent to the multilabel permutation [1,0] (=[spk2, spk1]):
+
+        >>> powerset = Powerset(num_classes=2, max_set_size=2)
+        >>> permutation_ml = torch.tensor([1, 0])
+        >>> permutation_ps = powerset.permutation_powerset(permutation_ml)
+        >>> permutation_ps
+        tensor([0, 2, 1, 3])
+
+        We obtain the powerset permutation with classes spk1 and spk2 permutated.
         """
         # t =(B, N)
         # permutation = (Nml, )
         mapping = self.mapping
-        permutated_mapping = self.mapping[:, permutation]
+        permutated_mapping = self.mapping[:, permutation_ml]
         # (Nml, N) -> (B, Nml, N)
 
         # create mapping-shaped 2**N tensor
@@ -175,4 +182,4 @@ class Powerset(nn.Module):
         ps_permutation = (
             (indexing_og[None] == indexing_new[:, None]).int().argmax(dim=0)
         )
-        return t[..., ps_permutation]
+        return ps_permutation
