@@ -142,8 +142,8 @@ class Model(pl.LightningModule):
             except AttributeError as e:
                 raise UnknownSpecificationsError(
                     "Task specifications are not available. This is most likely because they depend on "
-                    "the content of the training subset. Use `model.task.setup()` to go over the training "
-                    "subset and fix this, or let lightning trainer do that for you in `trainer.fit(model)`."
+                    "the content of the training subset. Use `model.prepare_data()` and `model.setup()` "
+                    "to go over the training subset and fix this, or let lightning trainer do that for you in `trainer.fit(model)`."
                 ) from e
 
         return specifications
@@ -217,9 +217,19 @@ class Model(pl.LightningModule):
             self.specifications, __example_output, example_output
         )
 
+    def prepare_data(self):
+        self.task.prepare_data()
+
     def setup(self, stage=None):
         if stage == "fit":
-            self.task.setup_metadata()
+            # let the task know about the trainer (e.g for broadcasting
+            # cache path between multi-GPU training processes).
+            self.task.trainer = self.trainer
+
+        # setup the task if defined (only on training and validation stages,
+        # but not for basic inference)
+        if self.task:
+            self.task.setup(stage)
 
         # list of layers before adding task-dependent layers
         before = set((name, id(module)) for name, module in self.named_modules())
@@ -252,7 +262,7 @@ class Model(pl.LightningModule):
                 module.to(self.device)
 
         # add (trainable) loss function (e.g. ArcFace has its own set of trainable weights)
-        if stage == "fit":
+        if self.task:
             # let task know about the model
             self.task.model = self
             # setup custom loss function
@@ -468,9 +478,8 @@ class Model(pl.LightningModule):
         if isinstance(modules, str):
             modules = [modules]
 
-        for name, module in ModelSummary(self, max_depth=-1).named_modules:
-            if name not in modules:
-                continue
+        for name in modules:
+            module = getattr(self, name)
 
             for parameter in module.parameters(recurse=True):
                 parameter.requires_grad = requires_grad

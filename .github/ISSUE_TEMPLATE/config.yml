@@ -2,7 +2,7 @@ blank_issues_enabled: false
 
 contact_links:
 
-  - name: Feature request 
+  - name: Feature request
     url: https://github.com/pyannote/pyannote-audio/discussions
     about: Suggest an idea for this project.
 
@@ -12,5 +12,4 @@ contact_links:
 
   - name: Premium models
     url: https://forms.gle/eKhn7H2zTa68sMMx8
-    about: We are considering selling premium models, extensions, or services around pyannote.audio. 
-  
+    about: We are considering selling premium models, extensions, or services around pyannote.audio.

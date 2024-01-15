@@ -23,14 +23,11 @@
 import itertools
 import math
 import random
-import warnings
-from collections import defaultdict
 from typing import Dict, Sequence, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from pyannote.database.protocol import SegmentationProtocol, SpeakerDiarizationProtocol
 from pyannote.database.protocol.protocol import Scope, Subset
 from pytorch_lightning.loggers import MLFlowLogger, TensorBoardLogger
 from torch.utils.data._utils.collate import default_collate
@@ -38,23 +35,23 @@ from torchaudio.backend.common import AudioMetaData
 from torchmetrics import Metric
 from torchmetrics.classification import BinaryAUROC, MulticlassAUROC, MultilabelAUROC
 
-from pyannote.audio.core.task import Problem
+from pyannote.audio.core.task import Problem, Task, get_dtype
 from pyannote.audio.utils.random import create_rng_for_worker
 
 Subsets = list(Subset.__args__)
 Scopes = list(Scope.__args__)
 
 
-class SegmentationTaskMixin:
+class SegmentationTask(Task):
     """Methods common to most segmentation tasks"""
 
     def get_file(self, file_id):
         file = dict()
 
-        file["audio"] = str(self.audios[file_id], encoding="utf-8")
+        file["audio"] = str(self.prepared_data["audio-path"][file_id], encoding="utf-8")
 
-        _audio_info = self.audio_infos[file_id]
-        _encoding = self.audio_encodings[file_id]
+        _audio_info = self.prepared_data["audio-info"][file_id]
+        _encoding = self.prepared_data["audio-encoding"][file_id]
 
         sample_rate = _audio_info["sample_rate"]
         num_frames = _audio_info["num_frames"]
@@ -70,319 +67,6 @@ class SegmentationTaskMixin:
         )
 
         return file
-
-    def setup(self):
-        """Setup"""
-
-        # duration of training chunks
-        # TODO: handle variable duration case
-        duration = getattr(self, "duration", 0.0)
-
-        # list of possible values for each metadata key
-        metadata_unique_values = defaultdict(list)
-
-        metadata_unique_values["subset"] = Subsets
-
-        if isinstance(self.protocol, SpeakerDiarizationProtocol):
-            metadata_unique_values["scope"] = Scopes
-
-        elif isinstance(self.protocol, SegmentationProtocol):
-            classes = getattr(self, "classes", list())
-
-        # make sure classes attribute exists (and set to None if it did not exist)
-        self.classes = getattr(self, "classes", None)
-        if self.classes is None:
-            classes = list()
-            # metadata_unique_values["classes"] = list(classes)
-
-        audios = list()  # list of path to audio files
-        audio_infos = list()
-        audio_encodings = list()
-        metadata = list()  # list of metadata
-
-        annotated_duration = list()  # total duration of annotated regions (per file)
-        annotated_regions = list()  # annotated regions
-        annotations = list()  # actual annotations
-        annotated_classes = list()  # list of annotated classes (per file)
-        unique_labels = list()
-
-        if self.has_validation:
-            files_iter = itertools.chain(
-                self.protocol.train(), self.protocol.development()
-            )
-        else:
-            files_iter = self.protocol.train()
-
-        for file_id, file in enumerate(files_iter):
-            # gather metadata and update metadata_unique_values so that each metadatum
-            # (e.g. source database or label) is represented by an integer.
-            metadatum = dict()
-
-            # keep track of source database and subset (train, development, or test)
-            if file["database"] not in metadata_unique_values["database"]:
-                metadata_unique_values["database"].append(file["database"])
-            metadatum["database"] = metadata_unique_values["database"].index(
-                file["database"]
-            )
-            metadatum["subset"] = Subsets.index(file["subset"])
-
-            # keep track of speaker label scope (file, database, or global) for speaker diarization protocols
-            if isinstance(self.protocol, SpeakerDiarizationProtocol):
-                metadatum["scope"] = Scopes.index(file["scope"])
-
-            # keep track of list of classes for regular segmentation protocols
-            # Different files may be annotated using a different set of classes
-            # (e.g. one database for speech/music/noise, and another one for male/female/child)
-            if isinstance(self.protocol, SegmentationProtocol):
-                if "classes" in file:
-                    local_classes = file["classes"]
-                else:
-                    local_classes = file["annotation"].labels()
-
-                # if task was not initialized with a fixed list of classes,
-                # we build it as the union of all classes found in files
-                if self.classes is None:
-                    for klass in local_classes:
-                        if klass not in classes:
-                            classes.append(klass)
-                    annotated_classes.append(
-                        [classes.index(klass) for klass in local_classes]
-                    )
-
-                # if task was initialized with a fixed list of classes,
-                # we make sure that all files use a subset of these classes
-                # if they don't, we issue a warning and ignore the extra classes
-                else:
-                    extra_classes = set(local_classes) - set(self.classes)
-                    if extra_classes:
-                        warnings.warn(
-                            f"Ignoring extra classes ({', '.join(extra_classes)}) found for file {file['uri']} ({file['database']}). "
-                        )
-                    annotated_classes.append(
-                        [
-                            self.classes.index(klass)
-                            for klass in set(local_classes) & set(self.classes)
-                        ]
-                    )
-
-            remaining_metadata_keys = set(file) - set(
-                [
-                    "uri",
-                    "database",
-                    "subset",
-                    "audio",
-                    "torchaudio.info",
-                    "scope",
-                    "classes",
-                    "annotation",
-                    "annotated",
-                ]
-            )
-
-            # keep track of any other (integer or string) metadata provided by the protocol
-            # (e.g. a "domain" key for domain-adversarial training)
-            for key in remaining_metadata_keys:
-                value = file[key]
-
-                if isinstance(value, str):
-                    if value not in metadata_unique_values[key]:
-                        metadata_unique_values[key].append(value)
-                    metadatum[key] = metadata_unique_values[key].index(value)
-
-                elif isinstance(value, int):
-                    metadatum[key] = value
-
-                else:
-                    warnings.warn(
-                        f"Ignoring '{key}' metadata because of its type ({type(value)}). Only str and int are supported for now.",
-                        category=UserWarning,
-                    )
-
-            metadata.append(metadatum)
-
-            database_unique_labels = list()
-
-            # reset list of file-scoped labels
-            file_unique_labels = list()
-
-            # path to audio file
-            audios.append(str(file["audio"]))
-
-            # audio info
-            audio_info = file["torchaudio.info"]
-            audio_infos.append(
-                (
-                    audio_info.sample_rate,  # sample rate
-                    audio_info.num_frames,  # number of frames
-                    audio_info.num_channels,  # number of channels
-                    audio_info.bits_per_sample,  # bits per sample
-                )
-            )
-            audio_encodings.append(audio_info.encoding)  # encoding
-
-            # annotated regions and duration
-            _annotated_duration = 0.0
-            for segment in file["annotated"]:
-                # skip annotated regions that are shorter than training chunk duration
-                if segment.duration < duration:
-                    continue
-
-                # append annotated region
-                annotated_region = (
-                    file_id,
-                    segment.duration,
-                    segment.start,
-                    segment.end,
-                )
-                annotated_regions.append(annotated_region)
-
-                # increment annotated duration
-                _annotated_duration += segment.duration
-
-            # append annotated duration
-            annotated_duration.append(_annotated_duration)
-
-            # annotations
-            for segment, _, label in file["annotation"].itertracks(yield_label=True):
-                # "scope" is provided by speaker diarization protocols to indicate
-                # whether speaker labels are local to the file ('file'), consistent across
-                # all files in a database ('database'), or globally consistent ('global')
-
-                if "scope" in file:
-                    # 0 = 'file'
-                    # 1 = 'database'
-                    # 2 = 'global'
-                    scope = Scopes.index(file["scope"])
-
-                    # update list of file-scope labels
-                    if label not in file_unique_labels:
-                        file_unique_labels.append(label)
-                    # and convert label to its (file-scope) index
-                    file_label_idx = file_unique_labels.index(label)
-
-                    database_label_idx = global_label_idx = -1
-
-                    if scope > 0:  # 'database' or 'global'
-                        # update list of database-scope labels
-                        if label not in database_unique_labels:
-                            database_unique_labels.append(label)
-
-                        # and convert label to its (database-scope) index
-                        database_label_idx = database_unique_labels.index(label)
-
-                    if scope > 1:  # 'global'
-                        # update list of global-scope labels
-                        if label not in unique_labels:
-                            unique_labels.append(label)
-                        # and convert label to its (global-scope) index
-                        global_label_idx = unique_labels.index(label)
-
-                # basic segmentation protocols do not provide "scope" information
-                # as classes are global by definition
-
-                else:
-                    try:
-                        file_label_idx = (
-                            database_label_idx
-                        ) = global_label_idx = classes.index(label)
-                    except ValueError:
-                        # skip labels that are not in the list of classes
-                        continue
-
-                annotations.append(
-                    (
-                        file_id,  # index of file
-                        segment.start,  # start time
-                        segment.end,  # end time
-                        file_label_idx,  # file-scope label index
-                        database_label_idx,  # database-scope label index
-                        global_label_idx,  # global-scope index
-                    )
-                )
-
-        # since not all metadata keys are present in all files, fallback to -1 when a key is missing
-        metadata = [
-            tuple(metadatum.get(key, -1) for key in metadata_unique_values)
-            for metadatum in metadata
-        ]
-        dtype = [(key, "i") for key in metadata_unique_values]
-        self.metadata = np.array(metadata, dtype=dtype)
-
-        # NOTE: read with str(self.audios[file_id], encoding='utf-8')
-        self.audios = np.array(audios, dtype=np.string_)
-
-        # turn list of files metadata into a single numpy array
-        # TODO: improve using https://github.com/pytorch/pytorch/issues/13246#issuecomment-617140519
-
-        dtype = [
-            ("sample_rate", "i"),
-            ("num_frames", "i"),
-            ("num_channels", "i"),
-            ("bits_per_sample", "i"),
-        ]
-        self.audio_infos = np.array(audio_infos, dtype=dtype)
-        self.audio_encodings = np.array(audio_encodings, dtype=np.string_)
-
-        self.annotated_duration = np.array(annotated_duration)
-
-        # turn list of annotated regions into a single numpy array
-        dtype = [("file_id", "i"), ("duration", "f"), ("start", "f"), ("end", "f")]
-        self.annotated_regions = np.array(annotated_regions, dtype=dtype)
-
-        # convert annotated_classes (which is a list of list of classes, one list of classes per file)
-        # into a single (num_files x num_classes) numpy array:
-        #    * True indicates that this particular class was annotated for this particular file (though it may not be active in this file)
-        #    * False indicates that this particular class was not even annotated (i.e. its absence does not imply that it is not active in this file)
-        if isinstance(self.protocol, SegmentationProtocol) and self.classes is None:
-            self.classes = classes
-        self.annotated_classes = np.zeros(
-            (len(annotated_classes), len(self.classes)), dtype=np.bool_
-        )
-        for file_id, classes in enumerate(annotated_classes):
-            self.annotated_classes[file_id, classes] = True
-
-        # turn list of annotations into a single numpy array
-        dtype = [
-            ("file_id", "i"),
-            ("start", "f"),
-            ("end", "f"),
-            ("file_label_idx", "i"),
-            ("database_label_idx", "i"),
-            ("global_label_idx", "i"),
-        ]
-        self.annotations = np.array(annotations, dtype=dtype)
-
-        self.metadata_unique_values = metadata_unique_values
-
-        if not self.has_validation:
-            return
-
-        validation_chunks = list()
-
-        # obtain indexes of files in the validation subset
-        validation_file_ids = np.where(
-            self.metadata["subset"] == Subsets.index("development")
-        )[0]
-
-        # iterate over files in the validation subset
-        for file_id in validation_file_ids:
-            # get annotated regions in file
-            annotated_regions = self.annotated_regions[
-                self.annotated_regions["file_id"] == file_id
-            ]
-
-            # iterate over annotated regions
-            for annotated_region in annotated_regions:
-                # number of chunks in annotated region
-                num_chunks = round(annotated_region["duration"] // duration)
-
-                # iterate over chunks
-                for c in range(num_chunks):
-                    start_time = annotated_region["start"] + c * duration
-                    validation_chunks.append((file_id, start_time, duration))
-
-        dtype = [("file_id", "i"), ("start", "f"), ("duration", "f")]
-        self.validation_chunks = np.array(validation_chunks, dtype=dtype)
 
     def default_metric(
         self,
@@ -419,15 +103,17 @@ class SegmentationTaskMixin:
         """
 
         # indices of training files that matches domain filters
-        training = self.metadata["subset"] == Subsets.index("train")
+        training = self.prepared_data["audio-metadata"]["subset"] == Subsets.index(
+            "train"
+        )
         for key, value in filters.items():
-            training &= self.metadata[key] == self.metadata_unique_values[key].index(
-                value
-            )
+            training &= self.prepared_data["audio-metadata"][key] == self.prepared_data[
+                "metadata"
+            ][key].index(value)
         file_ids = np.where(training)[0]
 
         # turn annotated duration into a probability distribution
-        annotated_duration = self.annotated_duration[file_ids]
+        annotated_duration = self.prepared_data["audio-annotated"][file_ids]
         cum_prob_annotated_duration = np.cumsum(
             annotated_duration / np.sum(annotated_duration)
         )
@@ -444,14 +130,19 @@ class SegmentationTaskMixin:
             for _ in range(num_chunks_per_file):
                 # find indices of annotated regions in this file
                 annotated_region_indices = np.where(
-                    self.annotated_regions["file_id"] == file_id
+                    self.prepared_data["annotations-regions"]["file_id"] == file_id
                 )[0]
 
                 # turn annotated regions duration into a probability distribution
+
                 cum_prob_annotated_regions_duration = np.cumsum(
-                    self.annotated_regions["duration"][annotated_region_indices]
+                    self.prepared_data["annotations-regions"]["duration"][
+                        annotated_region_indices
+                    ]
                     / np.sum(
-                        self.annotated_regions["duration"][annotated_region_indices]
+                        self.prepared_data["annotations-regions"]["duration"][
+                            annotated_region_indices
+                        ]
                     )
                 )
 
@@ -461,8 +152,10 @@ class SegmentationTaskMixin:
                 ]
 
                 # select one chunk at random in this annotated region
-                _, _, start, end = self.annotated_regions[annotated_region_index]
-                start_time = rng.uniform(start, end - duration)
+                _, region_duration, start = self.prepared_data["annotations-regions"][
+                    annotated_region_index
+                ]
+                start_time = rng.uniform(start, start + region_duration - duration)
 
                 yield self.prepare_chunk(file_id, start_time, duration)
 
@@ -492,7 +185,7 @@ class SegmentationTaskMixin:
             # create a subchunk generator for each combination of "balance" keys
             subchunks = dict()
             for product in itertools.product(
-                *[self.metadata_unique_values[key] for key in balance]
+                *[self.prepared_data["metadata"][key] for key in balance]
             ):
                 # we iterate on the cartesian product of the values in metadata_unique_values
                 # eg: for balance=["database", "split"], with 2 databases and 2 splits:
@@ -564,11 +257,48 @@ class SegmentationTaskMixin:
     def train__len__(self):
         # Number of training samples in one epoch
 
-        duration = np.sum(self.annotated_duration)
+        duration = np.sum(self.prepared_data["audio-annotated"])
         return max(self.batch_size, math.ceil(duration / self.duration))
 
+    def prepare_validation(self, prepared_data: Dict):
+        validation_chunks = list()
+
+        # obtain indexes of files in the validation subset
+        validation_file_ids = np.where(
+            prepared_data["audio-metadata"]["subset"] == Subsets.index("development")
+        )[0]
+
+        # iterate over files in the validation subset
+        for file_id in validation_file_ids:
+            # get annotated regions in file
+            annotated_regions = prepared_data["annotations-regions"][
+                prepared_data["annotations-regions"]["file_id"] == file_id
+            ]
+
+            # iterate over annotated regions
+            for annotated_region in annotated_regions:
+                # number of chunks in annotated region
+                num_chunks = round(annotated_region["duration"] // self.duration)
+
+                # iterate over chunks
+                for c in range(num_chunks):
+                    start_time = annotated_region["start"] + c * self.duration
+                    validation_chunks.append((file_id, start_time, self.duration))
+
+        dtype = [
+            (
+                "file_id",
+                get_dtype(max(v[0] for v in validation_chunks), unsigned=True),
+            ),
+            ("start", "f"),
+            ("duration", "f"),
+        ]
+
+        prepared_data["validation"] = np.array(validation_chunks, dtype=dtype)
+        validation_chunks.clear()
+
     def val__getitem__(self, idx):
-        validation_chunk = self.validation_chunks[idx]
+        validation_chunk = self.prepared_data["validation"][idx]
         return self.prepare_chunk(
             validation_chunk["file_id"],
             validation_chunk["start"],
@@ -576,7 +306,7 @@ class SegmentationTaskMixin:
         )
 
     def val__len__(self):
-        return len(self.validation_chunks)
+        return len(self.prepared_data["validation"])
 
     def validation_step(self, batch, batch_idx: int):
         """Compute validation area under the ROC curve

@@ -4,12 +4,17 @@
 
 ### New features
 
+- feat(task): add option to cache task training metadata to speed up training
 - feat(pipeline): add `Waveform` and `SampleRate` preprocessors
 - feat(model): add `num_frames` and `receptive_field` to segmentation models
 
 ### Fixes
 
 - fix(task): fix random generators
+
+## Breaking changes
+
+- BREAKING(task): custom tasks need to be updated (see "Add your own task" tutorial)
 
 ## Version 3.1.1 (2023-12-01)
 

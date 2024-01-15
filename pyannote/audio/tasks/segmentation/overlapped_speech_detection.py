@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 
-from typing import Dict, Sequence, Text, Tuple, Union
+from typing import Dict, Optional, Sequence, Text, Tuple, Union
 
 import numpy as np
 from pyannote.core import Segment, SlidingWindowFeature
@@ -29,11 +29,11 @@ from pyannote.database import Protocol
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchmetrics import Metric
 
-from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
-from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
+from pyannote.audio.core.task import Problem, Resolution, Specifications
+from pyannote.audio.tasks.segmentation.mixins import SegmentationTask
 
 
-class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
+class OverlappedSpeechDetection(SegmentationTask):
     """Overlapped speech detection
 
     Overlapped speech detection is the task of detecting regions where at least
@@ -51,6 +51,13 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
     ----------
     protocol : Protocol
         pyannote.database protocol
+   cache : str, optional
+        As (meta-)data preparation might take a very long time for large datasets,
+        it can be cached to disk for later (and faster!) re-use. 
+        When `cache` does not exist, `Task.prepare_data()` generates training
+        and validation metadata from `protocol` and save them to disk.
+        When `cache` exists, `Task.prepare_data()` is skipped and (meta)-data
+        are loaded from disk. Defaults to a temporary path. 
     duration : float, optional
         Chunks duration. Defaults to 2s.
     warm_up : float or (float, float), optional
@@ -105,6 +112,7 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
         pin_memory: bool = False,
         augmentation: BaseWaveformTransform = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
+        cache: Optional[Union[str, None]] = None,
     ):
         super().__init__(
             protocol,
@@ -115,6 +123,7 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
             pin_memory=pin_memory,
             augmentation=augmentation,
             metric=metric,
+            cache=cache,
         )
 
         self.specifications = Specifications(
@@ -163,7 +172,9 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
         sample["X"], _ = self.model.audio.crop(file, chunk, duration=duration)
 
         # gather all annotations of current file
-        annotations = self.annotations[self.annotations["file_id"] == file_id]
+        annotations = self.prepared_data["annotations-segments"][
+            self.prepared_data["annotations-segments"]["file_id"] == file_id
+        ]
 
         # gather all annotations with non-empty intersection with current chunk
         chunk_annotations = annotations[
@@ -186,7 +197,7 @@ class OverlappedSpeechDetection(SegmentationTaskMixin, Task):
             y, self.model.example_output.frames, labels=["speech"]
         )
 
-        metadata = self.metadata[file_id]
+        metadata = self.prepared_data["audio-metadata"][file_id]
         sample["meta"] = {key: metadata[key] for key in metadata.dtype.names}
         sample["meta"]["file"] = file_id
 
