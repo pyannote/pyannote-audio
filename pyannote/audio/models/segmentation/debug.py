@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 
-from functools import cache, cached_property
+from functools import cached_property, lru_cache
 from typing import Optional
 
 import torch
@@ -59,7 +59,7 @@ class SimpleSegmentationModel(Model):
             bidirectional=True,
         )
 
-    @cache
+    @lru_cache
     def num_frames(self, num_samples: int) -> int:
         """Compute number of output frames for a given number of input samples
 
