@@ -96,7 +96,7 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
 
         model: Model = get_model(segmentation, use_auth_token=use_auth_token)
         self._segmentation = Inference(model)
-        self._frames = self._segmentation.model.example_output.frames
+        self._frames = self._segmentation.model.receptive_field
 
         self._audio = model.audio
 

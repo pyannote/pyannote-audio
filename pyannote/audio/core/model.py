@@ -25,7 +25,6 @@ from __future__ import annotations
 import os
 import warnings
 from dataclasses import dataclass
-from functools import cached_property
 from importlib import import_module
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Text, Tuple, Union
@@ -46,7 +45,6 @@ from pyannote.audio import __version__
 from pyannote.audio.core.io import Audio
 from pyannote.audio.core.task import (
     Problem,
-    Resolution,
     Specifications,
     Task,
     UnknownSpecificationsError,
@@ -112,10 +110,6 @@ class Model(pl.LightningModule):
     def task(self, task: Task):
         # reset (cached) properties when task changes
         del self.specifications
-        try:
-            del self.example_output
-        except AttributeError:
-            pass
         self._task = task
 
     def build(self):
@@ -187,36 +181,6 @@ class Model(pl.LightningModule):
     def example_input_array(self) -> torch.Tensor:
         return self.__example_input_array()
 
-    @cached_property
-    def example_output(self) -> Union[Output, Tuple[Output]]:
-        """Example output"""
-        example_input_array = self.__example_input_array()
-        with torch.inference_mode():
-            example_output = self(example_input_array)
-
-        def __example_output(
-            example_output: torch.Tensor,
-            specifications: Specifications = None,
-        ) -> Output:
-            if specifications.resolution == Resolution.FRAME:
-                _, num_frames, dimension = example_output.shape
-                frame_duration = specifications.duration / num_frames
-                frames = SlidingWindow(step=frame_duration, duration=frame_duration)
-            else:
-                _, dimension = example_output.shape
-                num_frames = None
-                frames = None
-
-            return Output(
-                num_frames=num_frames,
-                dimension=dimension,
-                frames=frames,
-            )
-
-        return map_with_specifications(
-            self.specifications, __example_output, example_output
-        )
-
     def prepare_data(self):
         self.task.prepare_data()
 
@@ -269,9 +233,6 @@ class Model(pl.LightningModule):
             self.task.setup_loss_func()
             # setup custom validation metrics
             self.task.setup_validation_metric()
-
-            # cache for later (and to avoid later CUDA error with multiprocessing)
-            _ = self.example_output
 
         # list of layers after adding task-dependent layers
         after = set((name, id(module)) for name, module in self.named_modules())

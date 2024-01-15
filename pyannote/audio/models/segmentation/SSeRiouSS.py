@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-
+from functools import cache, cached_property
 from typing import Optional, Union
 
 import torch
@@ -174,6 +174,17 @@ class SSeRiouSS(Model):
             ]
         )
 
+    @property
+    def dimension(self) -> int:
+        """Dimension of output"""
+        if isinstance(self.specifications, tuple):
+            raise ValueError("SSeRiouSS does not support multi-tasking.")
+
+        if self.specifications.powerset:
+            return self.specifications.num_powerset_classes
+        else:
+            return len(self.specifications.classes)
+
     def build(self):
         if self.hparams.linear["num_layers"] > 0:
             in_features = self.hparams.linear["hidden_size"]
@@ -182,17 +193,10 @@ class SSeRiouSS(Model):
                 2 if self.hparams.lstm["bidirectional"] else 1
             )
 
-        if isinstance(self.specifications, tuple):
-            raise ValueError("SSeRiouSS model does not support multi-tasking.")
-
-        if self.specifications.powerset:
-            out_features = self.specifications.num_powerset_classes
-        else:
-            out_features = len(self.specifications.classes)
-
-        self.classifier = nn.Linear(in_features, out_features)
+        self.classifier = nn.Linear(in_features, self.dimension)
         self.activation = self.default_activation()
 
+    @cache
     def num_frames(self, num_samples: int) -> int:
         """Compute number of output frames for a given number of input samples
 
@@ -245,6 +249,7 @@ class SSeRiouSS(Model):
 
         return receptive_field_size
 
+    @cached_property
     def receptive_field(self) -> SlidingWindow:
         """Compute receptive field
 

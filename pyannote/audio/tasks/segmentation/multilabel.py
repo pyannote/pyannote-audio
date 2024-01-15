@@ -292,15 +292,20 @@ class MultiLabelSegmentation(SegmentationTask):
         ]
 
         # discretize chunk annotations at model output resolution
-        start = np.maximum(chunk_annotations["start"], chunk.start) - chunk.start
-        start_idx = np.floor(start / self.model.example_output.frames.step).astype(int)
-        end = np.minimum(chunk_annotations["end"], chunk.end) - chunk.start
-        end_idx = np.ceil(end / self.model.example_output.frames.step).astype(int)
+        step = self.model.receptive_field.step
+        half = 0.5 * self.model.receptive_field.duration
+
+        start = np.maximum(chunk_annotations["start"], chunk.start) - chunk.start - half
+        start_idx = np.maximum(0, np.round(start / step)).astype(int)
+
+        end = np.minimum(chunk_annotations["end"], chunk.end) - chunk.start - half
+        end_idx = np.round(end / step).astype(int)
 
         # frame-level targets (-1 for un-annotated classes)
+        num_frames = self.model.num_frames(duration)
         y = -np.ones(
             (
-                self.model.example_output.num_frames,
+                num_frames,
                 len(self.prepared_data["classes-list"]),
             ),
             dtype=np.int8,
@@ -309,10 +314,10 @@ class MultiLabelSegmentation(SegmentationTask):
         for start, end, label in zip(
             start_idx, end_idx, chunk_annotations["global_label_idx"]
         ):
-            y[start:end, label] = 1
+            y[start : end + 1, label] = 1
 
         sample["y"] = SlidingWindowFeature(
-            y, self.model.example_output.frames, labels=self.classes
+            y, self.model.receptive_field, labels=self.classes
         )
 
         metadata = self.prepared_data["audio-metadata"][file_id]
