@@ -215,11 +215,11 @@ class Task(pl.LightningDataModule):
         pyannote.database protocol
     cache : str, optional
         As (meta-)data preparation might take a very long time for large datasets,
-        it can be cached to disk for later (and faster!) re-use. 
+        it can be cached to disk for later (and faster!) re-use.
         When `cache` does not exist, `Task.prepare_data()` generates training
         and validation metadata from `protocol` and save them to disk.
         When `cache` exists, `Task.prepare_data()` is skipped and (meta)-data
-        are loaded from disk. Defaults to a temporary path. 
+        are loaded from disk. Defaults to a temporary path.
     duration : float, optional
         Chunks duration in seconds. Defaults to two seconds (2.).
     min_duration : float, optional
@@ -567,7 +567,7 @@ class Task(pl.LightningDataModule):
         # keep track of protocol name
         prepared_data["protocol"] = self.protocol.name
 
-        prepared_data["audio-path"] = np.array(audios, dtype=np.string_)
+        prepared_data["audio-path"] = np.array(audios, dtype=np.str_)
         audios.clear()
 
         prepared_data["audio-metadata"] = np.array(metadata, dtype=metadata_dtype)
@@ -576,7 +576,7 @@ class Task(pl.LightningDataModule):
         prepared_data["audio-info"] = np.array(audio_infos, dtype=info_dtype)
         audio_infos.clear()
 
-        prepared_data["audio-encoding"] = np.array(audio_encodings, dtype=np.string_)
+        prepared_data["audio-encoding"] = np.array(audio_encodings, dtype=np.str_)
         audio_encodings.clear()
 
         prepared_data["audio-annotated"] = np.array(annotated_duration)
@@ -596,11 +596,11 @@ class Task(pl.LightningDataModule):
 
         for database, labels in database_unique_labels.items():
             prepared_data[f"metadata-{database}-labels"] = np.array(
-                labels, dtype=np.string_
+                labels, dtype=np.str_
             )
         database_unique_labels.clear()
 
-        prepared_data["metadata-labels"] = np.array(unique_labels, dtype=np.string_)
+        prepared_data["metadata-labels"] = np.array(unique_labels, dtype=np.str_)
         unique_labels.clear()
 
         self.prepare_validation(prepared_data)
