@@ -82,7 +82,7 @@ class SimpleSegmentationModel(Model):
         hop_length = self.mfcc.MelSpectrogram.spectrogram.hop_length
         n_fft = self.mfcc.MelSpectrogram.spectrogram.n_fft
         center = self.mfcc.MelSpectrogram.spectrogram.center
-        return (
+        return int(
             1 + num_samples // hop_length
             if center
             else 1 + (num_samples - n_fft) // hop_length
