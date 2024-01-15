@@ -528,11 +528,11 @@ class Task(pl.LightningDataModule):
         info_dtype = [
             (
                 "sample_rate",
-                get_dtype(max(ai[0] for ai in audio_infos), unsigned=True),
+                get_dtype(max(ai[0] for ai in audio_infos)),
             ),
             (
                 "num_frames",
-                get_dtype(max(ai[1] for ai in audio_infos), unsigned=True),
+                get_dtype(max(ai[1] for ai in audio_infos)),
             ),
             ("num_channels", "B"),
             ("bits_per_sample", "B"),
@@ -542,7 +542,7 @@ class Task(pl.LightningDataModule):
         region_dtype = [
             (
                 "file_id",
-                get_dtype(max(ar[0] for ar in annotated_regions), unsigned=True),
+                get_dtype(max(ar[0] for ar in annotated_regions)),
             ),
             ("duration", "f"),
             ("start", "f"),
@@ -552,7 +552,7 @@ class Task(pl.LightningDataModule):
         segment_dtype = [
             (
                 "file_id",
-                get_dtype(max(a[0] for a in annotations), unsigned=True),
+                get_dtype(max(a[0] for a in annotations)),
             ),
             ("start", "f"),
             ("end", "f"),
