@@ -20,6 +20,7 @@ detection on the AMI corpus...
 pyannote-audio-train \
     model=PyanNet \
     task=VoiceActivityDetection \
+    registry="AMI-diarization-setup/pyannote/database.yml" \
     protocol=AMI.SpeakerDiarization.only_words
 ```
 
@@ -50,6 +51,7 @@ you know about the actual configuration used for training:
 pyannote-audio-train --cfg job \
     model=PyanNet \
     task=VoiceActivityDetection \
+    registry="AMI-diarization-setup/pyannote/database.yml" \
     protocol=AMI.SpeakerDiarization.only_words
 ```
 
@@ -72,6 +74,7 @@ To change the duration of audio chunks used for training to 2 seconds, you would
 pyannote-audio-train \
     model=PyanNet \
     task=VoiceActivityDetection task.duration=2.0 \
+    registry="AMI-diarization-setup/pyannote/database.yml" \
     protocol=AMI.SpeakerDiarization.only_words
 ```
 
@@ -105,6 +108,7 @@ pyannote-audio-train \
     --config-dir /path/to/custom_config \
     model=PyanNet \
     task=VoiceActivityDetection task.duration=2.0 \
+    registry="AMI-diarization-setup/pyannote/database.yml" \
     protocol=AMI.SpeakerDiarization.only_words \
     +augmentation=background_noise
 ```
@@ -128,6 +132,7 @@ pyannote-audio-train
     --multirun hydra/launcher=submitit_slurm \
     model=PyanNet +model.lstm.num_layers=2,3,4 +model.lstm.bidirectional=true,false \
     task=VoiceActivityDetection \
+    registry="AMI-diarization-setup/pyannote/database.yml" \
     protocol=AMI.SpeakerDiarization.only_words
 ```
 
