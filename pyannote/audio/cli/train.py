@@ -77,7 +77,8 @@ def train(cfg: DictConfig) -> Optional[float]:
     fine_tuning = cfg.model["_target_"] == "pyannote.audio.cli.pretrained"
     model = instantiate(cfg.model)
     model.task = task
-    model.setup(stage="fit")
+    model.prepare_data()
+    model.setup()
 
     # validation metric to monitor (and its direction: min or max)
     monitor, direction = task.val_monitor
@@ -146,7 +147,6 @@ def train(cfg: DictConfig) -> Optional[float]:
     # in case of fine-tuning, validate the initial model to make sure
     # that we actually improve over the initial performance
     if fine_tuning:
-        model.setup(stage="fit")
         trainer.validate(model)
 
     # train the model
