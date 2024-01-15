@@ -160,7 +160,7 @@ class ValDataset(Dataset):
         return self.task.val__len__()
 
 
-def get_dtype(value: int, unsigned: Optional[bool] = False) -> str:
+def get_dtype(value: int) -> str:
     """Return the most suitable type for storing the
     value passed in parameter in memory.
 
@@ -168,8 +168,6 @@ def get_dtype(value: int, unsigned: Optional[bool] = False) -> str:
     ----------
     value: int
         value whose type is best suited to storage in memory
-    unsigned: bool, optional
-        positive integer mode only. Default to False
 
     Returns
     -------
@@ -177,21 +175,13 @@ def get_dtype(value: int, unsigned: Optional[bool] = False) -> str:
         numpy formatted type
         (see https://numpy.org/doc/stable/reference/arrays.dtypes.html)
     """
-    if unsigned:
-        if value < 0:
-            raise ValueError(
-                f"negative value ({value}) is incompatible with unsigned types"
-            )
-        # unsigned byte (8 bits), unsigned short (16 bits), unsigned int (32 bits)
-        types_list = [(255, "B"), (65_535, "u2"), (4_294_967_296, "u4")]
-    else:
-        # signe byte (8 bits), signed short (16 bits), signed int (32 bits):
-        types_list = [(127, "b"), (32_768, "i2"), (2_147_483_648, "i")]
+    # signe byte (8 bits), signed short (16 bits), signed int (32 bits):
+    types_list = [(127, "b"), (32_768, "i2"), (2_147_483_648, "i")]
     filtered_list = [
         (max_val, type) for max_val, type in types_list if max_val > abs(value)
     ]
     if not filtered_list:
-        return "u8" if unsigned else "i8"  # unsigned or signed long (64 bits)
+        return "i8"  # signed long (64 bits)
     return filtered_list[0][1]
 
 
@@ -528,11 +518,11 @@ class Task(pl.LightningDataModule):
         info_dtype = [
             (
                 "sample_rate",
-                get_dtype(max(ai[0] for ai in audio_infos), unsigned=True),
+                get_dtype(max(ai[0] for ai in audio_infos)),
             ),
             (
                 "num_frames",
-                get_dtype(max(ai[1] for ai in audio_infos), unsigned=True),
+                get_dtype(max(ai[1] for ai in audio_infos)),
             ),
             ("num_channels", "B"),
             ("bits_per_sample", "B"),
@@ -542,7 +532,7 @@ class Task(pl.LightningDataModule):
         region_dtype = [
             (
                 "file_id",
-                get_dtype(max(ar[0] for ar in annotated_regions), unsigned=True),
+                get_dtype(max(ar[0] for ar in annotated_regions)),
             ),
             ("duration", "f"),
             ("start", "f"),
@@ -552,7 +542,7 @@ class Task(pl.LightningDataModule):
         segment_dtype = [
             (
                 "file_id",
-                get_dtype(max(a[0] for a in annotations), unsigned=True),
+                get_dtype(max(a[0] for a in annotations)),
             ),
             ("start", "f"),
             ("end", "f"),

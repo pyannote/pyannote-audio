@@ -287,7 +287,7 @@ class SegmentationTask(Task):
         dtype = [
             (
                 "file_id",
-                get_dtype(max(v[0] for v in validation_chunks), unsigned=True),
+                get_dtype(max(v[0] for v in validation_chunks)),
             ),
             ("start", "f"),
             ("duration", "f"),
