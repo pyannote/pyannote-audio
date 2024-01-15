@@ -51,13 +51,12 @@ class SegmentationTask(Task):
         file["audio"] = self.prepared_data["audio-path"][file_id]
 
         _audio_info = self.prepared_data["audio-info"][file_id]
-        _encoding = self.prepared_data["audio-encoding"][file_id]
+        encoding = self.prepared_data["audio-encoding"][file_id]
 
         sample_rate = _audio_info["sample_rate"]
         num_frames = _audio_info["num_frames"]
         num_channels = _audio_info["num_channels"]
         bits_per_sample = _audio_info["bits_per_sample"]
-        encoding = str(_encoding, encoding="utf-8")
         file["torchaudio.info"] = AudioMetaData(
             sample_rate=sample_rate,
             num_frames=num_frames,

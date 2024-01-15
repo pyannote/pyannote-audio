@@ -40,53 +40,53 @@ from pyannote.audio.tasks.segmentation.mixins import SegmentationTask
 class MultiLabelSegmentation(SegmentationTask):
     """Generic multi-label segmentation
 
-    Multi-label segmentation is the process of detecting temporal intervals
-    when a specific audio class is active.
+     Multi-label segmentation is the process of detecting temporal intervals
+     when a specific audio class is active.
 
-    Example use cases include speaker tracking, gender (male/female)
-    classification, or audio event detection.
+     Example use cases include speaker tracking, gender (male/female)
+     classification, or audio event detection.
 
-    Parameters
-    ----------
-    protocol : Protocol
-   cache : str, optional
-        As (meta-)data preparation might take a very long time for large datasets,
-        it can be cached to disk for later (and faster!) re-use. 
-        When `cache` does not exist, `Task.prepare_data()` generates training
-        and validation metadata from `protocol` and save them to disk.
-        When `cache` exists, `Task.prepare_data()` is skipped and (meta)-data
-        are loaded from disk. Defaults to a temporary path. 
-    classes : List[str], optional
-        List of classes. Defaults to the list of classes available in the training set.
-    duration : float, optional
-        Chunks duration. Defaults to 2s.
-    warm_up : float or (float, float), optional
-        Use that many seconds on the left- and rightmost parts of each chunk
-        to warm up the model. While the model does process those left- and right-most
-        parts, only the remaining central part of each chunk is used for computing the
-        loss during training, and for aggregating scores during inference.
-        Defaults to 0. (i.e. no warm-up).
-    balance: Sequence[Text], optional
-        When provided, training samples are sampled uniformly with respect to these keys.
-        For instance, setting `balance` to ["database","subset"] will make sure that each
-        database & subset combination will be equally represented in the training samples.
-    weight: str, optional
-        When provided, use this key to as frame-wise weight in loss function.
-    batch_size : int, optional
-        Number of training samples per batch. Defaults to 32.
-    num_workers : int, optional
-        Number of workers used for generating training samples.
-        Defaults to multiprocessing.cpu_count() // 2.
-    pin_memory : bool, optional
-        If True, data loaders will copy tensors into CUDA pinned
-        memory before returning them. See pytorch documentation
-        for more details. Defaults to False.
-    augmentation : BaseWaveformTransform, optional
-        torch_audiomentations waveform transform, used by dataloader
-        during training.
-    metric : optional
-        Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
-        Defaults to AUROC (area under the ROC curve).
+     Parameters
+     ----------
+     protocol : Protocol
+    cache : str, optional
+         As (meta-)data preparation might take a very long time for large datasets,
+         it can be cached to disk for later (and faster!) re-use.
+         When `cache` does not exist, `Task.prepare_data()` generates training
+         and validation metadata from `protocol` and save them to disk.
+         When `cache` exists, `Task.prepare_data()` is skipped and (meta)-data
+         are loaded from disk. Defaults to a temporary path.
+     classes : List[str], optional
+         List of classes. Defaults to the list of classes available in the training set.
+     duration : float, optional
+         Chunks duration. Defaults to 2s.
+     warm_up : float or (float, float), optional
+         Use that many seconds on the left- and rightmost parts of each chunk
+         to warm up the model. While the model does process those left- and right-most
+         parts, only the remaining central part of each chunk is used for computing the
+         loss during training, and for aggregating scores during inference.
+         Defaults to 0. (i.e. no warm-up).
+     balance: Sequence[Text], optional
+         When provided, training samples are sampled uniformly with respect to these keys.
+         For instance, setting `balance` to ["database","subset"] will make sure that each
+         database & subset combination will be equally represented in the training samples.
+     weight: str, optional
+         When provided, use this key to as frame-wise weight in loss function.
+     batch_size : int, optional
+         Number of training samples per batch. Defaults to 32.
+     num_workers : int, optional
+         Number of workers used for generating training samples.
+         Defaults to multiprocessing.cpu_count() // 2.
+     pin_memory : bool, optional
+         If True, data loaders will copy tensors into CUDA pinned
+         memory before returning them. See pytorch documentation
+         for more details. Defaults to False.
+     augmentation : BaseWaveformTransform, optional
+         torch_audiomentations waveform transform, used by dataloader
+         during training.
+     metric : optional
+         Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
+         Defaults to AUROC (area under the ROC curve).
     """
 
     def __init__(
@@ -179,7 +179,7 @@ class MultiLabelSegmentation(SegmentationTask):
                     [classes.index(klass) for klass in file_classes]
                 )
 
-            prepared_data["classes-list"] = np.array(classes, dtype=np.string_)
+            prepared_data["classes-list"] = np.array(classes, dtype=np.str_)
             self.classes = classes
 
         else:
@@ -216,7 +216,7 @@ class MultiLabelSegmentation(SegmentationTask):
                     ]
                 )
 
-            prepared_data["classes-list"] = np.array(self.classes, dtype=np.string_)
+            prepared_data["classes-list"] = np.array(self.classes, dtype=np.str_)
 
         # convert annotated_classes (which is a list of list of classes, one list of classes per file)
         # into a single (num_files x num_classes) numpy array:

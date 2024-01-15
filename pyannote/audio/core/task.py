@@ -576,7 +576,7 @@ class Task(pl.LightningDataModule):
         prepared_data["audio-info"] = np.array(audio_infos, dtype=info_dtype)
         audio_infos.clear()
 
-        prepared_data["audio-encoding"] = np.array(audio_encodings, dtype=np.string_)
+        prepared_data["audio-encoding"] = np.array(audio_encodings, dtype=np.str_)
         audio_encodings.clear()
 
         prepared_data["audio-annotated"] = np.array(annotated_duration)
