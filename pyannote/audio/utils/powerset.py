@@ -24,8 +24,9 @@
 # Hervé BREDIN - https://herve.niderb.fr
 # Alexis PLAQUET
 
-from functools import cached_property
+from functools import cached_property, lru_cache
 from itertools import combinations
+from typing import Callable
 
 import scipy.special
 import torch
@@ -139,8 +140,43 @@ class Powerset(nn.Module):
             num_classes=self.num_powerset_classes,
         )
 
+    @torch.no_grad()
+    def permutation_powerset_individual(self, perm_ml: torch.Tensor) -> torch.Tensor:
+        """Takes a (num_classes,)-shaped permutation in multilabel space and returns
+        the corresponding (num_powerset_classes,)-shaped permutation in powerset space.
+
+        Parameters
+        ----------
+        perm_ml : torch.Tensor
+            Permutation in multilabel space, (num_classes,)-shaped.
+
+        Returns
+        -------
+        torch.Tensor
+            Corresponding permutation in powerset space (num_powerset_classes,)-shaped.
+        """
+
+        mapping = self.mapping
+        permutated_mapping = self.mapping[:, perm_ml]
+
+        # create mapping-shaped 2**N tensor : powers2
+        arange = torch.arange(mapping.shape[1], device=mapping.device, dtype=torch.int)
+        powers2 = (2**arange).tile((self.mapping.shape[0], 1))
+
+        # compute the encoding of the powerset classes in this 2**N space, before and after
+        # permutation of the columns (mapping cols=labels, mapping rows=powerset classes)
+        indexing_og = torch.sum(self.mapping * powers2, dim=-1).long()
+        indexing_new = torch.sum(permutated_mapping * powers2, dim=-1).long()
+
+        # find the permutation to go from og to new
+        ps_permutation = (
+            (indexing_og[None] == indexing_new[:, None]).int().argmax(dim=0)
+        )
+        return ps_permutation
+
     def permutation_powerset(self, permutation_ml: torch.Tensor) -> torch.Tensor:
         """Find the equivalent to a multilabel permutation in the powerset class space.
+        Supports both batches of permutation (2D tensor) or single permutations (1D tensor).
 
         Parameters
         ----------
@@ -168,29 +204,12 @@ class Powerset(nn.Module):
         We obtain the powerset permutation with classes spk1 and spk2 permutated.
         """
 
-        def find_ps_perm(ps, perm_ml):
-            mapping = self.mapping
-            permutated_mapping = self.mapping[:, perm_ml]
-
-            # create mapping-shaped 2**N tensor : powers2
-            arange = torch.arange(
-                mapping.shape[1], device=mapping.device, dtype=torch.int
-            )
-            powers2 = (2**arange).tile((self.mapping.shape[0], 1))
-
-            # compute the encoding of the powerset classes in this 2**N space, before and after
-            # permutation of the columns (mapping cols=labels, mapping rows=powerset classes)
-            indexing_og = torch.sum(self.mapping * powers2, dim=-1).long()
-            indexing_new = torch.sum(permutated_mapping * powers2, dim=-1).long()
-
-            # find the permutation to go from og to new
-            ps_permutation = (
-                (indexing_og[None] == indexing_new[:, None]).int().argmax(dim=0)
-            )
-            return ps_permutation
-
         if permutation_ml.ndim == 1:
-            return find_ps_perm(self.mapping, permutation_ml)
+            return self.permutation_powerset_individual(permutation_ml)
         elif permutation_ml.ndim == 2:
-            batched_fn = torch.vmap(find_ps_perm, in_dims=(None, 0))
-            return batched_fn(self.mapping, permutation_ml)
+            batched_fn = torch.vmap(self.permutation_powerset_individual, in_dims=(0))
+            return batched_fn(permutation_ml)
+        else:
+            raise ValueError(
+                f"permutation_ml must be 1D (single permutation) or 2D (batch of permutations), got {permutation_ml.ndim}D"
+            )
