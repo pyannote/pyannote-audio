@@ -73,3 +73,17 @@ def test_permutate_powerset():
             t1_ps_perm_ml = powerset.to_multilabel(t1_ps_perm)
 
             assert t1_ml_perm.equal(t1_ps_perm_ml)
+
+            # same but batched
+            batch_size = 4
+
+            t1_ml_batch = torch.stack([t1_ml] * batch_size)
+            t1_batch = torch.stack([t1] * batch_size)
+            perm = torch.stack([torch.randperm(num_classes) for _ in range(batch_size)])
+
+            t1_ml_batch_perm = t1_ml_batch[:, :, perm]
+            perm_ps = powerset.permutation_powerset(perm)
+            t1_batch_perm = t1_batch[..., perm_ps]
+            t1_batch_perm_ml = powerset.to_multilabel(t1_batch_perm)
+
+            assert t1_ml_batch_perm.equal(t1_batch_perm_ml)

@@ -145,12 +145,13 @@ class Powerset(nn.Module):
         Parameters
         ----------
         permutation_ml: torch.Tensor
-            A multilabel permutation, (num_classes,)-shaped.
+            A multilabel permutation(s), (num_classes,) or (batch, num_classes)-shaped.
 
         Returns
         -------
         torch.Tensor
-            The corresponding powerset permutation, (num_powerset_classes,)-shaped.
+            The corresponding powerset permutation(s), (num_powerset_classes,)
+            or (batch, num_powerset_classes)-shaped depending on the input.
 
         Example
         ---------
@@ -166,20 +167,30 @@ class Powerset(nn.Module):
 
         We obtain the powerset permutation with classes spk1 and spk2 permutated.
         """
-        # t =(B, N)
-        # permutation = (Nml, )
-        mapping = self.mapping
-        permutated_mapping = self.mapping[:, permutation_ml]
-        # (Nml, N) -> (B, Nml, N)
 
-        # create mapping-shaped 2**N tensor
-        arange = torch.arange(mapping.shape[1], device=mapping.device, dtype=torch.int)
-        powers2 = (2**arange).tile((self.mapping.shape[0], 1))
+        def find_ps_perm(ps, perm_ml):
+            mapping = self.mapping
+            permutated_mapping = self.mapping[:, perm_ml]
 
-        indexing_og = torch.sum(self.mapping * powers2, dim=-1).long()
-        indexing_new = torch.sum(permutated_mapping * powers2, dim=-1).long()
+            # create mapping-shaped 2**N tensor : powers2
+            arange = torch.arange(
+                mapping.shape[1], device=mapping.device, dtype=torch.int
+            )
+            powers2 = (2**arange).tile((self.mapping.shape[0], 1))
 
-        ps_permutation = (
-            (indexing_og[None] == indexing_new[:, None]).int().argmax(dim=0)
-        )
-        return ps_permutation
+            # compute the encoding of the powerset classes in this 2**N space, before and after
+            # permutation of the columns (mapping cols=labels, mapping rows=powerset classes)
+            indexing_og = torch.sum(self.mapping * powers2, dim=-1).long()
+            indexing_new = torch.sum(permutated_mapping * powers2, dim=-1).long()
+
+            # find the permutation to go from og to new
+            ps_permutation = (
+                (indexing_og[None] == indexing_new[:, None]).int().argmax(dim=0)
+            )
+            return ps_permutation
+
+        if permutation_ml.ndim == 1:
+            return find_ps_perm(self.mapping, permutation_ml)
+        elif permutation_ml.ndim == 2:
+            batched_fn = torch.vmap(find_ps_perm, in_dims=(None, 0))
+            return batched_fn(self.mapping, permutation_ml)
