@@ -140,7 +140,6 @@ class Powerset(nn.Module):
             num_classes=self.num_powerset_classes,
         )
 
-    @torch.no_grad()
     def _permutation_powerset(self, perm_ml: torch.Tensor) -> torch.Tensor:
         """Takes a (num_classes,)-shaped permutation in multilabel space and returns
         the corresponding (num_powerset_classes,)-shaped permutation in powerset space.
