@@ -160,7 +160,7 @@ class ValDataset(Dataset):
         return self.task.val__len__()
 
 
-def get_dtype(value: int, unsigned: Optional[bool] = False) -> str:
+def get_dtype(value: int) -> str:
     """Return the most suitable type for storing the
     value passed in parameter in memory.
 
@@ -168,8 +168,6 @@ def get_dtype(value: int, unsigned: Optional[bool] = False) -> str:
     ----------
     value: int
         value whose type is best suited to storage in memory
-    unsigned: bool, optional
-        positive integer mode only. Default to False
 
     Returns
     -------
@@ -177,21 +175,13 @@ def get_dtype(value: int, unsigned: Optional[bool] = False) -> str:
         numpy formatted type
         (see https://numpy.org/doc/stable/reference/arrays.dtypes.html)
     """
-    if unsigned:
-        if value < 0:
-            raise ValueError(
-                f"negative value ({value}) is incompatible with unsigned types"
-            )
-        # unsigned byte (8 bits), unsigned short (16 bits), unsigned int (32 bits)
-        types_list = [(255, "B"), (65_535, "u2"), (4_294_967_296, "u4")]
-    else:
-        # signe byte (8 bits), signed short (16 bits), signed int (32 bits):
-        types_list = [(127, "b"), (32_768, "i2"), (2_147_483_648, "i")]
+    # signe byte (8 bits), signed short (16 bits), signed int (32 bits):
+    types_list = [(127, "b"), (32_768, "i2"), (2_147_483_648, "i")]
     filtered_list = [
         (max_val, type) for max_val, type in types_list if max_val > abs(value)
     ]
     if not filtered_list:
-        return "u8" if unsigned else "i8"  # unsigned or signed long (64 bits)
+        return "i8"  # signed long (64 bits)
     return filtered_list[0][1]
 
 
@@ -215,11 +205,11 @@ class Task(pl.LightningDataModule):
         pyannote.database protocol
     cache : str, optional
         As (meta-)data preparation might take a very long time for large datasets,
-        it can be cached to disk for later (and faster!) re-use. 
+        it can be cached to disk for later (and faster!) re-use.
         When `cache` does not exist, `Task.prepare_data()` generates training
         and validation metadata from `protocol` and save them to disk.
         When `cache` exists, `Task.prepare_data()` is skipped and (meta)-data
-        are loaded from disk. Defaults to a temporary path. 
+        are loaded from disk. Defaults to a temporary path.
     duration : float, optional
         Chunks duration in seconds. Defaults to two seconds (2.).
     min_duration : float, optional
@@ -528,11 +518,11 @@ class Task(pl.LightningDataModule):
         info_dtype = [
             (
                 "sample_rate",
-                get_dtype(max(ai[0] for ai in audio_infos), unsigned=True),
+                get_dtype(max(ai[0] for ai in audio_infos)),
             ),
             (
                 "num_frames",
-                get_dtype(max(ai[1] for ai in audio_infos), unsigned=True),
+                get_dtype(max(ai[1] for ai in audio_infos)),
             ),
             ("num_channels", "B"),
             ("bits_per_sample", "B"),
@@ -542,7 +532,7 @@ class Task(pl.LightningDataModule):
         region_dtype = [
             (
                 "file_id",
-                get_dtype(max(ar[0] for ar in annotated_regions), unsigned=True),
+                get_dtype(max(ar[0] for ar in annotated_regions)),
             ),
             ("duration", "f"),
             ("start", "f"),
@@ -552,7 +542,7 @@ class Task(pl.LightningDataModule):
         segment_dtype = [
             (
                 "file_id",
-                get_dtype(max(a[0] for a in annotations), unsigned=True),
+                get_dtype(max(a[0] for a in annotations)),
             ),
             ("start", "f"),
             ("end", "f"),
@@ -567,7 +557,7 @@ class Task(pl.LightningDataModule):
         # keep track of protocol name
         prepared_data["protocol"] = self.protocol.name
 
-        prepared_data["audio-path"] = np.array(audios, dtype=np.string_)
+        prepared_data["audio-path"] = np.array(audios, dtype=np.str_)
         audios.clear()
 
         prepared_data["audio-metadata"] = np.array(metadata, dtype=metadata_dtype)
@@ -576,7 +566,7 @@ class Task(pl.LightningDataModule):
         prepared_data["audio-info"] = np.array(audio_infos, dtype=info_dtype)
         audio_infos.clear()
 
-        prepared_data["audio-encoding"] = np.array(audio_encodings, dtype=np.string_)
+        prepared_data["audio-encoding"] = np.array(audio_encodings, dtype=np.str_)
         audio_encodings.clear()
 
         prepared_data["audio-annotated"] = np.array(annotated_duration)
@@ -596,11 +586,11 @@ class Task(pl.LightningDataModule):
 
         for database, labels in database_unique_labels.items():
             prepared_data[f"metadata-{database}-labels"] = np.array(
-                labels, dtype=np.string_
+                labels, dtype=np.str_
             )
         database_unique_labels.clear()
 
-        prepared_data["metadata-labels"] = np.array(unique_labels, dtype=np.string_)
+        prepared_data["metadata-labels"] = np.array(unique_labels, dtype=np.str_)
         unique_labels.clear()
 
         self.prepare_validation(prepared_data)

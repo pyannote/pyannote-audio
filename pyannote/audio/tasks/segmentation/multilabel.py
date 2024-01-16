@@ -49,13 +49,13 @@ class MultiLabelSegmentation(SegmentationTask):
     Parameters
     ----------
     protocol : Protocol
-   cache : str, optional
+    cache : str, optional
         As (meta-)data preparation might take a very long time for large datasets,
-        it can be cached to disk for later (and faster!) re-use. 
+        it can be cached to disk for later (and faster!) re-use.
         When `cache` does not exist, `Task.prepare_data()` generates training
         and validation metadata from `protocol` and save them to disk.
         When `cache` exists, `Task.prepare_data()` is skipped and (meta)-data
-        are loaded from disk. Defaults to a temporary path. 
+        are loaded from disk. Defaults to a temporary path.
     classes : List[str], optional
         List of classes. Defaults to the list of classes available in the training set.
     duration : float, optional
@@ -179,7 +179,7 @@ class MultiLabelSegmentation(SegmentationTask):
                     [classes.index(klass) for klass in file_classes]
                 )
 
-            prepared_data["classes-list"] = np.array(classes, dtype=np.string_)
+            prepared_data["classes-list"] = np.array(classes, dtype=np.str_)
             self.classes = classes
 
         else:
@@ -216,7 +216,7 @@ class MultiLabelSegmentation(SegmentationTask):
                     ]
                 )
 
-            prepared_data["classes-list"] = np.array(self.classes, dtype=np.string_)
+            prepared_data["classes-list"] = np.array(self.classes, dtype=np.str_)
 
         # convert annotated_classes (which is a list of list of classes, one list of classes per file)
         # into a single (num_files x num_classes) numpy array:
