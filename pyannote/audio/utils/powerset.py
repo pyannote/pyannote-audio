@@ -141,7 +141,7 @@ class Powerset(nn.Module):
         )
 
     @torch.no_grad()
-    def permutation_powerset_individual(self, perm_ml: torch.Tensor) -> torch.Tensor:
+    def _permutation_powerset(self, perm_ml: torch.Tensor) -> torch.Tensor:
         """Takes a (num_classes,)-shaped permutation in multilabel space and returns
         the corresponding (num_powerset_classes,)-shaped permutation in powerset space.
 
@@ -205,9 +205,9 @@ class Powerset(nn.Module):
         """
 
         if permutation_ml.ndim == 1:
-            return self.permutation_powerset_individual(permutation_ml)
+            return self._permutation_powerset(permutation_ml)
         elif permutation_ml.ndim == 2:
-            batched_fn = torch.vmap(self.permutation_powerset_individual, in_dims=(0))
+            batched_fn = torch.vmap(self._permutation_powerset, in_dims=(0))
             return batched_fn(permutation_ml)
         else:
             raise ValueError(
