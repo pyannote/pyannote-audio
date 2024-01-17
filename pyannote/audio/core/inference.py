@@ -94,6 +94,7 @@ class Inference(BaseInference):
         device: torch.device = None,
         batch_size: int = 32,
         use_auth_token: Union[Text, None] = None,
+        latency_index: int = None,
     ):
         # ~~~~ model ~~~~~
 
@@ -118,7 +119,6 @@ class Inference(BaseInference):
         specifications = self.model.specifications
 
         # ~~~~ sliding window ~~~~~
-
         if window not in ["sliding", "whole"]:
             raise ValueError('`window` must be "sliding" or "whole".')
 
@@ -139,6 +139,7 @@ class Inference(BaseInference):
                 f"{duration:g}s chunks for inference: this might lead to suboptimal results."
             )
         self.duration = duration
+        self.latency_index = latency_index
 
         # ~~~~ powerset to multilabel conversion ~~~~
 
@@ -226,6 +227,10 @@ class Inference(BaseInference):
 
         def __convert(output: torch.Tensor, conversion: nn.Module, **kwargs):
             return conversion(output).cpu().numpy()
+
+        if self.latency_index is not None:
+            return map_with_specifications(
+                self.model.specifications, __convert, outputs[self.latency_index], self.conversion)
 
         return map_with_specifications(
             self.model.specifications, __convert, outputs, self.conversion
@@ -605,6 +610,7 @@ class Inference(BaseInference):
             )
             + 1
         )
+
         aggregated_output: np.ndarray = np.zeros(
             (num_frames, num_classes), dtype=np.float32
         )
@@ -620,14 +626,14 @@ class Inference(BaseInference):
         aggregated_mask: np.ndarray = np.zeros(
             (num_frames, num_classes), dtype=np.float32
         )
-
         # loop on the scores of sliding chunks
         for (chunk, score), (_, mask) in zip(scores, masks):
             # chunk ~ Segment
             # score ~ (num_frames_per_chunk, num_classes)-shaped np.ndarray
             # mask ~ (num_frames_per_chunk, num_classes)-shaped np.ndarray
-
             start_frame = frames.closest_frame(chunk.start)
+
+
             aggregated_output[start_frame : start_frame + num_frames_per_chunk] += (
                 score * mask * hamming_window * warm_up_window
             )
@@ -651,6 +657,86 @@ class Inference(BaseInference):
         average[aggregated_mask == 0.0] = missing
 
         return SlidingWindowFeature(average, frames)
+
+    @staticmethod
+    def aggregate_end_chunk(
+        scores: SlidingWindowFeature,
+        frames: SlidingWindow = None,
+        warm_up: Tuple[float, float] = (0.0, 0.0),
+        epsilon: float = 1e-12,
+        hamming: bool = False,
+        missing: float = np.NaN,
+        skip_average: bool = False,
+    ) -> SlidingWindowFeature:
+        """Aggregation
+
+        Parameters
+        ----------
+        scores : SlidingWindowFeature
+            Raw (unaggregated) scores. Shape is (num_chunks, num_frames_per_chunk, num_classes).
+        frames : SlidingWindow, optional
+            Frames resolution. Defaults to estimate it automatically based on `scores` shape
+            and chunk size. Providing the exact frame resolution (when known) leads to better
+            temporal precision.
+        warm_up : (float, float) tuple, optional
+            Left/right warm up duration (in seconds).
+        missing : float, optional
+            Value used to replace missing (ie all NaNs) values.
+        skip_average : bool, optional
+            Skip final averaging step.
+
+        Returns
+        -------
+        aggregated_scores : SlidingWindowFeature
+            Aggregated scores. Shape is (num_frames, num_classes)
+        """
+
+        num_chunks, num_frames_per_chunk, num_classes = scores.data.shape
+
+        chunks = scores.sliding_window
+        if frames is None:
+            duration = step = chunks.duration / num_frames_per_chunk
+            frames = SlidingWindow(start=chunks.start, duration=duration, step=step)
+        else:
+            frames = SlidingWindow(
+                start=chunks.start,
+                duration=frames.duration,
+                step=frames.step,
+            )
+        masks = 1 - np.isnan(scores)
+        scores.data = np.nan_to_num(scores.data, copy=True, nan=0.0)
+
+        # aggregated_output[i] will be used to store the sum of all predictions
+        # for frame #i
+        num_frames = (
+            frames.closest_frame(
+                scores.sliding_window.start
+                + scores.sliding_window.duration
+                + (num_chunks - 1) * scores.sliding_window.step
+            )
+            + 1
+        )
+        step_frames = frames.closest_frame(scores.sliding_window.step)
+        aggregated_output: np.ndarray = np.zeros(
+            (num_frames, num_classes), dtype=np.float32
+        )
+        aggregated_output[0 : num_frames_per_chunk-step_frames] = scores[0][:num_frames_per_chunk-step_frames]
+        end = scores.sliding_window.duration - scores.sliding_window.step
+
+        # data = scores.data
+        # print(data.shape)
+        # data=data[1:]
+        # scores = scores[1:]
+        # loop on the scores of sliding chunks
+        for (chunk, score) in scores:
+            # chunk ~ Segment
+            # score ~ (num_frames_per_chunk, num_classes)-shaped np.ndarray
+            # mask ~ (num_frames_per_chunk, num_classes)-shaped np.ndarray
+            start_frame = frames.closest_frame(end)
+            aggregated_output[start_frame : start_frame + step_frames] = score[num_frames_per_chunk-step_frames:]
+            end = chunk.end
+
+        return SlidingWindowFeature(aggregated_output, frames)
 
     @staticmethod
     def trim(
