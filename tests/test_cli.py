@@ -138,7 +138,7 @@ def test_cli_eval_segmentation_model(database, protocol, model):
         [
             "pyannote-audio-eval",
             f"model={model}",
-            f"registry={database}",
+            f"+registry={database}",
             f"protocol={protocol.name}",
             "hydra.run.dir=.",  # run hydra app in current directory
             "hydra.output_subdir=null",  # disable hydra outputs

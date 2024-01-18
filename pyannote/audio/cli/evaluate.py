@@ -41,14 +41,20 @@ def evaluate(cfg: DictConfig) -> Optional[float]:
     (device,) = get_devices(needs=1)
     model = Model.from_pretrained(cfg.model, device=device)
 
-    # load databases into registry
-    for database_yml in cfg.registry.split(","):
-        registry.load_database(database_yml)
+    # load databases into registry if it was specified
+    if "registry" in cfg:
+        for database_yml in cfg.registry.split(","):
+            registry.load_database(database_yml)
+            # load evaluation files
+            protocol = registry.get_protocol(
+                cfg.protocol, preprocessors={"audio": FileFinder()}
+            )
+    else:
+        # load evaluation files
+        protocol = registry.get_protocol(
+            cfg.protocol, preprocessors={"audio": FileFinder()}
+        )
 
-    # load evaluation files
-    protocol = registry.get_protocol(
-        cfg.protocol, preprocessors={"audio": FileFinder()}
-    )
     files = list(getattr(protocol, cfg.subset)())
 
     # load evaluation metric
@@ -70,8 +76,6 @@ def evaluate(cfg: DictConfig) -> Optional[float]:
                 binarize(inference(file, hook=progress_hook)),
                 warm_up=(warm_up, warm_up),
             )
-
-        metric = DiscreteDiarizationErrorRate()
 
         for file in files:
             progress.update(file_task, description=file["uri"])
