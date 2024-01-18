@@ -40,6 +40,49 @@ trainer = Trainer()
 trainer.fit(model)
 ```
 
+You can also evaluate a model from it checkpoint on the AMI corpus by calling the following commad...
+
+```bash
+pyannote-audio-eval \
+    model=path_to_model_checkpoint.ckpt \
+    registry="AMI-diarization-setup/pyannote/database.yml" \
+    protocol="Debug.SpeakerDiarization.Debug" \
+    subset=test \
+```
+... which is more or less equivalent to running the following Python script:
+
+```python
+from pyannote.database import FileFinder, ProtocolFile, registry
+
+from pyannote.audio import Inference, Model
+from pyannote.audio.utils.metric import DiscreteDiarizationErrorRate
+from pyannote.audio.utils.signal import binarize
+
+model = Model.from_pretrained("path_to_checkpoint.ckpt")
+
+# load evaluation files
+registry.load_database("AMI-diarization-setup/pyannote/database.yml")
+protocol = registry.get_protocol("AMI.SpeakerDiarization.only_words", preprocessors={"audio": FileFinder()})
+files = list(getattr(protocol, "test")())
+
+# load evaluation metric
+metric = DiscreteDiarizationErrorRate()
+
+inference = Inference(model)
+
+def hypothesis(file: ProtocolFile):
+    return Inference.trim(
+        binarize(inference(file, hook=progress_hook)),
+    )
+
+for file in files:
+    reference = file["annotation"]
+    uem = file["annotated"]
+    _ = metric(reference, hypothesis(file), uem=uem)
+
+report = metric.report(display=False)
+```
+
 ## Hydra-based configuration
 
 `pyannote-audio-train` relies on [`Hydra`](https://hydra.cc) to configure the
