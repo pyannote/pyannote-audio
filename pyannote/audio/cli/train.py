@@ -75,8 +75,7 @@ def train(cfg: DictConfig) -> Optional[float]:
 
     # instantiate model
     fine_tuning = cfg.model["_target_"] == "pyannote.audio.cli.pretrained"
-    model = instantiate(cfg.model)
-    model.task = task
+    model = instantiate(cfg.model, task=task)
     model.prepare_data()
     model.setup()
 
