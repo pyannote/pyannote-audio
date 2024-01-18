@@ -25,7 +25,7 @@ from typing import Optional
 
 import hydra
 from omegaconf import DictConfig
-from pyannote.database import FileFinder, ProtocolFile, get_protocol
+from pyannote.database import FileFinder, ProtocolFile, registry
 from rich.progress import Progress
 
 from pyannote.audio import Inference, Model
@@ -41,8 +41,14 @@ def evaluate(cfg: DictConfig) -> Optional[float]:
     (device,) = get_devices(needs=1)
     model = Model.from_pretrained(cfg.model, device=device)
 
+    # load databases into registry
+    for database_yml in cfg.registry.split(","):
+        registry.load_database(database_yml)
+
     # load evaluation files
-    protocol = get_protocol(cfg.protocol, preprocessors={"audio": FileFinder()})
+    protocol = registry.get_protocol(
+        cfg.protocol, preprocessors={"audio": FileFinder()}
+    )
     files = list(getattr(protocol, cfg.subset)())
 
     # load evaluation metric
