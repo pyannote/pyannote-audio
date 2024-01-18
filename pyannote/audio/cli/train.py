@@ -157,7 +157,9 @@ def train(cfg: DictConfig) -> Optional[float]:
 
     # return the best validation score
     # this can be used for hyper-parameter optimization with Hydra sweepers
-    if monitor is not None:
+    # this can only be done if the trainer is not in fast dev run mode, as
+    # checkpointing is disabled in this mode
+    if monitor is not None and not trainer.fast_dev_run:
         best_monitor = float(checkpoint.best_model_score)
         if direction == "min":
             return best_monitor
