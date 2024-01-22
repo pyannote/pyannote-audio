@@ -30,4 +30,4 @@ jobs:
           pip install -e .[dev,testing]
       - name: Test with pytest
         run: |
-          pytest "not test_cli.py"
+          pytest -k "not test_cli.py"
