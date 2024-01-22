@@ -20,7 +20,7 @@ detection on the AMI corpus...
 pyannote-audio-train \
     model=PyanNet \
     task=VoiceActivityDetection \
-    registry="AMI-diarization-setup/pyannote/database.yml" \
+    +registry="AMI-diarization-setup/pyannote/database.yml" \
     protocol=AMI.SpeakerDiarization.only_words
 ```
 
@@ -45,7 +45,7 @@ You can also evaluate a model from it checkpoint on the AMI corpus by calling th
 ```bash
 pyannote-audio-eval \
     model=path_to_model_checkpoint.ckpt \
-    registry="AMI-diarization-setup/pyannote/database.yml" \
+    +registry="AMI-diarization-setup/pyannote/database.yml" \
     protocol="Debug.SpeakerDiarization.Debug" \
     subset=test \
 ```
