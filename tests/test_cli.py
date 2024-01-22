@@ -49,7 +49,7 @@ def test_cli_train_vad(database, protocol):
             "pyannote-audio-train",
             "model=DebugSegmentation",
             "task=VoiceActivityDetection",
-            f"registry={database}",
+            f"+registry={database}",
             f"protocol={protocol.name}",
             "trainer=fast_dev_run",
             "hydra.run.dir=.",  # run hydra app in current directory
@@ -67,7 +67,7 @@ def test_cli_train_segmentation(database, protocol):
             "pyannote-audio-train",
             "model=DebugSegmentation",
             "task=SpeakerDiarization",
-            f"registry={database}",
+            f"+registry={database}",
             f"protocol={protocol.name}",
             "trainer=fast_dev_run",
             "hydra.run.dir=.",  # run hydra app in current directory
@@ -85,7 +85,7 @@ def test_cli_train_osd(database, protocol):
             "pyannote-audio-train",
             "model=DebugSegmentation",
             "task=OverlappedSpeechDetection",
-            f"registry={database}",
+            f"+registry={database}",
             f"protocol={protocol.name}",
             "trainer=fast_dev_run",
             "hydra.run.dir=.",  # run hydra app in current directory
@@ -103,7 +103,7 @@ def test_cli_train_supervised_representation_with_arcface(database, protocol):
             "pyannote-audio-train",
             "model=DebugEmbedding",
             "task=SpeakerEmbedding",
-            f"registry={database}",
+            f"+registry={database}",
             f"protocol={protocol.name}",
             "trainer=fast_dev_run",
             "hydra.run.dir=.",  # run hydra app in current directory
@@ -121,7 +121,7 @@ def test_cli_train_segmentation_with_pyannet(database, protocol):
             "pyannote-audio-train",
             "model=PyanNet",
             "task=SpeakerDiarization",
-            f"registry={database}",
+            f"+registry={database}",
             f"protocol={protocol.name}",
             "trainer=fast_dev_run",
             "hydra.run.dir=.",  # run hydra app in current directory

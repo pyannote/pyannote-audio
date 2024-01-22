@@ -51,8 +51,9 @@ def train(cfg: DictConfig) -> Optional[float]:
     seed_everything(seed=seed)
 
     # load databases into registry
-    for database_yml in cfg.registry.split(","):
-        registry.load_database(database_yml)
+    if "registry" in cfg:
+        for database_yml in cfg.registry.split(","):
+            registry.load_database(database_yml)
 
     # instantiate training protocol with optional preprocessors
     preprocessors = {"audio": FileFinder(), "torchaudio.info": get_torchaudio_info}

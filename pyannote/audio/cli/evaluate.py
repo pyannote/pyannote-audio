@@ -45,15 +45,11 @@ def evaluate(cfg: DictConfig) -> Optional[float]:
     if "registry" in cfg:
         for database_yml in cfg.registry.split(","):
             registry.load_database(database_yml)
-            # load evaluation files
-            protocol = registry.get_protocol(
-                cfg.protocol, preprocessors={"audio": FileFinder()}
-            )
-    else:
-        # load evaluation files
-        protocol = registry.get_protocol(
-            cfg.protocol, preprocessors={"audio": FileFinder()}
-        )
+
+    # load evaluation files
+    protocol = registry.get_protocol(
+        cfg.protocol, preprocessors={"audio": FileFinder()}
+    )
 
     files = list(getattr(protocol, cfg.subset)())
 
