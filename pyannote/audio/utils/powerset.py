@@ -24,9 +24,8 @@
 # Hervé BREDIN - https://herve.niderb.fr
 # Alexis PLAQUET
 
-from functools import cached_property, lru_cache
+from functools import cached_property
 from itertools import combinations
-from typing import Callable
 
 import scipy.special
 import torch
@@ -140,6 +139,17 @@ class Powerset(nn.Module):
             num_classes=self.num_powerset_classes,
         )
 
+    @cached_property
+    def _powers2_matrix(self) -> torch.Tensor:
+        """Returns a (num_powerset_classes, num_classes)-shaped matrix
+        where column i contains 2**i. Helps compute a unique ID in the multiclass space.
+        """
+        arange = torch.arange(
+            self.num_classes, device=self.mapping.device, dtype=torch.int
+        )
+        powers2 = (2**arange).tile((self.num_powerset_classes, 1))
+        return powers2
+
     def _permutation_powerset(self, perm_ml: torch.Tensor) -> torch.Tensor:
         """Takes a (num_classes,)-shaped permutation in multilabel space and returns
         the corresponding (num_powerset_classes,)-shaped permutation in powerset space.
@@ -155,12 +165,10 @@ class Powerset(nn.Module):
             Corresponding permutation in powerset space (num_powerset_classes,)-shaped.
         """
 
-        mapping = self.mapping
         permutated_mapping = self.mapping[:, perm_ml]
 
-        # create mapping-shaped 2**N tensor : powers2
-        arange = torch.arange(mapping.shape[1], device=mapping.device, dtype=torch.int)
-        powers2 = (2**arange).tile((self.mapping.shape[0], 1))
+        # get mapping-shaped 2**N tensor
+        powers2 = self._powers2_matrix
 
         # compute the encoding of the powerset classes in this 2**N space, before and after
         # permutation of the columns (mapping cols=labels, mapping rows=powerset classes)
