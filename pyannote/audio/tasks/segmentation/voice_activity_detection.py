@@ -174,7 +174,9 @@ class VoiceActivityDetection(SegmentationTask):
         end_idx = np.round(end / step).astype(int)
 
         # frame-level targets
-        num_frames = self.model.num_frames(duration)
+        num_frames = self.model.num_frames(
+            round(duration * self.model.hparams.sample_rate)
+        )
         y = np.zeros((num_frames, 1), dtype=np.uint8)
         for start, end in zip(start_idx, end_idx):
             y[start : end + 1, 0] = 1

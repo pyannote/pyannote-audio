@@ -302,7 +302,9 @@ class MultiLabelSegmentation(SegmentationTask):
         end_idx = np.round(end / step).astype(int)
 
         # frame-level targets (-1 for un-annotated classes)
-        num_frames = self.model.num_frames(duration)
+        num_frames = self.model.num_frames(
+            round(duration * self.model.hparams.sample_rate)
+        )
         y = -np.ones(
             (
                 num_frames,
