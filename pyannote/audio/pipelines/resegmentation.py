@@ -86,7 +86,7 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
         self,
         segmentation: PipelineModel = "pyannote/segmentation",
         diarization: Text = "diarization",
-        der_variant: dict = None,
+        der_variant: Optional[dict] = None,
         use_auth_token: Union[Text, None] = None,
     ):
         super().__init__()
@@ -137,7 +137,7 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
     def apply(
         self,
         file: AudioFile,
-        diarization: Annotation = None,
+        diarization: Optional[Annotation] = None,
         hook: Optional[Callable] = None,
     ) -> Annotation:
         """Apply speaker diarization

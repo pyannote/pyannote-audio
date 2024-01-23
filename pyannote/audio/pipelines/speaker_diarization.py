@@ -121,7 +121,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         clustering: str = "AgglomerativeClustering",
         embedding_batch_size: int = 1,
         segmentation_batch_size: int = 1,
-        der_variant: dict = None,
+        der_variant: Optional[dict] = None,
         use_auth_token: Union[Text, None] = None,
     ):
         super().__init__()
@@ -428,9 +428,9 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
     def apply(
         self,
         file: AudioFile,
-        num_speakers: int = None,
-        min_speakers: int = None,
-        max_speakers: int = None,
+        num_speakers: Optional[int] = None,
+        min_speakers: Optional[int] = None,
+        max_speakers: Optional[int] = None,
         return_embeddings: bool = False,
         hook: Optional[Callable] = None,
     ) -> Annotation:
@@ -538,15 +538,20 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         # detected number of speakers can still be out of bounds
         # (specifically, lower than `min_speakers`), since there could be too few embeddings
         # to make enough clusters with a given minimum cluster size.
-        if num_different_speakers < min_speakers or num_different_speakers > max_speakers:
-            warnings.warn(textwrap.dedent(
-                f"""
+        if (
+            num_different_speakers < min_speakers
+            or num_different_speakers > max_speakers
+        ):
+            warnings.warn(
+                textwrap.dedent(
+                    f"""
                 The detected number of speakers ({num_different_speakers}) is outside
                 the given bounds [{min_speakers}, {max_speakers}]. This can happen if the
                 given audio file is too short to contain {min_speakers} or more speakers.
                 Try to lower the desired minimal number of speakers.
                 """
-            ))
+                )
+            )
 
         # during counting, we could possibly overcount the number of instantaneous
         # speakers due to segmentation errors, so we cap the maximum instantaneous number
@@ -618,7 +623,9 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         # of clusters obtained from `clustering`. In this case, we append zero embeddings
         # for extra speakers
         if len(diarization.labels()) > centroids.shape[0]:
-            centroids = np.pad(centroids, ((0, len(diarization.labels()) - centroids.shape[0]), (0, 0)))
+            centroids = np.pad(
+                centroids, ((0, len(diarization.labels()) - centroids.shape[0]), (0, 0))
+            )
 
         # re-order centroids so that they match
         # the order given by diarization.labels()

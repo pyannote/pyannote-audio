@@ -96,12 +96,12 @@ class MultiLabelSegmentation(SegmentationTask):
         classes: Optional[List[str]] = None,
         duration: float = 2.0,
         warm_up: Union[float, Tuple[float, float]] = 0.0,
-        balance: Sequence[Text] = None,
-        weight: Text = None,
+        balance: Optional[Sequence[Text]] = None,
+        weight: Optional[Text] = None,
         batch_size: int = 32,
-        num_workers: int = None,
+        num_workers: Optional[int] = None,
         pin_memory: bool = False,
-        augmentation: BaseWaveformTransform = None,
+        augmentation: Optional[BaseWaveformTransform] = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
     ):
         if not isinstance(protocol, SegmentationProtocol):

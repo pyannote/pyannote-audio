@@ -96,7 +96,7 @@ class BaseWeSpeakerResNet(Model):
         return features - torch.mean(features, dim=1, keepdim=True)
 
     def forward(
-        self, waveforms: torch.Tensor, weights: torch.Tensor = None
+        self, waveforms: torch.Tensor, weights: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """
 

@@ -61,73 +61,73 @@ Scopes = list(Scope.__args__)
 class SpeakerDiarization(SegmentationTask):
     """Speaker diarization
 
-    Parameters
-    ----------
-    protocol : SpeakerDiarizationProtocol
-        pyannote.database protocol
-   cache : str, optional
-        As (meta-)data preparation might take a very long time for large datasets,
-        it can be cached to disk for later (and faster!) re-use. 
-        When `cache` does not exist, `Task.prepare_data()` generates training
-        and validation metadata from `protocol` and save them to disk.
-        When `cache` exists, `Task.prepare_data()` is skipped and (meta)-data
-        are loaded from disk. Defaults to a temporary path. 
-    duration : float, optional
-        Chunks duration. Defaults to 2s.
-    max_speakers_per_chunk : int, optional
-        Maximum number of speakers per chunk (must be at least 2).
-        Defaults to estimating it from the training set.
-    max_speakers_per_frame : int, optional
-        Maximum number of (overlapping) speakers per frame.
-        Setting this value to 1 or more enables `powerset multi-class` training.
-        Default behavior is to use `multi-label` training.
-    weigh_by_cardinality: bool, optional
-        Weigh each powerset classes by the size of the corresponding speaker set.
-        In other words, {0, 1} powerset class weight is 2x bigger than that of {0}
-        or {1} powerset classes. Note that empty (non-speech) powerset class is
-        assigned the same weight as mono-speaker classes. Defaults to False (i.e. use
-        same weight for every class). Has no effect with `multi-label` training.
-    warm_up : float or (float, float), optional
-        Use that many seconds on the left- and rightmost parts of each chunk
-        to warm up the model. While the model does process those left- and right-most
-        parts, only the remaining central part of each chunk is used for computing the
-        loss during training, and for aggregating scores during inference.
-        Defaults to 0. (i.e. no warm-up).
-    balance: Sequence[Text], optional
-        When provided, training samples are sampled uniformly with respect to these keys.
-        For instance, setting `balance` to ["database","subset"] will make sure that each
-        database & subset combination will be equally represented in the training samples.
-    weight: str, optional
-        When provided, use this key as frame-wise weight in loss function.
-    batch_size : int, optional
-        Number of training samples per batch. Defaults to 32.
-    num_workers : int, optional
-        Number of workers used for generating training samples.
-        Defaults to multiprocessing.cpu_count() // 2.
-    pin_memory : bool, optional
-        If True, data loaders will copy tensors into CUDA pinned
-        memory before returning them. See pytorch documentation
-        for more details. Defaults to False.
-    augmentation : BaseWaveformTransform, optional
-        torch_audiomentations waveform transform, used by dataloader
-        during training.
-    vad_loss : {"bce", "mse"}, optional
-        Add voice activity detection loss.
-        Cannot be used in conjunction with `max_speakers_per_frame`.
-    metric : optional
-        Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
-        Defaults to AUROC (area under the ROC curve).
+     Parameters
+     ----------
+     protocol : SpeakerDiarizationProtocol
+         pyannote.database protocol
+    cache : str, optional
+         As (meta-)data preparation might take a very long time for large datasets,
+         it can be cached to disk for later (and faster!) re-use.
+         When `cache` does not exist, `Task.prepare_data()` generates training
+         and validation metadata from `protocol` and save them to disk.
+         When `cache` exists, `Task.prepare_data()` is skipped and (meta)-data
+         are loaded from disk. Defaults to a temporary path.
+     duration : float, optional
+         Chunks duration. Defaults to 2s.
+     max_speakers_per_chunk : int, optional
+         Maximum number of speakers per chunk (must be at least 2).
+         Defaults to estimating it from the training set.
+     max_speakers_per_frame : int, optional
+         Maximum number of (overlapping) speakers per frame.
+         Setting this value to 1 or more enables `powerset multi-class` training.
+         Default behavior is to use `multi-label` training.
+     weigh_by_cardinality: bool, optional
+         Weigh each powerset classes by the size of the corresponding speaker set.
+         In other words, {0, 1} powerset class weight is 2x bigger than that of {0}
+         or {1} powerset classes. Note that empty (non-speech) powerset class is
+         assigned the same weight as mono-speaker classes. Defaults to False (i.e. use
+         same weight for every class). Has no effect with `multi-label` training.
+     warm_up : float or (float, float), optional
+         Use that many seconds on the left- and rightmost parts of each chunk
+         to warm up the model. While the model does process those left- and right-most
+         parts, only the remaining central part of each chunk is used for computing the
+         loss during training, and for aggregating scores during inference.
+         Defaults to 0. (i.e. no warm-up).
+     balance: Sequence[Text], optional
+         When provided, training samples are sampled uniformly with respect to these keys.
+         For instance, setting `balance` to ["database","subset"] will make sure that each
+         database & subset combination will be equally represented in the training samples.
+     weight: str, optional
+         When provided, use this key as frame-wise weight in loss function.
+     batch_size : int, optional
+         Number of training samples per batch. Defaults to 32.
+     num_workers : int, optional
+         Number of workers used for generating training samples.
+         Defaults to multiprocessing.cpu_count() // 2.
+     pin_memory : bool, optional
+         If True, data loaders will copy tensors into CUDA pinned
+         memory before returning them. See pytorch documentation
+         for more details. Defaults to False.
+     augmentation : BaseWaveformTransform, optional
+         torch_audiomentations waveform transform, used by dataloader
+         during training.
+     vad_loss : {"bce", "mse"}, optional
+         Add voice activity detection loss.
+         Cannot be used in conjunction with `max_speakers_per_frame`.
+     metric : optional
+         Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
+         Defaults to AUROC (area under the ROC curve).
 
-    References
-    ----------
-    Hervé Bredin and Antoine Laurent
-    "End-To-End Speaker Segmentation for Overlap-Aware Resegmentation."
-    Proc. Interspeech 2021
+     References
+     ----------
+     Hervé Bredin and Antoine Laurent
+     "End-To-End Speaker Segmentation for Overlap-Aware Resegmentation."
+     Proc. Interspeech 2021
 
-    Zhihao Du, Shiliang Zhang, Siqi Zheng, and Zhijie Yan
-    "Speaker Embedding-aware Neural Diarization: an Efficient Framework for Overlapping
-    Speech Diarization in Meeting Scenarios"
-    https://arxiv.org/abs/2203.09767
+     Zhihao Du, Shiliang Zhang, Siqi Zheng, and Zhijie Yan
+     "Speaker Embedding-aware Neural Diarization: an Efficient Framework for Overlapping
+     Speech Diarization in Meeting Scenarios"
+     https://arxiv.org/abs/2203.09767
 
     """
 
@@ -136,19 +136,21 @@ class SpeakerDiarization(SegmentationTask):
         protocol: SpeakerDiarizationProtocol,
         cache: Optional[Union[str, None]] = None,
         duration: float = 2.0,
-        max_speakers_per_chunk: int = None,
-        max_speakers_per_frame: int = None,
+        max_speakers_per_chunk: Optional[int] = None,
+        max_speakers_per_frame: Optional[int] = None,
         weigh_by_cardinality: bool = False,
         warm_up: Union[float, Tuple[float, float]] = 0.0,
-        balance: Sequence[Text] = None,
-        weight: Text = None,
+        balance: Optional[Sequence[Text]] = None,
+        weight: Optional[Text] = None,
         batch_size: int = 32,
-        num_workers: int = None,
+        num_workers: Optional[int] = None,
         pin_memory: bool = False,
-        augmentation: BaseWaveformTransform = None,
+        augmentation: Optional[BaseWaveformTransform] = None,
         vad_loss: Literal["bce", "mse"] = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
-        max_num_speakers: int = None,  # deprecated in favor of `max_speakers_per_chunk``
+        max_num_speakers: Optional[
+            int
+        ] = None,  # deprecated in favor of `max_speakers_per_chunk``
         loss: Literal["bce", "mse"] = None,  # deprecated
     ):
         super().__init__(
@@ -437,7 +439,7 @@ class SpeakerDiarization(SegmentationTask):
         self,
         permutated_prediction: torch.Tensor,
         target: torch.Tensor,
-        weight: torch.Tensor = None,
+        weight: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Permutation-invariant segmentation loss
 
@@ -480,7 +482,7 @@ class SpeakerDiarization(SegmentationTask):
         self,
         permutated_prediction: torch.Tensor,
         target: torch.Tensor,
-        weight: torch.Tensor = None,
+        weight: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Voice activity detection loss
 
@@ -878,7 +880,7 @@ def main(protocol: str, subset: str = "test", model: str = "pyannote/segmentatio
         main_task = progress.add_task(protocol.name, total=len(files))
         file_task = progress.add_task("Processing", total=1.0)
 
-        def progress_hook(completed: int = None, total: int = None):
+        def progress_hook(completed: Optional[int] = None, total: Optional[int] = None):
             progress.update(file_task, completed=completed / total)
 
         inference = Inference(model, device=device)

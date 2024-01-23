@@ -86,12 +86,12 @@ class Inference(BaseInference):
         self,
         model: Union[Model, Text, Path],
         window: Text = "sliding",
-        duration: float = None,
-        step: float = None,
+        duration: Optional[float] = None,
+        step: Optional[float] = None,
         pre_aggregation_hook: Callable[[np.ndarray], np.ndarray] = None,
         skip_aggregation: bool = False,
         skip_conversion: bool = False,
-        device: torch.device = None,
+        device: Optional[torch.device] = None,
         batch_size: int = 32,
         use_auth_token: Union[Text, None] = None,
     ):
@@ -526,7 +526,7 @@ class Inference(BaseInference):
     @staticmethod
     def aggregate(
         scores: SlidingWindowFeature,
-        frames: SlidingWindow = None,
+        frames: Optional[SlidingWindow] = None,
         warm_up: Tuple[float, float] = (0.0, 0.0),
         epsilon: float = 1e-12,
         hamming: bool = False,
@@ -702,7 +702,7 @@ class Inference(BaseInference):
     @staticmethod
     def stitch(
         activations: SlidingWindowFeature,
-        frames: SlidingWindow = None,
+        frames: Optional[SlidingWindow] = None,
         lookahead: Optional[Tuple[int, int]] = None,
         cost_func: Callable[[torch.Tensor, torch.Tensor], torch.Tensor] = None,
         match_func: Callable[[np.ndarray, np.ndarray, float], bool] = None,

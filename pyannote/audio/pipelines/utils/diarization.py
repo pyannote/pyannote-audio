@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import Dict, Mapping, Tuple, Union
+from typing import Dict, Mapping, Optional, Tuple, Union
 
 import numpy as np
 from pyannote.core import Annotation, SlidingWindow, SlidingWindowFeature
@@ -28,7 +28,7 @@ from pyannote.core.utils.types import Label
 from pyannote.metrics.diarization import DiarizationErrorRate
 
 from pyannote.audio.core.inference import Inference
-from pyannote.audio.utils.signal import Binarize, binarize
+from pyannote.audio.utils.signal import Binarize
 
 
 # TODO: move to dedicated module
@@ -37,9 +37,9 @@ class SpeakerDiarizationMixin:
 
     @staticmethod
     def set_num_speakers(
-        num_speakers: int = None,
-        min_speakers: int = None,
-        max_speakers: int = None,
+        num_speakers: Optional[int] = None,
+        min_speakers: Optional[int] = None,
+        max_speakers: Optional[int] = None,
     ):
         """Validate number of speakers
 
@@ -122,7 +122,7 @@ class SpeakerDiarizationMixin:
     def speaker_count(
         binarized_segmentations: SlidingWindowFeature,
         warm_up: Tuple[float, float] = (0.1, 0.1),
-        frames: SlidingWindow = None,
+        frames: Optional[SlidingWindow] = None,
     ) -> SlidingWindowFeature:
         """Estimate frame-level number of instantaneous speakers
 

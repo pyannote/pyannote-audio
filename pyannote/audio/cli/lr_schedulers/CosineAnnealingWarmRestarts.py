@@ -20,6 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+from typing import Optional
 
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import (
@@ -32,7 +33,7 @@ def CosineAnnealingWarmRestarts(
     min_lr: float = 1e-8,
     max_lr: float = 1e-3,
     patience: int = 1,
-    num_batches_per_epoch: int = None,
+    num_batches_per_epoch: Optional[int] = None,
     **kwargs,
 ):
     """Wrapper around CosineAnnealingWarmRestarts

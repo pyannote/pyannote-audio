@@ -36,65 +36,65 @@ from pyannote.audio.tasks.segmentation.mixins import SegmentationTask
 class OverlappedSpeechDetection(SegmentationTask):
     """Overlapped speech detection
 
-    Overlapped speech detection is the task of detecting regions where at least
-    two speakers are speaking at the same time.
+     Overlapped speech detection is the task of detecting regions where at least
+     two speakers are speaking at the same time.
 
-    Here, it is addressed with the same approach as voice activity detection,
-    except "speech" class is replaced by "overlap", where a frame is marked as
-    "overlap" if two speakers or more are active.
+     Here, it is addressed with the same approach as voice activity detection,
+     except "speech" class is replaced by "overlap", where a frame is marked as
+     "overlap" if two speakers or more are active.
 
-    Note that data augmentation is used to increase the proporition of "overlap".
-    This is achieved by generating chunks made out of the (weighted) sum of two
-    random chunks.
+     Note that data augmentation is used to increase the proporition of "overlap".
+     This is achieved by generating chunks made out of the (weighted) sum of two
+     random chunks.
 
-    Parameters
-    ----------
-    protocol : Protocol
-        pyannote.database protocol
-   cache : str, optional
-        As (meta-)data preparation might take a very long time for large datasets,
-        it can be cached to disk for later (and faster!) re-use. 
-        When `cache` does not exist, `Task.prepare_data()` generates training
-        and validation metadata from `protocol` and save them to disk.
-        When `cache` exists, `Task.prepare_data()` is skipped and (meta)-data
-        are loaded from disk. Defaults to a temporary path. 
-    duration : float, optional
-        Chunks duration. Defaults to 2s.
-    warm_up : float or (float, float), optional
-        Use that many seconds on the left- and rightmost parts of each chunk
-        to warm up the model. While the model does process those left- and right-most
-        parts, only the remaining central part of each chunk is used for computing the
-        loss during training, and for aggregating scores during inference.
-        Defaults to 0. (i.e. no warm-up).
-    balance: Sequence[Text], optional
-        When provided, training samples are sampled uniformly with respect to these keys.
-        For instance, setting `balance` to ["database","subset"] will make sure that each
-        database & subset combination will be equally represented in the training samples.
-    overlap: dict, optional
-        Controls how artificial chunks with overlapping speech are generated:
-        - "probability" key is the probability of artificial overlapping chunks. Setting
-          "probability" to 0.6 means that, on average, 40% of training chunks are "real"
-          chunks, while 60% are artifical chunks made out of the (weighted) sum of two
-          chunks. Defaults to 0.5.
-        - "snr_min" and "snr_max" keys control the minimum and maximum signal-to-noise
-          ratio between summed chunks, in dB. Default to 0.0 and 10.
-    weight: str, optional
-        When provided, use this key to as frame-wise weight in loss function.
-    batch_size : int, optional
-        Number of training samples per batch. Defaults to 32.
-    num_workers : int, optional
-        Number of workers used for generating training samples.
-        Defaults to multiprocessing.cpu_count() // 2.
-    pin_memory : bool, optional
-        If True, data loaders will copy tensors into CUDA pinned
-        memory before returning them. See pytorch documentation
-        for more details. Defaults to False.
-    augmentation : BaseWaveformTransform, optional
-        torch_audiomentations waveform transform, used by dataloader
-        during training.
-    metric : optional
-        Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
-        Defaults to AUROC (area under the ROC curve).
+     Parameters
+     ----------
+     protocol : Protocol
+         pyannote.database protocol
+    cache : str, optional
+         As (meta-)data preparation might take a very long time for large datasets,
+         it can be cached to disk for later (and faster!) re-use.
+         When `cache` does not exist, `Task.prepare_data()` generates training
+         and validation metadata from `protocol` and save them to disk.
+         When `cache` exists, `Task.prepare_data()` is skipped and (meta)-data
+         are loaded from disk. Defaults to a temporary path.
+     duration : float, optional
+         Chunks duration. Defaults to 2s.
+     warm_up : float or (float, float), optional
+         Use that many seconds on the left- and rightmost parts of each chunk
+         to warm up the model. While the model does process those left- and right-most
+         parts, only the remaining central part of each chunk is used for computing the
+         loss during training, and for aggregating scores during inference.
+         Defaults to 0. (i.e. no warm-up).
+     balance: Sequence[Text], optional
+         When provided, training samples are sampled uniformly with respect to these keys.
+         For instance, setting `balance` to ["database","subset"] will make sure that each
+         database & subset combination will be equally represented in the training samples.
+     overlap: dict, optional
+         Controls how artificial chunks with overlapping speech are generated:
+         - "probability" key is the probability of artificial overlapping chunks. Setting
+           "probability" to 0.6 means that, on average, 40% of training chunks are "real"
+           chunks, while 60% are artifical chunks made out of the (weighted) sum of two
+           chunks. Defaults to 0.5.
+         - "snr_min" and "snr_max" keys control the minimum and maximum signal-to-noise
+           ratio between summed chunks, in dB. Default to 0.0 and 10.
+     weight: str, optional
+         When provided, use this key to as frame-wise weight in loss function.
+     batch_size : int, optional
+         Number of training samples per batch. Defaults to 32.
+     num_workers : int, optional
+         Number of workers used for generating training samples.
+         Defaults to multiprocessing.cpu_count() // 2.
+     pin_memory : bool, optional
+         If True, data loaders will copy tensors into CUDA pinned
+         memory before returning them. See pytorch documentation
+         for more details. Defaults to False.
+     augmentation : BaseWaveformTransform, optional
+         torch_audiomentations waveform transform, used by dataloader
+         during training.
+     metric : optional
+         Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
+         Defaults to AUROC (area under the ROC curve).
     """
 
     OVERLAP_DEFAULTS = {"probability": 0.5, "snr_min": 0.0, "snr_max": 10.0}
@@ -105,12 +105,12 @@ class OverlappedSpeechDetection(SegmentationTask):
         duration: float = 2.0,
         warm_up: Union[float, Tuple[float, float]] = 0.0,
         overlap: dict = OVERLAP_DEFAULTS,
-        balance: Sequence[Text] = None,
-        weight: Text = None,
+        balance: Optional[Sequence[Text]] = None,
+        weight: Optional[Text] = None,
         batch_size: int = 32,
-        num_workers: int = None,
+        num_workers: Optional[int] = None,
         pin_memory: bool = False,
-        augmentation: BaseWaveformTransform = None,
+        augmentation: Optional[BaseWaveformTransform] = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
         cache: Optional[Union[str, None]] = None,
     ):

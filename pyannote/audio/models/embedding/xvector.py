@@ -41,7 +41,7 @@ class XVectorMFCC(Model):
         self,
         sample_rate: int = 16000,
         num_channels: int = 1,
-        mfcc: dict = None,
+        mfcc: Optional[dict] = None,
         dimension: int = 512,
         task: Optional[Task] = None,
     ):
@@ -82,7 +82,7 @@ class XVectorMFCC(Model):
         self.embedding = nn.Linear(in_channel * 2, self.hparams.dimension)
 
     def forward(
-        self, waveforms: torch.Tensor, weights: torch.Tensor = None
+        self, waveforms: torch.Tensor, weights: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """
 
@@ -109,7 +109,7 @@ class XVectorSincNet(Model):
         self,
         sample_rate: int = 16000,
         num_channels: int = 1,
-        sincnet: dict = None,
+        sincnet: Optional[dict] = None,
         dimension: int = 512,
         task: Optional[Task] = None,
     ):
@@ -150,7 +150,7 @@ class XVectorSincNet(Model):
         self.embedding = nn.Linear(in_channel * 2, self.hparams.dimension)
 
     def forward(
-        self, waveforms: torch.Tensor, weights: torch.Tensor = None
+        self, waveforms: torch.Tensor, weights: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """
 
