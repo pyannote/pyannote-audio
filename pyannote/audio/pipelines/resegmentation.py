@@ -96,7 +96,6 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
 
         model: Model = get_model(segmentation, use_auth_token=use_auth_token)
         self._segmentation = Inference(model)
-        self._frames = self._segmentation.model.receptive_field
 
         self._audio = model.audio
 
@@ -193,8 +192,8 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
         # estimate frame-level number of instantaneous speakers
         count = self.speaker_count(
             binarized_segmentations,
+            self._segmentation.model.receptive_field,
             warm_up=(self.warm_up, self.warm_up),
-            frames=self._frames,
         )
         hook("speaker_counting", count)
 
@@ -205,7 +204,7 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
             support=Segment(
                 0.0, self._audio.get_duration(file) + self._segmentation.step
             ),
-            resolution=self._frames,
+            resolution=self._segmentation.model.receptive_field,
         )
         hook("@resegmentation/original", diarization)
 

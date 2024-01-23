@@ -32,7 +32,7 @@ from typing import Callable, Optional, Text, Union
 import numpy as np
 import torch
 from einops import rearrange
-from pyannote.core import Annotation, SlidingWindow, SlidingWindowFeature
+from pyannote.core import Annotation, SlidingWindowFeature
 from pyannote.metrics.diarization import GreedyDiarizationErrorRate
 from pyannote.pipeline.parameter import ParamDict, Uniform
 
@@ -147,7 +147,6 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             skip_aggregation=True,
             batch_size=segmentation_batch_size,
         )
-        self._frames: SlidingWindow = self._segmentation.model.receptive_field
 
         if self._segmentation.model.specifications.powerset:
             self.segmentation = ParamDict(
@@ -493,7 +492,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         # estimate frame-level number of instantaneous speakers
         count = self.speaker_count(
             binarized_segmentations,
-            frames=self._frames,
+            self._segmentation.model.receptive_field,
             warm_up=(0.0, 0.0),
         )
         hook("speaker_counting", count)
@@ -527,7 +526,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             min_clusters=min_speakers,
             max_clusters=max_speakers,
             file=file,  # <== for oracle clustering
-            frames=self._frames,  # <== for oracle clustering
+            frames=self._segmentation.model.receptive_field,  # <== for oracle clustering
         )
         # hard_clusters: (num_chunks, num_speakers)
         # centroids: (num_speakers, dimension)

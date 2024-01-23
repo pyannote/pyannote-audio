@@ -28,7 +28,7 @@ from pyannote.core.utils.types import Label
 from pyannote.metrics.diarization import DiarizationErrorRate
 
 from pyannote.audio.core.inference import Inference
-from pyannote.audio.utils.signal import Binarize, binarize
+from pyannote.audio.utils.signal import Binarize
 
 
 # TODO: move to dedicated module
@@ -121,8 +121,8 @@ class SpeakerDiarizationMixin:
     @staticmethod
     def speaker_count(
         binarized_segmentations: SlidingWindowFeature,
+        frames: SlidingWindow,
         warm_up: Tuple[float, float] = (0.1, 0.1),
-        frames: SlidingWindow = None,
     ) -> SlidingWindowFeature:
         """Estimate frame-level number of instantaneous speakers
 
@@ -133,7 +133,7 @@ class SpeakerDiarizationMixin:
         warm_up : (float, float) tuple, optional
             Left/right warm up ratio of chunk duration.
             Defaults to (0.1, 0.1), i.e. 10% on both sides.
-        frames : SlidingWindow, optional
+        frames : SlidingWindow
             Frames resolution. Defaults to estimate it automatically based on
             `segmentations` shape and chunk size. Providing the exact frame
             resolution (when known) leads to better temporal precision.
@@ -147,7 +147,7 @@ class SpeakerDiarizationMixin:
         trimmed = Inference.trim(binarized_segmentations, warm_up=warm_up)
         count = Inference.aggregate(
             np.sum(trimmed, axis=-1, keepdims=True),
-            frames=frames,
+            frames,
             hamming=False,
             missing=0.0,
             skip_average=False,
@@ -212,7 +212,7 @@ class SpeakerDiarizationMixin:
         # TODO: investigate alternative aggregation
         activations = Inference.aggregate(
             segmentations,
-            frames=count.sliding_window,
+            count.sliding_window,
             hamming=False,
             missing=0.0,
             skip_average=True,
