@@ -302,7 +302,9 @@ class Model(pl.LightningModule):
             Activation.
         """
 
-        def __default_activation(specifications: Specifications = None) -> nn.Module:
+        def __default_activation(
+            specifications: Optional[Specifications] = None,
+        ) -> nn.Module:
             if specifications.problem == Problem.BINARY_CLASSIFICATION:
                 return nn.Sigmoid()
 

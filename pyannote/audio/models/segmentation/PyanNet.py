@@ -74,9 +74,9 @@ class PyanNet(Model):
 
     def __init__(
         self,
-        sincnet: dict = None,
-        lstm: dict = None,
-        linear: dict = None,
+        sincnet: Optional[dict] = None,
+        lstm: Optional[dict] = None,
+        linear: Optional[dict] = None,
         sample_rate: int = 16000,
         num_channels: int = 1,
         task: Optional[Task] = None,

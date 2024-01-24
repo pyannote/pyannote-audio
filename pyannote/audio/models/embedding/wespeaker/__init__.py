@@ -101,7 +101,7 @@ class BaseWeSpeakerResNet(Model):
         return self.resnet.embed_dim
 
     def forward(
-        self, waveforms: torch.Tensor, weights: torch.Tensor = None
+        self, waveforms: torch.Tensor, weights: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """
 

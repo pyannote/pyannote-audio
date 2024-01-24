@@ -255,7 +255,7 @@ class OverlappedSpeechDetection(Pipeline):
                 _self,
                 reference: Annotation,
                 hypothesis: Annotation,
-                uem: Timeline = None,
+                uem: Optional[Timeline] = None,
                 **kwargs,
             ) -> dict:
                 return super().compute_components(

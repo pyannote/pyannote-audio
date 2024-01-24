@@ -73,11 +73,12 @@ class OverlappedSpeechDetection(SegmentationTask):
     overlap: dict, optional
         Controls how artificial chunks with overlapping speech are generated:
         - "probability" key is the probability of artificial overlapping chunks. Setting
-          "probability" to 0.6 means that, on average, 40% of training chunks are "real"
-          chunks, while 60% are artifical chunks made out of the (weighted) sum of two
-          chunks. Defaults to 0.5.
+         "probability" to 0.6 means that, on average, 40% of training chunks are "real"
+         chunks, while 60% are artifical chunks made out of the (weighted) sum of two
+         chunks. Defaults to 0.5.
         - "snr_min" and "snr_max" keys control the minimum and maximum signal-to-noise
-          ratio between summed chunks, in dB. Default to 0.0 and 10.
+         ratio between summed chunks, in dB. Default to 0.0 and 10.
+
     weight: str, optional
         When provided, use this key to as frame-wise weight in loss function.
     batch_size : int, optional
@@ -105,12 +106,12 @@ class OverlappedSpeechDetection(SegmentationTask):
         duration: float = 2.0,
         warm_up: Union[float, Tuple[float, float]] = 0.0,
         overlap: dict = OVERLAP_DEFAULTS,
-        balance: Sequence[Text] = None,
-        weight: Text = None,
+        balance: Optional[Sequence[Text]] = None,
+        weight: Optional[Text] = None,
         batch_size: int = 32,
-        num_workers: int = None,
+        num_workers: Optional[int] = None,
         pin_memory: bool = False,
-        augmentation: BaseWaveformTransform = None,
+        augmentation: Optional[BaseWaveformTransform] = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
         cache: Optional[Union[str, None]] = None,
     ):

@@ -121,7 +121,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         clustering: str = "AgglomerativeClustering",
         embedding_batch_size: int = 1,
         segmentation_batch_size: int = 1,
-        der_variant: dict = None,
+        der_variant: Optional[dict] = None,
         use_auth_token: Union[Text, None] = None,
     ):
         super().__init__()
@@ -427,9 +427,9 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
     def apply(
         self,
         file: AudioFile,
-        num_speakers: int = None,
-        min_speakers: int = None,
-        max_speakers: int = None,
+        num_speakers: Optional[int] = None,
+        min_speakers: Optional[int] = None,
+        max_speakers: Optional[int] = None,
         return_embeddings: bool = False,
         hook: Optional[Callable] = None,
     ) -> Annotation:

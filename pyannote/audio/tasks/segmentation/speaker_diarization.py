@@ -136,19 +136,21 @@ class SpeakerDiarization(SegmentationTask):
         protocol: SpeakerDiarizationProtocol,
         cache: Optional[Union[str, None]] = None,
         duration: float = 2.0,
-        max_speakers_per_chunk: int = None,
-        max_speakers_per_frame: int = None,
+        max_speakers_per_chunk: Optional[int] = None,
+        max_speakers_per_frame: Optional[int] = None,
         weigh_by_cardinality: bool = False,
         warm_up: Union[float, Tuple[float, float]] = 0.0,
-        balance: Sequence[Text] = None,
-        weight: Text = None,
+        balance: Optional[Sequence[Text]] = None,
+        weight: Optional[Text] = None,
         batch_size: int = 32,
-        num_workers: int = None,
+        num_workers: Optional[int] = None,
         pin_memory: bool = False,
-        augmentation: BaseWaveformTransform = None,
+        augmentation: Optional[BaseWaveformTransform] = None,
         vad_loss: Literal["bce", "mse"] = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
-        max_num_speakers: int = None,  # deprecated in favor of `max_speakers_per_chunk``
+        max_num_speakers: Optional[
+            int
+        ] = None,  # deprecated in favor of `max_speakers_per_chunk``
         loss: Literal["bce", "mse"] = None,  # deprecated
     ):
         super().__init__(
@@ -442,7 +444,7 @@ class SpeakerDiarization(SegmentationTask):
         self,
         permutated_prediction: torch.Tensor,
         target: torch.Tensor,
-        weight: torch.Tensor = None,
+        weight: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Permutation-invariant segmentation loss
 
@@ -485,7 +487,7 @@ class SpeakerDiarization(SegmentationTask):
         self,
         permutated_prediction: torch.Tensor,
         target: torch.Tensor,
-        weight: torch.Tensor = None,
+        weight: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Voice activity detection loss
 
@@ -883,7 +885,7 @@ def main(protocol: str, subset: str = "test", model: str = "pyannote/segmentatio
         main_task = progress.add_task(protocol.name, total=len(files))
         file_task = progress.add_task("Processing", total=1.0)
 
-        def progress_hook(completed: int = None, total: int = None):
+        def progress_hook(completed: Optional[int] = None, total: Optional[int] = None):
             progress.update(file_task, completed=completed / total)
 
         inference = Inference(model, device=device)

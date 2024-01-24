@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import Union
+from typing import Optional, Union
 
 import numpy as np
 from pyannote.core import Annotation, Segment, SlidingWindow, SlidingWindowFeature
@@ -32,7 +32,7 @@ def oracle_segmentation(
     file: AudioFile,
     window: SlidingWindow,
     frames: Union[SlidingWindow, float],
-    num_speakers: int = None,
+    num_speakers: Optional[int] = None,
 ) -> SlidingWindowFeature:
     """Oracle speaker segmentation
 
