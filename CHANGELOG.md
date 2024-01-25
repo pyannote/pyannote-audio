@@ -7,6 +7,7 @@
 - feat(task): add option to cache task training metadata to speed up training
 - feat(pipeline): add `Waveform` and `SampleRate` preprocessors
 - feat(model): add `num_frames`, `receptive_field`, and `dimension` properties to segmentation models
+- feat(sample): add sample file at `pyannote.audio.sample.SAMPLE_FILE`
 
 ### Fixes
 
