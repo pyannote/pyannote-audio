@@ -40,7 +40,7 @@ def database():
 
 @pytest.fixture()
 def model():
-    return "./tests/data/simple_model_on_speaker_diarization_task.ckpt"
+    return "pyannote/ci-segmentation"
 
 
 def test_cli_train_vad(database, protocol):
