@@ -6,7 +6,7 @@
 
 - feat(task): add option to cache task training metadata to speed up training
 - feat(pipeline): add `Waveform` and `SampleRate` preprocessors
-- feat(model): add `num_frames` and `receptive_field` to segmentation models
+- feat(model): add `num_frames`, `receptive_field`, and `dimension` properties to segmentation models
 
 ### Fixes
 
@@ -14,6 +14,7 @@
 
 ## Breaking changes
 
+- BREAKING(model): get rid of `Model.example_output` in favor of `num_frames`, `receptive_field`, and `dimension` properties
 - BREAKING(task): custom tasks need to be updated (see "Add your own task" tutorial)
 
 ## Version 3.1.1 (2023-12-01)

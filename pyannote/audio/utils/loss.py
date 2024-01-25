@@ -23,11 +23,13 @@
 
 """Frame-weighted versions of common loss functions"""
 
+from typing import Optional
+
 import torch
 import torch.nn.functional as F
 
 
-def interpolate(target: torch.Tensor, weight: torch.Tensor = None):
+def interpolate(target: torch.Tensor, weight: Optional[torch.Tensor] = None):
     """Interpolate weight to match target frame resolution
 
     Parameters
@@ -55,7 +57,9 @@ def interpolate(target: torch.Tensor, weight: torch.Tensor = None):
 
 
 def binary_cross_entropy(
-    prediction: torch.Tensor, target: torch.Tensor, weight: torch.Tensor = None
+    prediction: torch.Tensor,
+    target: torch.Tensor,
+    weight: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     """Frame-weighted binary cross entropy
 
@@ -91,7 +95,9 @@ def binary_cross_entropy(
 
 
 def mse_loss(
-    prediction: torch.Tensor, target: torch.Tensor, weight: torch.Tensor = None
+    prediction: torch.Tensor,
+    target: torch.Tensor,
+    weight: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     """Frame-weighted mean-squared error loss
 
@@ -131,8 +137,8 @@ def mse_loss(
 def nll_loss(
     prediction: torch.Tensor,
     target: torch.Tensor,
-    class_weight: torch.Tensor = None,
-    weight: torch.Tensor = None,
+    class_weight: Optional[torch.Tensor] = None,
+    weight: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     """Frame-weighted negative log-likelihood loss
 

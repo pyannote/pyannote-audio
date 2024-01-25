@@ -95,8 +95,13 @@ class BaseWeSpeakerResNet(Model):
 
         return features - torch.mean(features, dim=1, keepdim=True)
 
+    @property
+    def dimension(self) -> int:
+        """Dimension of output"""
+        return self.resnet.embed_dim
+
     def forward(
-        self, waveforms: torch.Tensor, weights: torch.Tensor = None
+        self, waveforms: torch.Tensor, weights: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """
 
