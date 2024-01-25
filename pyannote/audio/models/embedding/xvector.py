@@ -34,7 +34,6 @@ from pyannote.audio.utils.params import merge_dict
 
 
 class XVectorMFCC(Model):
-
     MFCC_DEFAULTS = {"n_mfcc": 40, "dct_type": 2, "norm": "ortho", "log_mels": False}
 
     def __init__(
@@ -81,6 +80,11 @@ class XVectorMFCC(Model):
 
         self.embedding = nn.Linear(in_channel * 2, self.hparams.dimension)
 
+    @property
+    def dimension(self) -> int:
+        """Dimension of output"""
+        return self.hparams.dimension
+
     def forward(
         self, waveforms: torch.Tensor, weights: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
@@ -102,7 +106,6 @@ class XVectorMFCC(Model):
 
 
 class XVectorSincNet(Model):
-
     SINCNET_DEFAULTS = {"stride": 10}
 
     def __init__(
@@ -148,6 +151,11 @@ class XVectorSincNet(Model):
         self.stats_pool = StatsPool()
 
         self.embedding = nn.Linear(in_channel * 2, self.hparams.dimension)
+
+    @property
+    def dimension(self) -> int:
+        """Dimension of output"""
+        return self.hparams.dimension
 
     def forward(
         self, waveforms: torch.Tensor, weights: Optional[torch.Tensor] = None

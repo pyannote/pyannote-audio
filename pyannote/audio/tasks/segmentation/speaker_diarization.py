@@ -355,10 +355,14 @@ class SpeakerDiarization(SegmentationTask):
         ]
 
         # discretize chunk annotations at model output resolution
-        start = np.maximum(chunk_annotations["start"], chunk.start) - chunk.start
-        start_idx = np.floor(start / self.model.example_output.frames.step).astype(int)
-        end = np.minimum(chunk_annotations["end"], chunk.end) - chunk.start
-        end_idx = np.ceil(end / self.model.example_output.frames.step).astype(int)
+        step = self.model.receptive_field.step
+        half = 0.5 * self.model.receptive_field.duration
+
+        start = np.maximum(chunk_annotations["start"], chunk.start) - chunk.start - half
+        start_idx = np.maximum(0, np.round(start / step)).astype(int)
+
+        end = np.minimum(chunk_annotations["end"], chunk.end) - chunk.start - half
+        end_idx = np.round(end / step).astype(int)
 
         # get list and number of labels for current scope
         labels = list(np.unique(chunk_annotations[label_scope_key]))
@@ -368,7 +372,10 @@ class SpeakerDiarization(SegmentationTask):
             pass
 
         # initial frame-level targets
-        y = np.zeros((self.model.example_output.num_frames, num_labels), dtype=np.uint8)
+        num_frames = self.model.num_frames(
+            round(duration * self.model.hparams.sample_rate)
+        )
+        y = np.zeros((num_frames, num_labels), dtype=np.uint8)
 
         # map labels to indices
         mapping = {label: idx for idx, label in enumerate(labels)}
@@ -377,11 +384,9 @@ class SpeakerDiarization(SegmentationTask):
             start_idx, end_idx, chunk_annotations[label_scope_key]
         ):
             mapped_label = mapping[label]
-            y[start:end, mapped_label] = 1
+            y[start : end + 1, mapped_label] = 1
 
-        sample["y"] = SlidingWindowFeature(
-            y, self.model.example_output.frames, labels=labels
-        )
+        sample["y"] = SlidingWindowFeature(y, self.model.receptive_field, labels=labels)
 
         metadata = self.prepared_data["audio-metadata"][file_id]
         sample["meta"] = {key: metadata[key] for key in metadata.dtype.names}

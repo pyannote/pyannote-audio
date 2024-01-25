@@ -39,7 +39,7 @@ def oracle_segmentation(
     Simulates inference based on an (imaginary) oracle segmentation model:
 
     >>> oracle = Model.from_pretrained("oracle")
-    >>> assert frames == oracle.example_output.frames
+    >>> assert frames == oracle.receptive_field
     >>> inference = Inference(oracle, duration=window.duration, step=window.step, skip_aggregation=True)
     >>> oracle_segmentation = inference(file)
 
