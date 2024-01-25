@@ -24,8 +24,10 @@
 # Hervé BREDIN - https://herve.niderb.fr
 # Alexis PLAQUET
 
+import itertools
 from functools import cached_property
 from itertools import combinations
+from typing import Dict, Tuple
 
 import scipy.special
 import torch
@@ -84,6 +86,27 @@ class Powerset(nn.Module):
                 powerset_k += 1
         return cardinality
 
+    @cached_property
+    def permutation_mapping(self) -> Dict[Tuple[int, ...], Tuple[int, ...]]:
+        result = {}
+        for perm in itertools.permutations(range(self.num_classes), self.num_classes):
+            result[tuple(perm)] = tuple(
+                self._permutation_powerset(
+                    torch.tensor(perm, dtype=torch.long)
+                ).tolist()
+            )
+        return result
+
+    @cached_property
+    def permutation_mapping_keys(self) -> torch.Tensor:
+        """(number_of_perms, num_classes)-shaped tensor, contains all possible multilabel permutations."""
+        return torch.tensor(list(self.permutation_mapping.keys()), dtype=torch.long)
+
+    @cached_property
+    def permutation_mapping_values(self) -> torch.Tensor:
+        """(number_of_perms, num_classes_powerset)-shaped, i-th entry is the matching powerset permutations to `permutation_mapping_keys[i]`"""
+        return torch.tensor(list(self.permutation_mapping.values()), dtype=torch.long)
+
     def to_multilabel(self, powerset: torch.Tensor, soft: bool = False) -> torch.Tensor:
         """Convert predictions from powerset to multi-label
 
@@ -139,20 +162,10 @@ class Powerset(nn.Module):
             num_classes=self.num_powerset_classes,
         )
 
-    @cached_property
-    def _powers2_matrix(self) -> torch.Tensor:
-        """Returns a (num_powerset_classes, num_classes)-shaped matrix
-        where column i contains 2**i. Helps compute a unique ID in the multiclass space.
-        """
-        arange = torch.arange(
-            self.num_classes, device=self.mapping.device, dtype=torch.int
-        )
-        powers2 = (2**arange).tile((self.num_powerset_classes, 1))
-        return powers2
-
     def _permutation_powerset(self, perm_ml: torch.Tensor) -> torch.Tensor:
         """Takes a (num_classes,)-shaped permutation in multilabel space and returns
         the corresponding (num_powerset_classes,)-shaped permutation in powerset space.
+        This does not cache anything and only works on one single permutation at a time.
 
         Parameters
         ----------
@@ -168,7 +181,10 @@ class Powerset(nn.Module):
         permutated_mapping = self.mapping[:, perm_ml]
 
         # get mapping-shaped 2**N tensor
-        powers2 = self._powers2_matrix
+        arange = torch.arange(
+            self.num_classes, device=self.mapping.device, dtype=torch.int
+        )
+        powers2 = (2**arange).tile((self.num_powerset_classes, 1))
 
         # compute the encoding of the powerset classes in this 2**N space, before and after
         # permutation of the columns (mapping cols=labels, mapping rows=powerset classes)
@@ -210,12 +226,22 @@ class Powerset(nn.Module):
 
         We obtain the powerset permutation with classes spk1 and spk2 permutated.
         """
-
         if permutation_ml.ndim == 1:
-            return self._permutation_powerset(permutation_ml)
+            # Just return the corresponding value in the mapping
+            return torch.tensor(
+                self.permutation_mapping[tuple(permutation_ml.tolist())],
+                dtype=torch.int,
+            )
         elif permutation_ml.ndim == 2:
-            batched_fn = torch.vmap(self._permutation_powerset, in_dims=(0))
-            return batched_fn(permutation_ml)
+            # Create a mask for matching keys, using broadcasting: (B,1,N_CLASSES) w/ (1,N_PERM,N_CLASSES)
+            # gives a mask of size (B, N_PERM, N_CLASSES)
+            mask = (
+                permutation_ml[:, None, :] == self.permutation_mapping_keys[None, ...]
+            )
+
+            # Use the mask to compute the corresponding values indices
+            corresponding_psperm_idx = mask.all(dim=-1).int().argmax(dim=1)
+            return self.permutation_mapping_values[corresponding_psperm_idx]
         else:
             raise ValueError(
                 f"permutation_ml must be 1D (single permutation) or 2D (batch of permutations), got {permutation_ml.ndim}D"
