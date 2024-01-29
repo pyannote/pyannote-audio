@@ -39,7 +39,6 @@ class SimpleEmbeddingModel(Model):
         num_channels: int = 1,
         task: Optional[Task] = None,
     ):
-
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
 
         self.mfcc = MFCC(
@@ -57,6 +56,11 @@ class SimpleEmbeddingModel(Model):
             batch_first=True,
             bidirectional=True,
         )
+
+    @property
+    def dimension(self) -> int:
+        """Dimension of output"""
+        return 64
 
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
         """

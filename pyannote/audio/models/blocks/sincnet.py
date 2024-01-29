@@ -24,6 +24,8 @@
 # Hervé Bredin - http://herve.niderb.fr
 
 
+from functools import cached_property, lru_cache
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -74,6 +76,7 @@ class SincNet(nn.Module):
         self.pool1d.append(nn.MaxPool1d(3, stride=3, padding=0, dilation=1))
         self.norm1d.append(nn.InstanceNorm1d(60, affine=True))
 
+    @lru_cache
     def num_frames(self, num_samples: int) -> int:
         """Compute number of output frames for a given number of input samples
 
@@ -132,6 +135,7 @@ class SincNet(nn.Module):
 
         return receptive_field_size
 
+    @cached_property
     def receptive_field(self) -> SlidingWindow:
         """Compute receptive field
 

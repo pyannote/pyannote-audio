@@ -284,7 +284,7 @@ class AdaptiveVoiceActivityDetection(Pipeline):
     def __init__(
         self,
         segmentation: PipelineInference = "hbredin/VoiceActivityDetection-PyanNet-DIHARD",
-        augmentation: PipelineAugmentation = None,
+        augmentation: Optional[PipelineAugmentation] = None,
         fscore: bool = False,
     ):
         super().__init__()

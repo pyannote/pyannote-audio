@@ -21,6 +21,7 @@
 # SOFTWARE.
 
 
+from functools import cached_property, lru_cache
 from typing import Optional
 
 import torch
@@ -58,6 +59,7 @@ class SimpleSegmentationModel(Model):
             bidirectional=True,
         )
 
+    @lru_cache
     def num_frames(self, num_samples: int) -> int:
         """Compute number of output frames for a given number of input samples
 
@@ -80,7 +82,7 @@ class SimpleSegmentationModel(Model):
         hop_length = self.mfcc.MelSpectrogram.spectrogram.hop_length
         n_fft = self.mfcc.MelSpectrogram.spectrogram.n_fft
         center = self.mfcc.MelSpectrogram.spectrogram.center
-        return (
+        return int(
             1 + num_samples // hop_length
             if center
             else 1 + (num_samples - n_fft) // hop_length
@@ -109,6 +111,7 @@ class SimpleSegmentationModel(Model):
         else:
             return (num_frames - 1) * hop_length + n_fft
 
+    @cached_property
     def receptive_field(self) -> SlidingWindow:
         """Compute receptive field
 
@@ -134,18 +137,21 @@ class SimpleSegmentationModel(Model):
 
         return SlidingWindow(start=0.0, duration=duration, step=step)
 
-    def build(self):
-        # define task-dependent layers
-
+    @property
+    def dimension(self) -> int:
+        """Dimension of output"""
         if isinstance(self.specifications, tuple):
             raise ValueError("SimpleSegmentationModel does not support multi-tasking.")
 
         if self.specifications.powerset:
-            out_features = self.specifications.num_powerset_classes
+            return self.specifications.num_powerset_classes
         else:
-            out_features = len(self.specifications.classes)
+            return len(self.specifications.classes)
 
-        self.classifier = nn.Linear(32 * 2, out_features)
+    def build(self):
+        # define task-dependent layers
+
+        self.classifier = nn.Linear(32 * 2, self.dimension)
         self.activation = self.default_activation()
 
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:

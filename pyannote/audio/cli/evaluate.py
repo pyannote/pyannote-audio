@@ -53,7 +53,7 @@ def evaluate(cfg: DictConfig) -> Optional[float]:
         main_task = progress.add_task(protocol.name, total=len(files))
         file_task = progress.add_task("Processing", total=1.0)
 
-        def progress_hook(completed: int = None, total: int = None):
+        def progress_hook(completed: Optional[int] = None, total: Optional[int] = None):
             progress.update(file_task, completed=completed / total)
 
         inference = Inference(model, device=device)
