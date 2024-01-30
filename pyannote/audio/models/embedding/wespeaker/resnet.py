@@ -15,6 +15,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Optional
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -35,7 +37,7 @@ class TSTP(nn.Module):
         self.in_dim = in_dim
         self.stats_pool = StatsPool()
 
-    def forward(self, features, weights: torch.Tensor = None):
+    def forward(self, features, weights: Optional[torch.Tensor] = None):
         """
 
         Parameters
@@ -190,7 +192,7 @@ class ResNet(nn.Module):
             self.in_planes = planes * block.expansion
         return nn.Sequential(*layers)
 
-    def forward(self, x: torch.Tensor, weights: torch.Tensor = None):
+    def forward(self, x: torch.Tensor, weights: Optional[torch.Tensor] = None):
         """
 
         Parameters

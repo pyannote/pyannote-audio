@@ -60,10 +60,10 @@ class MixSpeakerDiarization(Mix):
         max_snr_in_db: float = 5.0,
         mode: str = "per_example",
         p: float = 0.5,
-        p_mode: str = None,
-        sample_rate: int = None,
-        target_rate: int = None,
-        max_num_speakers: int = None,
+        p_mode: Optional[str] = None,
+        sample_rate: Optional[int] = None,
+        target_rate: Optional[int] = None,
+        max_num_speakers: Optional[int] = None,
         output_type: str = "tensor",
     ):
         super().__init__(
@@ -80,7 +80,7 @@ class MixSpeakerDiarization(Mix):
 
     def randomize_parameters(
         self,
-        samples: Tensor = None,
+        samples: Optional[Tensor] = None,
         sample_rate: Optional[int] = None,
         targets: Optional[Tensor] = None,
         target_rate: Optional[int] = None,

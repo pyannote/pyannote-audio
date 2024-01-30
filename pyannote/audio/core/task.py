@@ -250,12 +250,12 @@ class Task(pl.LightningDataModule):
         protocol: Protocol,
         cache: Optional[Union[str, None]] = None,
         duration: float = 2.0,
-        min_duration: float = None,
+        min_duration: Optional[float] = None,
         warm_up: Union[float, Tuple[float, float]] = 0.0,
         batch_size: int = 32,
-        num_workers: int = None,
+        num_workers: Optional[int] = None,
         pin_memory: bool = False,
-        augmentation: BaseWaveformTransform = None,
+        augmentation: Optional[BaseWaveformTransform] = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
     ):
         super().__init__()

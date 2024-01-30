@@ -9,7 +9,7 @@ from pyannote.audio.core.task import Resolution
 from pyannote.audio.models.segmentation.debug import SimpleSegmentationModel
 from pyannote.audio.tasks import VoiceActivityDetection
 
-HF_SAMPLE_MODEL_ID = "pyannote/TestModelForContinuousIntegration"
+HF_SAMPLE_MODEL_ID = "pyannote/ci-segmentation"
 
 
 def test_hf_download_inference():

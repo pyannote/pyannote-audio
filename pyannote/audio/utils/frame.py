@@ -24,7 +24,9 @@
 import math
 
 
-def conv1d_num_frames(num_samples, kernel_size=5, stride=1, padding=0, dilation=1):
+def conv1d_num_frames(
+    num_samples, kernel_size=5, stride=1, padding=0, dilation=1
+) -> int:
     """Compute expected number of frames after 1D convolution
 
     Parameters
