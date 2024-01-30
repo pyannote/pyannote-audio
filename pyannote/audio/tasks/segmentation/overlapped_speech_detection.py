@@ -172,9 +172,7 @@ class OverlappedSpeechDetection(SegmentationTask):
         sample["X"], _ = self.model.audio.crop(file, chunk, duration=duration)
 
         # gather all annotations of current file
-        annotations = self.prepared_data["annotations-segments"][
-            self.prepared_data["annotations-segments"]["file_id"] == file_id
-        ]
+        annotations = self.prepared_data["annotations-segments"][file_id]
 
         # gather all annotations with non-empty intersection with current chunk
         chunk_annotations = annotations[
