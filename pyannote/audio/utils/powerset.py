@@ -24,9 +24,8 @@
 # Hervé BREDIN - https://herve.niderb.fr
 # Alexis PLAQUET
 
-import itertools
 from functools import cached_property
-from itertools import combinations
+from itertools import combinations, permutations
 from typing import Dict, Tuple
 
 import scipy.special
@@ -67,6 +66,27 @@ class Powerset(nn.Module):
         )
 
     def build_mapping(self) -> torch.Tensor:
+        """Compute powerset to regular mapping
+
+        Returns
+        -------
+        mapping : (num_powerset_classes, num_classes) torch.Tensor
+            mapping[i, j] == 1 if jth regular class is a member of ith powerset class
+            mapping[i, j] == 0 otherwise
+
+        Example
+        -------
+        With num_classes == 3 and max_set_size == 2, returns
+
+            [0, 0, 0]  # none
+            [1, 0, 0]  # class #1
+            [0, 1, 0]  # class #2
+            [0, 0, 1]  # class #3
+            [1, 1, 0]  # classes #1 and #2
+            [1, 0, 1]  # classes #1 and #3
+            [0, 1, 1]  # classes #2 and #3
+
+        """
         mapping = torch.zeros(self.num_powerset_classes, self.num_classes)
         powerset_k = 0
         for set_size in range(0, self.max_set_size + 1):
@@ -78,34 +98,7 @@ class Powerset(nn.Module):
 
     def build_cardinality(self) -> torch.Tensor:
         """Compute size of each powerset class"""
-        cardinality = torch.zeros(self.num_powerset_classes)
-        powerset_k = 0
-        for set_size in range(0, self.max_set_size + 1):
-            for _ in combinations(range(self.num_classes), set_size):
-                cardinality[powerset_k] = set_size
-                powerset_k += 1
-        return cardinality
-
-    @cached_property
-    def permutation_mapping(self) -> Dict[Tuple[int, ...], Tuple[int, ...]]:
-        result = {}
-        for perm in itertools.permutations(range(self.num_classes), self.num_classes):
-            result[tuple(perm)] = tuple(
-                self._permutation_powerset(
-                    torch.tensor(perm, dtype=torch.long)
-                ).tolist()
-            )
-        return result
-
-    @cached_property
-    def permutation_mapping_keys(self) -> torch.Tensor:
-        """(number_of_perms, num_classes)-shaped tensor, contains all possible multilabel permutations."""
-        return torch.tensor(list(self.permutation_mapping.keys()), dtype=torch.long)
-
-    @cached_property
-    def permutation_mapping_values(self) -> torch.Tensor:
-        """(number_of_perms, num_classes_powerset)-shaped, i-th entry is the matching powerset permutations to `permutation_mapping_keys[i]`"""
-        return torch.tensor(list(self.permutation_mapping.values()), dtype=torch.long)
+        return torch.sum(self.mapping, dim=1)
 
     def to_multilabel(self, powerset: torch.Tensor, soft: bool = False) -> torch.Tensor:
         """Convert predictions from powerset to multi-label
@@ -162,87 +155,75 @@ class Powerset(nn.Module):
             num_classes=self.num_powerset_classes,
         )
 
-    def _permutation_powerset(self, perm_ml: torch.Tensor) -> torch.Tensor:
-        """Takes a (num_classes,)-shaped permutation in multilabel space and returns
+    def _permutation_powerset(
+        self, multilabel_permutation: Tuple[int, ...]
+    ) -> Tuple[int, ...]:
+        """Helper function for `permutation_mapping` property
+
+        Takes a (num_classes,)-shaped permutation in multilabel space and returns
         the corresponding (num_powerset_classes,)-shaped permutation in powerset space.
         This does not cache anything and only works on one single permutation at a time.
 
         Parameters
         ----------
-        perm_ml : torch.Tensor
-            Permutation in multilabel space, (num_classes,)-shaped.
+        multilabel_permutation : tuple of int
+            Permutation in multilabel space.
 
         Returns
         -------
-        torch.Tensor
-            Corresponding permutation in powerset space (num_powerset_classes,)-shaped.
+        powerset_permutation : tuple of int
+            Permutation in powerset space.
+
+        Example
+        -------
+        >>> powerset = Powerset(3, 2)
+        >>> powerset._permutation_powerset((1, 0, 2))
+        # (0, 2, 1, 3, 4, 6, 5)
+
         """
 
-        permutated_mapping = self.mapping[:, perm_ml]
+        permutated_mapping: torch.Tensor = self.mapping[:, multilabel_permutation]
 
-        # get mapping-shaped 2**N tensor
         arange = torch.arange(
             self.num_classes, device=self.mapping.device, dtype=torch.int
         )
-        powers2 = (2**arange).tile((self.num_powerset_classes, 1))
+        powers_of_two = (2**arange).tile((self.num_powerset_classes, 1))
 
         # compute the encoding of the powerset classes in this 2**N space, before and after
         # permutation of the columns (mapping cols=labels, mapping rows=powerset classes)
-        indexing_og = torch.sum(self.mapping * powers2, dim=-1).long()
-        indexing_new = torch.sum(permutated_mapping * powers2, dim=-1).long()
+        before = torch.sum(self.mapping * powers_of_two, dim=-1)
+        after = torch.sum(permutated_mapping * powers_of_two, dim=-1)
 
-        # find the permutation to go from og to new
-        ps_permutation = (
-            (indexing_og[None] == indexing_new[:, None]).int().argmax(dim=0)
-        )
-        return ps_permutation
+        # find before-to-after permutation
+        powerset_permutation = (before[None] == after[:, None]).int().argmax(dim=0)
 
-    def permutation_powerset(self, permutation_ml: torch.Tensor) -> torch.Tensor:
-        """Find the equivalent to a multilabel permutation in the powerset class space.
-        Supports both batches of permutation (2D tensor) or single permutations (1D tensor).
+        # return as tuple of indices
+        return tuple(powerset_permutation.tolist())
 
-        Parameters
-        ----------
-        permutation_ml: torch.Tensor
-            A multilabel permutation(s), (num_classes,) or (batch, num_classes)-shaped.
-
-        Returns
-        -------
-        torch.Tensor
-            The corresponding powerset permutation(s), (num_powerset_classes,)
-            or (batch, num_powerset_classes)-shaped depending on the input.
+    @cached_property
+    def permutation_mapping(self) -> Dict[Tuple[int, ...], Tuple[int, ...]]:
+        """Mapping between multilabel and powerset permutations
 
         Example
-        ---------
-        With Powerset(2,2), the powerset classes are [nonspeech, spk1, spk2, spk1+spk2],
-        while the multilabel 'classes' are [spk1, spk2].
-        If we get for the equivalent to the multilabel permutation [1,0] (=[spk2, spk1]):
+        -------
+        With num_classes == 3 and max_set_size == 2, returns
 
-        >>> powerset = Powerset(num_classes=2, max_set_size=2)
-        >>> permutation_ml = torch.tensor([1, 0])
-        >>> permutation_ps = powerset.permutation_powerset(permutation_ml)
-        >>> permutation_ps
-        tensor([0, 2, 1, 3])
-
-        We obtain the powerset permutation with classes spk1 and spk2 permutated.
+        {
+            (0, 1, 2): (0, 1, 2, 3, 4, 5, 6),
+            (0, 2, 1): (0, 1, 3, 2, 5, 4, 6),
+            (1, 0, 2): (0, 2, 1, 3, 4, 6, 5),
+            (1, 2, 0): (0, 2, 3, 1, 6, 4, 5),
+            (2, 0, 1): (0, 3, 1, 2, 5, 6, 4),
+            (2, 1, 0): (0, 3, 2, 1, 6, 5, 4)
+        }
         """
-        if permutation_ml.ndim == 1:
-            # Just return the corresponding value in the mapping
-            return torch.tensor(
-                self.permutation_mapping[tuple(permutation_ml.tolist())],
-                dtype=torch.int,
-            )
-        elif permutation_ml.ndim == 2:
-            # Create a mask for matching keys, using broadcasting: (B,1,N_CLASSES) w/ (1,N_PERM,N_CLASSES)
-            # gives a mask of size (B, N_PERM, N_CLASSES)
-            mask = (
-                permutation_ml[:, None, :] == self.permutation_mapping_keys[None, ...]
-            )
+        permutation_mapping = {}
 
-            # Use the mask to compute the corresponding values indices
-            corresponding_psperm_idx = mask.all(dim=-1).int().argmax(dim=1)
-            return self.permutation_mapping_values[corresponding_psperm_idx]
-        else:
-            raise ValueError(
-                f"permutation_ml must be 1D (single permutation) or 2D (batch of permutations), got {permutation_ml.ndim}D"
-            )
+        for multilabel_permutation in permutations(
+            range(self.num_classes), self.num_classes
+        ):
+            permutation_mapping[
+                tuple(multilabel_permutation)
+            ] = self._permutation_powerset(multilabel_permutation)
+
+        return permutation_mapping
