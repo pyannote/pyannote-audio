@@ -25,7 +25,7 @@
 
 import random
 from enum import Enum
-from typing import Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 from einops import rearrange
@@ -56,9 +56,9 @@ class BaseClustering(Pipeline):
     def set_num_clusters(
         self,
         num_embeddings: int,
-        num_clusters: int = None,
-        min_clusters: int = None,
-        max_clusters: int = None,
+        num_clusters: Optional[int] = None,
+        min_clusters: Optional[int] = None,
+        max_clusters: Optional[int] = None,
     ):
         min_clusters = num_clusters or min_clusters or 1
         min_clusters = max(1, min(num_embeddings, min_clusters))
@@ -79,7 +79,7 @@ class BaseClustering(Pipeline):
     def filter_embeddings(
         self,
         embeddings: np.ndarray,
-        segmentations: SlidingWindowFeature = None,
+        segmentations: Optional[SlidingWindowFeature] = None,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Filter NaN embeddings and downsample embeddings
 
@@ -97,7 +97,13 @@ class BaseClustering(Pipeline):
         speaker_idx : (num_embeddings, ) array
         """
 
-        chunk_idx, speaker_idx = np.where(~np.any(np.isnan(embeddings), axis=2))
+        # whether speaker is active
+        active = np.sum(segmentations.data, axis=1) > 0
+        # whether speaker embedding extraction went fine
+        valid = ~np.any(np.isnan(embeddings), axis=2)
+
+        # indices of embeddings that are both active and valid
+        chunk_idx, speaker_idx = np.where(active * valid)
 
         # sample max_num_embeddings embeddings
         num_embeddings = len(chunk_idx)
@@ -199,10 +205,10 @@ class BaseClustering(Pipeline):
     def __call__(
         self,
         embeddings: np.ndarray,
-        segmentations: SlidingWindowFeature = None,
-        num_clusters: int = None,
-        min_clusters: int = None,
-        max_clusters: int = None,
+        segmentations: Optional[SlidingWindowFeature] = None,
+        num_clusters: Optional[int] = None,
+        min_clusters: Optional[int] = None,
+        max_clusters: Optional[int] = None,
         **kwargs,
     ) -> np.ndarray:
         """Apply clustering
@@ -240,6 +246,7 @@ class BaseClustering(Pipeline):
         )
 
         num_embeddings, _ = train_embeddings.shape
+
         num_clusters, min_clusters, max_clusters = self.set_num_clusters(
             num_embeddings,
             num_clusters=num_clusters,
@@ -253,7 +260,6 @@ class BaseClustering(Pipeline):
             hard_clusters = np.zeros((num_chunks, num_speakers), dtype=np.int8)
             soft_clusters = np.ones((num_chunks, num_speakers, 1))
             centroids = np.mean(train_embeddings, axis=0, keepdims=True)
-
             return hard_clusters, soft_clusters, centroids
 
         train_clusters = self.cluster(
@@ -317,7 +323,7 @@ class AgglomerativeClustering(BaseClustering):
         embeddings: np.ndarray,
         min_clusters: int,
         max_clusters: int,
-        num_clusters: int = None,
+        num_clusters: Optional[int] = None,
     ):
         """
 
@@ -470,10 +476,10 @@ class OracleClustering(BaseClustering):
 
     def __call__(
         self,
-        embeddings: np.ndarray = None,
-        segmentations: SlidingWindowFeature = None,
-        file: AudioFile = None,
-        frames: SlidingWindow = None,
+        embeddings: Optional[np.ndarray] = None,
+        segmentations: Optional[SlidingWindowFeature] = None,
+        file: Optional[AudioFile] = None,
+        frames: Optional[SlidingWindow] = None,
         **kwargs,
     ) -> np.ndarray:
         """Apply oracle clustering

@@ -34,14 +34,13 @@ from pyannote.audio.utils.params import merge_dict
 
 
 class XVectorMFCC(Model):
-
     MFCC_DEFAULTS = {"n_mfcc": 40, "dct_type": 2, "norm": "ortho", "log_mels": False}
 
     def __init__(
         self,
         sample_rate: int = 16000,
         num_channels: int = 1,
-        mfcc: dict = None,
+        mfcc: Optional[dict] = None,
         dimension: int = 512,
         task: Optional[Task] = None,
     ):
@@ -81,8 +80,13 @@ class XVectorMFCC(Model):
 
         self.embedding = nn.Linear(in_channel * 2, self.hparams.dimension)
 
+    @property
+    def dimension(self) -> int:
+        """Dimension of output"""
+        return self.hparams.dimension
+
     def forward(
-        self, waveforms: torch.Tensor, weights: torch.Tensor = None
+        self, waveforms: torch.Tensor, weights: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """
 
@@ -102,14 +106,13 @@ class XVectorMFCC(Model):
 
 
 class XVectorSincNet(Model):
-
     SINCNET_DEFAULTS = {"stride": 10}
 
     def __init__(
         self,
         sample_rate: int = 16000,
         num_channels: int = 1,
-        sincnet: dict = None,
+        sincnet: Optional[dict] = None,
         dimension: int = 512,
         task: Optional[Task] = None,
     ):
@@ -149,8 +152,13 @@ class XVectorSincNet(Model):
 
         self.embedding = nn.Linear(in_channel * 2, self.hparams.dimension)
 
+    @property
+    def dimension(self) -> int:
+        """Dimension of output"""
+        return self.hparams.dimension
+
     def forward(
-        self, waveforms: torch.Tensor, weights: torch.Tensor = None
+        self, waveforms: torch.Tensor, weights: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """
 

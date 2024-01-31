@@ -27,7 +27,7 @@ from random import Random
 import torch
 
 
-def create_rng_for_worker(epoch: int) -> Random:
+def create_rng_for_worker(model) -> Random:
     """Create worker-specific random number generator
 
     This makes sure that
@@ -43,19 +43,24 @@ def create_rng_for_worker(epoch: int) -> Random:
     # create random number generator
     rng = Random()
 
-    #  create seed as a combination of PL_GLOBAL_SEED (set by pl.seed_everything())
-    #  and other PL multi-processing variables
-    global_seed = int(os.environ.get("PL_GLOBAL_SEED", "0"))
-    local_rank = int(os.environ.get("LOCAL_RANK", "0"))
-    node_rank = int(os.environ.get("NODE_RANK", "0"))
-
+    global_seed = os.environ.get("PL_GLOBAL_SEED", "unset")
     worker_info = torch.utils.data.get_worker_info()
 
     if worker_info is None:
-        worker_id = 0
+        worker_id = None
     else:
         worker_id = worker_info.id
 
-    rng.seed(hash((global_seed, worker_id, local_rank, node_rank, epoch)))
+    seed = hash(
+        (
+            global_seed,
+            worker_id,
+            model.local_rank,
+            model.global_rank,
+            model.current_epoch,
+        )
+    )
+
+    rng.seed(seed)
 
     return rng

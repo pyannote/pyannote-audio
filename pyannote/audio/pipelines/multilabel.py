@@ -75,7 +75,7 @@ class MultiLabelSegmentation(Pipeline):
 
     def __init__(
         self,
-        segmentation: PipelineModel = None,
+        segmentation: Optional[PipelineModel] = None,
         fscore: bool = False,
         share_min_duration: bool = False,
         use_auth_token: Union[Text, None] = None,

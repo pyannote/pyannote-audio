@@ -47,7 +47,7 @@ except ImportError:
     MOVIEPY_INSTALLED = False
 
 
-from typing import Mapping
+from typing import Mapping, Optional
 
 import torch
 from pyannote.core import (
@@ -64,7 +64,7 @@ from pyannote.audio.core.model import Model
 from pyannote.audio.utils.signal import Binarize
 
 
-def listen(audio_file: AudioFile, segment: Segment = None) -> None:
+def listen(audio_file: AudioFile, segment: Optional[Segment] = None) -> None:
     """listen to audio
 
     Allows playing of audio files. It will play the whole thing unless
@@ -91,7 +91,7 @@ def listen(audio_file: AudioFile, segment: Segment = None) -> None:
 
 def preview(
     audio_file: AudioFile,
-    segment: Segment = None,
+    segment: Optional[Segment] = None,
     zoom: float = 10.0,
     video_fps: int = 5,
     video_ext: str = "webm",

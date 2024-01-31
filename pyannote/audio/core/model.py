@@ -25,7 +25,6 @@ from __future__ import annotations
 import os
 import warnings
 from dataclasses import dataclass
-from functools import cached_property
 from importlib import import_module
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Text, Tuple, Union
@@ -46,7 +45,6 @@ from pyannote.audio import __version__
 from pyannote.audio.core.io import Audio
 from pyannote.audio.core.task import (
     Problem,
-    Resolution,
     Specifications,
     Task,
     UnknownSpecificationsError,
@@ -112,10 +110,6 @@ class Model(pl.LightningModule):
     def task(self, task: Task):
         # reset (cached) properties when task changes
         del self.specifications
-        try:
-            del self.example_output
-        except AttributeError:
-            pass
         self._task = task
 
     def build(self):
@@ -142,8 +136,8 @@ class Model(pl.LightningModule):
             except AttributeError as e:
                 raise UnknownSpecificationsError(
                     "Task specifications are not available. This is most likely because they depend on "
-                    "the content of the training subset. Use `model.task.setup()` to go over the training "
-                    "subset and fix this, or let lightning trainer do that for you in `trainer.fit(model)`."
+                    "the content of the training subset. Use `model.prepare_data()` and `model.setup()` "
+                    "to go over the training subset and fix this, or let lightning trainer do that for you in `trainer.fit(model)`."
                 ) from e
 
         return specifications
@@ -187,39 +181,19 @@ class Model(pl.LightningModule):
     def example_input_array(self) -> torch.Tensor:
         return self.__example_input_array()
 
-    @cached_property
-    def example_output(self) -> Union[Output, Tuple[Output]]:
-        """Example output"""
-        example_input_array = self.__example_input_array()
-        with torch.inference_mode():
-            example_output = self(example_input_array)
-
-        def __example_output(
-            example_output: torch.Tensor,
-            specifications: Specifications = None,
-        ) -> Output:
-            if specifications.resolution == Resolution.FRAME:
-                _, num_frames, dimension = example_output.shape
-                frame_duration = specifications.duration / num_frames
-                frames = SlidingWindow(step=frame_duration, duration=frame_duration)
-            else:
-                _, dimension = example_output.shape
-                num_frames = None
-                frames = None
-
-            return Output(
-                num_frames=num_frames,
-                dimension=dimension,
-                frames=frames,
-            )
-
-        return map_with_specifications(
-            self.specifications, __example_output, example_output
-        )
+    def prepare_data(self):
+        self.task.prepare_data()
 
     def setup(self, stage=None):
         if stage == "fit":
-            self.task.setup_metadata()
+            # let the task know about the trainer (e.g for broadcasting
+            # cache path between multi-GPU training processes).
+            self.task.trainer = self.trainer
+
+        # setup the task if defined (only on training and validation stages,
+        # but not for basic inference)
+        if self.task:
+            self.task.setup(stage)
 
         # list of layers before adding task-dependent layers
         before = set((name, id(module)) for name, module in self.named_modules())
@@ -252,16 +226,13 @@ class Model(pl.LightningModule):
                 module.to(self.device)
 
         # add (trainable) loss function (e.g. ArcFace has its own set of trainable weights)
-        if stage == "fit":
+        if self.task:
             # let task know about the model
             self.task.model = self
             # setup custom loss function
             self.task.setup_loss_func()
             # setup custom validation metrics
             self.task.setup_validation_metric()
-
-            # cache for later (and to avoid later CUDA error with multiprocessing)
-            _ = self.example_output
 
         # list of layers after adding task-dependent layers
         after = set((name, id(module)) for name, module in self.named_modules())
@@ -331,7 +302,9 @@ class Model(pl.LightningModule):
             Activation.
         """
 
-        def __default_activation(specifications: Specifications = None) -> nn.Module:
+        def __default_activation(
+            specifications: Optional[Specifications] = None,
+        ) -> nn.Module:
             if specifications.problem == Problem.BINARY_CLASSIFICATION:
                 return nn.Sigmoid()
 
@@ -468,9 +441,8 @@ class Model(pl.LightningModule):
         if isinstance(modules, str):
             modules = [modules]
 
-        for name, module in ModelSummary(self, max_depth=-1).named_modules:
-            if name not in modules:
-                continue
+        for name in modules:
+            module = getattr(self, name)
 
             for parameter in module.parameters(recurse=True):
                 parameter.requires_grad = requires_grad

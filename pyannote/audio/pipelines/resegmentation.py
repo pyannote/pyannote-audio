@@ -39,6 +39,7 @@ from pyannote.audio.pipelines.utils import (
     get_model,
 )
 from pyannote.audio.utils.permutation import mae_cost_func, permutate
+from pyannote.audio.utils.signal import binarize
 
 
 class Resegmentation(SpeakerDiarizationMixin, Pipeline):
@@ -85,7 +86,7 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
         self,
         segmentation: PipelineModel = "pyannote/segmentation",
         diarization: Text = "diarization",
-        der_variant: dict = None,
+        der_variant: Optional[dict] = None,
         use_auth_token: Union[Text, None] = None,
     ):
         super().__init__()
@@ -95,7 +96,6 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
 
         model: Model = get_model(segmentation, use_auth_token=use_auth_token)
         self._segmentation = Inference(model)
-        self._frames = self._segmentation.model.example_output.frames
 
         self._audio = model.audio
 
@@ -136,7 +136,7 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
     def apply(
         self,
         file: AudioFile,
-        diarization: Annotation = None,
+        diarization: Optional[Annotation] = None,
         hook: Optional[Callable] = None,
     ) -> Annotation:
         """Apply speaker diarization
@@ -181,13 +181,19 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
 
         hook("segmentation", segmentations)
 
-        # estimate frame-level number of instantaneous speakers
-        count = self.speaker_count(
+        # binarize segmentations before speaker counting
+        binarized_segmentations: SlidingWindowFeature = binarize(
             segmentations,
             onset=self.onset,
             offset=self.offset,
+            initial_state=False,
+        )
+
+        # estimate frame-level number of instantaneous speakers
+        count = self.speaker_count(
+            binarized_segmentations,
+            self._segmentation.model.receptive_field,
             warm_up=(self.warm_up, self.warm_up),
-            frames=self._frames,
         )
         hook("speaker_counting", count)
 
@@ -198,7 +204,7 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
             support=Segment(
                 0.0, self._audio.get_duration(file) + self._segmentation.step
             ),
-            resolution=self._frames,
+            resolution=self._segmentation.model.receptive_field,
         )
         hook("@resegmentation/original", diarization)
 

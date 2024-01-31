@@ -1,0 +1,56 @@
+name: Bug report
+description: Report a bug in pyannote.audio
+body:
+
+- type: markdown
+  attributes:
+    value: |
+      When reporting bugs, please follow the guidelines in this template. This helps identify the problem precisely and thus enables contributors to fix it faster.
+      - Write a descriptive issue title above.
+      - The golden rule is to **always open *one* issue for *one* bug**. If you notice several bugs and want to report them, make sure to create one new issue for each of them.
+      - Search [open](https://github.com/pyannote/pyannote-audio/issues) and [closed](https://github.com/pyannote/pyannote-audio/issues?q=is%3Aissue+is%3Aclosed) issues to ensure it has not already been reported. If you don't find a relevant match or if you're unsure, don't hesitate to **open a new issue**. The bugsquad will handle it from there if it's a duplicate.
+      - Please always check if your issue is reproducible in the latest version – it may already have been fixed!
+      - If you use a custom build, please test if your issue is reproducible in official releases too.
+
+- type: textarea
+  attributes:
+    label: Tested versions
+    description: |
+      To properly fix a bug, we need to identify if the bug was recently introduced in the engine, or if it was always present.
+      - Please specify the pyannote.audio version you found the issue in, including the **Git commit hash** if using a development build.
+      - If you can, **please test earlier pyannote.audio versions** and, if applicable, newer versions (development branch). Mention whether the bug is reproducible or not in the versions you tested.
+      - The aim is for us to identify whether a bug is a **regression**, i.e. an issue that didn't exist in a previous version, but was introduced later on, breaking existing functionality. For example, if a bug is reproducible in 3.2 but not in 3.0, we would like you to test intermediate 3.1 to find which version is the first one where the issue can be reproduced.
+    placeholder: |
+      - Reproducible in: 3.1, 3.2, and later
+      - Not reproducible in: 3.0
+  validations:
+    required: true
+
+- type: input
+  attributes:
+    label: System information
+    description: |
+      - Specify the OS version, and when relevant hardware information.
+      - For issues that are likely OS-specific and/or GPU-related, please specify the GPU model and architecture.
+      - **Bug reports not including the required information may be closed at the maintainers' discretion.** If in doubt, always include all the requested information; it's better to include too much information than not enough information.
+    placeholder: macOS 13.6 - pyannote.audio 3.1.1 - M1 Pro
+  validations:
+    required: true
+
+- type: textarea
+  attributes:
+    label: Issue description
+    description: |
+      Describe your issue briefly. What doesn't work, and how do you expect it to work instead?
+      You can include audio, images or videos with drag and drop, and format code blocks or logs with <code>```</code> tags.
+  validations:
+    required: true
+
+- type: input
+  attributes:
+    label: Minimal reproduction example (MRE)
+    description: |
+      Having reproducible issues is a prerequisite for contributors to be able to solve them.
+      Include a link to minimal reproduction example using [this Google Colab notebook](https://colab.research.google.com/github/pyannote/pyannote-audio/blob/develop/tutorials/MRE_template.ipynb) as a starting point.
+  validations:
+    required: true
