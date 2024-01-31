@@ -9,6 +9,7 @@
 - feat(model): add `num_frames`, `receptive_field`, and `dimension` properties to segmentation models
 - feat(sample): add sample file at `pyannote.audio.sample.SAMPLE_FILE`
 - feat(powerset): add `Powerset.permutation_mapping` to help with permutation in powerset space
+- feat(metric): add `reduce` option to `diarization_error_rate` metric
 
 ### Fixes
 
