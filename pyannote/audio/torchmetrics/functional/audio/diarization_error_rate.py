@@ -33,6 +33,7 @@ def _der_update(
     preds: torch.Tensor,
     target: torch.Tensor,
     threshold: Union[torch.Tensor, float] = 0.5,
+    reduce: str = "batch",
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Compute components of diarization error rate
 
@@ -44,14 +45,22 @@ def _der_update(
         (batch_size, num_speakers, num_frames)-shaped (0 or 1) targets.
     threshold : float or torch.Tensor, optional
         Threshold(s) used to binarize predictions. Defaults to 0.5.
+    reduce : {'batch', 'chunk', 'frame'}, optional
+        Reduction method. Defaults to 'batch'.
 
     Returns
     -------
-    false_alarm : (num_thresholds, )-shaped torch.Tensor
-    missed_detection : (num_thresholds, )-shaped torch.Tensor
-    speaker_confusion : (num_thresholds, )-shaped torch.Tensor
-    speech_total : torch.Tensor
-        Diarization error rate components accumulated over the whole batch.
+    false_alarm : torch.Tensor
+    missed_detection : torch.Tensor
+    speaker_confusion : torch.Tensor
+        If `reduce` is 'batch', returns (num_thresholds, )-shaped tensors.
+        If `reduce` is 'chunk', returns (batch_size, num_thresholds)-shaped tensors.
+        If `reduce` is 'frame', returns (batch_size, num_frames, num_thresholds)-shaped tensors.
+        In case `threshold` is a float, the last dimension is removed from the output tensors.
+    speech_total : (...,)-shaped torch.Tensor torch.Tensor
+        If `reduce` is 'batch', returns a scalar.
+        If `reduce` is 'chunk', returns (batch_size,)-shaped tensor.
+        If `reduce` is 'frame', returns (batch_size, num_frames)-shaped tensor.
     """
 
     # make threshold a (num_thresholds,) tensor
@@ -70,6 +79,9 @@ def _der_update(
     hypothesis = (permutated_preds.unsqueeze(-1) > threshold).float()
     # (batch_size, num_speakers, num_frames, num_thresholds)
 
+    speech_total = 1.0 * torch.sum(target, 1)
+    # (batch_size, num_frames)
+
     target = target.unsqueeze(-1)
     # (batch_size, num_speakers, num_frames, 1)
 
@@ -87,17 +99,47 @@ def _der_update(
     speaker_confusion = torch.sum((hypothesis != target) * hypothesis, 1) - false_alarm
     # (batch_size, num_frames, num_thresholds)
 
-    false_alarm = torch.sum(torch.sum(false_alarm, 1), 0)
-    missed_detection = torch.sum(torch.sum(missed_detection, 1), 0)
-    speaker_confusion = torch.sum(torch.sum(speaker_confusion, 1), 0)
+    if reduce == "frame":
+        if scalar_threshold:
+            return (
+                false_alarm[:, :, 0],
+                missed_detection[:, :, 0],
+                speaker_confusion[:, :, 0],
+                speech_total,
+            )
+        return false_alarm, missed_detection, speaker_confusion, torch.sum(target, 1)
+
+    speech_total = torch.sum(speech_total, 1)
+    # (batch_size, )
+    false_alarm = torch.sum(false_alarm, 1)
+    missed_detection = torch.sum(missed_detection, 1)
+    speaker_confusion = torch.sum(speaker_confusion, 1)
+    # (batch_size, num_thresholds)
+
+    if reduce == "chunk":
+        if scalar_threshold:
+            return (
+                false_alarm[:, 0],
+                missed_detection[:, 0],
+                speaker_confusion[:, 0],
+                speech_total,
+            )
+        return false_alarm, missed_detection, speaker_confusion, speech_total
+
+    speech_total = torch.sum(speech_total, 0)
+    # scalar
+    false_alarm = torch.sum(false_alarm, 0)
+    missed_detection = torch.sum(missed_detection, 0)
+    speaker_confusion = torch.sum(speaker_confusion, 0)
     # (num_thresholds, )
 
-    speech_total = 1.0 * torch.sum(target)
-
     if scalar_threshold:
-        false_alarm = false_alarm[0]
-        missed_detection = missed_detection[0]
-        speaker_confusion = speaker_confusion[0]
+        return (
+            false_alarm[0],
+            missed_detection[0],
+            speaker_confusion[0],
+            speech_total,
+        )
 
     return false_alarm, missed_detection, speaker_confusion, speech_total
 
@@ -131,6 +173,7 @@ def diarization_error_rate(
     preds: torch.Tensor,
     target: torch.Tensor,
     threshold: Union[torch.Tensor, float] = 0.5,
+    reduce: str = "batch",
 ) -> torch.Tensor:
     """Compute diarization error rate
 
@@ -142,14 +185,19 @@ def diarization_error_rate(
         (batch_size, num_speakers, num_frames)-shaped (0 or 1) targets.
     threshold : float or torch.Tensor, optional
         Threshold(s) used to binarize predictions. Defaults to 0.5.
+    reduce : {'batch', 'chunk', 'frame'}, optional
+        Reduction method. Defaults to 'batch'.
 
     Returns
     -------
-    der : (num_thresholds, )-shaped torch.Tensor
-        Aggregated diarization error rate
+    der : torch.Tensor
+        If `reduce` is 'batch', returns (num_thresholds, )-shaped tensors.
+        If `reduce` is 'chunk', returns (batch_size, num_thresholds)-shaped tensors.
+        If `reduce` is 'frame', returns (batch_size, num_frames, num_thresholds)-shaped tensors.
+        In case `threshold` is a float, the last dimension is removed from the output tensors.
     """
     false_alarm, missed_detection, speaker_confusion, speech_total = _der_update(
-        preds, target, threshold=threshold
+        preds, target, threshold=threshold, reduce=reduce
     )
     return _der_compute(false_alarm, missed_detection, speaker_confusion, speech_total)
 
