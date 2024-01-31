@@ -174,6 +174,7 @@ def diarization_error_rate(
     target: torch.Tensor,
     threshold: Union[torch.Tensor, float] = 0.5,
     reduce: str = "batch",
+    return_components: bool = False,
 ) -> torch.Tensor:
     """Compute diarization error rate
 
@@ -187,6 +188,10 @@ def diarization_error_rate(
         Threshold(s) used to binarize predictions. Defaults to 0.5.
     reduce : {'batch', 'chunk', 'frame'}, optional
         Reduction method. Defaults to 'batch'.
+    return_components : bool, optional
+        Return diarization error rate components as an additional tuple.
+        Defaults to False.
+
 
     Returns
     -------
@@ -195,11 +200,18 @@ def diarization_error_rate(
         If `reduce` is 'chunk', returns (batch_size, num_thresholds)-shaped tensors.
         If `reduce` is 'frame', returns (batch_size, num_frames, num_thresholds)-shaped tensors.
         In case `threshold` is a float, the last dimension is removed from the output tensors.
+    components : (false_alarm, missed_detection, speaker_confusion, speech_total) tuple, optional
+        Same shape as `der`. Only returned when `return_components` is True.
+
     """
     false_alarm, missed_detection, speaker_confusion, speech_total = _der_update(
         preds, target, threshold=threshold, reduce=reduce
     )
-    return _der_compute(false_alarm, missed_detection, speaker_confusion, speech_total)
+
+    der = _der_compute(false_alarm, missed_detection, speaker_confusion, speech_total)
+    if return_components:
+        return der, (false_alarm, missed_detection, speaker_confusion, speech_total)
+    return der
 
 
 def optimal_diarization_error_rate(
