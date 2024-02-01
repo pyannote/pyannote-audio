@@ -15,6 +15,10 @@
 
 - fix(task): fix random generators
 
+### Improvements
+
+- improve(metric): add support for number of speakers mismatch in `diarization_error_rate` metric
+
 ## Breaking changes
 
 - BREAKING(model): get rid of `Model.example_output` in favor of `num_frames`, `receptive_field`, and `dimension` properties
