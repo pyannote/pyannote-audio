@@ -130,15 +130,7 @@ class Model(pl.LightningModule):
                 ) from e
 
         else:
-            try:
-                specifications = self.task.specifications
-
-            except AttributeError as e:
-                raise UnknownSpecificationsError(
-                    "Task specifications are not available. This is most likely because they depend on "
-                    "the content of the training subset. Use `model.prepare_data()` and `model.setup()` "
-                    "to go over the training subset and fix this, or let lightning trainer do that for you in `trainer.fit(model)`."
-                ) from e
+            specifications = self.task.specifications
 
         return specifications
 
