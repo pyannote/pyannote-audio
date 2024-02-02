@@ -56,9 +56,7 @@ def conv1d_num_frames(
     )
 
 
-def conv1d_receptive_field_size(
-    num_frames=1, kernel_size=5, stride=1, padding=0, dilation=1
-):
+def conv1d_receptive_field_size(num_frames=1, kernel_size=5, stride=1, dilation=1):
     """Compute receptive field size for `num_frames` frames after 1D convolution
 
     Parameters
@@ -69,8 +67,6 @@ def conv1d_receptive_field_size(
         Kernel size
     stride : int
         Stride
-    padding : int
-        Padding
     dilation : int
         Dilation
 
@@ -79,4 +75,5 @@ def conv1d_receptive_field_size(
     receptive_field : int
         Receptive field size
     """
-    return (num_frames - 1) * stride - 2 * padding + dilation * (kernel_size - 1) + 1
+
+    return 1 + (kernel_size - 1) * dilation + (num_frames - 1) * stride

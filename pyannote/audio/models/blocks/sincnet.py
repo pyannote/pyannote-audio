@@ -120,16 +120,14 @@ class SincNet(nn.Module):
 
         kernel_size = [251, 3, 5, 3, 5, 3]
         stride = [self.stride, 3, 1, 3, 1, 3]
-        padding = [0, 0, 0, 0, 0, 0]
         dilation = [1, 1, 1, 1, 1, 1]
 
         receptive_field_size = num_frames
-        for k, s, p, d in reversed(list(zip(kernel_size, stride, padding, dilation))):
+        for k, s, d in reversed(list(zip(kernel_size, stride, dilation))):
             receptive_field_size = conv1d_receptive_field_size(
                 num_frames=receptive_field_size,
                 kernel_size=k,
                 stride=s,
-                padding=p,
                 dilation=d,
             )
 

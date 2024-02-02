@@ -243,7 +243,6 @@ class SSeRiouSS(Model):
                 num_frames=receptive_field_size,
                 kernel_size=conv_layer.kernel_size,
                 stride=conv_layer.stride,
-                padding=conv_layer.conv.padding[0],
                 dilation=conv_layer.conv.dilation[0],
             )
 
