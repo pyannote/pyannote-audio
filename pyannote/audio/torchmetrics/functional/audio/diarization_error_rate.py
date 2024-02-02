@@ -25,6 +25,7 @@ from numbers import Number
 from typing import Optional, Tuple, Union
 
 import torch
+import torch.nn.functional as F
 
 from pyannote.audio.utils.permutation import permutate
 
@@ -62,6 +63,23 @@ def _der_update(
         If `reduce` is 'chunk', returns (batch_size,)-shaped tensor.
         If `reduce` is 'frame', returns (batch_size, num_frames)-shaped tensor.
     """
+
+    prd_batch_size, prd_num_speakers, prd_num_frames = preds.shape
+    tgt_batch_size, tgt_num_speakers, tgt_num_frames = target.shape
+
+    if prd_batch_size != tgt_batch_size:
+        raise ValueError(f"Batch size mismatch: {prd_batch_size} != {tgt_batch_size}.")
+
+    if prd_num_frames != tgt_num_frames:
+        raise ValueError(
+            f"Number of frames mismatch: {prd_num_frames} != {tgt_num_frames}."
+        )
+
+    # pad number of speakers if necessary
+    if prd_num_speakers > tgt_num_speakers:
+        target = F.pad(target, (0, 0, 0, prd_num_speakers - tgt_num_speakers))
+    elif prd_num_speakers < tgt_num_speakers:
+        preds = F.pad(preds, (0, 0, 0, tgt_num_speakers - prd_num_speakers))
 
     # make threshold a (num_thresholds,) tensor
     scalar_threshold = isinstance(threshold, Number)
