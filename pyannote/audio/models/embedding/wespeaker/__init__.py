@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 
-from functools import partial
+from functools import lru_cache, partial
 from typing import Optional
 
 import torch
@@ -29,6 +29,10 @@ import torchaudio.compliance.kaldi as kaldi
 
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
+from pyannote.audio.utils.receptive_field import (
+    conv1d_receptive_field_center,
+    conv1d_receptive_field_size,
+)
 
 from .resnet import ResNet34, ResNet152, ResNet221, ResNet293
 
@@ -99,6 +103,80 @@ class BaseWeSpeakerResNet(Model):
     def dimension(self) -> int:
         """Dimension of output"""
         return self.resnet.embed_dim
+
+    @lru_cache
+    def num_frames(self, num_samples: int) -> int:
+        """Compute number of output frames
+
+        Parameters
+        ----------
+        num_samples : int
+            Number of input samples.
+
+        Returns
+        -------
+        num_frames : int
+            Number of output frames.
+        """
+        window_size = int(self.hparams.sample_rate * self.hparams.frame_length * 0.001)
+        step_size = int(self.hparams.sample_rate * self.hparams.frame_shift * 0.001)
+        num_frames = 1 + (num_samples - window_size) // step_size
+        num_frames = self.resnet.num_frames(num_frames)
+        return num_frames
+
+    def receptive_field_size(self, num_frames: int = 1) -> int:
+        """Compute size of receptive field
+
+        Parameters
+        ----------
+        num_frames : int, optional
+            Number of frames in the output signal
+
+        Returns
+        -------
+        receptive_field_size : int
+            Receptive field size.
+        """
+        receptive_field_size = num_frames
+        receptive_field_size = self.resnet.receptive_field_size(receptive_field_size)
+
+        window_size = int(self.hparams.sample_rate * self.hparams.frame_length * 0.001)
+        step_size = int(self.hparams.sample_rate * self.hparams.frame_shift * 0.001)
+
+        return conv1d_receptive_field_size(
+            num_frames=receptive_field_size,
+            kernel_size=window_size,
+            stride=step_size,
+            dilation=1,
+        )
+
+    def receptive_field_center(self, frame: int = 0) -> int:
+        """Compute center of receptive field
+
+        Parameters
+        ----------
+        frame : int, optional
+            Frame index
+
+        Returns
+        -------
+        receptive_field_center : int
+            Index of receptive field center.
+        """
+        receptive_field_center = frame
+        receptive_field_center = self.resnet.receptive_field_center(
+            frame=receptive_field_center
+        )
+
+        window_size = int(self.hparams.sample_rate * self.hparams.frame_length * 0.001)
+        step_size = int(self.hparams.sample_rate * self.hparams.frame_shift * 0.001)
+        return conv1d_receptive_field_center(
+            frame=receptive_field_center,
+            kernel_size=window_size,
+            stride=step_size,
+            padding=0,
+            dilation=1,
+        )
 
     def forward(
         self, waveforms: torch.Tensor, weights: Optional[torch.Tensor] = None

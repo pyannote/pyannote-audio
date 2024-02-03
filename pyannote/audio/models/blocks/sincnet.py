@@ -23,16 +23,18 @@
 # AUTHOR
 # Hervé Bredin - http://herve.niderb.fr
 
-
-from functools import cached_property, lru_cache
+from functools import lru_cache
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from asteroid_filterbanks import Encoder, ParamSincFB
-from pyannote.core import SlidingWindow
 
-from pyannote.audio.utils.frame import conv1d_num_frames, conv1d_receptive_field_size
+from pyannote.audio.utils.receptive_field import (
+    conv1d_num_frames,
+    conv1d_receptive_field_center,
+    conv1d_receptive_field_size,
+)
 
 
 class SincNet(nn.Module):
@@ -78,17 +80,17 @@ class SincNet(nn.Module):
 
     @lru_cache
     def num_frames(self, num_samples: int) -> int:
-        """Compute number of output frames for a given number of input samples
+        """Compute number of output frames
 
         Parameters
         ----------
         num_samples : int
-            Number of input samples
+            Number of input samples.
 
         Returns
         -------
         num_frames : int
-            Number of output frames
+            Number of output frames.
         """
 
         kernel_size = [251, 3, 5, 3, 5, 3]
@@ -105,7 +107,7 @@ class SincNet(nn.Module):
         return num_frames
 
     def receptive_field_size(self, num_frames: int = 1) -> int:
-        """Compute receptive field size
+        """Compute size of receptive field
 
         Parameters
         ----------
@@ -115,7 +117,7 @@ class SincNet(nn.Module):
         Returns
         -------
         receptive_field_size : int
-            Receptive field size
+            Receptive field size.
         """
 
         kernel_size = [251, 3, 5, 3, 5, 3]
@@ -133,30 +135,36 @@ class SincNet(nn.Module):
 
         return receptive_field_size
 
-    @cached_property
-    def receptive_field(self) -> SlidingWindow:
-        """Compute receptive field
+    def receptive_field_center(self, frame: int = 0) -> int:
+        """Compute center of receptive field
+
+        Parameters
+        ----------
+        frame : int, optional
+            Frame index
 
         Returns
         -------
-        receptive field : SlidingWindow
-
-        Source
-        ------
-        https://distill.pub/2019/computing-receptive-fields/
-
+        receptive_field_center : int
+            Index of receptive field center.
         """
 
-        # duration of the receptive field of each output frame
-        duration = self.receptive_field_size() / self.sample_rate
+        kernel_size = [251, 3, 5, 3, 5, 3]
+        stride = [self.stride, 3, 1, 3, 1, 3]
+        padding = [0, 0, 0, 0, 0, 0]
+        dilation = [1, 1, 1, 1, 1, 1]
 
-        # step between the receptive field region of two consecutive output frames
-        step = (
-            self.receptive_field_size(num_frames=2)
-            - self.receptive_field_size(num_frames=1)
-        ) / self.sample_rate
+        receptive_field_center = frame
+        for k, s, p, d in reversed(list(zip(kernel_size, stride, padding, dilation))):
+            receptive_field_center = conv1d_receptive_field_center(
+                receptive_field_center,
+                kernel_size=k,
+                stride=s,
+                padding=p,
+                dilation=d,
+            )
 
-        return SlidingWindow(start=0.0, duration=duration, step=step)
+        return receptive_field_center
 
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
         """Pass forward

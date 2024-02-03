@@ -15,6 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from functools import lru_cache
 from typing import Optional
 
 import torch
@@ -23,6 +24,14 @@ import torch.nn.functional as F
 from einops import rearrange
 
 from pyannote.audio.models.blocks.pooling import StatsPool
+from pyannote.audio.utils.receptive_field import (
+    conv1d_num_frames,
+    conv1d_receptive_field_center,
+    conv1d_receptive_field_size,
+    multi_conv_num_frames,
+    multi_conv_receptive_field_center,
+    multi_conv_receptive_field_size,
+)
 
 
 class TSTP(nn.Module):
@@ -77,6 +86,7 @@ class BasicBlock(nn.Module):
 
     def __init__(self, in_planes, planes, stride=1):
         super(BasicBlock, self).__init__()
+        self.stride = stride
         self.conv1 = nn.Conv2d(
             in_planes, planes, kernel_size=3, stride=stride, padding=1, bias=False
         )
@@ -99,6 +109,33 @@ class BasicBlock(nn.Module):
                 nn.BatchNorm2d(self.expansion * planes),
             )
 
+    @lru_cache
+    def num_frames(self, num_samples: int) -> int:
+        return multi_conv_num_frames(
+            num_samples,
+            kernel_size=[3, 3],
+            stride=[self.stride, 1],
+            padding=[1, 1],
+            dilation=[1, 1],
+        )
+
+    def receptive_field_size(self, num_frames: int = 1) -> int:
+        return multi_conv_receptive_field_size(
+            num_frames,
+            kernel_size=[3, 3],
+            stride=[self.stride, 1],
+            dilation=[1, 1],
+        )
+
+    def receptive_field_center(self, frame: int = 0) -> int:
+        return multi_conv_receptive_field_center(
+            frame,
+            kernel_size=[3, 3],
+            stride=[self.stride, 1],
+            padding=[1, 1],
+            dilation=[1, 1],
+        )
+
     def forward(self, x):
         out = F.relu(self.bn1(self.conv1(x)))
         out = self.bn2(self.conv2(out))
@@ -112,6 +149,7 @@ class Bottleneck(nn.Module):
 
     def __init__(self, in_planes, planes, stride=1):
         super(Bottleneck, self).__init__()
+        self.stride = stride
         self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=1, bias=False)
         self.bn1 = nn.BatchNorm2d(planes)
         self.conv2 = nn.Conv2d(
@@ -135,6 +173,33 @@ class Bottleneck(nn.Module):
                 ),
                 nn.BatchNorm2d(self.expansion * planes),
             )
+
+    @lru_cache
+    def num_frames(self, num_samples: int) -> int:
+        return multi_conv_num_frames(
+            num_samples,
+            kernel_size=[1, 3, 1],
+            stride=[1, self.stride, 1],
+            padding=[0, 1, 0],
+            dilation=[1, 1, 1],
+        )
+
+    def receptive_field_size(self, num_frames: int = 1) -> int:
+        return multi_conv_receptive_field_size(
+            num_frames,
+            kernel_size=[1, 3, 1],
+            stride=[1, self.stride, 1],
+            dilation=[1, 1, 1],
+        )
+
+    def receptive_field_center(self, frame: int = 0) -> int:
+        return multi_conv_receptive_field_center(
+            frame,
+            kernel_size=[1, 3, 1],
+            stride=[1, self.stride, 1],
+            padding=[0, 1, 0],
+            dilation=[1, 1, 1],
+        )
 
     def forward(self, x):
         out = F.relu(self.bn1(self.conv1(x)))
@@ -191,6 +256,90 @@ class ResNet(nn.Module):
             layers.append(block(self.in_planes, planes, stride))
             self.in_planes = planes * block.expansion
         return nn.Sequential(*layers)
+
+    @lru_cache
+    def num_frames(self, num_samples: int) -> int:
+        """Compute number of output frames
+
+        Parameters
+        ----------
+        num_samples : int
+            Number of input samples.
+
+        Returns
+        -------
+        num_frames : int
+            Number of output frames.
+        """
+
+        num_frames = num_samples
+        num_frames = conv1d_num_frames(
+            num_frames, kernel_size=3, stride=1, padding=1, dilation=1
+        )
+        for layers in [self.layer1, self.layer2, self.layer3, self.layer4]:
+            for layer in layers:
+                num_frames = layer.num_frames(num_frames)
+
+        return num_frames
+
+    def receptive_field_size(self, num_frames: int = 1) -> int:
+        """Compute size of receptive field
+
+        Parameters
+        ----------
+        num_frames : int, optional
+            Number of frames in the output signal
+
+        Returns
+        -------
+        receptive_field_size : int
+            Receptive field size.
+        """
+
+        receptive_field_size = num_frames
+        for layers in reversed([self.layer1, self.layer2, self.layer3, self.layer4]):
+            for layer in reversed(layers):
+                receptive_field_size = layer.receptive_field_size(receptive_field_size)
+
+        receptive_field_size = conv1d_receptive_field_size(
+            num_frames=receptive_field_size,
+            kernel_size=3,
+            stride=1,
+            dilation=1,
+        )
+
+        return receptive_field_size
+
+    def receptive_field_center(self, frame: int = 0) -> int:
+        """Compute center of receptive field
+
+        Parameters
+        ----------
+        frame : int, optional
+            Frame index
+
+        Returns
+        -------
+        receptive_field_center : int
+            Index of receptive field center.
+        """
+
+        receptive_field_center = frame
+        for layers in reversed([self.layer1, self.layer2, self.layer3, self.layer4]):
+            for layer in reversed(layers):
+                receptive_field_center = layer.receptive_field_center(
+                    frame=receptive_field_center
+                )
+
+        receptive_field_center = conv1d_receptive_field_center(
+            frame=receptive_field_center,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+            dilation=1,
+        )
+
+        return receptive_field_center
 
     def forward(self, x: torch.Tensor, weights: Optional[torch.Tensor] = None):
         """
