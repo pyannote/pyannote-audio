@@ -1,6 +1,6 @@
 # The MIT License (MIT)
 #
-# Copyright (c) 2019-2020 CNRS
+# Copyright (c) 2019- CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -31,9 +31,9 @@ import torch.nn.functional as F
 from asteroid_filterbanks import Encoder, ParamSincFB
 
 from pyannote.audio.utils.receptive_field import (
-    conv1d_num_frames,
-    conv1d_receptive_field_center,
-    conv1d_receptive_field_size,
+    multi_conv_num_frames,
+    multi_conv_receptive_field_center,
+    multi_conv_receptive_field_size,
 )
 
 
@@ -98,13 +98,13 @@ class SincNet(nn.Module):
         padding = [0, 0, 0, 0, 0, 0]
         dilation = [1, 1, 1, 1, 1, 1]
 
-        num_frames = num_samples
-        for k, s, p, d in zip(kernel_size, stride, padding, dilation):
-            num_frames = conv1d_num_frames(
-                num_frames, kernel_size=k, stride=s, padding=p, dilation=d
-            )
-
-        return num_frames
+        return multi_conv_num_frames(
+            num_samples,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            dilation=dilation,
+        )
 
     def receptive_field_size(self, num_frames: int = 1) -> int:
         """Compute size of receptive field
@@ -124,16 +124,12 @@ class SincNet(nn.Module):
         stride = [self.stride, 3, 1, 3, 1, 3]
         dilation = [1, 1, 1, 1, 1, 1]
 
-        receptive_field_size = num_frames
-        for k, s, d in reversed(list(zip(kernel_size, stride, dilation))):
-            receptive_field_size = conv1d_receptive_field_size(
-                num_frames=receptive_field_size,
-                kernel_size=k,
-                stride=s,
-                dilation=d,
-            )
-
-        return receptive_field_size
+        return multi_conv_receptive_field_size(
+            num_frames,
+            kernel_size=kernel_size,
+            stride=stride,
+            dilation=dilation,
+        )
 
     def receptive_field_center(self, frame: int = 0) -> int:
         """Compute center of receptive field
@@ -154,17 +150,13 @@ class SincNet(nn.Module):
         padding = [0, 0, 0, 0, 0, 0]
         dilation = [1, 1, 1, 1, 1, 1]
 
-        receptive_field_center = frame
-        for k, s, p, d in reversed(list(zip(kernel_size, stride, padding, dilation))):
-            receptive_field_center = conv1d_receptive_field_center(
-                receptive_field_center,
-                kernel_size=k,
-                stride=s,
-                padding=p,
-                dilation=d,
-            )
-
-        return receptive_field_center
+        return multi_conv_receptive_field_center(
+            frame,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            dilation=dilation,
+        )
 
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
         """Pass forward

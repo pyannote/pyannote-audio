@@ -30,6 +30,7 @@ import torchaudio.compliance.kaldi as kaldi
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
 from pyannote.audio.utils.receptive_field import (
+    conv1d_num_frames,
     conv1d_receptive_field_center,
     conv1d_receptive_field_size,
 )
@@ -120,9 +121,15 @@ class BaseWeSpeakerResNet(Model):
         """
         window_size = int(self.hparams.sample_rate * self.hparams.frame_length * 0.001)
         step_size = int(self.hparams.sample_rate * self.hparams.frame_shift * 0.001)
-        num_frames = 1 + (num_samples - window_size) // step_size
-        num_frames = self.resnet.num_frames(num_frames)
-        return num_frames
+
+        num_frames = conv1d_num_frames(
+            num_samples=num_samples,
+            kernel_size=window_size,
+            stride=step_size,
+            padding=0,
+            dilation=1,
+        )
+        return self.resnet.num_frames(num_frames)
 
     def receptive_field_size(self, num_frames: int = 1) -> int:
         """Compute size of receptive field

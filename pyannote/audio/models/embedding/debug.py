@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020 CNRS
+# Copyright (c) 2020- CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -32,6 +32,7 @@ from torchaudio.transforms import MFCC
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
 from pyannote.audio.utils.receptive_field import (
+    conv1d_num_frames,
     conv1d_receptive_field_center,
     conv1d_receptive_field_size,
 )
@@ -85,10 +86,13 @@ class SimpleEmbeddingModel(Model):
         hop_length = self.mfcc.MelSpectrogram.spectrogram.hop_length
         n_fft = self.mfcc.MelSpectrogram.spectrogram.n_fft
         center = self.mfcc.MelSpectrogram.spectrogram.center
-        return int(
-            1 + num_samples // hop_length
-            if center
-            else 1 + (num_samples - n_fft) // hop_length
+
+        return conv1d_num_frames(
+            num_samples=num_samples,
+            kernel_size=n_fft,
+            stride=hop_length,
+            padding=n_fft // 2 if center else 0,
+            dilation=1,
         )
 
     def receptive_field_size(self, num_frames: int = 1) -> int:

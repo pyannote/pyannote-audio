@@ -213,8 +213,6 @@ class XVectorMFCC(Model):
         outputs = self.mfcc(waveforms).squeeze(dim=1)
         for block in self.tdnns:
             outputs = block(outputs)
-
-        print(outputs.shape)
         outputs = self.stats_pool(outputs, weights=weights)
         return self.embedding(outputs)
 
