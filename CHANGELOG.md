@@ -20,6 +20,7 @@
 ### Improvements
 
 - improve(metric): add support for number of speakers mismatch in `diarization_error_rate` metric
+- improve(pipeline): track both `Model` and `nn.Module` attributes in `Pipeline.to(device)`
 
 ## Breaking changes
 
