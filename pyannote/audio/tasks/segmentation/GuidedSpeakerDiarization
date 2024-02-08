@@ -1,0 +1,992 @@
+# MIT License
+#
+# Copyright (c) 2020- CNRS
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+import math
+import random
+import itertools
+from typing import Dict, Optional, Sequence, Text, Union
+from torch.utils.data._utils.collate import default_collate
+
+import numpy as np
+import torch
+import torch.nn.functional
+from collections import defaultdict
+from matplotlib import pyplot as plt
+from pyannote.core import Segment, SlidingWindowFeature
+
+from pyannote.database.protocol import SegmentationProtocol, SpeakerDiarizationProtocol
+from pyannote.database.protocol.protocol import Scope, Subset
+from pytorch_lightning.loggers import MLFlowLogger, TensorBoardLogger
+from torch_audiomentations import OneOf
+from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
+from torch_audiomentations.utils.object_dict import ObjectDict
+from torchmetrics import Metric
+
+from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
+from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
+from pyannote.audio.torchmetrics import (
+    DiarizationErrorRate,
+    FalseAlarmRate,
+    MissedDetectionRate,
+    OptimalDiarizationErrorRate,
+    OptimalDiarizationErrorRateThreshold,
+    OptimalFalseAlarmRate,
+    OptimalMissedDetectionRate,
+    OptimalSpeakerConfusionRate,
+    SpeakerConfusionRate,
+)
+from pyannote.audio.utils.loss import nll_loss
+from pyannote.audio.utils.permutation import permutate
+from pyannote.audio.utils.powerset import Powerset
+
+Subsets = list(Subset.__args__)
+Scopes = list(Scope.__args__)
+
+
+class GuidedSpeakerDiarization(SegmentationTaskMixin, Task):
+    """Guided speaker diarization
+    Parameters
+    ----------
+    protocol : SpeakerDiarizationProtocol
+        pyannote.database protocol
+    duration : float, optional
+        Chunks duration. Defaults to 10s.
+    max_speakers_per_chunk : int, optional
+        Maximum number of speakers per chunk. Defaults to 3.
+    max_speakers_per_frame : int, optional
+        Maximum number of (overlapping) speakers per frame. Defaults to 2.
+    balance: str, optional
+        When provided, training samples are sampled uniformly with respect to that key.
+        For instance, setting `balance` to "database" will make sure that each database
+        will be equally represented in the training samples.
+    freedom : float, optional
+        Controls how much freedom the model is allowed regarding the provided guide.
+        0.0 means that the model is forced to follow the guide exactly.
+        1.0 means that the model is free to ignore the guide completely.
+        Defaults to 0.5.
+    batch_size : int, optional
+        Number of training samples per batch. Defaults to 32.
+    num_workers : int, optional
+        Number of workers used for generating training samples.
+        Defaults to multiprocessing.cpu_count() // 2.
+    pin_memory : bool, optional
+        If True, data loaders will copy tensors into CUDA pinned
+        memory before returning them. See pytorch documentation
+        for more details. Defaults to False.
+    augmentation : BaseWaveformTransform, optional
+        torch_audiomentations waveform transform, used by dataloader
+        during training.
+    metric : optional
+        Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
+        Defaults to AUROC (area under the ROC curve).
+    """
+
+    def __init__(
+        self,
+        protocol: SpeakerDiarizationProtocol,
+        duration: float = 10.0,
+        max_speakers_per_chunk: int = 3,
+        max_speakers_per_frame: int = 2,
+        balance: Text = None,
+        freedom: float = 0.5,
+        batch_size: int = 32,
+        num_workers: int = None,
+        pin_memory: bool = False,
+        augmentation: BaseWaveformTransform = None,
+        metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
+        step: float = None,
+    ):
+        super().__init__(
+            protocol,
+            duration=duration,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            pin_memory=pin_memory,
+            augmentation=augmentation,
+            metric=metric,
+        )
+
+        if not isinstance(protocol, SpeakerDiarizationProtocol):
+            raise ValueError(
+                "SpeakerDiarization task requires a SpeakerDiarizationProtocol."
+            )
+
+        self.max_speakers_per_chunk = max_speakers_per_chunk
+        self.max_speakers_per_frame = max_speakers_per_frame
+        self.balance = balance
+        self.freedom = freedom
+        if step == None:
+            self.step = self.duration / 10
+        else:
+            self.step = step
+
+        self.specifications = Specifications(
+            problem=Problem.MONO_LABEL_CLASSIFICATION,
+            resolution=Resolution.FRAME,
+            duration=self.duration,
+            classes=[f"speaker#{i+1}" for i in range(self.max_speakers_per_chunk)],
+            powerset_max_classes=self.max_speakers_per_frame,
+            permutation_invariant=True,
+        )
+
+    def setup_loss_func(self):
+        self.model.powerset = Powerset(
+            len(self.specifications.classes),
+            self.specifications.powerset_max_classes,
+        )
+
+    def setup(self):
+        """Setup"""
+
+        # duration of training chunks
+        # TODO: handle variable duration case
+        duration = getattr(self, "duration", 0.0)
+
+        # list of possible values for each metadata key
+        metadata_unique_values = defaultdict(list)
+
+        metadata_unique_values["subset"] = Subsets
+
+        if isinstance(self.protocol, SpeakerDiarizationProtocol):
+            metadata_unique_values["scope"] = Scopes
+
+        elif isinstance(self.protocol, SegmentationProtocol):
+            classes = getattr(self, "classes", list())
+
+        # make sure classes attribute exists (and set to None if it did not exist)
+        self.classes = getattr(self, "classes", None)
+        if self.classes is None:
+            classes = list()
+            # metadata_unique_values["classes"] = list(classes)
+
+        audios = list()  # list of path to audio files
+        audio_infos = list()
+        audio_encodings = list()
+        metadata = list()  # list of metadata
+
+        annotated_duration = list()  # total duration of annotated regions (per file)
+        annotated_regions = list()  # annotated regions
+        annotations = list()  # actual annotations
+        annotated_classes = list()  # list of annotated classes (per file)
+        unique_labels = list()
+
+        if self.has_validation:
+            files_iter = itertools.chain(
+                self.protocol.train(), self.protocol.development()
+            )
+        else:
+            files_iter = self.protocol.train()
+
+        for file_id, file in enumerate(files_iter):
+            # gather metadata and update metadata_unique_values so that each metadatum
+            # (e.g. source database or label) is represented by an integer.
+            metadatum = dict()
+
+            # keep track of source database and subset (train, development, or test)
+            if file["database"] not in metadata_unique_values["database"]:
+                metadata_unique_values["database"].append(file["database"])
+            metadatum["database"] = metadata_unique_values["database"].index(
+                file["database"]
+            )
+            metadatum["subset"] = Subsets.index(file["subset"])
+
+            # keep track of speaker label scope (file, database, or global) for speaker diarization protocols
+            if isinstance(self.protocol, SpeakerDiarizationProtocol):
+                metadatum["scope"] = Scopes.index(file["scope"])
+
+            # keep track of list of classes for regular segmentation protocols
+            # Different files may be annotated using a different set of classes
+            # (e.g. one database for speech/music/noise, and another one for male/female/child)
+            if isinstance(self.protocol, SegmentationProtocol):
+                if "classes" in file:
+                    local_classes = file["classes"]
+                else:
+                    local_classes = file["annotation"].labels()
+
+                # if task was not initialized with a fixed list of classes,
+                # we build it as the union of all classes found in files
+                if self.classes is None:
+                    for klass in local_classes:
+                        if klass not in classes:
+                            classes.append(klass)
+                    annotated_classes.append(
+                        [classes.index(klass) for klass in local_classes]
+                    )
+
+                # if task was initialized with a fixed list of classes,
+                # we make sure that all files use a subset of these classes
+                # if they don't, we issue a warning and ignore the extra classes
+                else:
+                    extra_classes = set(local_classes) - set(self.classes)
+                    if extra_classes:
+                        warnings.warn(
+                            f"Ignoring extra classes ({', '.join(extra_classes)}) found for file {file['uri']} ({file['database']}). "
+                        )
+                    annotated_classes.append(
+                        [
+                            self.classes.index(klass)
+                            for klass in set(local_classes) & set(self.classes)
+                        ]
+                    )
+
+            remaining_metadata_keys = set(file) - set(
+                [
+                    "uri",
+                    "database",
+                    "subset",
+                    "audio",
+                    "torchaudio.info",
+                    "scope",
+                    "classes",
+                    "annotation",
+                    "annotated",
+                ]
+            )
+
+            # keep track of any other (integer or string) metadata provided by the protocol
+            # (e.g. a "domain" key for domain-adversarial training)
+            for key in remaining_metadata_keys:
+                value = file[key]
+
+                if isinstance(value, str):
+                    if value not in metadata_unique_values[key]:
+                        metadata_unique_values[key].append(value)
+                    metadatum[key] = metadata_unique_values[key].index(value)
+
+                elif isinstance(value, int):
+                    metadatum[key] = value
+
+                else:
+                    warnings.warn(
+                        f"Ignoring '{key}' metadata because of its type ({type(value)}). Only str and int are supported for now.",
+                        category=UserWarning,
+                    )
+
+            metadata.append(metadatum)
+
+            database_unique_labels = list()
+
+            # reset list of file-scoped labels
+            file_unique_labels = list()
+
+            # path to audio file
+            audios.append(str(file["audio"]))
+
+            # audio info
+            audio_info = file["torchaudio.info"]
+            audio_infos.append(
+                (
+                    audio_info.sample_rate,  # sample rate
+                    audio_info.num_frames,  # number of frames
+                    audio_info.num_channels,  # number of channels
+                    audio_info.bits_per_sample,  # bits per sample
+                )
+            )
+            audio_encodings.append(audio_info.encoding)  # encoding
+
+            # annotated regions and duration
+            _annotated_duration = 0.0
+            for segment in file["annotated"]:
+                # skip annotated regions that are shorter than training chunk duration
+                if segment.duration < duration:
+                    continue
+
+                # append annotated region
+                annotated_region = (
+                    file_id,
+                    segment.duration,
+                    segment.start,
+                    segment.end,
+                )
+                annotated_regions.append(annotated_region)
+
+                # increment annotated duration
+                _annotated_duration += segment.duration
+
+            # append annotated duration
+            annotated_duration.append(_annotated_duration)
+
+            # annotations
+            for segment, _, label in file["annotation"].itertracks(yield_label=True):
+                # "scope" is provided by speaker diarization protocols to indicate
+                # whether speaker labels are local to the file ('file'), consistent across
+                # all files in a database ('database'), or globally consistent ('global')
+
+                if "scope" in file:
+                    # 0 = 'file'
+                    # 1 = 'database'
+                    # 2 = 'global'
+                    scope = Scopes.index(file["scope"])
+
+                    # update list of file-scope labels
+                    if label not in file_unique_labels:
+                        file_unique_labels.append(label)
+                    # and convert label to its (file-scope) index
+                    file_label_idx = file_unique_labels.index(label)
+
+                    database_label_idx = global_label_idx = -1
+
+                    if scope > 0:  # 'database' or 'global'
+                        # update list of database-scope labels
+                        if label not in database_unique_labels:
+                            database_unique_labels.append(label)
+
+                        # and convert label to its (database-scope) index
+                        database_label_idx = database_unique_labels.index(label)
+
+                    if scope > 1:  # 'global'
+                        # update list of global-scope labels
+                        if label not in unique_labels:
+                            unique_labels.append(label)
+                        # and convert label to its (global-scope) index
+                        global_label_idx = unique_labels.index(label)
+
+                # basic segmentation protocols do not provide "scope" information
+                # as classes are global by definition
+
+                else:
+                    try:
+                        file_label_idx = (
+                            database_label_idx
+                        ) = global_label_idx = classes.index(label)
+                    except ValueError:
+                        # skip labels that are not in the list of classes
+                        continue
+
+                annotations.append(
+                    (
+                        file_id,  # index of file
+                        segment.start,  # start time
+                        segment.end,  # end time
+                        file_label_idx,  # file-scope label index
+                        database_label_idx,  # database-scope label index
+                        global_label_idx,  # global-scope index
+                    )
+                )
+
+        # since not all metadata keys are present in all files, fallback to -1 when a key is missing
+        metadata = [
+            tuple(metadatum.get(key, -1) for key in metadata_unique_values)
+            for metadatum in metadata
+        ]
+        dtype = [(key, "i") for key in metadata_unique_values]
+        self.metadata = np.array(metadata, dtype=dtype)
+
+        # NOTE: read with str(self.audios[file_id], encoding='utf-8')
+        self.audios = np.array(audios, dtype=np.string_)
+
+        # turn list of files metadata into a single numpy array
+        # TODO: improve using https://github.com/pytorch/pytorch/issues/13246#issuecomment-617140519
+
+        dtype = [
+            ("sample_rate", "i"),
+            ("num_frames", "i"),
+            ("num_channels", "i"),
+            ("bits_per_sample", "i"),
+        ]
+        self.audio_infos = np.array(audio_infos, dtype=dtype)
+        self.audio_encodings = np.array(audio_encodings, dtype=np.string_)
+
+        self.annotated_duration = np.array(annotated_duration)
+
+        # turn list of annotated regions into a single numpy array
+        dtype = [("file_id", "i"), ("duration", "f"), ("start", "f"), ("end", "f")]
+        self.annotated_regions = np.array(annotated_regions, dtype=dtype)
+
+        # convert annotated_classes (which is a list of list of classes, one list of classes per file)
+        # into a single (num_files x num_classes) numpy array:
+        #    * True indicates that this particular class was annotated for this particular file (though it may not be active in this file)
+        #    * False indicates that this particular class was not even annotated (i.e. its absence does not imply that it is not active in this file)
+        if isinstance(self.protocol, SegmentationProtocol) and self.classes is None:
+            self.classes = classes
+        self.annotated_classes = np.zeros(
+            (len(annotated_classes), len(self.classes)), dtype=np.bool_
+        )
+        for file_id, classes in enumerate(annotated_classes):
+            self.annotated_classes[file_id, classes] = True
+
+        # turn list of annotations into a single numpy array
+        dtype = [
+            ("file_id", "i"),
+            ("start", "f"),
+            ("end", "f"),
+            ("file_label_idx", "i"),
+            ("database_label_idx", "i"),
+            ("global_label_idx", "i"),
+        ]
+        self.annotations = np.array(annotations, dtype=dtype)
+
+        self.metadata_unique_values = metadata_unique_values
+
+        if not self.has_validation:
+            return
+
+        validation_chunks = list()
+
+        # obtain indexes of files in the validation subset
+        validation_file_ids = np.where(
+            self.metadata["subset"] == Subsets.index("development")
+        )[0]
+
+        # iterate over files in the validation subset
+        for file_id in validation_file_ids:
+            # get annotated regions in file
+            annotated_regions = self.annotated_regions[
+                self.annotated_regions["file_id"] == file_id
+            ]
+
+            # iterate over annotated regions
+            for annotated_region in annotated_regions:
+                # number of chunks in annotated region
+                num_chunks = round((annotated_region["duration"] - self.duration) // self.step)
+                print(annotated_region["duration"])
+                print(num_chunks)
+
+               # iterate over chunks
+                for c in range(num_chunks//8):
+                    start_time = annotated_region["start"] + c * self.step
+                    validation_chunks.append((file_id, start_time, duration)) 
+
+        dtype = [("file_id", "i"), ("start", "f"), ("duration", "f")]
+        self.validation_chunks = np.array(validation_chunks, dtype=dtype)
+
+
+    def prepare_chunk(self, file_id: int, start_time: float, duration: float, number: int = 2):
+        """Prepare chunk
+        Parameters
+        ----------
+        file_id : int
+            File index
+        start_time : float
+            Chunk start time
+        duration : float
+            Chunk duration.
+        Returns
+        -------
+        sample : dict
+            Dictionary containing the chunk data with the following keys:
+            - `X`: waveform
+            - `y`: target as a SlidingWindowFeature instance where y.labels is
+                   in meta.scope space.
+            - `meta`:
+                - `scope`: target scope (0: file, 1: database, 2: global)
+                - `database`: database index
+                - `file`: file index
+        """
+
+        file = self.get_file(file_id)
+        # get label scope
+
+        label_scope = Scopes[self.metadata[file_id]["scope"]]
+        label_scope_key = f"{label_scope}_label_idx"
+
+        #
+        chunk = Segment(start_time, start_time + duration)
+
+        sample = dict()
+        sample["X"], _ = self.model.audio.crop(file, chunk, duration=duration)
+
+        # gather all annotations of current file
+        annotations = self.annotations[self.annotations["file_id"] == file_id]
+
+        # gather all annotations with non-empty intersection with current chunk
+        chunk_annotations = annotations[
+            (annotations["start"] < chunk.end) & (annotations["end"] > chunk.start)
+        ]
+
+        # discretize chunk annotations at model output resolution
+        start = np.maximum(chunk_annotations["start"], chunk.start) - chunk.start
+        start_idx = np.floor(start / self.model.example_output.frames.step).astype(
+            int
+        )
+        end = np.minimum(chunk_annotations["end"], chunk.end) - chunk.start
+        end_idx = np.ceil(end / self.model.example_output.frames.step).astype(int)
+
+        # get list and number of labels for current scope
+        labels = list(np.unique(chunk_annotations[label_scope_key]))
+        num_labels = len(labels)
+
+        if num_labels > self.max_speakers_per_chunk:
+            pass
+
+        # initial frame-level targets
+        num_chunks_per_file = getattr(self, "num_chunks_per_file", 1)
+        y = np.zeros((self.model.example_output.num_frames, num_labels), dtype=np.uint8)
+
+        # map labels to indices
+        mapping = {label: idx for idx, label in enumerate(labels)}
+
+        for start, end, label in zip(
+            start_idx, end_idx, chunk_annotations[label_scope_key]
+        ):
+            mapped_label = mapping[label]
+            y[start:end, mapped_label] = 1
+
+        sample["y"] = SlidingWindowFeature(
+            y, self.model.example_output.frames, labels=labels
+        )
+
+        metadata = self.metadata[file_id]
+        sample["meta"] = {key: metadata[key] for key in metadata.dtype.names}
+        sample["meta"]["file"] = file_id
+
+        sample["number"] = number
+
+        return sample
+
+    def collate_y(self, batch) -> torch.Tensor:
+        """
+        Parameters
+        ----------
+        batch : list
+            List of samples to collate.
+            "y" field is expected to be a SlidingWindowFeature.
+        Returns
+        -------
+        y : torch.Tensor
+            Collated target tensor of shape (batch_size, num_frames, self.max_speakers_per_chunk)
+            If one chunk has more than `self.max_speakers_per_chunk` speakers, we keep
+            the max_speakers_per_chunk most talkative ones. If it has less, we pad with
+            zeros (artificial inactive speakers).
+        """
+
+        collated_y = []
+        for b in batch:
+            y = b["y"].data
+            num_speakers = len(b["y"].labels)
+
+            # keep only the most talkative speakers
+            if num_speakers > self.max_speakers_per_chunk:
+                # sort speakers in descending talkativeness order
+                indices = np.argsort(-np.sum(y, axis=0), axis=0)
+                y = y[:, indices[: self.max_speakers_per_chunk]]
+
+            elif num_speakers < self.max_speakers_per_chunk:
+                # create inactive speakers by zero padding
+                y = np.pad(
+                    y,
+                    ((0, 0), (0, self.max_speakers_per_chunk - num_speakers)),
+                    mode="constant",
+                )
+
+            else:
+                # we have exactly the right number of speakers
+                pass
+
+            # shuffle speaker indices (to avoid having them sorted in talkativeness decreasing order) as
+            # the model might otherwise infer prior probabilities from the order of the speakers. we do
+            # not want this information (partly computed from the second half of the chunk) to leak.
+            np.random.shuffle(y.T)
+
+            collated_y.append(y)
+
+        return torch.from_numpy(np.stack(collated_y))
+
+    def collate_number(self, batch) -> torch.Tensor:
+        return default_collate([b["number"] for b in batch])
+
+
+    def collate_fn(self, batch, stage="train"):
+        # collate X
+        collated_X = self.collate_X(batch)
+
+        # collate y
+        collated_y = self.collate_y(batch)
+
+        # collate metadata
+        collated_meta = self.collate_meta(batch)
+
+        collated_number = self.collate_number(batch)
+
+
+        # apply augmentation (only in "train" stage)
+        self.augmentation.train(mode=(stage == "train"))
+        augmented = self.augmentation(
+            samples=collated_X,
+            sample_rate=self.model.hparams.sample_rate,
+            targets=collated_y.unsqueeze(1),
+        )
+
+        return {
+            "X": augmented.samples,
+            "y": augmented.targets.squeeze(1),
+            "meta": collated_meta,
+            "number": collated_number
+        }
+
+    def segmentation_loss(
+        self,
+        permutated_prediction: torch.Tensor,
+        target: torch.Tensor,
+        weight: torch.Tensor = None,
+    ) -> torch.Tensor:
+        """Permutation-invariant segmentation loss
+        Parameters
+        ----------
+        permutated_prediction : (batch_size, num_frames, num_classes) torch.Tensor
+            Permutated speaker activity predictions.
+        target : (batch_size, num_frames, num_speakers) torch.Tensor
+            Speaker activity.
+        weight : (batch_size, num_frames, 1) torch.Tensor, optional
+            Frames weight.
+        Returns
+        -------freedom
+        seg_loss : torch.Tensor
+            Permutation-invariant segmentation loss
+        """
+
+        return nll_loss(
+            permutated_prediction,
+            torch.argmax(target, dim=-1),
+            weight=weight,
+        )
+
+    def train__iter__helper(self, rng: random.Random, **filters):
+        """Iterate over training samples with optional domain filtering
+
+        Parameters
+        ----------
+        rng : random.Random
+            Random number generator
+        filters : dict, optional
+            When provided (as {key: value} dict), filter training files so that
+            only files such as file[key] == value are used for generating chunks.
+
+        Yields
+        ------
+        chunk : dict
+            Training chunks.
+        """
+
+        # indices of training files that matches domain filters
+        training = self.metadata["subset"] == Subsets.index("train")
+        for key, value in filters.items():
+            training &= self.metadata[key] == self.metadata_unique_values[key].index(value)
+        file_ids = np.where(training)[0]
+
+        # turn annotated duration into a probability distribution
+        annotated_duration = self.annotated_duration[file_ids]
+        prob_annotated_duration = annotated_duration / np.sum(annotated_duration)
+
+        duration = self.duration
+
+        num_chunks_per_file = getattr(self, "num_chunks_per_file", 1)
+        while True:
+            # select one file at random (with probability proportional to its annotated duration)
+            file_id = np.random.choice(file_ids, p=prob_annotated_duration)
+
+            # generate `num_chunks_per_file` chunks from this file
+            for _ in range(num_chunks_per_file):
+                # find indices of annotated regions in this file
+                annotated_region_indices = np.where(
+                    self.annotated_regions["file_id"] == file_id
+                )[0]
+
+                # turn annotated regions duration into a probability distribution
+                prob_annotated_regions_duration = self.annotated_regions["duration"][
+                    annotated_region_indices
+                ] / np.sum(self.annotated_regions["duration"][annotated_region_indices])
+
+                # selected one annotated region at random (with probability proportional to its duration)
+                annotated_region_index = np.random.choice(
+                    annotated_region_indices, p=prob_annotated_regions_duration
+                )
+
+                # select one chunk at random in this annotated region
+                _, _, start, end = self.annotated_regions[annotated_region_index]
+                start_time = rng.uniform(start, end - duration - self.step)
+
+                yield self.prepare_chunk(file_id, start_time, duration,0)
+                yield self.prepare_chunk(file_id, start_time + self.step, duration,1)
+
+
+    def training_step(self, batch, batch_idx: int):
+        """Compute permutation-invariant segmentation loss
+        Parameters
+        ----------
+        batch : (usually) dict of torch.Tensor
+            Current batch.
+        batch_idx: int
+            Batch index.
+        Returns
+        -------
+        loss : {str: torch.tensor}
+            {"loss": loss}
+        """
+        # target
+        target_multilabel = batch["y"]
+        # (batch_size, num_frames, num_speakers)
+
+        waveform = batch["X"]
+        # (batch_size, num_channels, num_samples)
+
+        # drop samples that contain too many speakers
+        num_speakers: torch.Tensor = torch.sum(
+            torch.any(target_multilabel, dim=1), dim=1
+        )
+        keep: torch.Tensor = num_speakers <= self.max_speakers_per_chunk
+        target_multilabel = target_multilabel[keep]
+        waveform = waveform[keep]
+
+        # corner case
+        if not keep.any():
+            return {"loss": 0.0}
+        
+        target_powerset = self.model.powerset.to_powerset(target_multilabel.float())
+        batch_size = target_powerset.size(0)
+        num_frames = target_powerset.size(1)
+        num_speakers = target_powerset.size(2)
+
+
+        
+        #create the guide with the same size as the targets (log because predictions are also log)
+        guide = torch.log(torch.full(target_powerset.size(), fill_value=1/num_speakers, device=target_multilabel.device))
+        guide_length = self.duration - self.step
+        guide_length =  int(np.floor(num_frames * guide_length / self.duration)) # round down
+
+        #No guide forward pass
+        no_guide_predictions_powerset = self.model(waveform)
+        # permutate target in multilabel space and convert it to powerset space
+        no_guide_predictions_multilabel = self.model.powerset.to_multilabel(no_guide_predictions_powerset)
+        permutated_target_multilabel, _ = permutate(no_guide_predictions_multilabel, target_multilabel)
+        permutated_target_powerset = self.model.powerset.to_powerset(permutated_target_multilabel.float())
+
+        # compute loss in powerset space (between soft prediction and permutated target)
+        no_guide_loss = self.segmentation_loss(no_guide_predictions_powerset, permutated_target_powerset)
+
+        #Even forward pass when initializing 
+        #We associate every even batch elements with a guide from the targets
+        guide[0:batch_size:2, :guide_length,:] = target_powerset[0:batch_size:2, :guide_length,:]
+        even_predictions_powerset = self.model(waveform[0:batch_size:2], guide=guide[0:batch_size:2])
+        # permutate target in multilabel space and # compute loss in powerset space
+        even_predictions_multilabel = self.model.powerset.to_multilabel(even_predictions_powerset)
+        permutated_target_multilabel, _ = permutate(even_predictions_multilabel, target_multilabel[1:batch_size:2])
+        permutated_target_powerset = self.model.powerset.to_powerset(permutated_target_multilabel.float())
+
+        # compute loss for the last frames (where there is no target guide)
+        end_even_loss = self.segmentation_loss(even_predictions_powerset[:, guide_length:, :], permutated_target_powerset[:, guide_length:, :])
+
+        #Odd forward pass
+        #We associate every odd batch elements with a guide from the even predictions (here no guide even predictions but could be from target-guided even predictions)
+        guide[1:batch_size:2, :guide_length,:] = no_guide_predictions_powerset[0:batch_size:2, num_frames-guide_length:, :]
+        odd_predictions_powerset = self.model(waveform[1:batch_size:2], guide=guide[1:batch_size:2])
+        # permutate target in multilabel space and convert it to powerset space
+        odd_predictions_multilabel = self.model.powerset.to_multilabel(odd_predictions_powerset)
+        permutated_target_multilabel, _ = permutate(odd_predictions_multilabel, target_multilabel[1:batch_size:2])
+        permutated_target_powerset = self.model.powerset.to_powerset(permutated_target_multilabel.float())
+
+        # compute loss in powerset space (between soft prediction and permutated target)
+        guided_loss = self.segmentation_loss(odd_predictions_powerset, permutated_target_powerset)
+
+
+        #Now we stack the even and the odd predictions
+        # soft_prediction_powerset = torch.stack([even_prediction_powerset, odd_prediction_powerset], dim=1)
+        # soft_prediction_powerset = soft_prediction_powerset.reshape(batch_size, num_frames, even_prediction_powerset.size(2))
+        
+        # decide what pass to use in final loss
+        end_even_loss = 0
+        seg_loss = no_guide_loss + end_even_loss + guided_loss
+
+        self.model.log(
+            "loss/train/segmentation",
+            seg_loss,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=False,
+            logger=True,
+        )
+
+        loss = seg_loss
+
+        self.model.log(
+            "loss/train",
+            loss,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=False,
+            logger=True,
+        )
+
+        return {"loss": loss}
+
+    def default_metric(
+        self,
+    ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
+        """Returns diarization error rate and its components"""
+
+        if self.specifications.powerset:
+            return {
+                "DiarizationErrorRate": DiarizationErrorRate(0.5),
+
+                "DiarizationErrorRate/Confusion": SpeakerConfusionRate(0.5),
+                "DiarizationErrorRate/Miss": MissedDetectionRate(0.5),
+                "DiarizationErrorRate/FalseAlarm": FalseAlarmRate(0.5),
+            }
+
+        return {
+            "DiarizationErrorRate": OptimalDiarizationErrorRate(),
+            "DiarizationErrorRate/Threshold": OptimalDiarizationErrorRateThreshold(),
+            "DiarizationErrorRate/Confusion": OptimalSpeakerConfusionRate(),
+            "DiarizationErrorRate/Miss": OptimalMissedDetectionRate(),
+            "DiarizationErrorRate/FalseAlarm": OptimalFalseAlarmRate(),
+        }
+
+
+    def val__getitem__(self, idx):
+        validation_chunk = self.validation_chunks[idx]
+        return self.prepare_chunk(
+            validation_chunk["file_id"],
+            validation_chunk["start"],
+            duration=validation_chunk["duration"],
+            number=idx
+        )
+
+    # TODO: no need to compute gradient in this method
+    def validation_step(self, batch, batch_idx: int):
+        """Compute validation loss and metric
+        Parameters
+        ----------
+        batch : dict of torch.Tensor
+            Current batch.
+        batch_idx: int
+            Batch index.
+        """
+        print(batch["number"])
+        # target
+        target = batch["y"]
+        # (batch_size, num_frames, num_speakers)
+
+        waveform = batch["X"]
+        # (batch_size, num_channels, num_samples)
+
+        # TODO: should we handle validation samples with too many speakers
+        # waveform = waveform[keep]
+        # target = target[keep]
+        target_powerset = self.model.powerset.to_powerset(target.float())
+        batch_size = target_powerset.size(0)
+        num_frames = target_powerset.size(1)
+        num_speakers = target_powerset.size(2)
+    
+
+        #create the guide with the same size as the targets
+        guide = torch.log(torch.full(target_powerset.size(), fill_value=1/num_speakers, device=target.device))
+        guide_length = self.duration - self.step
+        guide_length =  int(np.floor(num_frames * guide_length / self.duration)) # round down
+
+
+        predictions_powerset = torch.zeros(target_powerset.size(), device=target.device)
+        predictions_powerset[0] = self.model(waveform[0:1])
+        for i in range(1, batch_size):
+            guide[i, :guide_length] = predictions_powerset[i-1, num_frames-guide_length:]
+            predictions_powerset[i] = self.model(waveform[i:i+1], guide[i:i+1])
+
+        multilabel = self.model.powerset.to_multilabel(predictions_powerset)
+        permutated_target, _ = permutate(multilabel, target)
+        permutated_target_powerset = self.model.powerset.to_powerset(permutated_target.float())
+
+        seg_loss = self.segmentation_loss(predictions_powerset[1:], permutated_target_powerset[1:])
+
+        self.model.log(
+            "loss/val/segmentation",
+            seg_loss,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=False,
+            logger=True,
+        )
+
+        self.model.validation_metric(
+            torch.transpose(multilabel, 1, 2),
+            torch.transpose(target, 1, 2),
+        )
+
+        self.model.log_dict(
+            self.model.validation_metric,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+        )
+
+        # log first batch visualization every 2^n epochs.
+        if (
+            self.model.current_epoch == 0
+            or math.log2(self.model.current_epoch) % 1 > 0
+            or batch_idx > 0
+        ):
+            return
+
+        # visualize first 9 validation samples of first batch in Tensorboard/MLflow
+
+        y = permutated_target.float().cpu().numpy()
+        y_pred = multilabel.cpu().numpy()
+
+        # prepare 3 x 3 grid (or smaller if batch size is smaller)
+        num_samples = min(self.batch_size, 9)
+        nrows = math.ceil(math.sqrt(num_samples))
+        ncols = math.ceil(num_samples / nrows)
+        fig, axes = plt.subplots(
+            nrows=2 * nrows, ncols=ncols, figsize=(8, 5), squeeze=False
+        )
+
+        # reshape target so that there is one line per class when plotting it
+        y[y == 0] = np.NaN
+        if len(y.shape) == 2:
+            y = y[:, :, np.newaxis]
+        y *= np.arange(y.shape[2])
+
+        # plot each sample
+        for sample_idx in range(num_samples):
+            # find where in the grid it should be plotted
+            row_idx = sample_idx // nrows
+            col_idx = sample_idx % ncols
+
+            # plot target
+            ax_ref = axes[row_idx * 2 + 0, col_idx]
+            sample_y = y[sample_idx]
+            ax_ref.plot(sample_y)
+            ax_ref.set_xlim(0, len(sample_y))
+            ax_ref.set_ylim(-1, sample_y.shape[1])
+            ax_ref.get_xaxis().set_visible(False)
+            ax_ref.get_yaxis().set_visible(False)
+
+            # plot predictions
+            ax_hyp = axes[row_idx * 2 + 1, col_idx]
+            sample_y_pred = y_pred[sample_idx]
+            ax_hyp.plot(sample_y_pred)
+            ax_hyp.set_ylim(-0.1, 1.1)
+            ax_hyp.set_xlim(0, len(sample_y))
+            ax_hyp.get_xaxis().set_visible(False)
+
+        plt.tight_layout()
+
+        for logger in self.model.loggers:
+            if isinstance(logger, TensorBoardLogger):
+                logger.experiment.add_figure("samples", fig, self.model.current_epoch)
+            elif isinstance(logger, MLFlowLogger):
+                logger.experiment.log_figure(
+                    run_id=logger.run_id,
+                    figure=fig,
+                    artifact_file=f"samples_epoch{self.model.current_epoch}.png",
+                )
+
+        plt.close(fig)
