@@ -119,6 +119,7 @@ class Inference(BaseInference):
         specifications = self.model.specifications
 
         # ~~~~ sliding window ~~~~~
+
         if window not in ["sliding", "whole"]:
             raise ValueError('`window` must be "sliding" or "whole".')
 
