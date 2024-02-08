@@ -83,7 +83,7 @@ class MultilatencyPyanNet(Model):
         "hidden_size": 128,
         "num_layers": 2,
         "bidirectional": True,
-        "monolithic": True,
+        "monolithic": False,
         "dropout": 0.0,
     }
     LINEAR_DEFAULTS = {"hidden_size": 128, "num_layers": 2}
@@ -96,6 +96,7 @@ class MultilatencyPyanNet(Model):
         sample_rate: int = 16000,
         num_channels: int = 1,
         task: Optional[Task] = None,
+        latency_list: Optional[List[float]] = None,
     ):
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
 
@@ -105,6 +106,11 @@ class MultilatencyPyanNet(Model):
         lstm["batch_first"] = True
         linear = merge_dict(self.LINEAR_DEFAULTS, linear)
         self.save_hyperparameters("sincnet", "lstm", "linear")
+        self.hparams.latency_list = latency_list or self.task.latency_list
+        if self.task is not None:
+            self.latency_list = self.task.latency_list
+        else:
+            self.latency_list = self.hparams.latency_list 
 
         self.sincnet = SincNet(**self.hparams.sincnet)
 
@@ -112,7 +118,7 @@ class MultilatencyPyanNet(Model):
         if monolithic:
             multi_layer_lstm = dict(lstm)
             del multi_layer_lstm["monolithic"]
-            self.lstm = nn.ModuleList([nn.LSTM(60, **multi_layer_lstm) for i in range(len(self.task.latency_list))])
+            self.lstm = nn.LSTM(60, **multi_layer_lstm)
 
         else:
             num_layers = lstm["num_layers"]
@@ -142,7 +148,8 @@ class MultilatencyPyanNet(Model):
         lstm_out_features: int = self.hparams.lstm["hidden_size"] * (
             2 if self.hparams.lstm["bidirectional"] else 1
         )
-        self.linear = nn.ModuleList([nn.ModuleList(
+
+        self.linear = nn.ModuleList(
             [
                 nn.Linear(in_features, out_features)
                 for in_features, out_features in pairwise(
@@ -152,8 +159,7 @@ class MultilatencyPyanNet(Model):
                     + [self.hparams.linear["hidden_size"]]
                     * self.hparams.linear["num_layers"]
                 )
-            ]
-        ) for i in range(len(self.task.latency_list))])
+            ])
 
     def build(self):
         if self.hparams.linear["num_layers"] > 0:
@@ -171,7 +177,7 @@ class MultilatencyPyanNet(Model):
         else:
             out_features = len(self.specifications.classes)
 
-        self.classifier = nn.ModuleList([nn.Linear(in_features, out_features) for i in range(len(self.task.latency_list))])
+        self.classifier = nn.Linear(in_features, out_features * len(self.latency_list))
         self.activation = self.default_activation()
 
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
@@ -185,30 +191,26 @@ class MultilatencyPyanNet(Model):
         -------
         scores : (batch, frame, classes)
         """
-        sincnet_output = self.sincnet(waveforms)
-        predictions = []
-        for k in range(len(self.task.latency_list)):
-            if self.hparams.lstm["monolithic"]:
-                outputs, _ = self.lstm[k](
-                    rearrange(sincnet_output, "batch feature frame -> batch frame feature")
-                )
-            else:
-                outputs = rearrange(sincnet_output, "batch feature frame -> batch frame feature")
-                for i, lstm in enumerate(self.lstm):
-                    outputs, _ = lstm(outputs)
-                    if i + 1 < self.hparams.lstm["num_layers"]:
-                        outputs = self.dropout(outputs)
+        outputs = self.sincnet(waveforms)
+        if self.hparams.lstm["monolithic"]:
+            outputs, _ = self.lstm(
+                rearrange(outputs, "batch feature frame -> batch frame feature")
+            )
+        else:
+            outputs = rearrange(outputs, "batch feature frame -> batch frame feature")
+            for i, lstm in enumerate(self.lstm):
+                outputs, _ = lstm(outputs)
+                if i + 1 < self.hparams.lstm["num_layers"]:
+                    outputs = self.dropout(outputs)
 
-            if self.hparams.linear["num_layers"] > 0:
-                for linear in self.linear[k]:
-                    outputs = F.leaky_relu(linear(outputs))
+        if self.hparams.linear["num_layers"] > 0:
+            for linear in self.linear:
+                outputs = F.leaky_relu(linear(outputs))
+        predictions = self.activation(self.classifier(outputs))           
+        predictions = predictions.view(predictions.size(0), predictions.size(1), predictions.size(2) // len(self.latency_list), len(self.latency_list))
+        predictions = predictions.permute(3, 0, 1, 2)
             
-            predictions.append(self.activation(self.classifier[k](outputs)))
-        predictions = torch.stack(predictions, dim=0)
-
         return predictions
-
-
 
 
     def __example_input_array(self, duration: Optional[float] = None) -> torch.Tensor:
