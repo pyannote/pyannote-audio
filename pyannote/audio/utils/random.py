@@ -21,6 +21,7 @@
 # SOFTWARE.
 
 
+import hashlib
 import os
 from random import Random
 
@@ -51,16 +52,18 @@ def create_rng_for_worker(model) -> Random:
     else:
         worker_id = worker_info.id
 
-    seed = hash(
-        (
-            global_seed,
-            worker_id,
-            model.local_rank,
-            model.global_rank,
-            model.current_epoch,
-        )
+    t = (
+        global_seed,
+        worker_id,
+        model.local_rank,
+        model.global_rank,
+        model.current_epoch,
     )
-
+    # use md5 because python's `hash` is not deterministic
+    seed = int.from_bytes(
+        hashlib.md5(str(t).encode(), usedforsecurity=False).digest(),
+        byteorder="big",
+    )
     rng.seed(seed)
 
     return rng
