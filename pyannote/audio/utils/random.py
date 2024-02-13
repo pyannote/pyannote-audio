@@ -59,7 +59,7 @@ def create_rng_for_worker(model) -> Random:
         model.global_rank,
         model.current_epoch,
     )
-    # use md5 because python's `hash` is not deterministic.
+    # use adler32 because python's `hash` is not deterministic.
     seed = zlib.adler32(str(seed_tuple).encode())
     rng.seed(seed)
 
