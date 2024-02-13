@@ -21,8 +21,8 @@
 # SOFTWARE.
 
 
-import hashlib
 import os
+import zlib
 from random import Random
 
 import torch
@@ -52,18 +52,15 @@ def create_rng_for_worker(model) -> Random:
     else:
         worker_id = worker_info.id
 
-    t = (
+    seed_tuple = (
         global_seed,
         worker_id,
         model.local_rank,
         model.global_rank,
         model.current_epoch,
     )
-    # use md5 because python's `hash` is not deterministic
-    seed = int.from_bytes(
-        hashlib.md5(str(t).encode(), usedforsecurity=False).digest(),
-        byteorder="big",
-    )
+    # use md5 because python's `hash` is not deterministic.
+    seed = zlib.adler32(str(seed_tuple).encode())
     rng.seed(seed)
 
     return rng
