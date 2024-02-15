@@ -15,7 +15,7 @@
 
 ### Fixes
 
-- fix(task): fix random generators
+- fix(task): fix random generators and their reproducibility
 - fix(task): fix estimation of training set size
 
 ### Improvements
