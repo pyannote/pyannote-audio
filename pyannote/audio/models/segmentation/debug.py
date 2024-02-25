@@ -21,17 +21,21 @@
 # SOFTWARE.
 
 
-from functools import cached_property, lru_cache
+from functools import lru_cache
 from typing import Optional
 
 import torch
 import torch.nn as nn
 from einops import rearrange
-from pyannote.core import SlidingWindow
 from torchaudio.transforms import MFCC
 
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
+from pyannote.audio.utils.receptive_field import (
+    conv1d_num_frames,
+    conv1d_receptive_field_center,
+    conv1d_receptive_field_size,
+)
 
 
 class SimpleSegmentationModel(Model):
@@ -82,14 +86,17 @@ class SimpleSegmentationModel(Model):
         hop_length = self.mfcc.MelSpectrogram.spectrogram.hop_length
         n_fft = self.mfcc.MelSpectrogram.spectrogram.n_fft
         center = self.mfcc.MelSpectrogram.spectrogram.center
-        return int(
-            1 + num_samples // hop_length
-            if center
-            else 1 + (num_samples - n_fft) // hop_length
+
+        return conv1d_num_frames(
+            num_samples=num_samples,
+            kernel_size=n_fft,
+            stride=hop_length,
+            padding=n_fft // 2 if center else 0,
+            dilation=1,
         )
 
     def receptive_field_size(self, num_frames: int = 1) -> int:
-        """Compute receptive field size
+        """Compute size of receptive field
 
         Parameters
         ----------
@@ -99,43 +106,41 @@ class SimpleSegmentationModel(Model):
         Returns
         -------
         receptive_field_size : int
-            Receptive field size
+            Receptive field size.
+        """
+
+        hop_length = self.mfcc.MelSpectrogram.spectrogram.hop_length
+        n_fft = self.mfcc.MelSpectrogram.spectrogram.n_fft
+
+        return conv1d_receptive_field_size(
+            num_frames, kernel_size=n_fft, stride=hop_length, dilation=1
+        )
+
+    def receptive_field_center(self, frame: int = 0) -> int:
+        """Compute center of receptive field
+
+        Parameters
+        ----------
+        frame : int, optional
+            Frame index
+
+        Returns
+        -------
+        receptive_field_center : int
+            Index of receptive field center.
         """
 
         hop_length = self.mfcc.MelSpectrogram.spectrogram.hop_length
         n_fft = self.mfcc.MelSpectrogram.spectrogram.n_fft
         center = self.mfcc.MelSpectrogram.spectrogram.center
 
-        if center:
-            return (num_frames - 1) * hop_length
-        else:
-            return (num_frames - 1) * hop_length + n_fft
-
-    @cached_property
-    def receptive_field(self) -> SlidingWindow:
-        """Compute receptive field
-
-        Returns
-        -------
-        receptive field : SlidingWindow
-
-        Source
-        ------
-        https://distill.pub/2019/computing-receptive-fields/
-
-        """
-
-        # duration of the receptive field of each output frame
-        duration = (
-            self.mfcc.MelSpectrogram.spectrogram.win_length / self.hparams.sample_rate
+        return conv1d_receptive_field_center(
+            frame=frame,
+            kernel_size=n_fft,
+            stride=hop_length,
+            padding=n_fft // 2 if center else 0,
+            dilation=1,
         )
-
-        # step between the receptive field region of two consecutive output frames
-        step = (
-            self.mfcc.MelSpectrogram.spectrogram.hop_length / self.hparams.sample_rate
-        )
-
-        return SlidingWindow(start=0.0, duration=duration, step=step)
 
     @property
     def dimension(self) -> int:
