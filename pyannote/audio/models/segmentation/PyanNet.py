@@ -20,14 +20,13 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from functools import cached_property, lru_cache
+from functools import lru_cache
 from typing import Optional
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
-from pyannote.core import SlidingWindow
 from pyannote.core.utils.generators import pairwise
 
 from pyannote.audio.core.model import Model
@@ -178,20 +177,36 @@ class PyanNet(Model):
 
         return self.sincnet.num_frames(num_samples)
 
-    @cached_property
-    def receptive_field(self) -> SlidingWindow:
-        """Compute receptive field
+    def receptive_field_size(self, num_frames: int = 1) -> int:
+        """Compute size of receptive field
+
+        Parameters
+        ----------
+        num_frames : int, optional
+            Number of frames in the output signal
 
         Returns
         -------
-        receptive field : SlidingWindow
-
-        Source
-        ------
-        https://distill.pub/2019/computing-receptive-fields/
-
+        receptive_field_size : int
+            Receptive field size.
         """
-        return self.sincnet.receptive_field
+        return self.sincnet.receptive_field_size(num_frames=num_frames)
+
+    def receptive_field_center(self, frame: int = 0) -> int:
+        """Compute center of receptive field
+
+        Parameters
+        ----------
+        frame : int, optional
+            Frame index
+
+        Returns
+        -------
+        receptive_field_center : int
+            Index of receptive field center.
+        """
+
+        return self.sincnet.receptive_field_center(frame=frame)
 
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
         """Pass forward

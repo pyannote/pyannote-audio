@@ -30,6 +30,6 @@ precision: 32
 profiler: null
 reload_dataloaders_every_n_epochs: 0
 use_distributed_sampler: True # TODO: check what this does exactly
-strategy: null
+strategy: auto
 sync_batchnorm: False
 val_check_interval: 1.0

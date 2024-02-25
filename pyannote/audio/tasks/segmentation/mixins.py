@@ -255,8 +255,11 @@ class SegmentationTask(Task):
 
     def train__len__(self):
         # Number of training samples in one epoch
+        train_file_ids = np.where(
+            self.prepared_data["audio-metadata"]["subset"] == Subsets.index("train")
+        )[0]
 
-        duration = np.sum(self.prepared_data["audio-annotated"])
+        duration = np.sum(self.prepared_data["audio-annotated"][train_file_ids])
         return max(self.batch_size, math.ceil(duration / self.duration))
 
     def prepare_validation(self, prepared_data: Dict):

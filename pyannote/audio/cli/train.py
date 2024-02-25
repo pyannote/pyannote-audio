@@ -51,8 +51,9 @@ def train(cfg: DictConfig) -> Optional[float]:
     seed_everything(seed=seed)
 
     # load databases into registry
-    for database_yml in cfg.registry.split(","):
-        registry.load_database(database_yml)
+    if "registry" in cfg:
+        for database_yml in cfg.registry.split(","):
+            registry.load_database(database_yml)
 
     # instantiate training protocol with optional preprocessors
     preprocessors = {"audio": FileFinder(), "torchaudio.info": get_torchaudio_info}
@@ -75,9 +76,9 @@ def train(cfg: DictConfig) -> Optional[float]:
 
     # instantiate model
     fine_tuning = cfg.model["_target_"] == "pyannote.audio.cli.pretrained"
-    model = instantiate(cfg.model)
-    model.task = task
-    model.setup(stage="fit")
+    model = instantiate(cfg.model, task=task)
+    model.prepare_data()
+    model.setup()
 
     # validation metric to monitor (and its direction: min or max)
     monitor, direction = task.val_monitor
@@ -146,7 +147,6 @@ def train(cfg: DictConfig) -> Optional[float]:
     # in case of fine-tuning, validate the initial model to make sure
     # that we actually improve over the initial performance
     if fine_tuning:
-        model.setup(stage="fit")
         trainer.validate(model)
 
     # train the model
@@ -157,7 +157,9 @@ def train(cfg: DictConfig) -> Optional[float]:
 
     # return the best validation score
     # this can be used for hyper-parameter optimization with Hydra sweepers
-    if monitor is not None:
+    # this can only be done if the trainer is not in fast dev run mode, as
+    # checkpointing is disabled in this mode
+    if monitor is not None and not trainer.fast_dev_run:
         best_monitor = float(checkpoint.best_model_score)
         if direction == "min":
             return best_monitor
