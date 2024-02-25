@@ -1,6 +1,6 @@
 # The MIT License (MIT)
 #
-# Copyright (c) 2019-2020 CNRS
+# Copyright (c) 2019- CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -23,16 +23,18 @@
 # AUTHOR
 # Hervé Bredin - http://herve.niderb.fr
 
-
-from functools import cached_property, lru_cache
+from functools import lru_cache
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from asteroid_filterbanks import Encoder, ParamSincFB
-from pyannote.core import SlidingWindow
 
-from pyannote.audio.utils.frame import conv1d_num_frames, conv1d_receptive_field_size
+from pyannote.audio.utils.receptive_field import (
+    multi_conv_num_frames,
+    multi_conv_receptive_field_center,
+    multi_conv_receptive_field_size,
+)
 
 
 class SincNet(nn.Module):
@@ -78,17 +80,17 @@ class SincNet(nn.Module):
 
     @lru_cache
     def num_frames(self, num_samples: int) -> int:
-        """Compute number of output frames for a given number of input samples
+        """Compute number of output frames
 
         Parameters
         ----------
         num_samples : int
-            Number of input samples
+            Number of input samples.
 
         Returns
         -------
         num_frames : int
-            Number of output frames
+            Number of output frames.
         """
 
         kernel_size = [251, 3, 5, 3, 5, 3]
@@ -96,16 +98,16 @@ class SincNet(nn.Module):
         padding = [0, 0, 0, 0, 0, 0]
         dilation = [1, 1, 1, 1, 1, 1]
 
-        num_frames = num_samples
-        for k, s, p, d in zip(kernel_size, stride, padding, dilation):
-            num_frames = conv1d_num_frames(
-                num_frames, kernel_size=k, stride=s, padding=p, dilation=d
-            )
-
-        return num_frames
+        return multi_conv_num_frames(
+            num_samples,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            dilation=dilation,
+        )
 
     def receptive_field_size(self, num_frames: int = 1) -> int:
-        """Compute receptive field size
+        """Compute size of receptive field
 
         Parameters
         ----------
@@ -115,7 +117,32 @@ class SincNet(nn.Module):
         Returns
         -------
         receptive_field_size : int
-            Receptive field size
+            Receptive field size.
+        """
+
+        kernel_size = [251, 3, 5, 3, 5, 3]
+        stride = [self.stride, 3, 1, 3, 1, 3]
+        dilation = [1, 1, 1, 1, 1, 1]
+
+        return multi_conv_receptive_field_size(
+            num_frames,
+            kernel_size=kernel_size,
+            stride=stride,
+            dilation=dilation,
+        )
+
+    def receptive_field_center(self, frame: int = 0) -> int:
+        """Compute center of receptive field
+
+        Parameters
+        ----------
+        frame : int, optional
+            Frame index
+
+        Returns
+        -------
+        receptive_field_center : int
+            Index of receptive field center.
         """
 
         kernel_size = [251, 3, 5, 3, 5, 3]
@@ -123,42 +150,13 @@ class SincNet(nn.Module):
         padding = [0, 0, 0, 0, 0, 0]
         dilation = [1, 1, 1, 1, 1, 1]
 
-        receptive_field_size = num_frames
-        for k, s, p, d in reversed(list(zip(kernel_size, stride, padding, dilation))):
-            receptive_field_size = conv1d_receptive_field_size(
-                num_frames=receptive_field_size,
-                kernel_size=k,
-                stride=s,
-                padding=p,
-                dilation=d,
-            )
-
-        return receptive_field_size
-
-    @cached_property
-    def receptive_field(self) -> SlidingWindow:
-        """Compute receptive field
-
-        Returns
-        -------
-        receptive field : SlidingWindow
-
-        Source
-        ------
-        https://distill.pub/2019/computing-receptive-fields/
-
-        """
-
-        # duration of the receptive field of each output frame
-        duration = self.receptive_field_size() / self.sample_rate
-
-        # step between the receptive field region of two consecutive output frames
-        step = (
-            self.receptive_field_size(num_frames=2)
-            - self.receptive_field_size(num_frames=1)
-        ) / self.sample_rate
-
-        return SlidingWindow(start=0.0, duration=duration, step=step)
+        return multi_conv_receptive_field_center(
+            frame,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            dilation=dilation,
+        )
 
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
         """Pass forward
