@@ -25,6 +25,7 @@ from __future__ import annotations
 import os
 import warnings
 from dataclasses import dataclass
+from functools import cached_property
 from importlib import import_module
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Text, Tuple, Union
@@ -130,15 +131,7 @@ class Model(pl.LightningModule):
                 ) from e
 
         else:
-            try:
-                specifications = self.task.specifications
-
-            except AttributeError as e:
-                raise UnknownSpecificationsError(
-                    "Task specifications are not available. This is most likely because they depend on "
-                    "the content of the training subset. Use `model.prepare_data()` and `model.setup()` "
-                    "to go over the training subset and fix this, or let lightning trainer do that for you in `trainer.fit(model)`."
-                ) from e
+            specifications = self.task.specifications
 
         return specifications
 
@@ -180,6 +173,23 @@ class Model(pl.LightningModule):
     @property
     def example_input_array(self) -> torch.Tensor:
         return self.__example_input_array()
+
+    @cached_property
+    def receptive_field(self) -> SlidingWindow:
+        """(Internal) frames"""
+
+        receptive_field_size = self.receptive_field_size(num_frames=1)
+        receptive_field_step = (
+            self.receptive_field_size(num_frames=2) - receptive_field_size
+        )
+        receptive_field_start = (
+            self.receptive_field_center(frame=0) - (receptive_field_size - 1) / 2
+        )
+        return SlidingWindow(
+            start=receptive_field_start / self.hparams.sample_rate,
+            duration=receptive_field_size / self.hparams.sample_rate,
+            step=receptive_field_step / self.hparams.sample_rate,
+        )
 
     def prepare_data(self):
         self.task.prepare_data()

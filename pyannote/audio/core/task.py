@@ -671,7 +671,11 @@ class Task(pl.LightningDataModule):
     def specifications(self) -> Union[Specifications, Tuple[Specifications]]:
         # setup metadata on-demand the first time specifications are requested and missing
         if not hasattr(self, "_specifications"):
-            self.setup()
+            raise UnknownSpecificationsError(
+                "Task specifications are not available. This is most likely because they depend on "
+                "the content of the training subset. Use `task.prepare_data()` and `task.setup()` "
+                "to go over the training subset and fix this, or let lightning trainer do that for you in `trainer.fit(model)`."
+            )
         return self._specifications
 
     @specifications.setter

@@ -2,7 +2,7 @@
 
 *This tutorial is a very preliminary draft. Expect hiccups and missing details.*
 
-`pyannote.audio` provides a command line tool called `pyannote-audio-train` 
+`pyannote.audio` provides a command line tool called `pyannote-audio-train`
 that allows to train models directly from your terminal. It relies on extra
 dependencies installed using th `[cli]` suffix:
 
@@ -20,6 +20,7 @@ detection on the AMI corpus...
 pyannote-audio-train \
     model=PyanNet \
     task=VoiceActivityDetection \
+    +registry="AMI-diarization-setup/pyannote/database.yml" \
     protocol=AMI.SpeakerDiarization.only_words
 ```
 
@@ -28,20 +29,64 @@ pyannote-audio-train \
 ```python
 from pyannote.audio.tasks import VoiceActivityDetection
 from pyannote.audio.models.segmentation import PyanNet
-from pyannote.database import get_protocol
+from pyannote.database import registry, FileFinder()
 from pytorch_lightning import Trainer
 
-protocol = get_protocol("AMI.SpeakerDiarization.only_words")
+registry.load_database("AMI-diarization-setup/pyannote/database.yml")
+protocol = registry.get_protocol("AMI.SpeakerDiarization.only_words", preprocessors={"audio": FileFinder()})
 task = VoiceActivityDetection(protocol)
 model = PyanNet(task=task)
 trainer = Trainer()
 trainer.fit(model)
 ```
 
+You can also evaluate a model from it checkpoint on the AMI corpus by calling the following commad...
+
+```bash
+pyannote-audio-eval \
+    model=path_to_model_checkpoint.ckpt \
+    +registry="AMI-diarization-setup/pyannote/database.yml" \
+    protocol="Debug.SpeakerDiarization.Debug" \
+    subset=test \
+```
+... which is more or less equivalent to running the following Python script:
+
+```python
+from pyannote.database import FileFinder, ProtocolFile, registry
+
+from pyannote.audio import Inference, Model
+from pyannote.audio.utils.metric import DiscreteDiarizationErrorRate
+from pyannote.audio.utils.signal import binarize
+
+model = Model.from_pretrained("path_to_checkpoint.ckpt")
+
+# load evaluation files
+registry.load_database("AMI-diarization-setup/pyannote/database.yml")
+protocol = registry.get_protocol("AMI.SpeakerDiarization.only_words", preprocessors={"audio": FileFinder()})
+files = list(getattr(protocol, "test")())
+
+# load evaluation metric
+metric = DiscreteDiarizationErrorRate()
+
+inference = Inference(model)
+
+def hypothesis(file: ProtocolFile):
+    return Inference.trim(
+        binarize(inference(file, hook=progress_hook)),
+    )
+
+for file in files:
+    reference = file["annotation"]
+    uem = file["annotated"]
+    _ = metric(reference, hypothesis(file), uem=uem)
+
+report = metric.report(display=False)
+```
+
 ## Hydra-based configuration
 
-`pyannote-audio-train` relies on [`Hydra`](https://hydra.cc) to configure the 
-training process. Adding `--cfg job` option to the previous command will let 
+`pyannote-audio-train` relies on [`Hydra`](https://hydra.cc) to configure the
+training process. Adding `--cfg job` option to the previous command will let
 you know about the actual configuration used for training:
 
 
@@ -49,6 +94,7 @@ you know about the actual configuration used for training:
 pyannote-audio-train --cfg job \
     model=PyanNet \
     task=VoiceActivityDetection \
+    registry="AMI-diarization-setup/pyannote/database.yml" \
     protocol=AMI.SpeakerDiarization.only_words
 ```
 
@@ -71,6 +117,7 @@ To change the duration of audio chunks used for training to 2 seconds, you would
 pyannote-audio-train \
     model=PyanNet \
     task=VoiceActivityDetection task.duration=2.0 \
+    registry="AMI-diarization-setup/pyannote/database.yml" \
     protocol=AMI.SpeakerDiarization.only_words
 ```
 
@@ -104,6 +151,7 @@ pyannote-audio-train \
     --config-dir /path/to/custom_config \
     model=PyanNet \
     task=VoiceActivityDetection task.duration=2.0 \
+    registry="AMI-diarization-setup/pyannote/database.yml" \
     protocol=AMI.SpeakerDiarization.only_words \
     +augmentation=background_noise
 ```
@@ -123,10 +171,11 @@ Here, we launch a grid of (3 x 2 =) six different jobs:
 * mono-directional or bidirectional LSTMs
 
 ```bash
-pyannote-audio-train 
+pyannote-audio-train
     --multirun hydra/launcher=submitit_slurm \
     model=PyanNet +model.lstm.num_layers=2,3,4 +model.lstm.bidirectional=true,false \
     task=VoiceActivityDetection \
+    registry="AMI-diarization-setup/pyannote/database.yml" \
     protocol=AMI.SpeakerDiarization.only_words
 ```
 

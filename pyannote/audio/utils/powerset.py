@@ -25,7 +25,8 @@
 # Alexis PLAQUET
 
 from functools import cached_property
-from itertools import combinations
+from itertools import combinations, permutations
+from typing import Dict, Tuple
 
 import scipy.special
 import torch
@@ -65,6 +66,27 @@ class Powerset(nn.Module):
         )
 
     def build_mapping(self) -> torch.Tensor:
+        """Compute powerset to regular mapping
+
+        Returns
+        -------
+        mapping : (num_powerset_classes, num_classes) torch.Tensor
+            mapping[i, j] == 1 if jth regular class is a member of ith powerset class
+            mapping[i, j] == 0 otherwise
+
+        Example
+        -------
+        With num_classes == 3 and max_set_size == 2, returns
+
+            [0, 0, 0]  # none
+            [1, 0, 0]  # class #1
+            [0, 1, 0]  # class #2
+            [0, 0, 1]  # class #3
+            [1, 1, 0]  # classes #1 and #2
+            [1, 0, 1]  # classes #1 and #3
+            [0, 1, 1]  # classes #2 and #3
+
+        """
         mapping = torch.zeros(self.num_powerset_classes, self.num_classes)
         powerset_k = 0
         for set_size in range(0, self.max_set_size + 1):
@@ -76,13 +98,7 @@ class Powerset(nn.Module):
 
     def build_cardinality(self) -> torch.Tensor:
         """Compute size of each powerset class"""
-        cardinality = torch.zeros(self.num_powerset_classes)
-        powerset_k = 0
-        for set_size in range(0, self.max_set_size + 1):
-            for _ in combinations(range(self.num_classes), set_size):
-                cardinality[powerset_k] = set_size
-                powerset_k += 1
-        return cardinality
+        return torch.sum(self.mapping, dim=1)
 
     def to_multilabel(self, powerset: torch.Tensor, soft: bool = False) -> torch.Tensor:
         """Convert predictions from powerset to multi-label
@@ -138,3 +154,76 @@ class Powerset(nn.Module):
             torch.argmax(torch.matmul(multilabel, self.mapping.T), dim=-1),
             num_classes=self.num_powerset_classes,
         )
+
+    def _permutation_powerset(
+        self, multilabel_permutation: Tuple[int, ...]
+    ) -> Tuple[int, ...]:
+        """Helper function for `permutation_mapping` property
+
+        Takes a (num_classes,)-shaped permutation in multilabel space and returns
+        the corresponding (num_powerset_classes,)-shaped permutation in powerset space.
+        This does not cache anything and only works on one single permutation at a time.
+
+        Parameters
+        ----------
+        multilabel_permutation : tuple of int
+            Permutation in multilabel space.
+
+        Returns
+        -------
+        powerset_permutation : tuple of int
+            Permutation in powerset space.
+
+        Example
+        -------
+        >>> powerset = Powerset(3, 2)
+        >>> powerset._permutation_powerset((1, 0, 2))
+        # (0, 2, 1, 3, 4, 6, 5)
+
+        """
+
+        permutated_mapping: torch.Tensor = self.mapping[:, multilabel_permutation]
+
+        arange = torch.arange(
+            self.num_classes, device=self.mapping.device, dtype=torch.int
+        )
+        powers_of_two = (2**arange).tile((self.num_powerset_classes, 1))
+
+        # compute the encoding of the powerset classes in this 2**N space, before and after
+        # permutation of the columns (mapping cols=labels, mapping rows=powerset classes)
+        before = torch.sum(self.mapping * powers_of_two, dim=-1)
+        after = torch.sum(permutated_mapping * powers_of_two, dim=-1)
+
+        # find before-to-after permutation
+        powerset_permutation = (before[None] == after[:, None]).int().argmax(dim=0)
+
+        # return as tuple of indices
+        return tuple(powerset_permutation.tolist())
+
+    @cached_property
+    def permutation_mapping(self) -> Dict[Tuple[int, ...], Tuple[int, ...]]:
+        """Mapping between multilabel and powerset permutations
+
+        Example
+        -------
+        With num_classes == 3 and max_set_size == 2, returns
+
+        {
+            (0, 1, 2): (0, 1, 2, 3, 4, 5, 6),
+            (0, 2, 1): (0, 1, 3, 2, 5, 4, 6),
+            (1, 0, 2): (0, 2, 1, 3, 4, 6, 5),
+            (1, 2, 0): (0, 2, 3, 1, 6, 4, 5),
+            (2, 0, 1): (0, 3, 1, 2, 5, 6, 4),
+            (2, 1, 0): (0, 3, 2, 1, 6, 5, 4)
+        }
+        """
+        permutation_mapping = {}
+
+        for multilabel_permutation in permutations(
+            range(self.num_classes), self.num_classes
+        ):
+            permutation_mapping[
+                tuple(multilabel_permutation)
+            ] = self._permutation_powerset(multilabel_permutation)
+
+        return permutation_mapping

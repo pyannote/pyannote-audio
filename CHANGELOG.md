@@ -6,16 +6,26 @@
 
 - feat(task): add option to cache task training metadata to speed up training
 - feat(pipeline): add `Waveform` and `SampleRate` preprocessors
-- feat(model): add `num_frames`, `receptive_field`, and `dimension` properties to segmentation models
+- feat(model): add `num_frames` method to every model
+- feat(model): add `receptive_field` property to every model
+- feat(model): and `dimension` property to every model
 - feat(sample): add sample file at `pyannote.audio.sample.SAMPLE_FILE`
+- feat(powerset): add `Powerset.permutation_mapping` to help with permutation in powerset space
+- feat(metric): add `reduce` option to `diarization_error_rate` metric
 
 ### Fixes
 
-- fix(task): fix random generators
+- fix(task): fix random generators and their reproducibility
+- fix(task): fix estimation of training set size
+
+### Improvements
+
+- improve(metric): add support for number of speakers mismatch in `diarization_error_rate` metric
+- improve(pipeline): track both `Model` and `nn.Module` attributes in `Pipeline.to(device)`
 
 ## Breaking changes
 
-- BREAKING(model): get rid of `Model.example_output` in favor of `num_frames`, `receptive_field`, and `dimension` properties
+- BREAKING(model): get rid of `Model.example_output` in favor of `num_frames` method, `receptive_field` property, and `dimension` property
 - BREAKING(task): custom tasks need to be updated (see "Add your own task" tutorial)
 
 ## Version 3.1.1 (2023-12-01)
