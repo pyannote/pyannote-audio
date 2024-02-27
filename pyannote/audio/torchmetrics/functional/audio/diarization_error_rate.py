@@ -32,8 +32,7 @@ from pyannote.audio.utils.permutation import permutate
 def _der_update(
     preds: torch.Tensor,
     target: torch.Tensor,
-    per_frame: bool = False,
-    per_chunk: bool = False,
+    num_frames: float = None,
     streaming_permutation: bool = False,
     threshold: Union[torch.Tensor, float] = 0.5,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -60,46 +59,46 @@ def _der_update(
     if scalar_threshold:
         threshold = torch.tensor([threshold], dtype=preds.dtype, device=preds.device)
 
-    num_speakers = preds.size(1)
-    num_frames = preds.size(2)
-    step =  int(np.floor(num_frames * 0.1)) # round down
+
     # find the optimal mapping between target and (soft) predictions
     permutated_preds, _ = permutate(
         torch.transpose(target, 1, 2), torch.transpose(preds, 1, 2)
     )
 
-    # find the permutation without using the end of the chunk
-    _ , other_predictions = permutate(
-        torch.transpose(target[:,:,:num_frames-step], 1, 2), torch.transpose(preds[:,:,:num_frames-step], 1, 2)
-    )    
-
-    # use permutation to permutate the predictions
-
-    preds_with_other_permutation = torch.zeros(target.size(), device=target.device)
-    equal=0
-    notequal=0
-    for i in range(preds_with_other_permutation.size(0)):
-        for j in range(len(other_predictions[i])):
-            preds_with_other_permutation[i,j,:] = preds[i,other_predictions[i][j],:]
-        if torch.equal(permutated_preds[i],torch.transpose(preds_with_other_permutation[i], 0, 1)):
-            equal+=1
-        else:
-            notequal+=1
-
+    # find the optimal mapping between target and prediction without using the last part of the chunks
     if streaming_permutation:
-        print(notequal*100/preds_with_other_permutation.size(0))
+        nb_frames = preds.size(2)
+        step =  int(np.floor(nb_frames * 0.1)) # round down
+        # find the permutation without using the end of the chunk
+        _ , other_predictions = permutate(
+            torch.transpose(target[:,:,:nb_frames-step], 1, 2), torch.transpose(preds[:,:,:nb_frames-step], 1, 2)
+        ) 
+
+        # use permutation to permutate the predictions
+        preds_with_other_permutation = torch.zeros(target.size(), device=target.device)
+        # equal and notequal are just counting the numbers of chunks whose permutation is the same in the two cases
+        equal = 0
+        notequal = 0
+        for i in range(preds_with_other_permutation.size(0)):
+            for j in range(len(other_predictions[i])):
+                preds_with_other_permutation[i,j,:] = preds[i,other_predictions[i][j],:]
+            # optional
+            if torch.equal(permutated_preds[i],torch.transpose(preds_with_other_permutation[i], 0, 1)):
+                equal += 1
+            else:
+                notequal += 1
+    
+        print(f'Pourcentage of chunks different with streaming permutation : {notequal*100/preds_with_other_permutation.size(0):.1f} %')
         permutated_preds = preds_with_other_permutation
     else:
         permutated_preds = torch.transpose(permutated_preds, 1, 2)
     # (batch_size, num_speakers, num_frames)
-
+  
     # turn continuous [0, 1] predictions into binary {0, 1} decisions
     hypothesis = (permutated_preds.unsqueeze(-1) > threshold).float()
     # (batch_size, num_speakers, num_frames, num_thresholds)
-    print(hypothesis.size())
     target = target.unsqueeze(-1)
     # (batch_size, num_speakers, num_frames, 1)
-    print(target.size())
     detection_error = torch.sum(hypothesis, 1) - torch.sum(target, 1)
     # (batch_size, num_frames, num_thresholds)
 
@@ -114,10 +113,10 @@ def _der_update(
     speaker_confusion = torch.sum((hypothesis != target) * hypothesis, 1) - false_alarm
     # (batch_size, num_frames, num_thresholds)
     
-    if per_frame:
+    # return directly FA, MD and SC in tensors of size num_frames
+    if num_frames is not None:
         return torch.sum(false_alarm, 0)[:,0], torch.sum(missed_detection, 0)[:,0], torch.sum(speaker_confusion, 0)[:,0], 1.0 * torch.sum(target)
-    if per_chunk:
-        return torch.sum(false_alarm, 1)[:,0], torch.sum(missed_detection, 1)[:,0], torch.sum(speaker_confusion, 1)[:,0], 1.0 * torch.sum(target)
+    
     false_alarm = torch.sum(torch.sum(false_alarm, 1), 0)
     missed_detection = torch.sum(torch.sum(missed_detection, 1), 0)
     speaker_confusion = torch.sum(torch.sum(speaker_confusion, 1), 0)
@@ -138,9 +137,7 @@ def _der_compute(
     missed_detection: torch.Tensor,
     speaker_confusion: torch.Tensor,
     speech_total: torch.Tensor,
-    per_frame: bool = False,
-    per_chunk: bool = False,
-    streaming_permutation: bool = False,
+    num_frames: bool = False,
 ) -> torch.Tensor:
     """Compute diarization error rate from its components
 
@@ -157,9 +154,7 @@ def _der_compute(
     der : (num_thresholds, )-shaped torch.Tensor
         Diarization error rate.
     """
-    if per_frame:
-        return false_alarm, missed_detection, speaker_confusion, speech_total
-    if per_chunk:
+    if num_frames is not None:
         return false_alarm, missed_detection, speaker_confusion, speech_total
     return (false_alarm + missed_detection + speaker_confusion) / (speech_total + 1e-8)
 
