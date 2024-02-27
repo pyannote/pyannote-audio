@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020-2021 CNRS
+# Copyright (c) 2024- CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -21,19 +21,36 @@
 # SOFTWARE.
 
 
-from .wespeaker import (
-    WeSpeakerResNet34,
-    WeSpeakerResNet152,
-    WeSpeakerResNet221,
-    WeSpeakerResNet293,
-)
-from .xvector import XVectorMFCC, XVectorSincNet
+from pathlib import Path
 
-__all__ = [
-    "XVectorSincNet",
-    "XVectorMFCC",
-    "WeSpeakerResNet34",
-    "WeSpeakerResNet152",
-    "WeSpeakerResNet221",
-    "WeSpeakerResNet293",
-]
+from pyannote.core import Annotation, Segment, Timeline
+from pyannote.database.util import load_rttm
+
+from pyannote.audio.core.io import Audio, AudioFile
+
+
+def _sample() -> AudioFile:
+    sample_wav = Path(__file__).parent / "sample.wav"
+    uri = "sample"
+
+    audio = Audio()
+    waveform, sample_rate = audio(sample_wav)
+
+    sample_rttm = Path(__file__).parent / "sample.rttm"
+
+    annotation: Annotation = load_rttm(sample_rttm)[uri]
+    duration = audio.get_duration(sample_wav)
+
+    annotated: Timeline = Timeline([Segment(0.0, duration)], uri=uri)
+
+    return {
+        "audio": sample_wav,
+        "uri": "sample",
+        "waveform": waveform,
+        "sample_rate": sample_rate,
+        "annotation": annotation,
+        "annotated": annotated,
+    }
+
+
+SAMPLE_FILE = _sample()

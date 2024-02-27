@@ -20,6 +20,8 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import itertools
+import textwrap
 from typing import Dict, List, Optional, Sequence, Text, Tuple, Union
 
 import numpy as np
@@ -31,11 +33,11 @@ from pyannote.database.protocol import SegmentationProtocol
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchmetrics import Metric
 
-from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
-from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
+from pyannote.audio.core.task import Problem, Resolution, Specifications
+from pyannote.audio.tasks.segmentation.mixins import SegmentationTask
 
 
-class MultiLabelSegmentation(SegmentationTaskMixin, Task):
+class MultiLabelSegmentation(SegmentationTask):
     """Generic multi-label segmentation
 
     Multi-label segmentation is the process of detecting temporal intervals
@@ -47,7 +49,13 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
     Parameters
     ----------
     protocol : Protocol
-        pyannote.database protocol
+    cache : str, optional
+        As (meta-)data preparation might take a very long time for large datasets,
+        it can be cached to disk for later (and faster!) re-use.
+        When `cache` does not exist, `Task.prepare_data()` generates training
+        and validation metadata from `protocol` and save them to disk.
+        When `cache` exists, `Task.prepare_data()` is skipped and (meta)-data
+        are loaded from disk. Defaults to a temporary path.
     classes : List[str], optional
         List of classes. Defaults to the list of classes available in the training set.
     duration : float, optional
@@ -84,15 +92,16 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
     def __init__(
         self,
         protocol: Protocol,
+        cache: Optional[Union[str, None]] = None,
         classes: Optional[List[str]] = None,
         duration: float = 2.0,
         warm_up: Union[float, Tuple[float, float]] = 0.0,
-        balance: Sequence[Text] = None,
-        weight: Text = None,
+        balance: Optional[Sequence[Text]] = None,
+        weight: Optional[Text] = None,
         batch_size: int = 32,
-        num_workers: int = None,
+        num_workers: Optional[int] = None,
         pin_memory: bool = False,
-        augmentation: BaseWaveformTransform = None,
+        augmentation: Optional[BaseWaveformTransform] = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
     ):
         if not isinstance(protocol, SegmentationProtocol):
@@ -109,6 +118,7 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
             pin_memory=pin_memory,
             augmentation=augmentation,
             metric=metric,
+            cache=cache,
         )
 
         self.balance = balance
@@ -119,11 +129,114 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         # classes should be detected. therefore, we postpone the definition of
         # specifications to setup()
 
-    def setup(self):
-        super().setup()
+    def post_prepare_data(self, prepared_data: Dict):
+        # as different files may be annotated using a different set of classes
+        # (e.g. one database for speech/music/noise, and another one for
+        # male/female/child), we keep track of this information. this is used
+        # to know whether a missing class is considered a negative example (0) or
+        # simple an unknown example (-1)
+
+        if self.classes is None and not self.has_classes:
+            msg = textwrap.dedent(
+                """
+                Could not infer list of classes. Either provide a list of classes when
+                instantiating the task, or make sure that the training protocol provides
+                a 'classes' entry. See https://github.com/pyannote/pyannote-database#segmentation
+                for more details.
+                """
+            )
+
+        if self.has_validation:
+            files_iter = itertools.chain(
+                self.protocol.train(), self.protocol.development()
+            )
+        else:
+            files_iter = self.protocol.train()
+
+        if self.classes is None:
+            classes = list()  # overall list of classes
+            annotated_classes = list()  # list of annotated classes (per file)
+
+            for file in files_iter:
+                file_classes = file.get("classes", None)
+
+                if not file_classes:
+                    msg = textwrap.dedent(
+                        f"""
+                        File "{file['uri']}" (from {file['database']} database) does not
+                        provide a 'classes' entry. Please make sure the corresponding
+                        training protocol provides a 'classes' entry for all files. See
+                        https://github.com/pyannote/pyannote-database#segmentation for more
+                        details.
+                        """
+                    )
+                    raise ValueError(msg)
+
+                for klass in file_classes:
+                    if klass not in classes:
+                        classes.append(klass)
+                annotated_classes.append(
+                    [classes.index(klass) for klass in file_classes]
+                )
+
+            prepared_data["classes-list"] = np.array(classes, dtype=np.str_)
+            self.classes = classes
+
+        else:
+            annotated_classes = list()  # list of annotated classes (per file)
+            for file in files_iter:
+                file_classes = file.get("classes", None)
+
+                if not file_classes:
+                    msg = textwrap.dedent(
+                        f"""
+                        File "{file['uri']}" (from {file['database']} database) does not
+                        provide a 'classes' entry. Please make sure the corresponding
+                        training protocol provides a 'classes' entry for all files. See
+                        https://github.com/pyannote/pyannote-database#segmentation for more
+                        details.
+                        """
+                    )
+                    raise ValueError(msg)
+
+                extra_classes = set(file_classes) - set(self.classes)
+                if extra_classes:
+                    msg = textwrap.dedent(
+                        f"""
+                        File "{file['uri']}" (from {file['database']} database) provides
+                        extra classes ({', '.join(extra_classes)}) that are ignored.
+                        """
+                    )
+                    print(msg)
+
+                annotated_classes.append(
+                    [
+                        self.classes.index(klass)
+                        for klass in set(file_classes) & set(self.classes)
+                    ]
+                )
+
+            prepared_data["classes-list"] = np.array(self.classes, dtype=np.str_)
+
+        # convert annotated_classes (which is a list of list of classes, one list of classes per file)
+        # into a single (num_files x num_classes) numpy array:
+        #    * True indicates that this particular class was annotated for this particular file
+        #    (though it may not be active in this file)
+        #    * False indicates that this particular class was not even annotated (i.e. its absence
+        #    does not imply that it is not active in this file)
+        annotated_classes_array = np.zeros(
+            (len(annotated_classes), len(self.classes)), dtype=np.bool_
+        )
+        for file_id, classes in enumerate(annotated_classes):
+            annotated_classes_array[file_id, classes] = True
+        prepared_data["classes-annotated"] = annotated_classes_array
+        annotated_classes.clear()
+
+    def setup(self, stage=None):
+        super().setup(stage)
 
         self.specifications = Specifications(
-            classes=self.classes,
+            classes=self.prepared_data["classes-list"],
             problem=Problem.MULTI_LABEL_CLASSIFICATION,
             resolution=Resolution.FRAME,
             duration=self.duration,
@@ -169,7 +282,9 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         sample = dict()
         sample["X"], _ = self.model.audio.crop(file, chunk, duration=duration)
         # gather all annotations of current file
-        annotations = self.annotations[self.annotations["file_id"] == file_id]
+        annotations = self.prepared_data["annotations-segments"][
+            self.prepared_data["annotations-segments"]["file_id"] == file_id
+        ]
 
         # gather all annotations with non-empty intersection with current chunk
         chunk_annotations = annotations[
@@ -177,26 +292,37 @@ class MultiLabelSegmentation(SegmentationTaskMixin, Task):
         ]
 
         # discretize chunk annotations at model output resolution
-        start = np.maximum(chunk_annotations["start"], chunk.start) - chunk.start
-        start_idx = np.floor(start / self.model.example_output.frames.step).astype(int)
-        end = np.minimum(chunk_annotations["end"], chunk.end) - chunk.start
-        end_idx = np.ceil(end / self.model.example_output.frames.step).astype(int)
+        step = self.model.receptive_field.step
+        half = 0.5 * self.model.receptive_field.duration
+
+        start = np.maximum(chunk_annotations["start"], chunk.start) - chunk.start - half
+        start_idx = np.maximum(0, np.round(start / step)).astype(int)
+
+        end = np.minimum(chunk_annotations["end"], chunk.end) - chunk.start - half
+        end_idx = np.round(end / step).astype(int)
 
         # frame-level targets (-1 for un-annotated classes)
-        y = -np.ones(
-            (self.model.example_output.num_frames, len(self.classes)), dtype=np.int8
+        num_frames = self.model.num_frames(
+            round(duration * self.model.hparams.sample_rate)
         )
-        y[:, self.annotated_classes[file_id]] = 0
+        y = -np.ones(
+            (
+                num_frames,
+                len(self.prepared_data["classes-list"]),
+            ),
+            dtype=np.int8,
+        )
+        y[:, self.prepared_data["classes-annotated"][file_id]] = 0
         for start, end, label in zip(
             start_idx, end_idx, chunk_annotations["global_label_idx"]
         ):
-            y[start:end, label] = 1
+            y[start : end + 1, label] = 1
 
         sample["y"] = SlidingWindowFeature(
-            y, self.model.example_output.frames, labels=self.classes
+            y, self.model.receptive_field, labels=self.classes
         )
 
-        metadata = self.metadata[file_id]
+        metadata = self.prepared_data["audio-metadata"][file_id]
         sample["meta"] = {key: metadata[key] for key in metadata.dtype.names}
         sample["meta"]["file"] = file_id
 

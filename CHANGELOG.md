@@ -1,19 +1,67 @@
 # Changelog
 
-## `develop` branch
+## develop
 
+### New features
+
+- feat(task): add option to cache task training metadata to speed up training
+- feat(pipeline): add `Waveform` and `SampleRate` preprocessors
+- feat(model): add `num_frames`, `receptive_field`, and `dimension` properties to segmentation models
+- feat(sample): add sample file at `pyannote.audio.sample.SAMPLE_FILE`
+- feat(powerset): add `Powerset.permutation_mapping` to help with permutation in powerset space
+
+### Fixes
+
+- fix(task): fix random generators
+
+## Breaking changes
+
+- BREAKING(model): get rid of `Model.example_output` in favor of `num_frames`, `receptive_field`, and `dimension` properties
+- BREAKING(task): custom tasks need to be updated (see "Add your own task" tutorial)
+
+## Version 3.1.1 (2023-12-01)
+
+### TL;DR
+
+Providing `num_speakers` to [`pyannote/speaker-diarization-3.1`](https://hf.co/pyannote/speaker-diarization-3.1) now [works as expected](https://github.com/pyannote/pyannote-audio/issues/1567).
+
+### Fixes
+
+- fix(pipeline): fix support for setting `num_speakers` in [`pyannote/speaker-diarization-3.1`](https://hf.co/pyannote/speaker-diarization-3.1) pipeline
+
+## Version 3.1.0 (2023-11-16)
+
+### TL;DR
+
+[`pyannote/speaker-diarization-3.1`](https://hf.co/pyannote/speaker-diarization-3.1) no longer requires [unpopular](https://github.com/pyannote/pyannote-audio/issues/1537) ONNX runtime
+
+### New features
+
+- feat(model): add WeSpeaker embedding wrapper based on PyTorch
+- feat(model): add support for multi-speaker statistics pooling
 - feat(pipeline): add `TimingHook` for profiling processing time
 - feat(pipeline): add `ArtifactHook` for saving internal steps
 - feat(pipeline): add support for list of hooks with `Hooks`
-- BREAKING(pipeline): remove `logging_hook` (use `ArtifactHook` instead)
-- fix(pipeline): add missing "embedding" hook call in `SpeakerDiarization`
 - feat(utils): add `"soft"` option to `Powerset.to_multilabel`
-- improve(pipeline): compute `fbank` on GPU when requested
+
+### Fixes
+
+- fix(pipeline): add missing "embedding" hook call in `SpeakerDiarization`
 - fix(pipeline): fix `AgglomerativeClustering` to honor `num_clusters` when provided
+- fix(pipeline): fix frame-wise speaker count exceeding `max_speakers` or detected `num_speakers` in `SpeakerDiarization` pipeline
+
+### Improvements
+
+- improve(pipeline): compute `fbank` on GPU when requested
+
+### Breaking changes
+
 - BREAKING(pipeline): rename `WeSpeakerPretrainedSpeakerEmbedding` to `ONNXWeSpeakerPretrainedSpeakerEmbedding`
 - BREAKING(setup): remove `onnxruntime` dependency.
   You can still use ONNX `hbredin/wespeaker-voxceleb-resnet34-LM` but you will have to install `onnxruntime` yourself.
-- feat(model): add support for multi-speaker statistics pooling
+- BREAKING(pipeline): remove `logging_hook` (use `ArtifactHook` instead)
+- BREAKING(pipeline): remove `onset` and `offset` parameter in `SpeakerDiarizationMixin.speaker_count`
+  You should now binarize segmentations before passing them to `speaker_count`
 
 ## Version 3.0.1 (2023-09-28)
 

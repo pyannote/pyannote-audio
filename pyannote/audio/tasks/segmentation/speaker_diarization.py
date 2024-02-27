@@ -23,7 +23,7 @@
 import math
 import warnings
 from collections import Counter
-from typing import Dict, Literal, Sequence, Text, Tuple, Union
+from typing import Dict, Literal, Optional, Sequence, Text, Tuple, Union
 
 import numpy as np
 import torch
@@ -37,8 +37,8 @@ from rich.progress import track
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchmetrics import Metric
 
-from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
-from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
+from pyannote.audio.core.task import Problem, Resolution, Specifications
+from pyannote.audio.tasks.segmentation.mixins import SegmentationTask
 from pyannote.audio.torchmetrics import (
     DiarizationErrorRate,
     FalseAlarmRate,
@@ -58,13 +58,20 @@ Subsets = list(Subset.__args__)
 Scopes = list(Scope.__args__)
 
 
-class SpeakerDiarization(SegmentationTaskMixin, Task):
+class SpeakerDiarization(SegmentationTask):
     """Speaker diarization
 
     Parameters
     ----------
     protocol : SpeakerDiarizationProtocol
         pyannote.database protocol
+    cache : str, optional
+        As (meta-)data preparation might take a very long time for large datasets,
+        it can be cached to disk for later (and faster!) re-use.
+        When `cache` does not exist, `Task.prepare_data()` generates training
+        and validation metadata from `protocol` and save them to disk.
+        When `cache` exists, `Task.prepare_data()` is skipped and (meta)-data
+        are loaded from disk. Defaults to a temporary path.
     duration : float, optional
         Chunks duration. Defaults to 2s.
     max_speakers_per_chunk : int, optional
@@ -127,20 +134,23 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
     def __init__(
         self,
         protocol: SpeakerDiarizationProtocol,
+        cache: Optional[Union[str, None]] = None,
         duration: float = 2.0,
-        max_speakers_per_chunk: int = None,
-        max_speakers_per_frame: int = None,
+        max_speakers_per_chunk: Optional[int] = None,
+        max_speakers_per_frame: Optional[int] = None,
         weigh_by_cardinality: bool = False,
         warm_up: Union[float, Tuple[float, float]] = 0.0,
-        balance: Sequence[Text] = None,
-        weight: Text = None,
+        balance: Optional[Sequence[Text]] = None,
+        weight: Optional[Text] = None,
         batch_size: int = 32,
-        num_workers: int = None,
+        num_workers: Optional[int] = None,
         pin_memory: bool = False,
-        augmentation: BaseWaveformTransform = None,
+        augmentation: Optional[BaseWaveformTransform] = None,
         vad_loss: Literal["bce", "mse"] = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
-        max_num_speakers: int = None,  # deprecated in favor of `max_speakers_per_chunk``
+        max_num_speakers: Optional[
+            int
+        ] = None,  # deprecated in favor of `max_speakers_per_chunk``
         loss: Literal["bce", "mse"] = None,  # deprecated
     ):
         super().__init__(
@@ -152,6 +162,7 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
             pin_memory=pin_memory,
             augmentation=augmentation,
             metric=metric,
+            cache=cache,
         )
 
         if not isinstance(protocol, SpeakerDiarizationProtocol):
@@ -186,28 +197,34 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
         self.weight = weight
         self.vad_loss = vad_loss
 
-    def setup(self):
-        super().setup()
+    def setup(self, stage=None):
+        super().setup(stage)
 
         # estimate maximum number of speakers per chunk when not provided
         if self.max_speakers_per_chunk is None:
-            training = self.metadata["subset"] == Subsets.index("train")
+            training = self.prepared_data["audio-metadata"]["subset"] == Subsets.index(
+                "train"
+            )
 
             num_unique_speakers = []
             progress_description = f"Estimating maximum number of speakers per {self.duration:g}s chunk in the training set"
             for file_id in track(
                 np.where(training)[0], description=progress_description
             ):
-                annotations = self.annotations[
-                    np.where(self.annotations["file_id"] == file_id)[0]
+                annotations = self.prepared_data["annotations-segments"][
+                    np.where(
+                        self.prepared_data["annotations-segments"]["file_id"] == file_id
+                    )[0]
                 ]
-                annotated_regions = self.annotated_regions[
-                    np.where(self.annotated_regions["file_id"] == file_id)[0]
+                annotated_regions = self.prepared_data["annotations-regions"][
+                    np.where(
+                        self.prepared_data["annotations-regions"]["file_id"] == file_id
+                    )[0]
                 ]
                 for region in annotated_regions:
                     # find annotations within current region
                     region_start = region["start"]
-                    region_end = region["end"]
+                    region_end = region["start"] + region["duration"]
                     region_annotations = annotations[
                         np.where(
                             (annotations["start"] >= region_start)
@@ -318,7 +335,7 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
         file = self.get_file(file_id)
 
         # get label scope
-        label_scope = Scopes[self.metadata[file_id]["scope"]]
+        label_scope = Scopes[self.prepared_data["audio-metadata"][file_id]["scope"]]
         label_scope_key = f"{label_scope}_label_idx"
 
         #
@@ -328,7 +345,9 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
         sample["X"], _ = self.model.audio.crop(file, chunk, duration=duration)
 
         # gather all annotations of current file
-        annotations = self.annotations[self.annotations["file_id"] == file_id]
+        annotations = self.prepared_data["annotations-segments"][
+            self.prepared_data["annotations-segments"]["file_id"] == file_id
+        ]
 
         # gather all annotations with non-empty intersection with current chunk
         chunk_annotations = annotations[
@@ -336,10 +355,14 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
         ]
 
         # discretize chunk annotations at model output resolution
-        start = np.maximum(chunk_annotations["start"], chunk.start) - chunk.start
-        start_idx = np.floor(start / self.model.example_output.frames.step).astype(int)
-        end = np.minimum(chunk_annotations["end"], chunk.end) - chunk.start
-        end_idx = np.ceil(end / self.model.example_output.frames.step).astype(int)
+        step = self.model.receptive_field.step
+        half = 0.5 * self.model.receptive_field.duration
+
+        start = np.maximum(chunk_annotations["start"], chunk.start) - chunk.start - half
+        start_idx = np.maximum(0, np.round(start / step)).astype(int)
+
+        end = np.minimum(chunk_annotations["end"], chunk.end) - chunk.start - half
+        end_idx = np.round(end / step).astype(int)
 
         # get list and number of labels for current scope
         labels = list(np.unique(chunk_annotations[label_scope_key]))
@@ -349,7 +372,10 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
             pass
 
         # initial frame-level targets
-        y = np.zeros((self.model.example_output.num_frames, num_labels), dtype=np.uint8)
+        num_frames = self.model.num_frames(
+            round(duration * self.model.hparams.sample_rate)
+        )
+        y = np.zeros((num_frames, num_labels), dtype=np.uint8)
 
         # map labels to indices
         mapping = {label: idx for idx, label in enumerate(labels)}
@@ -358,13 +384,11 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
             start_idx, end_idx, chunk_annotations[label_scope_key]
         ):
             mapped_label = mapping[label]
-            y[start:end, mapped_label] = 1
+            y[start : end + 1, mapped_label] = 1
 
-        sample["y"] = SlidingWindowFeature(
-            y, self.model.example_output.frames, labels=labels
-        )
+        sample["y"] = SlidingWindowFeature(y, self.model.receptive_field, labels=labels)
 
-        metadata = self.metadata[file_id]
+        metadata = self.prepared_data["audio-metadata"][file_id]
         sample["meta"] = {key: metadata[key] for key in metadata.dtype.names}
         sample["meta"]["file"] = file_id
 
@@ -420,7 +444,7 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
         self,
         permutated_prediction: torch.Tensor,
         target: torch.Tensor,
-        weight: torch.Tensor = None,
+        weight: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Permutation-invariant segmentation loss
 
@@ -463,7 +487,7 @@ class SpeakerDiarization(SegmentationTaskMixin, Task):
         self,
         permutated_prediction: torch.Tensor,
         target: torch.Tensor,
-        weight: torch.Tensor = None,
+        weight: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Voice activity detection loss
 
@@ -861,7 +885,7 @@ def main(protocol: str, subset: str = "test", model: str = "pyannote/segmentatio
         main_task = progress.add_task(protocol.name, total=len(files))
         file_task = progress.add_task("Processing", total=1.0)
 
-        def progress_hook(completed: int = None, total: int = None):
+        def progress_hook(completed: Optional[int] = None, total: Optional[int] = None):
             progress.update(file_task, completed=completed / total)
 
         inference = Inference(model, device=device)

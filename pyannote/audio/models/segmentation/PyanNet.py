@@ -20,13 +20,14 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-
+from functools import cached_property, lru_cache
 from typing import Optional
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
+from pyannote.core import SlidingWindow
 from pyannote.core.utils.generators import pairwise
 
 from pyannote.audio.core.model import Model
@@ -73,9 +74,9 @@ class PyanNet(Model):
 
     def __init__(
         self,
-        sincnet: dict = None,
-        lstm: dict = None,
-        linear: dict = None,
+        sincnet: Optional[dict] = None,
+        lstm: Optional[dict] = None,
+        linear: Optional[dict] = None,
         sample_rate: int = 16000,
         num_channels: int = 1,
         task: Optional[Task] = None,
@@ -138,6 +139,17 @@ class PyanNet(Model):
             ]
         )
 
+    @property
+    def dimension(self) -> int:
+        """Dimension of output"""
+        if isinstance(self.specifications, tuple):
+            raise ValueError("PyanNet does not support multi-tasking.")
+
+        if self.specifications.powerset:
+            return self.specifications.num_powerset_classes
+        else:
+            return len(self.specifications.classes)
+
     def build(self):
         if self.hparams.linear["num_layers"] > 0:
             in_features = self.hparams.linear["hidden_size"]
@@ -146,16 +158,40 @@ class PyanNet(Model):
                 2 if self.hparams.lstm["bidirectional"] else 1
             )
 
-        if isinstance(self.specifications, tuple):
-            raise ValueError("PyanNet does not support multi-tasking.")
-
-        if self.specifications.powerset:
-            out_features = self.specifications.num_powerset_classes
-        else:
-            out_features = len(self.specifications.classes)
-
-        self.classifier = nn.Linear(in_features, out_features)
+        self.classifier = nn.Linear(in_features, self.dimension)
         self.activation = self.default_activation()
+
+    @lru_cache
+    def num_frames(self, num_samples: int) -> int:
+        """Compute number of output frames for a given number of input samples
+
+        Parameters
+        ----------
+        num_samples : int
+            Number of input samples
+
+        Returns
+        -------
+        num_frames : int
+            Number of output frames
+        """
+
+        return self.sincnet.num_frames(num_samples)
+
+    @cached_property
+    def receptive_field(self) -> SlidingWindow:
+        """Compute receptive field
+
+        Returns
+        -------
+        receptive field : SlidingWindow
+
+        Source
+        ------
+        https://distill.pub/2019/computing-receptive-fields/
+
+        """
+        return self.sincnet.receptive_field
 
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
         """Pass forward

@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import Dict, Mapping, Tuple, Union
+from typing import Dict, Mapping, Optional, Tuple, Union
 
 import numpy as np
 from pyannote.core import Annotation, SlidingWindow, SlidingWindowFeature
@@ -28,7 +28,7 @@ from pyannote.core.utils.types import Label
 from pyannote.metrics.diarization import DiarizationErrorRate
 
 from pyannote.audio.core.inference import Inference
-from pyannote.audio.utils.signal import Binarize, binarize
+from pyannote.audio.utils.signal import Binarize
 
 
 # TODO: move to dedicated module
@@ -37,9 +37,9 @@ class SpeakerDiarizationMixin:
 
     @staticmethod
     def set_num_speakers(
-        num_speakers: int = None,
-        min_speakers: int = None,
-        max_speakers: int = None,
+        num_speakers: Optional[int] = None,
+        min_speakers: Optional[int] = None,
+        max_speakers: Optional[int] = None,
     ):
         """Validate number of speakers
 
@@ -117,30 +117,23 @@ class SpeakerDiarizationMixin:
         else:
             return mapped_hypothesis
 
-    # TODO: get rid of onset/offset (binarization should be applied before calling speaker_count)
     # TODO: get rid of warm-up parameter (trimming should be applied before calling speaker_count)
     @staticmethod
     def speaker_count(
-        segmentations: SlidingWindowFeature,
-        onset: float = 0.5,
-        offset: float = None,
+        binarized_segmentations: SlidingWindowFeature,
+        frames: SlidingWindow,
         warm_up: Tuple[float, float] = (0.1, 0.1),
-        frames: SlidingWindow = None,
     ) -> SlidingWindowFeature:
         """Estimate frame-level number of instantaneous speakers
 
         Parameters
         ----------
-        segmentations : SlidingWindowFeature
-            (num_chunks, num_frames, num_classes)-shaped scores.
-        onset : float, optional
-           Onset threshold. Defaults to 0.5
-        offset : float, optional
-           Offset threshold. Defaults to `onset`.
+        binarized_segmentations : SlidingWindowFeature
+            (num_chunks, num_frames, num_classes)-shaped binarized scores.
         warm_up : (float, float) tuple, optional
             Left/right warm up ratio of chunk duration.
             Defaults to (0.1, 0.1), i.e. 10% on both sides.
-        frames : SlidingWindow, optional
+        frames : SlidingWindow
             Frames resolution. Defaults to estimate it automatically based on
             `segmentations` shape and chunk size. Providing the exact frame
             resolution (when known) leads to better temporal precision.
@@ -151,13 +144,10 @@ class SpeakerDiarizationMixin:
             (num_frames, 1)-shaped instantaneous speaker count
         """
 
-        binarized: SlidingWindowFeature = binarize(
-            segmentations, onset=onset, offset=offset, initial_state=False
-        )
-        trimmed = Inference.trim(binarized, warm_up=warm_up)
+        trimmed = Inference.trim(binarized_segmentations, warm_up=warm_up)
         count = Inference.aggregate(
             np.sum(trimmed, axis=-1, keepdims=True),
-            frames=frames,
+            frames,
             hamming=False,
             missing=0.0,
             skip_average=False,
@@ -222,7 +212,7 @@ class SpeakerDiarizationMixin:
         # TODO: investigate alternative aggregation
         activations = Inference.aggregate(
             segmentations,
-            frames=count.sliding_window,
+            count.sliding_window,
             hamming=False,
             missing=0.0,
             skip_average=True,

@@ -21,11 +21,13 @@
 # SOFTWARE.
 
 
+from functools import cached_property, lru_cache
 from typing import Optional
 
 import torch
 import torch.nn as nn
 from einops import rearrange
+from pyannote.core import SlidingWindow
 from torchaudio.transforms import MFCC
 
 from pyannote.audio.core.model import Model
@@ -57,18 +59,99 @@ class SimpleSegmentationModel(Model):
             bidirectional=True,
         )
 
-    def build(self):
-        # define task-dependent layers
+    @lru_cache
+    def num_frames(self, num_samples: int) -> int:
+        """Compute number of output frames for a given number of input samples
 
+        Parameters
+        ----------
+        num_samples : int
+            Number of input samples
+
+        Returns
+        -------
+        num_frames : int
+            Number of output frames
+
+        Source
+        ------
+        https://pytorch.org/docs/stable/generated/torch.stft.html#torch.stft
+
+        """
+
+        hop_length = self.mfcc.MelSpectrogram.spectrogram.hop_length
+        n_fft = self.mfcc.MelSpectrogram.spectrogram.n_fft
+        center = self.mfcc.MelSpectrogram.spectrogram.center
+        return int(
+            1 + num_samples // hop_length
+            if center
+            else 1 + (num_samples - n_fft) // hop_length
+        )
+
+    def receptive_field_size(self, num_frames: int = 1) -> int:
+        """Compute receptive field size
+
+        Parameters
+        ----------
+        num_frames : int, optional
+            Number of frames in the output signal
+
+        Returns
+        -------
+        receptive_field_size : int
+            Receptive field size
+        """
+
+        hop_length = self.mfcc.MelSpectrogram.spectrogram.hop_length
+        n_fft = self.mfcc.MelSpectrogram.spectrogram.n_fft
+        center = self.mfcc.MelSpectrogram.spectrogram.center
+
+        if center:
+            return (num_frames - 1) * hop_length
+        else:
+            return (num_frames - 1) * hop_length + n_fft
+
+    @cached_property
+    def receptive_field(self) -> SlidingWindow:
+        """Compute receptive field
+
+        Returns
+        -------
+        receptive field : SlidingWindow
+
+        Source
+        ------
+        https://distill.pub/2019/computing-receptive-fields/
+
+        """
+
+        # duration of the receptive field of each output frame
+        duration = (
+            self.mfcc.MelSpectrogram.spectrogram.win_length / self.hparams.sample_rate
+        )
+
+        # step between the receptive field region of two consecutive output frames
+        step = (
+            self.mfcc.MelSpectrogram.spectrogram.hop_length / self.hparams.sample_rate
+        )
+
+        return SlidingWindow(start=0.0, duration=duration, step=step)
+
+    @property
+    def dimension(self) -> int:
+        """Dimension of output"""
         if isinstance(self.specifications, tuple):
             raise ValueError("SimpleSegmentationModel does not support multi-tasking.")
 
         if self.specifications.powerset:
-            out_features = self.specifications.num_powerset_classes
+            return self.specifications.num_powerset_classes
         else:
-            out_features = len(self.specifications.classes)
+            return len(self.specifications.classes)
 
-        self.classifier = nn.Linear(32 * 2, out_features)
+    def build(self):
+        # define task-dependent layers
+
+        self.classifier = nn.Linear(32 * 2, self.dimension)
         self.activation = self.default_activation()
 
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
