@@ -22,7 +22,6 @@
 
 import warnings
 from functools import cached_property
-from packaging import version
 from pathlib import Path
 from typing import Optional, Text, Union
 
@@ -43,17 +42,9 @@ from pyannote.audio.pipelines.utils import PipelineModel, get_model
 
 backend = torchaudio.get_audio_backend()
 try:
-    import speechbrain
-    # SpeechBrain 1.0 changed the inference API to be `speechbrain.inference` 
-    # instead of `speechbrain.pretrained`. 
-    if version.parse(speechbrain.__version__) >= version.parse("1.0.0"):
-        from speechbrain.inference import (
-           EncoderClassifier as SpeechBrain_EncoderClassifier,
-        )
-    else:
-        from speechbrain.pretrained import (
-           EncoderClassifier as SpeechBrain_EncoderClassifier,
-        )
+    from speechbrain.inference import (
+        EncoderClassifier as SpeechBrain_EncoderClassifier,
+    )
 
     SPEECHBRAIN_IS_AVAILABLE = True
 except ImportError:
