@@ -1,12 +1,11 @@
-from tempfile import mkstemp
-
+import tempfile
 import pytest
 from speechbrain.inference import EncoderClassifier
 
 
 @pytest.fixture()
 def cache():
-    return mkstemp()[1]
+    return tempfile.mkdtemp()
 
 def test_import_speechbrain_encoder_classifier(cache):
     """This is a simple test that check if speechbrain
