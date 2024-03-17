@@ -22,6 +22,7 @@
 
 - improve(metric): add support for number of speakers mismatch in `diarization_error_rate` metric
 - improve(pipeline): track both `Model` and `nn.Module` attributes in `Pipeline.to(device)`
+- improve(io): switch to `torchaudio >= 2.2.0`
 
 ## Breaking changes
 

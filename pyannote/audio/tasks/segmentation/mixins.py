@@ -31,7 +31,7 @@ import torch
 from pyannote.database.protocol.protocol import Scope, Subset
 from pytorch_lightning.loggers import MLFlowLogger, TensorBoardLogger
 from torch.utils.data._utils.collate import default_collate
-from torchaudio.backend.common import AudioMetaData
+from torchaudio import AudioMetaData
 from torchmetrics import Metric
 from torchmetrics.classification import BinaryAUROC, MulticlassAUROC, MultilabelAUROC
 
