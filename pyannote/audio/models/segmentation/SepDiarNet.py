@@ -37,7 +37,7 @@ from asteroid.masknn.convolutional import TDConvNet
 from asteroid_filterbanks import make_enc_dec
 from asteroid.utils.torch_utils import pad_x_to_y
 from asteroid.masknn import DPRNN
-
+from transformers import AutoProcessor, AutoModel
 
 class SepDiarNet(Model):
     """PyanNet segmentation model
@@ -79,16 +79,6 @@ class SepDiarNet(Model):
         "dropout": 0.0,
     }
     LINEAR_DEFAULTS = {"hidden_size": 64, "num_layers": 0}
-    CONVNET_DEFAULTS = {
-        "n_blocks": 8,
-        "n_repeats": 3,
-        "bn_chan": 128,
-        "hid_chan": 512,
-        "skip_chan": 128,
-        "conv_kernel_size": 3,
-        "norm_type": "gLN",
-        "mask_act": "relu",
-    }
     DPRNN_DEFAULTS = {
         "n_repeats": 6,
         "bn_chan": 128,
@@ -114,6 +104,7 @@ class SepDiarNet(Model):
         encoder_type: str = None,
         n_sources: int = 3,
         use_lstm: bool = False,
+        use_wavlm: bool = True,
         lr: float = 1e-3,
         gradient_clip_val: float = 5.0,
     ):
@@ -122,11 +113,11 @@ class SepDiarNet(Model):
         lstm = merge_dict(self.LSTM_DEFAULTS, lstm)
         lstm["batch_first"] = True
         linear = merge_dict(self.LINEAR_DEFAULTS, linear)
-        convnet = merge_dict(self.CONVNET_DEFAULTS, convnet)
         dprnn = merge_dict(self.DPRNN_DEFAULTS, dprnn)
         encoder_decoder = merge_dict(self.ENCODER_DECODER_DEFAULTS, encoder_decoder)
         self.n_src = n_sources
         self.use_lstm = use_lstm
+        self.use_wavlm = use_wavlm
         self.save_hyperparameters(
             "encoder_decoder", "lstm", "linear", "convnet", "dprnn"
         )
@@ -145,13 +136,12 @@ class SepDiarNet(Model):
         self.masker = DPRNN(
             64 + 1024, out_chan=64, n_src=n_sources, **self.hparams.dprnn
         )
+        if self.use_wavlm:
+            self.wavlm = AutoModel.from_pretrained("microsoft/wavlm-large")
+            self.wavlm_scaling = int(320 / encoder_decoder["stride"])
 
-        from transformers import AutoProcessor, AutoModel
-
-        self.wavlm = AutoModel.from_pretrained("microsoft/wavlm-large")
         # diarization can use a lower resolution than separation, use 128x downsampling
         diarization_scaling = int(128 / encoder_decoder["stride"])
-        self.wavlm_scaling = int(320 / encoder_decoder["stride"])
         self.average_pool = nn.AvgPool1d(
             diarization_scaling, stride=diarization_scaling
         )
@@ -201,11 +191,12 @@ class SepDiarNet(Model):
         """
         bsz = waveforms.shape[0]
         tf_rep = self.encoder(waveforms)
-        wavlm_rep = self.wavlm(waveforms.squeeze(1)).last_hidden_state
-        wavlm_rep = wavlm_rep.transpose(1, 2)
-        wavlm_rep = wavlm_rep.repeat_interleave(self.wavlm_scaling, dim=-1)
-        wavlm_rep = pad_x_to_y(wavlm_rep, tf_rep)
-        wavlm_rep = torch.cat((tf_rep, wavlm_rep), dim=1)
+        if self.use_wavlm:
+            wavlm_rep = self.wavlm(waveforms.squeeze(1)).last_hidden_state
+            wavlm_rep = wavlm_rep.transpose(1, 2)
+            wavlm_rep = wavlm_rep.repeat_interleave(self.wavlm_scaling, dim=-1)
+            wavlm_rep = pad_x_to_y(wavlm_rep, tf_rep)
+            wavlm_rep = torch.cat((tf_rep, wavlm_rep), dim=1)
         masks = self.masker(wavlm_rep)
         # shape: (batch, nsrc, nfilters, nframes)
         masked_tf_rep = masks * tf_rep.unsqueeze(1)
