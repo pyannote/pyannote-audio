@@ -1,4 +1,4 @@
-name: Tests
+name: CLI tests
 
 on:
   push:
@@ -13,7 +13,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        python-version: [3.8, 3.9, "3.10"]
+        python-version: ["3.10"]
     steps:
       - uses: actions/checkout@v2
       - name: Set up Python ${{ matrix.python-version }}
@@ -27,7 +27,7 @@ jobs:
           sudo apt-get install libsndfile1
       - name: Install pyannote.audio
         run: |
-          pip install -e .[dev,testing]
+          pip install -e .[dev,testing,cli]
       - name: Test with pytest
         run: |
-          pytest -k "not test_cli.py"
+          pytest tests/test_cli.py

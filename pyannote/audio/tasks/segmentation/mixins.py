@@ -31,7 +31,7 @@ import torch
 from pyannote.database.protocol.protocol import Scope, Subset
 from pytorch_lightning.loggers import MLFlowLogger, TensorBoardLogger
 from torch.utils.data._utils.collate import default_collate
-from torchaudio.backend.common import AudioMetaData
+from torchaudio import AudioMetaData
 from torchmetrics import Metric
 from torchmetrics.classification import BinaryAUROC, MulticlassAUROC, MultilabelAUROC
 
@@ -255,8 +255,11 @@ class SegmentationTask(Task):
 
     def train__len__(self):
         # Number of training samples in one epoch
+        train_file_ids = np.where(
+            self.prepared_data["audio-metadata"]["subset"] == Subsets.index("train")
+        )[0]
 
-        duration = np.sum(self.prepared_data["audio-annotated"])
+        duration = np.sum(self.prepared_data["audio-annotated"][train_file_ids])
         return max(self.batch_size, math.ceil(duration / self.duration))
 
     def prepare_validation(self, prepared_data: Dict):

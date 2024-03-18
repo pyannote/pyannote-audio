@@ -25,7 +25,7 @@
 
 import random
 from enum import Enum
-from typing import Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 from einops import rearrange
@@ -56,9 +56,9 @@ class BaseClustering(Pipeline):
     def set_num_clusters(
         self,
         num_embeddings: int,
-        num_clusters: int = None,
-        min_clusters: int = None,
-        max_clusters: int = None,
+        num_clusters: Optional[int] = None,
+        min_clusters: Optional[int] = None,
+        max_clusters: Optional[int] = None,
     ):
         min_clusters = num_clusters or min_clusters or 1
         min_clusters = max(1, min(num_embeddings, min_clusters))
@@ -79,7 +79,7 @@ class BaseClustering(Pipeline):
     def filter_embeddings(
         self,
         embeddings: np.ndarray,
-        segmentations: SlidingWindowFeature = None,
+        segmentations: Optional[SlidingWindowFeature] = None,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Filter NaN embeddings and downsample embeddings
 
@@ -205,10 +205,10 @@ class BaseClustering(Pipeline):
     def __call__(
         self,
         embeddings: np.ndarray,
-        segmentations: SlidingWindowFeature = None,
-        num_clusters: int = None,
-        min_clusters: int = None,
-        max_clusters: int = None,
+        segmentations: Optional[SlidingWindowFeature] = None,
+        num_clusters: Optional[int] = None,
+        min_clusters: Optional[int] = None,
+        max_clusters: Optional[int] = None,
         **kwargs,
     ) -> np.ndarray:
         """Apply clustering
@@ -323,7 +323,7 @@ class AgglomerativeClustering(BaseClustering):
         embeddings: np.ndarray,
         min_clusters: int,
         max_clusters: int,
-        num_clusters: int = None,
+        num_clusters: Optional[int] = None,
     ):
         """
 
@@ -476,10 +476,10 @@ class OracleClustering(BaseClustering):
 
     def __call__(
         self,
-        embeddings: np.ndarray = None,
-        segmentations: SlidingWindowFeature = None,
-        file: AudioFile = None,
-        frames: SlidingWindow = None,
+        embeddings: Optional[np.ndarray] = None,
+        segmentations: Optional[SlidingWindowFeature] = None,
+        file: Optional[AudioFile] = None,
+        frames: Optional[SlidingWindow] = None,
         **kwargs,
     ) -> np.ndarray:
         """Apply oracle clustering

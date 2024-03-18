@@ -250,12 +250,12 @@ class Task(pl.LightningDataModule):
         protocol: Protocol,
         cache: Optional[Union[str, None]] = None,
         duration: float = 2.0,
-        min_duration: float = None,
+        min_duration: Optional[float] = None,
         warm_up: Union[float, Tuple[float, float]] = 0.0,
         batch_size: int = 32,
-        num_workers: int = None,
+        num_workers: Optional[int] = None,
         pin_memory: bool = False,
-        augmentation: BaseWaveformTransform = None,
+        augmentation: Optional[BaseWaveformTransform] = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
     ):
         super().__init__()
@@ -646,7 +646,11 @@ class Task(pl.LightningDataModule):
     def specifications(self) -> Union[Specifications, Tuple[Specifications]]:
         # setup metadata on-demand the first time specifications are requested and missing
         if not hasattr(self, "_specifications"):
-            self.setup()
+            raise UnknownSpecificationsError(
+                "Task specifications are not available. This is most likely because they depend on "
+                "the content of the training subset. Use `task.prepare_data()` and `task.setup()` "
+                "to go over the training subset and fix this, or let lightning trainer do that for you in `trainer.fit(model)`."
+            )
         return self._specifications
 
     @specifications.setter

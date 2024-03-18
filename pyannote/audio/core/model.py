@@ -46,7 +46,6 @@ from pyannote.audio import __version__
 from pyannote.audio.core.io import Audio
 from pyannote.audio.core.task import (
     Problem,
-    Resolution,
     Specifications,
     Task,
     UnknownSpecificationsError,
@@ -112,10 +111,6 @@ class Model(pl.LightningModule):
     def task(self, task: Task):
         # reset (cached) properties when task changes
         del self.specifications
-        try:
-            del self.example_output
-        except AttributeError:
-            pass
         self._task = task
 
     def build(self):
@@ -136,15 +131,7 @@ class Model(pl.LightningModule):
                 ) from e
 
         else:
-            try:
-                specifications = self.task.specifications
-
-            except AttributeError as e:
-                raise UnknownSpecificationsError(
-                    "Task specifications are not available. This is most likely because they depend on "
-                    "the content of the training subset. Use `model.prepare_data()` and `model.setup()` "
-                    "to go over the training subset and fix this, or let lightning trainer do that for you in `trainer.fit(model)`."
-                ) from e
+            specifications = self.task.specifications
 
         return specifications
 
@@ -188,33 +175,20 @@ class Model(pl.LightningModule):
         return self.__example_input_array()
 
     @cached_property
-    def example_output(self) -> Union[Output, Tuple[Output]]:
-        """Example output"""
-        example_input_array = self.__example_input_array()
-        with torch.inference_mode():
-            example_output = self(example_input_array)
+    def receptive_field(self) -> SlidingWindow:
+        """(Internal) frames"""
 
-        def __example_output(
-            example_output: torch.Tensor,
-            specifications: Specifications = None,
-        ) -> Output:
-            if specifications.resolution == Resolution.FRAME:
-                _, num_frames, dimension = example_output.shape
-                frame_duration = specifications.duration / num_frames
-                frames = SlidingWindow(step=frame_duration, duration=frame_duration)
-            else:
-                _, dimension = example_output.shape
-                num_frames = None
-                frames = None
-
-            return Output(
-                num_frames=num_frames,
-                dimension=dimension,
-                frames=frames,
-            )
-
-        return map_with_specifications(
-            self.specifications, __example_output, example_output
+        receptive_field_size = self.receptive_field_size(num_frames=1)
+        receptive_field_step = (
+            self.receptive_field_size(num_frames=2) - receptive_field_size
+        )
+        receptive_field_start = (
+            self.receptive_field_center(frame=0) - (receptive_field_size - 1) / 2
+        )
+        return SlidingWindow(
+            start=receptive_field_start / self.hparams.sample_rate,
+            duration=receptive_field_size / self.hparams.sample_rate,
+            step=receptive_field_step / self.hparams.sample_rate,
         )
 
     def prepare_data(self):
@@ -269,9 +243,6 @@ class Model(pl.LightningModule):
             self.task.setup_loss_func()
             # setup custom validation metrics
             self.task.setup_validation_metric()
-
-            # cache for later (and to avoid later CUDA error with multiprocessing)
-            _ = self.example_output
 
         # list of layers after adding task-dependent layers
         after = set((name, id(module)) for name, module in self.named_modules())
@@ -341,7 +312,9 @@ class Model(pl.LightningModule):
             Activation.
         """
 
-        def __default_activation(specifications: Specifications = None) -> nn.Module:
+        def __default_activation(
+            specifications: Optional[Specifications] = None,
+        ) -> nn.Module:
             if specifications.problem == Problem.BINARY_CLASSIFICATION:
                 return nn.Sigmoid()
 

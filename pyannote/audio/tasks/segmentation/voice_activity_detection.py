@@ -45,13 +45,13 @@ class VoiceActivityDetection(SegmentationTask):
     ----------
     protocol : Protocol
         pyannote.database protocol
-   cache : str, optional
+    cache : str, optional
         As (meta-)data preparation might take a very long time for large datasets,
-        it can be cached to disk for later (and faster!) re-use. 
+        it can be cached to disk for later (and faster!) re-use.
         When `cache` does not exist, `Task.prepare_data()` generates training
         and validation metadata from `protocol` and save them to disk.
         When `cache` exists, `Task.prepare_data()` is skipped and (meta)-data
-        are loaded from disk. Defaults to a temporary path. 
+        are loaded from disk. Defaults to a temporary path.
     duration : float, optional
         Chunks duration. Defaults to 2s.
     warm_up : float or (float, float), optional
@@ -89,12 +89,12 @@ class VoiceActivityDetection(SegmentationTask):
         cache: Optional[Union[str, None]] = None,
         duration: float = 2.0,
         warm_up: Union[float, Tuple[float, float]] = 0.0,
-        balance: Sequence[Text] = None,
-        weight: Text = None,
+        balance: Optional[Sequence[Text]] = None,
+        weight: Optional[Text] = None,
         batch_size: int = 32,
-        num_workers: int = None,
+        num_workers: Optional[int] = None,
         pin_memory: bool = False,
-        augmentation: BaseWaveformTransform = None,
+        augmentation: Optional[BaseWaveformTransform] = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
     ):
         super().__init__(
@@ -164,18 +164,25 @@ class VoiceActivityDetection(SegmentationTask):
         ]
 
         # discretize chunk annotations at model output resolution
-        start = np.maximum(chunk_annotations["start"], chunk.start) - chunk.start
-        start_idx = np.floor(start / self.model.example_output.frames.step).astype(int)
-        end = np.minimum(chunk_annotations["end"], chunk.end) - chunk.start
-        end_idx = np.ceil(end / self.model.example_output.frames.step).astype(int)
+        step = self.model.receptive_field.step
+        half = 0.5 * self.model.receptive_field.duration
+
+        start = np.maximum(chunk_annotations["start"], chunk.start) - chunk.start - half
+        start_idx = np.maximum(0, np.round(start / step)).astype(int)
+
+        end = np.minimum(chunk_annotations["end"], chunk.end) - chunk.start - half
+        end_idx = np.round(end / step).astype(int)
 
         # frame-level targets
-        y = np.zeros((self.model.example_output.num_frames, 1), dtype=np.uint8)
+        num_frames = self.model.num_frames(
+            round(duration * self.model.hparams.sample_rate)
+        )
+        y = np.zeros((num_frames, 1), dtype=np.uint8)
         for start, end in zip(start_idx, end_idx):
-            y[start:end, 0] = 1
+            y[start : end + 1, 0] = 1
 
         sample["y"] = SlidingWindowFeature(
-            y, self.model.example_output.frames, labels=["speech"]
+            y, self.model.receptive_field, labels=["speech"]
         )
 
         metadata = self.prepared_data["audio-metadata"][file_id]

@@ -27,10 +27,8 @@ from pyannote.audio.utils.powerset import Powerset
 
 
 def test_roundtrip():
-
     for num_classes in range(2, 5):
         for max_set_size in range(1, num_classes + 1):
-
             powerset = Powerset(num_classes, max_set_size)
 
             # simulate a sequence where each frame is assigned to a different powerset class
@@ -51,3 +49,28 @@ def test_roundtrip():
             reconstruction = powerset.to_powerset(batch_multilabel)
 
             assert torch.equal(batch_powerset, reconstruction)
+
+
+def test_permutate_powerset():
+    for num_classes in range(1, 6):
+        for max_set_size in range(1, num_classes + 1):
+            powerset = Powerset(num_classes, max_set_size)
+
+            # create (num_powerset_class, num_powerset_class)-shaped tensor, where each frame is assigned to a different powerset class
+            # and convert it to its multi-label equivalent
+            t1 = torch.nn.functional.one_hot(
+                torch.arange(powerset.num_powerset_classes),
+                powerset.num_powerset_classes,
+            )
+            t1_ml = powerset.to_multilabel(t1)
+
+            # then permutate the powerset class in powerset space AND the multilabel equivalent in its native space
+            # and check it has the same result.
+            # perm = torch.randperm(num_classes)
+            perm = tuple(torch.randperm(num_classes).tolist())
+            t1_ml_perm = t1_ml[:, perm]
+            perm_ps = powerset.permutation_mapping[perm]
+            t1_ps_perm = t1[..., perm_ps]
+            t1_ps_perm_ml = powerset.to_multilabel(t1_ps_perm)
+
+            assert t1_ml_perm.equal(t1_ps_perm_ml)
