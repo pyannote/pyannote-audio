@@ -642,6 +642,31 @@ class Task(pl.LightningDataModule):
                 f"does not correspond to the cached one ({self.prepared_data['protocol']})"
             )
 
+        # prepare annotations-segments into dict-like format, since it can't be stored in a cache .npy file like that
+        annotations = self.prepared_data['annotations-segments']
+        annotations_dict = defaultdict(list)
+        file_ids = []
+        for annotation in annotations:
+            file_id = annotation[0]
+            file_ids.append(file_id)
+            annotations_dict[file_id].append(annotation)
+
+        segment_dtype = [
+            (
+                "file_id",
+                get_dtype(max(a[0] for a in annotations)),
+            ),
+            ("start", "f"),
+            ("end", "f"),
+            ("file_label_idx", get_dtype(max(a[3] for a in annotations))),
+            ("database_label_idx", get_dtype(max(a[4] for a in annotations))),
+            ("global_label_idx", get_dtype(max(a[5] for a in annotations))),
+        ]
+
+        for file_id in file_ids:
+            annotations_dict[file_id] = np.array(annotations_dict[file_id], dtype=segment_dtype)
+        self.prepared_data['annotations-segments'] = annotations_dict
+
     @property
     def specifications(self) -> Union[Specifications, Tuple[Specifications]]:
         # setup metadata on-demand the first time specifications are requested and missing
