@@ -67,10 +67,34 @@ class ToTaToNet(Model):
         Keyword arugments used to initialize linear layers
         Defaults to {"hidden_size": 128, "num_layers": 2},
         i.e. two linear layers with 128 units each.
+    diar : dict, optional
+        Keyword arguments used to initalize the average pooling in the diarization branch.
+        Defaults to {"frames_per_second": 125}.
+    encoder_decoder : dict, optional
+        Keyword arguments used to initalize the encoder and decoder.
+        Defaults to {"fb_name": "free", "kernel_size": 32, "n_filters": 64, "stride": 16}.
+    dprnn : dict, optional
+        Keyword arguments used to initalize the DPRNN model.
+        Defaults to {"n_repeats": 6, "bn_chan": 128, "hid_size": 128, "chunk_size": 100, "norm_type": "gLN", "mask_act": "relu", "rnn_type": "LSTM"}.
+    sample_rate : int, optional
+        Audio sample rate. Defaults to 16000.
+    num_channels : int, optional
+        Number of channels. Defaults to 1.
+    task : Task, optional
+        Task to perform. Defaults to None.
+    n_sources : int, optional
+        Number of sources. Defaults to 3.
+    use_lstm : bool, optional
+        Whether to use LSTM in the diarization branch. Defaults to False.
+    use_wavlm : bool, optional
+        Whether to use the WavLM large model for feature extraction. Defaults to True.
+    gradient_clip_val : float, optional
+        Gradient clipping value. Required when fine-tuning the WavLM model and thus using two different optimizers. 
+        Defaults to 5.0.
     """
 
     ENCODER_DECODER_DEFAULTS = {
-        "fb_name": "stft",
+        "fb_name": "free",
         "kernel_size": 32,
         "n_filters": 64,
         "stride": 16,
@@ -102,16 +126,12 @@ class ToTaToNet(Model):
         diar: Optional[dict] = None,
         convnet: dict = None,
         dprnn: dict = None,
-        free_encoder: dict = None,
-        stft_encoder: dict = None,
         sample_rate: int = 16000,
         num_channels: int = 1,
         task: Optional[Task] = None,
-        encoder_type: str = None,
         n_sources: int = 3,
         use_lstm: bool = False,
         use_wavlm: bool = True,
-        lr: float = 1e-3,
         gradient_clip_val: float = 5.0,
     ):
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
@@ -126,7 +146,6 @@ class ToTaToNet(Model):
         self.use_lstm = use_lstm
         self.use_wavlm = use_wavlm
         self.save_hyperparameters("encoder_decoder", "lstm", "linear", "dprnn", "diar")
-        self.learning_rate = lr
         self.n_sources = n_sources
 
         if encoder_decoder["fb_name"] == "free":
@@ -138,15 +157,21 @@ class ToTaToNet(Model):
         self.encoder, self.decoder = make_enc_dec(
             sample_rate=sample_rate, **self.hparams.encoder_decoder
         )
+    
+        if self.use_wavlm:
+            self.wavlm = AutoModel.from_pretrained("microsoft/wavlm-large")
+            downsampling_factor = 1
+            for conv_layer in self.wavlm.feature_extractor.conv_layers:
+                if isinstance(conv_layer.conv, nn.Conv1d):
+                    downsampling_factor *= conv_layer.conv.stride[0]
+            self.wavlm_scaling = int(downsampling_factor / encoder_decoder["stride"])
+
         self.masker = DPRNN(
-            encoder_decoder["n_filters"] + 1024,
+            encoder_decoder["n_filters"] + self.wavlm.feature_projection.projection.out_features,
             out_chan=encoder_decoder["n_filters"],
             n_src=n_sources,
             **self.hparams.dprnn
         )
-        if self.use_wavlm:
-            self.wavlm = AutoModel.from_pretrained("microsoft/wavlm-large")
-            self.wavlm_scaling = int(320 / encoder_decoder["stride"])
 
         # diarization can use a lower resolution than separation
         self.diarization_scaling = int(
@@ -155,12 +180,12 @@ class ToTaToNet(Model):
         self.average_pool = nn.AvgPool1d(
             self.diarization_scaling, stride=self.diarization_scaling
         )
-        lstm_out_features = n_feats_out
+        linaer_input_features = n_feats_out
         if self.use_lstm:
             del lstm["monolithic"]
             multi_layer_lstm = dict(lstm)
             self.lstm = nn.LSTM(n_feats_out, **multi_layer_lstm)
-            lstm_out_features = lstm["hidden_size"] * (
+            linaer_input_features = lstm["hidden_size"] * (
                 2 if lstm["bidirectional"] else 1
             )
         if linear["num_layers"] > 0:
@@ -169,7 +194,7 @@ class ToTaToNet(Model):
                     nn.Linear(in_features, out_features)
                     for in_features, out_features in pairwise(
                         [
-                            lstm_out_features,
+                            linaer_input_features,
                         ]
                         + [self.hparams.linear["hidden_size"]]
                         * self.hparams.linear["num_layers"]
@@ -190,9 +215,6 @@ class ToTaToNet(Model):
         else:
             self.classifier = nn.Linear(1, self.dimension)
         self.activation = self.default_activation()
-
-    def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
 
     @lru_cache
     def num_frames(self, num_samples: int) -> int:
