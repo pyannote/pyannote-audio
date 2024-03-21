@@ -185,7 +185,6 @@ class JointSpeakerSeparationAndDiarization(SegmentationTask, Task):
         ] = None,  # deprecated in favor of `max_speakers_per_chunk``
         loss: Literal["bce", "mse"] = None,  # deprecated
         separation_loss_weight: float = 0.5,
-        original_mixtures_for_separation: bool = True,
     ):
         super().__init__(
             protocol,
@@ -230,7 +229,6 @@ class JointSpeakerSeparationAndDiarization(SegmentationTask, Task):
         self.weight = weight
         self.pit_sep_loss = PITLossWrapper(pairwise_neg_sisdr, pit_from="pw_mtx")
         self.separation_loss_weight = separation_loss_weight
-        self.original_mixtures_for_separation = original_mixtures_for_separation
         self.mixit_loss = MixITLossWrapper(multisrc_neg_sisdr, generalized=True)
 
     def setup(self, stage=None):
@@ -953,28 +951,6 @@ class JointSpeakerSeparationAndDiarization(SegmentationTask, Task):
         separation_loss = self.mixit_loss(
             mom_sources.transpose(1, 2), torch.stack((mix1, mix2)).transpose(0, 1)
         ).mean()
-
-        if self.original_mixtures_for_separation:
-            for i, num in enumerate(num_active_speakers_mix1):
-                if num == 1:
-                    separation_loss += min(
-                        [
-                            singlesrc_neg_sisdr(
-                                mix1_sources[i, :, j].unsqueeze(0), mix1[i].unsqueeze(0)
-                            )
-                            for j in range(3)
-                        ]
-                    ).item()
-            for i, num in enumerate(num_active_speakers_mix2):
-                if num == 1:
-                    separation_loss += min(
-                        [
-                            singlesrc_neg_sisdr(
-                                mix2_sources[i, :, j].unsqueeze(0), mix2[i].unsqueeze(0)
-                            )
-                            for j in range(3)
-                        ]
-                    ).item()
 
         return (
             seg_loss,
