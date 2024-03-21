@@ -150,7 +150,7 @@ class JointSpeakerSeparationAndDiarization(SegmentationTask, Task):
         Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
         Defaults to AUROC (area under the ROC curve).
     separation_loss_weight : float, optional
-        Factor that speaker separation loss is scaled by when calculating total loss.
+        Scaling factor between diarization and separation losses. Defaults to 0.5.
 
     References
     ----------
@@ -489,6 +489,9 @@ class JointSpeakerSeparationAndDiarization(SegmentationTask, Task):
 
     def common__iter__helper(self, split, rng: random.Random, **filters):
         """Iterate over samples with optional domain filtering
+
+        Mixtures are paired so that they have no speakers in common and the combined
+        number of speakers is no greater than max_speaker_per_chunk.
 
         Parameters
         ----------
@@ -892,14 +895,12 @@ class JointSpeakerSeparationAndDiarization(SegmentationTask, Task):
             Segmentation loss.
         separation_loss : torch.Tensor
             Separation loss.
-        forced_alignment_loss : torch.Tensor
-            Forced alignment loss.
         diarization : torch.Tensor
             Diarization predictions.
         permutated_diarization : torch.Tensor
-            Permutated diarization predictions.
+            Permutated diarization predictions that minizimise seg_loss.
         target : torch.Tensor
-            Target diarization.
+            Diarization target.
         """
             
         target = batch["y"]
