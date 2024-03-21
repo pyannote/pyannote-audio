@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-
+from functools import lru_cache
 from typing import Optional
 
 import torch
@@ -33,13 +33,17 @@ from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
 from pyannote.audio.models.blocks.sincnet import SincNet
 from pyannote.audio.utils.params import merge_dict
-from asteroid.masknn.convolutional import TDConvNet
+from pyannote.audio.utils.receptive_field import (
+    conv1d_num_frames,
+    conv1d_receptive_field_center,
+    conv1d_receptive_field_size,
+)
 from asteroid_filterbanks import make_enc_dec
 from asteroid.utils.torch_utils import pad_x_to_y
 from asteroid.masknn import DPRNN
 from transformers import AutoProcessor, AutoModel
 
-class SepDiarNet(Model):
+class ToTaToNet(Model):
     """PyanNet segmentation model
 
     SincNet > LSTM > Feed forward > Classifier
@@ -67,9 +71,9 @@ class SepDiarNet(Model):
 
     ENCODER_DECODER_DEFAULTS = {
         "fb_name": "stft",
-        "kernel_size": 512,
+        "kernel_size": 32,
         "n_filters": 64,
-        "stride": 32,
+        "stride": 16,
     }
     LSTM_DEFAULTS = {
         "hidden_size": 64,
@@ -88,12 +92,14 @@ class SepDiarNet(Model):
         "mask_act": "relu",
         "rnn_type": "LSTM",
     }
+    DIAR_DEFAULTS = {"frames_per_second": 125}
 
     def __init__(
         self,
         encoder_decoder: dict = None,
-        lstm: dict = None,
-        linear: dict = None,
+        lstm: Optional[dict] = None,
+        linear: Optional[dict] = None,
+        diar: Optional[dict] = None,
         convnet: dict = None,
         dprnn: dict = None,
         free_encoder: dict = None,
@@ -115,12 +121,11 @@ class SepDiarNet(Model):
         linear = merge_dict(self.LINEAR_DEFAULTS, linear)
         dprnn = merge_dict(self.DPRNN_DEFAULTS, dprnn)
         encoder_decoder = merge_dict(self.ENCODER_DECODER_DEFAULTS, encoder_decoder)
+        diar = merge_dict(self.DIAR_DEFAULTS, diar)
         self.n_src = n_sources
         self.use_lstm = use_lstm
         self.use_wavlm = use_wavlm
-        self.save_hyperparameters(
-            "encoder_decoder", "lstm", "linear", "convnet", "dprnn"
-        )
+        self.save_hyperparameters("encoder_decoder", "lstm", "linear", "dprnn", "diar")
         self.learning_rate = lr
         self.n_sources = n_sources
 
@@ -134,16 +139,21 @@ class SepDiarNet(Model):
             sample_rate=sample_rate, **self.hparams.encoder_decoder
         )
         self.masker = DPRNN(
-            64 + 1024, out_chan=64, n_src=n_sources, **self.hparams.dprnn
+            encoder_decoder["n_filters"] + 1024,
+            out_chan=encoder_decoder["n_filters"],
+            n_src=n_sources,
+            **self.hparams.dprnn
         )
         if self.use_wavlm:
             self.wavlm = AutoModel.from_pretrained("microsoft/wavlm-large")
             self.wavlm_scaling = int(320 / encoder_decoder["stride"])
 
-        # diarization can use a lower resolution than separation, use 128x downsampling
-        diarization_scaling = int(128 / encoder_decoder["stride"])
+        # diarization can use a lower resolution than separation
+        self.diarization_scaling = int(
+            sample_rate / diar["frames_per_second"] / encoder_decoder["stride"]
+        )
         self.average_pool = nn.AvgPool1d(
-            diarization_scaling, stride=diarization_scaling
+            self.diarization_scaling, stride=self.diarization_scaling
         )
         lstm_out_features = n_feats_out
         if self.use_lstm:
@@ -153,30 +163,112 @@ class SepDiarNet(Model):
             lstm_out_features = lstm["hidden_size"] * (
                 2 if lstm["bidirectional"] else 1
             )
-        self.linear = nn.ModuleList(
-            [
-                nn.Linear(in_features, out_features)
-                for in_features, out_features in pairwise(
-                    [
-                        lstm_out_features,
-                    ]
-                    + [self.hparams.linear["hidden_size"]]
-                    * self.hparams.linear["num_layers"]
-                )
-            ]
-        )
+        if linear["num_layers"] > 0:
+            self.linear = nn.ModuleList(
+                [
+                    nn.Linear(in_features, out_features)
+                    for in_features, out_features in pairwise(
+                        [
+                            lstm_out_features,
+                        ]
+                        + [self.hparams.linear["hidden_size"]]
+                        * self.hparams.linear["num_layers"]
+                    )
+                ]
+            )
         self.gradient_clip_val = gradient_clip_val
         self.automatic_optimization = False
 
+    @property
+    def dimension(self) -> int:
+        """Dimension of output"""
+        return 1
+
     def build(self):
         if self.use_lstm or self.hparams.linear["num_layers"] > 0:
-            self.classifier = nn.Linear(64, 1)
+            self.classifier = nn.Linear(64, self.dimension)
         else:
-            self.classifier = nn.Linear(1, 1)
+            self.classifier = nn.Linear(1, self.dimension)
         self.activation = self.default_activation()
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
+
+    @lru_cache
+    def num_frames(self, num_samples: int) -> int:
+        """Compute number of output frames
+
+        Parameters
+        ----------
+        num_samples : int
+            Number of input samples.
+
+        Returns
+        -------
+        num_frames : int
+            Number of output frames.
+        """
+
+        equivalent_stride = (
+            self.diarization_scaling * self.hparams.encoder_decoder["stride"]
+        )
+        equivalent_kernel_size = (
+            self.diarization_scaling * self.hparams.encoder_decoder["kernel_size"]
+        )
+
+        return conv1d_num_frames(
+            num_samples, kernel_size=equivalent_kernel_size, stride=equivalent_stride
+        )
+
+    def receptive_field_size(self, num_frames: int = 1) -> int:
+        """Compute size of receptive field
+
+        Parameters
+        ----------
+        num_frames : int, optional
+            Number of frames in the output signal
+
+        Returns
+        -------
+        receptive_field_size : int
+            Receptive field size.
+        """
+
+        equivalent_stride = (
+            self.diarization_scaling * self.hparams.encoder_decoder["stride"]
+        )
+        equivalent_kernel_size = (
+            self.diarization_scaling * self.hparams.encoder_decoder["kernel_size"]
+        )
+
+        return conv1d_receptive_field_size(
+            num_frames, kernel_size=equivalent_kernel_size, stride=equivalent_stride
+        )
+
+    def receptive_field_center(self, frame: int = 0) -> int:
+        """Compute center of receptive field
+
+        Parameters
+        ----------
+        frame : int, optional
+            Frame index
+
+        Returns
+        -------
+        receptive_field_center : int
+            Index of receptive field center.
+        """
+
+        equivalent_stride = (
+            self.diarization_scaling * self.hparams.encoder_decoder["stride"]
+        )
+        equivalent_kernel_size = (
+            self.diarization_scaling * self.hparams.encoder_decoder["kernel_size"]
+        )
+
+        return conv1d_receptive_field_center(
+            frame, kernel_size=equivalent_kernel_size, stride=equivalent_stride
+        )
 
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
         """Pass forward
