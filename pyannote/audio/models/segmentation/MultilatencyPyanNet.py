@@ -82,8 +82,8 @@ class MultilatencyPyanNet(Model):
     LSTM_DEFAULTS = {
         "hidden_size": 128,
         "num_layers": 2,
-        "bidirectional": True,
-        "monolithic": False,
+        "bidirectional": False,
+        "monolithic": True,
         "dropout": 0.0,
     }
     LINEAR_DEFAULTS = {"hidden_size": 128, "num_layers": 2}
@@ -95,11 +95,13 @@ class MultilatencyPyanNet(Model):
         linear: dict = None,
         sample_rate: int = 16000,
         num_channels: int = 1,
+        latency_index: int = -1,
         task: Optional[Task] = None,
         latency_list: Optional[List[float]] = None,
     ):
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
 
+        self.latency_index = latency_index
         sincnet = merge_dict(self.SINCNET_DEFAULTS, sincnet)
         sincnet["sample_rate"] = sample_rate
         lstm = merge_dict(self.LSTM_DEFAULTS, lstm)
@@ -113,7 +115,6 @@ class MultilatencyPyanNet(Model):
             self.latency_list = self.hparams.latency_list 
 
         self.sincnet = SincNet(**self.hparams.sincnet)
-
         monolithic = lstm["monolithic"]
         if monolithic:
             multi_layer_lstm = dict(lstm)
@@ -206,107 +207,123 @@ class MultilatencyPyanNet(Model):
         if self.hparams.linear["num_layers"] > 0:
             for linear in self.linear:
                 outputs = F.leaky_relu(linear(outputs))
-        predictions = self.activation(self.classifier(outputs))           
+        # tensor of size (batch_size, num_frames, num_speakers * K) where K is the number of latencies        
+        predictions = self.activation(self.classifier(outputs))   
+
+        # tensor of size (batch_size, num_frames, num_speakers, K)      
         predictions = predictions.view(predictions.size(0), predictions.size(1), predictions.size(2) // len(self.latency_list), len(self.latency_list))
+
+        # tensor of size (k, batch_size, num_frames, num_speakers)   
         predictions = predictions.permute(3, 0, 1, 2)
+
+        if self.latency_index == -1:   
+            # return all latencies 
+            return predictions
             
-        return predictions
+        # return only the corresponding latency
+        return predictions[self.latency_index]
 
 
-    def __example_input_array(self, duration: Optional[float] = None) -> torch.Tensor:
-        duration = duration or next(iter(self.specifications)).duration
-        return torch.randn(
-            (
-                1,
-                self.hparams.num_channels,
-                self.audio.get_num_samples(duration),
-            ),
-            device=self.device,
-        )
+    # def __example_input_array(self, duration: Optional[float] = None) -> torch.Tensor:
+    #     duration = duration or next(iter(self.specifications)).duration
+    #     return torch.randn(
+    #         (
+    #             1,
+    #             self.hparams.num_channels,
+    #             self.audio.get_num_samples(duration),
+    #         ),
+    #         device=self.device,
+    #     )
 
-    @property
-    def example_input_array(self) -> torch.Tensor:
-        return self.__example_input_array()
+#     @property
+#     def example_input_array(self) -> torch.Tensor:
+#         return self.__example_input_array()
 
 
-    @cached_property
-    def example_output(self) -> Union[Output, Tuple[Output]]:
-        """Example output"""
-        example_input_array = self.__example_input_array()
-        with torch.inference_mode():
-            example_output = self(example_input_array)
+#     @cached_property
+#     def example_output(self) -> Union[Output, Tuple[Output]]:
+#         """Example output"""
+#         example_input_array = self.__example_input_array()
+#         with torch.inference_mode():
+#             example_output = self(example_input_array)
 
-        def __example_output(
-            example_output: torch.Tensor,
-            specifications: Specifications = None,
-        ) -> Output:
-            if specifications.resolution == Resolution.FRAME:
-                _, _, num_frames, dimension = example_output.shape
-                frame_duration = specifications.duration / num_frames
-                frames = SlidingWindow(step=frame_duration, duration=frame_duration)
-            else:
-                _, dimension = example_output.shape
-                num_frames = None
-                frames = None
+#         def __example_output(
+#             example_output: torch.Tensor,
+#             specifications: Specifications = None,
+#         ) -> Output:
+#             if specifications.resolution == Resolution.FRAME:
+#                 num_frames, dimension = example_output.shape[-2], example_output.shape[-1]
+#                 frame_duration = specifications.duration / num_frames
+#                 frames = SlidingWindow(step=frame_duration, duration=frame_duration)
+#             else:
+#                 _, dimension = example_output.shape
+#                 num_frames = None
+#                 frames = None
 
-            return Output(
-                num_frames=num_frames,
-                dimension=dimension,
-                frames=frames,
-            )
+#             return Output(
+#                 num_frames=num_frames,
+#                 dimension=dimension,
+#                 frames=frames,
+#             )
 
-        return map_with_specifications(
-            self.specifications, __example_output, example_output
-        )
+#         return map_with_specifications(
+#             self.specifications, __example_output, example_output
+#         )
 
-    def setup(self, stage=None):
-        if stage == "fit":
-            self.task.setup_metadata()
+#     def setup(self, stage=None):
+#         if stage == "fit":
+#             self.task.setup_metadata()
 
-        # list of layers before adding task-dependent layers
-        before = set((name, id(module)) for name, module in self.named_modules())
+#         # list of layers before adding task-dependent layers
+#         before = set((name, id(module)) for name, module in self.named_modules())
 
-        # add task-dependent layers (e.g. final classification layer)
-        # and re-use original weights when compatible
+#         # add task-dependent layers (e.g. final classification layer)
+#         # and re-use original weights when compatible
 
-        original_state_dict = self.state_dict()
-        self.build()
+#         original_state_dict = self.state_dict()
+#         self.build()
 
-        try:
-            missing_keys, unexpected_keys = self.load_state_dict(
-                original_state_dict, strict=False
-            )
+#         try:
+#             missing_keys, unexpected_keys = self.load_state_dict(
+#                 original_state_dict, strict=False
+#             )
 
-        except RuntimeError as e:
-            if "size mismatch" in str(e):
-                msg = (
-                    "Model has been trained for a different task. For fine tuning or transfer learning, "
-                    "it is recommended to train task-dependent layers for a few epochs "
-                    f"before training the whole model: {self.task_dependent}."
-                )
-                warnings.warn(msg)
-            else:
-                raise e
+#         except RuntimeError as e:
+#             if "size mismatch" in str(e):
+#                 msg = (
+#                     "Model has been trained for a different task. For fine tuning or transfer learning, "
+#                     "it is recommended to train task-dependent layers for a few epochs "
+#                     f"before training the whole model: {self.task_dependent}."
+#                 )
+#                 warnings.warn(msg)
+#             else:
+#                 raise e
 
-        # move layers that were added by build() to same device as the rest of the model
-        for name, module in self.named_modules():
-            if (name, id(module)) not in before:
-                module.to(self.device)
+#         # move layers that were added by build() to same device as the rest of the model
+#         for name, module in self.named_modules():
+#             if (name, id(module)) not in before:
+#               (trainable) loss function (e.g. ArcFace has its own set of trainable weights)
+#         if stage == "fit":
+# …        # list of layers after adding task-dependent layers
+#         after = set((name, id(module)) for name, module in self.named_modules())
 
-        # add (trainable) loss function (e.g. ArcFace has its own set of trainable weights)
-        if stage == "fit":
-            # let task know about the model
-            self.task.model = self
-            # setup custom loss function
-            self.task.setup_loss_func()
-            # setup custom validation metrics
-            self.task.setup_validation_metric()
+#         # list of task-dependent layers
+#         self.task_dependent = list(name for name, _ in after - before)   module.to(self.device)
 
-            # cache for later (and to avoid later CUDA error with multiprocessing)
-            _ = self.example_output
+#         # add (trainable) loss function (e.g. ArcFace has its own set of trainable weights)
+#         if stage == "fit":
+#             # let task know about the model
+#             self.task.model = self
+#             # setup custom loss function
+#             self.task.setup_loss_func()
+#             # setup custom validation metrics
+#             self.task.setup_validation_metric()
 
-        # list of layers after adding task-dependent layers
-        after = set((name, id(module)) for name, module in self.named_modules())
+#             # cache for later (and to avoid later CUDA error with multiprocessing)
+#             _ = self.example_output
 
-        # list of task-dependent layers
-        self.task_dependent = list(name for name, _ in after - before)
+#         # list of layers after adding task-dependent layers
+#         after = set((name, id(module)) for name, module in self.named_modules())
+
+#         # list of task-dependent layers
+#         self.task_dependent = list(name for name, _ in after - before)

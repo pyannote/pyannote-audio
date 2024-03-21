@@ -199,7 +199,7 @@ class Model(pl.LightningModule):
             specifications: Specifications = None,
         ) -> Output:
             if specifications.resolution == Resolution.FRAME:
-                _, num_frames, dimension = example_output.shape
+                num_frames, dimension = example_output.shape[-2], example_output.shape[-1]
                 frame_duration = specifications.duration / num_frames
                 frames = SlidingWindow(step=frame_duration, duration=frame_duration)
             else:
