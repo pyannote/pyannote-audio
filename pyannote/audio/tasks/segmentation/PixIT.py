@@ -99,8 +99,8 @@ class ValDataset(IterableDataset):
         return self.task.val__len__()
 
 
-class JointSpeakerSeparationAndDiarization(SegmentationTask, Task):
-    """Speaker diarization
+class PixIT(SegmentationTask, Task):
+    """Joint speaker diarization and speaker separation task based on PixIT
 
     Parameters
     ----------

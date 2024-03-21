@@ -22,7 +22,7 @@
 
 from .segmentation.multilabel import MultiLabelSegmentation  # isort:skip
 from .segmentation.speaker_diarization import SpeakerDiarization  # isort:skip
-from .segmentation.speaker_separation_diarization import JointSpeakerSeparationAndDiarization  # isort:skip
+from .segmentation.PixIT import PixIT  # isort:skip
 from .segmentation.voice_activity_detection import VoiceActivityDetection  # isort:skip
 from .segmentation.overlapped_speech_detection import (  # isort:skip
     OverlappedSpeechDetection,
@@ -42,5 +42,5 @@ __all__ = [
     "MultiLabelSegmentation",
     "SpeakerEmbedding",
     "Segmentation",
-    "JointSpeakerSeparationAndDiarization",
+    "PixIT",
 ]
