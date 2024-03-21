@@ -186,8 +186,6 @@ class JointSpeakerSeparationAndDiarization(SegmentationTask, Task):
         loss: Literal["bce", "mse"] = None,  # deprecated
         separation_loss_weight: float = 0.5,
         original_mixtures_for_separation: bool = True,
-        forced_alignment_weight: float = 0.0,
-        add_noise_sources: bool = False,
     ):
         super().__init__(
             protocol,
@@ -233,8 +231,6 @@ class JointSpeakerSeparationAndDiarization(SegmentationTask, Task):
         self.pit_sep_loss = PITLossWrapper(pairwise_neg_sisdr, pit_from="pw_mtx")
         self.separation_loss_weight = separation_loss_weight
         self.original_mixtures_for_separation = original_mixtures_for_separation
-        self.forced_alignment_weight = forced_alignment_weight
-        self.add_noise_sources = add_noise_sources
         self.mixit_loss = MixITLossWrapper(multisrc_neg_sisdr, generalized=True)
 
     def setup(self, stage=None):
@@ -950,20 +946,7 @@ class JointSpeakerSeparationAndDiarization(SegmentationTask, Task):
         )
         # (batch_size, num_frames, 1)
 
-        if self.add_noise_sources:
-            # last 2 sources should only contain noise so we force diarization outputs to 0
-            permutated_diarization, permutations = permutate(
-                target, diarization[:, :, :3]
-            )
-            target = torch.cat(
-                (target, torch.zeros(batch_size, num_frames, 2, device=target.device)),
-                dim=2,
-            )
-            permutated_diarization = torch.cat(
-                (permutated_diarization, diarization[:, :, 3:]), dim=2
-            )
-        else:
-            permutated_diarization, permutations = permutate(target, diarization)
+        permutated_diarization, permutations = permutate(target, diarization)
 
         seg_loss = self.segmentation_loss(permutated_diarization, target, weight=weight)
 
