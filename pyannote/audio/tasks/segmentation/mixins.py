@@ -28,7 +28,6 @@ from typing import Dict, Sequence, Union
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from pyannote.database.protocol import SegmentationProtocol, SpeakerDiarizationProtocol
 from pyannote.database.protocol.protocol import Scope, Subset
 from pytorch_lightning.loggers import MLFlowLogger, TensorBoardLogger
 from torch.utils.data._utils.collate import default_collate
