@@ -216,28 +216,34 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         self.add_noise_sources = add_noise_sources
         self.mixit_loss = MixITLossWrapper(multisrc_neg_sisdr, generalized=True)
 
-    def setup(self):
-        super().setup()
+    def setup(self, stage=None):
+        super().setup(stage)
 
         # estimate maximum number of speakers per chunk when not provided
         if self.max_speakers_per_chunk is None:
-            training = self.metadata["subset"] == Subsets.index("train")
+            training = self.prepared_data["audio-metadata"]["subset"] == Subsets.index(
+                "train"
+            )
 
             num_unique_speakers = []
             progress_description = f"Estimating maximum number of speakers per {self.duration:g}s chunk in the training set"
             for file_id in track(
                 np.where(training)[0], description=progress_description
             ):
-                annotations = self.annotations[
-                    np.where(self.annotations["file_id"] == file_id)[0]
+                annotations = self.prepared_data["annotations-segments"][
+                    np.where(
+                        self.prepared_data["annotations-segments"]["file_id"] == file_id
+                    )[0]
                 ]
-                annotated_regions = self.annotated_regions[
-                    np.where(self.annotated_regions["file_id"] == file_id)[0]
+                annotated_regions = self.prepared_data["annotations-regions"][
+                    np.where(
+                        self.prepared_data["annotations-regions"]["file_id"] == file_id
+                    )[0]
                 ]
                 for region in annotated_regions:
                     # find annotations within current region
                     region_start = region["start"]
-                    region_end = region["end"]
+                    region_end = region["start"] + region["duration"]
                     region_annotations = annotations[
                         np.where(
                             (annotations["start"] >= region_start)
@@ -303,9 +309,11 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
         speaker_diarization = Specifications(
             duration=self.duration,
             resolution=Resolution.FRAME,
-            problem=Problem.MULTI_LABEL_CLASSIFICATION
-            if self.max_speakers_per_frame is None
-            else Problem.MONO_LABEL_CLASSIFICATION,
+            problem=(
+                Problem.MULTI_LABEL_CLASSIFICATION
+                if self.max_speakers_per_frame is None
+                else Problem.MONO_LABEL_CLASSIFICATION
+            ),
             permutation_invariant=True,
             classes=[f"speaker#{i+1}" for i in range(self.max_speakers_per_chunk)],
             powerset_max_classes=self.max_speakers_per_frame,
