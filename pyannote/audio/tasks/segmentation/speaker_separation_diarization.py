@@ -71,13 +71,23 @@ Scopes = list(Scope.__args__)
 from itertools import combinations
 from torch import nn
 from pytorch_lightning.callbacks import Callback
-from pyannote.audio.core.task import TrainDataset
 from functools import cached_property, partial
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 from pyannote.audio.utils.random import create_rng_for_worker
 
 
 class ValDataset(IterableDataset):
+    """Validation dataset class
+
+    This needs to be iterable so that mixture of mixture generation is the same for 
+    both training and development.
+
+    Parameters
+    ----------
+    task : JointSpeakerSeparationAndDiarization
+        Task instance.
+    """
+
     def __init__(self, task: Task):
         super().__init__()
         self.task = task
@@ -367,7 +377,7 @@ class JointSpeakerSeparationAndDiarization(SegmentationTask, Task):
         file = self.get_file(file_id)
 
         # get label scope
-        label_scope = Scopes[self.metadata[file_id]["scope"]]
+        label_scope = Scopes[self.prepared_data["audio-metadata"][file_id]["scope"]]
         label_scope_key = f"{label_scope}_label_idx"
 
         #
@@ -376,25 +386,25 @@ class JointSpeakerSeparationAndDiarization(SegmentationTask, Task):
         sample = dict()
         sample["X"], _ = self.model.audio.crop(file, chunk, duration=duration)
 
-        # use model introspection to predict how many frames it will output
-        # TODO: this should be cached
-        num_samples = sample["X"].shape[1]
-
         # gather all annotations of current file
-        annotations = self.annotations[self.annotations["file_id"] == file_id]
+        annotations = self.prepared_data["annotations-segments"][
+            self.prepared_data["annotations-segments"]["file_id"] == file_id
+        ]
 
         # gather all annotations with non-empty intersection with current chunk
         chunk_annotations = annotations[
             (annotations["start"] < chunk.end) & (annotations["end"] > chunk.start)
         ]
 
-        # discretize chunk annotations at model output and input resolutions
-        start = np.maximum(chunk_annotations["start"], chunk.start) - chunk.start
-        start_idx = np.floor(start / self.model.example_output[0].frames.step).astype(
-            int
-        )
-        end = np.minimum(chunk_annotations["end"], chunk.end) - chunk.start
-        end_idx = np.ceil(end / self.model.example_output[0].frames.step).astype(int)
+        # discretize chunk annotations at model output resolution
+        step = self.model.receptive_field.step
+        half = 0.5 * self.model.receptive_field.duration
+
+        start = np.maximum(chunk_annotations["start"], chunk.start) - chunk.start - half
+        start_idx = np.maximum(0, np.round(start / step)).astype(int)
+
+        end = np.minimum(chunk_annotations["end"], chunk.end) - chunk.start - half
+        end_idx = np.round(end / step).astype(int)
 
         # get list and number of labels for current scope
         labels = list(np.unique(chunk_annotations[label_scope_key]))
@@ -404,9 +414,10 @@ class JointSpeakerSeparationAndDiarization(SegmentationTask, Task):
             pass
 
         # initial frame-level targets
-        y = np.zeros(
-            (self.model.example_output[0].num_frames, num_labels), dtype=np.uint8
+        num_frames = self.model.num_frames(
+            round(duration * self.model.hparams.sample_rate)
         )
+        y = np.zeros((num_frames, num_labels), dtype=np.uint8)
 
         # map labels to indices
         mapping = {label: idx for idx, label in enumerate(labels)}
@@ -415,13 +426,12 @@ class JointSpeakerSeparationAndDiarization(SegmentationTask, Task):
             start_idx, end_idx, chunk_annotations[label_scope_key]
         ):
             mapped_label = mapping[label]
-            y[start:end, mapped_label] = 1
+            y[start : end + 1, mapped_label] = 1
 
-        sample["y"] = SlidingWindowFeature(
-            y, self.model.example_output[0].frames, labels=labels
-        )
+        sample["y"] = SlidingWindowFeature(y, self.model.receptive_field, labels=labels)
 
-        metadata = self.metadata[file_id]
+        metadata = self.prepared_data["audio-metadata"][file_id]
+
         sample["meta"] = {key: metadata[key] for key in metadata.dtype.names}
         sample["meta"]["file"] = file_id
 
@@ -438,7 +448,7 @@ class JointSpeakerSeparationAndDiarization(SegmentationTask, Task):
         )
 
     def val__iter__(self):
-        """Iterate over training samples
+        """Iterate over validation samples
 
         Yields
         ------
@@ -453,7 +463,7 @@ class JointSpeakerSeparationAndDiarization(SegmentationTask, Task):
         """
 
         # create worker-specific random number generator
-        rng = create_rng_for_worker(0)
+        rng = create_rng_for_worker(self.model)
 
         balance = getattr(self, "balance", None)
         if balance is None:
@@ -466,7 +476,7 @@ class JointSpeakerSeparationAndDiarization(SegmentationTask, Task):
                 [self.metadata_unique_values[key] for key in balance]
             ):
                 filters = {key: value for key, value in zip(balance, product)}
-                subchunks[product] = self.train__iter__helper(rng, **filters)
+                subchunks[product] = self.val__iter__helper(rng, **filters)
 
         while True:
             # select one subchunk generator at random (with uniform probability)
@@ -477,38 +487,37 @@ class JointSpeakerSeparationAndDiarization(SegmentationTask, Task):
             # generate random chunk
             yield next(chunks)
 
-    def train__len__(self):
-        # Number of training samples in one epoch
-
-        duration = np.sum(self.annotated_duration)
-        return max(self.batch_size, math.ceil(duration / self.duration))
-
-    def val__iter__helper(self, rng: random.Random, **filters):
-        """Iterate over training samples with optional domain filtering
+    def common__iter__helper(self, split, rng: random.Random, **filters):
+        """Iterate over samples with optional domain filtering
 
         Parameters
         ----------
         rng : random.Random
             Random number generator
         filters : dict, optional
-            When provided (as {key: value} dict), filter training files so that
+            When provided (as {key: value} dict), filter files so that
             only files such as file[key] == value are used for generating chunks.
 
         Yields
         ------
         chunk : dict
-            Training chunks.
+            Chunks.
         """
-
-        # indices of training files that matches domain filters
-        validating = self.metadata["subset"] == Subsets.index("train")
+        # indices of files that matches domain filters
+        split_files = self.prepared_data["audio-metadata"]["subset"] == Subsets.index(
+            split
+        )
         for key, value in filters.items():
-            validating &= self.metadata[key] == value
-        file_ids = np.where(validating)[0]
+            split_files &= self.prepared_data["audio-metadata"][
+                key
+            ] == self.prepared_data["metadata"][key].index(value)
+        file_ids = np.where(split_files)[0]
 
         # turn annotated duration into a probability distribution
-        annotated_duration = self.annotated_duration[file_ids]
-        prob_annotated_duration = annotated_duration / np.sum(annotated_duration)
+        annotated_duration = self.prepared_data["audio-annotated"][file_ids]
+        cum_prob_annotated_duration = np.cumsum(
+            annotated_duration / np.sum(annotated_duration)
+        )
 
         duration = self.duration
 
@@ -516,31 +525,43 @@ class JointSpeakerSeparationAndDiarization(SegmentationTask, Task):
 
         while True:
             # select one file at random (with probability proportional to its annotated duration)
-            file_id = np.random.choice(file_ids, p=prob_annotated_duration)
-            annotations = self.annotations[
-                np.where(self.annotations["file_id"] == file_id)[0]
+            file_id = file_ids[cum_prob_annotated_duration.searchsorted(rng.random())]
+            annotations = self.prepared_data["annotations-segments"][
+                np.where(
+                    self.prepared_data["annotations-segments"]["file_id"] == file_id
+                )[0]
             ]
 
             # generate `num_chunks_per_file` chunks from this file
             for _ in range(num_chunks_per_file):
                 # find indices of annotated regions in this file
                 annotated_region_indices = np.where(
-                    self.annotated_regions["file_id"] == file_id
+                    self.prepared_data["annotations-regions"]["file_id"] == file_id
                 )[0]
 
                 # turn annotated regions duration into a probability distribution
-                prob_annotated_regions_duration = self.annotated_regions["duration"][
-                    annotated_region_indices
-                ] / np.sum(self.annotated_regions["duration"][annotated_region_indices])
 
-                # selected one annotated region at random (with probability proportional to its duration)
-                annotated_region_index = np.random.choice(
-                    annotated_region_indices, p=prob_annotated_regions_duration
+                cum_prob_annotated_regions_duration = np.cumsum(
+                    self.prepared_data["annotations-regions"]["duration"][
+                        annotated_region_indices
+                    ]
+                    / np.sum(
+                        self.prepared_data["annotations-regions"]["duration"][
+                            annotated_region_indices
+                        ]
+                    )
                 )
 
+                # selected one annotated region at random (with probability proportional to its duration)
+                annotated_region_index = annotated_region_indices[
+                    cum_prob_annotated_regions_duration.searchsorted(rng.random())
+                ]
+
                 # select one chunk at random in this annotated region
-                _, _, start, end = self.annotated_regions[annotated_region_index]
-                start_time = rng.uniform(start, end - duration)
+                _, region_duration, start = self.prepared_data["annotations-regions"][
+                    annotated_region_index
+                ]
+                start_time = rng.uniform(start, start + region_duration - duration)
 
                 # find speakers that already appeared and all annotations that contain them
                 chunk_annotations = annotations[
@@ -560,12 +581,14 @@ class JointSpeakerSeparationAndDiarization(SegmentationTask, Task):
 
                     # selected one annotated region at random (with probability proportional to its duration)
                     annotated_region_index = np.random.choice(
-                        annotated_region_indices, p=prob_annotated_regions_duration
+                        annotated_region_indices, p=cum_prob_annotated_regions_duration
                     )
 
                     # select one chunk at random in this annotated region
-                    _, _, start, end = self.annotated_regions[annotated_region_index]
-                    start_time = rng.uniform(start, end - duration)
+                    _, region_duration, start = self.prepared_data[
+                        "annotations-regions"
+                    ][annotated_region_index]
+                    start_time = rng.uniform(start, start + region_duration - duration)
 
                     second_chunk = self.prepare_chunk(file_id, start_time, duration)
 
@@ -593,20 +616,23 @@ class JointSpeakerSeparationAndDiarization(SegmentationTask, Task):
                     # find segments that don't contain repeated speakers
                     segments_without_repeat = []
                     current_region_index = 0
-                    previous_time = self.annotated_regions["start"][
+                    previous_time = self.prepared_data["annotations-regions"]["start"][
                         annotated_region_indices[0]
                     ]
                     for segment in merged_repeated_segments:
                         if (
                             segment[0]
-                            > self.annotated_regions["end"][
+                            > self.prepared_data["annotations-regions"]["start"][
+                                annotated_region_indices[current_region_index]
+                            ]
+                            + self.prepared_data["annotations-regions"]["duration"][
                                 annotated_region_indices[current_region_index]
                             ]
                         ):
                             current_region_index += 1
-                            previous_time = self.annotated_regions["start"][
-                                annotated_region_indices[current_region_index]
-                            ]
+                            previous_time = self.prepared_data["annotations-regions"][
+                                "start"
+                            ][annotated_region_indices[current_region_index]]
 
                         if segment[0] - previous_time > duration:
                             segments_without_repeat.append(
@@ -640,6 +666,25 @@ class JointSpeakerSeparationAndDiarization(SegmentationTask, Task):
                         if len(labels) <= self.max_speakers_per_chunk:
                             yield first_chunk
                             yield second_chunk
+
+    def val__iter__helper(self, rng: random.Random, **filters):
+        """Iterate over validation samples with optional domain filtering
+
+        Parameters
+        ----------
+        rng : random.Random
+            Random number generator
+        filters : dict, optional
+            When provided (as {key: value} dict), filter validation files so that
+            only files such as file[key] == value are used for generating chunks.
+
+        Yields
+        ------
+        chunk : dict
+            validation chunks.
+        """
+
+        return self.common__iter__helper("development", rng, **filters)
 
     def train__iter__helper(self, rng: random.Random, **filters):
         """Iterate over training samples with optional domain filtering
@@ -658,149 +703,7 @@ class JointSpeakerSeparationAndDiarization(SegmentationTask, Task):
             Training chunks.
         """
 
-        # indices of training files that matches domain filters
-        training = self.metadata["subset"] == Subsets.index("train")
-        for key, value in filters.items():
-            training &= self.metadata[key] == value
-        file_ids = np.where(training)[0]
-
-        # turn annotated duration into a probability distribution
-        annotated_duration = self.annotated_duration[file_ids]
-        prob_annotated_duration = annotated_duration / np.sum(annotated_duration)
-
-        duration = self.duration
-
-        num_chunks_per_file = getattr(self, "num_chunks_per_file", 1)
-
-        while True:
-            # select one file at random (with probability proportional to its annotated duration)
-            file_id = np.random.choice(file_ids, p=prob_annotated_duration)
-            annotations = self.annotations[
-                np.where(self.annotations["file_id"] == file_id)[0]
-            ]
-
-            # generate `num_chunks_per_file` chunks from this file
-            for _ in range(num_chunks_per_file):
-                # find indices of annotated regions in this file
-                annotated_region_indices = np.where(
-                    self.annotated_regions["file_id"] == file_id
-                )[0]
-
-                # turn annotated regions duration into a probability distribution
-                prob_annotated_regions_duration = self.annotated_regions["duration"][
-                    annotated_region_indices
-                ] / np.sum(self.annotated_regions["duration"][annotated_region_indices])
-
-                # selected one annotated region at random (with probability proportional to its duration)
-                annotated_region_index = np.random.choice(
-                    annotated_region_indices, p=prob_annotated_regions_duration
-                )
-
-                # select one chunk at random in this annotated region
-                _, _, start, end = self.annotated_regions[annotated_region_index]
-                start_time = rng.uniform(start, end - duration)
-
-                # find speakers that already appeared and all annotations that contain them
-                chunk_annotations = annotations[
-                    (annotations["start"] < start_time + duration)
-                    & (annotations["end"] > start_time)
-                ]
-                previous_speaker_labels = list(
-                    np.unique(chunk_annotations["file_label_idx"])
-                )
-                repeated_speaker_annotations = annotations[
-                    np.isin(annotations["file_label_idx"], previous_speaker_labels)
-                ]
-
-                if repeated_speaker_annotations.size == 0:
-                    # if previous chunk has 0 speakers then just sample from all annotated regions again
-                    first_chunk = self.prepare_chunk(file_id, start_time, duration)
-
-                    # selected one annotated region at random (with probability proportional to its duration)
-                    annotated_region_index = np.random.choice(
-                        annotated_region_indices, p=prob_annotated_regions_duration
-                    )
-
-                    # select one chunk at random in this annotated region
-                    _, _, start, end = self.annotated_regions[annotated_region_index]
-                    start_time = rng.uniform(start, end - duration)
-
-                    second_chunk = self.prepare_chunk(file_id, start_time, duration)
-
-                    labels = first_chunk["y"].labels + second_chunk["y"].labels
-
-                    if len(labels) <= self.max_speakers_per_chunk:
-                        yield first_chunk
-                        yield second_chunk
-
-                else:
-                    # merge segments that contain repeated speakers
-                    merged_repeated_segments = [
-                        [
-                            repeated_speaker_annotations["start"][0],
-                            repeated_speaker_annotations["end"][0],
-                        ]
-                    ]
-                    for _, start, end, _, _, _ in repeated_speaker_annotations:
-                        previous = merged_repeated_segments[-1]
-                        if start <= previous[1]:
-                            previous[1] = max(previous[1], end)
-                        else:
-                            merged_repeated_segments.append([start, end])
-
-                    # find segments that don't contain repeated speakers
-                    segments_without_repeat = []
-                    current_region_index = 0
-                    previous_time = self.annotated_regions["start"][
-                        annotated_region_indices[0]
-                    ]
-                    for segment in merged_repeated_segments:
-                        if (
-                            segment[0]
-                            > self.annotated_regions["end"][
-                                annotated_region_indices[current_region_index]
-                            ]
-                        ):
-                            current_region_index += 1
-                            previous_time = self.annotated_regions["start"][
-                                annotated_region_indices[current_region_index]
-                            ]
-
-                        if segment[0] - previous_time > duration:
-                            segments_without_repeat.append(
-                                (previous_time, segment[0], segment[0] - previous_time)
-                            )
-                        previous_time = segment[1]
-
-                    dtype = [("start", "f"), ("end", "f"), ("duration", "f")]
-                    segments_without_repeat = np.array(
-                        segments_without_repeat, dtype=dtype
-                    )
-
-                    if np.sum(segments_without_repeat["duration"]) != 0:
-                        # only yield chunks if it is possible to choose the second chunk so that yielded chunks are always paired
-                        first_chunk = self.prepare_chunk(file_id, start_time, duration)
-
-                        prob_segments_duration = segments_without_repeat[
-                            "duration"
-                        ] / np.sum(segments_without_repeat["duration"])
-                        segment = np.random.choice(
-                            segments_without_repeat, p=prob_segments_duration
-                        )
-
-                        start, end, _ = segment
-                        new_start_time = rng.uniform(start, end - duration)
-                        second_chunk = self.prepare_chunk(
-                            file_id, new_start_time, duration
-                        )
-
-                        labels = first_chunk["y"].labels + second_chunk["y"].labels
-                        if len(labels) <= self.max_speakers_per_chunk:
-                            yield first_chunk
-                            yield second_chunk
-
-    def collate_X_separation_mask(self, batch) -> torch.Tensor:
-        return default_collate([b["X_separation_mask"] for b in batch])
+        return self.common__iter__helper("train", rng, **filters)
 
     def collate_fn(self, batch, stage="train"):
         """Collate function used for most segmentation tasks
@@ -831,9 +734,6 @@ class JointSpeakerSeparationAndDiarization(SegmentationTask, Task):
         # collate metadata
         collated_meta = self.collate_meta(batch)
 
-        # if self.original_mixtures_for_separation:
-        #     collated_X_separation_mask = self.collate_X_separation_mask(batch)
-
         # apply augmentation (only in "train" stage)
         self.augmentation.train(mode=(stage == "train"))
         augmented = self.augmentation(
@@ -842,13 +742,6 @@ class JointSpeakerSeparationAndDiarization(SegmentationTask, Task):
             targets=collated_y.unsqueeze(1),
         )
 
-        # if self.original_mixtures_for_separation:
-        #     return {
-        #         "X": augmented.samples,
-        #         "y": augmented.targets.squeeze(1),
-        #         "meta": collated_meta,
-        #         "X_separation_mask": collated_X_separation_mask,
-        #     }
         return {
             "X": augmented.samples,
             "y": augmented.targets.squeeze(1),
@@ -905,7 +798,7 @@ class JointSpeakerSeparationAndDiarization(SegmentationTask, Task):
         self,
         permutated_prediction: torch.Tensor,
         target: torch.Tensor,
-        weight: torch.Tensor = None,
+        weight: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Permutation-invariant segmentation loss
 
@@ -986,6 +879,29 @@ class JointSpeakerSeparationAndDiarization(SegmentationTask, Task):
         return mom, targets, num_active_speakers_mix1, num_active_speakers_mix2
 
     def common_step(self, batch):
+        """Common step for training and validation
+
+        Parameters
+        ----------
+        batch : dict of torch.Tensor
+            Current batch.
+
+        Returns
+        -------
+        seg_loss : torch.Tensor
+            Segmentation loss.
+        separation_loss : torch.Tensor
+            Separation loss.
+        forced_alignment_loss : torch.Tensor
+            Forced alignment loss.
+        diarization : torch.Tensor
+            Diarization predictions.
+        permutated_diarization : torch.Tensor
+            Permutated diarization predictions.
+        target : torch.Tensor
+            Target diarization.
+        """
+            
         target = batch["y"]
         # (batch_size, num_frames, num_speakers)
 
@@ -1076,18 +992,16 @@ class JointSpeakerSeparationAndDiarization(SegmentationTask, Task):
                         ]
                     ).item()
 
-        forced_alignment_loss = 0
         return (
             seg_loss,
             separation_loss,
-            forced_alignment_loss,
             diarization,
             permutated_diarization,
             target,
         )
 
     def training_step(self, batch, batch_idx: int):
-        """Compute permutation-invariant segmentation loss
+        """Compute PixIT loss for training
 
         Parameters
         ----------
@@ -1107,7 +1021,6 @@ class JointSpeakerSeparationAndDiarization(SegmentationTask, Task):
         (
             seg_loss,
             separation_loss,
-            forced_alignment_loss,
             diarization,
             permutated_diarization,
             target,
@@ -1133,7 +1046,6 @@ class JointSpeakerSeparationAndDiarization(SegmentationTask, Task):
         loss = (
             (1 - self.separation_loss_weight) * seg_loss
             + self.separation_loss_weight * separation_loss
-            + forced_alignment_loss * self.forced_alignment_weight
         )
 
         # skip batch if something went wrong for some reason
@@ -1193,7 +1105,6 @@ class JointSpeakerSeparationAndDiarization(SegmentationTask, Task):
         (
             seg_loss,
             separation_loss,
-            forced_alignment_loss,
             diarization,
             permutated_diarization,
             target,
@@ -1220,7 +1131,6 @@ class JointSpeakerSeparationAndDiarization(SegmentationTask, Task):
         loss = (
             (1 - self.separation_loss_weight) * seg_loss
             + self.separation_loss_weight * separation_loss
-            + forced_alignment_loss * self.forced_alignment_weight
         )
 
         self.model.log(
