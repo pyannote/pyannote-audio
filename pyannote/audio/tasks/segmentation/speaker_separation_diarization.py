@@ -25,7 +25,7 @@ import math
 import warnings
 import random
 from collections import Counter
-from typing import Dict, Literal, Sequence, Text, Tuple, Union
+from typing import Dict, Literal, Optional, Sequence, Text, Tuple, Union
 import lightning.pytorch as pl
 
 import numpy as np
@@ -41,7 +41,7 @@ from torch_audiomentations.core.transforms_interface import BaseWaveformTransfor
 from torchmetrics import Metric
 
 from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
-from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
+from pyannote.audio.tasks.segmentation.mixins import SegmentationTask
 from pyannote.audio.torchmetrics import (
     DiarizationErrorRate,
     FalseAlarmRate,
@@ -89,13 +89,20 @@ class ValDataset(IterableDataset):
         return self.task.val__len__()
 
 
-class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
+class JointSpeakerSeparationAndDiarization(SegmentationTask, Task):
     """Speaker diarization
 
     Parameters
     ----------
     protocol : SpeakerDiarizationProtocol
         pyannote.database protocol
+    cache : str, optional
+        As (meta-)data preparation might take a very long time for large datasets,
+        it can be cached to disk for later (and faster!) re-use.
+        When `cache` does not exist, `Task.prepare_data()` generates training
+        and validation metadata from `protocol` and save them to disk.
+        When `cache` exists, `Task.prepare_data()` is skipped and (meta)-data
+        are loaded from disk. Defaults to a temporary path.
     duration : float, optional
         Chunks duration. Defaults to 2s.
     max_speakers_per_chunk : int, optional
@@ -151,18 +158,21 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
     def __init__(
         self,
         protocol: SpeakerDiarizationProtocol,
+        cache: Optional[Union[str, None]] = None,
         duration: float = 2.0,
-        max_speakers_per_chunk: int = None,
-        max_speakers_per_frame: int = None,
+        max_speakers_per_chunk: Optional[int] = None,
+        max_speakers_per_frame: Optional[int] = None,
         weigh_by_cardinality: bool = False,
-        balance: Text = None,
-        weight: Text = None,
+        balance: Optional[Sequence[Text]] = None,
+        weight: Optional[Text] = None,
         batch_size: int = 32,
-        num_workers: int = None,
+        num_workers: Optional[int] = None,
         pin_memory: bool = False,
-        augmentation: BaseWaveformTransform = None,
+        augmentation: Optional[BaseWaveformTransform] = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
-        max_num_speakers: int = None,  # deprecated in favor of `max_speakers_per_chunk``
+        max_num_speakers: Optional[
+            int
+        ] = None,  # deprecated in favor of `max_speakers_per_chunk``
         loss: Literal["bce", "mse"] = None,  # deprecated
         separation_loss_weight: float = 0.5,
         original_mixtures_for_separation: bool = True,
@@ -177,6 +187,7 @@ class JointSpeakerSeparationAndDiarization(SegmentationTaskMixin, Task):
             pin_memory=pin_memory,
             augmentation=augmentation,
             metric=metric,
+            cache=cache,
         )
 
         if not isinstance(protocol, SpeakerDiarizationProtocol):
