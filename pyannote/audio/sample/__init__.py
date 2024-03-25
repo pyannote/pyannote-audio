@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020 CNRS
+# Copyright (c) 2024- CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -21,46 +21,36 @@
 # SOFTWARE.
 
 
-import os
-import zlib
-from random import Random
+from pathlib import Path
 
-import torch
+from pyannote.core import Annotation, Segment, Timeline
+from pyannote.database.util import load_rttm
+
+from pyannote.audio.core.io import Audio, AudioFile
 
 
-def create_rng_for_worker(model) -> Random:
-    """Create worker-specific random number generator
+def _sample() -> AudioFile:
+    sample_wav = Path(__file__).parent / "sample.wav"
+    uri = "sample"
 
-    This makes sure that
-    1. training samples generation is reproducible
-    2. every (worker, epoch) uses a different seed
+    audio = Audio()
+    waveform, sample_rate = audio(sample_wav)
 
-    Parameters
-    ----------
-    epoch : int
-        Current epoch.
-    """
+    sample_rttm = Path(__file__).parent / "sample.rttm"
 
-    # create random number generator
-    rng = Random()
+    annotation: Annotation = load_rttm(sample_rttm)[uri]
+    duration = audio.get_duration(sample_wav)
 
-    global_seed = os.environ.get("PL_GLOBAL_SEED", "unset")
-    worker_info = torch.utils.data.get_worker_info()
+    annotated: Timeline = Timeline([Segment(0.0, duration)], uri=uri)
 
-    if worker_info is None:
-        worker_id = None
-    else:
-        worker_id = worker_info.id
+    return {
+        "audio": sample_wav,
+        "uri": "sample",
+        "waveform": waveform,
+        "sample_rate": sample_rate,
+        "annotation": annotation,
+        "annotated": annotated,
+    }
 
-    seed_tuple = (
-        global_seed,
-        worker_id,
-        model.local_rank,
-        model.global_rank,
-        model.current_epoch,
-    )
-    # use adler32 because python's `hash` is not deterministic.
-    seed = zlib.adler32(str(seed_tuple).encode())
-    rng.seed(seed)
 
-    return rng
+SAMPLE_FILE = _sample()

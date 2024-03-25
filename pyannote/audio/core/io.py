@@ -40,8 +40,6 @@ import torchaudio
 from pyannote.core import Segment
 from torch import Tensor
 
-torchaudio.set_audio_backend("soundfile")
-
 AudioFile = Union[Text, Path, IOBase, Mapping]
 
 AudioFileDocString = """
@@ -253,7 +251,9 @@ class Audio:
 
         return frames / sample_rate
 
-    def get_num_samples(self, duration: float, sample_rate: int = None) -> int:
+    def get_num_samples(
+        self, duration: float, sample_rate: Optional[int] = None
+    ) -> int:
         """Deterministic number of samples from duration and sample rate"""
 
         sample_rate = sample_rate or self.sample_rate

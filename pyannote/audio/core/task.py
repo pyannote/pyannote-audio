@@ -23,19 +23,25 @@
 
 from __future__ import annotations
 
+import itertools
 import multiprocessing
 import sys
 import warnings
+from collections import defaultdict
 from dataclasses import dataclass
 from enum import Enum
 from functools import cached_property, partial
 from numbers import Number
+from pathlib import Path
+from tempfile import mkstemp
 from typing import Dict, List, Literal, Optional, Sequence, Text, Tuple, Union
 
+import numpy as np
 import pytorch_lightning as pl
 import scipy.special
 import torch
 from pyannote.database import Protocol
+from pyannote.database.protocol.protocol import Scope, Subset
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 from torch_audiomentations import Identity
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
@@ -43,6 +49,9 @@ from torchmetrics import Metric, MetricCollection
 
 from pyannote.audio.utils.loss import binary_cross_entropy, nll_loss
 from pyannote.audio.utils.protocol import check_protocol
+
+Subsets = list(Subset.__args__)
+Scopes = list(Scope.__args__)
 
 
 # Type of machine learning problem
@@ -151,6 +160,31 @@ class ValDataset(Dataset):
         return self.task.val__len__()
 
 
+def get_dtype(value: int) -> str:
+    """Return the most suitable type for storing the
+    value passed in parameter in memory.
+
+    Parameters
+    ----------
+    value: int
+        value whose type is best suited to storage in memory
+
+    Returns
+    -------
+    str:
+        numpy formatted type
+        (see https://numpy.org/doc/stable/reference/arrays.dtypes.html)
+    """
+    # signe byte (8 bits), signed short (16 bits), signed int (32 bits):
+    types_list = [(127, "b"), (32_768, "i2"), (2_147_483_648, "i")]
+    filtered_list = [
+        (max_val, type) for max_val, type in types_list if max_val > abs(value)
+    ]
+    if not filtered_list:
+        return "i8"  # signed long (64 bits)
+    return filtered_list[0][1]
+
+
 class Task(pl.LightningDataModule):
     """Base task class
 
@@ -169,6 +203,13 @@ class Task(pl.LightningDataModule):
     ----------
     protocol : Protocol
         pyannote.database protocol
+    cache : str, optional
+        As (meta-)data preparation might take a very long time for large datasets,
+        it can be cached to disk for later (and faster!) re-use.
+        When `cache` does not exist, `Task.prepare_data()` generates training
+        and validation metadata from `protocol` and save them to disk.
+        When `cache` exists, `Task.prepare_data()` is skipped and (meta)-data
+        are loaded from disk. Defaults to a temporary path.
     duration : float, optional
         Chunks duration in seconds. Defaults to two seconds (2.).
     min_duration : float, optional
@@ -201,18 +242,20 @@ class Task(pl.LightningDataModule):
     ----------
     specifications : Specifications or tuple of Specifications
         Task specifications (available after `Task.setup` has been called.)
+
     """
 
     def __init__(
         self,
         protocol: Protocol,
+        cache: Optional[Union[str, None]] = None,
         duration: float = 2.0,
-        min_duration: float = None,
+        min_duration: Optional[float] = None,
         warm_up: Union[float, Tuple[float, float]] = 0.0,
         batch_size: int = 32,
-        num_workers: int = None,
+        num_workers: Optional[int] = None,
         pin_memory: bool = False,
-        augmentation: BaseWaveformTransform = None,
+        augmentation: Optional[BaseWaveformTransform] = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
     ):
         super().__init__()
@@ -221,7 +264,15 @@ class Task(pl.LightningDataModule):
         self.protocol, checks = check_protocol(protocol)
         self.has_validation = checks["has_validation"]
         self.has_scope = checks["has_scope"]
+        if not self.has_scope:
+            raise ValueError(
+                "Protocol must provide 'scope' information (e.g. 'file', 'database', or 'global')."
+            )
+
         self.has_classes = checks["has_classes"]
+
+        # metadata cache
+        self.cache = Path(cache) if cache else cache
 
         # batching
         self.duration = duration
@@ -255,24 +306,351 @@ class Task(pl.LightningDataModule):
         self._metric = metric
 
     def prepare_data(self):
-        """Use this to download and prepare data
-
-        This is where we might end up downloading datasets
-        and transform them so that they are ready to be used
-        with pyannote.database. but for now, the API assume
-        that we directly provide a pyannote.database.Protocol.
+        """Use this to prepare data from task protocol
 
         Notes
         -----
-        Called only once.
+        Called only once on the main process (and only on it), for global_rank 0.
+
+        After this method is called, the task should have a `prepared_data` attribute
+        with the following dictionary structure:
+
+        prepared_data = {
+            'protocol': name of the protocol
+            'audio-path': array of N paths to audio
+            'audio-metadata': array of N audio infos such as audio subset, scope and database
+            'audio-info': array of N audio torchaudio.info struct
+            'audio-encoding': array of N audio encodings
+            'audio-annotated': array of N annotated duration (usually equals file duration but might be shorter if file is not fully annotated)
+            'annotations-regions': array of M annotated regions
+            'annotations-segments': array of M' annotated segments
+            'metadata-values': dict of lists of values for subset, scope and database
+            'metadata-`database-name`-labels': array of `database-name` labels. Each database with "database" scope labels has it own array.
+            'metadata-labels': array of global scope labels
+        }
+
+        """
+
+        if self.cache:
+            # check if cache exists and is not empty:
+            if self.cache.exists() and self.cache.stat().st_size > 0:
+                # data was already created, nothing to do
+                return
+            # create parent directory if needed
+            self.cache.parent.mkdir(parents=True, exist_ok=True)
+        else:
+            # if no cache was provided by user, create a temporary file
+            # in system directory used for temp files
+            self.cache = Path(mkstemp()[1])
+
+        # list of possible values for each metadata key
+        # (will become .prepared_data[""])
+        metadata_unique_values = defaultdict(list)
+        metadata_unique_values["subset"] = Subsets
+        metadata_unique_values["scope"] = Scopes
+
+        audios = list()  # list of path to audio files
+        audio_infos = list()
+        audio_encodings = list()
+        metadata = list()  # list of metadata
+
+        annotated_duration = list()  # total duration of annotated regions (per file)
+        annotated_regions = list()  # annotated regions
+        annotations = list()  # actual annotations
+        unique_labels = list()
+        database_unique_labels = {}
+
+        if self.has_validation:
+            files_iter = itertools.chain(
+                self.protocol.train(), self.protocol.development()
+            )
+        else:
+            files_iter = self.protocol.train()
+
+        for file_id, file in enumerate(files_iter):
+            # gather metadata and update metadata_unique_values so that each metadatum
+            # (e.g. source database or label) is represented by an integer.
+            metadatum = dict()
+
+            # keep track of source database and subset (train, development, or test)
+            if file["database"] not in metadata_unique_values["database"]:
+                metadata_unique_values["database"].append(file["database"])
+            metadatum["database"] = metadata_unique_values["database"].index(
+                file["database"]
+            )
+            metadatum["subset"] = Subsets.index(file["subset"])
+
+            # keep track of label scope (file, database, or global)
+            metadatum["scope"] = Scopes.index(file["scope"])
+
+            remaining_metadata_keys = set(file) - set(
+                [
+                    "uri",
+                    "database",
+                    "subset",
+                    "audio",
+                    "torchaudio.info",
+                    "scope",
+                    "classes",
+                    "annotation",
+                    "annotated",
+                ]
+            )
+
+            # keep track of any other (integer or string) metadata provided by the protocol
+            # (e.g. a "domain" key for domain-adversarial training)
+            for key in remaining_metadata_keys:
+                value = file[key]
+
+                if isinstance(value, str):
+                    if value not in metadata_unique_values[key]:
+                        metadata_unique_values[key].append(value)
+                    metadatum[key] = metadata_unique_values[key].index(value)
+
+                elif isinstance(value, int):
+                    metadatum[key] = value
+
+                else:
+                    warnings.warn(
+                        f"Ignoring '{key}' metadata because of its type ({type(value)}). Only str and int are supported for now.",
+                        category=UserWarning,
+                    )
+
+            metadata.append(metadatum)
+
+            # reset list of file-scoped labels
+            file_unique_labels = list()
+
+            # path to audio file
+            audios.append(str(file["audio"]))
+
+            # audio info
+            audio_info = file["torchaudio.info"]
+            audio_infos.append(
+                (
+                    audio_info.sample_rate,  # sample rate
+                    audio_info.num_frames,  # number of frames
+                    audio_info.num_channels,  # number of channels
+                    audio_info.bits_per_sample,  # bits per sample
+                )
+            )
+            audio_encodings.append(audio_info.encoding)  # encoding
+
+            # annotated regions and duration
+            _annotated_duration = 0.0
+            for segment in file["annotated"]:
+                # skip annotated regions that are shorter than training chunk duration
+                if segment.duration < self.duration:
+                    continue
+
+                # append annotated region
+                annotated_region = (
+                    file_id,
+                    segment.duration,
+                    segment.start,
+                )
+                annotated_regions.append(annotated_region)
+
+                # increment annotated duration
+                _annotated_duration += segment.duration
+
+            # append annotated duration
+            annotated_duration.append(_annotated_duration)
+
+            # annotations
+            for segment, _, label in file["annotation"].itertracks(yield_label=True):
+                # "scope" is provided by speaker diarization protocols to indicate
+                # whether speaker labels are local to the file ('file'), consistent across
+                # all files in a database ('database'), or globally consistent ('global')
+
+                # 0 = 'file' / 1 = 'database' / 2 = 'global'
+                scope = Scopes.index(file["scope"])
+
+                # update list of file-scope labels
+                if label not in file_unique_labels:
+                    file_unique_labels.append(label)
+                # and convert label to its (file-scope) index
+                file_label_idx = file_unique_labels.index(label)
+
+                database_label_idx = global_label_idx = -1
+
+                if scope > 0:  # 'database' or 'global'
+                    # update list of database-scope labels
+                    database = file["database"]
+                    if database not in database_unique_labels:
+                        database_unique_labels[database] = []
+                    if label not in database_unique_labels[database]:
+                        database_unique_labels[database].append(label)
+
+                    # and convert label to its (database-scope) index
+                    database_label_idx = database_unique_labels[database].index(label)
+
+                if scope > 1:  # 'global'
+                    # update list of global-scope labels
+                    if label not in unique_labels:
+                        unique_labels.append(label)
+                    # and convert label to its (global-scope) index
+                    global_label_idx = unique_labels.index(label)
+
+                annotations.append(
+                    (
+                        file_id,  # index of file
+                        segment.start,  # start time
+                        segment.end,  # end time
+                        file_label_idx,  # file-scope label index
+                        database_label_idx,  # database-scope label index
+                        global_label_idx,  # global-scope index
+                    )
+                )
+
+        # since not all metadata keys are present in all files, fallback to -1 when a key is missing
+        metadata = [
+            tuple(metadatum.get(key, -1) for key in metadata_unique_values)
+            for metadatum in metadata
+        ]
+        metadata_dtype = [
+            (key, get_dtype(max(m[i] for m in metadata)))
+            for i, key in enumerate(metadata_unique_values)
+        ]
+
+        # turn list of files metadata into a single numpy array
+        # TODO: improve using https://github.com/pytorch/pytorch/issues/13246#issuecomment-617140519
+        info_dtype = [
+            (
+                "sample_rate",
+                get_dtype(max(ai[0] for ai in audio_infos)),
+            ),
+            (
+                "num_frames",
+                get_dtype(max(ai[1] for ai in audio_infos)),
+            ),
+            ("num_channels", "B"),
+            ("bits_per_sample", "B"),
+        ]
+
+        # turn list of annotated regions into a single numpy array
+        region_dtype = [
+            (
+                "file_id",
+                get_dtype(max(ar[0] for ar in annotated_regions)),
+            ),
+            ("duration", "f"),
+            ("start", "f"),
+        ]
+
+        # turn list of annotations into a single numpy array
+        segment_dtype = [
+            (
+                "file_id",
+                get_dtype(max(a[0] for a in annotations)),
+            ),
+            ("start", "f"),
+            ("end", "f"),
+            ("file_label_idx", get_dtype(max(a[3] for a in annotations))),
+            ("database_label_idx", get_dtype(max(a[4] for a in annotations))),
+            ("global_label_idx", get_dtype(max(a[5] for a in annotations))),
+        ]
+
+        # save all protocol data in a dict
+        prepared_data = {}
+
+        # keep track of protocol name
+        prepared_data["protocol"] = self.protocol.name
+
+        prepared_data["audio-path"] = np.array(audios, dtype=np.str_)
+        audios.clear()
+
+        prepared_data["audio-metadata"] = np.array(metadata, dtype=metadata_dtype)
+        metadata.clear()
+
+        prepared_data["audio-info"] = np.array(audio_infos, dtype=info_dtype)
+        audio_infos.clear()
+
+        prepared_data["audio-encoding"] = np.array(audio_encodings, dtype=np.str_)
+        audio_encodings.clear()
+
+        prepared_data["audio-annotated"] = np.array(annotated_duration)
+        annotated_duration.clear()
+
+        prepared_data["annotations-regions"] = np.array(
+            annotated_regions, dtype=region_dtype
+        )
+        annotated_regions.clear()
+
+        prepared_data["annotations-segments"] = np.array(
+            annotations, dtype=segment_dtype
+        )
+        annotations.clear()
+
+        prepared_data["metadata-values"] = metadata_unique_values
+
+        for database, labels in database_unique_labels.items():
+            prepared_data[f"metadata-{database}-labels"] = np.array(
+                labels, dtype=np.str_
+            )
+        database_unique_labels.clear()
+
+        prepared_data["metadata-labels"] = np.array(unique_labels, dtype=np.str_)
+        unique_labels.clear()
+
+        self.prepare_validation(prepared_data)
+        self.post_prepare_data(prepared_data)
+
+        # save prepared data on the disk
+        with open(self.cache, "wb") as cache_file:
+            np.savez_compressed(cache_file, **prepared_data)
+
+    def post_prepare_data(self, prepared_data: Dict):
+        """Method for completing `prepared_data` with task-specific data.
+        For instance, for a classification task, this could be a list of
+        possible classes.
+
+        Parameters
+        ----------
+        prepared_data: dict
+            dictionnary containing protocol data prepared by
+            `prepare_data()`
+        Note
+        ----
+        This method does not return anything. Thus, user have to directly modify
+        `prepared_data`, for updates to be taken into account
         """
         pass
+
+    def setup(self, stage=None):
+        """Setup data cached by prepare_data into the task on each device"""
+
+        # send cache path on all processes used for the training,
+        # allowing them to access the cache generated by prepare_data
+        if stage == "fit":
+            self.cache = self.trainer.strategy.broadcast(self.cache)
+
+        try:
+            with open(self.cache, "rb") as cache_file:
+                self.prepared_data = dict(np.load(cache_file, allow_pickle=True))
+        except FileNotFoundError:
+            print(
+                "Cached data for protocol not found. Ensure that prepare_data() was called",
+                " and executed correctly or/and that the path to the task cache is correct.",
+            )
+            raise
+
+        # checks that the task current protocol matches the cached protocol
+        if self.protocol.name != self.prepared_data["protocol"]:
+            raise ValueError(
+                f"Protocol specified for the task ({self.protocol.name}) "
+                f"does not correspond to the cached one ({self.prepared_data['protocol']})"
+            )
 
     @property
     def specifications(self) -> Union[Specifications, Tuple[Specifications]]:
         # setup metadata on-demand the first time specifications are requested and missing
         if not hasattr(self, "_specifications"):
-            self.setup_metadata()
+            raise UnknownSpecificationsError(
+                "Task specifications are not available. This is most likely because they depend on "
+                "the content of the training subset. Use `task.prepare_data()` and `task.setup()` "
+                "to go over the training subset and fix this, or let lightning trainer do that for you in `trainer.fit(model)`."
+            )
         return self._specifications
 
     @specifications.setter
@@ -280,29 +658,6 @@ class Task(pl.LightningDataModule):
         self, specifications: Union[Specifications, Tuple[Specifications]]
     ):
         self._specifications = specifications
-
-    @property
-    def has_setup_metadata(self):
-        return getattr(self, "_has_setup_metadata", False)
-
-    @has_setup_metadata.setter
-    def has_setup_metadata(self, value: bool):
-        self._has_setup_metadata = value
-
-    def setup_metadata(self):
-        """Called at the beginning of training at the very beginning of Model.setup(stage="fit")
-
-        Notes
-        -----
-        This hook is called on every process when using DDP.
-
-        If `specifications` attribute has not been set in `__init__`,
-        `setup` is your last chance to set it.
-        """
-
-        if not self.has_setup_metadata:
-            self.setup()
-            self.has_setup_metadata = True
 
     def setup_loss_func(self):
         pass

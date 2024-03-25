@@ -22,7 +22,8 @@ help:
   template: |-
     ${hydra.help.header}
 
-    pyannote-audio-eval protocol={protocol_name} 
+    pyannote-audio-eval registry={path_to_database.yml}
+                        protocol={protocol_name}
                         subset={test | development | train}
                         model={path_to_pretrained_model}
                         warm_up={warm_up_duration_in_seconds}

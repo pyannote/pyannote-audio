@@ -27,11 +27,12 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 from functools import reduce
-from itertools import chain
 from typing import Dict, List, Optional, Set
 
 from pyannote.core import Annotation, Segment
 from pyannote.database import ProtocolFile
+
+from pyannote.audio.core.io import Audio, get_torchaudio_info
 
 
 class LowerTemporalResolution:
@@ -50,7 +51,6 @@ class LowerTemporalResolution:
         self.resolution = resolution
 
     def __call__(self, current_file: ProtocolFile) -> Annotation:
-
         annotation = current_file["annotation"]
         new_annotation = annotation.empty()
 
@@ -128,3 +128,17 @@ class DeriveMetaLabels:
                 derived[seg] = intersect_label
 
         return derived
+
+
+class Waveform:
+    def __init__(self):
+        self._audio = Audio()
+
+    def __call__(self, file: ProtocolFile):
+        waveform, _ = self._audio(file)
+        return waveform
+
+
+class SampleRate:
+    def __call__(self, file: ProtocolFile):
+        return get_torchaudio_info(file).sample_rate

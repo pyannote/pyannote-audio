@@ -1,6 +1,43 @@
 # Changelog
 
-## `develop` branch
+## develop
+
+### New features
+
+- feat(task): add option to cache task training metadata to speed up training
+- feat(pipeline): add `Waveform` and `SampleRate` preprocessors
+- feat(model): add `num_frames` method to every model
+- feat(model): add `receptive_field` property to every model
+- feat(model): and `dimension` property to every model
+- feat(sample): add sample file at `pyannote.audio.sample.SAMPLE_FILE`
+- feat(powerset): add `Powerset.permutation_mapping` to help with permutation in powerset space
+- feat(metric): add `reduce` option to `diarization_error_rate` metric
+
+### Fixes
+
+- fix(task): fix random generators and their reproducibility
+- fix(task): fix estimation of training set size
+
+### Improvements
+
+- improve(metric): add support for number of speakers mismatch in `diarization_error_rate` metric
+- improve(pipeline): track both `Model` and `nn.Module` attributes in `Pipeline.to(device)`
+- improve(io): switch to `torchaudio >= 2.2.0`
+
+## Breaking changes
+
+- BREAKING(model): get rid of `Model.example_output` in favor of `num_frames` method, `receptive_field` property, and `dimension` property
+- BREAKING(task): custom tasks need to be updated (see "Add your own task" tutorial)
+
+## Version 3.1.1 (2023-12-01)
+
+### TL;DR
+
+Providing `num_speakers` to [`pyannote/speaker-diarization-3.1`](https://hf.co/pyannote/speaker-diarization-3.1) now [works as expected](https://github.com/pyannote/pyannote-audio/issues/1567).
+
+### Fixes
+
+- fix(pipeline): fix support for setting `num_speakers` in [`pyannote/speaker-diarization-3.1`](https://hf.co/pyannote/speaker-diarization-3.1) pipeline
 
 ## Version 3.1.0 (2023-11-16)
 

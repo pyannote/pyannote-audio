@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import List, Mapping, Text, Union
+from typing import List, Mapping, Optional, Text, Union
 
 from pytorch_lightning import Callback, Trainer
 from pytorch_lightning.utilities.model_summary import ModelSummary
@@ -67,7 +67,7 @@ class GraduallyUnfreeze(Callback):
     def __init__(
         self,
         schedule: Union[Mapping[Text, int], List[Union[List[Text], Text]]] = None,
-        epochs_per_stage: int = None,
+        epochs_per_stage: Optional[int] = None,
     ):
         super().__init__()
 

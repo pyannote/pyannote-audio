@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Text, Union
 
 import torch
+import torch.nn as nn
 import yaml
 from huggingface_hub import hf_hub_download
 from huggingface_hub.utils import RepositoryNotFoundError
@@ -232,7 +233,7 @@ visit https://hf.co/{model_id} to accept the user conditions."""
         _models = self.__dict__.get("_models")
         _inferences = self.__dict__.get("_inferences")
 
-        if isinstance(value, Model):
+        if isinstance(value, nn.Module):
             if _models is None:
                 msg = "cannot assign models before Pipeline.__init__() call"
                 raise AttributeError(msg)
