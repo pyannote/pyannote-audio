@@ -31,7 +31,7 @@ from asteroid_filterbanks import Encoder, ParamSincFB
 
 
 class SincNet(nn.Module):
-    def __init__(self, sample_rate: int = 16000, stride: int = 1):
+    def __init__(self, sample_rate: int = 16000, stride: int = 1, streaming: bool = False):
         super().__init__()
 
         if sample_rate != 16000:
@@ -40,12 +40,14 @@ class SincNet(nn.Module):
             # kernel_size by (sample_rate / 16000). but this needs to be double-checked.
 
         self.stride = stride
-
-        self.wav_norm1d = nn.InstanceNorm1d(1, affine=True)
+        self.streaming = streaming
+        if self.streaming == False:
+            self.wav_norm1d = nn.InstanceNorm1d(1, affine=True)
 
         self.conv1d = nn.ModuleList()
         self.pool1d = nn.ModuleList()
-        self.norm1d = nn.ModuleList()
+        if self.streaming == False:
+            self.norm1d = nn.ModuleList()
 
         self.conv1d.append(
             Encoder(
@@ -60,15 +62,18 @@ class SincNet(nn.Module):
             )
         )
         self.pool1d.append(nn.MaxPool1d(3, stride=3, padding=0, dilation=1))
-        self.norm1d.append(nn.InstanceNorm1d(80, affine=True))
+        if self.streaming == False:
+            self.norm1d.append(nn.InstanceNorm1d(80, affine=True))
 
         self.conv1d.append(nn.Conv1d(80, 60, 5, stride=1))
         self.pool1d.append(nn.MaxPool1d(3, stride=3, padding=0, dilation=1))
-        self.norm1d.append(nn.InstanceNorm1d(60, affine=True))
+        if self.streaming == False:
+            self.norm1d.append(nn.InstanceNorm1d(60, affine=True))
 
         self.conv1d.append(nn.Conv1d(60, 60, 5, stride=1))
         self.pool1d.append(nn.MaxPool1d(3, stride=3, padding=0, dilation=1))
-        self.norm1d.append(nn.InstanceNorm1d(60, affine=True))
+        if self.streaming == False:
+            self.norm1d.append(nn.InstanceNorm1d(60, affine=True))
 
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
         """Pass forward
@@ -77,19 +82,33 @@ class SincNet(nn.Module):
         ----------
         waveforms : (batch, channel, sample)
         """
+        if self.streaming == False:
+            outputs = self.wav_norm1d(waveforms)
+            for c, (conv1d, pool1d, norm1d) in enumerate(
+                zip(self.conv1d, self.pool1d, self.norm1d)
+            ):
 
-        outputs = self.wav_norm1d(waveforms)
+                outputs = conv1d(outputs)
 
-        for c, (conv1d, pool1d, norm1d) in enumerate(
-            zip(self.conv1d, self.pool1d, self.norm1d)
-        ):
+                # https://github.com/mravanelli/SincNet/issues/4
+                if c == 0:
+                    outputs = torch.abs(outputs)
 
-            outputs = conv1d(outputs)
+                outputs = F.leaky_relu(norm1d(pool1d(outputs)))
+            return outputs
 
-            # https://github.com/mravanelli/SincNet/issues/4
-            if c == 0:
-                outputs = torch.abs(outputs)
+        else:
+            outputs = waveforms
+            for c, (conv1d, pool1d) in enumerate(
+                zip(self.conv1d, self.pool1d)
+            ):
 
-            outputs = F.leaky_relu(norm1d(pool1d(outputs)))
+                outputs = conv1d(outputs)
 
-        return outputs
+                # https://github.com/mravanelli/SincNet/issues/4
+                if c == 0:
+                    outputs = torch.abs(outputs)
+
+                outputs = F.leaky_relu(pool1d(outputs))
+
+            return outputs
