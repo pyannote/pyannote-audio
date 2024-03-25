@@ -38,7 +38,7 @@ from torch_audiomentations.core.transforms_interface import BaseWaveformTransfor
 from torchmetrics import Metric
 
 from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
-from pyannote.audio.tasks.segmentation.mixins import SegmentationTaskMixin
+from pyannote.audio.tasks.segmentation.mixins import SegmentationTask
 from pyannote.audio.torchmetrics import (
     DiarizationErrorRate,
     FalseAlarmRate,
@@ -58,7 +58,7 @@ Subsets = list(Subset.__args__)
 Scopes = list(Scope.__args__)
 
 
-class MultilatencySpeakerDiarization(SegmentationTaskMixin, Task):
+class MultilatencySpeakerDiarization(SegmentationTask, Task):
     """Speaker diarization
     Parameters
     ----------
