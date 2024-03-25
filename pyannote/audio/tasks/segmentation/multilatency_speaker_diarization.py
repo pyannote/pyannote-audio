@@ -60,7 +60,6 @@ Scopes = list(Scope.__args__)
 
 class MultilatencySpeakerDiarization(SegmentationTaskMixin, Task):
     """Speaker diarization
-
     Parameters
     ----------
     protocol : SpeakerDiarizationProtocol
@@ -110,18 +109,15 @@ class MultilatencySpeakerDiarization(SegmentationTaskMixin, Task):
     metric : optional
         Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
         Defaults to AUROC (area under the ROC curve).
-
     References
     ----------
     Hervé Bredin and Antoine Laurent
     "End-To-End Speaker Segmentation for Overlap-Aware Resegmentation."
     Proc. Interspeech 2021
-
     Zhihao Du, Shiliang Zhang, Siqi Zheng, and Zhijie Yan
     "Speaker Embedding-aware Neural Diarization: an Efficient Framework for Overlapping
     Speech Diarization in Meeting Scenarios"
     https://arxiv.org/abs/2203.09767
-
     """
 
     def __init__(
@@ -142,6 +138,7 @@ class MultilatencySpeakerDiarization(SegmentationTaskMixin, Task):
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
         max_num_speakers: int = None,  # deprecated in favor of `max_speakers_per_chunk``
         loss: Literal["bce", "mse"] = None,  # deprecated
+        latency: float = 0.0,
         latency_list: List[float] = [0.0],
 
     ):
@@ -187,6 +184,7 @@ class MultilatencySpeakerDiarization(SegmentationTaskMixin, Task):
         self.balance = balance
         self.weight = weight
         self.vad_loss = vad_loss
+        self.latency=latency
         self.latency_list=latency_list
 
 
@@ -296,7 +294,6 @@ class MultilatencySpeakerDiarization(SegmentationTaskMixin, Task):
 
     def prepare_chunk(self, file_id: int, start_time: float, duration: float):
         """Prepare chunk
-
         Parameters
         ----------
         file_id : int
@@ -305,7 +302,6 @@ class MultilatencySpeakerDiarization(SegmentationTaskMixin, Task):
             Chunk start time
         duration : float
             Chunk duration.
-
         Returns
         -------
         sample : dict
@@ -376,13 +372,11 @@ class MultilatencySpeakerDiarization(SegmentationTaskMixin, Task):
 
     def collate_y(self, batch) -> torch.Tensor:
         """
-
         Parameters
         ----------
         batch : list
             List of samples to collate.
             "y" field is expected to be a SlidingWindowFeature.
-
         Returns
         -------
         y : torch.Tensor
@@ -427,7 +421,6 @@ class MultilatencySpeakerDiarization(SegmentationTaskMixin, Task):
         weight: torch.Tensor = None,
     ) -> torch.Tensor:
         """Permutation-invariant segmentation loss
-
         Parameters
         ----------
         permutated_prediction : (batch_size, num_frames, num_classes) torch.Tensor
@@ -436,7 +429,6 @@ class MultilatencySpeakerDiarization(SegmentationTaskMixin, Task):
             Speaker activity.
         weight : (batch_size, num_frames, 1) torch.Tensor, optional
             Frames weight.
-
         Returns
         -------
         seg_loss : torch.Tensor
@@ -470,7 +462,6 @@ class MultilatencySpeakerDiarization(SegmentationTaskMixin, Task):
         weight: torch.Tensor = None,
     ) -> torch.Tensor:
         """Voice activity detection loss
-
         Parameters
         ----------
         permutated_prediction : (batch_size, num_frames, num_classes) torch.Tensor
@@ -479,7 +470,6 @@ class MultilatencySpeakerDiarization(SegmentationTaskMixin, Task):
             Speaker activity.
         weight : (batch_size, num_frames, 1) torch.Tensor, optional
             Frames weight.
-
         Returns
         -------
         vad_loss : torch.Tensor
@@ -502,14 +492,12 @@ class MultilatencySpeakerDiarization(SegmentationTaskMixin, Task):
 
     def training_step(self, batch, batch_idx: int):
         """Compute permutation-invariant segmentation loss
-
         Parameters
         ----------
         batch : (usually) dict of torch.Tensor
             Current batch.
         batch_idx: int
             Batch index.
-
         Returns
         -------
         loss : {str: torch.tensor}
@@ -535,10 +523,10 @@ class MultilatencySpeakerDiarization(SegmentationTaskMixin, Task):
 
         # forward pass
         predictions = self.model(waveform)
+        num_classes_powerset = predictions.size(2) //len(self.latency_list)
         seg_loss = 0
         for k in range(len(self.latency_list)):
-            # select one latency, then everything is identical to monolatency diarization
-            prediction = predictions[k]
+            prediction = predictions[:,:,k*num_classes_powerset:k*num_classes_powerset+num_classes_powerset]
             batch_size, num_frames, _ = prediction.shape
             # (batch_size, num_frames, num_classes)
 
@@ -556,23 +544,23 @@ class MultilatencySpeakerDiarization(SegmentationTaskMixin, Task):
             warm_up_right = round(self.warm_up[1] / self.duration * num_frames)
             weight[:, num_frames - warm_up_right :] = 0.0
 
-            # shift predictions and targets
-            if self.latency_list[k] >= 0: 
-                delay =  int(np.floor(num_frames * (self.latency_list[k]) / self.duration)) # round down
-                prediction = prediction[:, delay:, :]
-                reference = target[:, :num_frames-delay, :]
-            else:
-                delay =  int(np.floor(num_frames * (-1 * self.latency_list[k]) / self.duration)) # round down
-                prediction = prediction[:, :num_frames-delay, :]
-                reference = target[:, delay:, :]
+            delay =  int(np.floor(num_frames * (self.latency_list[k]) / self.duration)) # round down
+
+            prediction = prediction[:, delay:, :]
+            target = target[:, :num_frames-delay, :]
+
+        #future
+        # prediction = prediction[:, :num_frames-delay, :]
+        # target = target[:, delay:, :]
+
+
 
             if self.specifications.powerset:
                 multilabel = self.model.powerset.to_multilabel(prediction)
-                permutated_target, _ = permutate(multilabel, reference)
+                permutated_target, _ = permutate(multilabel, target)
                 permutated_target_powerset = self.model.powerset.to_powerset(
                     permutated_target.float()
                 )
-                # add all losses
                 seg_loss += self.segmentation_loss(
                     prediction, permutated_target_powerset, weight=weight
                 )
@@ -582,7 +570,7 @@ class MultilatencySpeakerDiarization(SegmentationTaskMixin, Task):
                 seg_loss += self.segmentation_loss(
                     permutated_prediction, target, weight=weight
                 )
-        
+
 
         self.model.log(
             "loss/train/segmentation",
@@ -659,7 +647,6 @@ class MultilatencySpeakerDiarization(SegmentationTaskMixin, Task):
     # TODO: no need to compute gradient in this method
     def validation_step(self, batch, batch_idx: int):
         """Compute validation loss and metric
-
         Parameters
         ----------
         batch : dict of torch.Tensor
@@ -682,8 +669,9 @@ class MultilatencySpeakerDiarization(SegmentationTaskMixin, Task):
         # forward pass
         predictions = self.model(waveform)
         losses=[]
+        num_classes_powerset = predictions.size(2) //len(self.latency_list)
         for k in range(len(self.latency_list)):
-            prediction = predictions[k]
+            prediction = predictions[:,:,k*num_classes_powerset:k*num_classes_powerset+num_classes_powerset]
             batch_size, num_frames, _ = prediction.shape
 
             # frames weight
@@ -700,14 +688,14 @@ class MultilatencySpeakerDiarization(SegmentationTaskMixin, Task):
             warm_up_right = round(self.warm_up[1] / self.duration * num_frames)
             weight[:, num_frames - warm_up_right :] = 0.0
 
-            if self.latency_list[k] >= 0: 
-                delay =  int(np.floor(num_frames * (self.latency_list[k]) / self.duration)) # round down
-                prediction = prediction[:, delay:, :]
-                reference = target[:, :num_frames-delay, :]
-            else:
-                delay =  int(np.floor(num_frames * (-1*self.latency_list[k]) / self.duration)) # round down
-                prediction = prediction[:, :num_frames-delay, :]
-                reference = target[:, delay:, :]
+            delay =  int(np.floor(num_frames * (self.latency_list[k]) / self.duration)) # round down
+
+            prediction = prediction[:, delay:, :]
+            reference = target[:, :num_frames-delay, :]
+
+            #future
+            # prediction = prediction[:, :num_frames-delay, :]
+            # target = target[:, delay:, :]
 
             if self.specifications.powerset:
                 multilabel = self.model.powerset.to_multilabel(prediction)
@@ -728,8 +716,9 @@ class MultilatencySpeakerDiarization(SegmentationTaskMixin, Task):
                     permutated_prediction, reference, weight=weight
                 ))
 
+        target = target[:, :num_frames-delay, :]
 
-        multilabel = self.model.powerset.to_multilabel(predictions[0])
+
         seg_loss = torch.sum(torch.tensor(losses))
 
         self.model.log(

@@ -114,7 +114,7 @@ class MultilatencyPyanNet(Model):
         else:
             self.latency_list = self.hparams.latency_list 
 
-        self.sincnet = SincNet(**self.hparams.sincnet)
+        self.sincnet = SincNet(**self.hparams.sincnet, streaming=True)
         monolithic = lstm["monolithic"]
         if monolithic:
             multi_layer_lstm = dict(lstm)
@@ -209,19 +209,20 @@ class MultilatencyPyanNet(Model):
                 outputs = F.leaky_relu(linear(outputs))
         # tensor of size (batch_size, num_frames, num_speakers * K) where K is the number of latencies        
         predictions = self.activation(self.classifier(outputs))   
+        num_classes_powerset = predictions.size(2) //len(self.latency_list)
+        # # tensor of size (batch_size, num_frames, num_speakers, K)      
+        # predictions = predictions.view(predictions.size(0), predictions.size(1), predictions.size(2) // len(self.latency_list), len(self.latency_list))
 
-        # tensor of size (batch_size, num_frames, num_speakers, K)      
-        predictions = predictions.view(predictions.size(0), predictions.size(1), predictions.size(2) // len(self.latency_list), len(self.latency_list))
-
-        # tensor of size (k, batch_size, num_frames, num_speakers)   
-        predictions = predictions.permute(3, 0, 1, 2)
+        # # tensor of size (k, batch_size, num_frames, num_speakers)   
+        # predictions = predictions.permute(3, 0, 1, 2)
 
         if self.latency_index == -1:   
             # return all latencies 
             return predictions
             
         # return only the corresponding latency
-        return predictions[self.latency_index]
+        return predictions[:,:,self.latency_index*num_classes_powerset:self.latency_index*num_classes_powerset+num_classes_powerset]
+
 
 
     # def __example_input_array(self, duration: Optional[float] = None) -> torch.Tensor:
