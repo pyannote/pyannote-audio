@@ -163,12 +163,19 @@ class ToTaToNet(Model):
                     downsampling_factor *= conv_layer.conv.stride[0]
             self.wavlm_scaling = int(downsampling_factor / encoder_decoder["stride"])
 
-        self.masker = DPRNN(
-            encoder_decoder["n_filters"] + self.wavlm.feature_projection.projection.out_features,
-            out_chan=encoder_decoder["n_filters"],
-            n_src=n_sources,
-            **self.hparams.dprnn
-        )
+            self.masker = DPRNN(
+                encoder_decoder["n_filters"] + self.wavlm.feature_projection.projection.out_features,
+                out_chan=encoder_decoder["n_filters"],
+                n_src=n_sources,
+                **self.hparams.dprnn
+            )
+        else:
+            self.masker = DPRNN(
+                encoder_decoder["n_filters"],
+                out_chan=encoder_decoder["n_filters"],
+                n_src=n_sources,
+                **self.hparams.dprnn
+            )
 
         # diarization can use a lower resolution than separation
         self.diarization_scaling = int(
@@ -309,7 +316,9 @@ class ToTaToNet(Model):
             wavlm_rep = wavlm_rep.repeat_interleave(self.wavlm_scaling, dim=-1)
             wavlm_rep = pad_x_to_y(wavlm_rep, tf_rep)
             wavlm_rep = torch.cat((tf_rep, wavlm_rep), dim=1)
-        masks = self.masker(wavlm_rep)
+            masks = self.masker(wavlm_rep)
+        else:
+            masks = self.masker(tf_rep)
         # shape: (batch, nsrc, nfilters, nframes)
         masked_tf_rep = masks * tf_rep.unsqueeze(1)
         decoded_sources = self.decoder(masked_tf_rep)
