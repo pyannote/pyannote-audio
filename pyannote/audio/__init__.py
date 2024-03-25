@@ -27,9 +27,9 @@ except ImportError:
 
 
 from .core.inference import Inference
-from .core.guided_inference import GuidedInference
+from .core.streaming_inference import StreamingInference
 from .core.io import Audio
 from .core.model import Model
 from .core.pipeline import Pipeline
 
-__all__ = ["Audio", "Model", "Inference", "Pipeline", "GuidedInference"]
+__all__ = ["Audio", "Model", "Inference", "Pipeline", "StreamingInference"]
