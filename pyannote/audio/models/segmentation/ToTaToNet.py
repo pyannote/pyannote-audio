@@ -31,7 +31,6 @@ from pyannote.core.utils.generators import pairwise
 
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
-from pyannote.audio.models.blocks.sincnet import SincNet
 from pyannote.audio.utils.params import merge_dict
 from pyannote.audio.utils.receptive_field import (
     conv1d_num_frames,
@@ -44,9 +43,7 @@ from asteroid.masknn import DPRNN
 from transformers import AutoProcessor, AutoModel
 
 class ToTaToNet(Model):
-    """PyanNet segmentation model
-
-    SincNet > LSTM > Feed forward > Classifier
+    """ToTaToNet joint speaker diarization and speech separation model
 
     Parameters
     ----------
@@ -302,6 +299,7 @@ class ToTaToNet(Model):
         Returns
         -------
         scores : (batch, frame, classes)
+        sources : (batch, sample, n_sources)
         """
         bsz = waveforms.shape[0]
         tf_rep = self.encoder(waveforms)

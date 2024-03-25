@@ -26,7 +26,6 @@ import warnings
 import random
 from collections import Counter
 from typing import Dict, Literal, Optional, Sequence, Text, Tuple, Union
-import lightning.pytorch as pl
 
 import numpy as np
 import torch
@@ -40,8 +39,8 @@ from rich.progress import track
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchmetrics import Metric
 
-from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
-from pyannote.audio.tasks.segmentation.mixins import SegmentationTask
+from pyannote.audio.core.task import Problem, Resolution, Specifications
+from pyannote.audio.tasks.segmentation.mixins import SegmentationTask, Task
 from pyannote.audio.torchmetrics import (
     DiarizationErrorRate,
     FalseAlarmRate,
@@ -59,9 +58,6 @@ from pyannote.audio.utils.powerset import Powerset
 from asteroid.losses import (
     MixITLossWrapper,
     multisrc_neg_sisdr,
-    PITLossWrapper,
-    pairwise_neg_sisdr,
-    singlesrc_neg_sisdr,
 )
 from torch.utils.data._utils.collate import default_collate
 
@@ -99,7 +95,7 @@ class ValDataset(IterableDataset):
         return self.task.val__len__()
 
 
-class PixIT(SegmentationTask, Task):
+class PixIT(SegmentationTask):
     """Joint speaker diarization and speaker separation task based on PixIT
 
     Parameters
@@ -128,10 +124,10 @@ class PixIT(SegmentationTask, Task):
         or {1} powerset classes. Note that empty (non-speech) powerset class is
         assigned the same weight as mono-speaker classes. Defaults to False (i.e. use
         same weight for every class). Has no effect with `multi-label` training.
-    balance: str, optional
-        When provided, training samples are sampled uniformly with respect to that key.
-        For instance, setting `balance` to "database" will make sure that each database
-        will be equally represented in the training samples.
+    balance: Sequence[Text], optional
+        When provided, training samples are sampled uniformly with respect to these keys.
+        For instance, setting `balance` to ["database","subset"] will make sure that each
+        database & subset combination will be equally represented in the training samples.
     weight: str, optional
         When provided, use this key as frame-wise weight in loss function.
     batch_size : int, optional
@@ -231,7 +227,6 @@ class PixIT(SegmentationTask, Task):
         self.weigh_by_cardinality = weigh_by_cardinality
         self.balance = balance
         self.weight = weight
-        self.pit_sep_loss = PITLossWrapper(pairwise_neg_sisdr, pit_from="pw_mtx")
         self.separation_loss_weight = separation_loss_weight
         self.mixit_loss = MixITLossWrapper(multisrc_neg_sisdr, generalized=True)
         self.finetune_wavlm = finetune_wavlm
@@ -430,7 +425,6 @@ class PixIT(SegmentationTask, Task):
         sample["y"] = SlidingWindowFeature(y, self.model.receptive_field, labels=labels)
 
         metadata = self.prepared_data["audio-metadata"][file_id]
-
         sample["meta"] = {key: metadata[key] for key in metadata.dtype.names}
         sample["meta"]["file"] = file_id
 
@@ -1210,7 +1204,7 @@ def main(protocol: str, subset: str = "test", model: str = "pyannote/segmentatio
         main_task = progress.add_task(protocol.name, total=len(files))
         file_task = progress.add_task("Processing", total=1.0)
 
-        def progress_hook(completed: int = None, total: int = None):
+        def progress_hook(completed: Optional[int] = None, total: Optional[int] = None):
             progress.update(file_task, completed=completed / total)
 
         inference = Inference(model, device=device)
