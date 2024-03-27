@@ -20,6 +20,19 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+from functools import lru_cache
+from typing import Optional
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from einops import rearrange
+from pyannote.core.utils.generators import pairwise
+
+from pyannote.audio.core.model import Model
+from pyannote.audio.core.task import Task
+from pyannote.audio.models.blocks.sincnet import SincNet
+from pyannote.audio.utils.params import merge_dict
 
 from typing import Optional
 from dataclasses import dataclass
@@ -161,6 +174,66 @@ class MultilatencyPyanNet(Model):
                     * self.hparams.linear["num_layers"]
                 )
             ])
+        
+    @property
+    def dimension(self) -> int:
+        """Dimension of output"""
+        if isinstance(self.specifications, tuple):
+            raise ValueError("PyanNet does not support multi-tasking.")
+
+        if self.specifications.powerset:
+            return self.specifications.num_powerset_classes
+        else:
+            return len(self.specifications.classes)
+
+    @lru_cache
+    def num_frames(self, num_samples: int) -> int:
+        """Compute number of output frames for a given number of input samples
+
+        Parameters
+        ----------
+        num_samples : int
+            Number of input samples
+
+        Returns
+        -------
+        num_frames : int
+            Number of output frames
+        """
+
+        return self.sincnet.num_frames(num_samples)
+
+    def receptive_field_size(self, num_frames: int = 1) -> int:
+        """Compute size of receptive field
+
+        Parameters
+        ----------
+        num_frames : int, optional
+            Number of frames in the output signal
+
+        Returns
+        -------
+        receptive_field_size : int
+            Receptive field size.
+        """
+        return self.sincnet.receptive_field_size(num_frames=num_frames)
+
+    def receptive_field_center(self, frame: int = 0) -> int:
+        """Compute center of receptive field
+
+        Parameters
+        ----------
+        frame : int, optional
+            Frame index
+
+        Returns
+        -------
+        receptive_field_center : int
+            Index of receptive field center.
+        """
+
+        return self.sincnet.receptive_field_center(frame=frame)
+
 
     def build(self):
         if self.hparams.linear["num_layers"] > 0:
@@ -210,15 +283,10 @@ class MultilatencyPyanNet(Model):
         # tensor of size (batch_size, num_frames, num_speakers * K) where K is the number of latencies        
         predictions = self.activation(self.classifier(outputs))   
         num_classes_powerset = predictions.size(2) //len(self.latency_list)
-        # # tensor of size (batch_size, num_frames, num_speakers, K)      
-        # predictions = predictions.view(predictions.size(0), predictions.size(1), predictions.size(2) // len(self.latency_list), len(self.latency_list))
-
-        # # tensor of size (k, batch_size, num_frames, num_speakers)   
-        # predictions = predictions.permute(3, 0, 1, 2)
 
         if self.latency_index == -1:   
             # return all latencies 
             return predictions
             
         # return only the corresponding latency
-        return predictions[:,:,self.latency_index*num_classes_powerset:self.latency_index*num_classes_powerset+num_classes_powerset]
+        return predictions[:,:, self.latency_index * num_classes_powerset : self.latency_index*num_classes_powerset + num_classes_powerset]

@@ -23,7 +23,8 @@ import sys
 import math
 import warnings
 from collections import Counter
-from typing import Dict, Literal, Sequence, Text, Tuple, Union, List
+from typing import Dict, Literal, Sequence, Text, Tuple, Union, List, Optional
+import torch.nn.functional as F
 
 import numpy as np
 import torch
@@ -50,12 +51,62 @@ from pyannote.audio.torchmetrics import (
     OptimalSpeakerConfusionRate,
     SpeakerConfusionRate,
 )
-from pyannote.audio.utils.loss import binary_cross_entropy, mse_loss, nll_loss
+from pyannote.audio.utils.loss import binary_cross_entropy, mse_loss, interpolate
+# from pyannote.audio.utils.loss import nll_loss
+
 from pyannote.audio.utils.permutation import permutate
 from pyannote.audio.utils.powerset import Powerset
 
 Subsets = list(Subset.__args__)
 Scopes = list(Scope.__args__)
+
+def nll_loss(
+    prediction: torch.Tensor,
+    target: torch.Tensor,
+    class_weight: Optional[torch.Tensor] = None,
+    weight: Optional[torch.Tensor] = None,
+) -> torch.Tensor:
+    """Frame-weighted negative log-likelihood loss
+
+    Parameters
+    ----------
+    prediction : torch.Tensor
+        Prediction with shape (batch_size, num_frames, num_classes).
+    target : torch.Tensor
+        Target with shape (batch_size, num_frames)
+    class_weight : (num_classes, ) torch.Tensor, optional
+        Class weight with shape (num_classes,  )
+    weight : (batch_size, num_frames, 1) torch.Tensor, optional
+        Frame weight with shape (batch_size, num_frames, 1).
+
+    Returns
+    -------
+    loss : torch.Tensor
+    """
+
+    num_classes = prediction.shape[2]
+
+    losses = F.nll_loss(
+        prediction.reshape(-1, num_classes),
+        # (batch_size x num_frames, num_classes)
+        target.view(-1),
+        # (batch_size x num_frames, )
+        weight=class_weight,
+        # (num_classes, )
+        reduction="none",
+    ).view(target.shape)
+    # (batch_size, num_frames)
+
+    if weight is None:
+        return torch.mean(losses)
+
+    else:
+        # interpolate weight
+        weight = interpolate(target, weight=weight).squeeze(dim=2)
+        # (batch_size, num_frames)
+
+        return torch.sum(losses * weight) / torch.sum(weight)
+
 
 
 class MultilatencySpeakerDiarization(SegmentationTask, Task):
@@ -123,22 +174,24 @@ class MultilatencySpeakerDiarization(SegmentationTask, Task):
     def __init__(
         self,
         protocol: SpeakerDiarizationProtocol,
+        cache: Optional[Union[str, None]] = None,
         duration: float = 2.0,
-        max_speakers_per_chunk: int = None,
-        max_speakers_per_frame: int = None,
+        max_speakers_per_chunk: Optional[int] = None,
+        max_speakers_per_frame: Optional[int] = None,
         weigh_by_cardinality: bool = False,
         warm_up: Union[float, Tuple[float, float]] = 0.0,
-        balance: Sequence[Text] = None,
-        weight: Text = None,
+        balance: Optional[Sequence[Text]] = None,
+        weight: Optional[Text] = None,
         batch_size: int = 32,
-        num_workers: int = None,
+        num_workers: Optional[int] = None,
         pin_memory: bool = False,
-        augmentation: BaseWaveformTransform = None,
+        augmentation: Optional[BaseWaveformTransform] = None,
         vad_loss: Literal["bce", "mse"] = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
-        max_num_speakers: int = None,  # deprecated in favor of `max_speakers_per_chunk``
+        max_num_speakers: Optional[
+            int
+        ] = None,  # deprecated in favor of `max_speakers_per_chunk``
         loss: Literal["bce", "mse"] = None,  # deprecated
-        latency: float = 0.0,
         latency_list: List[float] = [0.0],
 
     ):
@@ -151,6 +204,7 @@ class MultilatencySpeakerDiarization(SegmentationTask, Task):
             pin_memory=pin_memory,
             augmentation=augmentation,
             metric=metric,
+            cache=cache,
         )
 
         if not isinstance(protocol, SpeakerDiarizationProtocol):
@@ -184,32 +238,37 @@ class MultilatencySpeakerDiarization(SegmentationTask, Task):
         self.balance = balance
         self.weight = weight
         self.vad_loss = vad_loss
-        self.latency=latency
         self.latency_list=latency_list
 
 
-    def setup(self):
-        super().setup()
+    def setup(self, stage=None):
+        super().setup(stage)
 
         # estimate maximum number of speakers per chunk when not provided
         if self.max_speakers_per_chunk is None:
-            training = self.metadata["subset"] == Subsets.index("train")
+            training = self.prepared_data["audio-metadata"]["subset"] == Subsets.index(
+                "train"
+            )
 
             num_unique_speakers = []
             progress_description = f"Estimating maximum number of speakers per {self.duration:g}s chunk in the training set"
             for file_id in track(
                 np.where(training)[0], description=progress_description
             ):
-                annotations = self.annotations[
-                    np.where(self.annotations["file_id"] == file_id)[0]
+                annotations = self.prepared_data["annotations-segments"][
+                    np.where(
+                        self.prepared_data["annotations-segments"]["file_id"] == file_id
+                    )[0]
                 ]
-                annotated_regions = self.annotated_regions[
-                    np.where(self.annotated_regions["file_id"] == file_id)[0]
+                annotated_regions = self.prepared_data["annotations-regions"][
+                    np.where(
+                        self.prepared_data["annotations-regions"]["file_id"] == file_id
+                    )[0]
                 ]
                 for region in annotated_regions:
                     # find annotations within current region
                     region_start = region["start"]
-                    region_end = region["end"]
+                    region_end = region["start"] + region["duration"]
                     region_annotations = annotations[
                         np.where(
                             (annotations["start"] >= region_start)
@@ -294,6 +353,7 @@ class MultilatencySpeakerDiarization(SegmentationTask, Task):
 
     def prepare_chunk(self, file_id: int, start_time: float, duration: float):
         """Prepare chunk
+
         Parameters
         ----------
         file_id : int
@@ -302,6 +362,7 @@ class MultilatencySpeakerDiarization(SegmentationTask, Task):
             Chunk start time
         duration : float
             Chunk duration.
+
         Returns
         -------
         sample : dict
@@ -318,7 +379,7 @@ class MultilatencySpeakerDiarization(SegmentationTask, Task):
         file = self.get_file(file_id)
 
         # get label scope
-        label_scope = Scopes[self.metadata[file_id]["scope"]]
+        label_scope = Scopes[self.prepared_data["audio-metadata"][file_id]["scope"]]
         label_scope_key = f"{label_scope}_label_idx"
 
         #
@@ -328,7 +389,9 @@ class MultilatencySpeakerDiarization(SegmentationTask, Task):
         sample["X"], _ = self.model.audio.crop(file, chunk, duration=duration)
 
         # gather all annotations of current file
-        annotations = self.annotations[self.annotations["file_id"] == file_id]
+        annotations = self.prepared_data["annotations-segments"][
+            self.prepared_data["annotations-segments"]["file_id"] == file_id
+        ]
 
         # gather all annotations with non-empty intersection with current chunk
         chunk_annotations = annotations[
@@ -336,10 +399,14 @@ class MultilatencySpeakerDiarization(SegmentationTask, Task):
         ]
 
         # discretize chunk annotations at model output resolution
-        start = np.maximum(chunk_annotations["start"], chunk.start) - chunk.start
-        start_idx = np.floor(start / self.model.example_output.frames.step).astype(int)
-        end = np.minimum(chunk_annotations["end"], chunk.end) - chunk.start
-        end_idx = np.ceil(end / self.model.example_output.frames.step).astype(int)
+        step = self.model.receptive_field.step
+        half = 0.5 * self.model.receptive_field.duration
+
+        start = np.maximum(chunk_annotations["start"], chunk.start) - chunk.start - half
+        start_idx = np.maximum(0, np.round(start / step)).astype(int)
+
+        end = np.minimum(chunk_annotations["end"], chunk.end) - chunk.start - half
+        end_idx = np.round(end / step).astype(int)
 
         # get list and number of labels for current scope
         labels = list(np.unique(chunk_annotations[label_scope_key]))
@@ -349,7 +416,10 @@ class MultilatencySpeakerDiarization(SegmentationTask, Task):
             pass
 
         # initial frame-level targets
-        y = np.zeros((self.model.example_output.num_frames, num_labels), dtype=np.uint8)
+        num_frames = self.model.num_frames(
+            round(duration * self.model.hparams.sample_rate)
+        )
+        y = np.zeros((num_frames, num_labels), dtype=np.uint8)
 
         # map labels to indices
         mapping = {label: idx for idx, label in enumerate(labels)}
@@ -358,13 +428,11 @@ class MultilatencySpeakerDiarization(SegmentationTask, Task):
             start_idx, end_idx, chunk_annotations[label_scope_key]
         ):
             mapped_label = mapping[label]
-            y[start:end, mapped_label] = 1
+            y[start : end + 1, mapped_label] = 1
 
-        sample["y"] = SlidingWindowFeature(
-            y, self.model.example_output.frames, labels=labels
-        )
+        sample["y"] = SlidingWindowFeature(y, self.model.receptive_field, labels=labels)
 
-        metadata = self.metadata[file_id]
+        metadata = self.prepared_data["audio-metadata"][file_id]
         sample["meta"] = {key: metadata[key] for key in metadata.dtype.names}
         sample["meta"]["file"] = file_id
 
@@ -372,11 +440,13 @@ class MultilatencySpeakerDiarization(SegmentationTask, Task):
 
     def collate_y(self, batch) -> torch.Tensor:
         """
+
         Parameters
         ----------
         batch : list
             List of samples to collate.
             "y" field is expected to be a SlidingWindowFeature.
+
         Returns
         -------
         y : torch.Tensor
@@ -414,13 +484,15 @@ class MultilatencySpeakerDiarization(SegmentationTask, Task):
 
         return torch.from_numpy(np.stack(collated_y))
 
+
     def segmentation_loss(
         self,
         permutated_prediction: torch.Tensor,
         target: torch.Tensor,
-        weight: torch.Tensor = None,
+        weight: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Permutation-invariant segmentation loss
+
         Parameters
         ----------
         permutated_prediction : (batch_size, num_frames, num_classes) torch.Tensor
@@ -429,11 +501,13 @@ class MultilatencySpeakerDiarization(SegmentationTask, Task):
             Speaker activity.
         weight : (batch_size, num_frames, 1) torch.Tensor, optional
             Frames weight.
+
         Returns
         -------
         seg_loss : torch.Tensor
             Permutation-invariant segmentation loss
         """
+
         if self.specifications.powerset:
             # `clamp_min` is needed to set non-speech weight to 1.
             class_weight = (
@@ -441,27 +515,23 @@ class MultilatencySpeakerDiarization(SegmentationTask, Task):
                 if self.weigh_by_cardinality
                 else None
             )
-
-            seg_loss = nll_loss(
-                permutated_prediction,
-                torch.argmax(target, dim=-1),
-                class_weight=class_weight,
-                weight=weight,
-            )
+            seg_loss = nll_loss(permutated_prediction, torch.argmax(target, dim=-1))
         else:
             seg_loss = binary_cross_entropy(
                 permutated_prediction, target.float(), weight=weight
             )
 
         return seg_loss
+    
 
     def voice_activity_detection_loss(
         self,
         permutated_prediction: torch.Tensor,
         target: torch.Tensor,
-        weight: torch.Tensor = None,
+        weight: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Voice activity detection loss
+
         Parameters
         ----------
         permutated_prediction : (batch_size, num_frames, num_classes) torch.Tensor
@@ -470,6 +540,7 @@ class MultilatencySpeakerDiarization(SegmentationTask, Task):
             Speaker activity.
         weight : (batch_size, num_frames, 1) torch.Tensor, optional
             Frames weight.
+
         Returns
         -------
         vad_loss : torch.Tensor
@@ -886,7 +957,7 @@ def main(protocol: str, subset: str = "test", model: str = "pyannote/segmentatio
         main_task = progress.add_task(protocol.name, total=len(files))
         file_task = progress.add_task("Processing", total=1.0)
 
-        def progress_hook(completed: int = None, total: int = None):
+        def progress_hook(completed: Optional[int] = None, total: Optional[int] = None):
             progress.update(file_task, completed=completed / total)
 
         inference = Inference(model, device=device)
