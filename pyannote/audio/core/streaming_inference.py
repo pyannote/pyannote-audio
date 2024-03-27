@@ -20,6 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import math
 import warnings
 from pathlib import Path
 from typing import Callable, List, Optional, Text, Tuple, Union
@@ -36,6 +37,7 @@ from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import Model, Specifications
 from pyannote.audio.core.task import Resolution
 from pyannote.audio.utils.multi_task import map_with_specifications
+from pyannote.audio.utils.permutation import mae_cost_func, permutate
 from pyannote.audio.utils.powerset import Powerset
 from pyannote.audio.utils.reproducibility import fix_reproducibility
 
@@ -44,7 +46,7 @@ class BaseInference:
     pass
 
 
-class Inference(BaseInference):
+class StreamingInference(BaseInference):
     """Inference
 
     Parameters
@@ -84,12 +86,12 @@ class Inference(BaseInference):
         self,
         model: Union[Model, Text, Path],
         window: Text = "sliding",
-        duration: Optional[float] = None,
-        step: Optional[float] = None,
+        duration: float = None,
+        step: float = None,
         pre_aggregation_hook: Callable[[np.ndarray], np.ndarray] = None,
         skip_aggregation: bool = False,
         skip_conversion: bool = False,
-        device: Optional[torch.device] = None,
+        device: torch.device = None,
         batch_size: int = 32,
         use_auth_token: Union[Text, None] = None,
     ):
@@ -225,7 +227,6 @@ class Inference(BaseInference):
         def __convert(output: torch.Tensor, conversion: nn.Module, **kwargs):
             return conversion(output).cpu().numpy()
 
-
         return map_with_specifications(
             self.model.specifications, __convert, outputs, self.conversion
         )
@@ -262,14 +263,16 @@ class Inference(BaseInference):
         _, num_samples = waveform.shape
 
         def __frames(
-            receptive_field, specifications: Optional[Specifications] = None
+            example_output, specifications: Optional[Specifications] = None
         ) -> SlidingWindow:
             if specifications.resolution == Resolution.CHUNK:
                 return SlidingWindow(start=0.0, duration=self.duration, step=self.step)
-            return receptive_field
+            return example_output.frames
 
         frames: Union[SlidingWindow, Tuple[SlidingWindow]] = map_with_specifications(
-            self.model.specifications, __frames, self.model.receptive_field
+            self.model.specifications,
+            __frames,
+            self.model.example_output,
         )
 
         # prepare complete chunks
@@ -365,12 +368,12 @@ class Inference(BaseInference):
             if self.pre_aggregation_hook is not None:
                 outputs = self.pre_aggregation_hook(outputs)
 
-            aggregated = self.aggregate(
+            aggregated = self.concatenate_end_chunk(
                 SlidingWindowFeature(
                     outputs,
                     SlidingWindow(start=0.0, duration=self.duration, step=self.step),
                 ),
-                frames,
+                frames=frames,
                 warm_up=self.warm_up,
                 hamming=True,
                 missing=0.0,
@@ -523,7 +526,7 @@ class Inference(BaseInference):
     @staticmethod
     def aggregate(
         scores: SlidingWindowFeature,
-        frames: SlidingWindow,
+        frames: SlidingWindow = None,
         warm_up: Tuple[float, float] = (0.0, 0.0),
         epsilon: float = 1e-12,
         hamming: bool = False,
@@ -536,8 +539,10 @@ class Inference(BaseInference):
         ----------
         scores : SlidingWindowFeature
             Raw (unaggregated) scores. Shape is (num_chunks, num_frames_per_chunk, num_classes).
-        frames : SlidingWindow
-            Frames resolution.
+        frames : SlidingWindow, optional
+            Frames resolution. Defaults to estimate it automatically based on `scores` shape
+            and chunk size. Providing the exact frame resolution (when known) leads to better
+            temporal precision.
         warm_up : (float, float) tuple, optional
             Left/right warm up duration (in seconds).
         missing : float, optional
@@ -550,15 +555,19 @@ class Inference(BaseInference):
         aggregated_scores : SlidingWindowFeature
             Aggregated scores. Shape is (num_frames, num_classes)
         """
-        print("aggregate")
+
         num_chunks, num_frames_per_chunk, num_classes = scores.data.shape
 
         chunks = scores.sliding_window
-        frames = SlidingWindow(
-            start=chunks.start,
-            duration=frames.duration,
-            step=frames.step,
-        )
+        if frames is None:
+            duration = step = chunks.duration / num_frames_per_chunk
+            frames = SlidingWindow(start=chunks.start, duration=duration, step=step)
+        else:
+            frames = SlidingWindow(
+                start=chunks.start,
+                duration=frames.duration,
+                step=frames.step,
+            )
 
         masks = 1 - np.isnan(scores)
         scores.data = np.nan_to_num(scores.data, copy=True, nan=0.0)
@@ -593,7 +602,6 @@ class Inference(BaseInference):
                 scores.sliding_window.start
                 + scores.sliding_window.duration
                 + (num_chunks - 1) * scores.sliding_window.step
-                + 0.5 * frames.duration
             )
             + 1
         )
@@ -618,8 +626,7 @@ class Inference(BaseInference):
             # chunk ~ Segment
             # score ~ (num_frames_per_chunk, num_classes)-shaped np.ndarray
             # mask ~ (num_frames_per_chunk, num_classes)-shaped np.ndarray
-
-            start_frame = frames.closest_frame(chunk.start + 0.5 * frames.duration)
+            start_frame = frames.closest_frame(chunk.start)
 
 
             aggregated_output[start_frame : start_frame + num_frames_per_chunk] += (
@@ -646,6 +653,84 @@ class Inference(BaseInference):
 
         return SlidingWindowFeature(average, frames)
 
+    @staticmethod
+    def concatenate_end_chunk(
+        scores: SlidingWindowFeature,
+        frames: SlidingWindow = None,
+        warm_up: Tuple[float, float] = (0.0, 0.0),
+        epsilon: float = 1e-12,
+        hamming: bool = False,
+        missing: float = np.NaN,
+        skip_average: bool = False,
+    ) -> SlidingWindowFeature:
+        """Aggregation
+
+        Parameters
+        ----------
+        scores : SlidingWindowFeature
+            Raw (unaggregated) scores. Shape is (num_chunks, num_frames_per_chunk, num_classes).
+        frames : SlidingWindow, optional
+            Frames resolution. Defaults to estimate it automatically based on `scores` shape
+            and chunk size. Providing the exact frame resolution (when known) leads to better
+            temporal precision.
+        warm_up : (float, float) tuple, optional
+            Left/right warm up duration (in seconds).
+        missing : float, optional
+            Value used to replace missing (ie all NaNs) values.
+        skip_average : bool, optional
+            Skip final averaging step.
+
+        Returns
+        -------
+        aggregated_scores : SlidingWindowFeature
+            Aggregated scores. Shape is (num_frames, num_classes)
+        """
+        print("concatenate")
+        num_chunks, num_frames_per_chunk, num_classes = scores.data.shape
+
+        chunks = scores.sliding_window
+        if frames is None:
+            duration = step = chunks.duration / num_frames_per_chunk
+            frames = SlidingWindow(start=chunks.start, duration=duration, step=step)
+        else:
+            frames = SlidingWindow(
+                start=chunks.start,
+                duration=frames.duration,
+                step=frames.step,
+            )
+        masks = 1 - np.isnan(scores)
+        scores.data = np.nan_to_num(scores.data, copy=True, nan=0.0)
+
+        # aggregated_output[i] will be used to store the sum of all predictions
+        # for frame #i
+        num_frames = (
+            frames.closest_frame(
+                scores.sliding_window.start
+                + scores.sliding_window.duration
+                + (num_chunks - 1) * scores.sliding_window.step
+            )
+            + 1
+        )
+        step_frames = frames.closest_frame(scores.sliding_window.step)
+        aggregated_output: np.ndarray = np.zeros(
+            (num_frames, num_classes), dtype=np.float32
+        )
+        aggregated_output[0 : num_frames_per_chunk-step_frames] = scores[0][:num_frames_per_chunk-step_frames]
+        end = scores.sliding_window.duration - scores.sliding_window.step
+
+        # data = scores.data
+        # print(data.shape)
+        # data=data[1:]
+        # scores = scores[1:]
+        # loop on the scores of sliding chunks
+        for (chunk, score) in scores:
+            # chunk ~ Segment
+            # score ~ (num_frames_per_chunk, num_classes)-shaped np.ndarray
+            start_frame = frames.closest_frame(end)
+            aggregated_output[start_frame : start_frame + step_frames] = score[num_frames_per_chunk-step_frames:]
+            end = chunk.end
+
+        return SlidingWindowFeature(aggregated_output, frames)
 
     @staticmethod
     def trim(
@@ -693,3 +778,134 @@ class Inference(BaseInference):
         )
 
         return SlidingWindowFeature(new_data, new_chunks)
+
+    @staticmethod
+    def stitch(
+        activations: SlidingWindowFeature,
+        frames: SlidingWindow = None,
+        lookahead: Optional[Tuple[int, int]] = None,
+        cost_func: Callable[[torch.Tensor, torch.Tensor], torch.Tensor] = None,
+        match_func: Callable[[np.ndarray, np.ndarray, float], bool] = None,
+    ) -> SlidingWindowFeature:
+        """
+
+        Parameters
+        ----------
+        activations : SlidingWindowFeature
+            (num_chunks, num_frames, num_classes)-shaped scores.
+        frames : SlidingWindow, optional
+            Frames resolution. Defaults to estimate it automatically based on `activations`
+            shape and chunk size. Providing the exact frame resolution (when known) leads to better
+            temporal precision.
+        lookahead : (int, int) tuple
+            Number of past and future adjacent chunks to use for stitching.
+            Defaults to (k, k) with k = chunk_duration / chunk_step - 1
+        cost_func : callable
+            Cost function used to find the optimal mapping between two chunks.
+            Expects two (num_frames, num_classes) torch.tensor as input
+            and returns cost as a (num_classes, ) torch.tensor
+            Defaults to mean absolute error (utils.permutations.mae_cost_func)
+        match_func : callable
+            Function used to decide whether two speakers mapped by the optimal
+            mapping actually are a match.
+            Expects two (num_frames, ) np.ndarray and the cost (from cost_func)
+            and returns a boolean. Defaults to always returning True.
+        """
+
+        num_chunks, num_frames, num_classes = activations.data.shape
+
+        chunks: SlidingWindow = activations.sliding_window
+
+        if frames is None:
+            duration = step = chunks.duration / num_frames
+            frames = SlidingWindow(start=chunks.start, duration=duration, step=step)
+        else:
+            frames = SlidingWindow(
+                start=chunks.start,
+                duration=frames.duration,
+                step=frames.step,
+            )
+
+        max_lookahead = math.floor(chunks.duration / chunks.step - 1)
+        if lookahead is None:
+            lookahead = 2 * (max_lookahead,)
+
+        assert all(L <= max_lookahead for L in lookahead)
+
+        if cost_func is None:
+            cost_func = mae_cost_func
+
+        if match_func is None:
+
+            def always_match(this: np.ndarray, that: np.ndarray, cost: float):
+                return True
+
+            match_func = always_match
+
+        stitches = []
+        for C, (chunk, activation) in enumerate(activations):
+            local_stitch = np.NAN * np.zeros(
+                (sum(lookahead) + 1, num_frames, num_classes)
+            )
+
+            for c in range(
+                max(0, C - lookahead[0]), min(num_chunks, C + lookahead[1] + 1)
+            ):
+                # extract common temporal support
+                shift = round((C - c) * num_frames * chunks.step / chunks.duration)
+
+                if shift < 0:
+                    shift = -shift
+                    this_activations = activation[shift:]
+                    that_activations = activations[c, : num_frames - shift]
+                else:
+                    this_activations = activation[: num_frames - shift]
+                    that_activations = activations[c, shift:]
+
+                # find the optimal one-to-one mapping
+                _, (permutation,), (cost,) = permutate(
+                    this_activations[np.newaxis],
+                    that_activations,
+                    cost_func=cost_func,
+                    return_cost=True,
+                )
+
+                for this, that in enumerate(permutation):
+                    # only stitch under certain condiditions
+                    matching = (c == C) or (
+                        match_func(
+                            this_activations[:, this],
+                            that_activations[:, that],
+                            cost[this, that],
+                        )
+                    )
+
+                    if matching:
+                        local_stitch[c - C + lookahead[0], :, this] = activations[
+                            c, :, that
+                        ]
+
+                    # TODO: do not lookahead further once a mismatch is found
+
+            stitched_chunks = SlidingWindow(
+                start=chunk.start - lookahead[0] * chunks.step,
+                duration=chunks.duration,
+                step=chunks.step,
+            )
+
+            local_stitch = Inference.aggregate(
+                SlidingWindowFeature(local_stitch, stitched_chunks),
+                frames=frames,
+                hamming=True,
+            )
+
+            stitches.append(local_stitch.data)
+
+        stitches = np.stack(stitches)
+        stitched_chunks = SlidingWindow(
+            start=chunks.start - lookahead[0] * chunks.step,
+            duration=chunks.duration + sum(lookahead) * chunks.step,
+            step=chunks.step,
+        )
+
+        return SlidingWindowFeature(stitches, stitched_chunks)
