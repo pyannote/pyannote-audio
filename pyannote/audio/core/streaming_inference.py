@@ -24,7 +24,7 @@ import math
 import warnings
 from pathlib import Path
 from typing import Callable, List, Optional, Text, Tuple, Union
-
+from pyannote.audio import Inference
 import numpy as np
 import torch
 import torch.nn as nn

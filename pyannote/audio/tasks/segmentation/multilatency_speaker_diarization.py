@@ -593,10 +593,12 @@ class MultilatencySpeakerDiarization(SegmentationTask, Task):
             return None
 
         # forward pass
+        # tensor of size (batch_size, num_frames, num_speakers * K) where K is the number of latencies        
         predictions = self.model(waveform)
         num_classes_powerset = predictions.size(2) //len(self.latency_list)
         seg_loss = 0
         for k in range(len(self.latency_list)):
+            # select onle latency at a time
             prediction = predictions[:,:,k*num_classes_powerset:k*num_classes_powerset+num_classes_powerset]
             batch_size, num_frames, _ = prediction.shape
             # (batch_size, num_frames, num_classes)
@@ -615,17 +617,12 @@ class MultilatencySpeakerDiarization(SegmentationTask, Task):
             warm_up_right = round(self.warm_up[1] / self.duration * num_frames)
             weight[:, num_frames - warm_up_right :] = 0.0
 
+            # shift prediction and target
             delay =  int(np.floor(num_frames * (self.latency_list[k]) / self.duration)) # round down
-
             prediction = prediction[:, delay:, :]
             target = target[:, :num_frames-delay, :]
 
-        #future
-        # prediction = prediction[:, :num_frames-delay, :]
-        # target = target[:, delay:, :]
-
-
-
+            # compute loss (all losses are added, there are K losses)
             if self.specifications.powerset:
                 multilabel = self.model.powerset.to_multilabel(prediction)
                 permutated_target, _ = permutate(multilabel, target)
@@ -738,10 +735,12 @@ class MultilatencySpeakerDiarization(SegmentationTask, Task):
         # target = target[keep]
 
         # forward pass
+        # tensor of size (batch_size, num_frames, num_speakers * K) where K is the number of latencies        
         predictions = self.model(waveform)
         losses=[]
         num_classes_powerset = predictions.size(2) //len(self.latency_list)
         for k in range(len(self.latency_list)):
+            # select one latency
             prediction = predictions[:,:,k*num_classes_powerset:k*num_classes_powerset+num_classes_powerset]
             batch_size, num_frames, _ = prediction.shape
 
@@ -759,12 +758,12 @@ class MultilatencySpeakerDiarization(SegmentationTask, Task):
             warm_up_right = round(self.warm_up[1] / self.duration * num_frames)
             weight[:, num_frames - warm_up_right :] = 0.0
 
+            # shift prediction and target
             delay =  int(np.floor(num_frames * (self.latency_list[k]) / self.duration)) # round down
-
             prediction = prediction[:, delay:, :]
             reference = target[:, :num_frames-delay, :]
 
-            #future
+            # future
             # prediction = prediction[:, :num_frames-delay, :]
             # target = target[:, delay:, :]
 
