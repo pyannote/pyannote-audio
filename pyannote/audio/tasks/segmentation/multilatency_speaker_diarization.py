@@ -618,11 +618,16 @@ class MultilatencySpeakerDiarization(SegmentationTask, Task):
             weight[:, num_frames - warm_up_right :] = 0.0
 
             # shift prediction and target
-            delay =  int(np.floor(num_frames * (self.latency_list[k]) / self.duration)) # round down
-            prediction = prediction[:, delay:, :]
-            target = target[:, :num_frames-delay, :]
-
-            # compute loss (all losses are added, there are K losses)
+            if self.latency_list[k] >= 0:
+                delay =  int(np.floor(num_frames * (self.latency_list[k]) / self.duration)) # round down
+                prediction = prediction[:, delay:, :]
+                target = target[:, :num_frames-delay, :]
+            else:
+                delay =  int(np.floor(num_frames * (-1.0 * self.latency_list[k]) / self.duration)) # round down
+                prediction = prediction[:, :num_frames-delay, :]
+                target = target[:, delay:, :]
+            
+            #compute loss (all losses are added, there are K losses)
             if self.specifications.powerset:
                 multilabel = self.model.powerset.to_multilabel(prediction)
                 permutated_target, _ = permutate(multilabel, target)
@@ -759,13 +764,14 @@ class MultilatencySpeakerDiarization(SegmentationTask, Task):
             weight[:, num_frames - warm_up_right :] = 0.0
 
             # shift prediction and target
-            delay =  int(np.floor(num_frames * (self.latency_list[k]) / self.duration)) # round down
-            prediction = prediction[:, delay:, :]
-            reference = target[:, :num_frames-delay, :]
-
-            # future
-            # prediction = prediction[:, :num_frames-delay, :]
-            # target = target[:, delay:, :]
+            if self.latency_list[k] >= 0:
+                delay =  int(np.floor(num_frames * (self.latency_list[k]) / self.duration)) # round down
+                prediction = prediction[:, delay:, :]
+                reference = target[:, :num_frames-delay, :]
+            else:
+                delay =  int(np.floor(num_frames * (-1.0 * self.latency_list[k]) / self.duration)) # round down
+                prediction = prediction[:, :num_frames-delay, :]
+                reference = target[:, delay:, :]
 
             if self.specifications.powerset:
                 multilabel = self.model.powerset.to_multilabel(prediction)
@@ -786,7 +792,8 @@ class MultilatencySpeakerDiarization(SegmentationTask, Task):
                     permutated_prediction, reference, weight=weight
                 ))
 
-        target = target[:, :num_frames-delay, :]
+        # with the following line, the validation DER is calculated on the first latency prediction
+        multilabel = self.model.powerset.to_multilabel(predictions[:,:,:num_classes_powerset])
 
 
         seg_loss = torch.sum(torch.tensor(losses))
