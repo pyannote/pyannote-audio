@@ -4,24 +4,24 @@
 
 ### New features
 
-- feat(task): add option to cache task training metadata to speed up training
+- feat(task): add option to cache task training metadata to speed up training (with [@clement-pages](https://github.com/clement-pages/))
+- feat(model): add `receptive_field`, `num_frames` and `dimension` to models (with [@Bilal-Rahou](https://github.com/Bilal-Rahou))
+- feat(util): add `Powerset.permutation_mapping` to help with permutation in powerset space (with [@FrenchKrab](https://github.com/FrenchKrab))
+- feat(sample): add sample file at `pyannote.audio.sample.SAMPLE_FILE` 
+- feat(metric): add `reduce` option to `diarization_error_rate` metric (with [@Bilal-Rahou](https://github.com/Bilal-Rahou))
 - feat(pipeline): add `Waveform` and `SampleRate` preprocessors
-- feat(model): add `num_frames` method to every model
-- feat(model): add `receptive_field` property to every model
-- feat(model): and `dimension` property to every model
-- feat(sample): add sample file at `pyannote.audio.sample.SAMPLE_FILE`
-- feat(powerset): add `Powerset.permutation_mapping` to help with permutation in powerset space
-- feat(metric): add `reduce` option to `diarization_error_rate` metric
 
 ### Fixes
 
-- fix(task): fix random generators and their reproducibility
-- fix(task): fix estimation of training set size
+- fix(task): fix random generators and their reproducibility  (with [@FrenchKrab](https://github.com/FrenchKrab))
+- fix(task): fix estimation of training set size  (with [@FrenchKrab](https://github.com/FrenchKrab))
 
 ### Improvements
 
 - improve(metric): add support for number of speakers mismatch in `diarization_error_rate` metric
 - improve(pipeline): track both `Model` and `nn.Module` attributes in `Pipeline.to(device)`
+- improve(io): switch to `torchaudio >= 2.2.0`
+- improve(doc): update tutorials (with [@clement-pages](https://github.com/clement-pages/))
 
 ## Breaking changes
 

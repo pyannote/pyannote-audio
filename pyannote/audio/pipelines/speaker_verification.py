@@ -28,7 +28,6 @@ from typing import Optional, Text, Union
 import numpy as np
 import torch
 import torch.nn.functional as F
-import torchaudio
 import torchaudio.compliance.kaldi as kaldi
 from huggingface_hub import hf_hub_download
 from huggingface_hub.utils import RepositoryNotFoundError
@@ -40,7 +39,6 @@ from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import CACHE_DIR
 from pyannote.audio.pipelines.utils import PipelineModel, get_model
 
-backend = torchaudio.get_audio_backend()
 try:
     from speechbrain.pretrained import (
         EncoderClassifier as SpeechBrain_EncoderClassifier,
@@ -49,8 +47,6 @@ try:
     SPEECHBRAIN_IS_AVAILABLE = True
 except ImportError:
     SPEECHBRAIN_IS_AVAILABLE = False
-finally:
-    torchaudio.set_audio_backend(backend)
 
 try:
     from nemo.collections.asr.models import (
