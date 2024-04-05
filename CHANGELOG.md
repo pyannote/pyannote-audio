@@ -4,17 +4,19 @@
 
 ### New features
 
+- feat(model): add `ToTaToNet` joint speaker diarization and separation model (with [@joonaskalda](https://github.com/joonaskalda/))
+- feat(pipeline): add `JointSpeakerDiarizationAndSeparation` pipeline (with [@joonaskalda](https://github.com/joonaskalda/))
 - feat(task): add option to cache task training metadata to speed up training (with [@clement-pages](https://github.com/clement-pages/))
 - feat(model): add `receptive_field`, `num_frames` and `dimension` to models (with [@Bilal-Rahou](https://github.com/Bilal-Rahou))
 - feat(util): add `Powerset.permutation_mapping` to help with permutation in powerset space (with [@FrenchKrab](https://github.com/FrenchKrab))
-- feat(sample): add sample file at `pyannote.audio.sample.SAMPLE_FILE` 
+- feat(sample): add sample file at `pyannote.audio.sample.SAMPLE_FILE`
 - feat(metric): add `reduce` option to `diarization_error_rate` metric (with [@Bilal-Rahou](https://github.com/Bilal-Rahou))
 - feat(pipeline): add `Waveform` and `SampleRate` preprocessors
 
 ### Fixes
 
-- fix(task): fix random generators and their reproducibility  (with [@FrenchKrab](https://github.com/FrenchKrab))
-- fix(task): fix estimation of training set size  (with [@FrenchKrab](https://github.com/FrenchKrab))
+- fix(task): fix random generators and their reproducibility (with [@FrenchKrab](https://github.com/FrenchKrab))
+- fix(task): fix estimation of training set size (with [@FrenchKrab](https://github.com/FrenchKrab))
 
 ### Improvements
 
