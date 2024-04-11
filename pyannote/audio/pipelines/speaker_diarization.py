@@ -507,7 +507,14 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
             return diarization
 
-        if self.klustering == "OracleClustering" and not return_embeddings:
+        # skip (time consuming) speaker embedding extraction in the following cases
+        # when return_embeddings is False and one of these:
+        # - OracleClustering is used
+        # - max_speakers < 2 (since clustering will not be applied anyway in that case)
+
+        if not return_embeddings and (
+            self.klustering == "OracleClustering" or max_speakers == 1
+        ):
             embeddings = None
         else:
             embeddings = self.get_embeddings(
