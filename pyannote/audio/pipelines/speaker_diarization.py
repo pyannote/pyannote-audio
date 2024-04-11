@@ -478,6 +478,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         segmentations = self.get_segmentations(file, hook=hook)
         hook("segmentation", segmentations)
         #   shape: (num_chunks, num_frames, local_num_speakers)
+        num_chunks, num_frames, local_num_speakers = segmentations.data.shape
 
         # binarize segmentation
         if self._segmentation.model.specifications.powerset:
@@ -507,36 +508,39 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
             return diarization
 
-        # skip (time consuming) speaker embedding extraction in the following cases
-        # when return_embeddings is False and one of these:
-        # - OracleClustering is used
-        # - max_speakers < 2 (since clustering will not be applied anyway in that case)
-
-        if not return_embeddings and (
-            self.klustering == "OracleClustering" or max_speakers == 1
-        ):
+        # skip speaker embedding extraction and clustering when only one speaker
+        if not return_embeddings and max_speakers < 2:
+            hard_clusters = np.zeros((num_chunks, local_num_speakers), dtype=np.int8)
             embeddings = None
-        else:
-            embeddings = self.get_embeddings(
-                file,
-                binarized_segmentations,
-                exclude_overlap=self.embedding_exclude_overlap,
-                hook=hook,
-            )
-            hook("embeddings", embeddings)
-            #   shape: (num_chunks, local_num_speakers, dimension)
+            centroids = None
 
-        hard_clusters, _, centroids = self.clustering(
-            embeddings=embeddings,
-            segmentations=binarized_segmentations,
-            num_clusters=num_speakers,
-            min_clusters=min_speakers,
-            max_clusters=max_speakers,
-            file=file,  # <== for oracle clustering
-            frames=self._segmentation.model.receptive_field,  # <== for oracle clustering
-        )
-        # hard_clusters: (num_chunks, num_speakers)
-        # centroids: (num_speakers, dimension)
+        else:
+
+            # skip speaker embedding extraction with oracle clustering
+            if self.klustering == "OracleClustering" and not return_embeddings:
+                embeddings = None
+
+            else:
+                embeddings = self.get_embeddings(
+                    file,
+                    binarized_segmentations,
+                    exclude_overlap=self.embedding_exclude_overlap,
+                    hook=hook,
+                )
+                hook("embeddings", embeddings)
+                #   shape: (num_chunks, local_num_speakers, dimension)
+
+            hard_clusters, _, centroids = self.clustering(
+                embeddings=embeddings,
+                segmentations=binarized_segmentations,
+                num_clusters=num_speakers,
+                min_clusters=min_speakers,
+                max_clusters=max_speakers,
+                file=file,  # <== for oracle clustering
+                frames=self._segmentation.model.receptive_field,  # <== for oracle clustering
+            )
+            # hard_clusters: (num_chunks, num_speakers)
+            # centroids: (num_speakers, dimension)
 
         # number of detected clusters is the number of different speakers
         num_different_speakers = np.max(hard_clusters) + 1
