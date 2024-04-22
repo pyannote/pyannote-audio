@@ -22,6 +22,7 @@
 - improve(pipeline): track both `Model` and `nn.Module` attributes in `Pipeline.to(device)`
 - improve(io): switch to `torchaudio >= 2.2.0`
 - improve(doc): update tutorials (with [@clement-pages](https://github.com/clement-pages/))
+- improve(io): remove the misleading mentions of `numpy.ndarray` as it's not supported (with [@Purfview](https://github.com/Purfview))
 
 ## Breaking changes
 
