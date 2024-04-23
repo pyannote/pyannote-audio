@@ -30,14 +30,11 @@ from pyannote.database import Protocol
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchmetrics import Metric
 
-from pyannote.audio.core.task import Task
-
 from .mixins import SupervisedRepresentationLearningTaskMixin
 
 
 class SupervisedRepresentationLearningWithArcFace(
     SupervisedRepresentationLearningTaskMixin,
-    Task,
 ):
     """Supervised representation learning with ArcFace loss
 
@@ -47,6 +44,13 @@ class SupervisedRepresentationLearningWithArcFace(
     ----------
     protocol : Protocol
         pyannote.database protocol
+    cache : str, optional
+        As (meta-)data preparation might take a very long time for large datasets,
+        it can be cached to disk for later (and faster!) re-use.
+        When `cache` does not exist, `Task.prepare_data()` generates training
+        and validation metadata from `protocol` and save them to disk.
+        When `cache` exists, `Task.prepare_data()` is skipped and (meta)-data
+        are loaded from disk. Defaults to a temporary path.
     duration : float, optional
         Chunks duration in seconds. Defaults to two seconds (2.).
     min_duration : float, optional
@@ -73,6 +77,8 @@ class SupervisedRepresentationLearningWithArcFace(
     metric : optional
         Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
         Defaults to AUROC (area under the ROC curve).
+    cache : string, optional
+
     """
 
     #  TODO: add a ".metric" property that tells how speaker embedding trained with this approach
@@ -82,6 +88,7 @@ class SupervisedRepresentationLearningWithArcFace(
     def __init__(
         self,
         protocol: Protocol,
+        cache: Optional[str] = None,
         min_duration: Optional[float] = None,
         duration: float = 2.0,
         num_classes_per_batch: int = 32,
@@ -109,6 +116,7 @@ class SupervisedRepresentationLearningWithArcFace(
             pin_memory=pin_memory,
             augmentation=augmentation,
             metric=metric,
+            cache=cache,
         )
 
     def setup_loss_func(self):

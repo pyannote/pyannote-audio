@@ -21,6 +21,9 @@
 # SOFTWARE.
 
 import math
+import pickle
+from pathlib import Path
+from tempfile import mkstemp
 from typing import Dict, Sequence, Union
 
 import torch
@@ -35,12 +38,12 @@ from torchmetrics import Metric
 from torchmetrics.classification import BinaryAUROC
 from tqdm import tqdm
 
-from pyannote.audio.core.task import Problem, Resolution, Specifications
+from pyannote.audio.core.task import Problem, Resolution, Specifications, Task
 from pyannote.audio.torchmetrics.classification import EqualErrorRate
 from pyannote.audio.utils.random import create_rng_for_worker
 
 
-class SupervisedRepresentationLearningTaskMixin:
+class SupervisedRepresentationLearningTaskMixin(Task):
     """Methods common to most supervised representation tasks"""
 
     # batch_size = num_classes_per_batch x num_chunks_per_class
@@ -75,11 +78,22 @@ class SupervisedRepresentationLearningTaskMixin:
     def batch_size(self, batch_size: int):
         self.batch_size_ = batch_size
 
-    def setup(self, stage=None):
+    def prepare_data(self):
         # loop over the training set, remove annotated regions shorter than
         # chunk duration, and keep track of the reference annotations, per class.
+        if self.cache:
+            # check if cache exists and is not empty:
+            if self.cache.exists() and self.cache.stat().st_size > 0:
+                # data was already created, nothing to do
+                return
+            # create parent directory if needed
+            self.cache.parent.mkdir(parents=True, exist_ok=True)
+        else:
+            # if no cache was provided by user, create a temporary file
+            # in system directory used for temp files
+            self.cache = Path(mkstemp()[1])
 
-        self._train = dict()
+        train = {}
 
         desc = f"Loading {self.protocol.name} training labels"
         for f in tqdm(iterable=self.protocol.train(), desc=desc, unit="file"):
@@ -99,10 +113,10 @@ class SupervisedRepresentationLearningTaskMixin:
                 duration = sum(segment.duration for segment in speech_turns)
 
                 # add class to the list of classes
-                if klass not in self._train:
-                    self._train[klass] = list()
+                if klass not in train:
+                    train[klass] = list()
 
-                self._train[klass].append(
+                train[klass].append(
                     {
                         "uri": f["uri"],
                         "audio": f["audio"],
@@ -111,12 +125,42 @@ class SupervisedRepresentationLearningTaskMixin:
                     }
                 )
 
+        prepared_data = {"train": train, "protocol": self.protocol.name}
+
+        self.prepare_validation(prepared_data)
+        self.post_prepare_data(prepared_data)
+
+        # save prepared data on the disk
+        with open(self.cache, "wb") as cache_file:
+            pickle.dump(prepared_data, cache_file)
+
+    def setup(self, stage=None):
+        if stage == "fit":
+            self.cache = self.trainer.strategy.broadcast(self.cache)
+
+        try:
+            with open(self.cache, "rb") as cache_file:
+                self.prepared_data = pickle.load(cache_file)
+        except FileNotFoundError:
+            print(
+                "Cached data for protocol not found. Ensure that prepare_data() was called",
+                " and executed correctly or/and that the path to the task cache is correct.",
+            )
+            raise
+
+        # checks that the task current protocol matches the cached protocol
+        if self.protocol.name != self.prepared_data["protocol"]:
+            raise ValueError(
+                f"Protocol specified for the task ({self.protocol.name}) "
+                f"does not correspond to the cached one ({self.prepared_data['protocol']})"
+            )
+
         self.specifications = Specifications(
             problem=Problem.REPRESENTATION,
             resolution=Resolution.CHUNK,
             duration=self.duration,
             min_duration=self.min_duration,
-            classes=sorted(self._train),
+            classes=sorted(self.prepared_data["train"]),
         )
 
     def default_metric(
@@ -162,8 +206,10 @@ class SupervisedRepresentationLearningTaskMixin:
                 for _ in range(self.num_chunks_per_class):
                     # select one file at random (with probability proportional to its class duration)
                     file, *_ = rng.choices(
-                        self._train[klass],
-                        weights=[f["duration"] for f in self._train[klass]],
+                        self.prepared_data["train"][klass],
+                        weights=[
+                            f["duration"] for f in self.prepared_data["train"][klass]
+                        ],
                         k=1,
                     )
 
@@ -207,7 +253,9 @@ class SupervisedRepresentationLearningTaskMixin:
 
     def train__len__(self):
         duration = sum(
-            datum["duration"] for data in self._train.values() for datum in data
+            datum["duration"]
+            for data in self.prepared_data["train"].values()
+            for datum in data
         )
         avg_chunk_duration = 0.5 * (self.min_duration + self.duration)
         return max(self.batch_size, math.ceil(duration / avg_chunk_duration))
@@ -246,7 +294,15 @@ class SupervisedRepresentationLearningTaskMixin:
 
     def prepare_validation(self, prepared_dict: Dict):
         if isinstance(self.protocol, SpeakerVerificationProtocol):
-            prepared_dict["validation"] = list(self.protocol.development_trial())
+            prepared_dict["validation"] = []
+            for trial in self.protocol.development_trial():
+                prepared_dict["validation"].append(
+                    {
+                        "reference": trial["reference"],
+                        "file1": trial["file1"]["audio"],
+                        "file2": trial["file2"]["audio"],
+                    }
+                )
 
     def val__getitem__(self, idx):
         if isinstance(self.protocol, SpeakerVerificationProtocol):
