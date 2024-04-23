@@ -21,6 +21,7 @@
 # SOFTWARE.
 
 
+from .wavlm import WavLMEmbeddings
 from .wespeaker import (
     WeSpeakerResNet34,
     WeSpeakerResNet152,
@@ -36,4 +37,5 @@ __all__ = [
     "WeSpeakerResNet152",
     "WeSpeakerResNet221",
     "WeSpeakerResNet293",
+    "WavLMEmbeddings",
 ]
