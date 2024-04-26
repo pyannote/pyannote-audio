@@ -37,8 +37,8 @@ import torch
 import torch.nn as nn
 import torch.optim
 import yaml
-from huggingface_hub import HfApi, hf_hub_download
-from huggingface_hub.utils import RepositoryNotFoundError
+from huggingface_hub import HfApi, ModelCard, ModelCardData, hf_hub_download
+from huggingface_hub.utils import EntryNotFoundError, RepositoryNotFoundError
 from lightning_fabric.utilities.cloud_io import _load as pl_load
 from pyannote.core import SlidingWindow
 from pytorch_lightning.utilities.model_summary import ModelSummary
@@ -707,13 +707,76 @@ visit https://hf.co/{model_id} to accept the user conditions."""
 
     def push_to_hub(
         self,
-        repo_name: str,
-        use_auth_token: Union[Text, None] = None,
+        repo_id: str,
+        use_temp_dir: Optional[bool] = None,
+        commit_message: Optional[str] = None,
+        private: Optional[bool] = None,
+        token: Optional[Union[bool, str]] = None,
+        create_pr: bool = False,
+        revision: str = None,
+        commit_description: str = None,
+        tags: Optional[List[str]] = None,
+        **deprecated_kwargs,
     ) -> None:
+        """
+        Upload the {object_files} to the 🤗 Model Hub.
+
+        Parameters:
+            repo_id (`str`):
+                The name of the repository you want to push your {object} to. It should contain your organization name
+                when pushing to a given organization.
+            use_temp_dir (`bool`, *optional*):
+                Whether or not to use a temporary directory to store the files saved before they are pushed to the Hub.
+                Will default to `True` if there is no directory named like `repo_id`, `False` otherwise.
+            commit_message (`str`, *optional*):
+                Message to commit while pushing. Will default to `"Upload {object}"`.
+            private (`bool`, *optional*):
+                Whether or not the repository created should be private.
+            token (`bool` or `str`, *optional*):
+                The token to use as HTTP bearer authorization for remote files. If `True`, will use the token generated
+                when running `huggingface-cli login` (stored in `~/.huggingface`). Will default to `True` if `repo_url`
+                is not specified.
+            max_shard_size (`int` or `str`, *optional*, defaults to `"5GB"`):
+                Only applicable for models. The maximum size for a checkpoint before being sharded. Checkpoints shard
+                will then be each of size lower than this size. If expressed as a string, needs to be digits followed
+                by a unit (like `"5MB"`). We default it to `"5GB"` so that users can easily load models on free-tier
+                Google Colab instances without any CPU OOM issues.
+            create_pr (`bool`, *optional*, defaults to `False`):
+                Whether or not to create a PR with the uploaded files or directly commit.
+            safe_serialization (`bool`, *optional*, defaults to `True`):
+                Whether or not to convert the model weights in safetensors format for safer serialization.
+            revision (`str`, *optional*):
+                Branch to push the uploaded files to.
+            commit_description (`str`, *optional*):
+                The description of the commit that will be created
+            tags (`List[str]`, *optional*):
+                List of tags to push on the Hub.
+        """
+        use_auth_token = deprecated_kwargs.pop("use_auth_token", None)
+
+        ignore_metadata_errors = deprecated_kwargs.pop("ignore_metadata_errors", False)
+
+        if use_auth_token is not None:
+            warnings.warn(
+                "The `use_auth_token` argument is deprecated and will be removed in v5 of Transformers. Please use `token` instead.",
+                FutureWarning,
+            )
+            if token is not None:
+                raise ValueError(
+                    "`token` and `use_auth_token` are both specified. Please set only the argument `token`."
+                )
+            token = use_auth_token
 
         api = HfApi()
 
-        _ = api.create_repo(repo_name, exist_ok=True, repo_type="model")
+        _ = api.create_repo(
+            repo_id, private=private, token=token, exist_ok=True, repo_type="model"
+        )
+
+        # Create a new empty model card and eventually tag it
+        model_card = create_and_tag_model_card(
+            repo_id, tags, token=token, ignore_metadata_errors=ignore_metadata_errors
+        )
 
         with TemporaryDirectory() as tmpdir:
             tmpdir = Path(tmpdir)
@@ -755,10 +818,65 @@ visit https://hf.co/{model_id} to accept the user conditions."""
                 with open(tmpdir / "config.yaml", "w") as outfile:
                     yaml.dump(file, outfile, default_flow_style=False)
 
+                # Update model card if needed:
+                model_card.save(os.path.join(tmpdir, "README.md"))
+
                 # Push to hub
                 return api.upload_folder(
-                    repo_id=repo_name,
+                    repo_id=repo_id,
                     folder_path=tmpdir,
                     use_auth_token=use_auth_token,
                     repo_type="model",
+                    commit_message=commit_message,
+                    create_pr=create_pr,
+                    revision=revision,
+                    commit_description=commit_description,
                 )
+
+        if model_type == "WeSpeakerResNet34":
+
+            msg = "push_to_hub functionnality isn't available yet for WeSpeakerResNet34"
+            warnings.warn(msg)
+
+
+def create_and_tag_model_card(
+    repo_id: str,
+    tags: Optional[List[str]] = None,
+    token: Optional[str] = None,
+    ignore_metadata_errors: bool = False,
+):
+    """
+    Creates or loads an existing model card and tags it.
+
+    Args:
+        repo_id (`str`):
+            The repo_id where to look for the model card.
+        tags (`List[str]`, *optional*):
+            The list of tags to add in the model card
+        token (`str`, *optional*):
+            Authentication token, obtained with `huggingface_hub.HfApi.login` method. Will default to the stored token.
+        ignore_metadata_errors (`str`):
+            If True, errors while parsing the metadata section will be ignored. Some information might be lost during
+            the process. Use it at your own risk.
+    """
+    try:
+        # Check if the model card is present on the remote repo
+        model_card = ModelCard.load(
+            repo_id, token=token, ignore_metadata_errors=ignore_metadata_errors
+        )
+    except EntryNotFoundError:
+        # Otherwise create a simple model card from template
+        model_description = "This is the model card of a 🤗 transformers model that has been pushed on the Hub. This model card has been automatically generated."
+        card_data = ModelCardData(
+            tags=[] if tags is None else tags, library_name="transformers"
+        )
+        model_card = ModelCard.from_template(
+            card_data, model_description=model_description
+        )
+
+    if tags is not None:
+        for model_tag in tags:
+            if model_tag not in model_card.data.tags:
+                model_card.data.tags.append(model_tag)
+
+    return model_card
