@@ -722,6 +722,13 @@ visit https://hf.co/{model_id} to accept the user conditions."""
             checkpoint = {"state_dict": self.state_dict()}
             self.on_save_checkpoint(checkpoint)
             checkpoint["pytorch-lightning_version"] = pl.__version__
+            checkpoint["hyper_parameters"] = {
+                "sample_rate": self.hparams.sample_rate,
+                "num_channels": self.hparams.num_channels,
+                "sincnet": self.hparams.sincnet,
+                "lstm": self.hparams.lstm,
+                "linear": self.hparams.linear,
+            }
 
             pyannote_checkpoint = Path(tmpdir) / HF_PYTORCH_WEIGHTS_NAME
             torch.save(checkpoint, pyannote_checkpoint)
@@ -732,12 +739,7 @@ visit https://hf.co/{model_id} to accept the user conditions."""
                 "task": {},
             }
 
-            file["model"]["sample_rate"] = self.hparams.sample_rate
-            file["model"]["num_channels"] = self.hparams.num_channels
-            file["model"]["sincnet"] = self.hparams.sincnet
-            file["model"]["lstm"] = self.hparams.lstm
-
-            file["model"]["linear"] = self.hparams.linear
+            file["model"] = checkpoint["hyper_parameters"]
             file["task"]["duration"] = self.specifications.duration
             file["task"]["max_speakers_per_chunk"] = len(self.specifications.classes)
             file["task"][
