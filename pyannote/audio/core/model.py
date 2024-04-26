@@ -708,7 +708,6 @@ visit https://hf.co/{model_id} to accept the user conditions."""
     def push_to_hub(
         self,
         repo_id: str,
-        use_temp_dir: Optional[bool] = None,
         commit_message: Optional[str] = None,
         private: Optional[bool] = None,
         token: Optional[Union[bool, str]] = None,
@@ -773,18 +772,23 @@ visit https://hf.co/{model_id} to accept the user conditions."""
             repo_id, private=private, token=token, exist_ok=True, repo_type="model"
         )
 
+        model_type = str(type(self)).split("'")[1].split(".")[-1]
+
+        if model_type == "PyanNet":
+            tags = ["speaker-segmentation", "pyannote"]
+
         # Create a new empty model card and eventually tag it
         model_card = create_and_tag_model_card(
             repo_id, tags, token=token, ignore_metadata_errors=ignore_metadata_errors
         )
 
         with TemporaryDirectory() as tmpdir:
+
             tmpdir = Path(tmpdir)
 
             # Save State Dicts:
-            model_type = str(type(self)).split("'")[1].split(".")[-1]
-
             if model_type == "PyanNet":
+                # Save dicts:
                 checkpoint = {"state_dict": self.state_dict()}
                 self.on_save_checkpoint(checkpoint)
                 checkpoint["pytorch-lightning_version"] = pl.__version__
@@ -834,7 +838,6 @@ visit https://hf.co/{model_id} to accept the user conditions."""
                 )
 
         if model_type == "WeSpeakerResNet34":
-
             msg = "push_to_hub functionnality isn't available yet for WeSpeakerResNet34"
             warnings.warn(msg)
 
