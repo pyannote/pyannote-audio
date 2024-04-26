@@ -28,6 +28,7 @@ from dataclasses import dataclass
 from functools import cached_property
 from importlib import import_module
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any, Dict, List, Optional, Text, Tuple, Union
 from urllib.parse import urlparse
 
@@ -35,7 +36,8 @@ import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.optim
-from huggingface_hub import hf_hub_download
+import yaml
+from huggingface_hub import HfApi, hf_hub_download
 from huggingface_hub.utils import RepositoryNotFoundError
 from lightning_fabric.utilities.cloud_io import _load as pl_load
 from pyannote.core import SlidingWindow
@@ -702,3 +704,53 @@ visit https://hf.co/{model_id} to accept the user conditions."""
             raise e
 
         return model
+
+    def push_to_hub(
+        self,
+        repo_name: str,
+        use_auth_token: Union[Text, None] = None,
+    ) -> None:
+
+        api = HfApi()
+
+        _ = api.create_repo(repo_name, exist_ok=True, repo_type="model")
+
+        with TemporaryDirectory() as tmpdir:
+            tmpdir = Path(tmpdir)
+
+            # Save State Dicts:
+            checkpoint = {"state_dict": self.state_dict()}
+            self.on_save_checkpoint(checkpoint)
+            checkpoint["pytorch-lightning_version"] = pl.__version__
+
+            pyannote_checkpoint = Path(tmpdir) / HF_PYTORCH_WEIGHTS_NAME
+            torch.save(checkpoint, pyannote_checkpoint)
+
+            # Config File:
+            file = {
+                "model": {},
+                "task": {},
+            }
+
+            file["model"]["sample_rate"] = self.hparams.sample_rate
+            file["model"]["num_channels"] = self.hparams.num_channels
+            file["model"]["sincnet"] = self.hparams.sincnet
+            file["model"]["lstm"] = self.hparams.lstm
+
+            file["model"]["linear"] = self.hparams.linear
+            file["task"]["duration"] = self.specifications.duration
+            file["task"]["max_speakers_per_chunk"] = len(self.specifications.classes)
+            file["task"][
+                "max_speakers_per_frame"
+            ] = self.specifications.powerset_max_classes
+
+            with open(tmpdir / "config.yaml", "w") as outfile:
+                yaml.dump(file, outfile, default_flow_style=False)
+
+            # Push to hub
+            return api.upload_folder(
+                repo_id=repo_name,
+                folder_path=tmpdir,
+                use_auth_token=use_auth_token,
+                repo_type="model",
+            )
