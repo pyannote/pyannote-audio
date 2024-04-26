@@ -719,40 +719,46 @@ visit https://hf.co/{model_id} to accept the user conditions."""
             tmpdir = Path(tmpdir)
 
             # Save State Dicts:
-            checkpoint = {"state_dict": self.state_dict()}
-            self.on_save_checkpoint(checkpoint)
-            checkpoint["pytorch-lightning_version"] = pl.__version__
-            checkpoint["hyper_parameters"] = {
-                "sample_rate": self.hparams.sample_rate,
-                "num_channels": self.hparams.num_channels,
-                "sincnet": self.hparams.sincnet,
-                "lstm": self.hparams.lstm,
-                "linear": self.hparams.linear,
-            }
+            model_type = str(type(self)).split("'")[1].split(".")[-1]
 
-            pyannote_checkpoint = Path(tmpdir) / HF_PYTORCH_WEIGHTS_NAME
-            torch.save(checkpoint, pyannote_checkpoint)
+            if model_type == "PyanNet":
+                checkpoint = {"state_dict": self.state_dict()}
+                self.on_save_checkpoint(checkpoint)
+                checkpoint["pytorch-lightning_version"] = pl.__version__
+                checkpoint["hyper_parameters"] = {
+                    "sample_rate": self.hparams.sample_rate,
+                    "num_channels": self.hparams.num_channels,
+                    "sincnet": self.hparams.sincnet,
+                    "lstm": self.hparams.lstm,
+                    "linear": self.hparams.linear,
+                }
 
-            # Config File:
-            file = {
-                "model": {},
-                "task": {},
-            }
+                pyannote_checkpoint = Path(tmpdir) / HF_PYTORCH_WEIGHTS_NAME
+                torch.save(checkpoint, pyannote_checkpoint)
 
-            file["model"] = checkpoint["hyper_parameters"]
-            file["task"]["duration"] = self.specifications.duration
-            file["task"]["max_speakers_per_chunk"] = len(self.specifications.classes)
-            file["task"][
-                "max_speakers_per_frame"
-            ] = self.specifications.powerset_max_classes
+                # Config File:
+                file = {
+                    "model": {},
+                    "task": {},
+                }
 
-            with open(tmpdir / "config.yaml", "w") as outfile:
-                yaml.dump(file, outfile, default_flow_style=False)
+                file["model"] = checkpoint["hyper_parameters"]
+                file["model"]["_target_"] = str(type(self)).split("'")[1]
+                file["task"]["duration"] = self.specifications.duration
+                file["task"]["max_speakers_per_chunk"] = len(
+                    self.specifications.classes
+                )
+                file["task"][
+                    "max_speakers_per_frame"
+                ] = self.specifications.powerset_max_classes
 
-            # Push to hub
-            return api.upload_folder(
-                repo_id=repo_name,
-                folder_path=tmpdir,
-                use_auth_token=use_auth_token,
-                repo_type="model",
-            )
+                with open(tmpdir / "config.yaml", "w") as outfile:
+                    yaml.dump(file, outfile, default_flow_style=False)
+
+                # Push to hub
+                return api.upload_folder(
+                    repo_id=repo_name,
+                    folder_path=tmpdir,
+                    use_auth_token=use_auth_token,
+                    repo_type="model",
+                )
