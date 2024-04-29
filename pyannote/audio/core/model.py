@@ -583,6 +583,7 @@ class Model(pl.LightningModule):
         """
 
         # pytorch-lightning expects str, not Path.
+
         checkpoint = str(checkpoint)
         if hparams_file is not None:
             hparams_file = str(hparams_file)
@@ -742,8 +743,6 @@ visit https://hf.co/{model_id} to accept the user conditions."""
                 Google Colab instances without any CPU OOM issues.
             create_pr (`bool`, *optional*, defaults to `False`):
                 Whether or not to create a PR with the uploaded files or directly commit.
-            safe_serialization (`bool`, *optional*, defaults to `True`):
-                Whether or not to convert the model weights in safetensors format for safer serialization.
             revision (`str`, *optional*):
                 Branch to push the uploaded files to.
             commit_description (`str`, *optional*):
@@ -751,20 +750,8 @@ visit https://hf.co/{model_id} to accept the user conditions."""
             tags (`List[str]`, *optional*):
                 List of tags to push on the Hub.
         """
-        use_auth_token = deprecated_kwargs.pop("use_auth_token", None)
 
         ignore_metadata_errors = deprecated_kwargs.pop("ignore_metadata_errors", False)
-
-        if use_auth_token is not None:
-            warnings.warn(
-                "The `use_auth_token` argument is deprecated and will be removed in v5 of Transformers. Please use `token` instead.",
-                FutureWarning,
-            )
-            if token is not None:
-                raise ValueError(
-                    "`token` and `use_auth_token` are both specified. Please set only the argument `token`."
-                )
-            token = use_auth_token
 
         api = HfApi()
 
@@ -774,24 +761,16 @@ visit https://hf.co/{model_id} to accept the user conditions."""
 
         model_type = str(type(self)).split("'")[1].split(".")[-1]
 
-        if model_type == "PyanNet":
-            tags = ["speaker-segmentation", "pyannote"]
-
-        # Create a new empty model card and eventually tag it
-        model_card = create_and_tag_model_card(
-            repo_id, tags, token=token, ignore_metadata_errors=ignore_metadata_errors
-        )
-
         with TemporaryDirectory() as tmpdir:
 
             tmpdir = Path(tmpdir)
 
             # Save State Dicts:
+            checkpoint = {"state_dict": self.state_dict()}
+            self.on_save_checkpoint(checkpoint)
+            checkpoint["pytorch-lightning_version"] = pl.__version__
+
             if model_type == "PyanNet":
-                # Save dicts:
-                checkpoint = {"state_dict": self.state_dict()}
-                self.on_save_checkpoint(checkpoint)
-                checkpoint["pytorch-lightning_version"] = pl.__version__
                 checkpoint["hyper_parameters"] = {
                     "sample_rate": self.hparams.sample_rate,
                     "num_channels": self.hparams.num_channels,
@@ -800,15 +779,15 @@ visit https://hf.co/{model_id} to accept the user conditions."""
                     "linear": self.hparams.linear,
                 }
 
-                pyannote_checkpoint = Path(tmpdir) / HF_PYTORCH_WEIGHTS_NAME
-                torch.save(checkpoint, pyannote_checkpoint)
+            pyannote_checkpoint = Path(tmpdir) / HF_PYTORCH_WEIGHTS_NAME
+            torch.save(checkpoint, pyannote_checkpoint)
 
-                # Config File:
+            # Prepare Config Files and Tags for a PyanNet model
+            if model_type == "PyanNet":
                 file = {
                     "model": {},
                     "task": {},
                 }
-
                 file["model"] = checkpoint["hyper_parameters"]
                 file["model"]["_target_"] = str(type(self)).split("'")[1]
                 file["task"]["duration"] = self.specifications.duration
@@ -819,32 +798,44 @@ visit https://hf.co/{model_id} to accept the user conditions."""
                     "max_speakers_per_frame"
                 ] = self.specifications.powerset_max_classes
 
-                with open(tmpdir / "config.yaml", "w") as outfile:
-                    yaml.dump(file, outfile, default_flow_style=False)
+            # Prepare Config Files and Tags for a WeSpeakerResNet34 model:
+            elif model_type == "WeSpeakerResNet34":
+                file = {
+                    "model": {},
+                }
 
-                # Update model card if needed:
-                model_card.save(os.path.join(tmpdir, "README.md"))
+                file["model"] = dict(self.hparams)
+                file["model"]["_target_"] = str(type(self)).split("'")[1]
 
-                # Push to hub
-                return api.upload_folder(
-                    repo_id=repo_id,
-                    folder_path=tmpdir,
-                    use_auth_token=use_auth_token,
-                    repo_type="model",
-                    commit_message=commit_message,
-                    create_pr=create_pr,
-                    revision=revision,
-                    commit_description=commit_description,
-                )
+            with open(tmpdir / "config.yaml", "w") as outfile:
+                yaml.dump(file, outfile, default_flow_style=False)
 
-        if model_type == "WeSpeakerResNet34":
-            msg = "push_to_hub functionnality isn't available yet for WeSpeakerResNet34"
-            warnings.warn(msg)
+            # Update model card:
+            model_card = create_and_tag_model_card(
+                repo_id,
+                model_type,
+                token=token,
+                ignore_metadata_errors=ignore_metadata_errors,
+            )
+            model_card.save(os.path.join(tmpdir, "README.md"))
+
+            # Push to hub
+            return api.upload_folder(
+                repo_id=repo_id,
+                folder_path=tmpdir,
+                use_auth_token=token,
+                repo_type="model",
+                commit_message=commit_message,
+                create_pr=create_pr,
+                revision=revision,
+                commit_description=commit_description,
+            )
 
 
 def create_and_tag_model_card(
     repo_id: str,
-    tags: Optional[List[str]] = None,
+    model_type: str,
+    # tags: Optional[List[str]] = None,
     token: Optional[str] = None,
     ignore_metadata_errors: bool = False,
 ):
@@ -862,6 +853,53 @@ def create_and_tag_model_card(
             If True, errors while parsing the metadata section will be ignored. Some information might be lost during
             the process. Use it at your own risk.
     """
+
+    if model_type == "PyanNet":
+
+        tags = [
+            "pyannote",
+            "pyannote.audio",
+            "pyannote-audio-model",
+            "audio",
+            "voice",
+            "speech",
+            "speaker",
+            "speaker-diarization",
+            "speaker-change-detection",
+            "speaker-segmentation",
+            "voice-activity-detection",
+            "overlapped-speech-detection",
+            "resegmentation",
+        ]
+        licence = "mit"
+
+        extra_gated_prompt = "The collected information will help acquire a better knowledge of \
+            pyannote.audio userbase and help its maintainers improve it further. Though \
+            this model uses MIT license and will always remain open-source, we will \
+            occasionnally email you about premium models and paid services around \
+            pyannote."
+        # extra_gated_fields:
+        #     Company/university: text
+        # Website: text
+
+    elif model_type == "WeSpeakerResNet34":
+
+        tags = [
+            "pyannote",
+            "pyannote.audio",
+            "pyannote-audio-model",
+            "audio",
+            "voice",
+            "speech",
+            "speaker",
+            "speaker-recognition",
+            "speaker-verification",
+            "speaker-identification",
+            "speaker-embedding",
+            "PyTorch",
+            "wespeaker",
+        ]
+        licence = "cc-by-4.0"
     try:
         # Check if the model card is present on the remote repo
         model_card = ModelCard.load(
@@ -869,17 +907,24 @@ def create_and_tag_model_card(
         )
     except EntryNotFoundError:
         # Otherwise create a simple model card from template
-        model_description = "This is the model card of a 🤗 transformers model that has been pushed on the Hub. This model card has been automatically generated."
+        model_description = "This is the model card of a pyannote model that has been pushed on the Hub. This model card has been automatically generated."
         card_data = ModelCardData(
-            tags=[] if tags is None else tags, library_name="transformers"
+            tags=[] if tags is None else tags, library_name="pyannote"
         )
         model_card = ModelCard.from_template(
             card_data, model_description=model_description
         )
+    extra_gated_prompt = None
 
     if tags is not None:
         for model_tag in tags:
             if model_tag not in model_card.data.tags:
                 model_card.data.tags.append(model_tag)
+
+    if licence is not None:
+        model_card.data.licence = licence
+
+    if extra_gated_prompt is not None:
+        model_card.data.extra_gated_prompt = extra_gated_prompt
 
     return model_card
