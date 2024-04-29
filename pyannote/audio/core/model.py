@@ -725,9 +725,6 @@ visit https://hf.co/{model_id} to accept the user conditions."""
             repo_id (`str`):
                 The name of the repository you want to push your {object} to. It should contain your organization name
                 when pushing to a given organization.
-            use_temp_dir (`bool`, *optional*):
-                Whether or not to use a temporary directory to store the files saved before they are pushed to the Hub.
-                Will default to `True` if there is no directory named like `repo_id`, `False` otherwise.
             commit_message (`str`, *optional*):
                 Message to commit while pushing. Will default to `"Upload {object}"`.
             private (`bool`, *optional*):
@@ -736,11 +733,6 @@ visit https://hf.co/{model_id} to accept the user conditions."""
                 The token to use as HTTP bearer authorization for remote files. If `True`, will use the token generated
                 when running `huggingface-cli login` (stored in `~/.huggingface`). Will default to `True` if `repo_url`
                 is not specified.
-            max_shard_size (`int` or `str`, *optional*, defaults to `"5GB"`):
-                Only applicable for models. The maximum size for a checkpoint before being sharded. Checkpoints shard
-                will then be each of size lower than this size. If expressed as a string, needs to be digits followed
-                by a unit (like `"5MB"`). We default it to `"5GB"` so that users can easily load models on free-tier
-                Google Colab instances without any CPU OOM issues.
             create_pr (`bool`, *optional*, defaults to `False`):
                 Whether or not to create a PR with the uploaded files or directly commit.
             revision (`str`, *optional*):
@@ -814,6 +806,7 @@ visit https://hf.co/{model_id} to accept the user conditions."""
             model_card = create_and_tag_model_card(
                 repo_id,
                 model_type,
+                tags,
                 token=token,
                 ignore_metadata_errors=ignore_metadata_errors,
             )
@@ -835,7 +828,7 @@ visit https://hf.co/{model_id} to accept the user conditions."""
 def create_and_tag_model_card(
     repo_id: str,
     model_type: str,
-    # tags: Optional[List[str]] = None,
+    tags: Optional[List[str]] = None,
     token: Optional[str] = None,
     ignore_metadata_errors: bool = False,
 ):
@@ -845,8 +838,10 @@ def create_and_tag_model_card(
     Args:
         repo_id (`str`):
             The repo_id where to look for the model card.
+        model_type (`str):
+            Specify the model type (PyanNet or WeSpeakerResNet34) to create the associated model card.
         tags (`List[str]`, *optional*):
-            The list of tags to add in the model card
+            The list of optional tags to add in the model card
         token (`str`, *optional*):
             Authentication token, obtained with `huggingface_hub.HfApi.login` method. Will default to the stored token.
         ignore_metadata_errors (`str`):
@@ -855,9 +850,11 @@ def create_and_tag_model_card(
     """
     extra_gated_prompt = None
 
+    tags = [] if tags is None else tags
+
     if model_type == "PyanNet":
 
-        tags = [
+        base_tags = [
             "pyannote",
             "pyannote.audio",
             "pyannote-audio-model",
@@ -872,6 +869,7 @@ def create_and_tag_model_card(
             "overlapped-speech-detection",
             "resegmentation",
         ]
+        tags += base_tags
         licence = "mit"
 
         extra_gated_prompt = "The collected information will help acquire a better knowledge of \
@@ -879,13 +877,10 @@ def create_and_tag_model_card(
             this model uses MIT license and will always remain open-source, we will \
             occasionnally email you about premium models and paid services around \
             pyannote."
-        # extra_gated_fields:
-        #     Company/university: text
-        # Website: text
 
     elif model_type == "WeSpeakerResNet34":
 
-        tags = [
+        base_tags = [
             "pyannote",
             "pyannote.audio",
             "pyannote-audio-model",
@@ -900,6 +895,7 @@ def create_and_tag_model_card(
             "PyTorch",
             "wespeaker",
         ]
+        tags += base_tags
         licence = "cc-by-4.0"
     try:
         # Check if the model card is present on the remote repo
@@ -926,5 +922,7 @@ def create_and_tag_model_card(
 
     if extra_gated_prompt is not None:
         model_card.data.extra_gated_prompt = extra_gated_prompt
+
+    model_card.text = "This is the model card of a pyannote model that has been pushed on the Hub. This model card has been automatically generated."
 
     return model_card
