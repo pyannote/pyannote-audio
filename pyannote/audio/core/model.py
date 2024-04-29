@@ -848,7 +848,6 @@ def create_and_tag_model_card(
             If True, errors while parsing the metadata section will be ignored. Some information might be lost during
             the process. Use it at your own risk.
     """
-    extra_gated_prompt = None
 
     tags = [] if tags is None else tags
 
@@ -871,12 +870,6 @@ def create_and_tag_model_card(
         ]
         tags += base_tags
         licence = "mit"
-
-        extra_gated_prompt = "The collected information will help acquire a better knowledge of \
-            pyannote.audio userbase and help its maintainers improve it further. Though \
-            this model uses MIT license and will always remain open-source, we will \
-            occasionnally email you about premium models and paid services around \
-            pyannote."
 
     elif model_type == "WeSpeakerResNet34":
 
@@ -919,9 +912,6 @@ def create_and_tag_model_card(
 
     if licence is not None:
         model_card.data.licence = licence
-
-    if extra_gated_prompt is not None:
-        model_card.data.extra_gated_prompt = extra_gated_prompt
 
     model_card.text = "This is the model card of a pyannote model that has been pushed on the Hub. This model card has been automatically generated."
 
