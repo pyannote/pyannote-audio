@@ -853,6 +853,7 @@ def create_and_tag_model_card(
             If True, errors while parsing the metadata section will be ignored. Some information might be lost during
             the process. Use it at your own risk.
     """
+    extra_gated_prompt = None
 
     if model_type == "PyanNet":
 
@@ -914,7 +915,6 @@ def create_and_tag_model_card(
         model_card = ModelCard.from_template(
             card_data, model_description=model_description
         )
-    extra_gated_prompt = None
 
     if tags is not None:
         for model_tag in tags:
