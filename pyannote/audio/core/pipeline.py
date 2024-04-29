@@ -230,6 +230,11 @@ visit https://hf.co/{model_id} to accept the user conditions."""
                 The description of the commit that will be created
             tags (`List[str]`, *optional*):
                 List of tags to push on the Hub.
+            cache_dir: Path or str, optional
+                Path to config cache directory. Defauorch/pyannote" when unset.
+            config_yaml_path (`str`):
+                Path to the original "pyannote/speaker-diarization-3.1" Hub repository containing the default config file to use
+                to create custom speaker diarization config files.
         """
 
         api = HfApi()
