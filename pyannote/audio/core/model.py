@@ -743,8 +743,6 @@ visit https://hf.co/{model_id} to accept the user conditions."""
                 List of tags to push on the Hub.
         """
 
-        ignore_metadata_errors = deprecated_kwargs.pop("ignore_metadata_errors", False)
-
         api = HfApi()
 
         _ = api.create_repo(
@@ -808,7 +806,6 @@ visit https://hf.co/{model_id} to accept the user conditions."""
                 model_type,
                 tags,
                 token=token,
-                ignore_metadata_errors=ignore_metadata_errors,
             )
             model_card.save(os.path.join(tmpdir, "README.md"))
 
@@ -830,7 +827,6 @@ def create_and_tag_model_card(
     model_type: str,
     tags: Optional[List[str]] = None,
     token: Optional[str] = None,
-    ignore_metadata_errors: bool = False,
 ):
     """
     Creates or loads an existing model card and tags it.
@@ -892,9 +888,7 @@ def create_and_tag_model_card(
         licence = "cc-by-4.0"
     try:
         # Check if the model card is present on the remote repo
-        model_card = ModelCard.load(
-            repo_id, token=token, ignore_metadata_errors=ignore_metadata_errors
-        )
+        model_card = ModelCard.load(repo_id, token=token)
     except EntryNotFoundError:
         # Otherwise create a simple model card from template
         model_description = "This is the model card of a pyannote model that has been pushed on the Hub. This model card has been automatically generated."
