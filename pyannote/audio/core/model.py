@@ -711,12 +711,11 @@ visit https://hf.co/{model_id} to accept the user conditions."""
         repo_id: str,
         commit_message: Optional[str] = None,
         private: Optional[bool] = None,
-        token: Optional[Union[bool, str]] = None,
+        use_auth_token: Optional[Union[bool, str]] = None,
         create_pr: bool = False,
         revision: str = None,
         commit_description: str = None,
         tags: Optional[List[str]] = None,
-        **deprecated_kwargs,
     ) -> None:
         """
         Upload the {object_files} to the 🤗 Model Hub.
@@ -746,7 +745,11 @@ visit https://hf.co/{model_id} to accept the user conditions."""
         api = HfApi()
 
         _ = api.create_repo(
-            repo_id, private=private, token=token, exist_ok=True, repo_type="model"
+            repo_id,
+            private=private,
+            token=use_auth_token,
+            exist_ok=True,
+            repo_type="model",
         )
 
         model_type = str(type(self)).split("'")[1].split(".")[-1]
@@ -761,13 +764,7 @@ visit https://hf.co/{model_id} to accept the user conditions."""
             checkpoint["pytorch-lightning_version"] = pl.__version__
 
             if model_type == "PyanNet":
-                checkpoint["hyper_parameters"] = {
-                    "sample_rate": self.hparams.sample_rate,
-                    "num_channels": self.hparams.num_channels,
-                    "sincnet": self.hparams.sincnet,
-                    "lstm": self.hparams.lstm,
-                    "linear": self.hparams.linear,
-                }
+                checkpoint["hyper_parameters"] = dict(self.hparams)
 
             pyannote_checkpoint = Path(tmpdir) / HF_PYTORCH_WEIGHTS_NAME
             torch.save(checkpoint, pyannote_checkpoint)
@@ -805,7 +802,7 @@ visit https://hf.co/{model_id} to accept the user conditions."""
                 repo_id,
                 model_type,
                 tags,
-                token=token,
+                use_auth_token=use_auth_token,
             )
             model_card.save(os.path.join(tmpdir, "README.md"))
 
@@ -813,7 +810,7 @@ visit https://hf.co/{model_id} to accept the user conditions."""
             return api.upload_folder(
                 repo_id=repo_id,
                 folder_path=tmpdir,
-                use_auth_token=token,
+                use_auth_token=use_auth_token,
                 repo_type="model",
                 commit_message=commit_message,
                 create_pr=create_pr,
@@ -826,7 +823,7 @@ def create_and_tag_model_card(
     repo_id: str,
     model_type: str,
     tags: Optional[List[str]] = None,
-    token: Optional[str] = None,
+    use_auth_token: Optional[str] = None,
 ):
     """
     Creates or loads an existing model card and tags it.
@@ -838,7 +835,7 @@ def create_and_tag_model_card(
             Specify the model type (PyanNet or WeSpeakerResNet34) to create the associated model card.
         tags (`List[str]`, *optional*):
             The list of optional tags to add in the model card
-        token (`str`, *optional*):
+        use_auth_token (`str`, *optional*):
             Authentication token, obtained with `huggingface_hub.HfApi.login` method. Will default to the stored token.
         ignore_metadata_errors (`str`):
             If True, errors while parsing the metadata section will be ignored. Some information might be lost during
@@ -888,7 +885,7 @@ def create_and_tag_model_card(
         licence = "cc-by-4.0"
     try:
         # Check if the model card is present on the remote repo
-        model_card = ModelCard.load(repo_id, token=token)
+        model_card = ModelCard.load(repo_id, token=use_auth_token)
     except EntryNotFoundError:
         # Otherwise create a simple model card from template
         model_description = "This is the model card of a pyannote model that has been pushed on the Hub. This model card has been automatically generated."

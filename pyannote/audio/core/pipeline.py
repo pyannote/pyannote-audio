@@ -189,7 +189,7 @@ visit https://hf.co/{model_id} to accept the user conditions."""
         segmentation_model: str = None,
         commit_message: Optional[str] = None,
         private: Optional[bool] = None,
-        token: Optional[Union[bool, str]] = None,
+        use_auth_token: Optional[Union[bool, str]] = None,
         create_pr: bool = False,
         revision: str = None,
         commit_description: str = None,
@@ -218,7 +218,7 @@ visit https://hf.co/{model_id} to accept the user conditions."""
                 Message to commit while pushing. Will default to `"Upload {object}"`.
             private (`bool`, *optional*):
                 Whether or not the repository created should be private.
-            token (`bool` or `str`, *optional*):
+            use_auth_token (`bool` or `str`, *optional*):
                 The token to use as HTTP bearer authorization for remote files. If `True`, will use the token generated
                 when running `huggingface-cli login` (stored in `~/.huggingface`). Will default to `True` if `repo_url`
                 is not specified.
@@ -240,7 +240,11 @@ visit https://hf.co/{model_id} to accept the user conditions."""
         api = HfApi()
 
         _ = api.create_repo(
-            repo_id, private=private, token=token, exist_ok=True, repo_type="model"
+            repo_id,
+            private=private,
+            token=use_auth_token,
+            exist_ok=True,
+            repo_type="model",
         )
 
         # Load the pyannote/speaker-diarization-3.1 pipeline config:
@@ -253,7 +257,7 @@ visit https://hf.co/{model_id} to accept the user conditions."""
                 library_name="pyannote",
                 library_version=__version__,
                 cache_dir=cache_dir,
-                use_auth_token=token,
+                use_auth_token=use_auth_token,
             )
         except RepositoryNotFoundError:
             print(
@@ -294,14 +298,14 @@ visit https://hf.co/{model_id} to accept the user conditions."""
             pipeline_card = create_and_tag_pipeline_card(
                 repo_id,
                 tags,
-                token=token,
+                use_auth_token=use_auth_token,
             )
             pipeline_card.save(os.path.join(tmpdir, "README.md"))
 
             return api.upload_folder(
                 repo_id=repo_id,
                 folder_path=tmpdir,
-                use_auth_token=token,
+                use_auth_token=use_auth_token,
                 repo_type="model",
                 commit_message=commit_message,
                 create_pr=create_pr,
@@ -473,7 +477,7 @@ visit https://hf.co/{model_id} to accept the user conditions."""
 def create_and_tag_pipeline_card(
     repo_id: str,
     tags: Optional[List[str]] = None,
-    token: Optional[str] = None,
+    use_auth_token: Optional[str] = None,
 ):
     """
     Creates or loads an existing model card and tags it.
@@ -483,7 +487,7 @@ def create_and_tag_pipeline_card(
             The repo_id where to look for the model card.
         tags (`List[str]`, *optional*):
             The list of optional tags to add in the model card
-        token (`str`, *optional*):
+        use_auth_token (`str`, *optional*):
             Authentication token, obtained with `huggingface_hub.HfApi.login` method. Will default to the stored token.
     """
 
@@ -507,7 +511,7 @@ def create_and_tag_pipeline_card(
 
     try:
         # Check if the model card is present on the remote repo
-        model_card = ModelCard.load(repo_id, token=token)
+        model_card = ModelCard.load(repo_id, token=use_auth_token)
     except EntryNotFoundError:
         # Otherwise create a simple model card from template
         model_description = "This is the model card of a pyannote pipeline that has been pushed on the Hub. This model card has been automatically generated."
