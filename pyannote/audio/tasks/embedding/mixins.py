@@ -277,6 +277,18 @@ class SupervisedRepresentationLearningTaskMixin(Task):
         X, y = batch["X"], batch["y"]
         loss = self.model.loss_func(self.model(X), y)
 
+        if not self.model.automatic_optimization:
+
+            wavlm_opt, other_opt = self.model.optimizers()
+
+            wavlm_opt.zero_grad()
+            other_opt.zero_grad()
+
+            self.model.manual_backward(loss)
+
+            wavlm_opt.step()
+            other_opt.step()
+
         # skip batch if something went wrong for some reason
         if torch.isnan(loss):
             return None

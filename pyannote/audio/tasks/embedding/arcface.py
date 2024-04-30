@@ -120,9 +120,9 @@ class SupervisedRepresentationLearningWithArcFace(
         )
 
     def setup_loss_func(self):
-
+        self.model.eval()
         _, embedding_size = self.model(self.model.example_input_array).shape
-
+        self.model.train()
         self.model.loss_func = pytorch_metric_learning.losses.ArcFaceLoss(
             len(self.specifications.classes),
             embedding_size,

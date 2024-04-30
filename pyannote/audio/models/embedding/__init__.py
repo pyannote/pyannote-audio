@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 
-from .wavlm import WavLMEmbeddings
+from .wavlm import WavLM_ECAPA_TDNN, WavLMEmbeddings
 from .wespeaker import (
     WeSpeakerResNet34,
     WeSpeakerResNet152,
@@ -38,4 +38,5 @@ __all__ = [
     "WeSpeakerResNet221",
     "WeSpeakerResNet293",
     "WavLMEmbeddings",
+    "WavLM_ECAPA_TDNN",
 ]
