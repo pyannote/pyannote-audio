@@ -111,9 +111,14 @@ class SimpleEmbeddingModel(Model):
 
         hop_length = self.mfcc.MelSpectrogram.spectrogram.hop_length
         n_fft = self.mfcc.MelSpectrogram.spectrogram.n_fft
+        center = self.mfcc.MelSpectrogram.spectrogram.center
 
         return conv1d_receptive_field_size(
-            num_frames, kernel_size=n_fft, stride=hop_length, dilation=1
+            num_frames,
+            kernel_size=n_fft,
+            stride=hop_length,
+            padding=n_fft // 2 if center else 0,
+            dilation=1,
         )
 
     def receptive_field_center(self, frame: int = 0) -> int:

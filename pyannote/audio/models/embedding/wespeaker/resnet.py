@@ -124,6 +124,7 @@ class BasicBlock(nn.Module):
             num_frames,
             kernel_size=[3, 3],
             stride=[self.stride, 1],
+            padding=[1, 1],
             dilation=[1, 1],
         )
 
@@ -189,6 +190,7 @@ class Bottleneck(nn.Module):
             num_frames,
             kernel_size=[1, 3, 1],
             stride=[1, self.stride, 1],
+            padding=[0, 1, 0],
             dilation=[1, 1, 1],
         )
 
@@ -305,6 +307,7 @@ class ResNet(nn.Module):
             num_frames=receptive_field_size,
             kernel_size=3,
             stride=1,
+            padding=1,
             dilation=1,
         )
 

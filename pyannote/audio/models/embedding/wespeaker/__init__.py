@@ -154,6 +154,7 @@ class BaseWeSpeakerResNet(Model):
             num_frames=receptive_field_size,
             kernel_size=window_size,
             stride=step_size,
+            padding=0,
             dilation=1,
         )
 

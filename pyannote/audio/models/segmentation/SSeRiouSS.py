@@ -149,9 +149,12 @@ class SSeRiouSS(Model):
             self.lstm = nn.ModuleList(
                 [
                     nn.LSTM(
-                        wav2vec_dim
-                        if i == 0
-                        else lstm["hidden_size"] * (2 if lstm["bidirectional"] else 1),
+                        (
+                            wav2vec_dim
+                            if i == 0
+                            else lstm["hidden_size"]
+                            * (2 if lstm["bidirectional"] else 1)
+                        ),
                         **one_layer_lstm,
                     )
                     for i in range(num_layers)
@@ -246,6 +249,7 @@ class SSeRiouSS(Model):
                 num_frames=receptive_field_size,
                 kernel_size=conv_layer.kernel_size,
                 stride=conv_layer.stride,
+                padding=conv_layer.conv.padding[0],
                 dilation=conv_layer.conv.dilation[0],
             )
         return receptive_field_size
