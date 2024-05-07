@@ -31,11 +31,6 @@ from torchaudio.transforms import MFCC
 
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
-from pyannote.audio.utils.receptive_field import (
-    conv1d_num_frames,
-    conv1d_receptive_field_center,
-    conv1d_receptive_field_size,
-)
 
 
 class SimpleSegmentationModel(Model):
@@ -87,13 +82,10 @@ class SimpleSegmentationModel(Model):
         n_fft = self.mfcc.MelSpectrogram.spectrogram.n_fft
         center = self.mfcc.MelSpectrogram.spectrogram.center
 
-        return conv1d_num_frames(
-            num_samples=num_samples,
-            kernel_size=n_fft,
-            stride=hop_length,
-            padding=n_fft // 2 if center else 0,
-            dilation=1,
-        )
+        if center:
+            return 1 + num_samples // hop_length
+        else:
+            return 1 + (num_samples - n_fft) // hop_length
 
     def receptive_field_size(self, num_frames: int = 1) -> int:
         """Compute size of receptive field
@@ -111,15 +103,7 @@ class SimpleSegmentationModel(Model):
 
         hop_length = self.mfcc.MelSpectrogram.spectrogram.hop_length
         n_fft = self.mfcc.MelSpectrogram.spectrogram.n_fft
-        center = self.mfcc.MelSpectrogram.spectrogram.center
-
-        return conv1d_receptive_field_size(
-            num_frames,
-            kernel_size=n_fft,
-            stride=hop_length,
-            padding=n_fft // 2 if center else 0,
-            dilation=1,
-        )
+        return n_fft + (num_frames - 1) * hop_length
 
     def receptive_field_center(self, frame: int = 0) -> int:
         """Compute center of receptive field
@@ -139,13 +123,10 @@ class SimpleSegmentationModel(Model):
         n_fft = self.mfcc.MelSpectrogram.spectrogram.n_fft
         center = self.mfcc.MelSpectrogram.spectrogram.center
 
-        return conv1d_receptive_field_center(
-            frame=frame,
-            kernel_size=n_fft,
-            stride=hop_length,
-            padding=n_fft // 2 if center else 0,
-            dilation=1,
-        )
+        if center:
+            return frame * hop_length
+        else:
+            return frame * hop_length + n_fft // 2
 
     @property
     def dimension(self) -> int:
