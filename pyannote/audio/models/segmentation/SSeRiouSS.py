@@ -55,6 +55,8 @@ class SSeRiouSS(Model):
     wav2vec_layer: int, optional
         Index of layer to use as input to the LSTM.
         Defaults (-1) to use average of all layers (with learnable weights).
+    wav2vec_frozen: bool, optional
+        Freeze wav2vec layers. Defaults to True.
     lstm : dict, optional
         Keyword arguments passed to the LSTM layer.
         Defaults to {"hidden_size": 128, "num_layers": 4, "bidirectional": True},
@@ -82,6 +84,7 @@ class SSeRiouSS(Model):
         self,
         wav2vec: Union[dict, str] = None,
         wav2vec_layer: int = -1,
+        wav2vec_frozen: bool = True,
         lstm: Optional[dict] = None,
         linear: Optional[dict] = None,
         sample_rate: int = 16000,
@@ -128,7 +131,9 @@ class SSeRiouSS(Model):
         lstm["batch_first"] = True
         linear = merge_dict(self.LINEAR_DEFAULTS, linear)
 
-        self.save_hyperparameters("wav2vec", "wav2vec_layer", "lstm", "linear")
+        self.save_hyperparameters(
+            "wav2vec", "wav2vec_layer", "wav2vec_frozen", "lstm", "linear"
+        )
 
         monolithic = lstm["monolithic"]
         if monolithic:
@@ -294,7 +299,12 @@ class SSeRiouSS(Model):
             None if self.hparams.wav2vec_layer < 0 else self.hparams.wav2vec_layer
         )
 
-        with torch.no_grad():
+        if self.hparams.wav2vec_frozen:
+            with torch.no_grad():
+                outputs, _ = self.wav2vec.extract_features(
+                    waveforms.squeeze(1), num_layers=num_layers
+                )
+        else:
             outputs, _ = self.wav2vec.extract_features(
                 waveforms.squeeze(1), num_layers=num_layers
             )
