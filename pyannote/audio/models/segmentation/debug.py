@@ -21,6 +21,7 @@
 # SOFTWARE.
 
 
+from functools import lru_cache
 from typing import Optional
 
 import torch
@@ -57,18 +58,91 @@ class SimpleSegmentationModel(Model):
             bidirectional=True,
         )
 
-    def build(self):
-        # define task-dependent layers
+    @lru_cache
+    def num_frames(self, num_samples: int) -> int:
+        """Compute number of output frames for a given number of input samples
 
+        Parameters
+        ----------
+        num_samples : int
+            Number of input samples
+
+        Returns
+        -------
+        num_frames : int
+            Number of output frames
+
+        Source
+        ------
+        https://pytorch.org/docs/stable/generated/torch.stft.html#torch.stft
+
+        """
+
+        hop_length = self.mfcc.MelSpectrogram.spectrogram.hop_length
+        n_fft = self.mfcc.MelSpectrogram.spectrogram.n_fft
+        center = self.mfcc.MelSpectrogram.spectrogram.center
+
+        if center:
+            return 1 + num_samples // hop_length
+        else:
+            return 1 + (num_samples - n_fft) // hop_length
+
+    def receptive_field_size(self, num_frames: int = 1) -> int:
+        """Compute size of receptive field
+
+        Parameters
+        ----------
+        num_frames : int, optional
+            Number of frames in the output signal
+
+        Returns
+        -------
+        receptive_field_size : int
+            Receptive field size.
+        """
+
+        hop_length = self.mfcc.MelSpectrogram.spectrogram.hop_length
+        n_fft = self.mfcc.MelSpectrogram.spectrogram.n_fft
+        return n_fft + (num_frames - 1) * hop_length
+
+    def receptive_field_center(self, frame: int = 0) -> int:
+        """Compute center of receptive field
+
+        Parameters
+        ----------
+        frame : int, optional
+            Frame index
+
+        Returns
+        -------
+        receptive_field_center : int
+            Index of receptive field center.
+        """
+
+        hop_length = self.mfcc.MelSpectrogram.spectrogram.hop_length
+        n_fft = self.mfcc.MelSpectrogram.spectrogram.n_fft
+        center = self.mfcc.MelSpectrogram.spectrogram.center
+
+        if center:
+            return frame * hop_length
+        else:
+            return frame * hop_length + n_fft // 2
+
+    @property
+    def dimension(self) -> int:
+        """Dimension of output"""
         if isinstance(self.specifications, tuple):
             raise ValueError("SimpleSegmentationModel does not support multi-tasking.")
 
         if self.specifications.powerset:
-            out_features = self.specifications.num_powerset_classes
+            return self.specifications.num_powerset_classes
         else:
-            out_features = len(self.specifications.classes)
+            return len(self.specifications.classes)
 
-        self.classifier = nn.Linear(32 * 2, out_features)
+    def build(self):
+        # define task-dependent layers
+
+        self.classifier = nn.Linear(32 * 2, self.dimension)
         self.activation = self.default_activation()
 
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:

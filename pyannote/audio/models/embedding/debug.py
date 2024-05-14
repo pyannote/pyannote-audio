@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020 CNRS
+# Copyright (c) 2020- CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -21,6 +21,7 @@
 # SOFTWARE.
 
 
+from functools import lru_cache
 from typing import Optional
 
 import torch
@@ -39,7 +40,6 @@ class SimpleEmbeddingModel(Model):
         num_channels: int = 1,
         task: Optional[Task] = None,
     ):
-
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
 
         self.mfcc = MFCC(
@@ -57,6 +57,81 @@ class SimpleEmbeddingModel(Model):
             batch_first=True,
             bidirectional=True,
         )
+
+    @lru_cache
+    def num_frames(self, num_samples: int) -> int:
+        """Compute number of output frames for a given number of input samples
+
+        Parameters
+        ----------
+        num_samples : int
+            Number of input samples
+
+        Returns
+        -------
+        num_frames : int
+            Number of output frames
+
+        Source
+        ------
+        https://pytorch.org/docs/stable/generated/torch.stft.html#torch.stft
+
+        """
+
+        hop_length = self.mfcc.MelSpectrogram.spectrogram.hop_length
+        n_fft = self.mfcc.MelSpectrogram.spectrogram.n_fft
+        center = self.mfcc.MelSpectrogram.spectrogram.center
+
+        if center:
+            return 1 + num_samples // hop_length
+        else:
+            return 1 + (num_samples - n_fft) // hop_length
+
+    def receptive_field_size(self, num_frames: int = 1) -> int:
+        """Compute size of receptive field
+
+        Parameters
+        ----------
+        num_frames : int, optional
+            Number of frames in the output signal
+
+        Returns
+        -------
+        receptive_field_size : int
+            Receptive field size.
+        """
+
+        hop_length = self.mfcc.MelSpectrogram.spectrogram.hop_length
+        n_fft = self.mfcc.MelSpectrogram.spectrogram.n_fft
+        return n_fft + (num_frames - 1) * hop_length
+
+    def receptive_field_center(self, frame: int = 0) -> int:
+        """Compute center of receptive field
+
+        Parameters
+        ----------
+        frame : int, optional
+            Frame index
+
+        Returns
+        -------
+        receptive_field_center : int
+            Index of receptive field center.
+        """
+
+        hop_length = self.mfcc.MelSpectrogram.spectrogram.hop_length
+        n_fft = self.mfcc.MelSpectrogram.spectrogram.n_fft
+        center = self.mfcc.MelSpectrogram.spectrogram.center
+
+        if center:
+            return frame * hop_length
+        else:
+            return frame * hop_length + n_fft // 2
+
+    @property
+    def dimension(self) -> int:
+        """Dimension of output"""
+        return 64
 
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
         """

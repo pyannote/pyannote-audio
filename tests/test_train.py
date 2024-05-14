@@ -1,16 +1,41 @@
-import pytest
+# The MIT License (MIT)
+#
+# Copyright (c) 2024- CNRS
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+
 from pathlib import Path
+from tempfile import mkstemp
+
+import pytest
 from pyannote.database import FileFinder, get_protocol
 from pytorch_lightning import Trainer
 
-from pyannote.audio.models.segmentation.debug import SimpleSegmentationModel
 from pyannote.audio.models.embedding.debug import SimpleEmbeddingModel
+from pyannote.audio.models.segmentation.debug import SimpleSegmentationModel
 from pyannote.audio.tasks import (
+    MultiLabelSegmentation,
     OverlappedSpeechDetection,
     SpeakerDiarization,
-    VoiceActivityDetection,
-    MultiLabelSegmentation,
     SupervisedRepresentationLearningWithArcFace,
+    VoiceActivityDetection,
 )
 
 CACHE_FILE_PATH = "./cache/cache_file"
@@ -23,6 +48,31 @@ def protocol():
     )
 
 
+@pytest.fixture()
+def cache():
+    return mkstemp()[1]
+
+
+@pytest.fixture()
+def gender_protocol():
+    def to_gender(file):
+        annotation = file["annotation"]
+        mapping = {label: label[0] for label in annotation.labels()}
+        return annotation.rename_labels(mapping)
+
+    def classes(file):
+        return ["M", "F"]
+
+    return get_protocol(
+        "Debug.SpeakerDiarization.Debug",
+        preprocessors={
+            "audio": FileFinder(),
+            "annotation": to_gender,
+            "classes": classes,
+        },
+    )
+
+
 def test_train_segmentation(protocol):
     segmentation = SpeakerDiarization(protocol)
     model = SimpleSegmentationModel(task=segmentation)
@@ -30,43 +80,43 @@ def test_train_segmentation(protocol):
     trainer.fit(model)
 
 
-def test_train_segmentation_with_cached_data_mono_device(protocol):
-    first_task = SpeakerDiarization(protocol, cache_path=CACHE_FILE_PATH)
+def test_train_segmentation_with_cached_data_mono_device(protocol, cache):
+    first_task = SpeakerDiarization(protocol, cache=cache)
     first_model = SimpleSegmentationModel(task=first_task)
     first_trainer = Trainer(fast_dev_run=True, accelerator="cpu", devices=1)
     first_trainer.fit(first_model)
 
-    second_task = SpeakerDiarization(protocol, cache_path=CACHE_FILE_PATH)
+    second_task = SpeakerDiarization(protocol, cache=cache)
     second_model = SimpleSegmentationModel(task=second_task)
     second_trainer = Trainer(fast_dev_run=True, accelerator="cpu", devices=1)
     second_trainer.fit(second_model)
 
-    Path(CACHE_FILE_PATH).unlink(missing_ok=True)
 
-
-def test_train_multilabel_segmentation(protocol):
-    multilabel_segmentation = MultiLabelSegmentation(protocol)
+def test_train_multilabel_segmentation(gender_protocol):
+    multilabel_segmentation = MultiLabelSegmentation(gender_protocol)
     model = SimpleSegmentationModel(task=multilabel_segmentation)
     trainer = Trainer(fast_dev_run=True, accelerator="cpu")
     trainer.fit(model)
 
 
-def test_train_multilabel_segmentation_with_cached_data_mono_device(protocol):
-    first_task = MultiLabelSegmentation(protocol, cache_path=CACHE_FILE_PATH)
+def test_train_multilabel_segmentation_with_cached_data_mono_device(
+    gender_protocol, cache
+):
+    first_task = MultiLabelSegmentation(gender_protocol, cache=cache)
     first_model = SimpleSegmentationModel(task=first_task)
     first_trainer = Trainer(fast_dev_run=True, accelerator="cpu", devices=1)
     first_trainer.fit(first_model)
 
-    second_task = MultiLabelSegmentation(protocol, cache_path=CACHE_FILE_PATH)
+    second_task = MultiLabelSegmentation(gender_protocol, cache=cache)
     second_model = SimpleSegmentationModel(task=second_task)
     second_trainer = Trainer(fast_dev_run=True, accelerator="cpu", devices=1)
     second_trainer.fit(second_model)
 
-    Path(CACHE_FILE_PATH).unlink(missing_ok=True)
-
 
 def test_train_supervised_representation_with_arcface(protocol):
-    supervised_representation_with_arface = SupervisedRepresentationLearningWithArcFace(protocol)
+    supervised_representation_with_arface = SupervisedRepresentationLearningWithArcFace(
+        protocol
+    )
     model = SimpleEmbeddingModel(task=supervised_representation_with_arface)
     trainer = Trainer(fast_dev_run=True, accelerator="cpu")
     trainer.fit(model)
@@ -79,18 +129,16 @@ def test_train_voice_activity_detection(protocol):
     trainer.fit(model)
 
 
-def test_train_voice_activity_detection_with_cached_data_mono_device(protocol):
-    first_task = VoiceActivityDetection(protocol, cache_path=CACHE_FILE_PATH)
+def test_train_voice_activity_detection_with_cached_data_mono_device(protocol, cache):
+    first_task = VoiceActivityDetection(protocol, cache=cache)
     first_model = SimpleSegmentationModel(task=first_task)
     first_trainer = Trainer(fast_dev_run=True, accelerator="cpu", devices=1)
     first_trainer.fit(first_model)
 
-    second_task = VoiceActivityDetection(protocol, cache_path=CACHE_FILE_PATH)
+    second_task = VoiceActivityDetection(protocol, cache=cache)
     second_model = SimpleSegmentationModel(task=second_task)
     second_trainer = Trainer(fast_dev_run=True, accelerator="cpu", devices=1)
     second_trainer.fit(second_model)
-
-    Path(CACHE_FILE_PATH).unlink(missing_ok=True)
 
 
 def test_train_overlapped_speech_detection(protocol):
@@ -100,18 +148,18 @@ def test_train_overlapped_speech_detection(protocol):
     trainer.fit(model)
 
 
-def test_train_overlapped_speech_detection_with_cached_data_mono_device(protocol):
-    first_task = OverlappedSpeechDetection(protocol, cache_path=CACHE_FILE_PATH)
+def test_train_overlapped_speech_detection_with_cached_data_mono_device(
+    protocol, cache
+):
+    first_task = OverlappedSpeechDetection(protocol, cache=cache)
     first_model = SimpleSegmentationModel(task=first_task)
     first_trainer = Trainer(fast_dev_run=True, accelerator="cpu", devices=1)
     first_trainer.fit(first_model)
 
-    second_task = OverlappedSpeechDetection(protocol, cache_path=CACHE_FILE_PATH)
+    second_task = OverlappedSpeechDetection(protocol, cache=cache)
     second_model = SimpleSegmentationModel(task=second_task)
     second_trainer = Trainer(fast_dev_run=True, accelerator="cpu", devices=1)
     second_trainer.fit(second_model)
-
-    Path(CACHE_FILE_PATH).unlink(missing_ok=True)
 
 
 def test_finetune_with_task_that_does_not_need_setup_for_specs(protocol):
@@ -138,18 +186,16 @@ def test_finetune_with_task_that_needs_setup_for_specs(protocol):
     trainer.fit(model)
 
 
-def test_finetune_with_task_that_needs_setup_for_specs_and_with_cache(protocol):
-    segmentation = SpeakerDiarization(protocol, cache_path=CACHE_FILE_PATH)
+def test_finetune_with_task_that_needs_setup_for_specs_and_with_cache(protocol, cache):
+    segmentation = SpeakerDiarization(protocol, cache=cache)
     model = SimpleSegmentationModel(task=segmentation)
     trainer = Trainer(fast_dev_run=True, accelerator="cpu")
     trainer.fit(model)
 
-    segmentation = SpeakerDiarization(protocol, cache_path=CACHE_FILE_PATH)
+    segmentation = SpeakerDiarization(protocol, cache=cache)
     model.task = segmentation
     trainer = Trainer(fast_dev_run=True, accelerator="cpu")
     trainer.fit(model)
-
-    Path(CACHE_FILE_PATH).unlink(missing_ok=True)
 
 
 def test_transfer_with_task_that_does_not_need_setup_for_specs(protocol):
@@ -184,7 +230,22 @@ def test_finetune_freeze_with_task_that_needs_setup_for_specs(protocol):
 
     segmentation = SpeakerDiarization(protocol)
     model.task = segmentation
-    model.freeze_up_to("mfcc")
+    model.freeze_by_name("mfcc")
+    trainer = Trainer(fast_dev_run=True, accelerator="cpu")
+    trainer.fit(model)
+
+
+def test_finetune_freeze_with_task_that_needs_setup_for_specs_and_with_cache(
+    protocol, cache
+):
+    segmentation = SpeakerDiarization(protocol, cache=cache)
+    model = SimpleSegmentationModel(task=segmentation)
+    trainer = Trainer(fast_dev_run=True, accelerator="cpu")
+    trainer.fit(model)
+
+    segmentation = SpeakerDiarization(protocol, cache=cache)
+    model.task = segmentation
+    model.freeze_by_name("mfcc")
     trainer = Trainer(fast_dev_run=True, accelerator="cpu")
     trainer.fit(model)
 
@@ -212,12 +273,30 @@ def test_finetune_freeze_with_task_that_does_not_need_setup_for_specs(protocol):
 
     vad = VoiceActivityDetection(protocol)
     model.task = vad
-    model.freeze_up_to("mfcc")
+    model.freeze_by_name("mfcc")
     trainer = Trainer(fast_dev_run=True, accelerator="cpu")
     trainer.fit(model)
 
 
-def test_finetune_freeze_with_task_that_does_not_need_setup_for_specs_and_with_cache(protocol):
+def test_finetune_freeze_with_task_that_does_not_need_setup_for_specs_and_with_cache(
+    protocol,
+    cache,
+):
+    vad = VoiceActivityDetection(protocol, cache=cache)
+    model = SimpleSegmentationModel(task=vad)
+    trainer = Trainer(fast_dev_run=True, accelerator="cpu")
+    trainer.fit(model)
+
+    vad = VoiceActivityDetection(protocol, cache=cache)
+    model.task = vad
+    model.freeze_by_name("mfcc")
+    trainer = Trainer(fast_dev_run=True, accelerator="cpu")
+    trainer.fit(model)
+
+
+def test_finetune_freeze_with_task_that_does_not_need_setup_for_specs_and_with_cache(
+    protocol,
+):
     vad = VoiceActivityDetection(protocol, cache_path=CACHE_FILE_PATH)
     model = SimpleSegmentationModel(task=vad)
     trainer = Trainer(fast_dev_run=True, accelerator="cpu")
@@ -232,7 +311,9 @@ def test_finetune_freeze_with_task_that_does_not_need_setup_for_specs_and_with_c
     Path(CACHE_FILE_PATH).unlink(missing_ok=True)
 
 
-def test_finetune_freeze_with_task_that_does_not_need_setup_for_specs_and_with_cache(protocol):
+def test_finetune_freeze_with_task_that_does_not_need_setup_for_specs_and_with_cache(
+    protocol,
+):
     vad = VoiceActivityDetection(protocol, cache_path=CACHE_FILE_PATH)
     model = SimpleSegmentationModel(task=vad)
     trainer = Trainer(fast_dev_run=True, accelerator="cpu")
@@ -255,7 +336,7 @@ def test_transfer_freeze_with_task_that_does_not_need_setup_for_specs(protocol):
 
     voice_activity_detection = VoiceActivityDetection(protocol)
     model.task = voice_activity_detection
-    model.freeze_up_to("mfcc")
+    model.freeze_by_name("mfcc")
     trainer = Trainer(fast_dev_run=True, accelerator="cpu")
     trainer.fit(model)
 
@@ -268,6 +349,6 @@ def test_transfer_freeze_with_task_that_needs_setup_for_specs(protocol):
 
     segmentation = SpeakerDiarization(protocol)
     model.task = segmentation
-    model.freeze_up_to("mfcc")
+    model.freeze_by_name("mfcc")
     trainer = Trainer(fast_dev_run=True, accelerator="cpu")
     trainer.fit(model)

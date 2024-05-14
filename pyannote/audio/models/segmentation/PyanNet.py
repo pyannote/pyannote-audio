@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-
+from functools import lru_cache
 from typing import Optional
 
 import torch
@@ -73,9 +73,9 @@ class PyanNet(Model):
 
     def __init__(
         self,
-        sincnet: dict = None,
-        lstm: dict = None,
-        linear: dict = None,
+        sincnet: Optional[dict] = None,
+        lstm: Optional[dict] = None,
+        linear: Optional[dict] = None,
         sample_rate: int = 16000,
         num_channels: int = 1,
         task: Optional[Task] = None,
@@ -138,6 +138,17 @@ class PyanNet(Model):
             ]
         )
 
+    @property
+    def dimension(self) -> int:
+        """Dimension of output"""
+        if isinstance(self.specifications, tuple):
+            raise ValueError("PyanNet does not support multi-tasking.")
+
+        if self.specifications.powerset:
+            return self.specifications.num_powerset_classes
+        else:
+            return len(self.specifications.classes)
+
     def build(self):
         if self.hparams.linear["num_layers"] > 0:
             in_features = self.hparams.linear["hidden_size"]
@@ -146,16 +157,56 @@ class PyanNet(Model):
                 2 if self.hparams.lstm["bidirectional"] else 1
             )
 
-        if isinstance(self.specifications, tuple):
-            raise ValueError("PyanNet does not support multi-tasking.")
-
-        if self.specifications.powerset:
-            out_features = self.specifications.num_powerset_classes
-        else:
-            out_features = len(self.specifications.classes)
-
-        self.classifier = nn.Linear(in_features, out_features)
+        self.classifier = nn.Linear(in_features, self.dimension)
         self.activation = self.default_activation()
+
+    @lru_cache
+    def num_frames(self, num_samples: int) -> int:
+        """Compute number of output frames for a given number of input samples
+
+        Parameters
+        ----------
+        num_samples : int
+            Number of input samples
+
+        Returns
+        -------
+        num_frames : int
+            Number of output frames
+        """
+
+        return self.sincnet.num_frames(num_samples)
+
+    def receptive_field_size(self, num_frames: int = 1) -> int:
+        """Compute size of receptive field
+
+        Parameters
+        ----------
+        num_frames : int, optional
+            Number of frames in the output signal
+
+        Returns
+        -------
+        receptive_field_size : int
+            Receptive field size.
+        """
+        return self.sincnet.receptive_field_size(num_frames=num_frames)
+
+    def receptive_field_center(self, frame: int = 0) -> int:
+        """Compute center of receptive field
+
+        Parameters
+        ----------
+        frame : int, optional
+            Frame index
+
+        Returns
+        -------
+        receptive_field_center : int
+            Index of receptive field center.
+        """
+
+        return self.sincnet.receptive_field_center(frame=frame)
 
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
         """Pass forward

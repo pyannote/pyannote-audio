@@ -128,7 +128,7 @@ class OverlappedSpeechDetection(Pipeline):
         # load model
         model = get_model(segmentation, use_auth_token=use_auth_token)
 
-        if model.example_output.dimension > 1:
+        if model.dimension > 1:
             inference_kwargs["pre_aggregation_hook"] = lambda scores: np.partition(
                 scores, -2, axis=-1
             )[:, :, -2, np.newaxis]
@@ -255,7 +255,7 @@ class OverlappedSpeechDetection(Pipeline):
                 _self,
                 reference: Annotation,
                 hypothesis: Annotation,
-                uem: Timeline = None,
+                uem: Optional[Timeline] = None,
                 **kwargs,
             ) -> dict:
                 return super().compute_components(

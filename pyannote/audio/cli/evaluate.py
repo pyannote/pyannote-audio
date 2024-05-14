@@ -25,7 +25,7 @@ from typing import Optional
 
 import hydra
 from omegaconf import DictConfig
-from pyannote.database import FileFinder, ProtocolFile, get_protocol
+from pyannote.database import FileFinder, ProtocolFile, registry
 from rich.progress import Progress
 
 from pyannote.audio import Inference, Model
@@ -41,8 +41,16 @@ def evaluate(cfg: DictConfig) -> Optional[float]:
     (device,) = get_devices(needs=1)
     model = Model.from_pretrained(cfg.model, device=device)
 
+    # load databases into registry if it was specified
+    if "registry" in cfg:
+        for database_yml in cfg.registry.split(","):
+            registry.load_database(database_yml)
+
     # load evaluation files
-    protocol = get_protocol(cfg.protocol, preprocessors={"audio": FileFinder()})
+    protocol = registry.get_protocol(
+        cfg.protocol, preprocessors={"audio": FileFinder()}
+    )
+
     files = list(getattr(protocol, cfg.subset)())
 
     # load evaluation metric
@@ -53,7 +61,7 @@ def evaluate(cfg: DictConfig) -> Optional[float]:
         main_task = progress.add_task(protocol.name, total=len(files))
         file_task = progress.add_task("Processing", total=1.0)
 
-        def progress_hook(completed: int = None, total: int = None):
+        def progress_hook(completed: Optional[int] = None, total: Optional[int] = None):
             progress.update(file_task, completed=completed / total)
 
         inference = Inference(model, device=device)
@@ -64,8 +72,6 @@ def evaluate(cfg: DictConfig) -> Optional[float]:
                 binarize(inference(file, hook=progress_hook)),
                 warm_up=(warm_up, warm_up),
             )
-
-        metric = DiscreteDiarizationErrorRate()
 
         for file in files:
             progress.update(file_task, description=file["uri"])

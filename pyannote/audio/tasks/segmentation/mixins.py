@@ -31,11 +31,11 @@ import torch
 from pyannote.database.protocol.protocol import Scope, Subset
 from pytorch_lightning.loggers import MLFlowLogger, TensorBoardLogger
 from torch.utils.data._utils.collate import default_collate
-from torchaudio.backend.common import AudioMetaData
+from torchaudio import AudioMetaData
 from torchmetrics import Metric
 from torchmetrics.classification import BinaryAUROC, MulticlassAUROC, MultilabelAUROC
 
-from pyannote.audio.core.task import Problem, Task
+from pyannote.audio.core.task import Problem, Task, get_dtype
 from pyannote.audio.utils.random import create_rng_for_worker
 
 Subsets = list(Subset.__args__)
@@ -48,16 +48,15 @@ class SegmentationTask(Task):
     def get_file(self, file_id):
         file = dict()
 
-        file["audio"] = str(self.prepared_data["audios"][file_id], encoding="utf-8")
+        file["audio"] = self.prepared_data["audio-path"][file_id]
 
-        _audio_info = self.prepared_data["audio_infos"][file_id]
-        _encoding = self.prepared_data["audio_encodings"][file_id]
+        _audio_info = self.prepared_data["audio-info"][file_id]
+        encoding = self.prepared_data["audio-encoding"][file_id]
 
         sample_rate = _audio_info["sample_rate"]
         num_frames = _audio_info["num_frames"]
         num_channels = _audio_info["num_channels"]
         bits_per_sample = _audio_info["bits_per_sample"]
-        encoding = str(_encoding, encoding="utf-8")
         file["torchaudio.info"] = AudioMetaData(
             sample_rate=sample_rate,
             num_frames=num_frames,
@@ -103,14 +102,20 @@ class SegmentationTask(Task):
         """
 
         # indices of training files that matches domain filters
-        training = self.prepared_data["metadata"]["subset"] == Subsets.index("train")
+        training = self.prepared_data["audio-metadata"]["subset"] == Subsets.index(
+            "train"
+        )
         for key, value in filters.items():
-            training &= self.prepared_data["metadata"][key] == self.prepared_data["metadata_unique_values"][key].index(value)
+            training &= self.prepared_data["audio-metadata"][key] == self.prepared_data[
+                "metadata"
+            ][key].index(value)
         file_ids = np.where(training)[0]
 
         # turn annotated duration into a probability distribution
-        annotated_duration = self.prepared_data["annotated_duration"][file_ids]
-        prob_annotated_duration = annotated_duration / np.sum(annotated_duration)
+        annotated_duration = self.prepared_data["audio-annotated"][file_ids]
+        cum_prob_annotated_duration = np.cumsum(
+            annotated_duration / np.sum(annotated_duration)
+        )
 
         duration = self.duration
 
@@ -118,27 +123,37 @@ class SegmentationTask(Task):
 
         while True:
             # select one file at random (with probability proportional to its annotated duration)
-            file_id = np.random.choice(file_ids, p=prob_annotated_duration)
+            file_id = file_ids[cum_prob_annotated_duration.searchsorted(rng.random())]
 
             # generate `num_chunks_per_file` chunks from this file
             for _ in range(num_chunks_per_file):
                 # find indices of annotated regions in this file
                 annotated_region_indices = np.where(
-                    self.prepared_data["annotated_regions"]["file_id"] == file_id
+                    self.prepared_data["annotations-regions"]["file_id"] == file_id
                 )[0]
 
                 # turn annotated regions duration into a probability distribution
-                prob_annotated_regions_duration = self.prepared_data["annotated_regions"]["duration"][
-                    annotated_region_indices
-                ] / np.sum(self.prepared_data["annotated_regions"]["duration"][annotated_region_indices])
 
-                # selected one annotated region at random (with probability proportional to its duration)
-                annotated_region_index = np.random.choice(
-                    annotated_region_indices, p=prob_annotated_regions_duration
+                cum_prob_annotated_regions_duration = np.cumsum(
+                    self.prepared_data["annotations-regions"]["duration"][
+                        annotated_region_indices
+                    ]
+                    / np.sum(
+                        self.prepared_data["annotations-regions"]["duration"][
+                            annotated_region_indices
+                        ]
+                    )
                 )
 
+                # selected one annotated region at random (with probability proportional to its duration)
+                annotated_region_index = annotated_region_indices[
+                    cum_prob_annotated_regions_duration.searchsorted(rng.random())
+                ]
+
                 # select one chunk at random in this annotated region
-                _, region_duration, start = self.prepared_data["annotated_regions"][annotated_region_index]
+                _, region_duration, start = self.prepared_data["annotations-regions"][
+                    annotated_region_index
+                ]
                 start_time = rng.uniform(start, start + region_duration - duration)
 
                 yield self.prepare_chunk(file_id, start_time, duration)
@@ -159,7 +174,7 @@ class SegmentationTask(Task):
         """
 
         # create worker-specific random number generator
-        rng = create_rng_for_worker(self.model.current_epoch)
+        rng = create_rng_for_worker(self.model)
 
         balance = getattr(self, "balance", None)
         if balance is None:
@@ -169,7 +184,7 @@ class SegmentationTask(Task):
             # create a subchunk generator for each combination of "balance" keys
             subchunks = dict()
             for product in itertools.product(
-                *[self.prepared_data["metadata_unique_values"][key] for key in balance]
+                *[self.prepared_data["metadata"][key] for key in balance]
             ):
                 # we iterate on the cartesian product of the values in metadata_unique_values
                 # eg: for balance=["database", "split"], with 2 databases and 2 splits:
@@ -240,12 +255,52 @@ class SegmentationTask(Task):
 
     def train__len__(self):
         # Number of training samples in one epoch
+        train_file_ids = np.where(
+            self.prepared_data["audio-metadata"]["subset"] == Subsets.index("train")
+        )[0]
 
-        duration = np.sum(self.prepared_data["annotated_duration"])
+        duration = np.sum(self.prepared_data["audio-annotated"][train_file_ids])
         return max(self.batch_size, math.ceil(duration / self.duration))
 
+    def prepare_validation(self, prepared_data: Dict):
+        validation_chunks = list()
+
+        # obtain indexes of files in the validation subset
+        validation_file_ids = np.where(
+            prepared_data["audio-metadata"]["subset"] == Subsets.index("development")
+        )[0]
+
+        # iterate over files in the validation subset
+        for file_id in validation_file_ids:
+            # get annotated regions in file
+            annotated_regions = prepared_data["annotations-regions"][
+                prepared_data["annotations-regions"]["file_id"] == file_id
+            ]
+
+            # iterate over annotated regions
+            for annotated_region in annotated_regions:
+                # number of chunks in annotated region
+                num_chunks = round(annotated_region["duration"] // self.duration)
+
+                # iterate over chunks
+                for c in range(num_chunks):
+                    start_time = annotated_region["start"] + c * self.duration
+                    validation_chunks.append((file_id, start_time, self.duration))
+
+        dtype = [
+            (
+                "file_id",
+                get_dtype(max(v[0] for v in validation_chunks)),
+            ),
+            ("start", "f"),
+            ("duration", "f"),
+        ]
+
+        prepared_data["validation"] = np.array(validation_chunks, dtype=dtype)
+        validation_chunks.clear()
+
     def val__getitem__(self, idx):
-        validation_chunk = self.prepared_data["validation_chunks"][idx]
+        validation_chunk = self.prepared_data["validation"][idx]
         return self.prepare_chunk(
             validation_chunk["file_id"],
             validation_chunk["start"],
@@ -253,7 +308,7 @@ class SegmentationTask(Task):
         )
 
     def val__len__(self):
-        return len(self.prepared_data["validation_chunks"])
+        return len(self.prepared_data["validation"])
 
     def validation_step(self, batch, batch_idx: int):
         """Compute validation area under the ROC curve

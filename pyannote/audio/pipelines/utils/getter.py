@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 import itertools
-from typing import Mapping, Text, Union
+from typing import Mapping, Optional, Text, Union
 
 import torch
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
@@ -171,7 +171,7 @@ def get_augmentation(augmentation: PipelineAugmentation) -> BaseWaveformTransfor
     )
 
 
-def get_devices(needs: int = None):
+def get_devices(needs: Optional[int] = None):
     """Get devices that can be used by the pipeline
 
     Parameters

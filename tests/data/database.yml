@@ -2,6 +2,7 @@ Protocols:
    Debug:
       SpeakerDiarization:
          Debug:
+            scope: database
             train:
                uri: debug.train.lst
                annotation: debug.train.rttm

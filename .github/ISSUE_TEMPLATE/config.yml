@@ -1,0 +1,15 @@
+blank_issues_enabled: false
+
+contact_links:
+
+  - name: Feature request
+    url: https://github.com/pyannote/pyannote-audio/discussions
+    about: Suggest an idea for this project.
+
+  - name: Consulting
+    url: https://herve.niderb.fr/consulting
+    about: Using pyannote.audio in production? Make the most of it thanks to our consulting services.
+
+  - name: Premium models
+    url: https://forms.office.com/e/GdqwVgkZ5C
+    about: We are considering selling premium models, extensions, or services around pyannote.audio.
