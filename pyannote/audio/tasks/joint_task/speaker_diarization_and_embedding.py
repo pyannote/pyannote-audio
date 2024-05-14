@@ -107,7 +107,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
             cache=cache,
         )
 
-        self.dia_task_rate = dia_task_rate
+        self.num_dia_samples = int(batch_size * dia_task_rate)
         self.margin = margin
         self.scale = scale
         self.alpha = alpha
@@ -127,13 +127,15 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
 
         super().setup()
 
-        database_scope_mask = self.prepared_data["audio-metadata"]["scope"] > 0
+        global_scope_mask = (
+            self.prepared_data["annotations-segments"]["global_label_idx"] > -1
+        )
         self.embedding_files_id = np.unique(
-            self.prepared_data["annotations-segments"]["file_id"][database_scope_mask]
+            self.prepared_data["annotations-segments"]["file_id"][global_scope_mask]
         )
         embedding_classes = np.unique(
             self.prepared_data["annotations-segments"]["global_label_idx"][
-                database_scope_mask
+                global_scope_mask
             ]
         )
 
@@ -370,7 +372,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         else:
             # There is only files for the embedding subtask, so only train on
             # this task
-            self.dia_task_rate = 0.0
+            self.num_dia_samples = 0.0
             self.alpha = 0.0
 
         duration = self.duration
@@ -379,12 +381,12 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         shuffled_embedding_classes = list(
             self.specifications[Subtasks.index("embedding")].classes
         )
+
+        sample_idx = 0
         embedding_class_idx = 0
 
         while True:
-            # choose between diarization or embedding subtask according to a ratio
-            # between these two tasks
-            if np.random.uniform() < self.dia_task_rate:
+            if sample_idx < self.num_dia_samples:
                 file_id, start_time = self.draw_diarization_chunk(
                     file_ids, prob_annotated_duration, rng, duration
                 )
@@ -399,6 +401,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
                 file_id, start_time = self.draw_embedding_chunk(klass, duration)
 
             sample = self.prepare_chunk(file_id, start_time, duration)
+            sample_idx = (sample_idx + 1) % self.batch_size
             yield sample
 
     def train__iter__(self):
