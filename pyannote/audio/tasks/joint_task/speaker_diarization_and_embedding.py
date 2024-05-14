@@ -248,7 +248,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
     def draw_diarization_chunk(
         self,
         file_ids: np.ndarray,
-        prob_annotated_duration: np.ndarray,
+        cum_prob_annotated_duration: np.ndarray,
         rng: random.Random,
         duration: float,
     ) -> tuple:
@@ -258,7 +258,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         ----------
         file_ids: np.ndarray
             array containing files id
-        prob_annotated_duration: np.ndarray
+        cum_prob_annotated_duration: np.ndarray
             array of the same size than file_ids array, containing probability
             to corresponding file to be drawn
         rng : random.Random
@@ -267,25 +267,28 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
             duration of the chunk to draw
         """
         # select one file at random (wiht probability proportional to its annotated duration)
-        file_id = np.random.choice(file_ids, p=prob_annotated_duration)
+        file_id = file_ids[cum_prob_annotated_duration.searchsorted(rng.random())]
         # find indices of annotated regions in this file
         annotated_region_indices = np.where(
-            self.prepared_data["annotated_regions"]["file_id"] == file_id
+            self.prepared_data["annotations-regions"]["file_id"] == file_id
         )[0]
 
         # turn annotated regions duration into a probability distribution
-        prob_annotaded_regions_duration = self.prepared_data["annotations-regions"][
-            "duration"
-        ][annotated_region_indices] / np.sum(
+        cum_prob_annotaded_regions_duration = np.cumsum(
             self.prepared_data["annotations-regions"]["duration"][
                 annotated_region_indices
             ]
+            / np.sum(
+                self.prepared_data["annotations-regions"]["duration"][
+                    annotated_region_indices
+                ]
+            )
         )
 
         # seletect one annotated region at random (with probability proportional to its duration)
-        annotated_region_index = np.random.choice(
-            annotated_region_indices, p=prob_annotaded_regions_duration
-        )
+        annotated_region_index = annotated_region_indices[
+            cum_prob_annotaded_regions_duration.searchsorted(rng.random())
+        ]
 
         # select one chunk at random in this annotated region
         _, region_duration, start = self.prepared_data["annotations-regions"][
@@ -351,11 +354,13 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         """
 
         # indices of training files that matches domain filters
-        training = self.prepared_data["metadata-values"]["subset"] == Subsets.index(
+        training = self.prepared_data["audio-metadata"]["subset"] == Subsets.index(
             "train"
         )
         for key, value in filters.items():
-            training &= self.prepared_data["metadata-values"][key] == value
+            training &= self.prepared_data["audio-metadata"][key] == self.prepared_data[
+                "metadata"
+            ][key].index(value)
         file_ids = np.where(training)[0]
         # get the subset of embedding database files from training files
         embedding_files_ids = file_ids[np.isin(file_ids, self.embedding_files_id)]
@@ -368,7 +373,9 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         # test if there is at least one file for the diarization subtask
         # to prevent probabilities from summing to zero
         if np.any(annotated_duration != 0.0):
-            prob_annotated_duration = annotated_duration / np.sum(annotated_duration)
+            cum_prob_annotated_duration = np.cumsum(
+                annotated_duration / np.sum(annotated_duration)
+            )
         else:
             # There is only files for the embedding subtask, so only train on
             # this task
@@ -388,7 +395,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         while True:
             if sample_idx < self.num_dia_samples:
                 file_id, start_time = self.draw_diarization_chunk(
-                    file_ids, prob_annotated_duration, rng, duration
+                    file_ids, cum_prob_annotated_duration, rng, duration
                 )
             else:
                 # shuffle embedding classes list and go through this shuffled list
@@ -420,7 +427,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         """
 
         # create worker-specific random number generator
-        rng = create_rng_for_worker(self.model.current_epoch)
+        rng = create_rng_for_worker(self.model)
 
         balance = getattr(self, "balance", None)
         if balance is None:
