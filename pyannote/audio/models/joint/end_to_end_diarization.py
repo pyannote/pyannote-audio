@@ -21,22 +21,22 @@
 # SOFTWARE.
 
 import os
-from typing import List, Literal, Optional, Union
+from functools import lru_cache
+from typing import Literal, Optional, Union
 from warnings import warn
-from einops import rearrange
 
 import torch
-from torch import nn
 import torch.nn.functional as F
+from einops import rearrange
+from pyannote.core.utils.generators import pairwise
+from torch import nn
 
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
-from pyannote.audio.models.blocks.sincnet import SincNet
 from pyannote.audio.models.blocks.pooling import StatsPool
+from pyannote.audio.models.blocks.sincnet import SincNet
 from pyannote.audio.utils.params import merge_dict
 from pyannote.audio.utils.powerset import Powerset
-from pyannote.core.utils.generators import pairwise
-
 
 # TODO deplace these two lines into uitls/multi_task
 Subtask = Literal["diarization", "embedding"]
@@ -48,16 +48,17 @@ class WeSpeakerBasesEndToEndDiarization(Model):
     WeSpeaker-based joint speaker diarization and speaker
     embedding extraction model
     """
+
     def __init__(
-                self,
-                sincnet: dict = None,
-                lstm: dict = None,
-                linear: dict = None,
-                sample_rate=16000,
-                embedding_dim=256,
-                num_channels=1,
-                task: Optional[Union[Task, None]] = None,
-            ):
+        self,
+        sincnet: dict = None,
+        lstm: dict = None,
+        linear: dict = None,
+        sample_rate=16000,
+        embedding_dim=256,
+        num_channels=1,
+        task: Optional[Union[Task, None]] = None,
+    ):
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
 
         # speakers embedding extraction submodel:
@@ -68,8 +69,19 @@ class WeSpeakerBasesEndToEndDiarization(Model):
         # speaker segmentation submodel:
         self.pyannet = Model.from_pretrained(
             "pyannote/segmentation-3.0",
-            use_auth_token=os.environ["HUGGINGFACE_TOKEN"],
+            use_auth_token=os.environ["HG_TOKEN"],
         )
+
+    @property
+    def dimension(self) -> int:
+        """Dimension of output"""
+        if isinstance(self.specifications, tuple):
+            raise ValueError("PyanNet does not support multi-tasking.")
+
+        if self.specifications.powerset:
+            return self.specifications.num_powerset_classes
+        else:
+            return len(self.specifications.classes)
 
     def build(self):
         """"""
@@ -78,6 +90,54 @@ class WeSpeakerBasesEndToEndDiarization(Model):
             len(dia_specs.classes),
             dia_specs.powerset_max_classes,
         )
+
+    @lru_cache
+    def num_frames(self, num_samples: int) -> int:
+        """Compute number of output frames for a given number of input samples
+
+        Parameters
+        ----------
+        num_samples : int
+            Number of input samples
+
+        Returns
+        -------
+        num_frames : int
+            Number of output frames
+        """
+
+        return self.pyannet.sincnet.num_frames(num_samples)
+
+    def receptive_field_size(self, num_frames: int = 1) -> int:
+        """Compute size of receptive field
+
+        Parameters
+        ----------
+        num_frames : int, optional
+            Number of frames in the output signal
+
+        Returns
+        -------
+        receptive_field_size : int
+            Receptive field size.
+        """
+        return self.pyannet.sincnet.receptive_field_size(num_frames=num_frames)
+
+    def receptive_field_center(self, frame: int = 0) -> int:
+        """Compute center of receptive field
+
+        Parameters
+        ----------
+        frame : int, optional
+            Frame index
+
+        Returns
+        -------
+        receptive_field_center : int
+            Index of receptive field center.
+        """
+
+        return self.pyannet.sincnet.receptive_field_center(frame=frame)
 
     def forward(self, waveformms: torch.Tensor) -> torch.Tensor:
         """
@@ -97,8 +157,9 @@ class WeSpeakerBasesEndToEndDiarization(Model):
 class SpeakerEndToEndDiarization(Model):
     """Speaker End-to-End Diarization and Embedding model
     SINCNET -- TDNN .. TDNN -- TDNN ..TDNN -- StatsPool -- Linear --  Classifier
-                                    \ LSTM ... LSTM -- FeedForward -- Classifier
+                                    \\ LSTM ... LSTM -- FeedForward -- Classifier
     """
+
     SINCNET_DEFAULTS = {"stride": 10}
     LSTM_DEFAULTS = {
         "hidden_size": 128,
@@ -111,31 +172,32 @@ class SpeakerEndToEndDiarization(Model):
     LINEAR_DEFAULTS = {"hidden_size": 128, "num_layers": 2}
 
     def __init__(
-            self,
-            sincnet: dict = None,
-            lstm: dict= None,
-            linear: dict = None,
-            sample_rate: int = 16000,
-            num_channels: int = 1,
-            num_features: int = 60,
-            embedding_dim: int = 512,
-            separation_idx: int = 2,
-            task: Optional[Task] = None,
-            ):
+        self,
+        sincnet: dict = None,
+        lstm: dict = None,
+        linear: dict = None,
+        sample_rate: int = 16000,
+        num_channels: int = 1,
+        num_features: int = 60,
+        embedding_dim: int = 512,
+        separation_idx: int = 2,
+        task: Optional[Task] = None,
+    ):
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
 
         if num_features != 60:
-            warn("For now, the model only support a number of features of 60. Set it to 60")
+            warn(
+                "For now, the model only support a number of features of 60. Set it to 60"
+            )
             num_features = 60
         self.num_features = num_features
         self.separation_idx = separation_idx
         self.save_hyperparameters("num_features", "embedding_dim", "separation_idx")
 
-
         # sincnet module
         sincnet = merge_dict(self.SINCNET_DEFAULTS, sincnet)
         sincnet["sample_rate"] = sample_rate
-        self.sincnet =SincNet(**sincnet)
+        self.sincnet = SincNet(**sincnet)
         self.save_hyperparameters("sincnet")
 
         # tdnn modules
@@ -238,7 +300,9 @@ class SpeakerEndToEndDiarization(Model):
             diarization_spec.powerset_max_classes,
         )
 
-    def forward(self, waveforms: torch.Tensor, weights: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def forward(
+        self, waveforms: torch.Tensor, weights: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
         """
 
         Parameters
@@ -261,7 +325,9 @@ class SpeakerEndToEndDiarization(Model):
                 rearrange(common_outputs, "batch feature frame -> batch frame feature")
             )
         else:
-            diarization_outputs = rearrange(common_outputs, "batch feature frame -> batch frame feature")
+            diarization_outputs = rearrange(
+                common_outputs, "batch feature frame -> batch frame feature"
+            )
             for i, lstm in enumerate(self.lstm):
                 diarization_outputs, _ = lstm(diarization_outputs)
                 if i + 1 < self.hparams.lstm["num_layers"]:
@@ -299,31 +365,32 @@ class SpeakerEndToEndDiarizationV2(Model):
     LINEAR_DEFAULTS = {"hidden_size": 128, "num_layers": 2}
 
     def __init__(
-            self,
-            sincnet: dict = None,
-            lstm: dict= None,
-            linear: dict = None,
-            sample_rate: int = 16000,
-            num_channels: int = 1,
-            num_features: int = 60,
-            embedding_dim: int = 512,
-            separation_idx: int = 2,
-            task: Optional[Task] = None,
-            ):
+        self,
+        sincnet: dict = None,
+        lstm: dict = None,
+        linear: dict = None,
+        sample_rate: int = 16000,
+        num_channels: int = 1,
+        num_features: int = 60,
+        embedding_dim: int = 512,
+        separation_idx: int = 2,
+        task: Optional[Task] = None,
+    ):
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
 
         if num_features != 60:
-            warn("For now, the model only support a number of features of 60. Set it to 60")
+            warn(
+                "For now, the model only support a number of features of 60. Set it to 60"
+            )
             num_features = 60
         self.num_features = num_features
         self.separation_idx = separation_idx
         self.save_hyperparameters("num_features", "embedding_dim", "separation_idx")
 
-
         # sincnet module
         sincnet = merge_dict(self.SINCNET_DEFAULTS, sincnet)
         sincnet["sample_rate"] = sample_rate
-        self.sincnet =SincNet(**sincnet)
+        self.sincnet = SincNet(**sincnet)
         self.save_hyperparameters("sincnet")
 
         # tdnn modules
@@ -345,7 +412,7 @@ class SpeakerEndToEndDiarizationV2(Model):
                             out_channels=out_channel,
                             kernel_size=kernel_size,
                             dilation=dilation,
-                            padding="same"
+                            padding="same",
                         ),
                         nn.LeakyReLU(),
                         nn.BatchNorm1d(out_channel),
@@ -431,13 +498,15 @@ class SpeakerEndToEndDiarizationV2(Model):
         )
         self.encoder = nn.LSTM(
             # number of channel in the outputs of the last TDNN layer + lstm_out_features
-            input_size= self.last_tdnn_out_channels + lstm_out_features,
-            hidden_size=  len(diarization_spec.classes) * self.last_tdnn_out_channels,
+            input_size=self.last_tdnn_out_channels + lstm_out_features,
+            hidden_size=len(diarization_spec.classes) * self.last_tdnn_out_channels,
             batch_first=True,
             bidirectional=True,
         )
 
-    def forward(self, waveforms: torch.Tensor, weights: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def forward(
+        self, waveforms: torch.Tensor, weights: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
         """
 
         Parameters
@@ -462,7 +531,9 @@ class SpeakerEndToEndDiarizationV2(Model):
                 rearrange(dia_outputs, "batch feature frame -> batch frame feature")
             )
         else:
-            dia_outputs = rearrange(common_outputs, "batch feature frame -> batch frame feature")
+            dia_outputs = rearrange(
+                common_outputs, "batch feature frame -> batch frame feature"
+            )
             for i, lstm in enumerate(self.lstm):
                 dia_outputs, _ = lstm(dia_outputs)
                 if i + 1 < self.hparams.lstm["num_layers"]:
@@ -484,8 +555,9 @@ class SpeakerEndToEndDiarizationV2(Model):
         emb_outputs = torch.cat((emb_outputs, lstm_outputs), dim=2)
         _, emb_outputs = self.encoder(emb_outputs)
         emb_outputs = rearrange(emb_outputs[0], "l b h -> b (l h)")
-        emb_outputs = torch.reshape(emb_outputs,
-                                    (emb_outputs.shape[0], self.powerset.num_classes, -1))
+        emb_outputs = torch.reshape(
+            emb_outputs, (emb_outputs.shape[0], self.powerset.num_classes, -1)
+        )
         emb_outputs = self.embedding(emb_outputs)
 
         return (dia_outputs, emb_outputs)
