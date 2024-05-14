@@ -20,40 +20,33 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from collections import defaultdict
-from einops import rearrange
-import math
 import itertools
+import math
 import random
 from typing import Dict, Literal, Optional, Sequence, Union
-import warnings
-from matplotlib import pyplot as plt
+
 import numpy as np
 import torch
-
-from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
-from torchaudio.backend.common import AudioMetaData
-from torchmetrics import Metric
-from torchmetrics.classification import BinaryAUROC
-from torch.utils.data._utils.collate import default_collate
-from pytorch_metric_learning.losses import ArcFaceLoss
-from pytorch_lightning.loggers import MLFlowLogger, TensorBoardLogger
-
+from einops import rearrange
+from matplotlib import pyplot as plt
 from pyannote.core import Segment, SlidingWindowFeature
-from pyannote.audio.core.task import Problem, Resolution, Specifications
-from pyannote.audio.utils.loss import nll_loss
-from pyannote.audio.utils.permutation import permutate
-from pyannote.audio.utils.random import create_rng_for_worker
-from pyannote.audio.tasks import SpeakerDiarization
-from pyannote.database.protocol import SpeakerDiarizationProtocol
 from pyannote.database.protocol.protocol import Scope, Subset
-from pyannote.audio.torchmetrics.classification import EqualErrorRate
+from pytorch_lightning.loggers import MLFlowLogger, TensorBoardLogger
+from pytorch_metric_learning.losses import ArcFaceLoss
+from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
+from torchmetrics import Metric
+
+from pyannote.audio.core.task import Problem, Resolution, Specifications
+from pyannote.audio.tasks import SpeakerDiarization
 from pyannote.audio.torchmetrics import (
     DiarizationErrorRate,
     FalseAlarmRate,
     MissedDetectionRate,
     SpeakerConfusionRate,
 )
+from pyannote.audio.utils.loss import nll_loss
+from pyannote.audio.utils.permutation import permutate
+from pyannote.audio.utils.random import create_rng_for_worker
 
 Subtask = Literal["diarization", "embedding"]
 
@@ -84,21 +77,21 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
     """
 
     def __init__(
-            self,
-            protocol,
-            duration: float = 5.0,
-            max_speakers_per_chunk: int = 3,
-            max_speakers_per_frame: int = 2,
-            weigh_by_cardinality: bool = False,
-            batch_size: int = 32,
-            dia_task_rate : float = 0.5,
-            num_workers: int = None,
-            pin_memory: bool = False,
-            margin : float = 28.6,
-            scale: float = 64.0,
-            alpha: float = 0.5,
-            augmentation: BaseWaveformTransform = None,
-            cache_path: Optional[Union[str, None]] = None,
+        self,
+        protocol,
+        duration: float = 5.0,
+        max_speakers_per_chunk: int = 3,
+        max_speakers_per_frame: int = 2,
+        weigh_by_cardinality: bool = False,
+        batch_size: int = 32,
+        dia_task_rate: float = 0.5,
+        num_workers: int = None,
+        pin_memory: bool = False,
+        margin: float = 28.6,
+        scale: float = 64.0,
+        alpha: float = 0.5,
+        augmentation: BaseWaveformTransform = None,
+        cache: Optional[Union[str, None]] = None,
     ) -> None:
         """TODO Add docstring"""
         super().__init__(
@@ -111,7 +104,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
             num_workers=num_workers,
             pin_memory=pin_memory,
             augmentation=augmentation,
-            cache_path=cache_path,
+            cache=cache,
         )
 
         self.dia_task_rate = dia_task_rate
@@ -121,31 +114,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         # keep track of the use of database available in the meta protocol
         # * embedding databases are those with global speaker label scope
         # * diarization databases are those with file or database speaker label scope
-        self.global_files_id = []
-
-    def get_file(self, file_id):
-
-        file = dict()
-
-        file["audio"] = str(self.prepared_data["audios"][file_id], encoding="utf-8")
-
-        _audio_info = self.prepared_data["audio_infos"][file_id]
-        _encoding = self.prepared_data["audio_encodings"][file_id]
-
-        sample_rate = _audio_info["sample_rate"]
-        num_frames = _audio_info["num_frames"]
-        num_channels = _audio_info["num_channels"]
-        bits_per_sample = _audio_info["bits_per_sample"]
-        encoding = str(_encoding, encoding="utf-8")
-        file["torchaudio.info"] = AudioMetaData(
-            sample_rate=sample_rate,
-            num_frames=num_frames,
-            num_channels=num_channels,
-            bits_per_sample=bits_per_sample,
-            encoding=encoding,
-        )
-
-        return file
+        self.embedding_files_id = []
 
     def setup(self, stage="fit"):
         """Setup method
@@ -157,23 +126,30 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         """
 
         super().setup()
-        global_scope_mask = self.prepared_data["annotations"]["global_label_idx"] > -1
-        self.global_files_id = np.unique(self.prepared_data["annotations"]["file_id"][global_scope_mask])
-        global_classes = np.unique(self.prepared_data["annotations"]["global_label_idx"][global_scope_mask])
+
+        database_scope_mask = self.prepared_data["audio-metadata"]["scope"] > 0
+        self.embedding_files_id = np.unique(
+            self.prepared_data["annotations-segments"]["file_id"][database_scope_mask]
+        )
+        embedding_classes = np.unique(
+            self.prepared_data["annotations-segments"]["global_label_idx"][
+                database_scope_mask
+            ]
+        )
 
         speaker_diarization = Specifications(
-                duration=self.duration,
-                resolution=Resolution.FRAME,
-                problem=Problem.MONO_LABEL_CLASSIFICATION,
-                permutation_invariant=True,
-                classes=[f"speaker{i+1}" for i in range(self.max_speakers_per_chunk)],
-                powerset_max_classes=self.max_speakers_per_frame,
-            )
+            duration=self.duration,
+            resolution=Resolution.FRAME,
+            problem=Problem.MONO_LABEL_CLASSIFICATION,
+            permutation_invariant=True,
+            classes=[f"speaker{i+1}" for i in range(self.max_speakers_per_chunk)],
+            powerset_max_classes=self.max_speakers_per_frame,
+        )
         speaker_embedding = Specifications(
             duration=self.duration,
             resolution=Resolution.CHUNK,
             problem=Problem.REPRESENTATION,
-            classes=global_classes,
+            classes=embedding_classes,
         )
         self.specifications = (speaker_diarization, speaker_embedding)
 
@@ -208,16 +184,20 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         file = self.get_file(file_id)
 
         # get label scope
-        label_scope = Scopes[self.prepared_data["metadata"][file_id]["scope"]]
+        label_scope = Scopes[self.prepared_data["audio-metadata"][file_id]["scope"]]
         label_scope_key = f"{label_scope}_label_idx"
 
         chunk = Segment(start_time, start_time + duration)
 
         sample = dict()
-        sample["X"], _ = self.model.audio.crop(file, chunk, duration=duration, mode="pad")
+        sample["X"], _ = self.model.audio.crop(
+            file, chunk, duration=duration, mode="pad"
+        )
 
         # gather all annotations of current file
-        annotations = self.prepared_data["annotations"][self.prepared_data["annotations"]["file_id"] == file_id]
+        annotations = self.prepared_data["annotations-segments"][
+            self.prepared_data["annotations-segments"]["file_id"] == file_id
+        ]
 
         # gather all annotations with non-empty intersection with current chunk
         chunk_annotations = annotations[
@@ -227,7 +207,9 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         # discretize chunk annotations at model output resolution
         start = np.maximum(chunk_annotations["start"], chunk.start) - chunk.start
         # TODO handle tuple outputs from the model
-        start_idx = np.floor(start / self.model.example_output[0].frames.step).astype(int)
+        start_idx = np.floor(start / self.model.example_output[0].frames.step).astype(
+            int
+        )
         end = np.minimum(chunk_annotations["end"], chunk.end) - chunk.start
         end_idx = np.ceil(end / self.model.example_output[0].frames.step).astype(int)
 
@@ -239,7 +221,9 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
             pass
 
         # initial frame-level targets
-        y = np.zeros((self.model.example_output[0].num_frames, num_labels), dtype=np.uint8)
+        y = np.zeros(
+            (self.model.example_output[0].num_frames, num_labels), dtype=np.uint8
+        )
 
         # map labels to indices
         mapping = {label: idx for idx, label in enumerate(labels)}
@@ -253,17 +237,19 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         sample["y"] = SlidingWindowFeature(
             y, self.model.example_output[0].frames, labels=labels
         )
-        metadata = self.prepared_data["metadata"][file_id]
+        metadata = self.prepared_data["audio-metadata"][file_id]
         sample["meta"] = {key: metadata[key] for key in metadata.dtype.names}
         sample["meta"]["file"] = file_id
 
         return sample
 
-    def draw_diarization_chunk(self, file_ids : np.ndarray,
-                                 prob_annotated_duration : np.ndarray,
-                                 rng : random.Random,
-                                 duration : float,
-                                 ) -> tuple:
+    def draw_diarization_chunk(
+        self,
+        file_ids: np.ndarray,
+        prob_annotated_duration: np.ndarray,
+        rng: random.Random,
+        duration: float,
+    ) -> tuple:
         """Sample one chunk for the diarization task
 
         Parameters
@@ -286,23 +272,28 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         )[0]
 
         # turn annotated regions duration into a probability distribution
-        prob_annotaded_regions_duration = self.prepared_data["annotated_regions"]["duration"][
-            annotated_region_indices
-        ] / np.sum(self.prepared_data["annotated_regions"]["duration"][annotated_region_indices])
+        prob_annotaded_regions_duration = self.prepared_data["annotations-regions"][
+            "duration"
+        ][annotated_region_indices] / np.sum(
+            self.prepared_data["annotations-regions"]["duration"][
+                annotated_region_indices
+            ]
+        )
 
         # seletect one annotated region at random (with probability proportional to its duration)
-        annotated_region_index = np.random.choice(annotated_region_indices,
-                                                  p=prob_annotaded_regions_duration
-                                                  )
+        annotated_region_index = np.random.choice(
+            annotated_region_indices, p=prob_annotaded_regions_duration
+        )
 
         # select one chunk at random in this annotated region
-        _, region_duration, start = self.prepared_data["annotated_regions"][annotated_region_index]
+        _, region_duration, start = self.prepared_data["annotations-regions"][
+            annotated_region_index
+        ]
         start_time = rng.uniform(start, start + region_duration - duration)
 
         return (file_id, start_time)
 
-    def draw_embedding_chunk(self, class_id : int,
-                               duration : float) -> tuple:
+    def draw_embedding_chunk(self, class_id: int, duration: float) -> tuple:
         """Sample one chunk for the embedding task
 
         Parameters
@@ -322,8 +313,10 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         """
         # get index of the current class in the order of original class list
         # get segments for current class
-        class_segments_idx = self.prepared_data["annotations"]["global_label_idx"] == class_id
-        class_segments = self.prepared_data["annotations"][class_segments_idx]
+        class_segments_idx = (
+            self.prepared_data["annotations-segments"]["global_label_idx"] == class_id
+        )
+        class_segments = self.prepared_data["annotations-segments"][class_segments_idx]
 
         # sample one segment from all the class segments:
         segments_duration = class_segments["end"] - class_segments["start"]
@@ -332,11 +325,13 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         segment = np.random.choice(class_segments, p=prob_segments)
 
         # sample chunk start time in order to intersect it with the sampled segment
-        start_time = np.random.uniform(max(segment["start"] - duration, 0), segment["end"])
+        start_time = np.random.uniform(
+            max(segment["start"] - duration, 0), segment["end"]
+        )
 
         return (segment["file_id"], start_time)
 
-    def train__iter__helper(self, rng : random.Random, **filters):
+    def train__iter__helper(self, rng: random.Random, **filters):
         """Iterate over training samples with optional domain filtering
 
         Parameters
@@ -354,27 +349,29 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         """
 
         # indices of training files that matches domain filters
-        training = self.prepared_data["metadata"]["subset"] == Subsets.index("train")
+        training = self.prepared_data["metadata-values"]["subset"] == Subsets.index(
+            "train"
+        )
         for key, value in filters.items():
-            training &= self.prepared_data["metadata"][key] == value
+            training &= self.prepared_data["metadata-values"][key] == value
         file_ids = np.where(training)[0]
         # get the subset of embedding database files from training files
-        embedding_files_ids = file_ids[np.isin(file_ids, self.global_files_id)]
+        embedding_files_ids = file_ids[np.isin(file_ids, self.embedding_files_id)]
 
-        annotated_duration = self.prepared_data["annotated_duration"][file_ids]
+        annotated_duration = self.prepared_data["audio-annotated"][file_ids]
         # set duration of files for the embedding part to zero, in order to not
         # drawn them for diarization part
-        annotated_duration[embedding_files_ids] = 0.
+        annotated_duration[embedding_files_ids] = 0.0
 
         # test if there is at least one file for the diarization subtask
         # to prevent probabilities from summing to zero
-        if np.any(annotated_duration != 0.):
+        if np.any(annotated_duration != 0.0):
             prob_annotated_duration = annotated_duration / np.sum(annotated_duration)
         else:
             # There is only files for the embedding subtask, so only train on
             # this task
-            self.dia_task_rate = 0.
-            self.alpha = 0.
+            self.dia_task_rate = 0.0
+            self.alpha = 0.0
 
         duration = self.duration
 
@@ -388,9 +385,9 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
             # choose between diarization or embedding subtask according to a ratio
             # between these two tasks
             if np.random.uniform() < self.dia_task_rate:
-                file_id, start_time = self.draw_diarization_chunk(file_ids, prob_annotated_duration,
-                                                                  rng,
-                                                                  duration)
+                file_id, start_time = self.draw_diarization_chunk(
+                    file_ids, prob_annotated_duration, rng, duration
+                )
             else:
                 # shuffle embedding classes list and go through this shuffled list
                 # to make sure to see all the speakers during training
@@ -428,8 +425,10 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         else:
             # create
             subchunks = dict()
-            for product in itertools.product([self.prepared_data["metadata_unique_values"][key] for key in balance]):
-                filters = {key : value for key, value in zip(balance, product)}
+            for product in itertools.product(
+                [self.prepared_data["metadata-values"][key] for key in balance]
+            ):
+                filters = {key: value for key, value in zip(balance, product)}
                 subchunks[product] = self.train__iter__helper(rng, **filters)
 
         while True:
@@ -489,17 +488,19 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
                     mode="constant",
                 )
                 if b["meta"]["scope"] > 1:
-                    y_emb[: num_speakers] = labels[:]
+                    y_emb[:num_speakers] = labels[:]
 
             else:
                 if b["meta"]["scope"] > 1:
-                    y_emb[: num_speakers] = labels[:]
+                    y_emb[:num_speakers] = labels[:]
 
             collated_y_dia.append(y_dia)
             collate_y_emb.append(y_emb)
 
-        return (torch.from_numpy(np.stack(collated_y_dia)),
-                torch.from_numpy(np.stack(collate_y_emb)).squeeze(1))
+        return (
+            torch.from_numpy(np.stack(collated_y_dia)),
+            torch.from_numpy(np.stack(collate_y_emb)).squeeze(1),
+        )
 
     def collate_fn(self, batch, stage="train"):
         """Collate function used for most segmentation tasks
@@ -615,8 +616,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         # Get the permutated reference corresponding to diarization subtask
         permutated_target_dia = permutated_target[dia_chunks]
         # Compute segmentation loss
-        dia_loss = self.segmentation_loss(chunks_prediction,
-                                                  permutated_target_dia)
+        dia_loss = self.segmentation_loss(chunks_prediction, permutated_target_dia)
         self.model.log(
             "loss/train/dia",
             dia_loss,
@@ -653,9 +653,11 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         targets = rearrange(target_emb[emb_chunks], "b s -> (b s)")
         # compute loss only on global scope speaker embedding
         valid_emb = targets != -1
-        
+
         # compute the loss
-        emb_loss = self.model.arc_face_loss(embeddings[valid_emb, :], targets[valid_emb])
+        emb_loss = self.model.arc_face_loss(
+            embeddings[valid_emb, :], targets[valid_emb]
+        )
 
         # skip batch if something went wrong for some reason
         if torch.isnan(emb_loss):
@@ -693,7 +695,6 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         target_dia = batch["y_dia"]
         # batch embedding references (batch, num_speakers)
         target_emb = batch["y_emb"]
-        meta = batch["meta"]
 
         # drop samples that contain too many speakers
         num_speakers: torch.Tensor = torch.sum(torch.any(target_dia, dim=1), dim=1)
@@ -713,8 +714,9 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         # get the best permutation
         dia_multilabel = self.model.powerset.to_multilabel(dia_prediction)
         permutated_target_dia, permut_map = permutate(dia_multilabel, target_dia)
-        permutated_target_emb = target_emb[torch.arange(target_emb.shape[0]).unsqueeze(1),
-                                               permut_map]
+        permutated_target_emb = target_emb[
+            torch.arange(target_emb.shape[0]).unsqueeze(1), permut_map
+        ]
 
         # filter out the speaker in the reference that were not found by the diarization
         # part of the model, to not compute the embedding loss on these speaker:
@@ -730,17 +732,23 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         )
         # get embedding and diarization chunks position in current batch
         emb_chunks = batch["meta"]["scope"] == 2  # global scope for embedding task
-        dia_chunks = batch["meta"]["scope"] < 2  # file and database scope for diarization task
+        dia_chunks = (
+            batch["meta"]["scope"] < 2
+        )  # file and database scope for diarization task
 
         dia_loss = torch.tensor(0)
-        #if batch contains diarization subtask chunks, then compute diarization loss on these chunks:
+        # if batch contains diarization subtask chunks, then compute diarization loss on these chunks:
         if dia_chunks.any():
-            dia_loss = self.compute_diarization_loss(dia_chunks, dia_prediction, permutated_target_powerset)
+            dia_loss = self.compute_diarization_loss(
+                dia_chunks, dia_prediction, permutated_target_powerset
+            )
 
         emb_loss = torch.tensor(0)
         # if batch contains embedding subtask chunks, then compute embedding loss on these chunks:
         if emb_chunks.any():
-            emb_loss = self.compute_embedding_loss(emb_chunks, emb_prediction, permutated_target_emb)
+            emb_loss = self.compute_embedding_loss(
+                emb_chunks, emb_prediction, permutated_target_emb
+            )
 
         loss = alpha * dia_loss + (1 - alpha) * emb_loss
         return {"loss": loss}
@@ -760,7 +768,6 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         # target
         target_dia = batch["y_dia"]
         # (batch_size, num_frames, num_speakers)
-        target_emb = batch["y_emb"]
 
         waveform = batch["X"]
         # (batch_size, num_channels, num_samples)
@@ -770,7 +777,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         # target = target[keep]
 
         # forward pass
-        dia_prediction, emb_prediction = self.model(waveform)
+        dia_prediction, _ = self.model(waveform)
         batch_size, num_frames, _ = dia_prediction.shape
 
         multilabel = self.model.powerset.to_multilabel(dia_prediction)
@@ -782,7 +789,8 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
             permutated_target.float()
         )
         seg_loss = self.segmentation_loss(
-            dia_prediction, permutated_target_powerset,
+            dia_prediction,
+            permutated_target_powerset,
         )
 
         self.model.log(
@@ -795,12 +803,8 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         )
 
         self.model.validation_metric(
-            torch.transpose(
-                multilabel, 1, 2
-            ),
-            torch.transpose(
-                target_dia, 1, 2
-            ),
+            torch.transpose(multilabel, 1, 2),
+            torch.transpose(target_dia, 1, 2),
         )
 
         self.model.log_dict(
@@ -875,7 +879,6 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
 
         plt.close(fig)
 
-
     def default_metric(
         self,
     ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
@@ -887,6 +890,6 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
             "DiarizationErrorRate/Confusion": SpeakerConfusionRate(0.5),
             "DiarizationErrorRate/Miss": MissedDetectionRate(0.5),
             "DiarizationErrorRate/FalseAlarm": FalseAlarmRate(0.5),
-            #"EqualErrorRate": EqualErrorRate(compute_on_cpu=True, distances=False),
-            #"BinaryAUROC": BinaryAUROC(compute_on_cpu=True),
+            # "EqualErrorRate": EqualErrorRate(compute_on_cpu=True, distances=False),
+            # "BinaryAUROC": BinaryAUROC(compute_on_cpu=True),
         }
