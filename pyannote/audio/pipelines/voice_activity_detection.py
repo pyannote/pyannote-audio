@@ -115,7 +115,7 @@ class VoiceActivityDetection(Pipeline):
         segmentation: PipelineModel = "pyannote/segmentation",
         fscore: bool = False,
         use_auth_token: Union[Text, None] = None,
-        cache_dir: Union[Path, str, None] = None,
+        cache_dir: Union[Path, Text, None] = None,
         **inference_kwargs,
     ):
         super().__init__()

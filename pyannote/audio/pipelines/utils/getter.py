@@ -35,7 +35,7 @@ PipelineModel = Union[Model, Text, Mapping]
 def get_model(
     model: PipelineModel,
     use_auth_token: Union[Text, None] = None,
-    cache_dir: Union[Path, str, None] = None,
+    cache_dir: Union[Path, Text, None] = None,
 ) -> Model:
     """Load pretrained model and set it into `eval` mode.
 
