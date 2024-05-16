@@ -21,6 +21,7 @@
 # SOFTWARE.
 
 import itertools
+from pathlib import Path
 from typing import Mapping, Optional, Text, Union
 
 import torch
