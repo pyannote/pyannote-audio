@@ -579,7 +579,7 @@ class Model(pl.LightningModule):
         --------
         torch.load
         """
-        
+
         # pytorch-lightning expects str, not Path.
         checkpoint = str(checkpoint)
         if hparams_file is not None:
@@ -602,7 +602,7 @@ class Model(pl.LightningModule):
                 model_id = checkpoint
                 revision = None
 
-            if cache_dir is None:
+            if not cache_dir:
                 cache_dir = CACHE_DIR
 
             try:
