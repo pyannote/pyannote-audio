@@ -36,7 +36,6 @@ from torch.nn.utils.rnn import pad_sequence
 from pyannote.audio import Inference, Model, Pipeline
 from pyannote.audio.core.inference import BaseInference
 from pyannote.audio.core.io import AudioFile
-from pyannote.audio.core.model import CACHE_DIR
 from pyannote.audio.pipelines.utils import PipelineModel, get_model
 
 try:
@@ -215,7 +214,10 @@ class SpeechBrainPretrainedSpeakerEmbedding(BaseInference):
         When loading private huggingface.co models, set `use_auth_token`
         to True or to a string containing your hugginface.co authentication
         token that can be obtained by running `huggingface-cli login`
-
+    cache_dir: Path or str, optional
+        Path to model cache directory. Defaults to content of PYANNOTE_CACHE
+        environment variable, or "~/.cache/torch/pyannote" when unset.
+        
     Usage
     -----
     >>> get_embedding = SpeechBrainPretrainedSpeakerEmbedding("speechbrain/spkrec-ecapa-voxceleb")
@@ -236,6 +238,7 @@ class SpeechBrainPretrainedSpeakerEmbedding(BaseInference):
         embedding: Text = "speechbrain/spkrec-ecapa-voxceleb",
         device: Optional[torch.device] = None,
         use_auth_token: Union[Text, None] = None,
+        cache_dir: Union[Path, str, None] = None,
     ):
         if not SPEECHBRAIN_IS_AVAILABLE:
             raise ImportError(
@@ -252,10 +255,11 @@ class SpeechBrainPretrainedSpeakerEmbedding(BaseInference):
             self.revision = None
         self.device = device or torch.device("cpu")
         self.use_auth_token = use_auth_token
+        self.cache_dir = cache_dir
 
         self.classifier_ = SpeechBrain_EncoderClassifier.from_hparams(
             source=self.embedding,
-            savedir=f"{CACHE_DIR}/speechbrain",
+            savedir=f"{self.cache_dir}/speechbrain",
             run_opts={"device": self.device},
             use_auth_token=self.use_auth_token,
             revision=self.revision,
@@ -269,7 +273,7 @@ class SpeechBrainPretrainedSpeakerEmbedding(BaseInference):
 
         self.classifier_ = SpeechBrain_EncoderClassifier.from_hparams(
             source=self.embedding,
-            savedir=f"{CACHE_DIR}/speechbrain",
+            savedir=f"{self.cache_dir}/speechbrain",
             run_opts={"device": device},
             use_auth_token=self.use_auth_token,
             revision=self.revision,
