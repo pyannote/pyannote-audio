@@ -51,7 +51,8 @@ def get_model(
         to True or to a string containing your hugginface.co authentication
         token that can be obtained by visiting https://hf.co/settings/tokens
     cache_dir: Path or str, optional
-        Path to model cache directory. Defaults to ~/.cache/huggingface unless XDG_CACHE_HOME is set.
+        Path to model cache directory. Defaults to content of PYANNOTE_CACHE
+        environment variable, or "~/.cache/torch/pyannote" when unset.
 
     Returns
     -------
