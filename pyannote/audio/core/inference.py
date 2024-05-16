@@ -560,7 +560,7 @@ class Inference(BaseInference):
         )
 
         masks = 1 - np.isnan(scores)
-        scores.data = np.nan_to_num(scores.data, copy=True, nan=0.0)
+        np.nan_to_num(scores.data, copy=False, nan=0.0)
 
         # Hamming window used for overlap-add aggregation
         hamming_window = (
