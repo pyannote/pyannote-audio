@@ -25,6 +25,7 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 from functools import partial
+from pathlib import Path
 from typing import Callable, Optional, Text, Union
 
 from pyannote.core import Annotation, SlidingWindowFeature

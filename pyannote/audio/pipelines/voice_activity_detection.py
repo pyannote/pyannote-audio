@@ -25,6 +25,7 @@
 import tempfile
 from copy import deepcopy
 from functools import partial
+from pathlib import Path
 from types import MethodType
 from typing import Callable, Optional, Text, Union
 

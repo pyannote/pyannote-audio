@@ -23,6 +23,7 @@
 """Overlapped speech detection pipelines"""
 
 from functools import partial
+from pathlib import Path
 from typing import Callable, Optional, Text, Union
 
 import numpy as np
