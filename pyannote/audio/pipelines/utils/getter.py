@@ -35,6 +35,7 @@ PipelineModel = Union[Model, Text, Mapping]
 def get_model(
     model: PipelineModel,
     use_auth_token: Union[Text, None] = None,
+    cache_dir: Union[Path, str, None] = None,
 ) -> Model:
     """Load pretrained model and set it into `eval` mode.
 
@@ -49,6 +50,8 @@ def get_model(
         When loading a private or gated huggingface.co pipeline, set `use_auth_token`
         to True or to a string containing your hugginface.co authentication
         token that can be obtained by visiting https://hf.co/settings/tokens
+    cache_dir: Path or str, optional
+        Path to model cache directory. Defaults to ~/.cache/huggingface unless XDG_CACHE_HOME is set.
 
     Returns
     -------
@@ -73,11 +76,12 @@ def get_model(
 
     elif isinstance(model, Text):
         model = Model.from_pretrained(
-            model, use_auth_token=use_auth_token, strict=False
+            model, use_auth_token=use_auth_token, cache_dir=cache_dir, strict=False
         )
 
     elif isinstance(model, Mapping):
         model.setdefault("use_auth_token", use_auth_token)
+        model.setdefault("cache_dir", cache_dir)
         model = Model.from_pretrained(**model)
 
     else:
