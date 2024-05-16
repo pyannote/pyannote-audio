@@ -135,6 +135,7 @@ visit https://hf.co/{model_id} to accept the user conditions."""
         )
         params = config["pipeline"].get("params", {})
         params.setdefault("use_auth_token", use_auth_token)
+        params.setdefault("cache_dir", cache_dir)
         pipeline = Klass(**params)
 
         # freeze  parameters
