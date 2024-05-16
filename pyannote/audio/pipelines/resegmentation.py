@@ -71,7 +71,10 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
         When loading private huggingface.co models, set `use_auth_token`
         to True or to a string containing your hugginface.co authentication
         token that can be obtained by running `huggingface-cli login`
-
+    cache_dir: Path or str, optional
+        Path to model cache directory. Defaults to content of PYANNOTE_CACHE
+        environment variable, or "~/.cache/torch/pyannote" when unset.
+        
     Hyper-parameters
     ----------------
     onset, offset : float
@@ -88,13 +91,14 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
         diarization: Text = "diarization",
         der_variant: Optional[dict] = None,
         use_auth_token: Union[Text, None] = None,
+        cache_dir: Union[Path, Text, None] = None,
     ):
         super().__init__()
 
         self.segmentation = segmentation
         self.diarization = diarization
 
-        model: Model = get_model(segmentation, use_auth_token=use_auth_token)
+        model: Model = get_model(segmentation, use_auth_token=use_auth_token, cache_dir=cache_dir)
         self._segmentation = Inference(model)
 
         self._audio = model.audio
