@@ -69,7 +69,9 @@ def multi_conv_num_frames(
     return num_frames
 
 
-def conv1d_receptive_field_size(num_frames=1, kernel_size=5, stride=1, dilation=1):
+def conv1d_receptive_field_size(
+    num_frames=1, kernel_size=5, stride=1, padding=0, dilation=1
+):
     """Compute size of receptive field
 
     Parameters
@@ -80,6 +82,8 @@ def conv1d_receptive_field_size(num_frames=1, kernel_size=5, stride=1, dilation=
         Kernel size
     stride : int
         Stride
+    padding : int
+        Padding
     dilation : int
         Dilation
 
@@ -90,7 +94,7 @@ def conv1d_receptive_field_size(num_frames=1, kernel_size=5, stride=1, dilation=
     """
 
     effective_kernel_size = 1 + (kernel_size - 1) * dilation
-    return effective_kernel_size + (num_frames - 1) * stride
+    return effective_kernel_size + (num_frames - 1) * stride - 2 * padding
 
 
 def multi_conv_receptive_field_size(
@@ -102,11 +106,12 @@ def multi_conv_receptive_field_size(
 ) -> int:
     receptive_field_size = num_frames
 
-    for k, s, d in reversed(list(zip(kernel_size, stride, dilation))):
+    for k, s, p, d in reversed(list(zip(kernel_size, stride, padding, dilation))):
         receptive_field_size = conv1d_receptive_field_size(
             num_frames=receptive_field_size,
             kernel_size=k,
             stride=s,
+            padding=p,
             dilation=d,
         )
     return receptive_field_size

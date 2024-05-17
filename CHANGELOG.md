@@ -2,19 +2,28 @@
 
 ## develop
 
+### Fixes
+
+- fix(task): fix wrong train/development split when training with (some) meta-protocols ([#1709](https://github.com/pyannote/pyannote-audio/issues/1709))
+
+## Version 3.2.0 (2024-05-08)
+
 ### New features
 
 - feat(task): add option to cache task training metadata to speed up training (with [@clement-pages](https://github.com/clement-pages/))
 - feat(model): add `receptive_field`, `num_frames` and `dimension` to models (with [@Bilal-Rahou](https://github.com/Bilal-Rahou))
+- feat(model): add `fbank_only` property to `WeSpeaker` models
 - feat(util): add `Powerset.permutation_mapping` to help with permutation in powerset space (with [@FrenchKrab](https://github.com/FrenchKrab))
-- feat(sample): add sample file at `pyannote.audio.sample.SAMPLE_FILE` 
+- feat(sample): add sample file at `pyannote.audio.sample.SAMPLE_FILE`
 - feat(metric): add `reduce` option to `diarization_error_rate` metric (with [@Bilal-Rahou](https://github.com/Bilal-Rahou))
 - feat(pipeline): add `Waveform` and `SampleRate` preprocessors
 
 ### Fixes
 
-- fix(task): fix random generators and their reproducibility  (with [@FrenchKrab](https://github.com/FrenchKrab))
-- fix(task): fix estimation of training set size  (with [@FrenchKrab](https://github.com/FrenchKrab))
+- fix(task): fix random generators and their reproducibility (with [@FrenchKrab](https://github.com/FrenchKrab))
+- fix(task): fix estimation of training set size (with [@FrenchKrab](https://github.com/FrenchKrab))
+- fix(hook): fix `torch.Tensor` support in `ArtifactHook`
+- fix(doc): fix typo in `Powerset` docstring (with [@lukasstorck](https://github.com/lukasstorck))
 
 ### Improvements
 
@@ -24,10 +33,14 @@
 - improve(doc): update tutorials (with [@clement-pages](https://github.com/clement-pages/))
 - improve(io): remove the misleading mentions of `numpy.ndarray` as it's not supported (with [@Purfview](https://github.com/Purfview))
 
-## Breaking changes
+### Breaking changes
 
 - BREAKING(model): get rid of `Model.example_output` in favor of `num_frames` method, `receptive_field` property, and `dimension` property
 - BREAKING(task): custom tasks need to be updated (see "Add your own task" tutorial)
+
+### Community contributions
+
+- community: add tutorial for offline use of `pyannote/speaker-diarization-3.1` (by [@simonottenhauskenbun](https://github.com/simonottenhauskenbun))
 
 ## Version 3.1.1 (2023-12-01)
 
