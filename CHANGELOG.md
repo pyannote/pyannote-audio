@@ -32,6 +32,7 @@
 - fix(task): fix estimation of training set size (with [@FrenchKrab](https://github.com/FrenchKrab))
 - fix(hook): fix `torch.Tensor` support in `ArtifactHook`
 - fix(doc): fix typo in `Powerset` docstring (with [@lukasstorck](https://github.com/lukasstorck))
+- fix(doc): remove mention of unsupported `numpy.ndarray` waveform (with [@Purfview](https://github.com/Purfview))
 
 ### Improvements
 
@@ -39,7 +40,6 @@
 - improve(pipeline): track both `Model` and `nn.Module` attributes in `Pipeline.to(device)`
 - improve(io): switch to `torchaudio >= 2.2.0`
 - improve(doc): update tutorials (with [@clement-pages](https://github.com/clement-pages/))
-- improve(io): remove the misleading mentions of `numpy.ndarray` as it's not supported (with [@Purfview](https://github.com/Purfview))
 
 ### Breaking changes
 
