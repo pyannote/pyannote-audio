@@ -2,9 +2,17 @@
 
 ## develop
 
+### New features
+
+- feat(io): add option to select torchaudio `backend`
+
 ### Fixes
 
 - fix(task): fix wrong train/development split when training with (some) meta-protocols ([#1709](https://github.com/pyannote/pyannote-audio/issues/1709))
+
+### Improvements
+
+- improve(io): when available, default to using `soundfile` backend
 
 ## Version 3.2.0 (2024-05-08)
 
