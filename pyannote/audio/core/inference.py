@@ -559,9 +559,6 @@ class Inference(BaseInference):
             step=frames.step,
         )
 
-        masks = 1 - np.isnan(scores)
-        np.nan_to_num(scores.data, copy=False, nan=0.0)
-
         # Hamming window used for overlap-add aggregation
         hamming_window = (
             np.hamming(num_frames_per_chunk).reshape(-1, 1)
@@ -613,11 +610,13 @@ class Inference(BaseInference):
         )
 
         # loop on the scores of sliding chunks
-        for (chunk, score), (_, mask) in zip(scores, masks):
+        for chunk, score in scores:
             # chunk ~ Segment
             # score ~ (num_frames_per_chunk, num_classes)-shaped np.ndarray
             # mask ~ (num_frames_per_chunk, num_classes)-shaped np.ndarray
-
+            mask = 1 - np.isnan(score)
+            np.nan_to_num(score, copy=False, nan=0.0)
+            
             start_frame = frames.closest_frame(chunk.start + 0.5 * frames.duration)
 
             aggregated_output[start_frame : start_frame + num_frames_per_chunk] += (
