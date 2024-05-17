@@ -1,5 +1,11 @@
 # Changelog
 
+## develop
+
+### Fixes
+
+- fix(task): fix wrong train/development split when training with (some) meta-protocols ([#1709](https://github.com/pyannote/pyannote-audio/issues/1709))
+
 ## Version 3.2.0 (2024-05-08)
 
 ### New features
