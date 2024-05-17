@@ -182,6 +182,43 @@ visit https://hf.co/{model_id} to accept the user conditions."""
 
         return pipeline
 
+    def save_pretrained(
+        self,
+        dir,
+        embedding_model,
+        segmentation_model,
+        config_yml="pyannote/speaker-diarization-3.1",
+    ):
+
+        """save model config and checkpoint to a specific directory:
+
+        Args:
+            dir (str): Path directory to save the model and checkpoint
+            embedding_model (str): Path to the Speaker Embedding Model Hub repository
+            segmentation_model (str): Path to the Segmentation Model Hub repository
+            config_yml (str):
+                Path to the original "pyannote/speaker-diarization-3.1" Hub repository containing the default config file to use
+                to create custom speaker diarization config files.
+        """
+
+        dir = Path(dir)
+
+        with open(config_yml, "r") as fp:
+            config = yaml.load(fp, Loader=yaml.SafeLoader)
+
+        if embedding_model is None:
+            embedding_model = self.embedding
+
+        if segmentation_model is None:
+            segmentation_model = self.segmentation_model
+
+        # Modify the config with new segmentation and embedding models:
+        config["pipeline"]["params"]["embedding"] = embedding_model
+        config["pipeline"]["params"]["segmentation"] = segmentation_model
+
+        with open(dir / "config.yaml", "w") as outfile:
+            yaml.dump(config, outfile, default_flow_style=False)
+
     def push_to_hub(
         self,
         repo_id: str,
@@ -277,23 +314,9 @@ visit https://hf.co/{model_id} to accept the user conditions."""
 
         with TemporaryDirectory() as tmpdir:
 
-            tmpdir = Path(tmpdir)
-
-            with open(config_yml, "r") as fp:
-                config = yaml.load(fp, Loader=yaml.SafeLoader)
-
-            if embedding_model is None:
-                embedding_model = self.embedding
-
-            if segmentation_model is None:
-                segmentation_model = self.segmentation_model
-
-            # Modify the config with new segmentation and embedding models:
-            config["pipeline"]["params"]["embedding"] = embedding_model
-            config["pipeline"]["params"]["segmentation"] = segmentation_model
-
-            with open(tmpdir / "config.yaml", "w") as outfile:
-                yaml.dump(config, outfile, default_flow_style=False)
+            self.save_pretrained(
+                tmpdir, embedding_model, segmentation_model, config_yml
+            )
 
             pipeline_card = create_and_tag_pipeline_card(
                 repo_id,

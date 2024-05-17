@@ -706,6 +706,53 @@ visit https://hf.co/{model_id} to accept the user conditions."""
 
         return model
 
+    def save_pretrained(self, dir, model_type):
+        """save model config and checkpoint to a specific directory:
+
+        Args:
+            dir (str): Path directory to save the model and checkpoint
+            model_type (str): Either PyanNet or WeSpeakerResNet34
+        """
+
+        assert model_type in ["PyanNet", "WeSpeakerResNet34"]
+        dir = Path(dir)
+        # Save State Dicts:
+        checkpoint = {"state_dict": self.state_dict()}
+        self.on_save_checkpoint(checkpoint)
+        checkpoint["pytorch-lightning_version"] = pl.__version__
+
+        if model_type == "PyanNet":
+            checkpoint["hyper_parameters"] = dict(self.hparams)
+
+        pyannote_checkpoint = Path(dir) / HF_PYTORCH_WEIGHTS_NAME
+        torch.save(checkpoint, pyannote_checkpoint)
+
+        # Prepare Config Files and Tags for a PyanNet model
+        if model_type == "PyanNet":
+            file = {
+                "model": {},
+                "task": {},
+            }
+            file["model"] = checkpoint["hyper_parameters"]
+            file["model"]["_target_"] = str(type(self)).split("'")[1]
+            file["task"]["duration"] = self.specifications.duration
+            file["task"]["max_speakers_per_chunk"] = len(self.specifications.classes)
+            file["task"][
+                "max_speakers_per_frame"
+            ] = self.specifications.powerset_max_classes
+
+        # Prepare Config Files and Tags for a WeSpeakerResNet34 model:
+        elif model_type == "WeSpeakerResNet34":
+            file = {
+                "model": {},
+            }
+
+            file["model"] = dict(self.hparams)
+            file["model"]["_target_"] = str(type(self)).split("'")[1]
+
+        with open(dir / "config.yaml", "w") as outfile:
+            yaml.dump(file, outfile, default_flow_style=False)
+
     def push_to_hub(
         self,
         repo_id: str,
@@ -756,47 +803,8 @@ visit https://hf.co/{model_id} to accept the user conditions."""
 
         with TemporaryDirectory() as tmpdir:
 
-            tmpdir = Path(tmpdir)
-
-            # Save State Dicts:
-            checkpoint = {"state_dict": self.state_dict()}
-            self.on_save_checkpoint(checkpoint)
-            checkpoint["pytorch-lightning_version"] = pl.__version__
-
-            if model_type == "PyanNet":
-                checkpoint["hyper_parameters"] = dict(self.hparams)
-
-            pyannote_checkpoint = Path(tmpdir) / HF_PYTORCH_WEIGHTS_NAME
-            torch.save(checkpoint, pyannote_checkpoint)
-
-            # Prepare Config Files and Tags for a PyanNet model
-            if model_type == "PyanNet":
-                file = {
-                    "model": {},
-                    "task": {},
-                }
-                file["model"] = checkpoint["hyper_parameters"]
-                file["model"]["_target_"] = str(type(self)).split("'")[1]
-                file["task"]["duration"] = self.specifications.duration
-                file["task"]["max_speakers_per_chunk"] = len(
-                    self.specifications.classes
-                )
-                file["task"][
-                    "max_speakers_per_frame"
-                ] = self.specifications.powerset_max_classes
-
-            # Prepare Config Files and Tags for a WeSpeakerResNet34 model:
-            elif model_type == "WeSpeakerResNet34":
-                file = {
-                    "model": {},
-                }
-
-                file["model"] = dict(self.hparams)
-                file["model"]["_target_"] = str(type(self)).split("'")[1]
-
-            with open(tmpdir / "config.yaml", "w") as outfile:
-                yaml.dump(file, outfile, default_flow_style=False)
-
+            # Save model checkpoint and config
+            self.save_pretrained(tmpdir, model_type)
             # Update model card:
             model_card = create_and_tag_model_card(
                 repo_id,
