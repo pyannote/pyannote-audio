@@ -1,5 +1,5 @@
-Using `pyannote.audio` open-source toolkit in production?
-Make the most of it thanks to our [consulting services](https://herve.niderb.fr/consulting.html).
+Using `pyannote.audio` open-source toolkit in production?  
+Consider switching to [pyannoteAI](https://www.pyannote.ai) for better and faster options.
 
 # `pyannote.audio` speaker diarization toolkit
 
@@ -79,21 +79,21 @@ for turn, _, speaker in diarization.itertracks(yield_label=True):
 Out of the box, `pyannote.audio` speaker diarization [pipeline](https://hf.co/pyannote/speaker-diarization-3.1) v3.1 is expected to be much better (and faster) than v2.x.
 Those numbers are diarization error rates (in %):
 
-| Benchmark              | [v2.1](https://hf.co/pyannote/speaker-diarization-2.1) | [v3.1](https://hf.co/pyannote/speaker-diarization-3.1) | [Premium](https://forms.gle/eKhn7H2zTa68sMMx8) |
-| ---------------------- | ------ | ------ | --------- |
-| [AISHELL-4](https://arxiv.org/abs/2104.03603)              |  14.1  |  12.2  | 11.9      |
-| [AliMeeting](https://www.openslr.org/119/) (channel 1) |  27.4  |  24.4  | 22.5      |
-| [AMI](https://groups.inf.ed.ac.uk/ami/corpus/) (IHM)              |  18.9  |  18.8  | 16.6      |
-| [AMI](https://groups.inf.ed.ac.uk/ami/corpus/) (SDM)              |  27.1  |  22.4  | 20.9      |
-| [AVA-AVD](https://arxiv.org/abs/2111.14448)                |  66.3  |  50.0  | 39.8      |
-| [CALLHOME](https://catalog.ldc.upenn.edu/LDC2001S97) ([part 2](https://github.com/BUTSpeechFIT/CALLHOME_sublists/issues/1))      |  31.6  |  28.4  | 22.2      |
-| [DIHARD 3](https://catalog.ldc.upenn.edu/LDC2022S14) ([full](https://arxiv.org/abs/2012.01477))        |  26.9  |  21.7  | 17.2      |
-| [Earnings21](https://github.com/revdotcom/speech-datasets)   | 17.0 | 9.4 | 9.0 |
-| [Ego4D](https://arxiv.org/abs/2110.07058) (dev.)           |  61.5  |  51.2  | 43.8      |
-| [MSDWild](https://github.com/X-LANCE/MSDWILD)                |  32.8  |  25.3  | 19.8      |
-| [RAMC](https://www.openslr.org/123/)                   |  22.5  |  22.2  | 18.4      |
-| [REPERE](https://www.islrn.org/resources/360-758-359-485-0/) (phase2)        |   8.2  |   7.8  |  7.6      |
-| [VoxConverse](https://github.com/joonson/voxconverse) (v0.3)     |  11.2  |  11.3  |  9.4      |
+| Benchmark                                                                                                                   | [v2.1](https://hf.co/pyannote/speaker-diarization-2.1) | [v3.1](https://hf.co/pyannote/speaker-diarization-3.1) | [pyannoteAI](https://www.pyannote.ai) |
+| --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------ | ------------------------------------------------ |
+| [AISHELL-4](https://arxiv.org/abs/2104.03603)                                                                               | 14.1                                                   | 12.2                                                   | 11.9                                             |
+| [AliMeeting](https://www.openslr.org/119/) (channel 1)                                                                      | 27.4                                                   | 24.4                                                   | 22.5                                             |
+| [AMI](https://groups.inf.ed.ac.uk/ami/corpus/) (IHM)                                                                        | 18.9                                                   | 18.8                                                   | 16.6                                             |
+| [AMI](https://groups.inf.ed.ac.uk/ami/corpus/) (SDM)                                                                        | 27.1                                                   | 22.4                                                   | 20.9                                             |
+| [AVA-AVD](https://arxiv.org/abs/2111.14448)                                                                                 | 66.3                                                   | 50.0                                                   | 39.8                                             |
+| [CALLHOME](https://catalog.ldc.upenn.edu/LDC2001S97) ([part 2](https://github.com/BUTSpeechFIT/CALLHOME_sublists/issues/1)) | 31.6                                                   | 28.4                                                   | 22.2                                             |
+| [DIHARD 3](https://catalog.ldc.upenn.edu/LDC2022S14) ([full](https://arxiv.org/abs/2012.01477))                             | 26.9                                                   | 21.7                                                   | 17.2                                             |
+| [Earnings21](https://github.com/revdotcom/speech-datasets)                                                                  | 17.0                                                   | 9.4                                                    | 9.0                                              |
+| [Ego4D](https://arxiv.org/abs/2110.07058) (dev.)                                                                            | 61.5                                                   | 51.2                                                   | 43.8                                             |
+| [MSDWild](https://github.com/X-LANCE/MSDWILD)                                                                               | 32.8                                                   | 25.3                                                   | 19.8                                             |
+| [RAMC](https://www.openslr.org/123/)                                                                                        | 22.5                                                   | 22.2                                                   | 18.4                                             |
+| [REPERE](https://www.islrn.org/resources/360-758-359-485-0/) (phase2)                                                       | 8.2                                                    | 7.8                                                    | 7.6                                              |
+| [VoxConverse](https://github.com/joonson/voxconverse) (v0.3)                                                                | 11.2                                                   | 11.3                                                   | 9.4                                              |
 
 [Diarization error rate](http://pyannote.github.io/pyannote-metrics/reference.html#diarization) (in %)
 

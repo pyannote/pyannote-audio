@@ -109,7 +109,7 @@ class Powerset(nn.Module):
             Soft predictions in "powerset" space.
         soft : bool, optional
             Return soft multi-label predictions. Defaults to False (i.e. hard predictions)
-            Assumes that `powerset` are "logits" (not "probabilities").
+            Assumes that `powerset` are "log probabilities".
 
         Returns
         -------
