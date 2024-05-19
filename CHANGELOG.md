@@ -39,7 +39,6 @@
 
 - improve(metric): add support for number of speakers mismatch in `diarization_error_rate` metric
 - improve(pipeline): track both `Model` and `nn.Module` attributes in `Pipeline.to(device)`
-- improve(pipeline): do not extract embeddings in `SpeakerDiarization` pipeline when `max_speakers` is 1
 - improve(io): switch to `torchaudio >= 2.2.0`
 - improve(doc): update tutorials (with [@clement-pages](https://github.com/clement-pages/))
 
