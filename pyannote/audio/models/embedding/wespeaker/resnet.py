@@ -124,6 +124,7 @@ class BasicBlock(nn.Module):
             num_frames,
             kernel_size=[3, 3],
             stride=[self.stride, 1],
+            padding=[1, 1],
             dilation=[1, 1],
         )
 
@@ -189,6 +190,7 @@ class Bottleneck(nn.Module):
             num_frames,
             kernel_size=[1, 3, 1],
             stride=[1, self.stride, 1],
+            padding=[0, 1, 0],
             dilation=[1, 1, 1],
         )
 
@@ -305,6 +307,7 @@ class ResNet(nn.Module):
             num_frames=receptive_field_size,
             kernel_size=3,
             stride=1,
+            padding=1,
             dilation=1,
         )
 
@@ -341,12 +344,64 @@ class ResNet(nn.Module):
 
         return receptive_field_center
 
-    def forward(self, x: torch.Tensor, weights: Optional[torch.Tensor] = None):
-        """
+    def forward_frames(self, fbank: torch.Tensor) -> torch.Tensor:
+        """Extract frame-wise embeddings
 
         Parameters
         ----------
-        x : (batch, frames, features) torch.Tensor
+        fbanks : (batch, frames, features) torch.Tensor
+            Batch of fbank features
+
+        Returns
+        -------
+        embeddings : (batch, ..., embedding_frames) torch.Tensor
+            Batch of frame-wise embeddings.
+
+        """
+        fbank = fbank.permute(0, 2, 1)  # (B,T,F) => (B,F,T)
+        fbank = fbank.unsqueeze_(1)
+        out = F.relu(self.bn1(self.conv1(fbank)))
+        out = self.layer1(out)
+        out = self.layer2(out)
+        out = self.layer3(out)
+        out = self.layer4(out)
+        return out
+
+    def forward_embedding(
+        self, frames: torch.Tensor, weights: torch.Tensor = None
+    ) -> torch.Tensor:
+        """Extract speaker embeddings
+
+        Parameters
+        ----------
+        frames : torch.Tensor
+            Batch of frames with shape (batch, ..., embedding_frames).
+        weights : (batch, frames) or (batch, speakers, frames) torch.Tensor, optional
+            Batch of weights passed to statistics pooling layer.
+
+        Returns
+        -------
+        embeddings : (batch, dimension) or (batch, speakers, dimension) torch.Tensor
+            Batch of embeddings.
+        """
+
+        stats = self.pool(frames, weights=weights)
+
+        embed_a = self.seg_1(stats)
+        if self.two_emb_layer:
+            out = F.relu(embed_a)
+            out = self.seg_bn_1(out)
+            embed_b = self.seg_2(out)
+            return embed_a, embed_b
+        else:
+            return torch.tensor(0.0), embed_a
+
+    def forward(self, fbank: torch.Tensor, weights: Optional[torch.Tensor] = None):
+        """Extract speaker embeddings
+
+        Parameters
+        ----------
+        fbank : (batch, frames, features) torch.Tensor
             Batch of features
         weights : (batch, frames) torch.Tensor, optional
             Batch of weights
@@ -355,10 +410,9 @@ class ResNet(nn.Module):
         -------
         embedding : (batch, embedding_dim) torch.Tensor
         """
-        x = x.permute(0, 2, 1)  # (B,T,F) => (B,F,T)
-
-        x = x.unsqueeze_(1)
-        out = F.relu(self.bn1(self.conv1(x)))
+        fbank = fbank.permute(0, 2, 1)  # (B,T,F) => (B,F,T)
+        fbank = fbank.unsqueeze_(1)
+        out = F.relu(self.bn1(self.conv1(fbank)))
         out = self.layer1(out)
         out = self.layer2(out)
         out = self.layer3(out)
