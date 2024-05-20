@@ -185,36 +185,46 @@ visit https://hf.co/{model_id} to accept the user conditions."""
     def save_pretrained(
         self,
         dir,
-        embedding_model,
-        segmentation_model,
-        config_yml="pyannote/speaker-diarization-3.1",
     ):
 
         """save model config and checkpoint to a specific directory:
 
         Args:
             dir (str): Path directory to save the model and checkpoint
-            embedding_model (str): Path to the Speaker Embedding Model Hub repository
-            segmentation_model (str): Path to the Segmentation Model Hub repository
-            config_yml (str):
-                Path to the original "pyannote/speaker-diarization-3.1" Hub repository containing the default config file to use
-                to create custom speaker diarization config files.
         """
 
         dir = Path(dir)
 
-        with open(config_yml, "r") as fp:
-            config = yaml.load(fp, Loader=yaml.SafeLoader)
-
-        if embedding_model is None:
-            embedding_model = self.embedding
-
-        if segmentation_model is None:
-            segmentation_model = self.segmentation_model
-
-        # Modify the config with new segmentation and embedding models:
-        config["pipeline"]["params"]["embedding"] = embedding_model
-        config["pipeline"]["params"]["segmentation"] = segmentation_model
+        config = {
+            "pipeline": {
+                "name": str(type(self)).split("'")[1],
+                "params": {
+                    "clustering": self.klustering,
+                    "embedding": self.embedding,
+                    "embedding_batch_size": self.embedding_batch_size,
+                    "embedding_exclude_overlap": self.embedding_exclude_overlap,
+                    "segmentation": self.segmentation,
+                    "segmentation_batch_size": self.segmentation_batch_size,
+                },
+            },
+            "params": {
+                "clustering": {
+                    "method": self._pipelines["clustering"]._instantiated["method"],
+                    "min_cluster_size": self._pipelines["clustering"]._instantiated[
+                        "min_cluster_size"
+                    ],
+                    "threshold": self._pipelines["clustering"]._instantiated[
+                        "threshold"
+                    ],
+                },
+                "segmentation": {
+                    "min_duration_off": self._pipelines["segmentation"]._instantiated[
+                        "min_duration_off"
+                    ]
+                },
+                "version": 3.1,
+            },
+        }
 
         with open(dir / "config.yaml", "w") as outfile:
             yaml.dump(config, outfile, default_flow_style=False)
@@ -222,8 +232,6 @@ visit https://hf.co/{model_id} to accept the user conditions."""
     def push_to_hub(
         self,
         repo_id: str,
-        embedding_model: str = None,
-        segmentation_model: str = None,
         commit_message: Optional[str] = None,
         private: Optional[bool] = None,
         use_auth_token: Optional[Union[bool, str]] = None,
@@ -245,12 +253,6 @@ visit https://hf.co/{model_id} to accept the user conditions."""
             repo_id (`str`):
                 The name of the repository you want to push your {object} to. It should contain your organization name
                 when pushing to a given organization.
-            embedding_model (`str`):
-                The HF Hub repository containing the segmentation model to be used in the pipeline.
-                If not specified, will use the default pyannote/wespeaker-voxceleb-resnet34-LM model from the Hub.
-            segmentation_model (`str`):
-                The HF Hub repository containing the segmentation model to be used in the pipeline.
-                If not specified, will use the default pyannote/segmentation-3.0 model from the Hub.
             commit_message (`str`, *optional*):
                 Message to commit while pushing. Will default to `"Upload {object}"`.
             private (`bool`, *optional*):
@@ -285,38 +287,10 @@ visit https://hf.co/{model_id} to accept the user conditions."""
         )
 
         # Load the pyannote/speaker-diarization-3.1 pipeline config:
-        try:
-            config_yml = hf_hub_download(
-                config_yaml_path,
-                "config.yaml",
-                repo_type="model",
-                revision=revision,
-                library_name="pyannote",
-                library_version=__version__,
-                cache_dir=cache_dir,
-                use_auth_token=use_auth_token,
-            )
-        except RepositoryNotFoundError:
-            print(
-                f"""
-                Could not download '{config_yaml_path}' pipeline.
-                It might be because the pipeline is private or gated so make
-                sure to authenticate. Visit https://hf.co/settings/tokens to
-                create your access token and retry with:
-
-                >>> Pipeline.from_pretrained('{config_yaml_path}',
-                ...                          use_auth_token=YOUR_AUTH_TOKEN)
-
-                If this still does not work, it might be because the pipeline is gated:
-                visit https://hf.co/{config_yaml_path} to accept the user conditions."""
-            )
-            return None
 
         with TemporaryDirectory() as tmpdir:
 
-            self.save_pretrained(
-                tmpdir, embedding_model, segmentation_model, config_yml
-            )
+            self.save_pretrained(tmpdir)
 
             pipeline_card = create_and_tag_pipeline_card(
                 repo_id,
