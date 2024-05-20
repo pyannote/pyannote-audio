@@ -129,6 +129,7 @@ visit https://hf.co/{model_id} to accept the user conditions."""
         )
         params = config["pipeline"].get("params", {})
         params.setdefault("use_auth_token", use_auth_token)
+
         pipeline = Klass(**params)
 
         # freeze  parameters
@@ -185,12 +186,13 @@ visit https://hf.co/{model_id} to accept the user conditions."""
     def save_pretrained(
         self,
         dir,
+        save_checkpoints=False,
     ):
 
-        """save model config and checkpoint to a specific directory:
+        """save pipeline config and model checkpoints to a specific directory:
 
         Args:
-            dir (str): Path directory to save the model and checkpoint
+            dir (str): Path directory to save the pipeline and checkpoints
         """
 
         dir = Path(dir)
@@ -222,9 +224,20 @@ visit https://hf.co/{model_id} to accept the user conditions."""
                         "min_duration_off"
                     ]
                 },
-                "version": 3.1,
             },
+            "version": "3.1",
+            "checkpoints": save_checkpoints,
         }
+
+        if save_checkpoints:
+            seg_path = os.path.join(dir, "segmentation")
+            embed_path = os.path.join(dir, "embedding")
+            os.makedirs(seg_path, exist_ok=True)
+            os.makedirs(embed_path, exist_ok=True)
+            self._segmentation.model.save_pretrained(seg_path, model_type="PyanNet")
+            self._embedding.model_.save_pretrained(
+                embed_path, model_type="WeSpeakerResNet34"
+            )
 
         with open(dir / "config.yaml", "w") as outfile:
             yaml.dump(config, outfile, default_flow_style=False)
@@ -232,6 +245,7 @@ visit https://hf.co/{model_id} to accept the user conditions."""
     def push_to_hub(
         self,
         repo_id: str,
+        save_checkpoints: bool = False,
         commit_message: Optional[str] = None,
         private: Optional[bool] = None,
         use_auth_token: Optional[Union[bool, str]] = None,
@@ -240,7 +254,6 @@ visit https://hf.co/{model_id} to accept the user conditions."""
         commit_description: str = None,
         tags: Optional[List[str]] = None,
         cache_dir: Union[Path, Text] = CACHE_DIR,
-        config_yaml_path: str = "pyannote/speaker-diarization-3.1",
     ):
         """
         Upload the pyannote pipeline config file to the 🤗 Model Hub.
@@ -271,9 +284,6 @@ visit https://hf.co/{model_id} to accept the user conditions."""
                 List of tags to push on the Hub.
             cache_dir: Path or str, optional
                 Path to config cache directory. Defauorch/pyannote" when unset.
-            config_yaml_path (`str`):
-                Path to the original "pyannote/speaker-diarization-3.1" Hub repository containing the default config file to use
-                to create custom speaker diarization config files.
         """
 
         api = HfApi()
@@ -290,7 +300,7 @@ visit https://hf.co/{model_id} to accept the user conditions."""
 
         with TemporaryDirectory() as tmpdir:
 
-            self.save_pretrained(tmpdir)
+            self.save_pretrained(tmpdir, save_checkpoints)
 
             pipeline_card = create_and_tag_pipeline_card(
                 repo_id,
