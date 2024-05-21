@@ -536,6 +536,7 @@ class Model(pl.LightningModule):
         strict: bool = True,
         use_auth_token: Union[Text, None] = None,
         cache_dir: Union[Path, Text] = CACHE_DIR,
+        subfolder: Optional[str] = None,
         **kwargs,
     ) -> "Model":
         """Load pretrained model
@@ -568,6 +569,8 @@ class Model(pl.LightningModule):
         cache_dir: Path or str, optional
             Path to model cache directory. Defaults to content of PYANNOTE_CACHE
             environment variable, or "~/.cache/torch/pyannote" when unset.
+        subfolder: Path or str, optional
+            An optional value corresponding to a folder inside the model repo.
         kwargs: optional
             Any extra keyword args needed to init the model.
             Can also be used to override saved hyperparameter values.
@@ -621,6 +624,7 @@ class Model(pl.LightningModule):
                     use_auth_token=use_auth_token,
                     # local_files_only=False,
                     # legacy_cache_layout=False,
+                    subfolder=subfolder,
                 )
             except RepositoryNotFoundError:
                 print(

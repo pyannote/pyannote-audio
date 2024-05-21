@@ -46,6 +46,7 @@ from pyannote.audio.utils.reproducibility import fix_reproducibility
 from pyannote.audio.utils.version import check_version
 
 PIPELINE_PARAMS_NAME = "config.yaml"
+HF_PYTORCH_WEIGHTS_NAME = "pytorch_model.bin"
 
 
 class Pipeline(_Pipeline):
@@ -130,7 +131,14 @@ visit https://hf.co/{model_id} to accept the user conditions."""
         params = config["pipeline"].get("params", {})
         params.setdefault("use_auth_token", use_auth_token)
 
-        pipeline = Klass(**params)
+        if "checkpoints" in config and config["checkpoints"] is True:
+            embedding = Model.from_pretrained(model_id, subfolder="embedding")
+            segmentation = Model.from_pretrained(model_id, subfolder="segmentation")
+            pipeline = Klass(**params)
+            pipeline.embedding = embedding
+            pipeline.segmentation_model = segmentation
+        else:
+            pipeline = Klass(**params)
 
         # freeze  parameters
         if "freeze" in config:
@@ -196,16 +204,13 @@ visit https://hf.co/{model_id} to accept the user conditions."""
         """
 
         dir = Path(dir)
-
         config = {
             "pipeline": {
                 "name": str(type(self)).split("'")[1],
                 "params": {
                     "clustering": self.klustering,
-                    "embedding": self.embedding,
                     "embedding_batch_size": self.embedding_batch_size,
                     "embedding_exclude_overlap": self.embedding_exclude_overlap,
-                    "segmentation": self.segmentation,
                     "segmentation_batch_size": self.segmentation_batch_size,
                 },
             },
@@ -225,7 +230,7 @@ visit https://hf.co/{model_id} to accept the user conditions."""
                     ]
                 },
             },
-            "version": "3.1",
+            "version": str(__version__),
             "checkpoints": save_checkpoints,
         }
 
@@ -238,6 +243,9 @@ visit https://hf.co/{model_id} to accept the user conditions."""
             self._embedding.model_.save_pretrained(
                 embed_path, model_type="WeSpeakerResNet34"
             )
+        else:
+            config["pipeline"]["params"]["embedding"] = self.embedding
+            config["pipeline"]["params"]["segmentation"] = self.segmentation
 
         with open(dir / "config.yaml", "w") as outfile:
             yaml.dump(config, outfile, default_flow_style=False)
@@ -266,6 +274,8 @@ visit https://hf.co/{model_id} to accept the user conditions."""
             repo_id (`str`):
                 The name of the repository you want to push your {object} to. It should contain your organization name
                 when pushing to a given organization.
+            save_checkpoints (`bool`, *optional*):
+                If set to True, the embedding and segmentation model checkpoints will also be pushed to the Hub.
             commit_message (`str`, *optional*):
                 Message to commit while pushing. Will default to `"Upload {object}"`.
             private (`bool`, *optional*):
