@@ -131,13 +131,15 @@ visit https://hf.co/{model_id} to accept the user conditions."""
         params = config["pipeline"].get("params", {})
         params.setdefault("use_auth_token", use_auth_token)
 
-        if "checkpoints" in config and config["checkpoints"] is True:
+        try:
+            # If hub repo contains subfolders, load models and pipeline:
             embedding = Model.from_pretrained(model_id, subfolder="embedding")
             segmentation = Model.from_pretrained(model_id, subfolder="segmentation")
             pipeline = Klass(**params)
             pipeline.embedding = embedding
             pipeline.segmentation_model = segmentation
-        else:
+        except Exception:
+            # If not, it means that we want to load the default pyannote/speaker-diarization-3.1 pipeline:
             pipeline = Klass(**params)
 
         # freeze  parameters
@@ -194,7 +196,6 @@ visit https://hf.co/{model_id} to accept the user conditions."""
     def save_pretrained(
         self,
         dir,
-        save_checkpoints=False,
     ):
 
         """save pipeline config and model checkpoints to a specific directory:
@@ -231,21 +232,14 @@ visit https://hf.co/{model_id} to accept the user conditions."""
                 },
             },
             "version": str(__version__),
-            "checkpoints": save_checkpoints,
         }
 
-        if save_checkpoints:
-            seg_path = os.path.join(dir, "segmentation")
-            embed_path = os.path.join(dir, "embedding")
-            os.makedirs(seg_path, exist_ok=True)
-            os.makedirs(embed_path, exist_ok=True)
-            self._segmentation.model.save_pretrained(seg_path, model_type="PyanNet")
-            self._embedding.model_.save_pretrained(
-                embed_path, model_type="WeSpeakerResNet34"
-            )
-        else:
-            config["pipeline"]["params"]["embedding"] = self.embedding
-            config["pipeline"]["params"]["segmentation"] = self.segmentation
+        seg_path = os.path.join(dir, "segmentation")
+        embed_path = os.path.join(dir, "embedding")
+        os.makedirs(seg_path, exist_ok=True)
+        os.makedirs(embed_path, exist_ok=True)
+        self._segmentation.model.save_pretrained(seg_path)
+        self._embedding.model_.save_pretrained(embed_path)
 
         with open(dir / "config.yaml", "w") as outfile:
             yaml.dump(config, outfile, default_flow_style=False)
@@ -253,7 +247,6 @@ visit https://hf.co/{model_id} to accept the user conditions."""
     def push_to_hub(
         self,
         repo_id: str,
-        save_checkpoints: bool = False,
         commit_message: Optional[str] = None,
         private: Optional[bool] = None,
         use_auth_token: Optional[Union[bool, str]] = None,
@@ -274,8 +267,6 @@ visit https://hf.co/{model_id} to accept the user conditions."""
             repo_id (`str`):
                 The name of the repository you want to push your {object} to. It should contain your organization name
                 when pushing to a given organization.
-            save_checkpoints (`bool`, *optional*):
-                If set to True, the embedding and segmentation model checkpoints will also be pushed to the Hub.
             commit_message (`str`, *optional*):
                 Message to commit while pushing. Will default to `"Upload {object}"`.
             private (`bool`, *optional*):
@@ -310,7 +301,7 @@ visit https://hf.co/{model_id} to accept the user conditions."""
 
         with TemporaryDirectory() as tmpdir:
 
-            self.save_pretrained(tmpdir, save_checkpoints)
+            self.save_pretrained(tmpdir)
 
             pipeline_card = create_and_tag_pipeline_card(
                 repo_id,

@@ -710,16 +710,18 @@ visit https://hf.co/{model_id} to accept the user conditions."""
 
         return model
 
-    def save_pretrained(self, dir, model_type):
+    def save_pretrained(self, checkpoint_dir):
         """save model config and checkpoint to a specific directory:
 
         Args:
-            dir (str): Path directory to save the model and checkpoint
+            checkpoint_dir (str): Path directory to save the model and xzcheckpoint
             model_type (str): Either PyanNet or WeSpeakerResNet34
         """
 
+        model_type = str(type(self)).split("'")[1].split(".")[-1]
+
         assert model_type in ["PyanNet", "WeSpeakerResNet34"]
-        dir = Path(dir)
+        checkpoint_dir = Path(checkpoint_dir)
         # Save State Dicts:
         checkpoint = {"state_dict": self.state_dict()}
         self.on_save_checkpoint(checkpoint)
@@ -728,7 +730,7 @@ visit https://hf.co/{model_id} to accept the user conditions."""
         if model_type == "PyanNet":
             checkpoint["hyper_parameters"] = dict(self.hparams)
 
-        pyannote_checkpoint = Path(dir) / HF_PYTORCH_WEIGHTS_NAME
+        pyannote_checkpoint = Path(checkpoint_dir) / HF_PYTORCH_WEIGHTS_NAME
         torch.save(checkpoint, pyannote_checkpoint)
 
         # Prepare Config Files and Tags for a PyanNet model
@@ -754,7 +756,7 @@ visit https://hf.co/{model_id} to accept the user conditions."""
             file["model"] = dict(self.hparams)
             file["model"]["_target_"] = str(type(self)).split("'")[1]
 
-        with open(dir / "config.yaml", "w") as outfile:
+        with open(checkpoint_dir / "config.yaml", "w") as outfile:
             yaml.dump(file, outfile, default_flow_style=False)
 
     def push_to_hub(
@@ -769,14 +771,14 @@ visit https://hf.co/{model_id} to accept the user conditions."""
         tags: Optional[List[str]] = None,
     ) -> None:
         """
-        Upload the {object_files} to the 🤗 Model Hub.
+        Upload the pyannote Model to the 🤗 Model Hub.
 
         Parameters:
             repo_id (`str`):
-                The name of the repository you want to push your {object} to. It should contain your organization name
+                The name of the repository you want to push your Model to. It should contain your organization name
                 when pushing to a given organization.
             commit_message (`str`, *optional*):
-                Message to commit while pushing. Will default to `"Upload {object}"`.
+                Message to commit while pushing. Will default to `"Upload Model"`.
             private (`bool`, *optional*):
                 Whether or not the repository created should be private.
             token (`bool` or `str`, *optional*):
@@ -803,13 +805,13 @@ visit https://hf.co/{model_id} to accept the user conditions."""
             repo_type="model",
         )
 
-        model_type = str(type(self)).split("'")[1].split(".")[-1]
-
         with TemporaryDirectory() as tmpdir:
 
             # Save model checkpoint and config
-            self.save_pretrained(tmpdir, model_type)
+            self.save_pretrained(tmpdir)
             # Update model card:
+            model_type = str(type(self)).split("'")[1].split(".")[-1]
+
             model_card = create_and_tag_model_card(
                 repo_id,
                 model_type,
