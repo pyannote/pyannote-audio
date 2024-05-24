@@ -67,7 +67,7 @@ class ValDataset(IterableDataset):
 
     Parameters
     ----------
-    task : JointSpeakerSeparationAndDiarization
+    task : PixIT
         Task instance.
     """
 
