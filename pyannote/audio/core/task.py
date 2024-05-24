@@ -595,7 +595,9 @@ class Task(pl.LightningDataModule):
         prepared_data["metadata-labels"] = np.array(unique_labels, dtype=np.str_)
         unique_labels.clear()
 
-        self.prepare_validation(prepared_data)
+        if self.has_validation:
+            self.prepare_validation(prepared_data)
+
         self.post_prepare_data(prepared_data)
 
         # save prepared data on the disk

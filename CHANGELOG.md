@@ -9,6 +9,7 @@
 ### Fixes
 
 - fix(task): fix wrong train/development split when training with (some) meta-protocols ([#1709](https://github.com/pyannote/pyannote-audio/issues/1709))
+- fix(task): fix metadata preparation with missing validation subset ([@clement-pages](https://github.com/clement-pages/))
 
 ### Improvements
 
