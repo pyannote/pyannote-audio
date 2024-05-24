@@ -1,6 +1,6 @@
 # The MIT License (MIT)
 #
-# Copyright (c) 2021- CNRS
+# Copyright (c) 2024- CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""Speaker diarization pipelines"""
+"""Speaker separation pipelines"""
 
 import functools
 import itertools
@@ -32,7 +32,7 @@ from typing import Callable, Optional, Text, Tuple, Union
 import numpy as np
 import torch
 from einops import rearrange
-from pyannote.core import Annotation, SlidingWindowFeature, SlidingWindow
+from pyannote.core import Annotation, SlidingWindow, SlidingWindowFeature
 from pyannote.metrics.diarization import GreedyDiarizationErrorRate
 from pyannote.pipeline.parameter import ParamDict, Uniform
 
@@ -55,7 +55,7 @@ def batchify(iterable, batch_size: int = 32, fillvalue=None):
     return itertools.zip_longest(*args, fillvalue=fillvalue)
 
 
-class JointSpeakerDiarizationAndSeparation(SpeakerDiarizationMixin, Pipeline):
+class SpeakerSeparation(SpeakerDiarizationMixin, Pipeline):
     """Speaker diarization pipeline
 
     Parameters
@@ -101,6 +101,13 @@ class JointSpeakerDiarizationAndSeparation(SpeakerDiarizationMixin, Pipeline):
     segmentation.threshold
     segmentation.min_duration_off
     clustering.???
+
+    References
+    ----------
+    Joonas Kalda, Clément Pagés, Ricard Marxer, Tanel Alumäe, and Hervé Bredin.
+    "PixIT: Joint Training of Speaker Diarization and Speech Separation
+    from Real-world Multi-speaker Recordings"
+    Odyssey 2024. https://arxiv.org/abs/2403.02288
     """
 
     def __init__(
@@ -353,9 +360,7 @@ class JointSpeakerDiarizationAndSeparation(SpeakerDiarizationMixin, Pipeline):
 
         embedding_batches = np.vstack(embedding_batches)
 
-        embeddings = rearrange(
-            embedding_batches, "(c s) d -> c s d", c=num_chunks
-        )
+        embeddings = rearrange(embedding_batches, "(c s) d -> c s d", c=num_chunks)
 
         # caching embeddings for subsequent trials
         # (see comments at the top of this method for more details)
@@ -505,7 +510,7 @@ class JointSpeakerDiarizationAndSeparation(SpeakerDiarizationMixin, Pipeline):
             warm_up=(0.0, 0.0),
         )
         hook("speaker_counting", count)
-        
+
         #   shape: (num_frames, 1)
         #   dtype: int
 
@@ -583,19 +588,29 @@ class JointSpeakerDiarizationAndSeparation(SpeakerDiarizationMixin, Pipeline):
         hook("discrete_diarization", discrete_diarization)
         clustered_separations = self.reconstruct(separations, hard_clusters, count)
         frame_duration = separations.sliding_window.duration / separations.data.shape[1]
-        frames = SlidingWindow(step=frame_duration, duration=2*frame_duration)
-        sources = Inference.aggregate( clustered_separations, frames=frames, hamming=True, missing=0.0, skip_average=True, )
+        frames = SlidingWindow(step=frame_duration, duration=2 * frame_duration)
+        sources = Inference.aggregate(
+            clustered_separations,
+            frames=frames,
+            hamming=True,
+            missing=0.0,
+            skip_average=True,
+        )
         # zero-out sources when speaker is inactive
         # WARNING: this should be rewritten to avoid huge memory consumption
         if zero:
-            context_size_frames = int(self._segmentation.model.num_frames(
-                context_size_seconds * self._audio.sample_rate
-            ))
+            context_size_frames = int(
+                self._segmentation.model.num_frames(
+                    context_size_seconds * self._audio.sample_rate
+                )
+            )
             if context_size_frames > 0:
                 for i in range(discrete_diarization.data.shape[1]):
                     speaker_activation = discrete_diarization.data.T[i]
                     non_silent = np.where(speaker_activation != 0)[0]
-                    remaining_gaps = np.where(np.diff(non_silent) > 2 * context_size_frames)[0]
+                    remaining_gaps = np.where(
+                        np.diff(non_silent) > 2 * context_size_frames
+                    )[0]
                     remaining_zeros = [
                         np.arange(
                             non_silent[gap] + context_size_frames,
@@ -623,9 +638,9 @@ class JointSpeakerDiarizationAndSeparation(SpeakerDiarizationMixin, Pipeline):
                         len(speaker_activation), dtype=float
                     )
 
-                    speaker_activation_with_context[np.concatenate(remaining_zeros)] = (
-                        0.0
-                    )
+                    speaker_activation_with_context[
+                        np.concatenate(remaining_zeros)
+                    ] = 0.0
 
                     discrete_diarization.data.T[i] = speaker_activation_with_context
             num_sources = sources.data.shape[1]

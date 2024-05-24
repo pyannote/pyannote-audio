@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020 CNRS
+# Copyright (c) 2024- CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -26,8 +26,11 @@ from typing import Optional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from einops import rearrange
+from asteroid.masknn import DPRNN
+from asteroid.utils.torch_utils import pad_x_to_y
+from asteroid_filterbanks import make_enc_dec
 from pyannote.core.utils.generators import pairwise
+from transformers import AutoModel
 
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
@@ -37,10 +40,7 @@ from pyannote.audio.utils.receptive_field import (
     conv1d_receptive_field_center,
     conv1d_receptive_field_size,
 )
-from asteroid_filterbanks import make_enc_dec
-from asteroid.utils.torch_utils import pad_x_to_y
-from asteroid.masknn import DPRNN
-from transformers import AutoProcessor, AutoModel
+
 
 class ToTaToNet(Model):
     """ToTaToNet joint speaker diarization and speech separation model
@@ -86,8 +86,15 @@ class ToTaToNet(Model):
     use_wavlm : bool, optional
         Whether to use the WavLM large model for feature extraction. Defaults to True.
     gradient_clip_val : float, optional
-        Gradient clipping value. Required when fine-tuning the WavLM model and thus using two different optimizers. 
+        Gradient clipping value. Required when fine-tuning the WavLM model and thus using two different optimizers.
         Defaults to 5.0.
+
+    References
+    ----------
+    Joonas Kalda, Clément Pagés, Ricard Marxer, Tanel Alumäe, and Hervé Bredin.
+    "PixIT: Joint Training of Speaker Diarization and Speech Separation
+    from Real-world Multi-speaker Recordings"
+    Odyssey 2024. https://arxiv.org/abs/2403.02288
     """
 
     ENCODER_DECODER_DEFAULTS = {
@@ -121,7 +128,6 @@ class ToTaToNet(Model):
         lstm: Optional[dict] = None,
         linear: Optional[dict] = None,
         diar: Optional[dict] = None,
-        convnet: dict = None,
         dprnn: dict = None,
         sample_rate: int = 16000,
         num_channels: int = 1,
@@ -154,7 +160,7 @@ class ToTaToNet(Model):
         self.encoder, self.decoder = make_enc_dec(
             sample_rate=sample_rate, **self.hparams.encoder_decoder
         )
-    
+
         if self.use_wavlm:
             self.wavlm = AutoModel.from_pretrained("microsoft/wavlm-large")
             downsampling_factor = 1
@@ -164,7 +170,8 @@ class ToTaToNet(Model):
             self.wavlm_scaling = int(downsampling_factor / encoder_decoder["stride"])
 
             self.masker = DPRNN(
-                encoder_decoder["n_filters"] + self.wavlm.feature_projection.projection.out_features,
+                encoder_decoder["n_filters"]
+                + self.wavlm.feature_projection.projection.out_features,
                 out_chan=encoder_decoder["n_filters"],
                 n_src=n_sources,
                 **self.hparams.dprnn

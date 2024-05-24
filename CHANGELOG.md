@@ -9,7 +9,7 @@
 ### New features
 
 - feat(model): add `ToTaToNet` joint speaker diarization and separation model (with [@joonaskalda](https://github.com/joonaskalda/))
-- feat(pipeline): add `JointSpeakerDiarizationAndSeparation` pipeline (with [@joonaskalda](https://github.com/joonaskalda/))
+- feat(pipeline): add `SpeakerSeparation` pipeline (with [@joonaskalda](https://github.com/joonaskalda/))
 - feat(io): add option to select torchaudio `backend`
 
 ### Fixes

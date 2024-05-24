@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020- CNRS
+# Copyright (c) 2024- CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -22,61 +22,48 @@
 
 import itertools
 import math
-import warnings
 import random
+import warnings
 from collections import Counter
-from typing import Dict, Literal, Optional, Sequence, Text, Tuple, Union
+from functools import partial
+from typing import Dict, Literal, Optional, Sequence, Text, Union
 
 import numpy as np
 import torch
 import torch.nn.functional
+from asteroid.losses import MixITLossWrapper, multisrc_neg_sisdr
 from matplotlib import pyplot as plt
-from pyannote.core import Segment, SlidingWindow, SlidingWindowFeature
+from pyannote.core import Segment, SlidingWindowFeature
 from pyannote.database.protocol import SpeakerDiarizationProtocol
 from pyannote.database.protocol.protocol import Scope, Subset
 from pytorch_lightning.loggers import MLFlowLogger, TensorBoardLogger
 from rich.progress import track
+from torch.utils.data import DataLoader, IterableDataset
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchmetrics import Metric
 
 from pyannote.audio.core.task import Problem, Resolution, Specifications
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTask, Task
 from pyannote.audio.torchmetrics import (
-    DiarizationErrorRate,
-    FalseAlarmRate,
-    MissedDetectionRate,
     OptimalDiarizationErrorRate,
     OptimalDiarizationErrorRateThreshold,
     OptimalFalseAlarmRate,
     OptimalMissedDetectionRate,
     OptimalSpeakerConfusionRate,
-    SpeakerConfusionRate,
 )
-from pyannote.audio.utils.loss import binary_cross_entropy, mse_loss, nll_loss
+from pyannote.audio.utils.loss import binary_cross_entropy
 from pyannote.audio.utils.permutation import permutate
-from pyannote.audio.utils.powerset import Powerset
-from asteroid.losses import (
-    MixITLossWrapper,
-    multisrc_neg_sisdr,
-)
-from torch.utils.data._utils.collate import default_collate
+from pyannote.audio.utils.random import create_rng_for_worker
 
 Subsets = list(Subset.__args__)
 Scopes = list(Scope.__args__)
-
-from itertools import combinations
-from torch import nn
-from pytorch_lightning.callbacks import Callback
-from functools import cached_property, partial
-from torch.utils.data import DataLoader, Dataset, IterableDataset
-from pyannote.audio.utils.random import create_rng_for_worker
 
 
 class ValDataset(IterableDataset):
     """Validation dataset class
 
-    This needs to be iterable so that mixture of mixture generation is the same for 
-    both training and development.
+    This needs to be iterable so that mixture of mixture generation
+    is the same for both training and development.
 
     Parameters
     ----------
@@ -148,20 +135,15 @@ class PixIT(SegmentationTask):
     separation_loss_weight : float, optional
         Scaling factor between diarization and separation losses. Defaults to 0.5.
     finetune_wavlm : bool, optional
-        If True, the WavLM feature extractor will be fine-tuned during training. 
+        If True, the WavLM feature extractor will be fine-tuned during training.
         Defaults to True.
 
     References
     ----------
-    Hervé Bredin and Antoine Laurent
-    "End-To-End Speaker Segmentation for Overlap-Aware Resegmentation."
-    Proc. Interspeech 2021
-
-    Zhihao Du, Shiliang Zhang, Siqi Zheng, and Zhijie Yan
-    "Speaker Embedding-aware Neural Diarization: an Efficient Framework for Overlapping
-    Speech Diarization in Meeting Scenarios"
-    https://arxiv.org/abs/2203.09767
-
+    Joonas Kalda, Clément Pagés, Ricard Marxer, Tanel Alumäe, and Hervé Bredin.
+    "PixIT: Joint Training of Speaker Diarization and Speech Separation
+    from Real-world Multi-speaker Recordings"
+    Odyssey 2024. https://arxiv.org/abs/2403.02288
     """
 
     def __init__(
@@ -895,15 +877,12 @@ class PixIT(SegmentationTask):
         target : torch.Tensor
             Diarization target.
         """
-            
+
         target = batch["y"]
         # (batch_size, num_frames, num_speakers)
 
         waveform = batch["X"]
         # (batch_size, num_channels, num_samples)
-
-        # drop samples that contain too many speakers
-        num_speakers: torch.Tensor = torch.sum(torch.any(target, dim=1), dim=1)
 
         # forward pass
         bsz = waveform.shape[0]
@@ -915,21 +894,18 @@ class PixIT(SegmentationTask):
         if bsz % 2 != 0:
             waveform = waveform[:-1]
 
-        num_samples = waveform.shape[2]
         mix1 = waveform[0::2].squeeze(1)
         mix2 = waveform[1::2].squeeze(1)
 
         (
             mom,
             mom_target,
-            num_active_speakers_mix1,
-            num_active_speakers_mix2,
+            _,
+            _,
         ) = self.create_mixtures_of_mixtures(mix1, mix2, target[0::2], target[1::2])
         target = torch.cat((target[0::2], target[1::2], mom_target), dim=0)
 
         diarization, sources = self.model(torch.cat((mix1, mix2, mom), dim=0))
-        mix1_sources = sources[: bsz // 2]
-        mix2_sources = sources[bsz // 2 : bsz]
         mom_sources = sources[bsz:]
 
         batch_size, num_frames, _ = diarization.shape
@@ -943,7 +919,7 @@ class PixIT(SegmentationTask):
         )
         # (batch_size, num_frames, 1)
 
-        permutated_diarization, permutations = permutate(target, diarization)
+        permutated_diarization, _ = permutate(target, diarization)
 
         seg_loss = self.segmentation_loss(permutated_diarization, target, weight=weight)
 
@@ -1007,9 +983,8 @@ class PixIT(SegmentationTask):
         )
 
         loss = (
-            (1 - self.separation_loss_weight) * seg_loss
-            + self.separation_loss_weight * separation_loss
-        )
+            1 - self.separation_loss_weight
+        ) * seg_loss + self.separation_loss_weight * separation_loss
 
         # skip batch if something went wrong for some reason
         if torch.isnan(loss):
@@ -1024,7 +999,7 @@ class PixIT(SegmentationTask):
             logger=True,
         )
 
-        if self.finetune_wavlm: 
+        if self.finetune_wavlm:
             self.model.manual_backward(loss)
             self.model.clip_gradients(
                 wavlm_opt,
@@ -1093,9 +1068,8 @@ class PixIT(SegmentationTask):
         )
 
         loss = (
-            (1 - self.separation_loss_weight) * seg_loss
-            + self.separation_loss_weight * separation_loss
-        )
+            1 - self.separation_loss_weight
+        ) * seg_loss + self.separation_loss_weight * separation_loss
 
         self.model.log(
             "loss/val",

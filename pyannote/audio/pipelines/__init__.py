@@ -24,8 +24,8 @@ from .multilabel import MultiLabelSegmentation
 from .overlapped_speech_detection import OverlappedSpeechDetection
 from .resegmentation import Resegmentation
 from .speaker_diarization import SpeakerDiarization
+from .speaker_separation import SpeakerSeparation
 from .voice_activity_detection import VoiceActivityDetection
-from .seriously import JointSpeakerDiarizationAndSeparation
 
 __all__ = [
     "VoiceActivityDetection",
@@ -33,5 +33,5 @@ __all__ = [
     "SpeakerDiarization",
     "Resegmentation",
     "MultiLabelSegmentation",
-    "JointSpeakerDiarizationAndSeparation",
+    "SpeakerSeparation",
 ]

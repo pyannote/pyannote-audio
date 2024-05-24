@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2020- CNRS
+# Copyright (c) 2024- CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -20,7 +20,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from .PyanNet import PyanNet
-from .SSeRiouSS import SSeRiouSS
+from .ToTaToNet import ToTaToNet
 
-__all__ = ["PyanNet", "SSeRiouSS"]
+__all__ = ["ToTaToNet"]
