@@ -362,12 +362,13 @@ class Task(pl.LightningDataModule):
 
         if self.has_validation:
             files_iter = itertools.chain(
-                self.protocol.train(), self.protocol.development()
+                zip(itertools.repeat("train"), self.protocol.train()),
+                zip(itertools.repeat("development"), self.protocol.development()),
             )
         else:
-            files_iter = self.protocol.train()
+            files_iter = zip(itertools.repeat("train"), self.protocol.train())
 
-        for file_id, file in enumerate(files_iter):
+        for file_id, (subset, file) in enumerate(files_iter):
             # gather metadata and update metadata_unique_values so that each metadatum
             # (e.g. source database or label) is represented by an integer.
             metadatum = dict()
@@ -378,7 +379,8 @@ class Task(pl.LightningDataModule):
             metadatum["database"] = metadata_unique_values["database"].index(
                 file["database"]
             )
-            metadatum["subset"] = Subsets.index(file["subset"])
+
+            metadatum["subset"] = Subsets.index(subset)
 
             # keep track of label scope (file, database, or global)
             metadatum["scope"] = Scopes.index(file["scope"])
@@ -593,7 +595,9 @@ class Task(pl.LightningDataModule):
         prepared_data["metadata-labels"] = np.array(unique_labels, dtype=np.str_)
         unique_labels.clear()
 
-        self.prepare_validation(prepared_data)
+        if self.has_validation:
+            self.prepare_validation(prepared_data)
+
         self.post_prepare_data(prepared_data)
 
         # save prepared data on the disk

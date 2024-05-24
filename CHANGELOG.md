@@ -2,12 +2,33 @@
 
 ## develop
 
+### TL;DR
+
+`pyannote.audio` does [speaker separation](https://arxiv.org/abs/2403.02288): multi-speaker audio in, one audio channel per speaker out
+
 ### New features
 
 - feat(model): add `ToTaToNet` joint speaker diarization and separation model (with [@joonaskalda](https://github.com/joonaskalda/))
 - feat(pipeline): add `JointSpeakerDiarizationAndSeparation` pipeline (with [@joonaskalda](https://github.com/joonaskalda/))
+- feat(io): add option to select torchaudio `backend`
+
+### Fixes
+
+- fix(task): fix wrong train/development split when training with (some) meta-protocols ([#1709](https://github.com/pyannote/pyannote-audio/issues/1709))
+- fix(task): fix metadata preparation with missing validation subset ([@clement-pages](https://github.com/clement-pages/))
+
+### Improvements
+
+- improve(io): when available, default to using `soundfile` backend
+- improve(pipeline): do not extract embeddings when `max_speakers` is set to 1
+
+## Version 3.2.0 (2024-05-08)
+
+### New features
+
 - feat(task): add option to cache task training metadata to speed up training (with [@clement-pages](https://github.com/clement-pages/))
 - feat(model): add `receptive_field`, `num_frames` and `dimension` to models (with [@Bilal-Rahou](https://github.com/Bilal-Rahou))
+- feat(model): add `fbank_only` property to `WeSpeaker` models
 - feat(util): add `Powerset.permutation_mapping` to help with permutation in powerset space (with [@FrenchKrab](https://github.com/FrenchKrab))
 - feat(sample): add sample file at `pyannote.audio.sample.SAMPLE_FILE`
 - feat(metric): add `reduce` option to `diarization_error_rate` metric (with [@Bilal-Rahou](https://github.com/Bilal-Rahou))
@@ -17,6 +38,9 @@
 
 - fix(task): fix random generators and their reproducibility (with [@FrenchKrab](https://github.com/FrenchKrab))
 - fix(task): fix estimation of training set size (with [@FrenchKrab](https://github.com/FrenchKrab))
+- fix(hook): fix `torch.Tensor` support in `ArtifactHook`
+- fix(doc): fix typo in `Powerset` docstring (with [@lukasstorck](https://github.com/lukasstorck))
+- fix(doc): remove mention of unsupported `numpy.ndarray` waveform (with [@Purfview](https://github.com/Purfview))
 
 ### Improvements
 
@@ -25,10 +49,14 @@
 - improve(io): switch to `torchaudio >= 2.2.0`
 - improve(doc): update tutorials (with [@clement-pages](https://github.com/clement-pages/))
 
-## Breaking changes
+### Breaking changes
 
 - BREAKING(model): get rid of `Model.example_output` in favor of `num_frames` method, `receptive_field` property, and `dimension` property
 - BREAKING(task): custom tasks need to be updated (see "Add your own task" tutorial)
+
+### Community contributions
+
+- community: add tutorial for offline use of `pyannote/speaker-diarization-3.1` (by [@simonottenhauskenbun](https://github.com/simonottenhauskenbun))
 
 ## Version 3.1.1 (2023-12-01)
 
