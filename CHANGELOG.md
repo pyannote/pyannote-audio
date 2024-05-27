@@ -1,5 +1,21 @@
 # Changelog
 
+## develop
+
+### New features
+
+- feat(io): add option to select torchaudio `backend`
+
+### Fixes
+
+- fix(task): fix wrong train/development split when training with (some) meta-protocols ([#1709](https://github.com/pyannote/pyannote-audio/issues/1709))
+- fix(task): fix metadata preparation with missing validation subset ([@clement-pages](https://github.com/clement-pages/))
+
+### Improvements
+
+- improve(io): when available, default to using `soundfile` backend
+- improve(pipeline): do not extract embeddings when `max_speakers` is set to 1
+
 ## Version 3.2.0 (2024-05-08)
 
 ### New features
@@ -18,6 +34,7 @@
 - fix(task): fix estimation of training set size (with [@FrenchKrab](https://github.com/FrenchKrab))
 - fix(hook): fix `torch.Tensor` support in `ArtifactHook`
 - fix(doc): fix typo in `Powerset` docstring (with [@lukasstorck](https://github.com/lukasstorck))
+- fix(doc): remove mention of unsupported `numpy.ndarray` waveform (with [@Purfview](https://github.com/Purfview))
 
 ### Improvements
 
