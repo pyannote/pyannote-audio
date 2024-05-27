@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""Speaker separation pipelines"""
+"""Speech separation pipelines"""
 
 import functools
 import itertools
@@ -55,8 +55,8 @@ def batchify(iterable, batch_size: int = 32, fillvalue=None):
     return itertools.zip_longest(*args, fillvalue=fillvalue)
 
 
-class SpeakerSeparation(SpeakerDiarizationMixin, Pipeline):
-    """Speaker diarization pipeline
+class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
+    """Speech separation pipeline
 
     Parameters
     ----------
