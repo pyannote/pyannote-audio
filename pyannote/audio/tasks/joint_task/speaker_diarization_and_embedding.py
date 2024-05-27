@@ -222,8 +222,8 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         ]
 
         # discretize chunk annotations at model output resolution
-        step = self.model.receptive_field().step
-        half = 0.5 * self.model.receptive_field().duration
+        step = self.model.receptive_field.step
+        half = 0.5 * self.model.receptive_field.duration
 
         start = np.maximum(chunk_annotations["start"], chunk.start) - chunk.start - half
         start_idx = np.maximum(0, np.round(start / step)).astype(int)
