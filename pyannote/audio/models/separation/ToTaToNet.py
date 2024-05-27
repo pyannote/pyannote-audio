@@ -45,6 +45,11 @@ from pyannote.audio.utils.receptive_field import (
 class ToTaToNet(Model):
     """ToTaToNet joint speaker diarization and speech separation model
 
+                     //--------------\\
+    Conv1D Encoder -----+---> DPRNN --X----> Conv1D Decoder
+    WavLM > upsampling //               \\-> Avg pool -> LSTM -> Linear -> Classifier
+    
+
     Parameters
     ----------
     sample_rate : int, optional
@@ -56,7 +61,7 @@ class ToTaToNet(Model):
         Defaults to {"stride": 1}.
     lstm : dict, optional
         Keyword arguments passed to the LSTM layer.
-        Defaults to {"hidden_size": 128, "num_layers": 2, "bidirectional": True},
+        Defaults to {"hidden_size": 128, "num_layers": 2, "bidirectional": True, "monolithic": True, "dropout": 0.0},
         i.e. two bidirectional layers with 128 units each.
         Set "monolithic" to False to split monolithic multi-layer LSTM into multiple mono-layer LSTMs.
         This may proove useful for probing LSTM internals.
@@ -80,7 +85,7 @@ class ToTaToNet(Model):
     task : Task, optional
         Task to perform. Defaults to None.
     n_sources : int, optional
-        Number of sources. Defaults to 3.
+        Number of separated sources. Defaults to 3.
     use_lstm : bool, optional
         Whether to use LSTM in the diarization branch. Defaults to False.
     use_wavlm : bool, optional
@@ -110,7 +115,7 @@ class ToTaToNet(Model):
         "monolithic": True,
         "dropout": 0.0,
     }
-    LINEAR_DEFAULTS = {"hidden_size": 64, "num_layers": 0}
+    LINEAR_DEFAULTS = {"hidden_size": 64, "num_layers": 2}
     DPRNN_DEFAULTS = {
         "n_repeats": 6,
         "bn_chan": 128,

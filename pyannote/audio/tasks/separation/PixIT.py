@@ -62,8 +62,8 @@ Scopes = list(Scope.__args__)
 class ValDataset(IterableDataset):
     """Validation dataset class
 
-    This needs to be iterable so that mixture of mixture generation
-    is the same for both training and development.
+    Val dataset needs to be iterable so that mixture of mixture generation
+    can be performed in the same way for both training and development.
 
     Parameters
     ----------
@@ -97,7 +97,7 @@ class PixIT(SegmentationTask):
         When `cache` exists, `Task.prepare_data()` is skipped and (meta)-data
         are loaded from disk. Defaults to a temporary path.
     duration : float, optional
-        Chunks duration. Defaults to 2s.
+        Chunks duration. Defaults to 5s.
     max_speakers_per_chunk : int, optional
         Maximum number of speakers per chunk (must be at least 2).
         Defaults to estimating it from the training set.
@@ -150,7 +150,7 @@ class PixIT(SegmentationTask):
         self,
         protocol: SpeakerDiarizationProtocol,
         cache: Optional[Union[str, None]] = None,
-        duration: float = 2.0,
+        duration: float = 5.0,
         max_speakers_per_chunk: Optional[int] = None,
         max_speakers_per_frame: Optional[int] = None,
         weigh_by_cardinality: bool = False,
@@ -201,7 +201,7 @@ class PixIT(SegmentationTask):
 
         if batch_size % 2 != 0:
             raise ValueError(
-                "`batch_size` must be divisible by 2 for mixtures of mixtures training"
+                "`batch_size` must be divisible by 2 for PixIT"
             )
 
         self.max_speakers_per_chunk = max_speakers_per_chunk
@@ -413,6 +413,13 @@ class PixIT(SegmentationTask):
         return sample
 
     def val_dataloader(self) -> DataLoader:
+        """Validation data loader
+
+        Returns
+        -------
+        DataLoader
+            Validation data loader.
+        """
         return DataLoader(
             ValDataset(self),
             batch_size=self.batch_size,
@@ -465,8 +472,9 @@ class PixIT(SegmentationTask):
     def common__iter__helper(self, split, rng: random.Random, **filters):
         """Iterate over samples with optional domain filtering
 
-        Mixtures are paired so that they have no speakers in common and the combined
-        number of speakers is no greater than max_speaker_per_chunk.
+        Mixtures are paired so that they have no speakers in common, come from the
+        same file, and the combined number of speakers is no greater than 
+        max_speaker_per_chunk.
 
         Parameters
         ----------
