@@ -24,6 +24,7 @@ import time
 from copy import deepcopy
 from typing import Any, Mapping, Optional, Text
 
+import torch
 from rich.progress import (
     BarColumn,
     Progress,
@@ -74,6 +75,9 @@ class ArtifactHook:
             self.artifacts and step_name not in self.artifacts
         ):
             return
+
+        if isinstance(step_artifact, torch.Tensor):
+            step_artifact = step_artifact.numpy(force=True)
 
         file.setdefault(self.file_key, dict())[step_name] = deepcopy(step_artifact)
 
