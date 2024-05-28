@@ -122,12 +122,14 @@ class SincNet(nn.Module):
 
         kernel_size = [251, 3, 5, 3, 5, 3]
         stride = [self.stride, 3, 1, 3, 1, 3]
+        padding = [0, 0, 0, 0, 0, 0]
         dilation = [1, 1, 1, 1, 1, 1]
 
         return multi_conv_receptive_field_size(
             num_frames,
             kernel_size=kernel_size,
             stride=stride,
+            padding=padding,
             dilation=dilation,
         )
 

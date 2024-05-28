@@ -48,21 +48,41 @@ Audio files can be provided to the Audio class using different types:
     - a "IOBase" instance with "read" and "seek" support: open("audio.wav", "rb")
     - a "Mapping" with any of the above as "audio" key: {"audio": ...}
     - a "Mapping" with both "waveform" and "sample_rate" key:
-        {"waveform": (channel, time) numpy.ndarray or torch.Tensor, "sample_rate": 44100}
+        {"waveform": (channel, time) torch.Tensor, "sample_rate": 44100}
 
 For last two options, an additional "channel" key can be provided as a zero-indexed
 integer to load a specific channel: {"audio": "stereo.wav", "channel": 0}
 """
 
 
-def get_torchaudio_info(file: AudioFile):
+def get_torchaudio_info(
+    file: AudioFile, backend: str = None
+) -> torchaudio.AudioMetaData:
     """Protocol preprocessor used to cache output of torchaudio.info
 
     This is useful to speed future random access to this file, e.g.
     in dataloaders using Audio.crop a lot....
+
+    Parameters
+    ----------
+    file : AudioFile
+    backend : str
+        torchaudio backend to use. Defaults to 'soundfile' if available,
+        or the first available backend.
+
+    Returns
+    -------
+    info : torchaudio.AudioMetaData
+        Audio file metadata
     """
 
-    info = torchaudio.info(file["audio"])
+    if not backend:
+        backends = (
+            torchaudio.list_audio_backends()
+        )  # e.g ['ffmpeg', 'soundfile', 'sox']
+        backend = "soundfile" if "soundfile" in backends else backends[0]
+
+    info = torchaudio.info(file["audio"], backend=backend)
 
     # rewind if needed
     if isinstance(file["audio"], IOBase):
@@ -82,6 +102,9 @@ class Audio:
         In case of multi-channel audio, convert to single-channel audio
         using one of the following strategies: select one channel at
         'random' or 'downmix' by averaging all channels.
+    backend : str
+        torchaudio backend to use. Defaults to 'soundfile' if available,
+        or the first available backend.
 
     Usage
     -----
@@ -126,7 +149,7 @@ class Audio:
         -------
         validated_file : Mapping
             {"audio": str, "uri": str, ...}
-            {"waveform": array or tensor, "sample_rate": int, "uri": str, ...}
+            {"waveform": tensor, "sample_rate": int, "uri": str, ...}
             {"audio": file, "uri": "stream"} if `file` is an IOBase instance
 
         Raises
@@ -148,7 +171,7 @@ class Audio:
             raise ValueError(AudioFileDocString)
 
         if "waveform" in file:
-            waveform: Union[np.ndarray, Tensor] = file["waveform"]
+            waveform: Tensor = file["waveform"]
             if len(waveform.shape) != 2 or waveform.shape[0] > waveform.shape[1]:
                 raise ValueError(
                     "'waveform' must be provided as a (channel, time) torch Tensor."
@@ -179,10 +202,18 @@ class Audio:
 
         return file
 
-    def __init__(self, sample_rate=None, mono=None):
+    def __init__(self, sample_rate: int = None, mono=None, backend: str = None):
         super().__init__()
         self.sample_rate = sample_rate
         self.mono = mono
+
+        if not backend:
+            backends = (
+                torchaudio.list_audio_backends()
+            )  # e.g ['ffmpeg', 'soundfile', 'sox']
+            backend = "soundfile" if "soundfile" in backends else backends[0]
+
+        self.backend = backend
 
     def downmix_and_resample(self, waveform: Tensor, sample_rate: int) -> Tensor:
         """Downmix and resample
@@ -244,7 +275,7 @@ class Audio:
             if "torchaudio.info" in file:
                 info = file["torchaudio.info"]
             else:
-                info = get_torchaudio_info(file)
+                info = get_torchaudio_info(file, backend=self.backend)
 
             frames = info.num_frames
             sample_rate = info.sample_rate
@@ -291,7 +322,7 @@ class Audio:
             sample_rate = file["sample_rate"]
 
         elif "audio" in file:
-            waveform, sample_rate = torchaudio.load(file["audio"])
+            waveform, sample_rate = torchaudio.load(file["audio"], backend=self.backend)
 
             # rewind if needed
             if isinstance(file["audio"], IOBase):
@@ -349,7 +380,7 @@ class Audio:
             sample_rate = info.sample_rate
 
         else:
-            info = get_torchaudio_info(file)
+            info = get_torchaudio_info(file, backend=self.backend)
             frames = info.num_frames
             sample_rate = info.sample_rate
 
@@ -401,7 +432,10 @@ class Audio:
         else:
             try:
                 data, _ = torchaudio.load(
-                    file["audio"], frame_offset=start_frame, num_frames=num_frames
+                    file["audio"],
+                    frame_offset=start_frame,
+                    num_frames=num_frames,
+                    backend=self.backend,
                 )
                 # rewind if needed
                 if isinstance(file["audio"], IOBase):
