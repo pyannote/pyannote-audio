@@ -34,7 +34,7 @@ import torch
 from einops import rearrange
 from pyannote.core import Annotation, SlidingWindow, SlidingWindowFeature
 from pyannote.metrics.diarization import GreedyDiarizationErrorRate
-from pyannote.pipeline.parameter import ParamDict, Uniform
+from pyannote.pipeline.parameter import ParamDict, Uniform, Categorical
 
 from pyannote.audio import Audio, Inference, Model, Pipeline
 from pyannote.audio.core.io import AudioFile
@@ -101,6 +101,8 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
     segmentation.threshold
     segmentation.min_duration_off
     clustering.???
+    separation.leakage_removal
+    separation.asr_collar
 
     References
     ----------
@@ -174,6 +176,11 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
                 f'clustering must be one of [{", ".join(list(Clustering.__members__))}]'
             )
         self.clustering = Klustering.value(metric=metric)
+
+        self.separation = ParamDict(
+            leakage_removal=Categorical([True, False]),
+            asr_collar=Uniform(0.0, 1.0),
+        )
 
     @property
     def segmentation_batch_size(self) -> int:
@@ -435,8 +442,6 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
         max_speakers: Optional[int] = None,
         return_embeddings: bool = False,
         hook: Optional[Callable] = None,
-        zero: bool = False,
-        context_size_seconds: float = 0,
     ) -> Annotation:
         """Apply speaker diarization
 
@@ -460,11 +465,6 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
             Time-consuming steps call `hook` multiple times with the same `step_name`
             and additional `completed` and `total` keyword arguments usable to track
             progress of current step.
-        zero : bool, optional
-            Zero-out sources when speaker is inactive according to diarization.
-        context_size_seconds : float, optional
-            Number of seconds to keep around active speaker regions in separated
-            sources. Useful for downstream ASR. Defaults to 0.
 
         Returns
         -------
@@ -598,38 +598,38 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
         )
         # zero-out sources when speaker is inactive
         # WARNING: this should be rewritten to avoid huge memory consumption
-        if zero:
-            context_size_frames = int(
+        if self.separation.leakage_removal:
+            asr_collar_frames = int(
                 self._segmentation.model.num_frames(
-                    context_size_seconds * self._audio.sample_rate
+                    self.separation.asr_collar * self._audio.sample_rate
                 )
             )
-            if context_size_frames > 0:
+            if asr_collar_frames > 0:
                 for i in range(discrete_diarization.data.shape[1]):
                     speaker_activation = discrete_diarization.data.T[i]
                     non_silent = np.where(speaker_activation != 0)[0]
                     remaining_gaps = np.where(
-                        np.diff(non_silent) > 2 * context_size_frames
+                        np.diff(non_silent) > 2 * asr_collar_frames
                     )[0]
                     remaining_zeros = [
                         np.arange(
-                            non_silent[gap] + context_size_frames,
-                            non_silent[gap + 1] - context_size_frames,
+                            non_silent[gap] + asr_collar_frames,
+                            non_silent[gap + 1] - asr_collar_frames,
                         )
                         for gap in remaining_gaps
                     ]
                     # edge cases of long silent regions in beginning or end of audio
-                    if non_silent[0] > context_size_frames:
+                    if non_silent[0] > asr_collar_frames:
                         remaining_zeros = [
-                            np.arange(0, non_silent[0] - context_size_frames)
+                            np.arange(0, non_silent[0] - asr_collar_frames)
                         ] + remaining_zeros
                     if (
                         non_silent[-1]
-                        < speaker_activation.shape[0] - context_size_frames
+                        < speaker_activation.shape[0] - asr_collar_frames
                     ):
                         remaining_zeros = remaining_zeros + [
                             np.arange(
-                                non_silent[-1] + context_size_frames,
+                                non_silent[-1] + asr_collar_frames,
                                 speaker_activation.shape[0],
                             )
                         ]
