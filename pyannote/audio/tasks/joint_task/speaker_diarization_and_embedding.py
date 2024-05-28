@@ -638,7 +638,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         )
         return dia_loss
 
-    def compute_embedding_loss(self, emb_prediction, target_emb):
+    def compute_embedding_loss(self, emb_prediction, target_emb, valid_embs):
         """Compute loss for the speaker embeddings extraction subtask
 
         Parameters
@@ -660,11 +660,10 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         # Get corresponding target label
         targets = rearrange(target_emb, "b s -> (b s)")
         # compute loss only on global scope speaker embedding
-        valid_emb = targets != -1
-
+        valid_embs = rearrange(valid_embs, "b s -> (b s)")
         # compute the loss
         emb_loss = self.model.arc_face_loss(
-            embeddings[valid_emb, :], targets[valid_emb]
+            embeddings[valid_embs, :], targets[valid_embs]
         )
 
         # skip batch if something went wrong for some reason
@@ -696,7 +695,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         loss : {str: torch.tensor}
             {"loss": loss}
         """
-        alpha = self.alpha
+
         # batch waveforms (batch_size, num_channels, num_samples)
         waveform = batch["X"]
         # batch diarization references (batch_size, num_channels, num_speakers)
@@ -705,13 +704,14 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         target_emb = batch["y_emb"]
 
         # drop samples that contain too many speakers
-        num_speakers: torch.Tensor = torch.sum(torch.any(target_dia, dim=1), dim=1)
-        keep: torch.Tensor = num_speakers <= self.max_speakers_per_chunk
+        num_speakers = torch.sum(torch.any(target_dia, dim=1), dim=1)
+        keep = num_speakers <= self.max_speakers_per_chunk
 
-        num_remaining_dia_samples = torch.sum(keep[: self.num_dia_samples])
         target_dia = target_dia[keep]
         target_emb = target_emb[keep]
         waveform = waveform[keep]
+
+        num_remaining_dia_samples = torch.sum(keep[: self.num_dia_samples])
 
         # corner case
         if not keep.any():
@@ -727,6 +727,11 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         permutated_target_emb = target_emb[
             torch.arange(target_emb.shape[0]).unsqueeze(1), permut_map
         ]
+
+        # an embedding is valid only if corresponding speaker is active in the diarization prediction and reference
+        active_speaker_pred = torch.any(dia_multilabel > 0, dim=1)
+        active_speaker_ref = torch.any(permutated_target_dia == 1, dim=1)
+        valid_embs = torch.logical_and(active_speaker_pred, active_speaker_ref)[num_remaining_dia_samples:]
 
         permutated_target_powerset = self.model.powerset.to_powerset(
             permutated_target_dia.float()
@@ -750,10 +755,10 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
             emb_prediction = emb_prediction[num_remaining_dia_samples:]
             permutated_target_emb = permutated_target_emb[num_remaining_dia_samples:]
             emb_loss = self.compute_embedding_loss(
-                emb_prediction, permutated_target_emb
+                emb_prediction, permutated_target_emb, valid_embs
             )
 
-        loss = alpha * dia_loss + (1 - alpha) * emb_loss
+        loss = self.alpha * dia_loss + (1 - self.alpha) * emb_loss
         return {"loss": loss}
 
     # TODO: no need to compute gradient in this method
