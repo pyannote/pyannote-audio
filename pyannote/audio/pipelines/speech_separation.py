@@ -34,7 +34,7 @@ import torch
 from einops import rearrange
 from pyannote.core import Annotation, SlidingWindow, SlidingWindowFeature
 from pyannote.metrics.diarization import GreedyDiarizationErrorRate
-from pyannote.pipeline.parameter import ParamDict, Uniform, Categorical
+from pyannote.pipeline.parameter import Categorical, ParamDict, Uniform
 
 from pyannote.audio import Audio, Inference, Model, Pipeline
 from pyannote.audio.core.io import AudioFile
@@ -98,11 +98,20 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
 
     Hyper-parameters
     ----------------
-    segmentation.threshold
-    segmentation.min_duration_off
-    clustering.???
-    separation.leakage_removal
+    segmentation.min_duration_off : float
+        Fill intra-speaker gaps shorter than that many seconds.
+    segmentation.threshold : float
+        Mark speaker has active when their probability is higher than this.
+    clustering.method : {'centroid', 'average', ...}
+        Linkage used for agglomerative clustering
+    clustering.min_cluster_size : int
+        Minium cluster size.
+    clustering.threshold : float
+        Clustering threshold used to stop merging clusters.
+    separation.leakage_removal : bool
+        Zero-out sources when speaker is inactive.
     separation.asr_collar
+        When using leakage removal, keep that many seconds before and after each speaker turn
 
     References
     ----------
@@ -623,10 +632,7 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
                         remaining_zeros = [
                             np.arange(0, non_silent[0] - asr_collar_frames)
                         ] + remaining_zeros
-                    if (
-                        non_silent[-1]
-                        < speaker_activation.shape[0] - asr_collar_frames
-                    ):
+                    if non_silent[-1] < speaker_activation.shape[0] - asr_collar_frames:
                         remaining_zeros = remaining_zeros + [
                             np.arange(
                                 non_silent[-1] + asr_collar_frames,
