@@ -1,4 +1,3 @@
-asteroid >=0.7.0
 asteroid-filterbanks >=0.4
 einops >=0.6.0
 huggingface_hub >= 0.13.0
@@ -18,4 +17,3 @@ torch >= 2.0.0
 torch_audiomentations >= 0.11.0
 torchaudio >= 2.2.0
 torchmetrics >= 0.11.0
-transformers >= 4.39.1

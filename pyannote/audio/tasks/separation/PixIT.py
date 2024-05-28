@@ -31,7 +31,6 @@ from typing import Dict, Literal, Optional, Sequence, Text, Union
 import numpy as np
 import torch
 import torch.nn.functional
-from asteroid.losses import MixITLossWrapper, multisrc_neg_sisdr
 from matplotlib import pyplot as plt
 from pyannote.core import Segment, SlidingWindowFeature
 from pyannote.database.protocol import SpeakerDiarizationProtocol
@@ -54,6 +53,14 @@ from pyannote.audio.torchmetrics import (
 from pyannote.audio.utils.loss import binary_cross_entropy
 from pyannote.audio.utils.permutation import permutate
 from pyannote.audio.utils.random import create_rng_for_worker
+
+try:
+    from asteroid.losses import MixITLossWrapper, multisrc_neg_sisdr
+
+    ASTEROID_IS_AVAILABLE = True
+except ImportError:
+    ASTEROID_IS_AVAILABLE = False
+
 
 Subsets = list(Subset.__args__)
 Scopes = list(Scope.__args__)
@@ -168,6 +175,13 @@ class PixIT(SegmentationTask):
         separation_loss_weight: float = 0.5,
         finetune_wavlm: bool = True,
     ):
+
+        if not ASTEROID_IS_AVAILABLE:
+            raise ImportError(
+                "'asteroid' must be installed to train separation models with PixIT . "
+                "`pip install pyannote-audio[separation]` should do the trick."
+            )
+
         super().__init__(
             protocol,
             duration=duration,
@@ -200,9 +214,7 @@ class PixIT(SegmentationTask):
             )
 
         if batch_size % 2 != 0:
-            raise ValueError(
-                "`batch_size` must be divisible by 2 for PixIT"
-            )
+            raise ValueError("`batch_size` must be divisible by 2 for PixIT")
 
         self.max_speakers_per_chunk = max_speakers_per_chunk
         self.max_speakers_per_frame = max_speakers_per_frame
@@ -473,7 +485,7 @@ class PixIT(SegmentationTask):
         """Iterate over samples with optional domain filtering
 
         Mixtures are paired so that they have no speakers in common, come from the
-        same file, and the combined number of speakers is no greater than 
+        same file, and the combined number of speakers is no greater than
         max_speaker_per_chunk.
 
         Parameters

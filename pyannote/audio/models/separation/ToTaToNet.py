@@ -26,11 +26,8 @@ from typing import Optional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from asteroid.masknn import DPRNN
-from asteroid.utils.torch_utils import pad_x_to_y
 from asteroid_filterbanks import make_enc_dec
 from pyannote.core.utils.generators import pairwise
-from transformers import AutoModel
 
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
@@ -41,6 +38,22 @@ from pyannote.audio.utils.receptive_field import (
     conv1d_receptive_field_size,
 )
 
+try:
+    from asteroid.masknn import DPRNN
+    from asteroid.utils.torch_utils import pad_x_to_y
+
+    ASTEROID_IS_AVAILABLE = True
+except ImportError:
+    ASTEROID_IS_AVAILABLE = False
+
+
+try:
+    from transformers import AutoModel
+
+    TRANSFORMERS_IS_AVAILABLE = True
+except ImportError:
+    TRANSFORMERS_IS_AVAILABLE = False
+
 
 class ToTaToNet(Model):
     """ToTaToNet joint speaker diarization and speech separation model
@@ -48,7 +61,7 @@ class ToTaToNet(Model):
                      //--------------\\
     Conv1D Encoder -----+---> DPRNN --X----> Conv1D Decoder
     WavLM > upsampling //               \\-> Avg pool -> LSTM -> Linear -> Classifier
-    
+
 
     Parameters
     ----------
@@ -142,6 +155,19 @@ class ToTaToNet(Model):
         use_wavlm: bool = True,
         gradient_clip_val: float = 5.0,
     ):
+
+        if not ASTEROID_IS_AVAILABLE:
+            raise ImportError(
+                "'asteroid' must be installed to use ToTaToNet separation. "
+                "`pip install pyannote-audio[separation]` should do the trick."
+            )
+
+        if not TRANSFORMERS_IS_AVAILABLE:
+            raise ImportError(
+                "'transformers' must be installed to use ToTaToNet separation. "
+                "`pip install pyannote-audio[separation]` should do the trick."
+            )
+
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
 
         lstm = merge_dict(self.LSTM_DEFAULTS, lstm)
@@ -179,14 +205,14 @@ class ToTaToNet(Model):
                 + self.wavlm.feature_projection.projection.out_features,
                 out_chan=encoder_decoder["n_filters"],
                 n_src=n_sources,
-                **self.hparams.dprnn
+                **self.hparams.dprnn,
             )
         else:
             self.masker = DPRNN(
                 encoder_decoder["n_filters"],
                 out_chan=encoder_decoder["n_filters"],
                 n_src=n_sources,
-                **self.hparams.dprnn
+                **self.hparams.dprnn,
             )
 
         # diarization can use a lower resolution than separation
