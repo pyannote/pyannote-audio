@@ -58,9 +58,9 @@ except ImportError:
 class ToTaToNet(Model):
     """ToTaToNet joint speaker diarization and speech separation model
 
-                        /--------------\
+                        /--------------\\
     Conv1D Encoder --------+--- DPRNN --X------- Conv1D Decoder
-    WavLM -- upsampling --/                 \--- Avg pool -- Linear -- Classifier
+    WavLM -- upsampling --/                 \\--- Avg pool -- Linear -- Classifier
 
 
     Parameters
@@ -138,7 +138,6 @@ class ToTaToNet(Model):
         use_wavlm: bool = True,
         gradient_clip_val: float = 5.0,
     ):
-
         if not ASTEROID_IS_AVAILABLE:
             raise ImportError(
                 "'asteroid' must be installed to use ToTaToNet separation. "

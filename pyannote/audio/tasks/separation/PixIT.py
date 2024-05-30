@@ -175,7 +175,6 @@ class PixIT(SegmentationTask):
         separation_loss_weight: float = 0.5,
         finetune_wavlm: bool = True,
     ):
-
         if not ASTEROID_IS_AVAILABLE:
             raise ImportError(
                 "'asteroid' must be installed to train separation models with PixIT . "
