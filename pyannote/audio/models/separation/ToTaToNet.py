@@ -58,9 +58,9 @@ except ImportError:
 class ToTaToNet(Model):
     """ToTaToNet joint speaker diarization and speech separation model
 
-                     //--------------\\
-    Conv1D Encoder -----+---> DPRNN --X----> Conv1D Decoder
-    WavLM > upsampling //               \\-> Avg pool -> LSTM -> Linear -> Classifier
+                        /--------------\
+    Conv1D Encoder --------+--- DPRNN --X------- Conv1D Decoder
+    WavLM -- upsampling --/                 \--- Avg pool -- Linear -- Classifier
 
 
     Parameters
@@ -72,12 +72,6 @@ class ToTaToNet(Model):
     sincnet : dict, optional
         Keyword arugments passed to the SincNet block.
         Defaults to {"stride": 1}.
-    lstm : dict, optional
-        Keyword arguments passed to the LSTM layer.
-        Defaults to {"hidden_size": 128, "num_layers": 2, "bidirectional": True, "monolithic": True, "dropout": 0.0},
-        i.e. two bidirectional layers with 128 units each.
-        Set "monolithic" to False to split monolithic multi-layer LSTM into multiple mono-layer LSTMs.
-        This may proove useful for probing LSTM internals.
     linear : dict, optional
         Keyword arugments used to initialize linear layers
         Defaults to {"hidden_size": 128, "num_layers": 2},
@@ -99,8 +93,6 @@ class ToTaToNet(Model):
         Task to perform. Defaults to None.
     n_sources : int, optional
         Number of separated sources. Defaults to 3.
-    use_lstm : bool, optional
-        Whether to use LSTM in the diarization branch. Defaults to False.
     use_wavlm : bool, optional
         Whether to use the WavLM large model for feature extraction. Defaults to True.
     gradient_clip_val : float, optional
@@ -121,13 +113,6 @@ class ToTaToNet(Model):
         "n_filters": 64,
         "stride": 16,
     }
-    LSTM_DEFAULTS = {
-        "hidden_size": 64,
-        "num_layers": 2,
-        "bidirectional": True,
-        "monolithic": True,
-        "dropout": 0.0,
-    }
     LINEAR_DEFAULTS = {"hidden_size": 64, "num_layers": 2}
     DPRNN_DEFAULTS = {
         "n_repeats": 6,
@@ -143,7 +128,6 @@ class ToTaToNet(Model):
     def __init__(
         self,
         encoder_decoder: dict = None,
-        lstm: Optional[dict] = None,
         linear: Optional[dict] = None,
         diar: Optional[dict] = None,
         dprnn: dict = None,
@@ -151,7 +135,6 @@ class ToTaToNet(Model):
         num_channels: int = 1,
         task: Optional[Task] = None,
         n_sources: int = 3,
-        use_lstm: bool = False,
         use_wavlm: bool = True,
         gradient_clip_val: float = 5.0,
     ):
@@ -170,16 +153,12 @@ class ToTaToNet(Model):
 
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
 
-        lstm = merge_dict(self.LSTM_DEFAULTS, lstm)
-        lstm["batch_first"] = True
         linear = merge_dict(self.LINEAR_DEFAULTS, linear)
         dprnn = merge_dict(self.DPRNN_DEFAULTS, dprnn)
         encoder_decoder = merge_dict(self.ENCODER_DECODER_DEFAULTS, encoder_decoder)
         diar = merge_dict(self.DIAR_DEFAULTS, diar)
-        self.n_src = n_sources
-        self.use_lstm = use_lstm
         self.use_wavlm = use_wavlm
-        self.save_hyperparameters("encoder_decoder", "lstm", "linear", "dprnn", "diar")
+        self.save_hyperparameters("encoder_decoder", "linear", "dprnn", "diar")
         self.n_sources = n_sources
 
         if encoder_decoder["fb_name"] == "free":
@@ -223,13 +202,6 @@ class ToTaToNet(Model):
             self.diarization_scaling, stride=self.diarization_scaling
         )
         linaer_input_features = n_feats_out
-        if self.use_lstm:
-            del lstm["monolithic"]
-            multi_layer_lstm = dict(lstm)
-            self.lstm = nn.LSTM(n_feats_out, **multi_layer_lstm)
-            linaer_input_features = lstm["hidden_size"] * (
-                2 if lstm["bidirectional"] else 1
-            )
         if linear["num_layers"] > 0:
             self.linear = nn.ModuleList(
                 [
@@ -252,7 +224,7 @@ class ToTaToNet(Model):
         return 1
 
     def build(self):
-        if self.use_lstm or self.hparams.linear["num_layers"] > 0:
+        if self.hparams.linear["num_layers"] > 0:
             self.classifier = nn.Linear(64, self.dimension)
         else:
             self.classifier = nn.Linear(1, self.dimension)
@@ -367,12 +339,10 @@ class ToTaToNet(Model):
         outputs = self.average_pool(outputs)
         outputs = outputs.transpose(1, 2)
         # shape (batch, nframes, nfilters)
-        if self.use_lstm:
-            outputs, _ = self.lstm(outputs)
         if self.hparams.linear["num_layers"] > 0:
             for linear in self.linear:
                 outputs = F.leaky_relu(linear(outputs))
-        if not self.use_lstm and self.hparams.linear["num_layers"] == 0:
+        if self.hparams.linear["num_layers"] == 0:
             outputs = (outputs**2).sum(dim=2).unsqueeze(-1)
         outputs = self.classifier(outputs)
         outputs = outputs.reshape(bsz, self.n_sources, -1)
