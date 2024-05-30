@@ -20,6 +20,8 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+# AUTHOR: Joonas Kalda (github.com/joonaskalda)
+
 from functools import lru_cache
 from typing import Optional
 
