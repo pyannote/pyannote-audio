@@ -26,6 +26,7 @@ pip install pyannote.audio[separation]==3.3.0
 
 - improve(io): when available, default to using `soundfile` backend
 - improve(pipeline): do not extract embeddings when `max_speakers` is set to 1
+- improve(pipeline): optimize memory usage of most pipelines ([#1713](https://github.com/pyannote/pyannote-audio/pull/1713) by [@benniekiss](https://github.com/benniekiss/))
 
 ## Version 3.2.0 (2024-05-08)
 
