@@ -2,8 +2,19 @@
 
 ## develop
 
+### TL;DR
+
+`pyannote.audio` does [speech separation](https://hf.co/pyannote/speech-separation-ami-1.0): multi-speaker audio in, one audio channel per speaker out!
+
+```bash
+pip install pyannote.audio[separation]==3.3.0
+```
+
 ### New features
 
+- feat(task): add `PixIT` joint speaker diarization and speech separation task (with [@joonaskalda](https://github.com/joonaskalda/))
+- feat(model): add `ToTaToNet` joint speaker diarization and speech separation model (with [@joonaskalda](https://github.com/joonaskalda/))
+- feat(pipeline): add `SpeechSeparation` pipeline (with [@joonaskalda](https://github.com/joonaskalda/))
 - feat(io): add option to select torchaudio `backend`
 
 ### Fixes
