@@ -606,7 +606,6 @@ class Task(pl.LightningDataModule):
             # skip specification-dependent parameters and non-attributed parameters
             # (for instance because they were deprecated)
             except (AttributeError, UnknownSpecificationsError):
-                print(param_name)
                 continue
             if isinstance(param_value, (bool, float, int, str, type(None))):
                 parameters.append(param_value)
@@ -682,7 +681,6 @@ class Task(pl.LightningDataModule):
                 continue
             cached_value = self.prepared_data["task-parameters"][param_name]
             if param_value != cached_value:
-                print("passing here")
                 warnings.warn(
                     f"Value specified for {param_name} of the task differs from the one in the cached data."
                     f"Current one = {param_value}, cached one = {cached_value}."
