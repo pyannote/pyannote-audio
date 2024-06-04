@@ -23,6 +23,7 @@
 
 from __future__ import annotations
 
+import inspect
 import itertools
 import multiprocessing
 import sys
@@ -599,11 +600,15 @@ class Task(pl.LightningDataModule):
         # keep track of task parameters
         parameters = []
         dtype = []
-        for param_name, param_value in self.__dict__.items():
-            # only keep public parameters with native type
-            if param_name[0] == "_":
+        for param_name in inspect.signature(self.__init__).parameters:
+            try:
+                param_value = getattr(self, param_name)
+            # skip specification-dependent parameters and non-attributed parameters
+            # (for instance because they were deprecated)
+            except (AttributeError, UnknownSpecificationsError):
+                print(param_name)
                 continue
-            if isinstance(param_value, (bool, float, int, str)):
+            if isinstance(param_value, (bool, float, int, str, type(None))):
                 parameters.append(param_value)
                 dtype.append((param_name, type(param_value)))
 
@@ -665,11 +670,19 @@ class Task(pl.LightningDataModule):
             )
 
         # checks that the task current hyperparameters matches the cached ones
-        for param_name, param_value in self.__dict__.items():
+        for param_name in inspect.signature(self.__init__).parameters:
+            try:
+                param_value = getattr(self, param_name)
+            # skip specification-dependent parameters and non-attributed parameters
+            # (for instance because they were deprecated)
+            except (AttributeError, UnknownSpecificationsError):
+                continue
+
             if param_name not in self.prepared_data["task-parameters"].dtype.names:
                 continue
             cached_value = self.prepared_data["task-parameters"][param_name]
             if param_value != cached_value:
+                print("passing here")
                 warnings.warn(
                     f"Value specified for {param_name} of the task differs from the one in the cached data."
                     f"Current one = {param_value}, cached one = {cached_value}."
