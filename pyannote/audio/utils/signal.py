@@ -267,40 +267,34 @@ class Binarize:
 
         num_frames, num_classes = scores.data.shape
         frames = scores.sliding_window
-        timestamps = [frames[i].middle for i in range(num_frames)]
+        timestamps = np.array([frames[i].middle for i in range(num_frames)])
 
         # annotation meant to store 'active' regions
         active = Annotation()
 
         for k, k_scores in enumerate(scores.data.T):
-
             label = k if scores.labels is None else scores.labels[k]
+            
+            # Detect transitions
+            is_active = k_scores > self.onset
+            transitions = np.diff(is_active.astype(int))
+            starts = np.where(transitions == 1)[0] + 1
+            ends = np.where(transitions == -1)[0] + 1
 
-            # initial state
-            start = timestamps[0]
-            is_active = k_scores[0] > self.onset
+            # If the first frame is active, add it as a start
+            if is_active[0]:
+                starts = np.insert(starts, 0, 0)
 
-            for t, y in zip(timestamps[1:], k_scores[1:]):
+            # If the last frame is active, add it as an end
+            if is_active[-1]:
+                ends = np.append(ends, len(is_active))
 
-                # currently active
-                if is_active:
-                    # switching from active to inactive
-                    if y < self.offset:
-                        region = Segment(start - self.pad_onset, t + self.pad_offset)
-                        active[region, k] = label
-                        start = t
-                        is_active = False
-
-                # currently inactive
-                else:
-                    # switching from inactive to active
-                    if y > self.onset:
-                        start = t
-                        is_active = True
-
-            # if active at the end, add final region
-            if is_active:
-                region = Segment(start - self.pad_onset, t + self.pad_offset)
+            # Create segments
+            for start, end in zip(starts, ends):
+                region = Segment(
+                    timestamps[start] - self.pad_onset,
+                    timestamps[end] + self.pad_offset,
+                )
                 active[region, k] = label
 
         # because of padding, some active regions might be overlapping: merge them.
