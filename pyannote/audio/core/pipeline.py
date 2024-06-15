@@ -54,7 +54,7 @@ class Pipeline(_Pipeline):
         checkpoint_path: Union[Text, Path],
         hparams_file: Union[Text, Path] = None,
         use_auth_token: Union[Text, None] = None,
-        cache_dir: Union[Path, Text] = CACHE_DIR,
+        cache_dir: Union[Path, Text, None] = None,
     ) -> "Pipeline":
         """Load pretrained pipeline
 
@@ -78,6 +78,9 @@ class Pipeline(_Pipeline):
         if os.path.isfile(checkpoint_path):
             config_yml = checkpoint_path
 
+        if not cache_dir:
+            cache_dir = CACHE_DIR
+            
         else:
             if "@" in checkpoint_path:
                 model_id = checkpoint_path.split("@")[0]
