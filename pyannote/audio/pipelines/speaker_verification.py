@@ -434,6 +434,9 @@ class ONNXWeSpeakerPretrainedSpeakerEmbedding(BaseInference):
         super().__init__()
 
         if not Path(embedding).exists():
+            if not cache_dir:
+                cache_dir = CACHE_DIR
+                
             try:
                 embedding = hf_hub_download(
                     repo_id=embedding,
