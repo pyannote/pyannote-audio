@@ -25,6 +25,7 @@
 from functools import partial
 from pathlib import Path
 from typing import Callable, Optional, Text, Union
+
 import numpy as np
 from pyannote.core import Annotation, Segment, SlidingWindowFeature
 from pyannote.metrics.diarization import GreedyDiarizationErrorRate
