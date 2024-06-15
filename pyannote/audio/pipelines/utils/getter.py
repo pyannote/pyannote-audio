@@ -79,7 +79,7 @@ def get_model(
         
     if isinstance(model, Model):
         pass
-        
+
     elif isinstance(model, Text):
         model = Model.from_pretrained(
             model, use_auth_token=use_auth_token, cache_dir=cache_dir, strict=False
