@@ -72,15 +72,14 @@ class Pipeline(_Pipeline):
             Path to model cache directory. Defaults to content of PYANNOTE_CACHE
             environment variable, or "~/.cache/torch/pyannote" when unset.
         """
+        if not cache_dir:
+            cache_dir = CACHE_DIR
 
         checkpoint_path = str(checkpoint_path)
 
         if os.path.isfile(checkpoint_path):
             config_yml = checkpoint_path
 
-        if not cache_dir:
-            cache_dir = CACHE_DIR
-            
         else:
             if "@" in checkpoint_path:
                 model_id = checkpoint_path.split("@")[0]
