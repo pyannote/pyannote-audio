@@ -36,6 +36,7 @@ from torch.nn.utils.rnn import pad_sequence
 from pyannote.audio import Inference, Model, Pipeline
 from pyannote.audio.core.inference import BaseInference
 from pyannote.audio.core.io import AudioFile
+from pyannote.audio.core.model import CACHE_DIR
 from pyannote.audio.pipelines.utils import PipelineModel, get_model
 
 try:
@@ -255,7 +256,7 @@ class SpeechBrainPretrainedSpeakerEmbedding(BaseInference):
             self.revision = None
         self.device = device or torch.device("cpu")
         self.use_auth_token = use_auth_token
-        self.cache_dir = cache_dir
+        self.cache_dir = cache_dir or CACHE_DIR
 
         self.classifier_ = SpeechBrain_EncoderClassifier.from_hparams(
             source=self.embedding,
