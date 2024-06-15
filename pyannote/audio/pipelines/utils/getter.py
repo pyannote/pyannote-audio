@@ -29,6 +29,7 @@ from torch_audiomentations.core.transforms_interface import BaseWaveformTransfor
 from torch_audiomentations.utils.config import from_dict as augmentation_from_dict
 
 from pyannote.audio import Inference, Model
+from pyannote.audio.core.model import CACHE_DIR
 
 PipelineModel = Union[Model, Text, Mapping]
 
@@ -73,9 +74,12 @@ def get_model(
 
     """
 
+    if not cache_dir:
+         cache_dir = CACHE_DIR
+        
     if isinstance(model, Model):
         pass
-
+        
     elif isinstance(model, Text):
         model = Model.from_pretrained(
             model, use_auth_token=use_auth_token, cache_dir=cache_dir, strict=False
