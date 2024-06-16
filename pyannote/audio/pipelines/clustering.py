@@ -472,6 +472,24 @@ class AgglomerativeClustering(BaseClustering):
 
 
 class AgglomerativeClusteringGPU(AgglomerativeClustering):
+    def __init__(
+        self,
+        metric: str = "cosine",
+        max_num_embeddings: int = np.inf,
+        constrained_assignment: bool = False,
+    ):
+        super().__init__(
+            metric=metric,
+            max_num_embeddings=max_num_embeddings,
+            constrained_assignment=constrained_assignment,
+        )
+
+        self.threshold = Uniform(0.0, 2.0)  # assume unit-normalized embeddings
+        self.method = Categorical(["single"])
+
+        # minimum cluster size
+        self.min_cluster_size = Integer(1, 20)
+
     def cluster(
         self, embeddings, min_clusters: int, max_clusters: int, num_clusters: int = None
     ):
@@ -489,6 +507,16 @@ class AgglomerativeClusteringGPU(AgglomerativeClustering):
         elif max_clusters == 1:
             return np.zeros((len(embeddings),))
 
+        if len(embeddings) <= min_clusters:
+            return np.arange(len(embeddings))
+
+        if num_clusters is not None:
+            agg_clust = cuml.cluster.AgglomerativeClustering(
+                n_clusters=num_clusters, linkage=self.method, metric=self.metric
+            )
+            clusters = agg_clust.fit_predict(embeddings)
+            return clusters.get()
+
         # Convert embeddings to cupy array for GPU operations
         embeddings = cp.asarray(embeddings)
         num_embeddings, _ = embeddings.shape
@@ -496,13 +524,15 @@ class AgglomerativeClusteringGPU(AgglomerativeClustering):
         # 初始化最优聚类数量和最优得分
         best_num_clusters = None
         best_score = -1
-        clusters = None
+        best_clusters = None
+
+        print(min_clusters, max_clusters)
 
         # 遍历可能的聚类数量
         for num_clusters in range(min_clusters, max_clusters + 1):
             # 进行聚类
             agg_clust = cuml.cluster.AgglomerativeClustering(
-                n_clusters=num_clusters, linkage="single", affinity="cosine"
+                n_clusters=num_clusters, linkage=self.method, metric=self.metric
             )
             clusters = agg_clust.fit_predict(embeddings)
 
@@ -513,6 +543,7 @@ class AgglomerativeClusteringGPU(AgglomerativeClustering):
             if score > best_score:
                 best_num_clusters = num_clusters
                 best_score = score
+                best_clusters = clusters
             print(f"Number of clusters: {num_clusters}, score: {score}")
 
         if may_single:
@@ -521,7 +552,7 @@ class AgglomerativeClusteringGPU(AgglomerativeClustering):
         # 最后，best_num_clusters 就是最优聚类数量
         print(f"Best number of clusters: {best_num_clusters}, score: {best_score}")
 
-        return clusters.get()
+        return best_clusters.get()
 
 
 class OracleClustering(BaseClustering):
