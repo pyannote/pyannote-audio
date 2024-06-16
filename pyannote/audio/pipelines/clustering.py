@@ -471,6 +471,59 @@ class AgglomerativeClustering(BaseClustering):
         return clusters
 
 
+class AgglomerativeClusteringGPU(AgglomerativeClustering):
+    def cluster(
+        self, embeddings, min_clusters: int, max_clusters: int, num_clusters: int = None
+    ):
+        import cuml
+        import cupy as cp
+        from cuml.metrics.cluster import silhouette_score
+
+        print("start clustering")
+        assert max_clusters >= min_clusters > 0
+
+        may_single = False
+        if max_clusters > 1 and min_clusters == 1:
+            min_clusters = 2
+            may_single = True
+        elif max_clusters == 1:
+            return np.zeros((len(embeddings),))
+
+        # Convert embeddings to cupy array for GPU operations
+        embeddings = cp.asarray(embeddings)
+        num_embeddings, _ = embeddings.shape
+
+        # 初始化最优聚类数量和最优得分
+        best_num_clusters = None
+        best_score = -1
+        clusters = None
+
+        # 遍历可能的聚类数量
+        for num_clusters in range(min_clusters, max_clusters + 1):
+            # 进行聚类
+            agg_clust = cuml.cluster.AgglomerativeClustering(
+                n_clusters=num_clusters, linkage="single", affinity="cosine"
+            )
+            clusters = agg_clust.fit_predict(embeddings)
+
+            # 计算轮廓系数
+            score = silhouette_score(embeddings, clusters)
+
+            # 如果这个聚类的得分更高，就更新最优聚类数量和最优得分
+            if score > best_score:
+                best_num_clusters = num_clusters
+                best_score = score
+            print(f"Number of clusters: {num_clusters}, score: {score}")
+
+        if may_single:
+            if num_clusters == 2 and best_score < 0.25:
+                return np.zeros((num_embeddings,))
+        # 最后，best_num_clusters 就是最优聚类数量
+        print(f"Best number of clusters: {best_num_clusters}, score: {best_score}")
+
+        return clusters.get()
+
+
 class OracleClustering(BaseClustering):
     """Oracle clustering"""
 
@@ -558,4 +611,5 @@ class OracleClustering(BaseClustering):
 
 class Clustering(Enum):
     AgglomerativeClustering = AgglomerativeClustering
+    AgglomerativeClusteringGPU = AgglomerativeClusteringGPU
     OracleClustering = OracleClustering
