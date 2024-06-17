@@ -818,7 +818,7 @@ class SpeakerDiarization(SegmentationTask):
         )
 
         # reshape target so that there is one line per class when plotting it
-        y[y == 0] = np.NaN
+        y[y == 0] = np.nan
         if len(y.shape) == 2:
             y = y[:, :, np.newaxis]
         y *= np.arange(y.shape[2])
