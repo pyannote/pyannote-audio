@@ -495,64 +495,71 @@ class AgglomerativeClusteringGPU(AgglomerativeClustering):
     ):
         import cuml
         import cupy as cp
-        from cuml.metrics.cluster import silhouette_score
 
-        print("start clustering")
-        assert max_clusters >= min_clusters > 0
+        # Define utility functions
+        def cosine_similarity(M):
+            M = M / cp.linalg.norm(M, axis=1, keepdims=True)
+            return 0.5 * (1.0 + cp.dot(M, M.T))
 
-        may_single = False
-        if max_clusters > 1 and min_clusters == 1:
-            min_clusters = 2
-            may_single = True
-        elif max_clusters == 1:
-            return np.zeros((len(embeddings),))
+        def prune(M, p):
+            m = M.shape[0]
+            if m < 1000:
+                n = max(m - 10, 2)
+            else:
+                n = int((1.0 - p) * m)
+            for i in range(m):
+                indexes = cp.argsort(M[i, :])
+                low_indexes, high_indexes = indexes[0:n], indexes[n:m]
+                M[i, low_indexes] = 0.0
+                M[i, high_indexes] = 1.0
+            return 0.5 * (M + M.T)
 
-        if len(embeddings) <= min_clusters:
-            return np.arange(len(embeddings))
+        def laplacian(M):
+            M[cp.diag_indices(M.shape[0])] = 0.0
+            D = cp.diag(cp.sum(cp.abs(M), axis=1))
+            return D - M
 
-        if num_clusters is not None:
-            agg_clust = cuml.cluster.AgglomerativeClustering(
-                n_clusters=num_clusters, linkage=self.method, metric=self.metric
+        def spectral(M, num_spks, min_num_spks, max_num_spks):
+            eig_values, eig_vectors = cp.linalg.eigh(M)
+            num_spks = (
+                num_spks
+                if num_spks is not None
+                else cp.argmax(cp.diff(eig_values[: max_num_spks + 1])) + 1
             )
-            clusters = agg_clust.fit_predict(embeddings)
+            num_spks = max(num_spks, min_num_spks)
+            return eig_vectors[:, :num_spks]
+
+        def kmeans(data):
+            k = data.shape[1]
+            kmeans_float = cuml.cluster.KMeans(n_clusters=k, n_init=10)
+            clusters = kmeans_float.fit_predict(cp.asarray(data))
             return clusters.get()
 
-        # Convert embeddings to cupy array for GPU operations
-        embeddings = cp.asarray(embeddings)
-        num_embeddings, _ = embeddings.shape
+        # Fallback for trivial cases
+        if len(embeddings) <= 2:
+            return np.arange(len(embeddings))
 
-        # 初始化最优聚类数量和最优得分
-        best_num_clusters = None
-        best_score = -1
-        best_clusters = None
+        embeddings = cp.array(embeddings)
 
-        print(min_clusters, max_clusters)
+        # How to specify the cuda device?
+        # with cp.cuda.Device(1):
+        #     embeddings = cp.array(embeddings)
 
-        # 遍历可能的聚类数量
-        for num_clusters in range(min_clusters, max_clusters + 1):
-            # 进行聚类
-            agg_clust = cuml.cluster.AgglomerativeClustering(
-                n_clusters=num_clusters, linkage=self.method, metric=self.metric
-            )
-            clusters = agg_clust.fit_predict(embeddings)
+        # Compute similarity matrix
+        similarity_matrix = cosine_similarity(embeddings)
+        # Prune matrix with p interval
+        p = 0.01
+        pruned_similarity_matrix = prune(similarity_matrix, p)
+        # Compute Laplacian
+        laplacian_matrix = laplacian(pruned_similarity_matrix)
+        # Compute spectral embeddings
+        spectral_embeddings = spectral(
+            laplacian_matrix, num_clusters, min_clusters, max_clusters
+        )
+        # Assign class labels
+        clusters = kmeans(spectral_embeddings)
 
-            # 计算轮廓系数
-            score = silhouette_score(embeddings, clusters)
-
-            # 如果这个聚类的得分更高，就更新最优聚类数量和最优得分
-            if score > best_score:
-                best_num_clusters = num_clusters
-                best_score = score
-                best_clusters = clusters
-            print(f"Number of clusters: {num_clusters}, score: {score}")
-
-        if may_single:
-            if num_clusters == 2 and best_score < 0.25:
-                return np.zeros((num_embeddings,))
-        # 最后，best_num_clusters 就是最优聚类数量
-        print(f"Best number of clusters: {best_num_clusters}, score: {best_score}")
-
-        return best_clusters.get()
+        return clusters
 
 
 class OracleClustering(BaseClustering):
