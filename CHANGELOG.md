@@ -5,6 +5,7 @@
 ### Fixes
 
 - fix: fix support for `numpy==2.x` ([@ibevers](https://github.com/ibevers/))
+- fix: fix support for `speechbrain==1.x` ([@Adel-Moumen](https://github.com/Adel-Moumen/))
 
 ### Breaking changes
 
