@@ -6,6 +6,10 @@
 
 - fix: fix support for `numpy==2.x` ([@ibevers](https://github.com/ibevers/))
 
+### Breaking changes
+
+- setup: drop support for Python 3.8
+
 ## Version 3.3.0 (2024-06-14)
 
 ### TL;DR
