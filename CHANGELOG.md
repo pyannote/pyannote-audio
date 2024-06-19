@@ -1,5 +1,11 @@
 # Changelog
 
+## develop
+
+### Fixes
+
+- fix: fix support for `numpy==2.x` ([@ibevers](https://github.com/ibevers/))
+
 ## Version 3.3.0 (2024-06-14)
 
 ### TL;DR
