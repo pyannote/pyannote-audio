@@ -449,7 +449,8 @@ class ONNXWeSpeakerPretrainedSpeakerEmbedding(BaseInference):
                     {
                         "cudnn_conv_algo_search": "DEFAULT",  # EXHAUSTIVE / HEURISTIC / DEFAULT
                     },
-                )
+                ),
+                "CPUExecutionProvider",
             ]
         else:
             warnings.warn(
