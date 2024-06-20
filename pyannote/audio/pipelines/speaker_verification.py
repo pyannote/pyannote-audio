@@ -40,7 +40,7 @@ from pyannote.audio.core.model import CACHE_DIR
 from pyannote.audio.pipelines.utils import PipelineModel, get_model
 
 try:
-    from speechbrain.pretrained import (
+    from speechbrain.inference import (
         EncoderClassifier as SpeechBrain_EncoderClassifier,
     )
 
