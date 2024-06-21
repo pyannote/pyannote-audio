@@ -20,10 +20,13 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+from collections import defaultdict
 import itertools
 import math
+from pathlib import Path
 import random
 import warnings
+from tempfile import mkstemp
 from typing import Dict, Literal, Optional, Sequence, Union
 
 import numpy as np
@@ -37,7 +40,9 @@ from pytorch_metric_learning.losses import ArcFaceLoss
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchmetrics import Metric
 
-from pyannote.audio.core.task import Problem, Resolution, Specifications
+from pyannote.audio.core.task import (
+    Problem, Resolution, Specifications, get_dtype
+)
 from pyannote.audio.tasks import SpeakerDiarization
 from pyannote.audio.torchmetrics import (
     DiarizationErrorRate,
@@ -116,6 +121,305 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         # * embedding databases are those with global speaker label scope
         # * diarization databases are those with file or database speaker label scope
         self.embedding_files_id = []
+
+    def prepare_data(self):
+        """Use this to prepare data from task protocol
+
+        Notes
+        -----
+        Called only once on the main process (and only on it), for global_rank 0.
+
+        After this method is called, the task should have a `prepared_data` attribute
+        with the following dictionary structure:
+
+        prepared_data = {
+            'protocol': name of the protocol
+            'audio-path': array of N paths to audio
+            'audio-metadata': array of N audio infos such as audio subset, scope and database
+            'audio-info': array of N audio torchaudio.info struct
+            'audio-encoding': array of N audio encodings
+            'audio-annotated': array of N annotated duration (usually equals file duration but might be shorter if file is not fully annotated)
+            'annotations-regions': array of M annotated regions
+            'annotations-segments': array of M' annotated segments
+            'metadata-values': dict of lists of values for subset, scope and database
+            'metadata-`database-name`-labels': array of `database-name` labels. Each database with "database" scope labels has it own array.
+            'metadata-labels': array of global scope labels
+        }
+
+        """
+
+        if self.cache:
+            # check if cache exists and is not empty:
+            if self.cache.exists() and self.cache.stat().st_size > 0:
+                # data was already created, nothing to do
+                return
+            # create parent directory if needed
+            self.cache.parent.mkdir(parents=True, exist_ok=True)
+        else:
+            # if no cache was provided by user, create a temporary file
+            # in system directory used for temp files
+            self.cache = Path(mkstemp()[1])
+
+        # list of possible values for each metadata key
+        # (will become .prepared_data[""])
+        metadata_unique_values = defaultdict(list)
+        metadata_unique_values["subset"] = Subsets
+        metadata_unique_values["scope"] = Scopes
+
+        audios = list()  # list of path to audio files
+        audio_infos = list()
+        audio_encodings = list()
+        metadata = list()  # list of metadata
+
+        annotated_duration = list()  # total duration of annotated regions (per file)
+        annotated_regions = list()  # annotated regions
+        annotations = list()  # actual annotations
+        unique_labels = list()
+        database_unique_labels = {}
+
+        if self.has_validation:
+            files_iter = itertools.chain(
+                zip(itertools.repeat("train"), self.protocol.train()),
+                zip(itertools.repeat("development"), self.protocol.development()),
+            )
+        else:
+            files_iter = zip(itertools.repeat("train"), self.protocol.train())
+
+        for file_id, (subset, file) in enumerate(files_iter):
+            # gather metadata and update metadata_unique_values so that each metadatum
+            # (e.g. source database or label) is represented by an integer.
+            metadatum = dict()
+
+            # keep track of source database and subset (train, development, or test)
+            if file["database"] not in metadata_unique_values["database"]:
+                metadata_unique_values["database"].append(file["database"])
+            metadatum["database"] = metadata_unique_values["database"].index(
+                file["database"]
+            )
+
+            metadatum["subset"] = Subsets.index(subset)
+
+            # keep track of label scope (file, database, or global)
+            metadatum["scope"] = Scopes.index(file["scope"])
+
+            remaining_metadata_keys = set(file) - set(
+                [
+                    "uri",
+                    "database",
+                    "subset",
+                    "audio",
+                    "torchaudio.info",
+                    "scope",
+                    "classes",
+                    "annotation",
+                    "annotated",
+                ]
+            )
+
+            # keep track of any other (integer or string) metadata provided by the protocol
+            # (e.g. a "domain" key for domain-adversarial training)
+            for key in remaining_metadata_keys:
+                value = file[key]
+
+                if isinstance(value, str):
+                    if value not in metadata_unique_values[key]:
+                        metadata_unique_values[key].append(value)
+                    metadatum[key] = metadata_unique_values[key].index(value)
+
+                elif isinstance(value, int):
+                    metadatum[key] = value
+
+                else:
+                    warnings.warn(
+                        f"Ignoring '{key}' metadata because of its type ({type(value)}). Only str and int are supported for now.",
+                        category=UserWarning,
+                    )
+
+            metadata.append(metadatum)
+
+            # reset list of file-scoped labels
+            file_unique_labels = list()
+
+            # path to audio file
+            audios.append(str(file["audio"]))
+
+            # audio info
+            audio_info = file["torchaudio.info"]
+            audio_infos.append(
+                (
+                    audio_info.sample_rate,  # sample rate
+                    audio_info.num_frames,  # number of frames
+                    audio_info.num_channels,  # number of channels
+                    audio_info.bits_per_sample,  # bits per sample
+                )
+            )
+            audio_encodings.append(audio_info.encoding)  # encoding
+
+            # annotated regions and duration
+            _annotated_duration = 0.0
+            for segment in file["annotated"]:
+                # skip annotated regions that are shorter than training chunk duration
+                # if segment.duration < self.duration:
+                    # continue
+
+                # append annotated region
+                annotated_region = (
+                    file_id,
+                    segment.duration,
+                    segment.start,
+                )
+                annotated_regions.append(annotated_region)
+
+                # increment annotated duration
+                _annotated_duration += segment.duration
+
+            # append annotated duration
+            annotated_duration.append(_annotated_duration)
+
+            # annotations
+            for segment, _, label in file["annotation"].itertracks(yield_label=True):
+                # "scope" is provided by speaker diarization protocols to indicate
+                # whether speaker labels are local to the file ('file'), consistent across
+                # all files in a database ('database'), or globally consistent ('global')
+
+                # 0 = 'file' / 1 = 'database' / 2 = 'global'
+                scope = Scopes.index(file["scope"])
+
+                # update list of file-scope labels
+                if label not in file_unique_labels:
+                    file_unique_labels.append(label)
+                # and convert label to its (file-scope) index
+                file_label_idx = file_unique_labels.index(label)
+
+                database_label_idx = global_label_idx = -1
+
+                if scope > 0:  # 'database' or 'global'
+                    # update list of database-scope labels
+                    database = file["database"]
+                    if database not in database_unique_labels:
+                        database_unique_labels[database] = []
+                    if label not in database_unique_labels[database]:
+                        database_unique_labels[database].append(label)
+
+                    # and convert label to its (database-scope) index
+                    database_label_idx = database_unique_labels[database].index(label)
+
+                if scope > 1:  # 'global'
+                    # update list of global-scope labels
+                    if label not in unique_labels:
+                        unique_labels.append(label)
+                    # and convert label to its (global-scope) index
+                    global_label_idx = unique_labels.index(label)
+
+                annotations.append(
+                    (
+                        file_id,  # index of file
+                        segment.start,  # start time
+                        segment.end,  # end time
+                        file_label_idx,  # file-scope label index
+                        database_label_idx,  # database-scope label index
+                        global_label_idx,  # global-scope index
+                    )
+                )
+
+        # since not all metadata keys are present in all files, fallback to -1 when a key is missing
+        metadata = [
+            tuple(metadatum.get(key, -1) for key in metadata_unique_values)
+            for metadatum in metadata
+        ]
+        metadata_dtype = [
+            (key, get_dtype(max(m[i] for m in metadata)))
+            for i, key in enumerate(metadata_unique_values)
+        ]
+
+        # turn list of files metadata into a single numpy array
+        # TODO: improve using https://github.com/pytorch/pytorch/issues/13246#issuecomment-617140519
+        info_dtype = [
+            (
+                "sample_rate",
+                get_dtype(max(ai[0] for ai in audio_infos)),
+            ),
+            (
+                "num_frames",
+                get_dtype(max(ai[1] for ai in audio_infos)),
+            ),
+            ("num_channels", "B"),
+            ("bits_per_sample", "B"),
+        ]
+
+        # turn list of annotated regions into a single numpy array
+        region_dtype = [
+            (
+                "file_id",
+                get_dtype(max(ar[0] for ar in annotated_regions)),
+            ),
+            ("duration", "f"),
+            ("start", "f"),
+        ]
+
+        # turn list of annotations into a single numpy array
+        segment_dtype = [
+            (
+                "file_id",
+                get_dtype(max(a[0] for a in annotations)),
+            ),
+            ("start", "f"),
+            ("end", "f"),
+            ("file_label_idx", get_dtype(max(a[3] for a in annotations))),
+            ("database_label_idx", get_dtype(max(a[4] for a in annotations))),
+            ("global_label_idx", get_dtype(max(a[5] for a in annotations))),
+        ]
+
+        # save all protocol data in a dict
+        prepared_data = {}
+
+        # keep track of protocol name
+        prepared_data["protocol"] = self.protocol.name
+
+        prepared_data["audio-path"] = np.array(audios, dtype=np.str_)
+        audios.clear()
+
+        prepared_data["audio-metadata"] = np.array(metadata, dtype=metadata_dtype)
+        metadata.clear()
+
+        prepared_data["audio-info"] = np.array(audio_infos, dtype=info_dtype)
+        audio_infos.clear()
+
+        prepared_data["audio-encoding"] = np.array(audio_encodings, dtype=np.str_)
+        audio_encodings.clear()
+
+        prepared_data["audio-annotated"] = np.array(annotated_duration)
+        annotated_duration.clear()
+
+        prepared_data["annotations-regions"] = np.array(
+            annotated_regions, dtype=region_dtype
+        )
+        annotated_regions.clear()
+
+        prepared_data["annotations-segments"] = np.array(
+            annotations, dtype=segment_dtype
+        )
+        annotations.clear()
+
+        prepared_data["metadata-values"] = metadata_unique_values
+
+        for database, labels in database_unique_labels.items():
+            prepared_data[f"metadata-{database}-labels"] = np.array(
+                labels, dtype=np.str_
+            )
+        database_unique_labels.clear()
+
+        prepared_data["metadata-labels"] = np.array(unique_labels, dtype=np.str_)
+        unique_labels.clear()
+
+        if self.has_validation:
+            self.prepare_validation(prepared_data)
+
+        self.post_prepare_data(prepared_data)
+
+        # save prepared data on the disk
+        with open(self.cache, "wb") as cache_file:
+            np.savez_compressed(cache_file, **prepared_data)
 
     def setup(self, stage="fit"):
         """Setup method
@@ -251,7 +555,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
             start_idx, end_idx, chunk_annotations[label_scope_key]
         ):
             mapped_label = mapping[label]
-            y[start : end + 1, mapped_label] = 1
+            y[start:end + 1, mapped_label] = 1
 
         sample["y"] = SlidingWindowFeature(y, self.model.receptive_field, labels=labels)
 
@@ -666,6 +970,9 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
             embeddings[valid_embs, :], targets[valid_embs]
         )
 
+        if torch.any(valid_embs):
+            emb_loss = (1. / torch.sum(valid_embs)) * emb_loss
+
         # skip batch if something went wrong for some reason
         if torch.isnan(emb_loss):
             return None
@@ -731,7 +1038,9 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         # an embedding is valid only if corresponding speaker is active in the diarization prediction and reference
         active_speaker_pred = torch.any(dia_multilabel > 0, dim=1)
         active_speaker_ref = torch.any(permutated_target_dia == 1, dim=1)
-        valid_embs = torch.logical_and(active_speaker_pred, active_speaker_ref)[num_remaining_dia_samples:]
+        valid_embs = torch.logical_and(active_speaker_pred, active_speaker_ref)[
+            num_remaining_dia_samples:
+        ]
 
         permutated_target_powerset = self.model.powerset.to_powerset(
             permutated_target_dia.float()
@@ -751,14 +1060,16 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
 
         emb_loss = torch.tensor(0)
         # if batch contains embedding subtask chunks, then compute embedding loss on these chunks:
-        if self.alpha != 1.0 and torch.any(keep[self.num_dia_samples :]):
+        if self.alpha != 1.0 and torch.any(valid_embs):
             emb_prediction = emb_prediction[num_remaining_dia_samples:]
             permutated_target_emb = permutated_target_emb[num_remaining_dia_samples:]
             emb_loss = self.compute_embedding_loss(
                 emb_prediction, permutated_target_emb, valid_embs
             )
+            loss = self.alpha * dia_loss + (1 - self.alpha) * emb_loss
+        else:
+            loss = self.alpha * dia_loss
 
-        loss = self.alpha * dia_loss + (1 - self.alpha) * emb_loss
         return {"loss": loss}
 
     # TODO: no need to compute gradient in this method
