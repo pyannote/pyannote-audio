@@ -1,9 +1,33 @@
 # Changelog
 
-## develop
+
+## Version 3.3.1 (2024-06-19)
+
+### Breaking changes
+
+- setup: drop support for Python 3.8
+
+### Fixes
+
+- fix: fix support for `numpy==2.x` ([@ibevers](https://github.com/ibevers/))
+- fix: fix support for `speechbrain==1.x` ([@Adel-Moumen](https://github.com/Adel-Moumen/))
+
+
+## Version 3.3.0 (2024-06-14)
+
+### TL;DR
+
+`pyannote.audio` does [speech separation](https://hf.co/pyannote/speech-separation-ami-1.0): multi-speaker audio in, one audio channel per speaker out!
+
+```bash
+pip install pyannote.audio[separation]==3.3.0
+```
 
 ### New features
 
+- feat(task): add `PixIT` joint speaker diarization and speech separation task (with [@joonaskalda](https://github.com/joonaskalda/))
+- feat(model): add `ToTaToNet` joint speaker diarization and speech separation model (with [@joonaskalda](https://github.com/joonaskalda/))
+- feat(pipeline): add `SpeechSeparation` pipeline (with [@joonaskalda](https://github.com/joonaskalda/))
 - feat(io): add option to select torchaudio `backend`
 
 ### Fixes
@@ -15,6 +39,7 @@
 
 - improve(io): when available, default to using `soundfile` backend
 - improve(pipeline): do not extract embeddings when `max_speakers` is set to 1
+- improve(pipeline): optimize memory usage of most pipelines ([#1713](https://github.com/pyannote/pyannote-audio/pull/1713) by [@benniekiss](https://github.com/benniekiss/))
 
 ## Version 3.2.0 (2024-05-08)
 
