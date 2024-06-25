@@ -491,7 +491,6 @@ class KMeansGPU(BaseClustering):
         import cupy as cp
         from cuml.metrics.cluster import silhouette_score
 
-        print("start clustering")
         assert max_clusters >= min_clusters > 0
 
         may_single = False
