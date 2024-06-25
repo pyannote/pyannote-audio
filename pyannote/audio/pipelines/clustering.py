@@ -474,10 +474,17 @@ class AgglomerativeClustering(BaseClustering):
 class KMeansGPU(BaseClustering):
     def __init__(
         self,
-        metric: str = "cosine",
+        metric: str = "",
         max_num_embeddings: int = np.inf,
         constrained_assignment: bool = False,
     ):
+        """KMeans clustering
+
+        Parameters
+        ----------
+        metric : {""}, optional
+            Distance metric to use. KMeansGPU only supports the default value.
+        """
         super().__init__(
             metric=metric,
             max_num_embeddings=max_num_embeddings,
@@ -487,45 +494,45 @@ class KMeansGPU(BaseClustering):
     def cluster(
         self, embeddings, min_clusters: int, max_clusters: int, num_clusters: int = None
     ):
-        import cuml
-        import cupy as cp
-        from cuml.metrics.cluster import silhouette_score
+        try:
+            import cuml
+            import cupy as cp
+            from cuml.metrics.cluster import silhouette_score
+        except ImportError:
+            raise ImportError(
+                "KMeansGPU requires cuML. You can install it with 'https://docs.rapids.ai/install'."
+            )
 
         assert max_clusters >= min_clusters > 0
+
+        num_embeddings = len(embeddings)
 
         may_single = False
         if max_clusters > 1 and min_clusters == 1:
             min_clusters = 2
             may_single = True
         elif max_clusters == 1:
-            return np.zeros((len(embeddings),))
+            return np.zeros((num_embeddings,))
 
-        if len(embeddings) <= min_clusters:
-            return np.arange(len(embeddings))
+        if num_embeddings <= min_clusters or num_embeddings == num_clusters:
+            return np.arange(num_embeddings)
 
         if num_clusters is not None:
             agg_clust = cuml.cluster.KMeans(n_clusters=num_clusters)
             clusters = agg_clust.fit_predict(embeddings)
             return clusters.get()
 
-        # Convert embeddings to cupy array for GPU operations
         embeddings = cp.asarray(embeddings)
-        num_embeddings, _ = embeddings.shape
 
-        # 初始化最优聚类数量和最优得分
         best_score = -1
         best_clusters = None
 
-        # 遍历可能的聚类数量
-        for num_clusters in range(min_clusters, max_clusters + 1):
-            # 进行聚类
+        for num_clusters in range(min_clusters, min(max_clusters + 1, num_embeddings)):
             agg_clust = cuml.cluster.KMeans(n_clusters=num_clusters)
             clusters = agg_clust.fit_predict(embeddings)
 
-            # 计算轮廓系数
             score = silhouette_score(embeddings, clusters)
 
-            # 如果这个聚类的得分更高，就更新最优聚类数量和最优得分
             if score > best_score:
                 best_score = score
                 best_clusters = clusters
