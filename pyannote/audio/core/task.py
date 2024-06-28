@@ -23,6 +23,7 @@
 
 from __future__ import annotations
 
+import inspect
 import itertools
 import multiprocessing
 import sys
@@ -327,6 +328,7 @@ class Task(pl.LightningDataModule):
             'metadata-values': dict of lists of values for subset, scope and database
             'metadata-`database-name`-labels': array of `database-name` labels. Each database with "database" scope labels has it own array.
             'metadata-labels': array of global scope labels
+            'task-parameters': hyper-parameters used for the task
         }
 
         """
@@ -595,6 +597,26 @@ class Task(pl.LightningDataModule):
         prepared_data["metadata-labels"] = np.array(unique_labels, dtype=np.str_)
         unique_labels.clear()
 
+        # keep track of task parameters
+        parameters = []
+        dtype = []
+        for param_name in inspect.signature(self.__init__).parameters:
+            try:
+                param_value = getattr(self, param_name)
+            # skip specification-dependent parameters and non-attributed parameters
+            # (for instance because they were deprecated)
+            except (AttributeError, UnknownSpecificationsError):
+                continue
+            if isinstance(param_value, (bool, float, int, str, type(None))):
+                parameters.append(param_value)
+                dtype.append((param_name, type(param_value)))
+
+        prepared_data["task-parameters"] = np.array(
+            tuple(parameters), dtype=np.dtype(dtype)
+        )
+        parameters.clear()
+        dtype.clear()
+
         if self.has_validation:
             self.prepare_validation(prepared_data)
 
@@ -645,6 +667,26 @@ class Task(pl.LightningDataModule):
                 f"Protocol specified for the task ({self.protocol.name}) "
                 f"does not correspond to the cached one ({self.prepared_data['protocol']})"
             )
+
+        # checks that the task current hyperparameters matches the cached ones
+        for param_name in inspect.signature(self.__init__).parameters:
+            try:
+                param_value = getattr(self, param_name)
+            # skip specification-dependent parameters and non-attributed parameters
+            # (for instance because they were deprecated)
+            except (AttributeError, UnknownSpecificationsError):
+                continue
+
+            if param_name not in self.prepared_data["task-parameters"].dtype.names:
+                continue
+            cached_value = self.prepared_data["task-parameters"][param_name]
+            if param_value != cached_value:
+                warnings.warn(
+                    f"Value specified for {param_name} of the task differs from the one in the cached data."
+                    f"Current one = {param_value}, cached one = {cached_value}."
+                    "You may need to create a new cache for this task with"
+                    " the new value for this hyperparameter.",
+                )
 
     @property
     def specifications(self) -> Union[Specifications, Tuple[Specifications]]:
