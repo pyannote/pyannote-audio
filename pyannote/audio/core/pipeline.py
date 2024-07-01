@@ -54,7 +54,7 @@ class Pipeline(_Pipeline):
         checkpoint_path: Union[Text, Path],
         hparams_file: Union[Text, Path] = None,
         use_auth_token: Union[Text, None] = None,
-        cache_dir: Union[Path, Text] = CACHE_DIR,
+        cache_dir: Union[Path, Text, None] = None,
     ) -> "Pipeline":
         """Load pretrained pipeline
 
@@ -69,8 +69,11 @@ class Pipeline(_Pipeline):
             to True or to a string containing your hugginface.co authentication
             token that can be obtained by running `huggingface-cli login`
         cache_dir: Path or str, optional
-            Path to model cache directory. Defauorch/pyannote" when unset.
+            Path to model cache directory. Defaults to content of PYANNOTE_CACHE
+            environment variable, or "~/.cache/torch/pyannote" when unset.
         """
+        if not cache_dir:
+            cache_dir = CACHE_DIR
 
         checkpoint_path = str(checkpoint_path)
 
@@ -134,6 +137,7 @@ visit https://hf.co/{model_id} to accept the user conditions."""
         )
         params = config["pipeline"].get("params", {})
         params.setdefault("use_auth_token", use_auth_token)
+        params.setdefault("cache_dir", cache_dir)
         pipeline = Klass(**params)
 
         # freeze  parameters

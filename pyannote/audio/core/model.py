@@ -533,7 +533,7 @@ class Model(pl.LightningModule):
         hparams_file: Union[Path, Text] = None,
         strict: bool = True,
         use_auth_token: Union[Text, None] = None,
-        cache_dir: Union[Path, Text] = CACHE_DIR,
+        cache_dir: Union[Path, Text, None] = None,
         **kwargs,
     ) -> "Model":
         """Load pretrained model
@@ -601,6 +601,9 @@ class Model(pl.LightningModule):
             else:
                 model_id = checkpoint
                 revision = None
+
+            if not cache_dir:
+                cache_dir = CACHE_DIR
 
             try:
                 path_for_pl = hf_hub_download(

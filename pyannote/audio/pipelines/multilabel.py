@@ -25,6 +25,7 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 from functools import partial
+from pathlib import Path
 from typing import Callable, Optional, Text, Union
 
 from pyannote.core import Annotation, SlidingWindowFeature
@@ -57,6 +58,9 @@ class MultiLabelSegmentation(Pipeline):
         When loading private huggingface.co models, set `use_auth_token`
         to True or to a string containing your hugginface.co authentication
         token that can be obtained by running `huggingface-cli login`
+    cache_dir: Path or str, optional
+        Path to model cache directory. Defaults to content of PYANNOTE_CACHE
+        environment variable, or "~/.cache/torch/pyannote" when unset.
     inference_kwargs : dict, optional
         Keywords arguments passed to Inference.
 
@@ -79,6 +83,7 @@ class MultiLabelSegmentation(Pipeline):
         fscore: bool = False,
         share_min_duration: bool = False,
         use_auth_token: Union[Text, None] = None,
+        cache_dir: Union[Path, Text, None] = None,
         **inference_kwargs,
     ):
 
@@ -94,7 +99,7 @@ class MultiLabelSegmentation(Pipeline):
         self.share_min_duration = share_min_duration
 
         # load model
-        model = get_model(segmentation, use_auth_token=use_auth_token)
+        model = get_model(segmentation, use_auth_token=use_auth_token, cache_dir=cache_dir)
 
         self._classes = model.specifications.classes
         self._segmentation = Inference(model, **inference_kwargs)
