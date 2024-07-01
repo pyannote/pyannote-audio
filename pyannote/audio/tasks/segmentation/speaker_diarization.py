@@ -117,6 +117,8 @@ class SpeakerDiarization(SegmentationTask):
     metric : optional
         Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
         Defaults to AUROC (area under the ROC curve).
+    cache_path : str, optional
+        path to file where to write or load task caches
 
     References
     ----------
