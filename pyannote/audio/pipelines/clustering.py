@@ -22,7 +22,6 @@
 
 """Clustering pipelines"""
 
-
 import random
 from enum import Enum
 from typing import Optional, Tuple
@@ -35,6 +34,7 @@ from pyannote.pipeline.parameter import Categorical, Integer, Uniform
 from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.optimize import linear_sum_assignment
 from scipy.spatial.distance import cdist
+from sklearn.cluster import KMeans
 
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.pipelines.utils import oracle_segmentation
@@ -264,8 +264,8 @@ class BaseClustering(Pipeline):
 
         train_clusters = self.cluster(
             train_embeddings,
-            min_clusters,
-            max_clusters,
+            min_clusters=min_clusters,
+            max_clusters=max_clusters,
             num_clusters=num_clusters,
         )
 
@@ -321,8 +321,8 @@ class AgglomerativeClustering(BaseClustering):
     def cluster(
         self,
         embeddings: np.ndarray,
-        min_clusters: int,
-        max_clusters: int,
+        min_clusters: Optional[int] = None,
+        max_clusters: Optional[int] = None,
         num_clusters: Optional[int] = None,
     ):
         """
@@ -471,6 +471,71 @@ class AgglomerativeClustering(BaseClustering):
         return clusters
 
 
+class KMeansClustering(BaseClustering):
+    """KMeans clustering
+
+    Parameters
+    ----------
+    metric : {"cosine", "euclidean"}, optional
+        Distance metric to use. Defaults to "cosine".
+
+    Hyper-parameters
+    ----------------
+    None
+    """
+
+    def __init__(
+        self,
+        metric: str = "cosine",
+    ):
+        if metric not in ["cosine", "euclidean"]:
+            raise ValueError(
+                f"Unsupported metric: {metric}. Must be 'cosine' or 'euclidean'."
+            )
+
+        super().__init__(metric=metric)
+
+    def cluster(
+        self,
+        embeddings: np.ndarray,
+        min_clusters: Optional[int] = None,
+        max_clusters: Optional[int] = None,
+        num_clusters: Optional[int] = None,
+    ):
+        """Perform KMeans clustering
+
+        Parameters
+        ----------
+        embeddings : (num_embeddings, dimension) array
+            Embeddings
+        num_clusters : int, optional
+            Expected number of clusters.
+
+        Returns
+        -------
+        clusters : (num_embeddings, ) array
+            0-indexed cluster indices.
+        """
+
+        if num_clusters is None:
+            raise ValueError("`num_clusters` must be provided.")
+
+        num_embeddings, _ = embeddings.shape
+        if num_embeddings < num_clusters:
+            # one cluster per embedding as int
+            return np.arange(num_embeddings, dtype=np.int32)
+
+        # unit-normalize embeddings to use 'euclidean' distance
+        if self.metric == "cosine":
+            with np.errstate(divide="ignore", invalid="ignore"):
+                embeddings /= np.linalg.norm(embeddings, axis=-1, keepdims=True)
+
+        # perform Kmeans clustering
+        return KMeans(
+            n_clusters=num_clusters, random_state=42, copy_x=False
+        ).fit_predict(embeddings)
+
+
 class OracleClustering(BaseClustering):
     """Oracle clustering"""
 
@@ -558,4 +623,5 @@ class OracleClustering(BaseClustering):
 
 class Clustering(Enum):
     AgglomerativeClustering = AgglomerativeClustering
+    KMeansClustering = KMeansClustering
     OracleClustering = OracleClustering
