@@ -45,6 +45,7 @@ from pyannote.audio.pipelines.utils import (
     SpeakerDiarizationMixin,
     get_model,
 )
+from pyannote.audio.pipelines.utils.diarization import set_num_speakers
 from pyannote.audio.utils.signal import binarize
 
 
@@ -469,7 +470,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         # setup hook (e.g. for debugging purposes)
         hook = self.setup_hook(file, hook=hook)
 
-        num_speakers, min_speakers, max_speakers = self.set_num_speakers(
+        num_speakers, min_speakers, max_speakers = set_num_speakers(
             num_speakers=num_speakers,
             min_speakers=min_speakers,
             max_speakers=max_speakers,
