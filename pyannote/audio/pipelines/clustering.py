@@ -298,6 +298,8 @@ class AgglomerativeClustering(BaseClustering):
         Minimum cluster size
     """
 
+    expects_num_clusters: bool = False
+
     def __init__(
         self,
         metric: str = "cosine",
@@ -484,6 +486,8 @@ class KMeansClustering(BaseClustering):
     None
     """
 
+    expects_num_clusters: bool = True
+
     def __init__(
         self,
         metric: str = "cosine",
@@ -538,6 +542,8 @@ class KMeansClustering(BaseClustering):
 
 class OracleClustering(BaseClustering):
     """Oracle clustering"""
+
+    expects_num_clusters: bool = True
 
     def __call__(
         self,
