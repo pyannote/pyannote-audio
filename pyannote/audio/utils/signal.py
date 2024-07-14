@@ -274,7 +274,7 @@ class Binarize:
 
         for k, k_scores in enumerate(scores.data.T):
             label = k if scores.labels is None else scores.labels[k]
-            
+
             # Detect transitions
             is_active = k_scores > self.onset
             transitions = np.diff(is_active.astype(int))
@@ -287,7 +287,7 @@ class Binarize:
 
             # If the last frame is active, add it as an end
             if is_active[-1]:
-                ends = np.append(ends, len(is_active))
+                ends = np.append(ends, len(is_active) - 1)
 
             # Create segments
             for start, end in zip(starts, ends):
