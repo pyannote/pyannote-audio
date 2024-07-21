@@ -1,5 +1,9 @@
 # Changelog
 
+## develop
+
+- fix: fix support for `numpy==2.x` ([@metal3d](https://github.com/metal3d/))
+
 
 ## Version 3.3.1 (2024-06-19)
 
