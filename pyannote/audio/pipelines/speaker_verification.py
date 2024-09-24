@@ -40,7 +40,7 @@ from pyannote.audio.core.model import CACHE_DIR
 from pyannote.audio.pipelines.utils import PipelineModel, get_model
 
 try:
-    from speechbrain.pretrained import (
+    from speechbrain.inference import (
         EncoderClassifier as SpeechBrain_EncoderClassifier,
     )
 
@@ -186,7 +186,7 @@ class NeMoPretrainedSpeakerEmbedding(BaseInference):
 
         # corner case: every signal is too short
         if max_len < self.min_num_samples:
-            return np.NAN * np.zeros((batch_size, self.dimension))
+            return np.nan * np.zeros((batch_size, self.dimension))
 
         too_short = wav_lens < self.min_num_samples
         wav_lens[too_short] = max_len
@@ -197,7 +197,7 @@ class NeMoPretrainedSpeakerEmbedding(BaseInference):
         )
 
         embeddings = embeddings.cpu().numpy()
-        embeddings[too_short.cpu().numpy()] = np.NAN
+        embeddings[too_short.cpu().numpy()] = np.nan
 
         return embeddings
 
@@ -364,7 +364,7 @@ class SpeechBrainPretrainedSpeakerEmbedding(BaseInference):
 
         # corner case: every signal is too short
         if max_len < self.min_num_samples:
-            return np.NAN * np.zeros((batch_size, self.dimension))
+            return np.nan * np.zeros((batch_size, self.dimension))
 
         too_short = wav_lens < self.min_num_samples
         wav_lens = wav_lens / max_len
@@ -377,7 +377,7 @@ class SpeechBrainPretrainedSpeakerEmbedding(BaseInference):
             .numpy()
         )
 
-        embeddings[too_short.cpu().numpy()] = np.NAN
+        embeddings[too_short.cpu().numpy()] = np.nan
 
         return embeddings
 
@@ -594,7 +594,7 @@ class ONNXWeSpeakerPretrainedSpeakerEmbedding(BaseInference):
 
         imasks = imasks > 0.5
 
-        embeddings = np.NAN * np.zeros((batch_size, self.dimension))
+        embeddings = np.nan * np.zeros((batch_size, self.dimension))
 
         for f, (feature, imask) in enumerate(zip(features, imasks)):
             masked_feature = feature[imask]

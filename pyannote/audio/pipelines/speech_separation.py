@@ -419,7 +419,7 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
         num_chunks, num_frames, local_num_speakers = segmentations.data.shape
 
         num_clusters = np.max(hard_clusters) + 1
-        clustered_segmentations = np.NAN * np.zeros(
+        clustered_segmentations = np.nan * np.zeros(
             (num_chunks, num_frames, num_clusters)
         )
 
@@ -644,9 +644,9 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
                         len(speaker_activation), dtype=float
                     )
 
-                    speaker_activation_with_context[
-                        np.concatenate(remaining_zeros)
-                    ] = 0.0
+                    speaker_activation_with_context[np.concatenate(remaining_zeros)] = (
+                        0.0
+                    )
 
                     discrete_diarization.data.T[i] = speaker_activation_with_context
             num_sources = sources.data.shape[1]
