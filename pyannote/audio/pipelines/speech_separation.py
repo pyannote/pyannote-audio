@@ -580,6 +580,10 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
         # of speakers by the `max_speakers` value
         count.data = np.minimum(count.data, max_speakers).astype(np.int8)
 
+        max_speakers_per_frame = np.max(count.data)
+        if max_speakers_per_frame > num_different_speakers:
+            count.data[count.data == max_speakers_per_frame] = num_different_speakers
+
         # reconstruct discrete diarization from raw hard clusters
 
         # keep track of inactive speakers at chunk level
@@ -652,10 +656,11 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
                     speaker_activation_with_context = np.ones(
                         len(speaker_activation), dtype=float
                     )
-
-                    speaker_activation_with_context[np.concatenate(remaining_zeros)] = (
-                        0.0
-                    )
+                    
+                    if len(remaining_zeros) > 0:
+                        speaker_activation_with_context[np.concatenate(remaining_zeros)] = (
+                            0.0
+                        )
 
                     discrete_diarization.data.T[i] = speaker_activation_with_context
             num_sources = sources.data.shape[1]
