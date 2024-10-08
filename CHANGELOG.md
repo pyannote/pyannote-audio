@@ -1,5 +1,12 @@
 # Changelog
 
+## develop
+
+### Fixes
+
+- fix: fix clipping issue in speech separation pipeline ([@joonaskalda](https://github.com/joonaskalda/))
+
+
 ## Version 3.3.2 (2024-09-11)
 
 ### Fixes
