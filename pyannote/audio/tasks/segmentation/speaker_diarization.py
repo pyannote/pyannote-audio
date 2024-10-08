@@ -368,9 +368,6 @@ class SpeakerDiarization(SegmentationTask):
         labels = list(np.unique(chunk_annotations[label_scope_key]))
         num_labels = len(labels)
 
-        if num_labels > self.max_speakers_per_chunk:
-            pass
-
         # initial frame-level targets
         num_frames = self.model.num_frames(
             round(duration * self.model.hparams.sample_rate)
@@ -679,9 +676,11 @@ class SpeakerDiarization(SegmentationTask):
         waveform = batch["X"]
         # (batch_size, num_channels, num_samples)
 
-        # TODO: should we handle validation samples with too many speakers
-        # waveform = waveform[keep]
-        # target = target[keep]
+        # drop samples that contain too many speakers
+        num_speakers: torch.Tensor = torch.sum(torch.any(target, dim=1), dim=1)
+        keep: torch.Tensor = num_speakers <= self.max_speakers_per_chunk
+        target = target[keep]
+        waveform = waveform[keep]
 
         # forward pass
         prediction = self.model(waveform)
@@ -721,7 +720,7 @@ class SpeakerDiarization(SegmentationTask):
             )
 
         self.model.log(
-            "loss/val/segmentation",
+            f"loss/val/segmentation/{self.max_speakers_per_chunk:d}speakers",
             seg_loss,
             on_step=False,
             on_epoch=True,
