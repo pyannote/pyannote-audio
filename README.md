@@ -1,4 +1,4 @@
-Using `pyannote.audio` open-source toolkit in production?  
+Using `pyannote.audio` open-source toolkit in production?
 Consider switching to [pyannoteAI](https://www.pyannote.ai) for better and faster options.
 
 # `pyannote.audio` speaker diarization toolkit
@@ -73,6 +73,7 @@ for turn, _, speaker in diarization.itertracks(yield_label=True):
   - [First release of pyannote.audio](https://www.youtube.com/watch?v=37R_R82lfwA) / ICASSP 2020 / 8 min
 - Community contributions (not maintained by the core team)
   - 2024-04-05 > [Offline speaker diarization (speaker-diarization-3.1)](tutorials/community/offline_usage_speaker_diarization.ipynb) by [Simon Ottenhaus](https://github.com/simonottenhauskenbun)
+  - 2024-09-24 > [Evaluating `pyannote` pretrained speech separation pipelines](tutorials/community/eval_separation_pipeline.ipynb) by  [Clément Pagés](https://github.com/)
 
 ## Benchmark
 
