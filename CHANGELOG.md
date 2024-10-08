@@ -2,6 +2,10 @@
 
 ## develop
 
+### New features
+
+- feat: add `"hidden"` option to `ProgressHook`
+
 ### Fixes
 
 - fix: fix clipping issue in speech separation pipeline ([@joonaskalda](https://github.com/joonaskalda/))
