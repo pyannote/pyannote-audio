@@ -26,13 +26,14 @@ from collections import OrderedDict
 from collections.abc import Iterator
 from functools import partial
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Callable, Dict, List, Optional, Text, Union
 
 import torch
 import torch.nn as nn
 import yaml
-from huggingface_hub import hf_hub_download
-from huggingface_hub.utils import RepositoryNotFoundError
+from huggingface_hub import HfApi, ModelCard, ModelCardData, hf_hub_download
+from huggingface_hub.utils import EntryNotFoundError, RepositoryNotFoundError
 from pyannote.core.utils.helper import get_class_by_name
 from pyannote.database import FileFinder, ProtocolFile
 from pyannote.pipeline import Pipeline as _Pipeline
@@ -45,6 +46,7 @@ from pyannote.audio.utils.reproducibility import fix_reproducibility
 from pyannote.audio.utils.version import check_version
 
 PIPELINE_PARAMS_NAME = "config.yaml"
+HF_PYTORCH_WEIGHTS_NAME = "pytorch_model.bin"
 
 
 class Pipeline(_Pipeline):
@@ -95,13 +97,7 @@ class Pipeline(_Pipeline):
                     library_name="pyannote",
                     library_version=__version__,
                     cache_dir=cache_dir,
-                    # force_download=False,
-                    # proxies=None,
-                    # etag_timeout=10,
-                    # resume_download=False,
                     use_auth_token=use_auth_token,
-                    # local_files_only=False,
-                    # legacy_cache_layout=False,
                 )
 
             except RepositoryNotFoundError:
@@ -135,7 +131,17 @@ visit https://hf.co/{model_id} to accept the user conditions."""
         )
         params = config["pipeline"].get("params", {})
         params.setdefault("use_auth_token", use_auth_token)
-        pipeline = Klass(**params)
+
+        try:
+            # If hub repo contains subfolders, load models and pipeline:
+            embedding = Model.from_pretrained(model_id, subfolder="embedding")
+            segmentation = Model.from_pretrained(model_id, subfolder="segmentation")
+            pipeline = Klass(**params)
+            pipeline.embedding = embedding
+            pipeline.segmentation_model = segmentation
+        except Exception:
+            # If not, it means that we want to load the default pyannote/speaker-diarization-3.1 pipeline:
+            pipeline = Klass(**params)
 
         # freeze  parameters
         if "freeze" in config:
@@ -187,6 +193,134 @@ visit https://hf.co/{model_id} to accept the user conditions."""
                 print(e)
 
         return pipeline
+
+    def save_pretrained(
+        self,
+        dir,
+    ):
+
+        """save pipeline config and model checkpoints to a specific directory:
+
+        Args:
+            dir (str): Path directory to save the pipeline and checkpoints
+        """
+
+        dir = Path(dir)
+        config = {
+            "pipeline": {
+                "name": str(type(self)).split("'")[1],
+                "params": {
+                    "clustering": self.klustering,
+                    "embedding_batch_size": self.embedding_batch_size,
+                    "embedding_exclude_overlap": self.embedding_exclude_overlap,
+                    "segmentation_batch_size": self.segmentation_batch_size,
+                },
+            },
+            "params": {
+                "clustering": {
+                    "method": self._pipelines["clustering"]._instantiated["method"],
+                    "min_cluster_size": self._pipelines["clustering"]._instantiated[
+                        "min_cluster_size"
+                    ],
+                    "threshold": self._pipelines["clustering"]._instantiated[
+                        "threshold"
+                    ],
+                },
+                "segmentation": {
+                    "min_duration_off": self._pipelines["segmentation"]._instantiated[
+                        "min_duration_off"
+                    ]
+                },
+            },
+            "version": str(__version__),
+        }
+
+        seg_path = os.path.join(dir, "segmentation")
+        embed_path = os.path.join(dir, "embedding")
+        os.makedirs(seg_path, exist_ok=True)
+        os.makedirs(embed_path, exist_ok=True)
+        self._segmentation.model.save_pretrained(seg_path)
+        self._embedding.model_.save_pretrained(embed_path)
+
+        with open(dir / "config.yaml", "w") as outfile:
+            yaml.dump(config, outfile, default_flow_style=False)
+
+    def push_to_hub(
+        self,
+        repo_id: str,
+        commit_message: Optional[str] = None,
+        private: Optional[bool] = None,
+        use_auth_token: Optional[Union[bool, str]] = None,
+        create_pr: bool = False,
+        revision: str = None,
+        commit_description: str = None,
+        tags: Optional[List[str]] = None,
+        cache_dir: Union[Path, Text] = CACHE_DIR,
+    ):
+        """
+        Upload the pyannote pipeline config file to the 🤗 Model Hub.
+
+        Important remark:
+        --> For now, both push_to_hub and from_pretrained use segmentation and embedding models from the Hub that are loaded using a config file.
+        In particular, push_to_hub can't be used (for now) to push a custom pipeline with locally modified models.
+
+        Parameters:
+            repo_id (`str`):
+                The name of the repository you want to push your {object} to. It should contain your organization name
+                when pushing to a given organization.
+            commit_message (`str`, *optional*):
+                Message to commit while pushing. Will default to `"Upload {object}"`.
+            private (`bool`, *optional*):
+                Whether or not the repository created should be private.
+            use_auth_token (`bool` or `str`, *optional*):
+                The token to use as HTTP bearer authorization for remote files. If `True`, will use the token generated
+                when running `huggingface-cli login` (stored in `~/.huggingface`). Will default to `True` if `repo_url`
+                is not specified.
+            create_pr (`bool`, *optional*, defaults to `False`):
+                Whether or not to create a PR with the uploaded files or directly commit.
+            revision (`str`, *optional*):
+                Branch to push the uploaded files to.
+            commit_description (`str`, *optional*):
+                The description of the commit that will be created
+            tags (`List[str]`, *optional*):
+                List of tags to push on the Hub.
+            cache_dir: Path or str, optional
+                Path to config cache directory. Defauorch/pyannote" when unset.
+        """
+
+        api = HfApi()
+
+        _ = api.create_repo(
+            repo_id,
+            private=private,
+            token=use_auth_token,
+            exist_ok=True,
+            repo_type="model",
+        )
+
+        # Load the pyannote/speaker-diarization-3.1 pipeline config:
+
+        with TemporaryDirectory() as tmpdir:
+
+            self.save_pretrained(tmpdir)
+
+            pipeline_card = create_and_tag_pipeline_card(
+                repo_id,
+                tags,
+                use_auth_token=use_auth_token,
+            )
+            pipeline_card.save(os.path.join(tmpdir, "README.md"))
+
+            return api.upload_folder(
+                repo_id=repo_id,
+                folder_path=tmpdir,
+                use_auth_token=use_auth_token,
+                repo_type="model",
+                commit_message=commit_message,
+                create_pr=create_pr,
+                revision=revision,
+                commit_description=commit_description,
+            )
 
     def __init__(self):
         super().__init__()
@@ -347,3 +481,63 @@ visit https://hf.co/{model_id} to accept the user conditions."""
         self.device = device
 
         return self
+
+
+def create_and_tag_pipeline_card(
+    repo_id: str,
+    tags: Optional[List[str]] = None,
+    use_auth_token: Optional[str] = None,
+):
+    """
+    Creates or loads an existing model card and tags it.
+
+    Args:
+        repo_id (`str`):
+            The repo_id where to look for the model card.
+        tags (`List[str]`, *optional*):
+            The list of optional tags to add in the model card
+        use_auth_token (`str`, *optional*):
+            Authentication token, obtained with `huggingface_hub.HfApi.login` method. Will default to the stored token.
+    """
+
+    tags = [] if tags is None else tags
+
+    base_tags = [
+        "pyannote",
+        "pyannote.audio",
+        "pyannote-audio-pipeline",
+        "audio",
+        "voice",
+        "speech",
+        "speaker",
+        "speaker-diarization",
+        "speaker-change-detection",
+        "voice-activity-detection",
+        "overlapped-speech-detection",
+        "automatic-speech-recognition",
+    ]
+    tags += base_tags
+
+    try:
+        # Check if the model card is present on the remote repo
+        model_card = ModelCard.load(repo_id, token=use_auth_token)
+    except EntryNotFoundError:
+        # Otherwise create a simple model card from template
+        model_description = "This is the model card of a pyannote pipeline that has been pushed on the Hub. This model card has been automatically generated."
+        card_data = ModelCardData(
+            tags=[] if tags is None else tags, library_name="pyannote"
+        )
+        model_card = ModelCard.from_template(
+            card_data, model_description=model_description
+        )
+
+    if tags is not None:
+        for model_tag in tags:
+            if model_tag not in model_card.data.tags:
+                model_card.data.tags.append(model_tag)
+
+    model_card.data.licence = "mit"
+
+    model_card.text = "This is the model card of a pyannote pipeline that has been pushed on the Hub. This model card has been automatically generated."
+
+    return model_card
