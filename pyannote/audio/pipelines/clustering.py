@@ -471,6 +471,79 @@ class AgglomerativeClustering(BaseClustering):
         return clusters
 
 
+class KMeansGPU(BaseClustering):
+    def __init__(
+        self,
+        metric: str = "",
+        max_num_embeddings: int = np.inf,
+        constrained_assignment: bool = False,
+    ):
+        """KMeans clustering
+
+        Parameters
+        ----------
+        metric : {""}, optional
+            Distance metric to use. KMeansGPU only supports the default value.
+        """
+        super().__init__(
+            metric=metric,
+            max_num_embeddings=max_num_embeddings,
+            constrained_assignment=constrained_assignment,
+        )
+
+    def cluster(
+        self, embeddings, min_clusters: int, max_clusters: int, num_clusters: int = None
+    ):
+        try:
+            import cuml
+            import cupy as cp
+            from cuml.metrics.cluster import silhouette_score
+        except ImportError:
+            raise ImportError(
+                "KMeansGPU requires cuML. You can install it with 'https://docs.rapids.ai/install'."
+            )
+
+        assert max_clusters >= min_clusters > 0
+
+        num_embeddings = len(embeddings)
+
+        may_single = False
+        if max_clusters > 1 and min_clusters == 1:
+            min_clusters = 2
+            may_single = True
+        elif max_clusters == 1:
+            return np.zeros((num_embeddings,))
+
+        if num_embeddings <= min_clusters or num_embeddings == num_clusters:
+            return np.arange(num_embeddings)
+
+        if num_clusters is not None:
+            agg_clust = cuml.cluster.KMeans(n_clusters=num_clusters)
+            clusters = agg_clust.fit_predict(embeddings)
+            return clusters.get()
+
+        embeddings = cp.asarray(embeddings)
+
+        best_score = -1
+        best_clusters = None
+
+        for num_clusters in range(min_clusters, min(max_clusters + 1, num_embeddings)):
+            agg_clust = cuml.cluster.KMeans(n_clusters=num_clusters)
+            clusters = agg_clust.fit_predict(embeddings)
+
+            score = silhouette_score(embeddings, clusters)
+
+            if score > best_score:
+                best_score = score
+                best_clusters = clusters
+
+        if may_single:
+            if num_clusters == 2 and best_score < 0.25:
+                return np.zeros((num_embeddings,))
+
+        return best_clusters.get()
+
+
 class OracleClustering(BaseClustering):
     """Oracle clustering"""
 
@@ -558,4 +631,5 @@ class OracleClustering(BaseClustering):
 
 class Clustering(Enum):
     AgglomerativeClustering = AgglomerativeClustering
+    KMeansGPU = KMeansGPU
     OracleClustering = OracleClustering
