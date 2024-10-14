@@ -97,10 +97,14 @@ class ProgressHook:
        output = pipeline(file, hook=hook)
     """
 
-    def __init__(self, transient: bool = False):
+    def __init__(self, transient: bool = False, hidden: bool = False):
         self.transient = transient
+        self.hidden = hidden
 
     def __enter__(self):
+        if self.hidden:
+            return self
+
         self.progress = Progress(
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
@@ -112,7 +116,11 @@ class ProgressHook:
         return self
 
     def __exit__(self, *args):
+        if self.hidden:
+            return
+
         self.progress.stop()
+        return
 
     def __call__(
         self,
@@ -122,6 +130,9 @@ class ProgressHook:
         total: Optional[int] = None,
         completed: Optional[int] = None,
     ):
+        if self.hidden:
+            return
+
         if completed is None:
             completed = total = 1
 

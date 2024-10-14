@@ -653,15 +653,21 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
                         len(speaker_activation), dtype=float
                     )
 
-                    speaker_activation_with_context[np.concatenate(remaining_zeros)] = (
-                        0.0
-                    )
+                    speaker_activation_with_context[
+                        np.concatenate(remaining_zeros)
+                    ] = 0.0
 
                     discrete_diarization.data.T[i] = speaker_activation_with_context
             num_sources = sources.data.shape[1]
             sources.data = (
                 sources.data * discrete_diarization.align(sources).data[:, :num_sources]
             )
+
+        # separated sources might be scaled up/down due to SI-SDR loss used when training
+        # so we peak-normalize them
+        sources.data = sources.data / np.max(
+            np.abs(sources.data), axis=0, keepdims=True
+        )
 
         # convert to continuous diarization
         diarization = self.to_annotation(
