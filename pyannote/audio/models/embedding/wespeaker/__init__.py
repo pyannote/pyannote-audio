@@ -459,9 +459,65 @@ class WeSpeakerResNet293(BaseWeSpeakerResNet):
         )
 
 
+class WeSpeakerSamResNet34(BaseWeSpeakerResNet):
+    def __init__(
+        self,
+        sample_rate: int = 16000,
+        num_channels: int = 1,
+        num_mel_bins: int = 80,
+        frame_length: int = 25,
+        frame_shift: int = 10,
+        dither: float = 0.0,
+        window_type: str = "hamming",
+        use_energy: bool = False,
+        task: Optional[Task] = None,
+    ):
+        super().__init__(
+            sample_rate=sample_rate,
+            num_channels=num_channels,
+            num_mel_bins=num_mel_bins,
+            frame_length=frame_length,
+            frame_shift=frame_shift,
+            dither=dither,
+            window_type=window_type,
+            use_energy=use_energy,
+            task=task,
+        )
+        self.resnet = ...
+
+
+class WeSpeakerSamResNet100(BaseWeSpeakerResNet):
+    def __init__(
+        self,
+        sample_rate: int = 16000,
+        num_channels: int = 1,
+        num_mel_bins: int = 80,
+        frame_length: int = 25,
+        frame_shift: int = 10,
+        dither: float = 0.0,
+        window_type: str = "hamming",
+        use_energy: bool = False,
+        task: Optional[Task] = None,
+    ):
+        super().__init__(
+            sample_rate=sample_rate,
+            num_channels=num_channels,
+            num_mel_bins=num_mel_bins,
+            frame_length=frame_length,
+            frame_shift=frame_shift,
+            dither=dither,
+            window_type=window_type,
+            use_energy=use_energy,
+            task=task,
+        )
+        self.resnet = ...
+
+
 __all__ = [
     "WeSpeakerResNet34",
     "WeSpeakerResNet152",
     "WeSpeakerResNet221",
     "WeSpeakerResNet293",
+    "WeSpeakerSamResNet34",
+    "WeSpeakerSamResNet100",
 ]

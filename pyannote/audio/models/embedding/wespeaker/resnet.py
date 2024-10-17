@@ -368,7 +368,7 @@ class ResNet(nn.Module):
         return out
 
     def forward_embedding(
-        self, frames: torch.Tensor, weights: torch.Tensor = None
+        self, frames: torch.Tensor, weights: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """Extract speaker embeddings
 
