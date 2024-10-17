@@ -442,7 +442,6 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
             clustered_segmentations, segmentations.sliding_window
         )
         return clustered_segmentations
-        return self.to_diarization(clustered_segmentations, count)
 
     def apply(
         self,
@@ -654,6 +653,12 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
             sources.data = (
                 sources.data * discrete_diarization.align(sources).data[:, :num_sources]
             )
+
+        # separated sources might be scaled up/down due to SI-SDR loss used when training
+        # so we peak-normalize them
+        sources.data = sources.data / np.max(
+            np.abs(sources.data), axis=0, keepdims=True
+        )
 
         # convert to continuous diarization
         diarization = self.to_annotation(

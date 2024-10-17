@@ -2,16 +2,22 @@
 
 ## develop
 
-
 ### New features
 
 - feat: add support for `k-means` clustering
+- feat: add `"hidden"` option to `ProgressHook`
 - feat: add `FilterByNumberOfSpeakers` protocol files filter
 
 ### Fixes
 
-- fix: fix support for `numpy==2.x` ([@metal3d](https://github.com/metal3d/))
+- fix: fix clipping issue in speech separation pipeline ([@joonaskalda](https://github.com/joonaskalda/))
 
+## Version 3.3.2 (2024-09-11)
+
+### Fixes
+
+- fix: (really) fix support for `numpy==2.x` ([@metal3d](https://github.com/metal3d/))
+- doc: fix `Pipeline` docstring ([@huisman](https://github.com/huisman/))
 
 ## Version 3.3.1 (2024-06-19)
 
