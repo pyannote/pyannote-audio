@@ -2,6 +2,14 @@
 
 ## develop
 
+
+### New features
+
+- feat: add support for `k-means` clustering
+- feat: add `FilterByNumberOfSpeakers` protocol files filter
+
+### Fixes
+
 - fix: fix support for `numpy==2.x` ([@metal3d](https://github.com/metal3d/))
 
 
