@@ -536,7 +536,7 @@ class KMeansClustering(BaseClustering):
 
         # perform Kmeans clustering
         return KMeans(
-            n_clusters=num_clusters, random_state=42, copy_x=False
+            n_clusters=num_clusters, n_init=3, random_state=42, copy_x=False
         ).fit_predict(embeddings)
 
 
