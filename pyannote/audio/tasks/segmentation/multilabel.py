@@ -87,6 +87,8 @@ class MultiLabelSegmentation(SegmentationTask):
     metric : optional
         Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
         Defaults to AUROC (area under the ROC curve).
+    cache_path : str, optional
+        path to file where to write or load task caches
     """
 
     def __init__(
@@ -103,6 +105,7 @@ class MultiLabelSegmentation(SegmentationTask):
         pin_memory: bool = False,
         augmentation: Optional[BaseWaveformTransform] = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
+        cache_path: Optional[Union[str, None]] = None,
     ):
         if not isinstance(protocol, SegmentationProtocol):
             raise ValueError(

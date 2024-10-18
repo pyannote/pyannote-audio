@@ -194,6 +194,9 @@ class Model(pl.LightningModule):
     def prepare_data(self):
         self.task.prepare_data()
 
+    def prepare_data(self):
+        self.task.prepare_data()
+
     def setup(self, stage=None):
         if stage == "fit":
             # let the task know about the trainer (e.g for broadcasting

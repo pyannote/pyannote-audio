@@ -21,6 +21,7 @@
 # SOFTWARE.
 
 
+from pathlib import Path
 from tempfile import mkstemp
 
 import pytest
@@ -36,6 +37,8 @@ from pyannote.audio.tasks import (
     SupervisedRepresentationLearningWithArcFace,
     VoiceActivityDetection,
 )
+
+CACHE_FILE_PATH = "./cache/cache_file"
 
 
 @pytest.fixture()
@@ -247,6 +250,21 @@ def test_finetune_freeze_with_task_that_needs_setup_for_specs_and_with_cache(
     trainer.fit(model)
 
 
+def test_finetune_freeze_with_task_that_needs_setup_for_specs_and_with_cache(protocol):
+    segmentation = SpeakerDiarization(protocol, cache_path=CACHE_FILE_PATH)
+    model = SimpleSegmentationModel(task=segmentation)
+    trainer = Trainer(fast_dev_run=True, accelerator="cpu")
+    trainer.fit(model)
+
+    segmentation = SpeakerDiarization(protocol)
+    model.task = segmentation
+    model.freeze_up_to("mfcc")
+    trainer = Trainer(fast_dev_run=True, accelerator="cpu")
+    trainer.fit(model)
+
+    Path(CACHE_FILE_PATH).unlink(missing_ok=True)
+
+
 def test_finetune_freeze_with_task_that_does_not_need_setup_for_specs(protocol):
     vad = VoiceActivityDetection(protocol)
     model = SimpleSegmentationModel(task=vad)
@@ -274,6 +292,40 @@ def test_finetune_freeze_with_task_that_does_not_need_setup_for_specs_and_with_c
     model.freeze_by_name("mfcc")
     trainer = Trainer(fast_dev_run=True, accelerator="cpu")
     trainer.fit(model)
+
+
+def test_finetune_freeze_with_task_that_does_not_need_setup_for_specs_and_with_cache(
+    protocol,
+):
+    vad = VoiceActivityDetection(protocol, cache_path=CACHE_FILE_PATH)
+    model = SimpleSegmentationModel(task=vad)
+    trainer = Trainer(fast_dev_run=True, accelerator="cpu")
+    trainer.fit(model)
+
+    vad = VoiceActivityDetection(protocol, cache_path=CACHE_FILE_PATH)
+    model.task = vad
+    model.freeze_up_to("mfcc")
+    trainer = Trainer(fast_dev_run=True, accelerator="cpu")
+    trainer.fit(model)
+
+    Path(CACHE_FILE_PATH).unlink(missing_ok=True)
+
+
+def test_finetune_freeze_with_task_that_does_not_need_setup_for_specs_and_with_cache(
+    protocol,
+):
+    vad = VoiceActivityDetection(protocol, cache_path=CACHE_FILE_PATH)
+    model = SimpleSegmentationModel(task=vad)
+    trainer = Trainer(fast_dev_run=True, accelerator="cpu")
+    trainer.fit(model)
+
+    vad = VoiceActivityDetection(protocol, cache_path=CACHE_FILE_PATH)
+    model.task = vad
+    model.freeze_up_to("mfcc")
+    trainer = Trainer(fast_dev_run=True, accelerator="cpu")
+    trainer.fit(model)
+
+    Path(CACHE_FILE_PATH).unlink(missing_ok=True)
 
 
 def test_transfer_freeze_with_task_that_does_not_need_setup_for_specs(protocol):
