@@ -31,7 +31,44 @@ from pyannote.audio.core.inference import Inference
 from pyannote.audio.utils.signal import Binarize
 
 
-# TODO: move to dedicated module
+def set_num_speakers(
+    num_speakers: Optional[int] = None,
+    min_speakers: Optional[int] = None,
+    max_speakers: Optional[int] = None,
+):
+    """Validate number of speakers
+
+    Parameters
+    ----------
+    num_speakers : int, optional
+        Number of speakers.
+    min_speakers : int, optional
+        Minimum number of speakers.
+    max_speakers : int, optional
+        Maximum number of speakers.
+
+    Returns
+    -------
+    num_speakers : int or None
+    min_speakers : int
+    max_speakers : int or np.inf
+    """
+
+    # override {min|max}_num_speakers by num_speakers when available
+    min_speakers = num_speakers or min_speakers or 1
+    max_speakers = num_speakers or max_speakers or np.inf
+
+    if min_speakers > max_speakers:
+        raise ValueError(
+            f"min_speakers must be smaller than (or equal to) max_speakers "
+            f"(here: min_speakers={min_speakers:g} and max_speakers={max_speakers:g})."
+        )
+    if min_speakers == max_speakers:
+        num_speakers = min_speakers
+
+    return num_speakers, min_speakers, max_speakers
+
+
 class SpeakerDiarizationMixin:
     """Defines a bunch of methods common to speaker diarization pipelines"""
 
@@ -58,20 +95,11 @@ class SpeakerDiarizationMixin:
         min_speakers : int
         max_speakers : int or np.inf
         """
-
-        # override {min|max}_num_speakers by num_speakers when available
-        min_speakers = num_speakers or min_speakers or 1
-        max_speakers = num_speakers or max_speakers or np.inf
-
-        if min_speakers > max_speakers:
-            raise ValueError(
-                f"min_speakers must be smaller than (or equal to) max_speakers "
-                f"(here: min_speakers={min_speakers:g} and max_speakers={max_speakers:g})."
-            )
-        if min_speakers == max_speakers:
-            num_speakers = min_speakers
-
-        return num_speakers, min_speakers, max_speakers
+        return set_num_speakers(
+            num_speakers=num_speakers,
+            min_speakers=min_speakers,
+            max_speakers=max_speakers,
+        )
 
     @staticmethod
     def optimal_mapping(
