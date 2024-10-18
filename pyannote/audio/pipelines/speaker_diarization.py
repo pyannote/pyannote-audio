@@ -27,7 +27,7 @@ import itertools
 import math
 import textwrap
 import warnings
-from typing import Callable, Optional, Text, Tuple, Union
+from typing import Callable, Mapping, Optional, Text, Union
 
 import numpy as np
 import torch
@@ -47,6 +47,7 @@ from pyannote.audio.pipelines.utils import (
     SpeakerDiarizationMixin,
     get_model,
 )
+from pyannote.audio.pipelines.utils.diarization import set_num_speakers
 from pyannote.audio.utils.signal import binarize
 
 
@@ -178,6 +179,8 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                 f'clustering must be one of [{", ".join(list(Clustering.__members__))}]'
             )
         self.clustering = Klustering.value(metric=metric)
+
+        self._expects_num_speakers = self.clustering.expects_num_clusters
 
     @property
     def segmentation_batch_size(self) -> int:
@@ -471,11 +474,24 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         # setup hook (e.g. for debugging purposes)
         hook = self.setup_hook(file, hook=hook)
 
-        num_speakers, min_speakers, max_speakers = self.set_num_speakers(
+        num_speakers, min_speakers, max_speakers = set_num_speakers(
             num_speakers=num_speakers,
             min_speakers=min_speakers,
             max_speakers=max_speakers,
         )
+
+        # when using KMeans clustering (or equivalent), the number of speakers must
+        # be provided alongside the audio file. also, during pipeline training, we
+        # infer the number of speakers from the reference annotation to avoid the
+        # pipeline complaining about missing number of speakers.
+        if self._expects_num_speakers and num_speakers is None:
+            if isinstance(file, Mapping) and "annotation" in file:
+                num_speakers = len(file["annotation"].labels())
+
+            else:
+                raise ValueError(
+                    f"num_speakers must be provided when using {self.klustering} clustering"
+                )
 
         segmentations = self.get_segmentations(file, hook=hook)
         hook("segmentation", segmentations)
