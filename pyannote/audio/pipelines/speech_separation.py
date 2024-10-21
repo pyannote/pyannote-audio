@@ -726,7 +726,6 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
 
         # re-order centroids so that they match
         # the order given by diarization.labels()
-        inverse_mapping = {label: index for index, label in mapping.items()}
         centroids = centroids[
             [inverse_mapping[label] for label in diarization.labels()]
         ]
