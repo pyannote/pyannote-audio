@@ -30,6 +30,7 @@ import warnings
 from typing import Callable, Optional, Text, Tuple, Union
 
 import numpy as np
+from scipy.ndimage import binary_dilation
 import torch
 from einops import rearrange
 from pyannote.core import Annotation, SlidingWindow, SlidingWindowFeature
@@ -581,10 +582,6 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
         # of speakers by the `max_speakers` value
         count.data = np.minimum(count.data, max_speakers).astype(np.int8)
 
-        max_speakers_per_frame = np.max(count.data)
-        if max_speakers_per_frame > num_different_speakers:
-            count.data[count.data == max_speakers_per_frame] = num_different_speakers
-
         # reconstruct discrete diarization from raw hard clusters
 
         # keep track of inactive speakers at chunk level
@@ -598,18 +595,16 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
             count,
         )
         discrete_diarization = self.to_diarization(discrete_diarization, count)
-
-        # remove inactive speakers at the audio level from the diarization
+       # remove file-wise inactive speakers from the diarization
         active_speakers = np.sum(discrete_diarization, axis=0) > 0
         # shape: (num_speakers, )
         discrete_diarization.data = discrete_diarization.data[:, active_speakers]
-        # shape: (num_frames, num_active_speakers)
-
+        num_frames, num_speakers = discrete_diarization.data.shape
         hook("discrete_diarization", discrete_diarization)
+
         clustered_separations = self.reconstruct(separations, hard_clusters, count)
         frame_duration = separations.sliding_window.duration / separations.data.shape[1]
         frames = SlidingWindow(step=frame_duration, duration=2 * frame_duration)
-
         sources = Inference.aggregate(
             clustered_separations,
             frames=frames,
@@ -617,7 +612,17 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
             missing=0.0,
             skip_average=True,
         )
+
+        _, num_sources = sources.data.shape
+
+        # In some cases, maximum num of simultaneous speakers is greater than num of clusters, 
+        # implying a num of speakers in the diarization greater than num of sources after calling 
+        # to_diarization(). So we add dummy sources to match the number of speakers in diarization.
+        sources.data = np.pad(sources.data, ((0, 0), (0, max(0, num_speakers - num_sources))))
+
+        # remove sources corresponding to file-wise inactive speakers
         sources.data = sources.data[:, active_speakers]
+        print(sources.data.shape)
 
         # zero-out sources when speaker is inactive
         # WARNING: this should be rewritten to avoid huge memory consumption
@@ -628,42 +633,13 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
                 )
             )
             if asr_collar_frames > 0:
-                for i in range(discrete_diarization.data.shape[1]):
+                for i in range(num_speakers):
                     speaker_activation = discrete_diarization.data.T[i]
-                    non_silent = np.where(speaker_activation != 0)[0]
-                    remaining_gaps = np.where(
-                        np.diff(non_silent) > 2 * asr_collar_frames
-                    )[0]
-                    remaining_zeros = [
-                        np.arange(
-                            non_silent[gap] + asr_collar_frames,
-                            non_silent[gap + 1] - asr_collar_frames,
-                        )
-                        for gap in remaining_gaps
-                    ]
-                    # edge cases of long silent regions in beginning or end of audio
-                    if non_silent[0] > asr_collar_frames:
-                        remaining_zeros = [
-                            np.arange(0, non_silent[0] - asr_collar_frames)
-                        ] + remaining_zeros
-                    if non_silent[-1] < speaker_activation.shape[0] - asr_collar_frames:
-                        remaining_zeros = remaining_zeros + [
-                            np.arange(
-                                non_silent[-1] + asr_collar_frames,
-                                speaker_activation.shape[0],
-                            )
-                        ]
-
-                    speaker_activation_with_context = np.ones(
-                        len(speaker_activation), dtype=float
-                    )
-
-                    speaker_activation_with_context[
-                        np.concatenate(remaining_zeros)
-                    ] = 0.0
-
+                    non_silent = speaker_activation != 0
+                    dilated_non_silent = binary_dilation(non_silent, [True] * (2 * asr_collar_frames))
+                    speaker_activation_with_context = dilated_non_silent.astype(np.int8)
                     discrete_diarization.data.T[i] = speaker_activation_with_context
-            num_sources = sources.data.shape[1]
+
             sources.data = (
                 sources.data * discrete_diarization.align(sources).data[:, :num_sources]
             )
@@ -711,6 +687,8 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
         # at this point, `diarization` speaker labels are strings (or mix of
         # strings and integers when reference is available and some hypothesis
         # speakers are not present in the reference)
+
+        print(diarization.labels())
 
         if not return_embeddings:
             return diarization, sources
