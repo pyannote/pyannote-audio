@@ -24,6 +24,7 @@
 # Initially copied from https://github.com/BUTSpeechFIT/DiariZen/blob/e747106e753bb17799602b24d396f60b13da81b4/diarizen/models/eend/model_wavlm_conformer.py
 
 
+import contextlib
 from functools import lru_cache
 from typing import Optional, Union
 
@@ -54,6 +55,8 @@ class DiariZen(Model):
         Number of channels. Defaults to mono (1).
     wav2vec: dict or str, optional
         Defaults to "WAVLM_BASE".
+    wav2vec_frozen: bool, optional
+        Whether to freeze wav2vec weights. Defaults to False.
     wav2vec_layer: int, optional
         Index of layer to use as input to the LSTM.
         Defaults (-1) to use average of all layers (with learnable weights).
@@ -83,6 +86,7 @@ class DiariZen(Model):
     def __init__(
         self,
         wav2vec: Union[dict, str] = None,
+        wav2vec_frozen: bool = False,
         wav2vec_layer: int = -1,
         conformer: Optional[dict] = None,
         sample_rate: int = 16000,
@@ -130,7 +134,9 @@ class DiariZen(Model):
 
         conformer = merge_dict(self.CONFORMER_DEFAULTS, conformer)
 
-        self.save_hyperparameters("wav2vec", "wav2vec_layer", "conformer")
+        self.save_hyperparameters(
+            "wav2vec", "wav2vec_frozen", "wav2vec_layer", "conformer"
+        )
 
         self.conformer = ConformerEncoder(**conformer)
         self.proj = nn.Linear(wav2vec_dim, conformer["attention_in"])
@@ -252,7 +258,10 @@ class DiariZen(Model):
             None if self.hparams.wav2vec_layer < 0 else self.hparams.wav2vec_layer
         )
 
-        with torch.no_grad():
+        context = (
+            torch.no_grad() if self.hparams.wav2vec_frozen else contextlib.nullcontext()
+        )
+        with context:
             outputs, _ = self.wav2vec.extract_features(
                 waveforms.squeeze(1), num_layers=num_layers
             )
