@@ -20,6 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import contextlib
 from functools import lru_cache
 from typing import Optional, Union
 
@@ -52,6 +53,8 @@ class SSeRiouSS(Model):
         Number of channels. Defaults to mono (1).
     wav2vec: dict or str, optional
         Defaults to "WAVLM_BASE".
+    wav2vec_frozen: bool, optional
+        Whether to freeze wav2vec weights. Defaults to False.
     wav2vec_layer: int, optional
         Index of layer to use as input to the LSTM.
         Defaults (-1) to use average of all layers (with learnable weights).
@@ -128,7 +131,9 @@ class SSeRiouSS(Model):
         lstm["batch_first"] = True
         linear = merge_dict(self.LINEAR_DEFAULTS, linear)
 
-        self.save_hyperparameters("wav2vec", "wav2vec_layer", "lstm", "linear")
+        self.save_hyperparameters(
+            "wav2vec", "wav2vec_frozen", "wav2vec_layer", "lstm", "linear"
+        )
 
         monolithic = lstm["monolithic"]
         if monolithic:
@@ -294,7 +299,10 @@ class SSeRiouSS(Model):
             None if self.hparams.wav2vec_layer < 0 else self.hparams.wav2vec_layer
         )
 
-        with torch.no_grad():
+        context = (
+            torch.no_grad() if self.hparams.wav2vec_frozen else contextlib.nullcontext()
+        )
+        with context:
             outputs, _ = self.wav2vec.extract_features(
                 waveforms.squeeze(1), num_layers=num_layers
             )
