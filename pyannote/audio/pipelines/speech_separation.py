@@ -622,7 +622,6 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
 
         # remove sources corresponding to file-wise inactive speakers
         sources.data = sources.data[:, active_speakers]
-        print(sources.data.shape)
 
         # zero-out sources when speaker is inactive
         # WARNING: this should be rewritten to avoid huge memory consumption
@@ -687,8 +686,6 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
         # at this point, `diarization` speaker labels are strings (or mix of
         # strings and integers when reference is available and some hypothesis
         # speakers are not present in the reference)
-
-        print(diarization.labels())
 
         if not return_embeddings:
             return diarization, sources
