@@ -84,6 +84,7 @@ class SSeRiouSS(Model):
     def __init__(
         self,
         wav2vec: Union[dict, str] = None,
+        wav2vec_frozen: bool = False,
         wav2vec_layer: int = -1,
         lstm: Optional[dict] = None,
         linear: Optional[dict] = None,
