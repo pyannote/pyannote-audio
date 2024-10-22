@@ -1,5 +1,17 @@
 # Changelog
 
+## develop
+
+### New features
+
+- feat: add support for `k-means` clustering
+- feat: add `"hidden"` option to `ProgressHook`
+- feat: add `FilterByNumberOfSpeakers` protocol files filter
+
+### Fixes
+
+- fix: fix clipping issue in speech separation pipeline ([@joonaskalda](https://github.com/joonaskalda/))
+
 ## Version 3.3.2 (2024-09-11)
 
 ### Fixes
