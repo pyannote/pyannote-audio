@@ -701,11 +701,9 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
         # re-order sources so that they match
         # the order given by diarization.labels()
         inverse_mapping = {label: index for index, label in mapping.items()}
-        original_sliding_window = sources.sliding_window
-        data = sources.data[
+        source.data = sources.data[
             :, [inverse_mapping[label] for label in diarization.labels()]
         ]
-        sources = SlidingWindowFeature(data, original_sliding_window)
 
         if not return_embeddings:
             return diarization, sources
