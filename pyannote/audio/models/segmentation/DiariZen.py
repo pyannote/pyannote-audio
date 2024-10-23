@@ -1,6 +1,7 @@
 # MIT License
 #
-# Copyright (c) 2023- CNRS
+# Copyright 2024 CNRS (author: Herve Bredin, herve.bredin@irit.fr)
+# Copyright 2024 Brno University of Technology (author: Jiangyu Han, ihan@fit.vut.cz)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -20,6 +21,9 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+# Initially copied from https://github.com/BUTSpeechFIT/DiariZen/blob/e747106e753bb17799602b24d396f60b13da81b4/diarizen/models/eend/model_wavlm_conformer.py
+
+
 import contextlib
 from functools import lru_cache
 from typing import Optional, Union
@@ -28,10 +32,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchaudio
-from pyannote.core.utils.generators import pairwise
 
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
+from pyannote.audio.models.blocks.conformer import ConformerEncoder
 from pyannote.audio.utils.params import merge_dict
 from pyannote.audio.utils.receptive_field import (
     conv1d_num_frames,
@@ -40,10 +44,8 @@ from pyannote.audio.utils.receptive_field import (
 )
 
 
-class SSeRiouSS(Model):
-    """Self-Supervised Representation for Speaker Segmentation
-
-    wav2vec > LSTM > Feed forward > Classifier
+class DiariZen(Model):
+    """Architecture used in Leveraging Self-Supervised Learning for Speaker Diarization
 
     Parameters
     ----------
@@ -58,41 +60,43 @@ class SSeRiouSS(Model):
     wav2vec_layer: int, optional
         Index of layer to use as input to the LSTM.
         Defaults (-1) to use average of all layers (with learnable weights).
-    lstm : dict, optional
-        Keyword arguments passed to the LSTM layer.
-        Defaults to {"hidden_size": 128, "num_layers": 4, "bidirectional": True},
-        i.e. two bidirectional layers with 128 units each.
-        Set "monolithic" to False to split monolithic multi-layer LSTM into multiple mono-layer LSTMs.
-        This may proove useful for probing LSTM internals.
-    linear : dict, optional
-        Keyword arugments used to initialize linear layers
-        Defaults to {"hidden_size": 128, "num_layers": 2},
-        i.e. two linear layers with 128 units each.
+    conformer : dict, optional
+        Keyword arguments passed to the Conformer layer.
+
+    Reference
+    ---------
+    Jiangyu Han, Federico Landini, Johan Rohdin, Anna Silnova, Mireia Diez, and Lukas Burget
+    "Leveraging Self-Supervised Learning for Speaker Diarization"
+    https://arxiv.org/abs/2409.09408
     """
 
     WAV2VEC_DEFAULTS = "WAVLM_BASE"
 
-    LSTM_DEFAULTS = {
-        "hidden_size": 128,
-        "num_layers": 4,
-        "bidirectional": True,
-        "monolithic": True,
-        "dropout": 0.0,
+    CONFORMER_DEFAULTS = {
+        "attention_in": 256,
+        "ffn_hidden": 1024,
+        "num_head": 4,
+        "num_layer": 4,
+        "kernel_size": 31,
+        "dropout": 0.1,
+        "use_posi": False,
+        "output_activate_function": False,
     }
-    LINEAR_DEFAULTS = {"hidden_size": 128, "num_layers": 2}
 
     def __init__(
         self,
         wav2vec: Union[dict, str] = None,
         wav2vec_frozen: bool = False,
         wav2vec_layer: int = -1,
-        lstm: Optional[dict] = None,
-        linear: Optional[dict] = None,
+        conformer: Optional[dict] = None,
         sample_rate: int = 16000,
         num_channels: int = 1,
         task: Optional[Task] = None,
     ):
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
+
+        wav2vec_dim: int
+        wav2vec_num_layers: int
 
         if isinstance(wav2vec, str):
             # `wav2vec` is one of the supported pipelines from torchaudio (e.g. "WAVLM_BASE")
@@ -128,69 +132,21 @@ class SSeRiouSS(Model):
                 data=torch.ones(wav2vec_num_layers), requires_grad=True
             )
 
-        lstm = merge_dict(self.LSTM_DEFAULTS, lstm)
-        lstm["batch_first"] = True
-        linear = merge_dict(self.LINEAR_DEFAULTS, linear)
+        conformer = merge_dict(self.CONFORMER_DEFAULTS, conformer)
 
         self.save_hyperparameters(
-            "wav2vec", "wav2vec_frozen", "wav2vec_layer", "lstm", "linear"
+            "wav2vec", "wav2vec_frozen", "wav2vec_layer", "conformer"
         )
 
-        monolithic = lstm["monolithic"]
-        if monolithic:
-            multi_layer_lstm = dict(lstm)
-            del multi_layer_lstm["monolithic"]
-            self.lstm = nn.LSTM(wav2vec_dim, **multi_layer_lstm)
-
-        else:
-            num_layers = lstm["num_layers"]
-            if num_layers > 1:
-                self.dropout = nn.Dropout(p=lstm["dropout"])
-
-            one_layer_lstm = dict(lstm)
-            one_layer_lstm["num_layers"] = 1
-            one_layer_lstm["dropout"] = 0.0
-            del one_layer_lstm["monolithic"]
-
-            self.lstm = nn.ModuleList(
-                [
-                    nn.LSTM(
-                        (
-                            wav2vec_dim
-                            if i == 0
-                            else lstm["hidden_size"]
-                            * (2 if lstm["bidirectional"] else 1)
-                        ),
-                        **one_layer_lstm,
-                    )
-                    for i in range(num_layers)
-                ]
-            )
-
-        if linear["num_layers"] < 1:
-            return
-
-        lstm_out_features: int = self.hparams.lstm["hidden_size"] * (
-            2 if self.hparams.lstm["bidirectional"] else 1
-        )
-        self.linear = nn.ModuleList(
-            [
-                nn.Linear(in_features, out_features)
-                for in_features, out_features in pairwise(
-                    [
-                        lstm_out_features,
-                    ]
-                    + [self.hparams.linear["hidden_size"]]
-                    * self.hparams.linear["num_layers"]
-                )
-            ]
-        )
+        self.conformer = ConformerEncoder(**conformer)
+        self.proj = nn.Linear(wav2vec_dim, conformer["attention_in"])
+        self.lnorm = nn.LayerNorm(conformer["attention_in"])
 
     @property
     def dimension(self) -> int:
         """Dimension of output"""
         if isinstance(self.specifications, tuple):
-            raise ValueError("SSeRiouSS does not support multi-tasking.")
+            raise ValueError("DiariZen does not support multi-tasking.")
 
         if self.specifications.powerset:
             return self.specifications.num_powerset_classes
@@ -198,14 +154,9 @@ class SSeRiouSS(Model):
             return len(self.specifications.classes)
 
     def build(self):
-        if self.hparams.linear["num_layers"] > 0:
-            in_features = self.hparams.linear["hidden_size"]
-        else:
-            in_features = self.hparams.lstm["hidden_size"] * (
-                2 if self.hparams.lstm["bidirectional"] else 1
-            )
-
-        self.classifier = nn.Linear(in_features, self.dimension)
+        self.classifier = nn.Linear(
+            self.hparams.conformer["attention_in"], self.dimension
+        )
         self.activation = self.default_activation()
 
     @lru_cache
@@ -233,6 +184,8 @@ class SSeRiouSS(Model):
                 dilation=conv_layer.conv.dilation[0],
             )
 
+        # TODO: look at conformer.num_frames
+
         return num_frames
 
     def receptive_field_size(self, num_frames: int = 1) -> int:
@@ -248,6 +201,8 @@ class SSeRiouSS(Model):
         receptive_field_size : int
             Receptive field size.
         """
+
+        # TODO: look at conformer receptive field size
 
         receptive_field_size = num_frames
         for conv_layer in reversed(self.wav2vec.feature_extractor.conv_layers):
@@ -273,6 +228,9 @@ class SSeRiouSS(Model):
         receptive_field_center : int
             Index of receptive field center.
         """
+
+        # TODO: look at conformer receptive field center
+
         receptive_field_center = frame
         for conv_layer in reversed(self.wav2vec.feature_extractor.conv_layers):
             receptive_field_center = conv1d_receptive_field_center(
@@ -315,16 +273,7 @@ class SSeRiouSS(Model):
         else:
             outputs = outputs[-1]
 
-        if self.hparams.lstm["monolithic"]:
-            outputs, _ = self.lstm(outputs)
-        else:
-            for i, lstm in enumerate(self.lstm):
-                outputs, _ = lstm(outputs)
-                if i + 1 < self.hparams.lstm["num_layers"]:
-                    outputs = self.dropout(outputs)
-
-        if self.hparams.linear["num_layers"] > 0:
-            for linear in self.linear:
-                outputs = F.leaky_relu(linear(outputs))
-
+        outputs = self.proj(outputs)
+        outputs = self.lnorm(outputs)
+        outputs = self.conformer(outputs)
         return self.activation(self.classifier(outputs))
