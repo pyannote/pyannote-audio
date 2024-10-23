@@ -125,7 +125,7 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
 
     def __init__(
         self,
-        segmentation: PipelineModel = None,
+        segmentation: PipelineModel = "pyannote/separation-ami-1.0",
         segmentation_step: float = 0.1,
         embedding: PipelineModel = "speechbrain/spkrec-ecapa-voxceleb@5c0be3875fda05e81f3c004ed8c7c06be308de1e",
         embedding_exclude_overlap: bool = False,
@@ -687,6 +687,13 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
         # strings and integers when reference is available and some hypothesis
         # speakers are not present in the reference)
 
+        # re-order sources so that they match
+        # the order given by diarization.labels()
+        inverse_mapping = {label: index for index, label in mapping.items()}
+        source.data = sources.data[
+            :, [inverse_mapping[label] for label in diarization.labels()]
+        ]
+
         if not return_embeddings:
             return diarization, sources
 
@@ -706,7 +713,6 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
 
         # re-order centroids so that they match
         # the order given by diarization.labels()
-        inverse_mapping = {label: index for index, label in mapping.items()}
         centroids = centroids[
             [inverse_mapping[label] for label in diarization.labels()]
         ]
