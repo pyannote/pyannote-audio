@@ -45,6 +45,7 @@ from pyannote.audio.pipelines.utils import (
     SpeakerDiarizationMixin,
     get_model,
 )
+from pyannote.audio.pipelines.utils.diarization import set_num_speakers
 from pyannote.audio.utils.signal import binarize
 
 
@@ -419,7 +420,7 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
         num_chunks, num_frames, local_num_speakers = segmentations.data.shape
 
         num_clusters = np.max(hard_clusters) + 1
-        clustered_segmentations = np.NAN * np.zeros(
+        clustered_segmentations = np.nan * np.zeros(
             (num_chunks, num_frames, num_clusters)
         )
 
@@ -441,7 +442,6 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
             clustered_segmentations, segmentations.sliding_window
         )
         return clustered_segmentations
-        return self.to_diarization(clustered_segmentations, count)
 
     def apply(
         self,
@@ -490,7 +490,7 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
         # setup hook (e.g. for debugging purposes)
         hook = self.setup_hook(file, hook=hook)
 
-        num_speakers, min_speakers, max_speakers = self.set_num_speakers(
+        num_speakers, min_speakers, max_speakers = set_num_speakers(
             num_speakers=num_speakers,
             min_speakers=min_speakers,
             max_speakers=max_speakers,
@@ -653,6 +653,12 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
             sources.data = (
                 sources.data * discrete_diarization.align(sources).data[:, :num_sources]
             )
+
+        # separated sources might be scaled up/down due to SI-SDR loss used when training
+        # so we peak-normalize them
+        sources.data = sources.data / np.max(
+            np.abs(sources.data), axis=0, keepdims=True
+        )
 
         # convert to continuous diarization
         diarization = self.to_annotation(

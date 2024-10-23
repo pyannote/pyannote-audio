@@ -526,7 +526,7 @@ class Inference(BaseInference):
         warm_up: Tuple[float, float] = (0.0, 0.0),
         epsilon: float = 1e-12,
         hamming: bool = False,
-        missing: float = np.NaN,
+        missing: float = np.nan,
         skip_average: bool = False,
     ) -> SlidingWindowFeature:
         """Aggregation

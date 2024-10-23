@@ -2,6 +2,37 @@
 
 ## develop
 
+### New features
+
+- feat: add support for `k-means` clustering
+- feat: add `"hidden"` option to `ProgressHook`
+- feat: add `FilterByNumberOfSpeakers` protocol files filter
+
+### Fixes
+
+- fix: fix clipping issue in speech separation pipeline ([@joonaskalda](https://github.com/joonaskalda/))
+
+## Version 3.3.2 (2024-09-11)
+
+### Fixes
+
+- fix: (really) fix support for `numpy==2.x` ([@metal3d](https://github.com/metal3d/))
+- doc: fix `Pipeline` docstring ([@huisman](https://github.com/huisman/))
+
+## Version 3.3.1 (2024-06-19)
+
+### Breaking changes
+
+- setup: drop support for Python 3.8
+
+### Fixes
+
+- fix: fix support for `numpy==2.x` ([@ibevers](https://github.com/ibevers/))
+- fix: fix support for `speechbrain==1.x` ([@Adel-Moumen](https://github.com/Adel-Moumen/))
+
+
+## Version 3.3.0 (2024-06-14)
+
 ### TL;DR
 
 `pyannote.audio` does [speech separation](https://hf.co/pyannote/speech-separation-ami-1.0): multi-speaker audio in, one audio channel per speaker out!
