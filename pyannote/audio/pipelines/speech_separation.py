@@ -640,7 +640,7 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
                     discrete_diarization.data.T[i] = speaker_activation_with_context
 
             sources.data = (
-                sources.data * discrete_diarization.align(sources).data[:, :num_sources]
+                sources.data * discrete_diarization.align(sources).data
             )
 
         # separated sources might be scaled up/down due to SI-SDR loss used when training
@@ -690,7 +690,7 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
         # re-order sources so that they match
         # the order given by diarization.labels()
         inverse_mapping = {label: index for index, label in mapping.items()}
-        source.data = sources.data[
+        sources.data = sources.data[
             :, [inverse_mapping[label] for label in diarization.labels()]
         ]
 
