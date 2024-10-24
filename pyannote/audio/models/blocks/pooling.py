@@ -28,7 +28,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-def _pool(sequences: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:
+def _pool(
+        sequences: torch.Tensor, weights: torch.Tensor, compute_mean: bool, compute_std:bool
+    ) -> torch.Tensor:
     """Helper function to compute statistics pooling
 
     Assumes that weights are already interpolated to match the number of frames
@@ -50,16 +52,24 @@ def _pool(sequences: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:
     weights = weights.unsqueeze(dim=1)
     # (batch, 1, frames)
 
+    stats = []
+
     v1 = weights.sum(dim=2) + 1e-8
     mean = torch.sum(sequences * weights, dim=2) / v1
 
-    dx2 = torch.square(sequences - mean.unsqueeze(2))
-    v2 = torch.square(weights).sum(dim=2)
+    if compute_mean:
+        stats.append(mean)
 
-    var = torch.sum(dx2 * weights, dim=2) / (v1 - v2 / v1 + 1e-8)
-    std = torch.sqrt(var)
+    if compute_std:
+        dx2 = torch.square(sequences - mean.unsqueeze(2))
+        v2 = torch.square(weights).sum(dim=2)
 
-    return torch.cat([mean, std], dim=1)
+        var = torch.sum(dx2 * weights, dim=2) / (v1 - v2 / v1 + 1e-8)
+        std = torch.sqrt(var)
+
+        stats.append(std)
+
+    return torch.cat(stats, dim=1)
 
 
 class StatsPool(nn.Module):
@@ -68,14 +78,33 @@ class StatsPool(nn.Module):
     Compute temporal mean and (unbiased) standard deviation
     and returns their concatenation.
 
+    Parameters
+    ----------
+
+    compute_mean: bool, optional
+        whether to compute (and return) temporal mean.
+        Default to True
+    compute_std: bool, optional
+        whether to compute (and return) temporal standard deviation.
+        Default to True
+
     Reference
     ---------
     https://en.wikipedia.org/wiki/Weighted_arithmetic_mean
 
     """
 
+    def __init__(
+        self,
+        compute_mean: Optional[bool] = True,
+        computde_std: Optional[bool] = True,
+    ):
+        super().__init__()
+        self.compute_mean = compute_mean
+        self.compute_std = computde_std
+
     def forward(
-        self, sequences: torch.Tensor, weights: Optional[torch.Tensor] = None
+        self, sequences: torch.Tensor, weights: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Forward pass
 
@@ -122,7 +151,7 @@ class StatsPool(nn.Module):
 
         output = torch.stack(
             [
-                _pool(sequences, weights[:, speaker, :])
+                _pool(sequences, weights[:, speaker, :], self.compute_mean, self.compute_std)
                 for speaker in range(num_speakers)
             ],
             dim=1,
