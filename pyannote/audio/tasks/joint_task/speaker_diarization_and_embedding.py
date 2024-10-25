@@ -1298,8 +1298,6 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         file_id = batch["meta"]["file"][0]
         file = self.get_file(file_id)
         file["annotation"] = reference
-        print(reference.uri)
-        print(file["audio"])
 
         assert reference.uri in file["audio"]
 
@@ -1307,7 +1305,6 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         support = Timeline()
         for start_time in start_times:
             support.add(Segment(start_time, start_time + self.duration))
-        print("support=", support)
 
         # keep reference only on chunk segments:
         reference = reference.crop(support)
@@ -1360,11 +1357,12 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
             hypothesis=(binarized_segmentations, hard_clusters),
             pad_duration=pad_duration,
         )
-        # oder = self.compute_metric(
-        #     reference=reference,
-        #     hypothesis=(binarized_segmentations, oracle_hard_clusters),
-        #     pad_duration=pad_duration,
-        # )
+
+        oder = self.compute_metric(
+            reference=reference,
+            hypothesis=(binarized_segmentations, oracle_hard_clusters),
+            pad_duration=pad_duration,
+        )
 
         for key in der:
             self.model.log(
@@ -1376,14 +1374,14 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
                 logger=True,
             )
 
-            # self.model.log(
-            #     f"BS={self.batch_size}-Duration={self.duration}s/ODER/{key}",
-            #     oder[key],
-            #     on_step=False,
-            #     on_epoch=True,
-            #     prog_bar=True,
-            #     logger=True,
-            # )
+            self.model.log(
+                f"BS={self.batch_size}-Duration={self.duration}s/ODER/{key}",
+                oder[key],
+                on_step=False,
+                on_epoch=True,
+                prog_bar=True,
+                logger=True,
+            )
 
         return None
 
