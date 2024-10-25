@@ -22,27 +22,31 @@
 
 from collections import defaultdict
 import itertools
-import math
 from pathlib import Path
 import random
 import warnings
 from tempfile import mkstemp
-from typing import Dict, Literal, Optional, Sequence, Union
+from typing import Dict, Literal, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import torch
 from einops import rearrange
 from matplotlib import pyplot as plt
-from pyannote.core import Segment, SlidingWindowFeature
+from pyannote.core import (
+    Annotation,
+    Segment,
+    SlidingWindow,
+    SlidingWindowFeature,
+    Timeline,
+)
 from pyannote.database.protocol.protocol import Scope, Subset
-from pytorch_lightning.loggers import MLFlowLogger, TensorBoardLogger
 from pytorch_metric_learning.losses import ArcFaceLoss
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchmetrics import Metric
 
-from pyannote.audio.core.task import (
-    Problem, Resolution, Specifications, get_dtype
-)
+from scipy.spatial.distance import cdist
+
+from pyannote.audio.core.task import Problem, Resolution, Specifications, get_dtype
 from pyannote.audio.tasks import SpeakerDiarization
 from pyannote.audio.torchmetrics import (
     DiarizationErrorRate,
@@ -53,6 +57,13 @@ from pyannote.audio.torchmetrics import (
 from pyannote.audio.utils.loss import nll_loss
 from pyannote.audio.utils.permutation import permutate
 from pyannote.audio.utils.random import create_rng_for_worker
+from pyannote.audio.pipelines.clustering import KMeansClustering, OracleClustering
+from pyannote.audio.pipelines.utils import SpeakerDiarizationMixin
+from pyannote.audio.core.io import Audio
+
+from pyannote.metrics.diarization import (
+    DiarizationErrorRate as GlobalDiarizationErrorRate,
+)
 
 Subtask = Literal["diarization", "embedding"]
 
@@ -260,7 +271,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
             for segment in file["annotated"]:
                 # skip annotated regions that are shorter than training chunk duration
                 # if segment.duration < self.duration:
-                    # continue
+                # continue
 
                 # append annotated region
                 annotated_region = (
@@ -421,6 +432,13 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         with open(self.cache, "wb") as cache_file:
             np.savez_compressed(cache_file, **prepared_data)
 
+    def prepare_validation(self, prepared_data: Dict) -> None:
+        """Each validation batch correspond to a part of a validation file"""
+        validation_mask = prepared_data["audio-metadata"]["subset"] == Subsets.index(
+            "development"
+        )
+        prepared_data["validation-files"] = np.argwhere(validation_mask).reshape((-1,))
+
     def setup(self, stage="fit"):
         """Setup method
 
@@ -555,7 +573,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
             start_idx, end_idx, chunk_annotations[label_scope_key]
         ):
             mapped_label = mapping[label]
-            y[start:end + 1, mapped_label] = 1
+            y[start : end + 1, mapped_label] = 1
 
         sample["y"] = SlidingWindowFeature(y, self.model.receptive_field, labels=labels)
 
@@ -762,6 +780,39 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
             # generate random chunk
             yield next(chunks)
 
+    def val__getitem__(self, idx) -> Dict:
+        """Validation items are generated so that all samples in a batch come from the same
+        validation file. These samples are created by sliding a window over the first seconds of
+        the validation file, with a step (for now arbitrally) set to 0.2 (20% of the task duration,
+        e.g. 1 second for a duration of 5 seconds)"""
+
+        file_idx = idx // self.batch_size
+        chunk_idx = idx % self.batch_size
+
+        file_id = self.prepared_data["validation-files"][file_idx]
+        file = next(
+            itertools.islice(self.protocol.development(), file_idx, file_idx + 1)
+        )
+
+        file_duration = file.get(
+            "duration", Audio("downmix").get_duration(file["audio"])
+        )
+        start_time = chunk_idx * (
+            (file_duration - self.duration) / (self.batch_size - 1)
+        )
+
+        chunk = self.prepare_chunk(file_id, start_time, self.duration)
+
+        if chunk_idx == 0:
+            chunk["annotation"] = file["annotation"]
+
+        chunk["start_time"] = start_time
+
+        return chunk
+
+    def val__len__(self):
+        return len(self.prepared_data["validation-files"]) * self.batch_size
+
     def collate_y(self, batch) -> torch.Tensor:
         """
         Parameters
@@ -859,13 +910,18 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
             sample_rate=self.model.hparams.sample_rate,
             targets=collated_y_dia.unsqueeze(1),
         )
-
-        return {
+        collated_batch = {
             "X": augmented.samples,
             "y_dia": augmented.targets.squeeze(1),
             "y_emb": collate_y_emb,
             "meta": collated_meta,
         }
+
+        if stage == "val":
+            collated_batch["annotation"] = batch[0]["annotation"]
+            collated_batch["start_times"] = [b["start_time"] for b in batch]
+
+        return collated_batch
 
     def setup_loss_func(self):
         self.model.arc_face_loss = ArcFaceLoss(
@@ -971,7 +1027,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         )
 
         if torch.any(valid_embs):
-            emb_loss = (1. / torch.sum(valid_embs)) * emb_loss
+            emb_loss = (1.0 / torch.sum(valid_embs)) * emb_loss
 
         # skip batch if something went wrong for some reason
         if torch.isnan(emb_loss):
@@ -1072,6 +1128,152 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
 
         return {"loss": loss}
 
+    def reconstruct(
+        self,
+        segmentations: SlidingWindowFeature,
+        clusters: np.ndarray,
+    ) -> SlidingWindowFeature:
+        """Build final discrete diarization out of clustered segmentation
+
+        Parameters
+        ----------
+        segmentations : (num_chunks, num_frames, num_speakers) SlidingWindowFeature
+            Raw speaker segmentation.
+        hard_clusters : (num_chunks, num_speakers) array
+            Output of clustering step.
+        count : (total_num_frames, 1) SlidingWindowFeature
+            Instantaneous number of active speakers.
+
+        Returns
+        -------
+        discrete_diarization : SlidingWindowFeature
+            Discrete (0s and 1s) diarization.
+        """
+
+        num_chunks, num_frames, _ = segmentations.data.shape
+        num_clusters = np.max(clusters) + 1
+        clustered_segmentations = np.nan * np.zeros(
+            (num_chunks, num_frames, num_clusters)
+        )
+
+        for c, (cluster, (chunk, segmentation)) in enumerate(
+            zip(clusters, segmentations)
+        ):
+            # cluster is (local_num_speakers, )-shaped
+            # segmentation is (num_frames, local_num_speakers)-shaped
+            for k in np.unique(cluster):
+                if k == -2:
+                    continue
+
+                # TODO: can we do better than this max here?
+                clustered_segmentations[c, :, k] = np.max(
+                    segmentation[:, cluster == k], axis=1
+                )
+
+        clustered_segmentations = SlidingWindowFeature(
+            clustered_segmentations, segmentations.sliding_window
+        )
+        return clustered_segmentations
+
+    def aggregate(self, segmentations: SlidingWindowFeature, pad_duration:float) -> SlidingWindowFeature:
+        num_chunks, num_frames, num_speakers = segmentations.data.shape
+        sliding_window = segmentations.sliding_window
+        frame_duration = sliding_window.duration / num_frames
+
+        if num_chunks <= 1:
+            return segmentations[0]
+
+        num_padding_frames = np.round(
+            pad_duration / frame_duration
+        ).astype(np.uint32)
+        aggregated_segmentation = segmentations[0]
+
+        for chunk_segmentation in segmentations[1:]:
+            padding = np.zeros((num_padding_frames, num_speakers))
+            aggregated_segmentation = np.concatenate(
+                (aggregated_segmentation, padding, chunk_segmentation)
+            )
+        return SlidingWindowFeature(aggregated_segmentation.astype(np.int8), SlidingWindow(step=frame_duration, duration=frame_duration))
+
+    def to_diarization(
+        self,
+        segmentations: SlidingWindowFeature,
+        pad_duration: float = 0.,
+    ) -> SlidingWindowFeature:
+        """Build diarization out of preprocessed segmentation and precomputed speaker count
+
+        Parameters
+        ----------
+        segmentations : SlidingWindowFeature
+            (num_chunks, num_frames, num_speakers)-shaped segmentations
+        count : SlidingWindow_feature
+            (num_frames, 1)-shaped speaker count
+
+        Returns
+        -------
+        discrete_diarization : SlidingWindowFeature
+            Discrete (0s and 1s) diarization.
+        """
+
+        activations = self.aggregate(segmentations, pad_duration=pad_duration)
+        # shape: (num_frames, num_speakers)
+        _, num_speakers = activations.data.shape
+
+        count = np.sum(activations, axis=1, keepdims=True)
+        # shape: (num_frames, 1)
+
+        max_speakers_per_frame = np.max(count.data)
+        if num_speakers < max_speakers_per_frame:
+            activations.data = np.pad(
+                activations.data, ((0, 0), (0, max_speakers_per_frame - num_speakers))
+            )
+
+        extent = activations.extent & count.extent
+        activations = activations.crop(extent, return_data=False)
+        count = count.crop(extent, return_data=False)
+
+        sorted_speakers = np.argsort(-activations, axis=-1)
+        binary = np.zeros_like(activations.data)
+
+        for t, ((_, c), speakers) in enumerate(zip(count, sorted_speakers)):
+            for i in range(c.item()):
+                binary[t, speakers[i]] = 1.0
+
+        return SlidingWindowFeature(binary, activations.sliding_window)
+
+    def compute_metric(
+        self,
+        reference: Annotation,
+        hypothesis: Tuple[SlidingWindowFeature, np.ndarray],
+        pad_duration: float,
+    ):
+        """Compute diarization annotation from binarized segmentation and cluster (num_chunk, num_speaker)"""
+        frames = self.model.receptive_field
+        binarized_segmentations, clusters = hypothesis
+
+        # keep track of inactive speakers
+        inactive_speakers = np.sum(binarized_segmentations.data, axis=1) == 0
+        # shape: (num_chunks, num_speakers)
+        clusters[inactive_speakers] = -2
+
+        clustered_segmentations = self.reconstruct(
+            binarized_segmentations, clusters
+        )
+
+        binarized_diarization = self.to_diarization(clustered_segmentations, pad_duration=pad_duration)
+        diarization = SpeakerDiarizationMixin.to_annotation(binarized_diarization)
+
+        metric = GlobalDiarizationErrorRate()
+        metric(reference, diarization, detailed=True)
+
+        result = metric[:]
+        metric_dict = {"der": 0.}
+        for component in ["false alarm", "missed detection", "confusion"]:
+            metric_dict[component] = (result[component] / result["total"])
+            metric_dict["der"] += metric_dict[component]
+
+        return metric_dict
+
     # TODO: no need to compute gradient in this method
     def validation_step(self, batch, batch_idx: int):
         """Compute validation loss and metric
@@ -1079,124 +1281,111 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         Parameters
         ----------
         batch : dict of torch.Tensor
-            Current batch.
+            current batch. All chunks come from the same
+            file and are in chronological order
         batch_idx: int
             Batch index.
         """
 
-        # target
-        target_dia = batch["y_dia"]
-        # (batch_size, num_frames, num_speakers)
+        # get reference
+        reference = batch["annotation"]
+        num_speakers = len(reference.labels())
+
+        frames = self.model.receptive_field
+
+        start_times = batch["start_times"]
+
+        file_id = batch["meta"]["file"][0]
+        file = self.get_file(file_id)
+        file["annotation"] = reference
+        print(reference.uri)
+        print(file["audio"])
+
+        assert reference.uri in file["audio"]
+
+        # build support timeline from chunk segments
+        support = Timeline()
+        for start_time in start_times:
+            support.add(Segment(start_time, start_time + self.duration))
+        print("support=", support)
+
+        # keep reference only on chunk segments:
+        reference = reference.crop(support)
+        # corner case where no reference segments intersects the timeline
+        if len(reference) == 0:
+            return None
 
         waveform = batch["X"]
-        # (batch_size, num_channels, num_samples)
+        #shape: (num_chunks, num_channels, local_num_samples)
 
-        # TODO: should we handle validation samples with too many speakers
-        # waveform = waveform[keep]
-        # target = target[keep]
+        # segmentation + embeddings extraction step
+        segmentations, embeddings = self.model(waveform)
+        # shapes: (num_chunks, num_frames, powerset_classes), (num_chunks, local_num_speakers, embed_dim)
 
-        # forward pass
-        dia_prediction, _ = self.model(waveform)
-        batch_size, num_frames, _ = dia_prediction.shape
+        if self.batch_size > 1:
+            step = batch["start_times"][1] - batch["start_times"][0]
+        else:
+            step = self.duration
 
-        multilabel = self.model.powerset.to_multilabel(dia_prediction)
-        permutated_target, _ = permutate(multilabel, target_dia)
-
-        # FIXME: handle case where target have too many speakers?
-        # since we don't need
-        permutated_target_powerset = self.model.powerset.to_powerset(
-            permutated_target.float()
-        )
-        seg_loss = self.segmentation_loss(
-            dia_prediction,
-            permutated_target_powerset,
+        sliding_window = SlidingWindow(
+            start=batch["start_times"][0], duration=self.duration, step=step
         )
 
-        self.model.log(
-            "loss/val/dia",
-            seg_loss,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=False,
-            logger=True,
+        binarized_segmentations = self.model.powerset.to_multilabel(segmentations)
+
+        binarized_segmentations = binarized_segmentations.cpu().detach().numpy()
+        binarized_segmentations = SlidingWindowFeature(
+            binarized_segmentations, sliding_window
         )
 
-        self.model.validation_metric(
-            torch.transpose(multilabel, 1, 2),
-            torch.transpose(target_dia, 1, 2),
+        embeddings = embeddings.cpu().detach().numpy()
+
+        # clustering step
+        clustering = KMeansClustering()
+        hard_clusters, _, _ = clustering(
+            embeddings=embeddings,
+            segmentations=binarized_segmentations,
+            num_clusters=num_speakers,
+        )
+        oracle_clustering = OracleClustering()
+        oracle_hard_clusters, _, _ = oracle_clustering(
+            segmentations=binarized_segmentations,
+            file=file,
+            frames=self.model.receptive_field.step,
         )
 
-        self.model.log_dict(
-            self.model.validation_metric,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-            logger=True,
+        pad_duration = step - self.duration
+        der = self.compute_metric(
+            reference=reference,
+            hypothesis=(binarized_segmentations, hard_clusters),
+            pad_duration=pad_duration,
         )
+        # oder = self.compute_metric(
+        #     reference=reference,
+        #     hypothesis=(binarized_segmentations, oracle_hard_clusters),
+        #     pad_duration=pad_duration,
+        # )
 
-        # log first batch visualization every 2^n epochs.
-        if (
-            self.model.current_epoch == 0
-            or math.log2(self.model.current_epoch) % 1 > 0
-            or batch_idx > 0
-        ):
-            return
+        for key in der:
+            self.model.log(
+                f"BS={self.batch_size}-Duration={self.duration}s/DER/{key}",
+                der[key],
+                on_step=False,
+                on_epoch=True,
+                prog_bar=True,
+                logger=True,
+            )
 
-        # visualize first 9 validation samples of first batch in Tensorboard/MLflow
+            # self.model.log(
+            #     f"BS={self.batch_size}-Duration={self.duration}s/ODER/{key}",
+            #     oder[key],
+            #     on_step=False,
+            #     on_epoch=True,
+            #     prog_bar=True,
+            #     logger=True,
+            # )
 
-        y = permutated_target.float().cpu().numpy()
-        y_pred = multilabel.cpu().numpy()
-
-        # prepare 3 x 3 grid (or smaller if batch size is smaller)
-        num_samples = min(self.batch_size, 9)
-        nrows = math.ceil(math.sqrt(num_samples))
-        ncols = math.ceil(num_samples / nrows)
-        fig, axes = plt.subplots(
-            nrows=2 * nrows, ncols=ncols, figsize=(8, 5), squeeze=False
-        )
-
-        # reshape target so that there is one line per class when plotting it
-        y[y == 0] = np.NaN
-        if len(y.shape) == 2:
-            y = y[:, :, np.newaxis]
-        y *= np.arange(y.shape[2])
-
-        # plot each sample
-        for sample_idx in range(num_samples):
-            # find where in the grid it should be plotted
-            row_idx = sample_idx // nrows
-            col_idx = sample_idx % ncols
-
-            # plot target
-            ax_ref = axes[row_idx * 2 + 0, col_idx]
-            sample_y = y[sample_idx]
-            ax_ref.plot(sample_y)
-            ax_ref.set_xlim(0, len(sample_y))
-            ax_ref.set_ylim(-1, sample_y.shape[1])
-            ax_ref.get_xaxis().set_visible(False)
-            ax_ref.get_yaxis().set_visible(False)
-
-            # plot predictions
-            ax_hyp = axes[row_idx * 2 + 1, col_idx]
-            sample_y_pred = y_pred[sample_idx]
-            ax_hyp.plot(sample_y_pred)
-            ax_hyp.set_ylim(-0.1, 1.1)
-            ax_hyp.set_xlim(0, len(sample_y))
-            ax_hyp.get_xaxis().set_visible(False)
-
-        plt.tight_layout()
-
-        for logger in self.model.loggers:
-            if isinstance(logger, TensorBoardLogger):
-                logger.experiment.add_figure("samples", fig, self.model.current_epoch)
-            elif isinstance(logger, MLFlowLogger):
-                logger.experiment.log_figure(
-                    run_id=logger.run_id,
-                    figure=fig,
-                    artifact_file=f"samples_epoch{self.model.current_epoch}.png",
-                )
-
-        plt.close(fig)
+        return None
 
     def default_metric(
         self,
@@ -1209,6 +1398,4 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
             "DiarizationErrorRate/Confusion": SpeakerConfusionRate(0.5),
             "DiarizationErrorRate/Miss": MissedDetectionRate(0.5),
             "DiarizationErrorRate/FalseAlarm": FalseAlarmRate(0.5),
-            # "EqualErrorRate": EqualErrorRate(compute_on_cpu=True, distances=False),
-            # "BinaryAUROC": BinaryAUROC(compute_on_cpu=True),
         }
