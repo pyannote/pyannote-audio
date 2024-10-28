@@ -46,24 +46,17 @@ from torchmetrics import Metric
 
 from scipy.spatial.distance import cdist
 
+from pyannote.audio import Inference
+from pyannote.audio.core.io import Audio
 from pyannote.audio.core.task import Problem, Resolution, Specifications, get_dtype
 from pyannote.audio.tasks import SpeakerDiarization
-from pyannote.audio.torchmetrics import (
-    DiarizationErrorRate,
-    FalseAlarmRate,
-    MissedDetectionRate,
-    SpeakerConfusionRate,
-)
 from pyannote.audio.utils.loss import nll_loss
 from pyannote.audio.utils.permutation import permutate
 from pyannote.audio.utils.random import create_rng_for_worker
 from pyannote.audio.pipelines.clustering import KMeansClustering, OracleClustering
 from pyannote.audio.pipelines.utils import SpeakerDiarizationMixin
-from pyannote.audio.core.io import Audio
 
-from pyannote.metrics.diarization import (
-    DiarizationErrorRate as GlobalDiarizationErrorRate,
-)
+from pyannote.metrics.diarization import DiarizationErrorRate
 
 Subtask = Literal["diarization", "embedding"]
 
@@ -781,10 +774,24 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
             yield next(chunks)
 
     def val__getitem__(self, idx) -> Dict:
-        """Validation items are generated so that all samples in a batch come from the same
-        validation file. These samples are created by sliding a window over the first seconds of
-        the validation file, with a step (for now arbitrally) set to 0.2 (20% of the task duration,
-        e.g. 1 second for a duration of 5 seconds)"""
+        """Validation items are generated so that all the chunks in a batch come from the same
+        validation file. These chunks are extracted regularly over all the file, so that the first
+        chunk start at the very beginning of the file, and the last chunk ends at the end of the file.
+        Step between chunks depends of the file duration and the total batch duration. This step can
+        be negative. In that case, chunks are overlapped.
+
+        Parameters
+        ----------
+        idx: int
+            item index. Note: this method may be incompatible with the use of sampler,
+            as this method requires incremental idx starting from 0.
+        
+        Returns
+        -------
+        chunk: dict
+            extracted chunk from current validation file. The first chunk contains annotation
+            for the whole file.
+        """
 
         file_idx = idx // self.batch_size
         chunk_idx = idx % self.batch_size
@@ -811,6 +818,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         return chunk
 
     def val__len__(self):
+        """Return total length of validation, which is num_validation_files * batch_size"""
         return len(self.prepared_data["validation-files"]) * self.batch_size
 
     def collate_y(self, batch) -> torch.Tensor:
@@ -892,7 +900,8 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         Returns
         -------
         batch : dict
-            Collated batch as {"X": torch.Tensor, "y": torch.Tensor} dict.
+            Collated batch as {"X": torch.Tensor, "y": torch.Tensor} dict (train).
+            Collated batch as {"X": torch.Tensor, "annotation": Annotation, "start_times": list} dict (validation)
         """
 
         # collate X
@@ -1139,10 +1148,8 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         ----------
         segmentations : (num_chunks, num_frames, num_speakers) SlidingWindowFeature
             Raw speaker segmentation.
-        hard_clusters : (num_chunks, num_speakers) array
+        clusters : (num_chunks, num_speakers) array
             Output of clustering step.
-        count : (total_num_frames, 1) SlidingWindowFeature
-            Instantaneous number of active speakers.
 
         Returns
         -------
@@ -1173,9 +1180,30 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         clustered_segmentations = SlidingWindowFeature(
             clustered_segmentations, segmentations.sliding_window
         )
+
         return clustered_segmentations
 
-    def aggregate(self, segmentations: SlidingWindowFeature, pad_duration:float) -> SlidingWindowFeature:
+    def aggregate(
+        self, segmentations: SlidingWindowFeature, pad_duration: float
+    ) -> SlidingWindowFeature:
+        """"Aggregate segmentation chunks over time with padding between
+        each chunk.
+        
+        Parameters
+        ----------
+        segmentations: SlidingWindowFeature
+            unaggragated segmentation chunks. Shape is (num_chunks, num_frames, num_speakers).
+        pad_duration: float
+            padding duration between two consecutive segmentation chunks.
+            In case pad_duration is < 0. (overlapped segmentation chunks),
+            `Inference.aggregate()` is used.
+
+        Returns
+        -------
+        segmentation: SlidingWindowFeature
+            aggregated segmentation. Shape is (num_frames', num_speakers).
+        """
+
         num_chunks, num_frames, num_speakers = segmentations.data.shape
         frame_duration = segmentations.sliding_window.duration / num_frames
 
@@ -1202,21 +1230,22 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
     def to_diarization(
         self,
         segmentations: SlidingWindowFeature,
-        pad_duration: float = 0.,
+        pad_duration: float = 0.0,
     ) -> SlidingWindowFeature:
-        """Build diarization out of preprocessed segmentation and precomputed speaker count
+        """Build diarization out of preprocessed segmentation
 
         Parameters
         ----------
         segmentations : SlidingWindowFeature
             (num_chunks, num_frames, num_speakers)-shaped segmentations
-        count : SlidingWindow_feature
-            (num_frames, 1)-shaped speaker count
+        pad_duration: float,
+            padding duration between two consecutive segmentation chunks.
+            Can be negative (overlapped chunks).
 
         Returns
         -------
         discrete_diarization : SlidingWindowFeature
-            Discrete (0s and 1s) diarization.
+            Discrete (0s and 1s) diarization. Shape is (num_frames', num_speakers')
         """
 
         activations = self.aggregate(segmentations, pad_duration=pad_duration)
@@ -1245,13 +1274,29 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
 
         return SlidingWindowFeature(binary, activations.sliding_window)
 
-    def compute_metric(
+    def compute_der(
         self,
         reference: Annotation,
         hypothesis: Tuple[SlidingWindowFeature, np.ndarray],
         pad_duration: float,
     ):
-        """Compute diarization annotation from binarized segmentation and cluster (num_chunk, num_speaker)"""
+        """ Compute global Diarization Error Rate (DER) given reference and hypothesis.
+        DER is computed on part of the validation file that were used to build validation
+        batch.
+
+        Parameters
+        ----------
+        reference: pyannote.core.Annotation
+            cropped file's annotation matching part of the file used to build validation batch
+        hypothesis: (pyannote.core.SlidingWindowFeature, np.ndarray)
+            tuple containing unclustered segmentation chunks and clusters from the clustering step
+        pad_duration: float
+            padding duration between two consecutives chunks. Can be negative (overlapped chunks)
+        
+        Returns: dict
+            Dict containing computed DER and its components (false alarm, missed detection
+            and confusion)
+        """
         frames = self.model.receptive_field
         binarized_segmentations, clusters = hypothesis
 
@@ -1260,27 +1305,27 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         # shape: (num_chunks, num_speakers)
         clusters[inactive_speakers] = -2
 
-        clustered_segmentations = self.reconstruct(
-            binarized_segmentations, clusters
-        )
+        clustered_segmentations = self.reconstruct(binarized_segmentations, clusters)
 
-        binarized_diarization = self.to_diarization(clustered_segmentations, pad_duration=pad_duration)
+        binarized_diarization = self.to_diarization(
+            clustered_segmentations, pad_duration=pad_duration
+        )
         diarization = SpeakerDiarizationMixin.to_annotation(binarized_diarization)
 
-        metric = GlobalDiarizationErrorRate()
+        metric = DiarizationErrorRate()
         metric(reference, diarization, detailed=True)
 
         result = metric[:]
-        metric_dict = {"der": 0.}
+        metric_dict = {"der": 0.0}
         for component in ["false alarm", "missed detection", "confusion"]:
-            metric_dict[component] = (result[component] / result["total"])
+            metric_dict[component] = result[component] / result["total"]
             metric_dict["der"] += metric_dict[component]
 
         return metric_dict
 
     # TODO: no need to compute gradient in this method
     def validation_step(self, batch, batch_idx: int):
-        """Compute validation loss and metric
+        """Compute (global) Diarization Error Rate
 
         Parameters
         ----------
@@ -1312,12 +1357,13 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
 
         # keep reference only on chunk segments:
         reference = reference.crop(support)
-        # corner case where no reference segments intersects the timeline
+        # corner case where no reference segments intersects the timeline.
+        # This case can occurs if batch duration is too short.
         if len(reference) == 0:
             return None
 
         waveform = batch["X"]
-        #shape: (num_chunks, num_channels, local_num_samples)
+        # shape: (num_chunks, num_channels, local_num_samples)
 
         # segmentation + embeddings extraction step
         segmentations, embeddings = self.model(waveform)
@@ -1332,39 +1378,42 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
             start=batch["start_times"][0], duration=self.duration, step=step
         )
 
+        # convert powert segmentations to multilabel segmentation
         binarized_segmentations = self.model.powerset.to_multilabel(segmentations)
 
+        # gradient is uneeded here, so we can safely detach tensors from the gradient graph
         binarized_segmentations = binarized_segmentations.cpu().detach().numpy()
+        embeddings = embeddings.cpu().detach().numpy()
+
         binarized_segmentations = SlidingWindowFeature(
             binarized_segmentations, sliding_window
         )
 
-        embeddings = embeddings.cpu().detach().numpy()
-
         # clustering step
         clustering = KMeansClustering()
-        hard_clusters, _, _ = clustering(
+        clusters, _, _ = clustering(
             embeddings=embeddings,
             segmentations=binarized_segmentations,
             num_clusters=num_speakers,
         )
         oracle_clustering = OracleClustering()
-        oracle_hard_clusters, _, _ = oracle_clustering(
+        oracle_clusters, _, _ = oracle_clustering(
             segmentations=binarized_segmentations,
             file=file,
             frames=self.model.receptive_field.step,
         )
 
+        # compute diarization error rate
         pad_duration = step - self.duration
-        der = self.compute_metric(
+        der = self.compute_der(
             reference=reference,
-            hypothesis=(binarized_segmentations, hard_clusters),
+            hypothesis=(binarized_segmentations, clusters),
             pad_duration=pad_duration,
         )
 
-        oder = self.compute_metric(
+        oder = self.compute_der(
             reference=reference,
-            hypothesis=(binarized_segmentations, oracle_hard_clusters),
+            hypothesis=(binarized_segmentations, oracle_clusters),
             pad_duration=pad_duration,
         )
 
@@ -1395,9 +1444,4 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         """Returns diarization error rate and its components for diarization subtask,
         and equal error rate for the embedding part
         """
-        return {
-            "DiarizationErrorRate": DiarizationErrorRate(0.5),
-            "DiarizationErrorRate/Confusion": SpeakerConfusionRate(0.5),
-            "DiarizationErrorRate/Miss": MissedDetectionRate(0.5),
-            "DiarizationErrorRate/FalseAlarm": FalseAlarmRate(0.5),
-        }
+        return {}
