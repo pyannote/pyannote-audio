@@ -1177,15 +1177,18 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
 
     def aggregate(self, segmentations: SlidingWindowFeature, pad_duration:float) -> SlidingWindowFeature:
         num_chunks, num_frames, num_speakers = segmentations.data.shape
-        sliding_window = segmentations.sliding_window
-        frame_duration = sliding_window.duration / num_frames
+        frame_duration = segmentations.sliding_window.duration / num_frames
 
-        if num_chunks <= 1:
-            return segmentations[0]
+        window = SlidingWindow(step=frame_duration, duration=frame_duration)
 
-        num_padding_frames = np.round(
-            pad_duration / frame_duration
-        ).astype(np.uint32)
+        if num_chunks == 1:
+            return SlidingWindowFeature(segmentations[0], window)
+
+        # if segmentation chunks are overlaped
+        if pad_duration < 0.:
+            return Inference.aggregate(segmentations, window)
+
+        num_padding_frames = np.round(pad_duration / frame_duration).astype(np.uint32)
         aggregated_segmentation = segmentations[0]
 
         for chunk_segmentation in segmentations[1:]:
@@ -1193,7 +1196,8 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
             aggregated_segmentation = np.concatenate(
                 (aggregated_segmentation, padding, chunk_segmentation)
             )
-        return SlidingWindowFeature(aggregated_segmentation.astype(np.int8), SlidingWindow(step=frame_duration, duration=frame_duration))
+
+        return SlidingWindowFeature(aggregated_segmentation.astype(np.int8), window)
 
     def to_diarization(
         self,
