@@ -94,7 +94,7 @@ class SpeakerDiarization(SegmentationTask):
         during training.
     metric : optional
         Validation metric(s). Can be anything supported by torchmetrics.MetricCollection.
-        Defaults to AUROC (area under the ROC curve).
+        Defaults to DiarizationErrorRate and its components.
 
     References
     ----------
@@ -634,7 +634,7 @@ class SpeakerDiarization(SegmentationTask):
         plt.close(fig)
 
 
-def main(protocol: str, subset: str = "test", model: str = "pyannote/segmentation"):
+def evaluate(protocol: str, subset: str = "test", model: str = "pyannote/segmentation"):
     """Evaluate a segmentation model"""
 
     from pyannote.database import FileFinder, get_protocol
@@ -672,5 +672,4 @@ def main(protocol: str, subset: str = "test", model: str = "pyannote/segmentatio
 
 if __name__ == "__main__":
     import typer
-
-    typer.run(main)
+    typer.run(evaluate)
