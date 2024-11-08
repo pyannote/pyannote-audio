@@ -21,7 +21,7 @@
 
 - fix: fix clipping issue in speech separation pipeline ([@joonaskalda](https://github.com/joonaskalda/))
 - fix: fix alignment between separated sources and diarization when the diarization reference is available ([@Lebourdais](https://github.com/Lebourdais/))
-- fix: update PyTorch reference ([@emmanuel-ferdman](https://github.com/emmanuel-ferdman/))
+- fix(doc): fix link to pytorch ([@emmanuel-ferdman](https://github.com/emmanuel-ferdman/))
 
 ## Version 3.3.2 (2024-09-11)
 
