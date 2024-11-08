@@ -553,6 +553,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                 max_clusters=max_speakers,
                 file=file,  # <== for oracle clustering
                 frames=self._segmentation.model.receptive_field,  # <== for oracle clustering
+                hook=hook,
             )
             # hard_clusters: (num_chunks, num_speakers)
             # centroids: (num_speakers, dimension)
@@ -590,6 +591,9 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         #   shape: (num_chunks, num_speakers)
 
         hard_clusters[inactive_speakers] = -2
+
+        hook("hard_clusters", hard_clusters)
+
         discrete_diarization = self.reconstruct(
             segmentations,
             hard_clusters,

@@ -24,7 +24,7 @@
 
 import random
 from enum import Enum
-from typing import Optional, Tuple
+from typing import Callable, Optional, Tuple
 
 import numpy as np
 from einops import rearrange
@@ -209,6 +209,7 @@ class BaseClustering(Pipeline):
         num_clusters: Optional[int] = None,
         min_clusters: Optional[int] = None,
         max_clusters: Optional[int] = None,
+        hook: Optional[Callable] = None,
         **kwargs,
     ) -> np.ndarray:
         """Apply clustering
@@ -267,6 +268,7 @@ class BaseClustering(Pipeline):
             min_clusters=min_clusters,
             max_clusters=max_clusters,
             num_clusters=num_clusters,
+            hook=hook,
         )
 
         hard_clusters, soft_clusters, centroids = self.assign_embeddings(
@@ -326,6 +328,7 @@ class AgglomerativeClustering(BaseClustering):
         min_clusters: Optional[int] = None,
         max_clusters: Optional[int] = None,
         num_clusters: Optional[int] = None,
+        hook: Optional[Callable] = None,
     ):
         """
 
@@ -374,8 +377,12 @@ class AgglomerativeClustering(BaseClustering):
                 embeddings, method=self.method, metric=self.metric
             )
 
+        hook("clustering.dendrogram", dendrogram)
+
         # apply the predefined threshold
         clusters = fcluster(dendrogram, self.threshold, criterion="distance") - 1
+
+        hook("clustering.fcluster", clusters)
 
         # split clusters into two categories based on their number of items:
         # large clusters vs. small clusters
@@ -470,6 +477,7 @@ class AgglomerativeClustering(BaseClustering):
 
         # re-number clusters from 0 to num_large_clusters
         _, clusters = np.unique(clusters, return_inverse=True)
+
         return clusters
 
 
