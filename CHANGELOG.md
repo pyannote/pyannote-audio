@@ -2,15 +2,25 @@
 
 ## develop
 
+### Breaking changes
+
+- BREAKING(task): drop support for `multilabel` training in `SpeakerDiarization` task
+- BREAKING(task): drop support for `warm_up` option in `SpeakerDiarization` task
+- BREAKING(task): drop support for `weigh_by_cardinality` option in `SpeakerDiarization` task
+- BREAKING(task): drop support for `vad_loss` option in `SpeakerDiarization` task
+
 ### New features
 
-- feat: add support for `k-means` clustering
-- feat: add `"hidden"` option to `ProgressHook`
-- feat: add `FilterByNumberOfSpeakers` protocol files filter
+- feat(clustering): add support for `k-means` clustering
+- feat(model): add `wav2vec_frozen` option to freeze/unfreeze `wav2vec` in `SSeRiouSS` architecture
+- feat(task): add support for manual optimization in `SpeakerDiarization` task
+- feat(utils): add `hidden` option to `ProgressHook`
+- feat(utils): add `FilterByNumberOfSpeakers` protocol files filter
 
 ### Fixes
 
 - fix: fix clipping issue in speech separation pipeline ([@joonaskalda](https://github.com/joonaskalda/))
+- fix: fix alignment between separated sources and diarization when the diarization reference is available ([@Lebourdais](https://github.com/Lebourdais/))
 
 ## Version 3.3.2 (2024-09-11)
 
