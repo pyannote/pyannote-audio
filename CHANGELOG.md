@@ -7,6 +7,7 @@
 - feat: add support for `k-means` clustering
 - feat: add `"hidden"` option to `ProgressHook`
 - feat: add `FilterByNumberOfSpeakers` protocol files filter
+- feat(model): add `wav2vec_frozen` option to freeze/unfreeze `wav2vec` in `SSeRiouSS` architecture
 
 ### Fixes
 
