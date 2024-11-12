@@ -107,14 +107,20 @@ class SegmentationTask(Task):
         )
         for key, value in filters.items():
             training &= self.prepared_data["audio-metadata"][key] == self.prepared_data[
-                "metadata"
+                "metadata-values"
             ][key].index(value)
         file_ids = np.where(training)[0]
 
         # turn annotated duration into a probability distribution
         annotated_duration = self.prepared_data["audio-annotated"][file_ids]
+        annotated_duration_total = np.sum(annotated_duration)
+        # Exit early (this will discard this worker/helper).
+        # This should happen only when the filter contains no data.
+        # (which happens when balance is used since we use all combinations of balance filters)
+        if annotated_duration_total == 0:
+            yield None
         cum_prob_annotated_duration = np.cumsum(
-            annotated_duration / np.sum(annotated_duration)
+            annotated_duration / annotated_duration_total
         )
 
         duration = self.duration
@@ -184,13 +190,18 @@ class SegmentationTask(Task):
             # create a subchunk generator for each combination of "balance" keys
             subchunks = dict()
             for product in itertools.product(
-                *[self.prepared_data["metadata"][key] for key in balance]
+                *[self.prepared_data["metadata-values"][key] for key in balance]
             ):
                 # we iterate on the cartesian product of the values in metadata_unique_values
                 # eg: for balance=["database", "split"], with 2 databases and 2 splits:
                 # ("DIHARD", "A"), ("DIHARD", "B"), ("REPERE", "A"), ("REPERE", "B")
                 filters = {key: value for key, value in zip(balance, product)}
-                subchunks[product] = self.train__iter__helper(rng, **filters)
+                product_iterator = self.train__iter__helper(rng, **filters)
+
+                # This specific product may not exist. For example, if balance=['database']
+                # and there is a database that's not present in the training set.
+                if next(product_iterator) is not None:
+                    subchunks[product] = product_iterator
 
         while True:
             # select one subchunk generator at random (with uniform probability)

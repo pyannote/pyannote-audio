@@ -632,6 +632,7 @@ class Task(pl.LightningDataModule):
         try:
             with open(self.cache, "rb") as cache_file:
                 self.prepared_data = dict(np.load(cache_file, allow_pickle=True))
+                self.prepared_data["metadata-values"] = self.prepared_data["metadata-values"].item()
         except FileNotFoundError:
             print(
                 "Cached data for protocol not found. Ensure that prepare_data() was called",
