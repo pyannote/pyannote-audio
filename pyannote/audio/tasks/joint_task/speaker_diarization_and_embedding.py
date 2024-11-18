@@ -31,7 +31,6 @@ from typing import Dict, Literal, Optional, Sequence, Tuple, Union
 import numpy as np
 import torch
 from einops import rearrange
-from matplotlib import pyplot as plt
 from pyannote.core import (
     Annotation,
     Segment,
@@ -56,7 +55,14 @@ from pyannote.audio.utils.random import create_rng_for_worker
 from pyannote.audio.pipelines.clustering import KMeansClustering, OracleClustering
 from pyannote.audio.pipelines.utils import SpeakerDiarizationMixin
 
-from pyannote.metrics.diarization import DiarizationErrorRate
+from pyannote.audio.torchmetrics import (
+    DiarizationErrorRate,
+    FalseAlarmRate,
+    MissedDetectionRate,
+    SpeakerConfusionRate,
+)
+
+from torchmetrics import MetricCollection
 
 Subtask = Literal["diarization", "embedding"]
 
@@ -125,6 +131,17 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         # * embedding databases are those with global speaker label scope
         # * diarization databases are those with file or database speaker label scope
         self.embedding_files_id = []
+
+        self.validation_metrics = MetricCollection(
+            {
+                "DiarizationErrorRate": DiarizationErrorRate(0.5),
+                "DiarizationErrorRate/FalseAlarm": FalseAlarmRate(0.5),
+                "DiarizationErrorRate/Miss": MissedDetectionRate(0.5),
+                "DiarizationErrorRate/Confusion": SpeakerConfusionRate(0.5),
+            }
+        )
+
+        self.oracle_validation_metrics = self.validation_metrics.clone(prefix="Oracle")
 
     def prepare_data(self):
         """Use this to prepare data from task protocol
@@ -785,7 +802,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         idx: int
             item index. Note: this method may be incompatible with the use of sampler,
             as this method requires incremental idx starting from 0.
-        
+
         Returns
         -------
         chunk: dict
@@ -1159,9 +1176,7 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
 
         num_chunks, num_frames, _ = segmentations.data.shape
         num_clusters = np.max(clusters) + 1
-        clustered_segmentations = np.nan * np.zeros(
-            (num_chunks, num_frames, num_clusters)
-        )
+        clustered_segmentations = np.zeros((num_chunks, num_frames, num_clusters))
 
         for c, (cluster, (chunk, segmentation)) in enumerate(
             zip(clusters, segmentations)
@@ -1183,122 +1198,120 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
 
         return clustered_segmentations
 
-    def aggregate(
-        self, segmentations: SlidingWindowFeature, pad_duration: float
-    ) -> SlidingWindowFeature:
-        """"Aggregate segmentation chunks over time with padding between
-        each chunk.
-        
-        Parameters
-        ----------
-        segmentations: SlidingWindowFeature
-            unaggragated segmentation chunks. Shape is (num_chunks, num_frames, num_speakers).
-        pad_duration: float
-            padding duration between two consecutive segmentation chunks.
-            In case pad_duration is < 0. (overlapped segmentation chunks),
-            `Inference.aggregate()` is used.
+    # def aggregate(
+    #     self, segmentations: SlidingWindowFeature, pad_duration: float
+    # ) -> SlidingWindowFeature:
+    #     """ "Aggregate segmentation chunks over time with padding between
+    #     each chunk.
 
-        Returns
-        -------
-        segmentation: SlidingWindowFeature
-            aggregated segmentation. Shape is (num_frames', num_speakers).
-        """
+    #     Parameters
+    #     ----------
+    #     segmentations: SlidingWindowFeature
+    #         unaggragated segmentation chunks. Shape is (num_chunks, num_frames, num_speakers).
+    #     pad_duration: float
+    #         padding duration between two consecutive segmentation chunks.
+    #         In case pad_duration is < 0. (overlapped segmentation chunks),
+    #         `Inference.aggregate()` is used.
 
-        num_chunks, num_frames, num_speakers = segmentations.data.shape
-        frame_duration = segmentations.sliding_window.duration / num_frames
+    #     Returns
+    #     -------
+    #     segmentation: SlidingWindowFeature
+    #         aggregated segmentation. Shape is (num_frames', num_speakers).
+    #     """
 
-        window = SlidingWindow(step=frame_duration, duration=frame_duration)
+    #     num_chunks, num_frames, num_speakers = segmentations.data.shape
+    #     frame_duration = segmentations.sliding_window.duration / num_frames
 
-        if num_chunks == 1:
-            return SlidingWindowFeature(segmentations[0], window)
+    #     window = SlidingWindow(step=frame_duration, duration=frame_duration)
 
-        # if segmentation chunks are overlaped
-        if pad_duration < 0.:
-            return Inference.aggregate(segmentations, window)
+    #     if num_chunks == 1:
+    #         return SlidingWindowFeature(segmentations[0], window)
 
-        num_padding_frames = np.round(pad_duration / frame_duration).astype(np.uint32)
-        aggregated_segmentation = segmentations[0]
+    #     # if segmentation chunks are overlaped
+    #     if pad_duration < 0.0:
+    #         return Inference.aggregate(segmentations, window)
 
-        for chunk_segmentation in segmentations[1:]:
-            padding = np.zeros((num_padding_frames, num_speakers))
-            aggregated_segmentation = np.concatenate(
-                (aggregated_segmentation, padding, chunk_segmentation)
-            )
+    #     num_padding_frames = np.round(pad_duration / frame_duration).astype(np.uint32)
+    #     aggregated_segmentation = segmentations[0]
 
-        return SlidingWindowFeature(aggregated_segmentation.astype(np.int8), window)
+    #     for chunk_segmentation in segmentations[1:]:
+    #         padding = np.zeros((num_padding_frames, num_speakers))
+    #         aggregated_segmentation = np.concatenate(
+    #             (aggregated_segmentation, padding, chunk_segmentation)
+    #         )
 
-    def to_diarization(
+    #     return SlidingWindowFeature(aggregated_segmentation.astype(np.int8), window)
+
+    # def to_diarization(
+    #     self,
+    #     segmentations: SlidingWindowFeature,
+    #     pad_duration: float = 0.0,
+    # ) -> SlidingWindowFeature:
+    #     """Build diarization out of preprocessed segmentation
+
+    #     Parameters
+    #     ----------
+    #     segmentations : SlidingWindowFeature
+    #         (num_chunks, num_frames, num_speakers)-shaped segmentations
+    #     pad_duration: float,
+    #         padding duration between two consecutive segmentation chunks.
+    #         Can be negative (overlapped chunks).
+
+    #     Returns
+    #     -------
+    #     discrete_diarization : SlidingWindowFeature
+    #         Discrete (0s and 1s) diarization. Shape is (num_frames', num_speakers')
+    #     """
+
+    #     activations = self.aggregate(segmentations, pad_duration=pad_duration)
+    #     # shape: (num_frames, num_speakers)
+    #     _, num_speakers = activations.data.shape
+
+    #     count = np.sum(activations, axis=1, keepdims=True)
+    #     # shape: (num_frames, 1)
+
+    #     max_speakers_per_frame = np.max(count.data)
+    #     if num_speakers < max_speakers_per_frame:
+    #         activations.data = np.pad(
+    #             activations.data, ((0, 0), (0, max_speakers_per_frame - num_speakers))
+    #         )
+
+    #     extent = activations.extent & count.extent
+    #     activations = activations.crop(extent, return_data=False)
+    #     count = count.crop(extent, return_data=False)
+
+    #     sorted_speakers = np.argsort(-activations, axis=-1)
+    #     binary = np.zeros_like(activations.data)
+
+    #     for t, ((_, c), speakers) in enumerate(zip(count, sorted_speakers)):
+    #         for i in range(c.item()):
+    #             binary[t, speakers[i]] = 1.0
+
+    #     return SlidingWindowFeature(binary, activations.sliding_window)
+
+    def compute_metrics(
         self,
-        segmentations: SlidingWindowFeature,
-        pad_duration: float = 0.0,
-    ) -> SlidingWindowFeature:
-        """Build diarization out of preprocessed segmentation
+        discretized_reference,
+        prediction: Tuple[SlidingWindowFeature, np.ndarray],
+        oracle_mode: bool,
+    ) -> None:
+        """Compute (oracle) Diarization Error Rate at file level 
+        given the reference and hypothesis.
+        DER is only computed on parts of the validation file 
+        that were used to build validation batch.
 
         Parameters
         ----------
-        segmentations : SlidingWindowFeature
-            (num_chunks, num_frames, num_speakers)-shaped segmentations
-        pad_duration: float,
-            padding duration between two consecutive segmentation chunks.
-            Can be negative (overlapped chunks).
-
-        Returns
-        -------
-        discrete_diarization : SlidingWindowFeature
-            Discrete (0s and 1s) diarization. Shape is (num_frames', num_speakers')
+        discretized_reference: np.ndarray
+            cropped file's discretized reference matching parts 
+            of the validation file used to build current batch
+        prediction: (pyannote.core.SlidingWindowFeature, np.ndarray)
+            tuple containing unclustered segmentation chunks 
+            and clusters from the clustering step
+        oracle_mode: boolean
+            Whether to compute DER or oracle DER
         """
-
-        activations = self.aggregate(segmentations, pad_duration=pad_duration)
-        # shape: (num_frames, num_speakers)
-        _, num_speakers = activations.data.shape
-
-        count = np.sum(activations, axis=1, keepdims=True)
-        # shape: (num_frames, 1)
-
-        max_speakers_per_frame = np.max(count.data)
-        if num_speakers < max_speakers_per_frame:
-            activations.data = np.pad(
-                activations.data, ((0, 0), (0, max_speakers_per_frame - num_speakers))
-            )
-
-        extent = activations.extent & count.extent
-        activations = activations.crop(extent, return_data=False)
-        count = count.crop(extent, return_data=False)
-
-        sorted_speakers = np.argsort(-activations, axis=-1)
-        binary = np.zeros_like(activations.data)
-
-        for t, ((_, c), speakers) in enumerate(zip(count, sorted_speakers)):
-            for i in range(c.item()):
-                binary[t, speakers[i]] = 1.0
-
-        return SlidingWindowFeature(binary, activations.sliding_window)
-
-    def compute_der(
-        self,
-        reference: Annotation,
-        hypothesis: Tuple[SlidingWindowFeature, np.ndarray],
-        pad_duration: float,
-    ):
-        """ Compute global Diarization Error Rate (DER) given reference and hypothesis.
-        DER is computed on part of the validation file that were used to build validation
-        batch.
-
-        Parameters
-        ----------
-        reference: pyannote.core.Annotation
-            cropped file's annotation matching part of the file used to build validation batch
-        hypothesis: (pyannote.core.SlidingWindowFeature, np.ndarray)
-            tuple containing unclustered segmentation chunks and clusters from the clustering step
-        pad_duration: float
-            padding duration between two consecutives chunks. Can be negative (overlapped chunks)
-        
-        Returns: dict
-            Dict containing computed DER and its components (false alarm, missed detection
-            and confusion)
-        """
-        frames = self.model.receptive_field
-        binarized_segmentations, clusters = hypothesis
+        binarized_segmentations, clusters = prediction
 
         # keep track of inactive speakers
         inactive_speakers = np.sum(binarized_segmentations.data, axis=1) == 0
@@ -1306,26 +1319,31 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         clusters[inactive_speakers] = -2
 
         clustered_segmentations = self.reconstruct(binarized_segmentations, clusters)
+        # shape: (num_chunks, num_frames, num_speakers)
 
-        binarized_diarization = self.to_diarization(
-            clustered_segmentations, pad_duration=pad_duration
+        clustered_segmentations = torch.from_numpy(clustered_segmentations.data)
+        hypothesis = rearrange(clustered_segmentations, "c f s -> s (c f)")
+        # shape: (num_speakers, num_chunks * num_frames)
+
+        reference = torch.from_numpy(discretized_reference.T)
+        # shape: (num_speakers, num_chunks * num_frames)
+
+        # calculate and log metrics
+        name = "oracle_validation_metrics" if oracle_mode else "validation_metrics"
+        metrics = getattr(self, name)
+        outputs = metrics(hypothesis.unsqueeze(0), reference.unsqueeze(0))
+        self.model.log_dict(
+            outputs,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
         )
-        diarization = SpeakerDiarizationMixin.to_annotation(binarized_diarization)
 
-        metric = DiarizationErrorRate()
-        metric(reference, diarization, detailed=True)
-
-        result = metric[:]
-        metric_dict = {"der": 0.0}
-        for component in ["false alarm", "missed detection", "confusion"]:
-            metric_dict[component] = result[component] / result["total"]
-            metric_dict["der"] += metric_dict[component]
-
-        return metric_dict
-
-    # TODO: no need to compute gradient in this method
     def validation_step(self, batch, batch_idx: int):
-        """Compute (global) Diarization Error Rate
+        """Validation step consists of applying a diarization pipeline
+        on a validation file to compute file-level Diarization Error Rate (DER)
+        and Oracle Diarization Error Rate (ODER).
 
         Parameters
         ----------
@@ -1340,27 +1358,31 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         reference = batch["annotation"]
         num_speakers = len(reference.labels())
 
-        frames = self.model.receptive_field
-
         start_times = batch["start_times"]
 
         file_id = batch["meta"]["file"][0]
         file = self.get_file(file_id)
+        # needed by oracle clustering
         file["annotation"] = reference
 
         assert reference.uri in file["audio"]
 
-        # build support timeline from chunk segments
-        support = Timeline()
-        for start_time in start_times:
-            support.add(Segment(start_time, start_time + self.duration))
+        resolution = self.model.receptive_field
 
-        # keep reference only on chunk segments:
-        reference = reference.crop(support)
-        # corner case where no reference segments intersects the timeline.
-        # This case can occurs if batch duration is too short.
-        if len(reference) == 0:
-            return None
+        # get discretized reference for current file
+        discretized_segments = []
+        num_frames = int(
+            self.model.num_frames(self.model.hparams["sample_rate"] * self.duration)
+        )
+        for start_time in start_times:
+            discretized_segment = reference.discretize(
+                support=Segment(start_time, start_time + self.duration),
+                resolution=resolution,
+                labels=reference.labels(),
+            )
+            discretized_segments.append(discretized_segment.data[:num_frames])
+        discretized_reference = np.concatenate(discretized_segments)
+        # shape: (num_chunks * num_frames, num_speakers)
 
         waveform = batch["X"]
         # shape: (num_chunks, num_channels, local_num_samples)
@@ -1374,67 +1396,45 @@ class JointSpeakerDiarizationAndEmbedding(SpeakerDiarization):
         else:
             step = self.duration
 
-        sliding_window = SlidingWindow(
-            start=batch["start_times"][0], duration=self.duration, step=step
-        )
-
-        # convert powert segmentations to multilabel segmentation
+        # convert from powerset segmentations to multilabel segmentations
         binarized_segmentations = self.model.powerset.to_multilabel(segmentations)
 
-        # gradient is uneeded here, so we can safely detach tensors from the gradient graph
+        # gradient is uneeded here, so we can detach tensors from the gradient graph
         binarized_segmentations = binarized_segmentations.cpu().detach().numpy()
         embeddings = embeddings.cpu().detach().numpy()
 
         binarized_segmentations = SlidingWindowFeature(
-            binarized_segmentations, sliding_window
+            binarized_segmentations,
+            SlidingWindow(
+                start=batch["start_times"][0], duration=self.duration, step=step
+            ),
         )
 
-        # clustering step
+        # compute file-wise diarization error rate
         clustering = KMeansClustering()
         clusters, _, _ = clustering(
             embeddings=embeddings,
             segmentations=binarized_segmentations,
             num_clusters=num_speakers,
         )
+        der = self.compute_metrics(
+            discretized_reference=discretized_reference,
+            prediction=(binarized_segmentations, clusters),
+            oracle_mode=False,
+        )
+
+        # compute file-wise oracle diarization error rate
         oracle_clustering = OracleClustering()
         oracle_clusters, _, _ = oracle_clustering(
             segmentations=binarized_segmentations,
             file=file,
-            frames=self.model.receptive_field.step,
+            frames=resolution.step,
         )
-
-        # compute diarization error rate
-        pad_duration = step - self.duration
-        der = self.compute_der(
-            reference=reference,
-            hypothesis=(binarized_segmentations, clusters),
-            pad_duration=pad_duration,
+        oder = self.compute_metrics(
+            discretized_reference=discretized_reference,
+            prediction=(binarized_segmentations, oracle_clusters),
+            oracle_mode=True,
         )
-
-        oder = self.compute_der(
-            reference=reference,
-            hypothesis=(binarized_segmentations, oracle_clusters),
-            pad_duration=pad_duration,
-        )
-
-        for key in der:
-            self.model.log(
-                f"BS={self.batch_size}-Duration={self.duration}s/DER/{key}",
-                der[key],
-                on_step=False,
-                on_epoch=True,
-                prog_bar=True,
-                logger=True,
-            )
-
-            self.model.log(
-                f"BS={self.batch_size}-Duration={self.duration}s/ODER/{key}",
-                oder[key],
-                on_step=False,
-                on_epoch=True,
-                prog_bar=True,
-                logger=True,
-            )
 
         return None
 
