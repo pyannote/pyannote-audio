@@ -27,7 +27,7 @@ import itertools
 import math
 import textwrap
 import warnings
-from typing import Callable, Mapping, Optional, Text, Union
+from typing import Callable, Mapping, Optional, Text, Union, Tuple
 
 import numpy as np
 import torch
@@ -714,6 +714,7 @@ class SpeakerDiarizationV2(SpeakerDiarizationMixin, Pipeline):
         clustering: str = "AgglomerativeClustering",
         batch_size: int = 1,
         use_auth_token: Union[Text, None] = None,
+        der_variant: Optional[dict] = None,
     ):
         super().__init__()
 
@@ -730,6 +731,8 @@ class SpeakerDiarizationV2(SpeakerDiarizationMixin, Pipeline):
 
         self.step = step
         self.klustering = clustering
+
+        self.der_variant = der_variant or {"collar": 0.0, "skip_overlap": False}
 
         duration: float = segmentation_specifications.duration
         self._inference = Inference(
