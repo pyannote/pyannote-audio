@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2022- CNRS
+# Copyright (c) 2024- CNRS
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -21,52 +21,167 @@
 # SOFTWARE.
 
 
+import sys
+from enum import Enum
 from pathlib import Path
+from typing import Optional
 
+import pyannote.database
+import torch
 import typer
 from pyannote.core import Annotation
+from typing_extensions import Annotated
 
-from pyannote.audio import Audio, Pipeline
-from pyannote.audio.pipelines.utils.hook import Hooks, ProgressHook, TimingHook
+from pyannote.audio import Pipeline
+
+
+class Subset(str, Enum):
+    train = "train"
+    development = "development"
+    test = "test"
+
+
+class Device(str, Enum):
+    CPU = "cpu"
+    CUDA = "cuda"
+    MPS = "mps"
+    AUTO = "auto"
+
+
+def guess_device() -> Device:
+    if torch.cuda.is_available():
+        return Device.CUDA
+
+    if torch.backends.mps.is_available():
+        return Device.MPS
+
+    return Device.CPU
+
 
 app = typer.Typer()
 
 
 @app.command("apply")
 def apply(
-    pipeline: str,
-    audio_in: str,
-    rttm_out: str,
+    audio: Annotated[
+        Path,
+        typer.Argument(
+            help="Path to audio file",
+            exists=True,
+            file_okay=True,
+            readable=True,
+        ),
+    ],
+    pipeline: Annotated[
+        str, typer.Option(help="Pretrained pipeline")
+    ] = "pyannote/speaker-diarization-3.1",
+    device: Annotated[
+        Device, typer.Option(help="Accelerator to use (CPU, CUDA, MPS)")
+    ] = Device.AUTO,
 ):
+    # load pretrained pipeline
     pretrained_pipeline = Pipeline.from_pretrained(pipeline)
 
-    io = Audio()
+    # send pipeline to device
+    if device == Device.AUTO:
+        device = guess_device()
+    torch_device = torch.device(device.value)
+    pretrained_pipeline.to(torch_device)
 
-    with open(rttm_out, "w") as rttm:
-        audio_duration = io.get_duration(audio_in)
+    prediction: Annotation = pretrained_pipeline(audio)
 
-        file = {
-            "audio": audio_in,
-            "uri": Path(audio_in).stem,
-        }
+    prediction.write_rttm(sys.stdout)
+    sys.stdout.flush()
 
-        rttm.write(f"# pipeline.path: {pipeline}\n")
-        rttm.write(f"# audio.path: {audio_in}\n")
-        rttm.write(f"# audio.duration: {audio_duration:.1f}s\n")
 
-        with Hooks(ProgressHook(), TimingHook()) as hook:
-            output: Annotation = pretrained_pipeline(file, hook=hook)
+@app.command("benchmark")
+def benchmark(
+    protocol: Annotated[
+        str,
+        typer.Argument(help="Benchmarked protocol"),
+    ],
+    into: Annotated[
+        Path,
+        typer.Argument(
+            help="Directory into which benchmark results are saved",
+            exists=True,
+            dir_okay=True,
+            file_okay=False,
+            writable=True,
+            resolve_path=True,
+        ),
+    ],
+    subset: Annotated[
+        Subset,
+        typer.Option(
+            help="Benchmarked subset",
+            case_sensitive=False,
+        ),
+    ] = Subset.test,
+    pipeline: Annotated[
+        str, typer.Option(help="Benchmarked pipeline")
+    ] = "pyannote/speaker-diarization-3.1",
+    device: Annotated[
+        Device, typer.Option(help="Accelerator to use (CPU, CUDA, MPS)")
+    ] = Device.AUTO,
+    registry: Annotated[
+        Optional[Path],
+        typer.Option(
+            help="Loaded registry",
+            exists=True,
+            dir_okay=False,
+            file_okay=True,
+            readable=True,
+        ),
+    ] = None,
+):
+    # load pretrained pipeline
+    pretrained_pipeline = Pipeline.from_pretrained(pipeline)
 
-        time_total = file["timing_hook"]["total"]
+    # send pipeline to device
+    if device == Device.AUTO:
+        device = guess_device()
+    torch_device = torch.device(device.value)
+    pretrained_pipeline.to(torch_device)
 
-        rttm.write(f"# processing.duration: {time_total:.1f}s\n")
-        rttm.write(f"# processing.rtf: {time_total / audio_duration:.0%}\n")
+    # load pipeline metric (when available)
+    try:
+        metric = pretrained_pipeline.get_metric()
+    except NotImplementedError:
+        metric = None
 
-        output.write_rttm(rttm)
-        rttm.flush()
+    # load protocol from (optional) registry
+    if registry:
+        pyannote.database.registry.load_database(registry)
+
+    loaded_protocol = pyannote.database.registry.get_protocol(
+        protocol, {"audio": pyannote.database.FileFinder()}
+    )
+
+    with open(into / f"{protocol}.{subset}.rttm", "w") as rttm:
+        for file in getattr(loaded_protocol, subset.value)():
+            prediction: Annotation = pretrained_pipeline(file)
+            prediction.write_rttm(rttm)
+            rttm.flush()
+
+            if metric is None:
+                continue
+
+            groundtruth = file.get("annotation", None)
+            if groundtruth is None:
+                continue
+
+            annotated = file.get("annotated", None)
+            _ = metric(groundtruth, prediction, uem=annotated)
+
+    if metric is None:
+        return
+
+    with open(into / f"{protocol}.{subset}.txt", "w") as txt:
+        txt.write(str(metric))
+
+    print(str(metric))
 
 
 if __name__ == "__main__":
     app()
-
-# python -m pyannote.audio apply pyannote/speaker-diarization-3.0 file.wav file.wav.rttm
