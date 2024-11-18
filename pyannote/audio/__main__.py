@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# encoding: utf-8
+
 # MIT License
 #
 # Copyright (c) 2024- CNRS
