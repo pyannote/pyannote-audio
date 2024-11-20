@@ -49,6 +49,8 @@ from pyannote.audio.utils.loss import nll_loss
 from pyannote.audio.utils.permutation import permutate
 from pyannote.audio.utils.powerset import Powerset
 
+
+
 Subsets = list(Subset.__args__)
 Scopes = list(Scope.__args__)
 
@@ -567,7 +569,7 @@ class SpeakerDiarization(SegmentationTask):
             on_epoch=True,
             prog_bar=True,
             logger=True,
-        )
+       )
 
         # log first batch visualization every 2^n epochs.
         if (
@@ -583,7 +585,8 @@ class SpeakerDiarization(SegmentationTask):
         y_pred = multilabel.cpu().numpy()
 
         # prepare 3 x 3 grid (or smaller if batch size is smaller)
-        num_samples = min(self.batch_size, 9)
+        num_samples = min(min(self.batch_size, 9), y.shape[0])
+
         nrows = math.ceil(math.sqrt(num_samples))
         ncols = math.ceil(num_samples / nrows)
         fig, axes = plt.subplots(
@@ -624,6 +627,8 @@ class SpeakerDiarization(SegmentationTask):
         for logger in self.model.loggers:
             if isinstance(logger, TensorBoardLogger):
                 logger.experiment.add_figure("samples", fig, self.model.current_epoch)
+                #metric =  self.model.validation_metric.compute()
+                #logger.experiment.add_scalars('DiarizationErrorRate', metric, global_step=self.model.current_epoch)
             elif isinstance(logger, MLFlowLogger):
                 logger.experiment.log_figure(
                     run_id=logger.run_id,
