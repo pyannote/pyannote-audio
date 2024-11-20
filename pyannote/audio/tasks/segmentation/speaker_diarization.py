@@ -627,8 +627,6 @@ class SpeakerDiarization(SegmentationTask):
         for logger in self.model.loggers:
             if isinstance(logger, TensorBoardLogger):
                 logger.experiment.add_figure("samples", fig, self.model.current_epoch)
-                #metric =  self.model.validation_metric.compute()
-                #logger.experiment.add_scalars('DiarizationErrorRate', metric, global_step=self.model.current_epoch)
             elif isinstance(logger, MLFlowLogger):
                 logger.experiment.log_figure(
                     run_id=logger.run_id,
