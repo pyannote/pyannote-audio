@@ -22,7 +22,6 @@
 
 # AUTHOR: Joonas Kalda (github.com/joonaskalda)
 
-import contextlib
 from functools import lru_cache
 from typing import Optional
 
@@ -179,6 +178,8 @@ class ToTaToNet(Model):
 
         if self.use_wavlm:
             self.wavlm = AutoModel.from_pretrained("microsoft/wavlm-large")
+            for param in self.wavlm.parameters():
+                param.requires_grad = not wavlm_frozen
             downsampling_factor = 1
             for conv_layer in self.wavlm.feature_extractor.conv_layers:
                 if isinstance(conv_layer.conv, nn.Conv1d):
@@ -328,13 +329,7 @@ class ToTaToNet(Model):
         bsz = waveforms.shape[0]
         tf_rep = self.encoder(waveforms)
         if self.use_wavlm:
-            context = (
-                torch.no_grad()
-                if self.hparams["wavlm_frozen"]
-                else contextlib.nullcontext()
-            )
-            with context:
-                wavlm_rep = self.wavlm(waveforms.squeeze(1)).last_hidden_state
+            wavlm_rep = self.wavlm(waveforms.squeeze(1)).last_hidden_state
             wavlm_rep = wavlm_rep.transpose(1, 2)
             wavlm_rep = wavlm_rep.repeat_interleave(self.wavlm_scaling, dim=-1)
             wavlm_rep = pad_x_to_y(wavlm_rep, tf_rep)
