@@ -966,13 +966,6 @@ class PixIT(SegmentationTask):
         loss : {str: torch.tensor}
             {"loss": loss}
         """
-        # finetuning wavlm with a smaller learning rate requires two optimizers
-        # and manual gradient stepping
-        if not self.automatic_optimization:
-            wavlm_opt, rest_opt = self.model.optimizers()
-            wavlm_opt.zero_grad()
-            rest_opt.zero_grad()
-
         (
             seg_loss,
             separation_loss,
@@ -980,6 +973,7 @@ class PixIT(SegmentationTask):
             permutated_diarization,
             target,
         ) = self.common_step(batch)
+
         self.model.log(
             "loss/train/separation",
             separation_loss,
@@ -1015,20 +1009,21 @@ class PixIT(SegmentationTask):
             logger=True,
         )
 
+        # using multiple optimizers requires manual optimization
         if not self.automatic_optimization:
+            optimizers = self.model.optimizers()
+            for optimizer in optimizers:
+                optimizer.zero_grad()
+
             self.model.manual_backward(loss)
-            self.model.clip_gradients(
-                wavlm_opt,
-                gradient_clip_val=self.model.gradient_clip_val,
-                gradient_clip_algorithm="norm",
-            )
-            self.model.clip_gradients(
-                rest_opt,
-                gradient_clip_val=self.model.gradient_clip_val,
-                gradient_clip_algorithm="norm",
-            )
-            wavlm_opt.step()
-            rest_opt.step()
+
+            for optimizer in optimizers:
+                self.model.clip_gradients(
+                    optimizer,
+                    gradient_clip_val=self.model.gradient_clip_val,
+                    gradient_clip_algorithm="norm",
+                )
+                optimizer.step()
 
         return {"loss": loss}
 
