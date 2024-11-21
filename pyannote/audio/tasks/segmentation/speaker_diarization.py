@@ -49,8 +49,6 @@ from pyannote.audio.utils.loss import nll_loss
 from pyannote.audio.utils.permutation import permutate
 from pyannote.audio.utils.powerset import Powerset
 
-
-
 Subsets = list(Subset.__args__)
 Scopes = list(Scope.__args__)
 
