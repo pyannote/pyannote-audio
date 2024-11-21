@@ -569,7 +569,7 @@ class SpeakerDiarization(SegmentationTask):
             on_epoch=True,
             prog_bar=True,
             logger=True,
-       )
+        )
 
         # log first batch visualization every 2^n epochs.
         if (
