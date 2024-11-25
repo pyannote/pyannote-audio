@@ -650,6 +650,10 @@ class Task(pl.LightningDataModule):
     def automatic_optimization(self) -> bool:
         return self.model.automatic_optimization
 
+    @automatic_optimization.setter
+    def automatic_optimization(self, automatic_optimisation: bool) -> None:
+        self.model.automatic_optimization = automatic_optimisation
+
     @property
     def specifications(self) -> Union[Specifications, Tuple[Specifications]]:
         # setup metadata on-demand the first time specifications are requested and missing
