@@ -467,6 +467,9 @@ class SpeakerDiarization(SegmentationTask):
 
         if not self.automatic_optimization:
             optimizers = self.model.optimizers()
+            optimizers = (
+                [optimizers] if not isinstance(optimizers, list) else optimizers
+            )
             for optimizer in optimizers:
                 optimizer.zero_grad()
 
@@ -668,4 +671,5 @@ def evaluate(protocol: str, subset: str = "test", model: str = "pyannote/segment
 
 if __name__ == "__main__":
     import typer
+
     typer.run(evaluate)

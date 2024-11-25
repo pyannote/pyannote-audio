@@ -1012,6 +1012,9 @@ class PixIT(SegmentationTask):
         # using multiple optimizers requires manual optimization
         if not self.automatic_optimization:
             optimizers = self.model.optimizers()
+            optimizers = (
+                [optimizers] if not isinstance(optimizers, list) else optimizers
+            )
             for optimizer in optimizers:
                 optimizer.zero_grad()
 
