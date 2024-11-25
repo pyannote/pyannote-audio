@@ -579,7 +579,8 @@ class SpeakerDiarization(SegmentationTask):
         y_pred = multilabel.cpu().numpy()
 
         # prepare 3 x 3 grid (or smaller if batch size is smaller)
-        num_samples = min(self.batch_size, 9)
+        num_samples = min(self.batch_size, 9, y.shape[0])
+
         nrows = math.ceil(math.sqrt(num_samples))
         ncols = math.ceil(num_samples / nrows)
         fig, axes = plt.subplots(
