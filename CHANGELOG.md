@@ -2,8 +2,62 @@
 
 ## develop
 
+### Breaking changes
+
+- BREAKING(task): drop support for `multilabel` training in `SpeakerDiarization` task
+- BREAKING(task): drop support for `warm_up` option in `SpeakerDiarization` task
+- BREAKING(task): drop support for `weigh_by_cardinality` option in `SpeakerDiarization` task
+- BREAKING(task): drop support for `vad_loss` option in `SpeakerDiarization` task
+
 ### New features
 
+- feat(clustering): add support for `k-means` clustering
+- feat(model): add `wav2vec_frozen` option to freeze/unfreeze `wav2vec` in `SSeRiouSS` architecture
+- feat(task): add support for manual optimization in `SpeakerDiarization` task
+- feat(utils): add `hidden` option to `ProgressHook`
+- feat(utils): add `FilterByNumberOfSpeakers` protocol files filter
+
+### Fixes
+
+- fix(separation): fix clipping issue in speech separation pipeline ([@joonaskalda](https://github.com/joonaskalda/))
+- fix(separation): fix alignment between separated sources and diarization ([@Lebourdais](https://github.com/Lebourdais/) and [@clement-pages](https://github.com/clement-pages/))
+- fix(doc): fix link to pytorch ([@emmanuel-ferdman](https://github.com/emmanuel-ferdman/))
+- fix(task): fix corner case with small (<9) number of validation samples ([@antoinelaurent](https://github.com/antoinelaurent/))
+
+## Version 3.3.2 (2024-09-11)
+
+### Fixes
+
+- fix: (really) fix support for `numpy==2.x` ([@metal3d](https://github.com/metal3d/))
+- doc: fix `Pipeline` docstring ([@huisman](https://github.com/huisman/))
+
+## Version 3.3.1 (2024-06-19)
+
+### Breaking changes
+
+- setup: drop support for Python 3.8
+
+### Fixes
+
+- fix: fix support for `numpy==2.x` ([@ibevers](https://github.com/ibevers/))
+- fix: fix support for `speechbrain==1.x` ([@Adel-Moumen](https://github.com/Adel-Moumen/))
+
+
+## Version 3.3.0 (2024-06-14)
+
+### TL;DR
+
+`pyannote.audio` does [speech separation](https://hf.co/pyannote/speech-separation-ami-1.0): multi-speaker audio in, one audio channel per speaker out!
+
+```bash
+pip install pyannote.audio[separation]==3.3.0
+```
+
+### New features
+
+- feat(task): add `PixIT` joint speaker diarization and speech separation task (with [@joonaskalda](https://github.com/joonaskalda/))
+- feat(model): add `ToTaToNet` joint speaker diarization and speech separation model (with [@joonaskalda](https://github.com/joonaskalda/))
+- feat(pipeline): add `SpeechSeparation` pipeline (with [@joonaskalda](https://github.com/joonaskalda/))
 - feat(io): add option to select torchaudio `backend`
 
 ### Fixes
@@ -15,6 +69,7 @@
 
 - improve(io): when available, default to using `soundfile` backend
 - improve(pipeline): do not extract embeddings when `max_speakers` is set to 1
+- improve(pipeline): optimize memory usage of most pipelines ([#1713](https://github.com/pyannote/pyannote-audio/pull/1713) by [@benniekiss](https://github.com/benniekiss/))
 
 ## Version 3.2.0 (2024-05-08)
 

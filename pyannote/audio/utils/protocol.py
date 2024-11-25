@@ -21,8 +21,10 @@
 # SOFTWARE.
 
 from functools import partial
+from typing import Optional
 
 import torchaudio
+from pyannote.core import Annotation
 from pyannote.database import FileFinder, Protocol, get_annotated
 from pyannote.database.protocol import SpeakerVerificationProtocol
 
@@ -62,14 +64,12 @@ def check_protocol(protocol: Protocol) -> Protocol:
 
     # does protocol provide audio keys?
     if "audio" not in file:
-
         if "waveform" in file:
             if "sample_rate" not in file:
                 msg = f'Protocol {protocol.name} provides audio with "waveform" key but is missing a "sample_rate" key.'
                 raise ValueError(msg)
 
         else:
-
             file_finder = FileFinder()
             try:
                 _ = file_finder(file)
@@ -90,7 +90,6 @@ def check_protocol(protocol: Protocol) -> Protocol:
                 print(msg)
 
     if "waveform" not in file and "torchaudio.info" not in file:
-
         # use soundfile when available (it usually is faster than ffmpeg for getting info)
         backends = (
             torchaudio.list_audio_backends()
@@ -107,7 +106,6 @@ def check_protocol(protocol: Protocol) -> Protocol:
         print(msg)
 
     if "annotated" not in file:
-
         if "duration" not in file:
             protocol.preprocessors["duration"] = get_duration
 
@@ -143,3 +141,45 @@ def check_protocol(protocol: Protocol) -> Protocol:
     }
 
     return protocol, checks
+
+
+class FilterByNumberOfSpeakers:
+    """Filter files based on the number of speakers
+
+    Note
+    ----
+    Always returns True if `current_file` does not have an "annotation" key.
+
+    """
+
+    def __init__(
+        self,
+        num_speakers: Optional[int] = None,
+        min_speakers: Optional[int] = None,
+        max_speakers: Optional[int] = None,
+    ):
+        from pyannote.audio.pipelines.utils.diarization import set_num_speakers
+
+        self.num_speakers, self.min_speakers, self.max_speakers = set_num_speakers(
+            num_speakers=num_speakers,
+            min_speakers=min_speakers,
+            max_speakers=max_speakers,
+        )
+
+    def __call__(self, current_file: dict) -> bool:
+        if "annotation" not in current_file:
+            return True
+
+        annotation: Annotation = current_file["annotation"]
+        num_speakers: int = len(annotation.labels())
+
+        if self.num_speakers is not None and self.num_speakers != num_speakers:
+            return False
+
+        if self.min_speakers is not None and self.min_speakers > num_speakers:
+            return False
+
+        if self.max_speakers is not None and self.max_speakers < num_speakers:
+            return False
+
+        return True

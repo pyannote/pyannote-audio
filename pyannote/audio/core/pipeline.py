@@ -71,7 +71,8 @@ class Pipeline(_Pipeline):
             to True or to a string containing your hugginface.co authentication
             token that can be obtained by running `huggingface-cli login`
         cache_dir: Path or str, optional
-            Path to model cache directory. Defauorch/pyannote" when unset.
+            Path to model cache directory. Defaults to content of PYANNOTE_CACHE
+            environment variable, or "~/.cache/torch/pyannote" when unset.
         """
 
         checkpoint_path = str(checkpoint_path)
