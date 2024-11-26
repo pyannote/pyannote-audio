@@ -2,6 +2,20 @@
 
 ## develop
 
+### TL;DR
+
+#### Quality of life improvements
+
+Models can now be stored alongside their pipelines in the same repository, streamlining gating mechanism:
+- accept `pyannote/speaker-diarization-x.x` pipeline user agreement
+- ~~accept `pyannote/segmentation-3.0` model user agreement~~
+- ~~accept `pyannote/wespeaker-voxceleb-resnet34-LM` model user agreement~~
+- load pipeline with `Pipeline.from_pretrained("pyannote/speaker-diarization-3.1", use_auth_token=True)`
+
+#### Improve speech separation quality
+
+Clipping and speaker/source alignment issues in speech separation pipeline have been fixed.
+
 ### Breaking changes
 
 - BREAKING(task): drop support for `multilabel` training in `SpeakerDiarization` task
@@ -11,6 +25,7 @@
 
 ### New features
 
+- improve(hub): add support for pipeline repos that also include underlying models
 - feat(clustering): add support for `k-means` clustering
 - feat(model): add `wav2vec_frozen` option to freeze/unfreeze `wav2vec` in `SSeRiouSS` architecture
 - feat(task): add support for manual optimization in `SpeakerDiarization` task
