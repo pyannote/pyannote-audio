@@ -34,12 +34,12 @@ Clipping and speaker/source alignment issues in speech separation pipeline have 
 
 ### Improvements
 
-- improve(model): improve WavLM (un)freezing support for `SSeRiouSS` architectures ([@clement-pages](https://github.com/clement-pages/))
+- improve(model): improve WavLM (un)freezing support for `SSeRiouSS` architecture ([@clement-pages](https://github.com/clement-pages/))
 - improve(task): improve `SpeakerDiarization` training with manual optimization ([@clement-pages](https://github.com/clement-pages/))
 
 ### Fixes
 
-- fix(model): improve WavLM (un)freezing support for `ToTaToNet` architectures ([@clement-pages](https://github.com/clement-pages/))
+- fix(model): improve WavLM (un)freezing support for `ToTaToNet` architecture ([@clement-pages](https://github.com/clement-pages/))
 - fix(separation): fix clipping issue in speech separation pipeline ([@joonaskalda](https://github.com/joonaskalda/))
 - fix(separation): fix alignment between separated sources and diarization ([@Lebourdais](https://github.com/Lebourdais/) and [@clement-pages](https://github.com/clement-pages/))
 - fix(separation): prevent leakage removal collar from being applied to diarization ([@clement-pages](https://github.com/clement-pages/))
