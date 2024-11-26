@@ -632,15 +632,16 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
                 )
             )
             if asr_collar_frames > 0:
+                dilated_speaker_activations = np.zeros_like(discrete_diarization.data)
                 for i in range(num_speakers):
                     speaker_activation = discrete_diarization.data.T[i]
                     non_silent = speaker_activation != 0
                     dilated_non_silent = binary_dilation(non_silent, [True] * (2 * asr_collar_frames))
-                    speaker_activation_with_context = dilated_non_silent.astype(np.int8)
-                    discrete_diarization.data.T[i] = speaker_activation_with_context
+                    dilated_speaker_activations.T[i] = dilated_non_silent.astype(np.int8)
 
+            dilated_speaker_activations = SlidingWindowFeature(dilated_speaker_activations, discrete_diarization.sliding_window)
             sources.data = (
-                sources.data * discrete_diarization.align(sources).data
+                sources.data * dilated_speaker_activations.align(sources).data
             )
 
         # separated sources might be scaled up/down due to SI-SDR loss used when training
