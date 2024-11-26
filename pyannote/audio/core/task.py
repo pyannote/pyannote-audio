@@ -48,6 +48,7 @@ from torch_audiomentations.core.transforms_interface import BaseWaveformTransfor
 from torchmetrics import Metric, MetricCollection
 
 from pyannote.audio.utils.loss import binary_cross_entropy, nll_loss
+from pyannote.audio.utils.params import merge_dict 
 from pyannote.audio.utils.protocol import check_protocol
 
 Subsets = list(Subset.__args__)
@@ -231,6 +232,9 @@ class Task(pl.LightningDataModule):
         If True, data loaders will copy tensors into CUDA pinned
         memory before returning them. See pytorch documentation
         for more details. Defaults to False.
+    gradient: dict, optional
+        Keywords arguments for gradient calculation.
+        Defaults to {"clip_val": 5.0, "clip_algorithm": "norm", "accumulate_batches": 1}
     augmentation : BaseWaveformTransform, optional
         torch_audiomentations waveform transform, used by dataloader
         during training.
@@ -245,6 +249,12 @@ class Task(pl.LightningDataModule):
 
     """
 
+    GRADIENT_DEFAULTS = {
+        "clip_val": 5.0,
+        "clip_algorithm": "norm",
+        "accumulate_batches": 1,
+    }
+
     def __init__(
         self,
         protocol: Protocol,
@@ -255,6 +265,7 @@ class Task(pl.LightningDataModule):
         batch_size: int = 32,
         num_workers: Optional[int] = None,
         pin_memory: bool = False,
+        gradient: Optional[dict] = None,
         augmentation: Optional[BaseWaveformTransform] = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
     ):
@@ -302,6 +313,7 @@ class Task(pl.LightningDataModule):
 
         self.num_workers = num_workers
         self.pin_memory = pin_memory
+        self.gradient = merge_dict(self.GRADIENT_DEFAULTS, gradient)
         self.augmentation = augmentation or Identity(output_type="dict")
         self._metric = metric
 
@@ -810,6 +822,45 @@ class Task(pl.LightningDataModule):
     # can obviously be overriden for each task
     def training_step(self, batch, batch_idx: int):
         return self.common_step(batch, batch_idx, "train")
+    
+    def manual_optimization(self, loss: torch.Tensor, batch_idx: int) -> torch.Tensor:
+        """Process manual optimization for each optimizer
+        
+        Parameters
+        ----------
+        loss: torch.Tensor
+            Computed loss for current training step.
+        batch_idx: int
+            Batch index.
+
+        Returns
+        -------
+        scaled_loss: torch.Tensor
+            Loss scaled by `1 / Task.gradient["accumulate_batches"]`.
+        """
+        optimizers = self.model.optimizers()
+        optimizers = optimizers if isinstance(optimizers, list) else [optimizers]
+
+        num_accumulate_batches = self.gradient["accumulate_batches"]
+        if batch_idx % num_accumulate_batches == 0:
+            for optimizer in optimizers:
+                optimizer.zero_grad()
+
+        # scale loss to keep the gradient magnitude as it would be using batches
+        # with size = batch_size * num_accumulate_batches
+        scaled_loss = loss / num_accumulate_batches
+        self.model.manual_backward(scaled_loss)
+
+        if (batch_idx + 1) % num_accumulate_batches == 0:
+            for optimizer in optimizers:
+                self.model.clip_gradients(
+                    optimizer,
+                    gradient_clip_val=self.gradient["clip_val"],
+                    gradient_clip_algorithm=self.gradient["clip_algorithm"],
+                )
+                optimizer.step()
+        
+        return scaled_loss
 
     def val__getitem__(self, idx):
         # will become val_dataset.__getitem__ method

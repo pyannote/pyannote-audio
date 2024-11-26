@@ -94,6 +94,7 @@ class VoiceActivityDetection(SegmentationTask):
         batch_size: int = 32,
         num_workers: Optional[int] = None,
         pin_memory: bool = False,
+        gradient: Optional[Dict] = None,
         augmentation: Optional[BaseWaveformTransform] = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
     ):
@@ -104,6 +105,7 @@ class VoiceActivityDetection(SegmentationTask):
             batch_size=batch_size,
             num_workers=num_workers,
             pin_memory=pin_memory,
+            gradient=gradient,
             augmentation=augmentation,
             metric=metric,
             cache=cache,

@@ -90,6 +90,7 @@ class SupervisedRepresentationLearningWithArcFace(
         scale: float = 64.0,
         num_workers: Optional[int] = None,
         pin_memory: bool = False,
+        gradient: Optional[Dict] = None,
         augmentation: Optional[BaseWaveformTransform] = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
     ):
@@ -106,6 +107,7 @@ class SupervisedRepresentationLearningWithArcFace(
             min_duration=min_duration,
             batch_size=self.batch_size,
             num_workers=num_workers,
+            gradient=gradient,
             pin_memory=pin_memory,
             augmentation=augmentation,
             metric=metric,

@@ -165,6 +165,7 @@ class PixIT(SegmentationTask):
         batch_size: int = 32,
         num_workers: Optional[int] = None,
         pin_memory: bool = False,
+        gradient: Optional[Dict] = None,
         augmentation: Optional[BaseWaveformTransform] = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
         max_num_speakers: Optional[
@@ -185,6 +186,7 @@ class PixIT(SegmentationTask):
             batch_size=batch_size,
             num_workers=num_workers,
             pin_memory=pin_memory,
+            gradient=gradient,
             augmentation=augmentation,
             metric=metric,
             cache=cache,
@@ -1009,22 +1011,8 @@ class PixIT(SegmentationTask):
             logger=True,
         )
 
-        # using multiple optimizers requires manual optimization
         if not self.automatic_optimization:
-            optimizers = self.model.optimizers()
-            optimizers = optimizers if isinstance(optimizers, list) else [optimizers]
-            for optimizer in optimizers:
-                optimizer.zero_grad()
-
-            self.model.manual_backward(loss)
-
-            for optimizer in optimizers:
-                self.model.clip_gradients(
-                    optimizer,
-                    gradient_clip_val=self.model.gradient_clip_val,
-                    gradient_clip_algorithm="norm",
-                )
-                optimizer.step()
+            loss = self.manual_optimization(loss, batch_idx)
 
         return {"loss": loss}
 
