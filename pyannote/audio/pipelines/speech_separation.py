@@ -70,7 +70,7 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
         `segmentation_step` controls the step of this window, provided as a ratio of its
         duration. Defaults to 0.1 (i.e. 90% overlap between two consecuive windows).
     embedding : Model, str, or dict, optional
-        Pretrained embedding model. Defaults to "pyannote/embedding@2022.07".
+        Pretrained embedding model. Defaults to "speechbrain/spkrec-ecapa-voxceleb@5c0be3875fda05e81f3c004ed8c7c06be308de1e".
         See pyannote.audio.pipelines.utils.get_model for supported format.
     embedding_exclude_overlap : bool, optional
         Exclude overlapping speech regions when extracting embeddings.
