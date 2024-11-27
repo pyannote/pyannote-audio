@@ -46,6 +46,7 @@ Clipping and speaker/source alignment issues in speech separation pipeline have 
 - fix(separation): fix `PixIT` training with manual optimization ([@clement-pages](https://github.com/clement-pages/))
 - fix(doc): fix link to pytorch ([@emmanuel-ferdman](https://github.com/emmanuel-ferdman/))
 - fix(task): fix corner case with small (<9) number of validation samples ([@antoinelaurent](https://github.com/antoinelaurent/))
+- fix(documentation): Changed the default embedding model from "pyannote/embedding@2022.07" to "speechbrain/spkrec-ecapa-voxcele" in documentations of speech_separation.py and speaker_diarization.py.
 
 ## Version 3.3.2 (2024-09-11)
 
