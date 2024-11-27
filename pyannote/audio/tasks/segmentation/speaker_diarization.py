@@ -398,10 +398,6 @@ class SpeakerDiarization(SegmentationTask):
 
         return torch.from_numpy(np.stack(collated_y))
 
-    @property
-    def automatic_optimization(self):
-        return self.model.automatic_optimization
-
     def training_step(self, batch, batch_idx: int):
         """Compute permutation-invariant segmentation loss
 
@@ -469,8 +465,9 @@ class SpeakerDiarization(SegmentationTask):
             logger=True,
         )
 
-        if not self.model.automatic_optimization:
+        if not self.automatic_optimization:
             optimizers = self.model.optimizers()
+            optimizers = optimizers if isinstance(optimizers, list) else [optimizers]
             for optimizer in optimizers:
                 optimizer.zero_grad()
 
@@ -673,4 +670,5 @@ def evaluate(protocol: str, subset: str = "test", model: str = "pyannote/segment
 
 if __name__ == "__main__":
     import typer
+
     typer.run(evaluate)

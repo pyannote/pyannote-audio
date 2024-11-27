@@ -127,6 +127,9 @@ class SSeRiouSS(Model):
             self.wav2vec_weights = nn.Parameter(
                 data=torch.ones(wav2vec_num_layers), requires_grad=True
             )
+        
+        for param in self.wav2vec.parameters():
+            param.requires_grad = not wav2vec_frozen
 
         lstm = merge_dict(self.LSTM_DEFAULTS, lstm)
         lstm["batch_first"] = True
@@ -300,13 +303,9 @@ class SSeRiouSS(Model):
             None if self.hparams.wav2vec_layer < 0 else self.hparams.wav2vec_layer
         )
 
-        context = (
-            torch.no_grad() if self.hparams.wav2vec_frozen else contextlib.nullcontext()
+        outputs, _ = self.wav2vec.extract_features(
+            waveforms.squeeze(1), num_layers=num_layers
         )
-        with context:
-            outputs, _ = self.wav2vec.extract_features(
-                waveforms.squeeze(1), num_layers=num_layers
-            )
 
         if num_layers is None:
             outputs = torch.stack(outputs, dim=-1) @ F.softmax(
