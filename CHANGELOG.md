@@ -2,16 +2,52 @@
 
 ## develop
 
+### TL;DR
+
+#### Quality of life improvements
+
+Models can now be stored alongside their pipelines in the same repository, streamlining gating mechanism:
+- accept `pyannote/speaker-diarization-x.x` pipeline user agreement
+- ~~accept `pyannote/segmentation-3.0` model user agreement~~
+- ~~accept `pyannote/wespeaker-voxceleb-resnet34-LM` model user agreement~~
+- load pipeline with `Pipeline.from_pretrained("pyannote/speaker-diarization-3.1", use_auth_token=True)`
+
+#### Improve speech separation quality
+
+Clipping and speaker/source alignment issues in speech separation pipeline have been fixed.
+
+### Breaking changes
+
+- BREAKING(task): drop support for `multilabel` training in `SpeakerDiarization` task
+- BREAKING(task): drop support for `warm_up` option in `SpeakerDiarization` task
+- BREAKING(task): drop support for `weigh_by_cardinality` option in `SpeakerDiarization` task
+- BREAKING(task): drop support for `vad_loss` option in `SpeakerDiarization` task
+
 ### New features
 
-- feat: add support for `k-means` clustering
-- feat: add `"hidden"` option to `ProgressHook`
-- feat: add `FilterByNumberOfSpeakers` protocol files filter
+- improve(hub): add support for pipeline repos that also include underlying models
+- feat(clustering): add support for `k-means` clustering
+- feat(model): add `wav2vec_frozen` option to freeze/unfreeze `wav2vec` in `SSeRiouSS` architecture
+- feat(task): add support for manual optimization in `SpeakerDiarization` task
+- feat(utils): add `hidden` option to `ProgressHook`
+- feat(utils): add `FilterByNumberOfSpeakers` protocol files filter
+- feat(core): add `Calibration` class to calibrate logits/distances into probabilities
+
+### Improvements
+
+- improve(model): improve WavLM (un)freezing support for `SSeRiouSS` architecture ([@clement-pages](https://github.com/clement-pages/))
+- improve(task): improve `SpeakerDiarization` training with manual optimization ([@clement-pages](https://github.com/clement-pages/))
 
 ### Fixes
 
-- fix: fix clipping issue in speech separation pipeline ([@joonaskalda](https://github.com/joonaskalda/))
-- fix: fix alignment between separated sources and diarization when the diarization reference is available ([@Lebourdais](https://github.com/Lebourdais/))
+- fix(model): improve WavLM (un)freezing support for `ToTaToNet` architecture ([@clement-pages](https://github.com/clement-pages/))
+- fix(separation): fix clipping issue in speech separation pipeline ([@joonaskalda](https://github.com/joonaskalda/))
+- fix(separation): fix alignment between separated sources and diarization ([@Lebourdais](https://github.com/Lebourdais/) and [@clement-pages](https://github.com/clement-pages/))
+- fix(separation): prevent leakage removal collar from being applied to diarization ([@clement-pages](https://github.com/clement-pages/))
+- fix(separation): fix `PixIT` training with manual optimization ([@clement-pages](https://github.com/clement-pages/))
+- fix(doc): fix link to pytorch ([@emmanuel-ferdman](https://github.com/emmanuel-ferdman/))
+- fix(task): fix corner case with small (<9) number of validation samples ([@antoinelaurent](https://github.com/antoinelaurent/))
+- fix(doc): fix default embedding in `SpeechSeparation` and `SpeakerDiarization` docstring ([@razi-tm](https://github.com/razi-tm/)).
 
 ## Version 3.3.2 (2024-09-11)
 

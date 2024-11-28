@@ -96,6 +96,8 @@ class ToTaToNet(Model):
         Number of separated sources. Defaults to 3.
     use_wavlm : bool, optional
         Whether to use the WavLM large model for feature extraction. Defaults to True.
+    wavlm_frozen : bool, optional
+        Whether to freeze the WavLM model. Defaults to False.
     gradient_clip_val : float, optional
         Gradient clipping value. Required when fine-tuning the WavLM model and thus using two different optimizers.
         Defaults to 5.0.
@@ -137,6 +139,7 @@ class ToTaToNet(Model):
         task: Optional[Task] = None,
         n_sources: int = 3,
         use_wavlm: bool = True,
+        wavlm_frozen: bool = False,
         gradient_clip_val: float = 5.0,
     ):
         if not ASTEROID_IS_AVAILABLE:
@@ -158,7 +161,9 @@ class ToTaToNet(Model):
         encoder_decoder = merge_dict(self.ENCODER_DECODER_DEFAULTS, encoder_decoder)
         diar = merge_dict(self.DIAR_DEFAULTS, diar)
         self.use_wavlm = use_wavlm
-        self.save_hyperparameters("encoder_decoder", "linear", "dprnn", "diar")
+        self.save_hyperparameters(
+            "encoder_decoder", "linear", "dprnn", "diar", "wavlm_frozen"
+        )
         self.n_sources = n_sources
 
         if encoder_decoder["fb_name"] == "free":
@@ -173,6 +178,8 @@ class ToTaToNet(Model):
 
         if self.use_wavlm:
             self.wavlm = AutoModel.from_pretrained("microsoft/wavlm-large")
+            for param in self.wavlm.parameters():
+                param.requires_grad = not wavlm_frozen
             downsampling_factor = 1
             for conv_layer in self.wavlm.feature_extractor.conv_layers:
                 if isinstance(conv_layer.conv, nn.Conv1d):
@@ -216,7 +223,8 @@ class ToTaToNet(Model):
                 ]
             )
         self.gradient_clip_val = gradient_clip_val
-        self.automatic_optimization = False
+        # manual optimization is needed only when wavlm is finetuned
+        self.automatic_optimization = wavlm_frozen
 
     @property
     def dimension(self) -> int:

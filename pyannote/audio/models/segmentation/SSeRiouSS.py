@@ -20,6 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import contextlib
 from functools import lru_cache
 from typing import Optional, Union
 
@@ -52,6 +53,8 @@ class SSeRiouSS(Model):
         Number of channels. Defaults to mono (1).
     wav2vec: dict or str, optional
         Defaults to "WAVLM_BASE".
+    wav2vec_frozen: bool, optional
+        Whether to freeze wav2vec weights. Defaults to False.
     wav2vec_layer: int, optional
         Index of layer to use as input to the LSTM.
         Defaults (-1) to use average of all layers (with learnable weights).
@@ -81,6 +84,7 @@ class SSeRiouSS(Model):
     def __init__(
         self,
         wav2vec: Union[dict, str] = None,
+        wav2vec_frozen: bool = False,
         wav2vec_layer: int = -1,
         lstm: Optional[dict] = None,
         linear: Optional[dict] = None,
@@ -123,12 +127,17 @@ class SSeRiouSS(Model):
             self.wav2vec_weights = nn.Parameter(
                 data=torch.ones(wav2vec_num_layers), requires_grad=True
             )
+        
+        for param in self.wav2vec.parameters():
+            param.requires_grad = not wav2vec_frozen
 
         lstm = merge_dict(self.LSTM_DEFAULTS, lstm)
         lstm["batch_first"] = True
         linear = merge_dict(self.LINEAR_DEFAULTS, linear)
 
-        self.save_hyperparameters("wav2vec", "wav2vec_layer", "lstm", "linear")
+        self.save_hyperparameters(
+            "wav2vec", "wav2vec_frozen", "wav2vec_layer", "lstm", "linear"
+        )
 
         monolithic = lstm["monolithic"]
         if monolithic:
@@ -294,10 +303,9 @@ class SSeRiouSS(Model):
             None if self.hparams.wav2vec_layer < 0 else self.hparams.wav2vec_layer
         )
 
-        with torch.no_grad():
-            outputs, _ = self.wav2vec.extract_features(
-                waveforms.squeeze(1), num_layers=num_layers
-            )
+        outputs, _ = self.wav2vec.extract_features(
+            waveforms.squeeze(1), num_layers=num_layers
+        )
 
         if num_layers is None:
             outputs = torch.stack(outputs, dim=-1) @ F.softmax(
