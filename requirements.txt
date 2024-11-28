@@ -9,6 +9,7 @@ pyannote.metrics >= 3.2
 pyannote.pipeline >= 3.0.1
 pytorch_metric_learning >= 2.1.0
 rich >= 12.0.0
+safetensors >= 0.4.5
 semver >= 3.0.0
 soundfile >= 0.12.1
 speechbrain >= 1.0.0
