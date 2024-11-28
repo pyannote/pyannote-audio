@@ -532,6 +532,7 @@ class Model(pl.LightningModule):
         map_location=None,
         hparams_file: Union[Path, Text] = None,
         strict: bool = True,
+        subfolder: Optional[str] = None,
         use_auth_token: Union[Text, None] = None,
         cache_dir: Union[Path, Text, None] = None,
         **kwargs,
@@ -542,7 +543,7 @@ class Model(pl.LightningModule):
         ----------
         checkpoint : Path or str
             Path to checkpoint, or a remote URL, or a model identifier from
-            the huggingface.co model hub.
+            the hf.co model hub.
         map_location: optional
             Same role as in torch.load().
             Defaults to `lambda storage, loc: storage`.
@@ -559,8 +560,10 @@ class Model(pl.LightningModule):
         strict : bool, optional
             Whether to strictly enforce that the keys in checkpoint match
             the keys returned by this module’s state dict. Defaults to True.
+        subfolder : str, optional
+            Folder inside the hf.co model repo.
         use_auth_token : str, optional
-            When loading a private huggingface.co model, set `use_auth_token`
+            When loading a private hf.co model, set `use_auth_token`
             to True or to a string containing your hugginface.co authentication
             token that can be obtained by running `huggingface-cli login`
         cache_dir: Path or str, optional
@@ -609,18 +612,13 @@ class Model(pl.LightningModule):
                 path_for_pl = hf_hub_download(
                     model_id,
                     HF_PYTORCH_WEIGHTS_NAME,
+                    subfolder=subfolder,
                     repo_type="model",
                     revision=revision,
                     library_name="pyannote",
                     library_version=__version__,
                     cache_dir=cache_dir,
-                    # force_download=False,
-                    # proxies=None,
-                    # etag_timeout=10,
-                    # resume_download=False,
                     use_auth_token=use_auth_token,
-                    # local_files_only=False,
-                    # legacy_cache_layout=False,
                 )
             except RepositoryNotFoundError:
                 print(

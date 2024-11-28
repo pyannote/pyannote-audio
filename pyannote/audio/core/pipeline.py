@@ -47,6 +47,49 @@ from pyannote.audio.utils.version import check_version
 PIPELINE_PARAMS_NAME = "config.yaml"
 
 
+def expand_subfolders(
+    config, hf_model_id, use_auth_token: Optional[Text] = None
+) -> None:
+    """Expand $model subfolders in config
+
+    Processes `config` dictionary recursively and replaces "$model/{subfolder}"
+    values with {"checkpoint": hf_model_id,
+                 "subfolder": {subfolder},
+                 "use_auth_token": use_auth_token}
+
+    Parameters
+    ----------
+    config : dict
+    hf_model_id : str
+        Parent Huggingface model identifier
+    use_auth_token : str, optional
+        Token used for loading from the root folder.
+    """
+    if isinstance(config, dict):
+        for key, value in config.items():
+            if isinstance(value, str) and value.startswith("$model/"):
+                subfolder = "/".join(value.split("/")[1:])
+                config[key] = {
+                    "checkpoint": hf_model_id,
+                    "subfolder": subfolder,
+                    "use_auth_token": use_auth_token,
+                }
+            else:
+                expand_subfolders(value, hf_model_id, use_auth_token=use_auth_token)
+
+    elif isinstance(config, list):
+        for idx, value in enumerate(config):
+            if isinstance(value, str) and value.startswith("$model/"):
+                subfolder = "/".join(value.split("/")[1:])
+                config[idx] = {
+                    "checkpoint": hf_model_id,
+                    "subfolder": subfolder,
+                    "use_auth_token": use_auth_token,
+                }
+            else:
+                expand_subfolders(value, hf_model_id, use_auth_token=use_auth_token)
+
+
 class Pipeline(_Pipeline):
     @classmethod
     def from_pretrained(
@@ -97,13 +140,7 @@ class Pipeline(_Pipeline):
                     library_name="pyannote",
                     library_version=__version__,
                     cache_dir=cache_dir,
-                    # force_download=False,
-                    # proxies=None,
-                    # etag_timeout=10,
-                    # resume_download=False,
                     use_auth_token=use_auth_token,
-                    # local_files_only=False,
-                    # legacy_cache_layout=False,
                 )
 
             except RepositoryNotFoundError:
@@ -124,6 +161,7 @@ visit https://hf.co/{model_id} to accept the user conditions."""
 
         with open(config_yml, "r") as fp:
             config = yaml.load(fp, Loader=yaml.SafeLoader)
+        expand_subfolders(config, model_id, use_auth_token=use_auth_token)
 
         if "version" in config:
             check_version(
