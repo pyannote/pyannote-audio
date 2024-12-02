@@ -67,6 +67,9 @@ class SupervisedRepresentationLearningWithArcFace(
         If True, data loaders will copy tensors into CUDA pinned
         memory before returning them. See pytorch documentation
         for more details. Defaults to False.
+    gradient: dict, optional
+        Keywords arguments for gradient calculation.
+        Defaults to {"clip_val": 5.0, "clip_algorithm": "norm", "accumulate_batches": 1}
     augmentation : BaseWaveformTransform, optional
         torch_audiomentations waveform transform, used by dataloader
         during training.
@@ -107,8 +110,8 @@ class SupervisedRepresentationLearningWithArcFace(
             min_duration=min_duration,
             batch_size=self.batch_size,
             num_workers=num_workers,
-            gradient=gradient,
             pin_memory=pin_memory,
+            gradient=gradient,
             augmentation=augmentation,
             metric=metric,
         )

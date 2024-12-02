@@ -75,6 +75,9 @@ class VoiceActivityDetection(SegmentationTask):
         If True, data loaders will copy tensors into CUDA pinned
         memory before returning them. See pytorch documentation
         for more details. Defaults to False.
+    gradient: dict, optional
+        Keywords arguments for gradient calculation.
+        Defaults to {"clip_val": 5.0, "clip_algorithm": "norm", "accumulate_batches": 1}
     augmentation : BaseWaveformTransform, optional
         torch_audiomentations waveform transform, used by dataloader
         during training.
