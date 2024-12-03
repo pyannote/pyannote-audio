@@ -23,9 +23,11 @@
 from .diarization import SpeakerDiarizationMixin
 from .getter import (
     PipelineAugmentation,
+    PipelineCalibration,
     PipelineInference,
     PipelineModel,
     get_augmentation,
+    get_calibration,
     get_devices,
     get_inference,
     get_model,
@@ -42,4 +44,6 @@ __all__ = [
     "PipelineInference",
     "get_model",
     "PipelineModel",
+    "get_calibration",
+    "PipelineCalibration",
 ]

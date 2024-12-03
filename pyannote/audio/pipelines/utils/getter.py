@@ -21,13 +21,14 @@
 # SOFTWARE.
 
 import itertools
-from typing import Mapping, Optional, Text, Union
+from typing import Dict, Mapping, Optional, Text, Union
 
 import torch
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torch_audiomentations.utils.config import from_dict as augmentation_from_dict
 
 from pyannote.audio import Inference, Model
+from pyannote.audio.core.calibration import Calibration
 
 PipelineModel = Union[Model, Text, Mapping]
 
@@ -139,6 +140,54 @@ def get_inference(inference: PipelineInference) -> Inference:
 
 
 PipelineAugmentation = Union[BaseWaveformTransform, Mapping]
+
+
+PipelineCalibration = Union[Calibration, Text, Dict]
+
+
+def get_calibration(
+    calibration: PipelineCalibration,
+    use_auth_token: Union[Text, None] = None,
+) -> Optional[Calibration]:
+    """Load pretrained calibration
+
+    Parameters
+    ----------
+    calibration : Calibration, str, or dict
+        When `Calibration`, returns `calibration` as is.
+        When `str`, assumes that this is either the path to a checkpoint or the name of a
+        pretrained calibration on Huggingface.co and loads with `Calibration.from_pretrained(calibration)`.
+        When `dict`, loads with `Calibration.from_pretrained(**calibration)`.
+
+    Returns
+    -------
+    calibration : Calibration
+        Calibration.
+
+    See also
+    --------
+    pyannote.audio.core.calibration.Calibration.from_pretrained
+    """
+
+    if isinstance(calibration, Calibration):
+        loaded_calibration = calibration
+
+    elif isinstance(calibration, Text):
+        loaded_calibration = Calibration.from_pretrained(
+            calibration, use_auth_token=use_auth_token
+        )
+
+    elif isinstance(calibration, Dict):
+        calibration.setdefault("use_auth_token", use_auth_token)
+        loaded_calibration = Calibration.from_pretrained(**calibration)
+
+    else:
+        raise TypeError(
+            f"Unsupported type ({type(calibration)}) for loading calibration: "
+            f"expected `str` or `dict`."
+        )
+
+    return loaded_calibration
 
 
 def get_augmentation(augmentation: PipelineAugmentation) -> BaseWaveformTransform:

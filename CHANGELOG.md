@@ -31,6 +31,7 @@ Clipping and speaker/source alignment issues in speech separation pipeline have 
 - feat(task): add support for manual optimization in `SpeakerDiarization` task
 - feat(utils): add `hidden` option to `ProgressHook`
 - feat(utils): add `FilterByNumberOfSpeakers` protocol files filter
+- feat(core): add `Calibration` class to calibrate logits/distances into probabilities
 
 ### Improvements
 
@@ -46,6 +47,7 @@ Clipping and speaker/source alignment issues in speech separation pipeline have 
 - fix(separation): fix `PixIT` training with manual optimization ([@clement-pages](https://github.com/clement-pages/))
 - fix(doc): fix link to pytorch ([@emmanuel-ferdman](https://github.com/emmanuel-ferdman/))
 - fix(task): fix corner case with small (<9) number of validation samples ([@antoinelaurent](https://github.com/antoinelaurent/))
+- fix(doc): fix default embedding in `SpeechSeparation` and `SpeakerDiarization` docstring ([@razi-tm](https://github.com/razi-tm/)).
 
 ## Version 3.3.2 (2024-09-11)
 
