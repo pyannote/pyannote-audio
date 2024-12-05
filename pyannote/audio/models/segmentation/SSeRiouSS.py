@@ -128,6 +128,9 @@ class SSeRiouSS(Model):
                 data=torch.ones(wav2vec_num_layers), requires_grad=True
             )
         
+        # by default, wa2vec is in eval mode (especially when loading from torchaudio)
+        self.wav2vec.train()
+
         for param in self.wav2vec.parameters():
             param.requires_grad = not wav2vec_frozen
 

@@ -178,6 +178,8 @@ class ToTaToNet(Model):
 
         if self.use_wavlm:
             self.wavlm = AutoModel.from_pretrained("microsoft/wavlm-large")
+            # by default wavlm is in eval mode
+            self.wavlm.train()
             for param in self.wavlm.parameters():
                 param.requires_grad = not wavlm_frozen
             downsampling_factor = 1
