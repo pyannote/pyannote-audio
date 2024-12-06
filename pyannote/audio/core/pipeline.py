@@ -98,7 +98,7 @@ class Pipeline(_Pipeline):
         hparams_file: Union[Text, Path] = None,
         use_auth_token: Union[Text, None] = None,
         cache_dir: Union[Path, Text] = CACHE_DIR,
-    ) -> "Pipeline":
+    ) -> "Pipeline" | None:
         """Load pretrained pipeline
 
         Parameters
