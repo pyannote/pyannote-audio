@@ -25,6 +25,7 @@
 
 
 import sys
+from contextlib import nullcontext
 from enum import Enum
 from pathlib import Path
 from typing import Optional
@@ -68,8 +69,17 @@ def parse_device(device: Device) -> torch.device:
 app = typer.Typer()
 
 
+# TODO: add option to download pretrained pipeline for later use without internet
+
+
 @app.command("apply")
 def apply(
+    pipeline: Annotated[
+        str,
+        typer.Argument(
+            help="Pretrained pipeline (e.g. pyannote/speaker-diarization-3.1)"
+        ),
+    ],
     audio: Annotated[
         Path,
         typer.Argument(
@@ -79,13 +89,25 @@ def apply(
             readable=True,
         ),
     ],
-    pipeline: Annotated[
-        str, typer.Option(help="Pretrained pipeline")
-    ] = "pyannote/speaker-diarization-3.1",
+    into: Annotated[
+        Path,
+        typer.Option(
+            help="Path to file where results are saved.",
+            exists=False,
+            dir_okay=False,
+            file_okay=True,
+            writable=True,
+            resolve_path=True,
+        ),
+    ] = None,
     device: Annotated[
         Device, typer.Option(help="Accelerator to use (CPU, CUDA, MPS)")
     ] = Device.AUTO,
 ):
+    """
+    Apply a pretrained PIPELINE to an AUDIO file
+    """
+
     # load pretrained pipeline
     pretrained_pipeline = Pipeline.from_pretrained(pipeline)
 
@@ -93,14 +115,22 @@ def apply(
     torch_device = parse_device(device)
     pretrained_pipeline.to(torch_device)
 
+    # apply pipeline to audio file
     prediction: Annotation = pretrained_pipeline(audio)
 
-    prediction.write_rttm(sys.stdout)
-    sys.stdout.flush()
+    # save (or print) results
+    with open(into, "w") if into else nullcontext(sys.stdout) as rttm:
+        prediction.write_rttm(rttm)
 
 
 @app.command("benchmark")
 def benchmark(
+    pipeline: Annotated[
+        str,
+        typer.Argument(
+            help="Pretrained pipeline (e.g. pyannote/speaker-diarization-3.1)"
+        ),
+    ],
     protocol: Annotated[
         str,
         typer.Argument(help="Benchmarked protocol"),
@@ -123,9 +153,6 @@ def benchmark(
             case_sensitive=False,
         ),
     ] = Subset.test,
-    pipeline: Annotated[
-        str, typer.Option(help="Benchmarked pipeline")
-    ] = "pyannote/speaker-diarization-3.1",
     device: Annotated[
         Device, typer.Option(help="Accelerator to use (CPU, CUDA, MPS)")
     ] = Device.AUTO,
@@ -140,6 +167,10 @@ def benchmark(
         ),
     ] = None,
 ):
+    """
+    Benchmark a pretrained PIPELINE
+    """
+
     # load pretrained pipeline
     pretrained_pipeline = Pipeline.from_pretrained(pipeline)
 
