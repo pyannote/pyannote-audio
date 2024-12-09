@@ -51,14 +51,18 @@ class Device(str, Enum):
     AUTO = "auto"
 
 
-def guess_device() -> Device:
-    if torch.cuda.is_available():
-        return Device.CUDA
+def parse_device(device: Device) -> torch.device:
+    if device == Device.AUTO:
+        if torch.cuda.is_available():
+            device = Device.CUDA
 
-    if torch.backends.mps.is_available():
-        return Device.MPS
+        elif torch.backends.mps.is_available():
+            device = Device.MPS
 
-    return Device.CPU
+        else:
+            device = Device.CPU
+
+    return torch.device(device.value)
 
 
 app = typer.Typer()
@@ -86,9 +90,7 @@ def apply(
     pretrained_pipeline = Pipeline.from_pretrained(pipeline)
 
     # send pipeline to device
-    if device == Device.AUTO:
-        device = guess_device()
-    torch_device = torch.device(device.value)
+    torch_device = parse_device(device)
     pretrained_pipeline.to(torch_device)
 
     prediction: Annotation = pretrained_pipeline(audio)
@@ -142,9 +144,7 @@ def benchmark(
     pretrained_pipeline = Pipeline.from_pretrained(pipeline)
 
     # send pipeline to device
-    if device == Device.AUTO:
-        device = guess_device()
-    torch_device = torch.device(device.value)
+    torch_device = parse_device(device)
     pretrained_pipeline.to(torch_device)
 
     # load pipeline metric (when available)
