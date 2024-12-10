@@ -108,6 +108,16 @@ class SpeakerConfusionRate(DiarizationErrorRate):
         return self.speaker_confusion / (self.speech_total + 1e-8)
 
 
+class DiarizationPrecision(DiarizationErrorRate):
+    higher_is_better = True
+
+    def compute(self):
+        detected_speech: torch.Tensor = (
+            self.speech_total + self.false_alarm - self.missed_detection
+        )
+        return 1.0 - self.speaker_confusion / (detected_speech + 1e-8)
+
+
 class FalseAlarmRate(DiarizationErrorRate):
     def compute(self):
         return self.false_alarm / (self.speech_total + 1e-8)
@@ -116,6 +126,11 @@ class FalseAlarmRate(DiarizationErrorRate):
 class MissedDetectionRate(DiarizationErrorRate):
     def compute(self):
         return self.missed_detection / (self.speech_total + 1e-8)
+
+
+class DetectionErrorRate(DiarizationErrorRate):
+    def compute(self):
+        return (self.false_alarm + self.missed_detection) / (self.speech_total + 1e-8)
 
 
 class OptimalDiarizationErrorRate(Metric):

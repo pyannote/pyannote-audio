@@ -40,7 +40,9 @@ from torchmetrics import Metric
 from pyannote.audio.core.task import Problem, Resolution, Specifications
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTask
 from pyannote.audio.torchmetrics import (
+    DetectionErrorRate,
     DiarizationErrorRate,
+    DiarizationPrecision,
     FalseAlarmRate,
     MissedDetectionRate,
     SpeakerConfusionRate,
@@ -493,6 +495,8 @@ class SpeakerDiarization(SegmentationTask):
             "DiarizationErrorRate/Confusion": SpeakerConfusionRate(0.5),
             "DiarizationErrorRate/Miss": MissedDetectionRate(0.5),
             "DiarizationErrorRate/FalseAlarm": FalseAlarmRate(0.5),
+            "DiarizationErrorRate/Precision": DiarizationPrecision(0.5),
+            "DiarizationErrorRate/DetectionErrorRate": DetectionErrorRate(0.5),
         }
 
     # TODO: no need to compute gradient in this method
