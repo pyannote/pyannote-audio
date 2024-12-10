@@ -43,6 +43,7 @@ from pyannote.audio.torchmetrics import (
     DetectionErrorRate,
     DiarizationErrorRate,
     DiarizationPrecision,
+    DiarizationRecall,
     FalseAlarmRate,
     MissedDetectionRate,
     SpeakerConfusionRate,
@@ -496,6 +497,7 @@ class SpeakerDiarization(SegmentationTask):
             "DiarizationErrorRate/Miss": MissedDetectionRate(0.5),
             "DiarizationErrorRate/FalseAlarm": FalseAlarmRate(0.5),
             "DiarizationErrorRate/Precision": DiarizationPrecision(0.5),
+            "DiarizationErrorRate/Recall": DiarizationRecall(0.5),
             "DiarizationErrorRate/DetectionErrorRate": DetectionErrorRate(0.5),
         }
 

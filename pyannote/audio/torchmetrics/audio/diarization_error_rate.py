@@ -109,26 +109,114 @@ class SpeakerConfusionRate(DiarizationErrorRate):
 
 
 class DiarizationPrecision(DiarizationErrorRate):
+    """Diarization precision
+
+    Ratio of correctly identified over correctly detected speech durations
+
+    Parameters
+    ----------
+    threshold : float, optional
+        Threshold used to binarize predictions. Defaults to 0.5.
+
+    Notes
+    -----
+    While pyannote.audio conventions is to store speaker activations with
+    (batch_size, num_frames, num_speakers)-shaped tensors, this torchmetrics metric
+    expects them to be shaped as (batch_size, num_speakers, num_frames) tensors.
+    """
+
     higher_is_better = True
 
     def compute(self):
-        detected_speech: torch.Tensor = (
-            self.speech_total + self.false_alarm - self.missed_detection
-        )
-        return 1.0 - self.speaker_confusion / (detected_speech + 1e-8)
+        correctly_detected_speech = self.speech_total - self.missed_detection
+        correctly_identified_speech = correctly_detected_speech - self.speaker_confusion
+        return correctly_identified_speech / (correctly_detected_speech + 1e-8)
+
+
+class DiarizationRecall(DiarizationErrorRate):
+    """Diarization recall
+
+    Ratio of correctly identified over total speech durations
+
+    Parameters
+    ----------
+    threshold : float, optional
+        Threshold used to binarize predictions. Defaults to 0.5.
+
+    Notes
+    -----
+    While pyannote.audio conventions is to store speaker activations with
+    (batch_size, num_frames, num_speakers)-shaped tensors, this torchmetrics metric
+    expects them to be shaped as (batch_size, num_speakers, num_frames) tensors.
+    """
+
+    higher_is_better = True
+
+    def compute(self):
+        correctly_detected_speech = self.speech_total - self.missed_detection
+        correctly_identified_speech = correctly_detected_speech - self.speaker_confusion
+        return correctly_identified_speech / (self.speech_total + 1e-8)
 
 
 class FalseAlarmRate(DiarizationErrorRate):
+    """False alarm rate
+
+    Ratio of falsely detected speech over total speech duration
+
+    Parameters
+    ----------
+    threshold : float, optional
+        Threshold used to binarize predictions. Defaults to 0.5.
+
+    Notes
+    -----
+    While pyannote.audio conventions is to store speaker activations with
+    (batch_size, num_frames, num_speakers)-shaped tensors, this torchmetrics metric
+    expects them to be shaped as (batch_size, num_speakers, num_frames) tensors.
+    """
+
     def compute(self):
         return self.false_alarm / (self.speech_total + 1e-8)
 
 
 class MissedDetectionRate(DiarizationErrorRate):
+    """Missed detection rate
+
+    Ratio of missed speech over total speech duration
+
+    Parameters
+    ----------
+    threshold : float, optional
+        Threshold used to binarize predictions. Defaults to 0.5.
+
+    Notes
+    -----
+    While pyannote.audio conventions is to store speaker activations with
+    (batch_size, num_frames, num_speakers)-shaped tensors, this torchmetrics metric
+    expects them to be shaped as (batch_size, num_speakers, num_frames) tensors.
+    """
+
     def compute(self):
         return self.missed_detection / (self.speech_total + 1e-8)
 
 
 class DetectionErrorRate(DiarizationErrorRate):
+    """Detection error rate
+
+    Sum of false alarm and missed detection rates.
+
+    Parameters
+    ----------
+    threshold : float, optional
+        Threshold used to binarize predictions. Defaults to 0.5.
+
+    Notes
+    -----
+    While pyannote.audio conventions is to store speaker activations with
+    (batch_size, num_frames, num_speakers)-shaped tensors, this torchmetrics metric
+    expects them to be shaped as (batch_size, num_speakers, num_frames) tensors.
+    """
+
     def compute(self):
         return (self.false_alarm + self.missed_detection) / (self.speech_total + 1e-8)
 
