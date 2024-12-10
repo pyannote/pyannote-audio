@@ -44,68 +44,73 @@ from pyannote.audio.core.model import CACHE_DIR, Model
 from pyannote.audio.utils.reproducibility import fix_reproducibility
 from pyannote.audio.utils.version import check_version
 
-PIPELINE_PARAMS_NAME = "config.yaml"
-
 
 def expand_subfolders(
-    config, hf_model_id, use_auth_token: Optional[Text] = None
+    config,
+    model_id: Optional[Text] = None,
+    use_auth_token: Optional[Text] = None,
 ) -> None:
     """Expand $model subfolders in config
 
     Processes `config` dictionary recursively and replaces "$model/{subfolder}"
-    values with {"checkpoint": hf_model_id,
+    values with {"checkpoint": model_id,
                  "subfolder": {subfolder},
                  "use_auth_token": use_auth_token}
 
     Parameters
     ----------
     config : dict
-    hf_model_id : str
-        Parent Huggingface model identifier
+    model_id : str, optional
+        Model identifier when loading from the huggingface.co model hub.
     use_auth_token : str, optional
         Token used for loading from the root folder.
     """
+
     if isinstance(config, dict):
         for key, value in config.items():
             if isinstance(value, str) and value.startswith("$model/"):
                 subfolder = "/".join(value.split("/")[1:])
                 config[key] = {
-                    "checkpoint": hf_model_id,
+                    "checkpoint": model_id,
                     "subfolder": subfolder,
                     "use_auth_token": use_auth_token,
                 }
             else:
-                expand_subfolders(value, hf_model_id, use_auth_token=use_auth_token)
+                expand_subfolders(value, model_id, use_auth_token=use_auth_token)
 
     elif isinstance(config, list):
         for idx, value in enumerate(config):
             if isinstance(value, str) and value.startswith("$model/"):
                 subfolder = "/".join(value.split("/")[1:])
                 config[idx] = {
-                    "checkpoint": hf_model_id,
+                    "checkpoint": model_id,
                     "subfolder": subfolder,
                     "use_auth_token": use_auth_token,
                 }
             else:
-                expand_subfolders(value, hf_model_id, use_auth_token=use_auth_token)
+                expand_subfolders(value, model_id, use_auth_token=use_auth_token)
 
 
 class Pipeline(_Pipeline):
+    PIPELINE_CHECKPOINT = "config.yaml"
+
     @classmethod
     def from_pretrained(
         cls,
-        checkpoint_path: Union[Text, Path],
+        checkpoint: Union[Text, Path],
         hparams_file: Union[Text, Path] = None,
-        use_auth_token: Union[Text, None] = None,
+        use_auth_token: Union[Text, None] = None,  # todo: deprecate in favor of token
         cache_dir: Union[Path, Text] = CACHE_DIR,
     ) -> "Pipeline":
         """Load pretrained pipeline
 
         Parameters
         ----------
-        checkpoint_path : Path or str
-            Path to pipeline checkpoint, or a remote URL,
-            or a pipeline identifier from the huggingface.co model hub.
+        checkpoint : str
+            Pipeline checkpoint, provided as one of the following:
+            * path to a local `config.yaml` pipeline checkpoint
+            * path to a local directory containing such a file
+            * identifier of a pipeline on huggingface.co model hub
         hparams_file: Path or str, optional
         use_auth_token : str, optional
             When loading a private huggingface.co pipeline, set `use_auth_token`
@@ -116,29 +121,36 @@ class Pipeline(_Pipeline):
             environment variable, or "~/.cache/torch/pyannote" when unset.
         """
 
-        checkpoint_path = str(checkpoint_path)
+        # if checkpoint is a directory, look for the pipeline checkpoint
+        # inside this directory
+        if os.path.isdir(checkpoint):
+            model_id = Path(checkpoint)
+            config_yml = model_id / cls.PIPELINE_CHECKPOINT
 
-        if os.path.isfile(checkpoint_path):
-            config_yml = checkpoint_path
+        # if checkpoint is a file, assume it is the pipeline checkpoint
+        elif os.path.isfile(checkpoint):
+            model_id = Path(checkpoint).parent
+            config_yml = checkpoint
 
+        # otherwise, assume that the checkpoint is hosted on HF model hub
         else:
-            if "@" in checkpoint_path:
-                model_id = checkpoint_path.split("@")[0]
-                revision = checkpoint_path.split("@")[1]
+            if "@" in checkpoint:
+                model_id = checkpoint.split("@")[0]
+                revision = checkpoint.split("@")[1]
             else:
-                model_id = checkpoint_path
+                model_id = checkpoint
                 revision = None
 
             try:
                 config_yml = hf_hub_download(
                     model_id,
-                    PIPELINE_PARAMS_NAME,
+                    cls.PIPELINE_CHECKPOINT,
                     repo_type="model",
                     revision=revision,
                     library_name="pyannote",
                     library_version=__version__,
                     cache_dir=cache_dir,
-                    use_auth_token=use_auth_token,
+                    token=use_auth_token,
                 )
 
             except RepositoryNotFoundError:
@@ -159,6 +171,7 @@ visit https://hf.co/{model_id} to accept the user conditions."""
 
         with open(config_yml, "r") as fp:
             config = yaml.load(fp, Loader=yaml.SafeLoader)
+
         expand_subfolders(config, model_id, use_auth_token=use_auth_token)
 
         if "version" in config:
