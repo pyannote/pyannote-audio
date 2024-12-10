@@ -192,7 +192,7 @@ def benchmark(
         protocol, {"audio": pyannote.database.FileFinder()}
     )
 
-    with open(into / f"{protocol}.{subset}.rttm", "w") as rttm:
+    with open(into / f"{protocol}.{subset.value}.rttm", "w") as rttm:
         for file in getattr(loaded_protocol, subset.value)():
             prediction: Annotation = pretrained_pipeline(file)
             prediction.write_rttm(rttm)
@@ -211,7 +211,7 @@ def benchmark(
     if metric is None:
         return
 
-    with open(into / f"{protocol}.{subset}.txt", "w") as txt:
+    with open(into / f"{protocol}.{subset.value}.txt", "w") as txt:
         txt.write(str(metric))
 
     print(str(metric))
