@@ -23,6 +23,7 @@
 
 from __future__ import annotations
 
+import inspect
 import itertools
 import multiprocessing
 import sys
@@ -905,3 +906,30 @@ class Task(pl.LightningDataModule):
 
         name, metric = next(iter(self.metric.items()))
         return name, "max" if metric.higher_is_better else "min"
+
+    def on_save_checkpoint(self, checkpoint):
+        checkpoint["pyannote.audio"]["task"] = {
+            "module": self.__class__.__module__,
+            "class": self.__class__.__name__,
+            "hyper_parameters": self.hparams,
+        }
+
+        # save metrics:
+        if isinstance(self.metric, Metric):
+            metrics = {self.metric.__class__.__name__: self.metric}
+        elif isinstance(self.metric, Sequence):
+            metrics = {metric.__class__.__name__: metric for metric in self.metric}
+        else:
+            metrics = self.metric
+        
+        if metrics:
+            checkpoint["pyannote.audio"]["task"]["metrics"] = {
+                name: {
+                    "module": metric.__class__.__module__,
+                    "class": metric.__class__.__name__,
+                    "kwargs": {
+                        param : getattr(metric, param, None)
+                        for param in inspect.signature(metric.__init__).parameters
+                    }
+                } for name, metric in metrics.items()
+            }

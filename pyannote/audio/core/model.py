@@ -264,12 +264,9 @@ class Model(pl.LightningModule):
                 "class": self.__class__.__name__,
             },
             "specifications": self.specifications,
-            "task": {
-                "module": self.task.__class__.__module__,
-                "class": self.task.__class__.__name__,
-                "hyper_parameters": self.task.hparams,
-            },
         }
+
+        self.task.on_save_checkpoint(checkpoint)
 
     def on_load_checkpoint(self, checkpoint: Dict[str, Any]):
         check_version(
@@ -673,16 +670,25 @@ visit https://hf.co/{model_id} to accept the user conditions."""
 
             raise e
 
-        # obtain task class from the checkpoint, if any
+        # init task from the checkpoint, if any
         if protocol and "task" in loaded_checkpoint["pyannote.audio"]:
-            # move code to core.Task
-
             task_module_name: str = loaded_checkpoint["pyannote.audio"]["task"]["module"]
             task_module = import_module(task_module_name)
             task_class_name: str = loaded_checkpoint["pyannote.audio"]["task"]["class"]
             task_hparams = loaded_checkpoint["pyannote.audio"]["task"]["hyper_parameters"]
 
             TaskClass = getattr(task_module, task_class_name)
+
+            metrics = loaded_checkpoint["pyannote.audio"]["task"]["metrics"]
+            metric = {}
+            for name, metadata in metrics.items():
+                metric_module = import_module(metadata["module"])
+                metric_class = metadata["class"]
+                metric_kwargs = metadata["kwargs"]
+
+                MetricClass = getattr(metric_module, metric_class)
+                metric[name] = MetricClass(**metric_kwargs)
+            task_hparams["metric"] = metric
 
             model.task = TaskClass(protocol, **task_hparams)
 
