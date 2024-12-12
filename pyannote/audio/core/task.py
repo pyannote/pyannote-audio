@@ -914,6 +914,20 @@ class Task(pl.LightningDataModule):
             "hyper_parameters": self.hparams,
         }
 
+        # save augmentation:
+        # TODO: add support for compose augmentation
+        if not self.augmentation:
+            checkpoint["pyannote.audio"]["task"]["augmentation"] = None
+        elif isinstance(self.augmentation, BaseWaveformTransform):
+            checkpoint["pyannote.audio"]["task"]["augmentation"] = [{
+                "module": self.augmentation.__class__.__module__,
+                "class": self.augmentation.__class__.__name__,
+                "kwargs": {
+                    param: getattr(self.augmentation, param, None)
+                    for param in inspect.signature(self.augmentation.__init__).parameters
+                }
+            }]
+
         # save metrics:
         if isinstance(self.metric, Metric):
             metrics = {self.metric.__class__.__name__: self.metric}
@@ -933,3 +947,5 @@ class Task(pl.LightningDataModule):
                     }
                 } for name, metric in metrics.items()
             }
+        else:
+            checkpoint["pyannote.audio"]["task"]["metrics"] = None

@@ -679,17 +679,34 @@ visit https://hf.co/{model_id} to accept the user conditions."""
 
             TaskClass = getattr(task_module, task_class_name)
 
-            metrics = loaded_checkpoint["pyannote.audio"]["task"]["metrics"]
-            metric = {}
-            for name, metadata in metrics.items():
-                metric_module = import_module(metadata["module"])
-                metric_class = metadata["class"]
-                metric_kwargs = metadata["kwargs"]
+            # instanciate task augmentation
+            augmentation = loaded_checkpoint["pyannote.audio"]["task"]["augmentation"]
+            if augmentation:
+                augmentation_module = import_module(augmentation["module"])
+                augmentation_class = augmentation["class"]
+                augmentation_kwargs = augmentation["kwargs"]
+                AugmentationClass = getattr(augmentation_module, augmentation_class)
+                augmentation = AugmentationClass(**augmentation_kwargs)
 
-                MetricClass = getattr(metric_module, metric_class)
-                metric[name] = MetricClass(**metric_kwargs)
+            task_hparams["augmentation"] = augmentation
+
+            # instanciate task metrics
+            metrics = loaded_checkpoint["pyannote.audio"]["task"]["metrics"]
+            if metrics:
+                metric = {}
+                for name, metadata in metrics.items():
+                    metric_module = import_module(metadata["module"])
+                    metric_class = metadata["class"]
+                    metric_kwargs = metadata["kwargs"]
+
+                    MetricClass = getattr(metric_module, metric_class)
+                    metric[name] = MetricClass(**metric_kwargs)
+            else:
+                metric = None
+
             task_hparams["metric"] = metric
 
+            # instanciate training task
             model.task = TaskClass(protocol, **task_hparams)
 
         return model
