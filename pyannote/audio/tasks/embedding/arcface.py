@@ -111,6 +111,8 @@ class SupervisedRepresentationLearningWithArcFace(
             metric=metric,
         )
 
+        self.save_hyperparameters(ignore=["augmentation", "metric", "protocol"])
+
     def setup_loss_func(self):
 
         _, embedding_size = self.model(self.model.example_input_array).shape

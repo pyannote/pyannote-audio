@@ -23,7 +23,6 @@
 
 from __future__ import annotations
 
-import inspect
 import itertools
 import multiprocessing
 import sys
@@ -305,6 +304,8 @@ class Task(pl.LightningDataModule):
         self.pin_memory = pin_memory
         self.augmentation = augmentation or Identity(output_type="dict")
         self._metric = metric
+
+        self.hparams["protocol"] = protocol.name
 
     def prepare_data(self):
         """Use this to prepare data from task protocol
@@ -597,16 +598,10 @@ class Task(pl.LightningDataModule):
         prepared_data["metadata-labels"] = np.array(unique_labels, dtype=np.str_)
         unique_labels.clear()
 
-        # keep track of task parameters
+        # keep track of task hyperparameters
         parameters = []
         dtype = []
-        for param_name in inspect.signature(self.__init__).parameters:
-            try:
-                param_value = getattr(self, param_name)
-            # skip specification-dependent parameters and non-attributed parameters
-            # (for instance because they were deprecated)
-            except (AttributeError, UnknownSpecificationsError):
-                continue
+        for param_name, param_value in self.hparams.items():
             if isinstance(param_value, (bool, float, int, str, type(None))):
                 parameters.append(param_value)
                 dtype.append((param_name, type(param_value)))
@@ -669,23 +664,15 @@ class Task(pl.LightningDataModule):
             )
 
         # checks that the task current hyperparameters matches the cached ones
-        for param_name in inspect.signature(self.__init__).parameters:
-            try:
-                param_value = getattr(self, param_name)
-            # skip specification-dependent parameters and non-attributed parameters
-            # (for instance because they were deprecated)
-            except (AttributeError, UnknownSpecificationsError):
-                continue
-
+        for param_name, param_value in self.hparams.items():
             if param_name not in self.prepared_data["task-parameters"].dtype.names:
                 continue
             cached_value = self.prepared_data["task-parameters"][param_name]
             if param_value != cached_value:
                 warnings.warn(
-                    f"Value specified for {param_name} of the task differs from the one in the cached data."
-                    f"Current one = {param_value}, cached one = {cached_value}."
-                    "You may need to create a new cache for this task with"
-                    " the new value for this hyperparameter.",
+                    f"Value specified for the task hyperparameter {param_name} differs from the one in the cached data."
+                    f"Current value = {param_value}, cached value = {cached_value}."
+                    "You may need to create a new cache with the new value for this hyperparameter.",
                 )
 
     @property

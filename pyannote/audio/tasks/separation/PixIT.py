@@ -221,6 +221,8 @@ class PixIT(SegmentationTask):
         self.separation_loss_weight = separation_loss_weight
         self.mixit_loss = MixITLossWrapper(multisrc_neg_sisdr, generalized=True)
 
+        self.save_hyperparameters(ignore=["augmentation", "loss", "metric", "protocol"])
+
     def setup(self, stage=None):
         super().setup(stage)
 

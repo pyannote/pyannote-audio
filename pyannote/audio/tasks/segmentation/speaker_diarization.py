@@ -162,6 +162,8 @@ class SpeakerDiarization(SegmentationTask):
         self.balance = balance
         self.weight = weight
 
+        self.save_hyperparameters(ignore=["augmentation", "loss", "metric", "protocol"])
+
     def setup(self, stage=None):
         super().setup(stage)
 

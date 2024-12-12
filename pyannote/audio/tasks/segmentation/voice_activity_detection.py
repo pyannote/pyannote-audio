@@ -123,6 +123,8 @@ class VoiceActivityDetection(SegmentationTask):
             ],
         )
 
+        self.save_hyperparameters(ignore=["augmentation", "metric", "protocol"])
+
     def prepare_chunk(self, file_id: int, start_time: float, duration: float):
         """Prepare chunk for voice activity detection
 

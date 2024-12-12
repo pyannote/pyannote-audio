@@ -52,6 +52,8 @@ from pyannote.audio.core.task import (
 from pyannote.audio.utils.multi_task import map_with_specifications
 from pyannote.audio.utils.version import check_version
 
+from pyannote.database import get_protocol, FileFinder
+
 CACHE_DIR = os.getenv(
     "PYANNOTE_CACHE",
     os.path.expanduser("~/.cache/torch/pyannote"),
@@ -262,6 +264,11 @@ class Model(pl.LightningModule):
                 "class": self.__class__.__name__,
             },
             "specifications": self.specifications,
+            "task": {
+                "module": self.task.__class__.__module__,
+                "class": self.task.__class__.__name__,
+                "hyper_parameters": self.task.hparams,
+            },
         }
 
     def on_load_checkpoint(self, checkpoint: Dict[str, Any]):
@@ -533,6 +540,7 @@ class Model(pl.LightningModule):
         subfolder: Optional[str] = None,
         use_auth_token: Union[Text, None] = None,  # todo: deprecate in favor of token
         cache_dir: Union[Path, Text] = CACHE_DIR,
+        database_path: Union[Path, Text, None] = None,
         **kwargs,
     ) -> "Model":
         """Load pretrained model
@@ -662,5 +670,22 @@ visit https://hf.co/{model_id} to accept the user conditions."""
                 return model
 
             raise e
+
+        # obtain task class from the checkpoint, if any
+        if "task" in loaded_checkpoint["pyannote.audio"]:
+            # move code to core.Task
+
+            task_module_name: str = loaded_checkpoint["pyannote.audio"]["task"]["module"]
+            task_module = import_module(task_module_name)
+            task_class_name: str = loaded_checkpoint["pyannote.audio"]["task"]["class"]
+            task_hparams = loaded_checkpoint["pyannote.audio"]["task"]["hyper_parameters"]
+
+            TaskClass = getattr(task_module, task_class_name)
+
+            protocol = get_protocol(
+                task_hparams.pop("protocol"), preprocessors={"audio": FileFinder()}
+            )
+
+            model.task = TaskClass(protocol, **task_hparams)
 
         return model
