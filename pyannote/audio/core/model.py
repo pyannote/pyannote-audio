@@ -52,7 +52,7 @@ from pyannote.audio.core.task import (
 from pyannote.audio.utils.multi_task import map_with_specifications
 from pyannote.audio.utils.version import check_version
 
-from pyannote.database import get_protocol, FileFinder
+from pyannote.database import Protocol
 
 CACHE_DIR = os.getenv(
     "PYANNOTE_CACHE",
@@ -540,7 +540,7 @@ class Model(pl.LightningModule):
         subfolder: Optional[str] = None,
         use_auth_token: Union[Text, None] = None,  # todo: deprecate in favor of token
         cache_dir: Union[Path, Text] = CACHE_DIR,
-        database_path: Union[Path, Text, None] = None,
+        protocol: Union[Protocol, None] = None,
         **kwargs,
     ) -> "Model":
         """Load pretrained model
@@ -567,6 +567,8 @@ class Model(pl.LightningModule):
         cache_dir: Path or str, optional
             Path to model cache directory. Defaults to content of PYANNOTE_CACHE
             environment variable, or "~/.cache/torch/pyannote" when unset.
+        protocol: Protocol, optional
+            Protocol used to train the model. Needed to continue training.
         kwargs: optional
             Any extra keyword args needed to init the model.
             Can also be used to override saved hyperparameter values.
@@ -672,7 +674,7 @@ visit https://hf.co/{model_id} to accept the user conditions."""
             raise e
 
         # obtain task class from the checkpoint, if any
-        if "task" in loaded_checkpoint["pyannote.audio"]:
+        if protocol and "task" in loaded_checkpoint["pyannote.audio"]:
             # move code to core.Task
 
             task_module_name: str = loaded_checkpoint["pyannote.audio"]["task"]["module"]
@@ -681,10 +683,6 @@ visit https://hf.co/{model_id} to accept the user conditions."""
             task_hparams = loaded_checkpoint["pyannote.audio"]["task"]["hyper_parameters"]
 
             TaskClass = getattr(task_module, task_class_name)
-
-            protocol = get_protocol(
-                task_hparams.pop("protocol"), preprocessors={"audio": FileFinder()}
-            )
 
             model.task = TaskClass(protocol, **task_hparams)
 

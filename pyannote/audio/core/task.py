@@ -305,8 +305,6 @@ class Task(pl.LightningDataModule):
         self.augmentation = augmentation or Identity(output_type="dict")
         self._metric = metric
 
-        self.hparams["protocol"] = protocol.name
-
     def prepare_data(self):
         """Use this to prepare data from task protocol
 
