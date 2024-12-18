@@ -30,7 +30,7 @@ import warnings
 from typing import Callable, Optional, Text, Tuple, Union
 
 import numpy as np
-from scipy.ndimage import binary_dilation, binary_opening
+from scipy.ndimage import binary_dilation, binary_closing
 import torch
 from einops import rearrange
 from pyannote.core import Annotation, SlidingWindow, SlidingWindowFeature
@@ -609,9 +609,9 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
                 self.segmentation.min_duration_on * self._audio.sample_rate
             )
         )
-        print(min_frames_on)
+
         if min_frames_on > 0:
-            discrete_diarization.data = binary_opening(
+            discrete_diarization.data = binary_closing(
                 discrete_diarization.data, structure=np.array([[True] * min_frames_on]).T
             )
 
