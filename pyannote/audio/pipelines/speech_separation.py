@@ -646,9 +646,9 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
 
         # separated sources might be scaled up/down due to SI-SDR loss used when training
         # so we peak-normalize them
-        sources.data[:, :num_sources] = (sources.data / np.max(
-            np.abs(sources.data), axis=0, keepdims=True
-        ))[:, :num_sources]
+        sources.data = (
+            sources.data / (np.max(np.abs(sources.data), axis=0, keepdims=True) + 1e-8)
+        )
 
         # convert to continuous diarization
         diarization = self.to_annotation(
