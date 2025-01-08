@@ -30,6 +30,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from asteroid_filterbanks import Encoder, ParamSincFB
 
+from einops import rearrange
+
 from pyannote.audio.utils.receptive_field import (
     multi_conv_num_frames,
     multi_conv_receptive_field_center,
@@ -37,8 +39,87 @@ from pyannote.audio.utils.receptive_field import (
 )
 
 
+class PCConvBlock(nn.Module):
+    """Per channels convolution block. 
+    Channels are processed independently from each other.
+    Input shape: (batch, features, channels, frames)
+    Output shape: (batch, features, channels, frames)
+    
+    Parameters
+    ----------
+    num_channels: int
+        number of channels in audio
+    """
+    def __init__(self, num_channels: int):
+        super().__init__()
+        self.pool = nn.MaxPool2d(kernel_size=(1, 3), stride=(1, 3), padding=0, dilation=1)
+        self.norm = nn.InstanceNorm2d(60, affine=True)
+        self.leaky_relu = nn.LeakyReLU()
+        
+        self.conv_1 = nn.Sequential(
+            nn.Conv2d(80, 60, kernel_size=(1, 5), stride=1),
+            self.pool,
+            self.norm,
+            self.leaky_relu,
+        )
+
+        self.conv_2 = nn.Sequential(
+            nn.Conv2d(60, 60, kernel_size=(1, 5), stride=1),
+            self.pool,
+            self.norm,
+            self.leaky_relu,
+        )
+    
+    def forward(self, x : torch.Tensor) -> torch.Tensor:
+        outputs = self.conv_1(x)
+        outputs = self.conv_2(outputs)
+        
+        return outputs
+
+class MCConvBlock(nn.Module):
+    """Multi-channels convolution block. Channels are processed together.
+    Input shape: (batch, features, channels, frames)
+    Output shape: (batch, features, frames)
+    
+    Parameters
+    ----------
+    num_channels: int
+        number of channels in audio
+    """
+    def __init__(self, num_channels: int):
+        super().__init__()
+        self.conv2d = nn.Conv2d(80, 60, kernel_size=(num_channels, 5), stride=1)
+        self.conv1d = nn.Conv1d(60, 60, kernel_size=5, stride=1)
+        self.pool1d = nn.MaxPool1d(3, stride=3, padding=0, dilation=1)
+        self.norm1d = nn.InstanceNorm1d(60, affine=True)
+
+    def forward(self, x : torch.Tensor) -> torch.Tensor:
+        outputs = self.conv2d(x)
+        outputs = torch.squeeze(outputs, dim=2)
+        outputs = F.leaky_relu(self.norm1d(self.pool1d(outputs)))
+        
+        outputs = self.conv1d(outputs)
+        outputs = F.leaky_relu(self.norm1d(self.pool1d(outputs)))
+
+        return outputs
+
+
 class SincNet(nn.Module):
-    def __init__(self, sample_rate: int = 16000, stride: int = 1):
+    """ Multi-channels SincNet
+
+    Parameters
+    ----------
+    sample_rate: int, optional
+        Audio sample rate. Only supports 16kHz for now.
+    stride: int, optional
+        Kernel stride. Defaults to 1.
+    num_channels: int, optional
+        Number of channels in audio. Defaults to 2.
+    per_channel: bool, optional
+        Whether to process audio's channel independently from each other. 
+        Defaults is False.
+    """
+    def __init__(self, sample_rate: int = 16000, stride: int = 1, num_channels: int = 1, per_channel: bool = False):
         super().__init__()
 
         if sample_rate != 16000:
@@ -48,35 +129,26 @@ class SincNet(nn.Module):
 
         self.sample_rate = sample_rate
         self.stride = stride
+        self.num_channels = num_channels
 
-        self.wav_norm1d = nn.InstanceNorm1d(1, affine=True)
+        self.wav_norm1d = nn.InstanceNorm1d(num_features=num_channels, affine=True)
 
-        self.conv1d = nn.ModuleList()
-        self.pool1d = nn.ModuleList()
-        self.norm1d = nn.ModuleList()
-
-        self.conv1d.append(
-            Encoder(
-                ParamSincFB(
-                    80,
-                    251,
-                    stride=self.stride,
-                    sample_rate=sample_rate,
-                    min_low_hz=50,
-                    min_band_hz=50,
-                )
+        self.encoder = Encoder(
+            ParamSincFB(
+                80,
+                251,
+                stride=self.stride,
+                sample_rate=sample_rate,
+                min_low_hz=50,
+                min_band_hz=50,
             )
         )
-        self.pool1d.append(nn.MaxPool1d(3, stride=3, padding=0, dilation=1))
-        self.norm1d.append(nn.InstanceNorm1d(80, affine=True))
 
-        self.conv1d.append(nn.Conv1d(80, 60, 5, stride=1))
-        self.pool1d.append(nn.MaxPool1d(3, stride=3, padding=0, dilation=1))
-        self.norm1d.append(nn.InstanceNorm1d(60, affine=True))
-
-        self.conv1d.append(nn.Conv1d(60, 60, 5, stride=1))
-        self.pool1d.append(nn.MaxPool1d(3, stride=3, padding=0, dilation=1))
-        self.norm1d.append(nn.InstanceNorm1d(60, affine=True))
+        self.pool2d = nn.MaxPool2d(kernel_size=(1, 3), stride=(1, 3), padding=0, dilation=1)
+        self.norm2d = nn.InstanceNorm2d(80, affine=True)
+        
+        self.conv_block = PCConvBlock(num_channels) if per_channel else MCConvBlock(num_channels)
+        
 
     @lru_cache
     def num_frames(self, num_samples: int) -> int:
@@ -170,15 +242,14 @@ class SincNet(nn.Module):
 
         outputs = self.wav_norm1d(waveforms)
 
-        for c, (conv1d, pool1d, norm1d) in enumerate(
-            zip(self.conv1d, self.pool1d, self.norm1d)
-        ):
-            outputs = conv1d(outputs)
+        outputs = self.encoder(outputs)
+        # https://github.com/mravanelli/SincNet/issues/4
+        outputs = torch.abs(outputs)
+        if self.num_channels == 1:
+            outputs = outputs.unsqueeze(dim=1)
+        outputs = rearrange(outputs, "b c f t -> b f c t")
+        outputs = F.leaky_relu(self.norm2d(self.pool2d(outputs)))
 
-            # https://github.com/mravanelli/SincNet/issues/4
-            if c == 0:
-                outputs = torch.abs(outputs)
-
-            outputs = F.leaky_relu(norm1d(pool1d(outputs)))
+        outputs = self.conv_block(outputs)
 
         return outputs
