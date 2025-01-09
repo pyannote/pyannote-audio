@@ -46,6 +46,7 @@ from pyannote.database.protocol.protocol import Scope, Subset
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 from torch_audiomentations import Identity
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
+from torch_audiomentations.core.composition import BaseCompose
 from torchmetrics import Metric, MetricCollection
 
 from pyannote.audio.utils.loss import binary_cross_entropy, nll_loss
@@ -915,18 +916,24 @@ class Task(pl.LightningDataModule):
         }
 
         # save augmentation:
-        # TODO: add support for compose augmentation
+        def serialize_augmentation(augmentation) -> Dict:
+            return {
+                "module": augmentation.__class__.__module__,
+                "class": augmentation.__class__.__name__,
+                "kwargs": {
+                    param: getattr(augmentation, param, None)
+                    for param in inspect.signature(augmentation.__init__).parameters
+                }
+            }
+
         if not self.augmentation:
             checkpoint["pyannote.audio"]["task"]["augmentation"] = None
         elif isinstance(self.augmentation, BaseWaveformTransform):
-            checkpoint["pyannote.audio"]["task"]["augmentation"] = [{
-                "module": self.augmentation.__class__.__module__,
-                "class": self.augmentation.__class__.__name__,
-                "kwargs": {
-                    param: getattr(self.augmentation, param, None)
-                    for param in inspect.signature(self.augmentation.__init__).parameters
-                }
-            }]
+            checkpoint["pyannote.audio"]["task"]["augmentation"] = serialize_augmentation(self.augmentation)
+        elif isinstance(self.augmentation, BaseCompose):
+            checkpoint["pyannote.audio"]["task"]["augmentation"] = []
+            for augmentation in self.augmentation.transforms:
+                checkpoint["pyannote.audio"]["task"]["augmentation"].append(serialize_augmentation(augmentation))
 
         # save metrics:
         if isinstance(self.metric, Metric):

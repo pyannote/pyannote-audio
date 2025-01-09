@@ -40,6 +40,7 @@ from lightning_fabric.utilities.cloud_io import _load as pl_load
 from pyannote.core import SlidingWindow
 from pytorch_lightning.utilities.model_summary.model_summary import ModelSummary
 from torch.utils.data import DataLoader
+from torch_audiomentations.core.composition import Compose
 
 from pyannote.audio import __version__
 from pyannote.audio.core.io import Audio
@@ -679,16 +680,27 @@ visit https://hf.co/{model_id} to accept the user conditions."""
 
             TaskClass = getattr(task_module, task_class_name)
 
-            # instanciate task augmentation
-            augmentation = loaded_checkpoint["pyannote.audio"]["task"]["augmentation"]
-            if augmentation:
-                augmentation_module = import_module(augmentation["module"])
-                augmentation_class = augmentation["class"]
-                augmentation_kwargs = augmentation["kwargs"]
-                AugmentationClass = getattr(augmentation_module, augmentation_class)
-                augmentation = AugmentationClass(**augmentation_kwargs)
+            # instantiate task augmentation
+            def instantiate_transform(transform_data):
+                transform_module = import_module(transform_data["module"])
+                transform_class = transform_data["class"]
+                transform_kwargs = transform_data["kwargs"]
+                TransformClass = getattr(transform_module, transform_class)
+                return TransformClass(**transform_kwargs)
 
-            task_hparams["augmentation"] = augmentation
+            augmentation_data = loaded_checkpoint["pyannote.audio"]["task"]["augmentation"]
+            # BaseWaveformTransform case
+            if isinstance(augmentation_data, Dict):
+                task_hparams["augmentation"] = instantiate_transform(augmentation_data)
+
+            # Compose transform case
+            elif isinstance(augmentation_data , List):
+                transforms = []
+                for transform_data in augmentation_data:
+                    transform = instantiate_transform(transform_data)
+                    transforms.append(transform)
+                
+                task_hparams["augmentation"] = Compose(transforms=transforms, output_type="dict")
 
             # instanciate task metrics
             metrics = loaded_checkpoint["pyannote.audio"]["task"]["metrics"]
