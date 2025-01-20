@@ -38,12 +38,6 @@ class DiarizationErrorRate(Metric):
     ----------
     threshold : float, optional
         Threshold used to binarize predictions. Defaults to 0.5.
-
-    Notes
-    -----
-    While pyannote.audio conventions is to store speaker activations with
-    (batch_size, num_frames, num_speakers)-shaped tensors, this torchmetrics metric
-    expects them to be shaped as (batch_size, num_speakers, num_frames) tensors.
     """
 
     higher_is_better = False
@@ -68,7 +62,7 @@ class DiarizationErrorRate(Metric):
         preds: torch.Tensor,
         target: torch.Tensor,
     ) -> None:
-        """Compute and accumulate components of diarization error rate
+        """Compute and accumulate diarization error rate components
 
         Parameters
         ----------
@@ -95,6 +89,8 @@ class DiarizationErrorRate(Metric):
         self.speech_total += speech_total
 
     def compute(self):
+        """Compute diarization error rate from its accumulated components"""
+
         return _der_compute(
             self.false_alarm,
             self.missed_detection,
@@ -104,18 +100,111 @@ class DiarizationErrorRate(Metric):
 
 
 class SpeakerConfusionRate(DiarizationErrorRate):
+    """Speaker confusion rate (one of the three summands of diarization error rate)
+
+    Parameters
+    ----------
+    threshold : float, optional
+        Threshold used to binarize predictions. Defaults to 0.5.
+    """
+
+    higher_is_better = False
+
     def compute(self):
+        """Compute speaker confusion rate from its accumulated components"""
         return self.speaker_confusion / (self.speech_total + 1e-8)
 
 
-class FalseAlarmRate(DiarizationErrorRate):
+class DiarizationPrecision(DiarizationErrorRate):
+    """Precision of speaker identification
+
+    This metric is computed as the durations ratio of correctly identified speech
+    over correctly detected speech. As such it does not account for false alarms.
+
+    Parameters
+    ----------
+    threshold : float, optional
+        Threshold used to binarize predictions. Defaults to 0.5.
+    """
+
+    higher_is_better = True
+
     def compute(self):
+        """Compute precision of speaker identification from its accumulated components"""
+        correctly_detected_speech = self.speech_total - self.missed_detection
+        correctly_identified_speech = correctly_detected_speech - self.speaker_confusion
+        return correctly_identified_speech / (correctly_detected_speech + 1e-8)
+
+
+class DiarizationRecall(DiarizationErrorRate):
+    """Recall of speaker identification
+
+    This metric is computed as the durations ratio of correctly identified speech
+    over total speech in reference. As such it does not account for false alarms.
+
+    Parameters
+    ----------
+    threshold : float, optional
+        Threshold used to binarize predictions. Defaults to 0.5.
+    """
+
+    higher_is_better = True
+
+    def compute(self):
+        """Compute recall of speaker identification from its accumulated components"""
+        correctly_detected_speech = self.speech_total - self.missed_detection
+        correctly_identified_speech = correctly_detected_speech - self.speaker_confusion
+        return correctly_identified_speech / (self.speech_total + 1e-8)
+
+
+class FalseAlarmRate(DiarizationErrorRate):
+    """False alarm rate (one of the three summands of diarization error rate)
+
+    Parameters
+    ----------
+    threshold : float, optional
+        Threshold used to binarize predictions. Defaults to 0.5.
+    """
+
+    higher_is_better = False
+
+    def compute(self):
+        """Compute false alarm rate from its accumulated components"""
         return self.false_alarm / (self.speech_total + 1e-8)
 
 
 class MissedDetectionRate(DiarizationErrorRate):
+    """Missed detection rate (one of the three summands of diarization error rate)
+
+    Parameters
+    ----------
+    threshold : float, optional
+        Threshold used to binarize predictions. Defaults to 0.5.
+    """
+
+    higher_is_better = False
+
     def compute(self):
+        """Compute missed detection rate from its accumulated components"""
         return self.missed_detection / (self.speech_total + 1e-8)
+
+
+class DetectionErrorRate(DiarizationErrorRate):
+    """Detection error rate
+
+    This metric is computed as the sum of false alarm and missed detection rates.
+
+    Parameters
+    ----------
+    threshold : float, optional
+        Threshold used to binarize predictions. Defaults to 0.5.
+    """
+
+    higher_is_better = False
+
+    def compute(self):
+        """Compute detection error rate from its accumulated components"""
+        return (self.false_alarm + self.missed_detection) / (self.speech_total + 1e-8)
 
 
 class OptimalDiarizationErrorRate(Metric):
@@ -209,6 +298,8 @@ class OptimalDiarizationErrorRate(Metric):
 
 
 class OptimalDiarizationErrorRateThreshold(OptimalDiarizationErrorRate):
+    higher_is_better = False
+
     def compute(self):
         der = _der_compute(
             self.FalseAlarm,
@@ -223,6 +314,8 @@ class OptimalDiarizationErrorRateThreshold(OptimalDiarizationErrorRate):
 
 
 class OptimalSpeakerConfusionRate(OptimalDiarizationErrorRate):
+    higher_is_better = False
+
     def compute(self):
         der = _der_compute(
             self.FalseAlarm,
@@ -235,6 +328,8 @@ class OptimalSpeakerConfusionRate(OptimalDiarizationErrorRate):
 
 
 class OptimalFalseAlarmRate(OptimalDiarizationErrorRate):
+    higher_is_better = False
+
     def compute(self):
         der = _der_compute(
             self.FalseAlarm,
@@ -247,6 +342,8 @@ class OptimalFalseAlarmRate(OptimalDiarizationErrorRate):
 
 
 class OptimalMissedDetectionRate(OptimalDiarizationErrorRate):
+    higher_is_better = False
+
     def compute(self):
         der = _der_compute(
             self.FalseAlarm,
