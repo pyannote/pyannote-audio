@@ -137,7 +137,7 @@ class Calibration(IsotonicRegression):
         if os.path.isfile(checkpoint):
             return cls.from_file(checkpoint)
 
-        path = download_from_hf_hub(
+        _, _, path = download_from_hf_hub(
             checkpoint,
             AssetFileName.Calibration,
             subfolder=subfolder,
