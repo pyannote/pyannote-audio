@@ -54,13 +54,10 @@ class MultiLabelSegmentation(Pipeline):
         Defaults to optimizing identification error rate.
     share_min_duration : bool, optional
         If True, `min_duration_on` and `min_duration_off` are shared among labels.
-    use_auth_token : str, optional
-        When loading private huggingface.co models, set `use_auth_token`
-        to True or to a string containing your hugginface.co authentication
-        token that can be obtained by running `huggingface-cli login`
+    token : str or bool, optional
+        Token to be used for the download.
     cache_dir: Path or str, optional
-        Path to model cache directory. Defaults to content of PYANNOTE_CACHE
-        environment variable, or "~/.cache/torch/pyannote" when unset.
+        Path to the folder where cached files are stored.
     inference_kwargs : dict, optional
         Keywords arguments passed to Inference.
 
@@ -82,7 +79,7 @@ class MultiLabelSegmentation(Pipeline):
         segmentation: Optional[PipelineModel] = None,
         fscore: bool = False,
         share_min_duration: bool = False,
-        use_auth_token: Union[Text, None] = None,
+        token: Union[Text, None] = None,
         cache_dir: Union[Path, Text, None] = None,
         **inference_kwargs,
     ):
@@ -99,7 +96,7 @@ class MultiLabelSegmentation(Pipeline):
         self.share_min_duration = share_min_duration
 
         # load model
-        model = get_model(segmentation, use_auth_token=use_auth_token, cache_dir=cache_dir)
+        model = get_model(segmentation, token=token, cache_dir=cache_dir)
 
         self._classes = model.specifications.classes
         self._segmentation = Inference(model, **inference_kwargs)

@@ -68,14 +68,11 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
         Optimize for a variant of diarization error rate.
         Defaults to {"collar": 0.0, "skip_overlap": False}. This is used in `get_metric`
         when instantiating the metric: GreedyDiarizationErrorRate(**der_variant).
-    use_auth_token : str, optional
-        When loading private huggingface.co models, set `use_auth_token`
-        to True or to a string containing your hugginface.co authentication
-        token that can be obtained by running `huggingface-cli login`
+    token : str or bool, optional
+        Token to be used for the download.
     cache_dir: Path or str, optional
-        Path to model cache directory. Defaults to content of PYANNOTE_CACHE
-        environment variable, or "~/.cache/torch/pyannote" when unset.
-        
+        Path to the folder where cached files are stored.
+
     Hyper-parameters
     ----------------
     onset, offset : float
@@ -91,7 +88,7 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
         segmentation: PipelineModel = "pyannote/segmentation",
         diarization: Text = "diarization",
         der_variant: Optional[dict] = None,
-        use_auth_token: Union[Text, None] = None,
+        token: Union[Text, None] = None,
         cache_dir: Union[Path, Text, None] = None,
     ):
         super().__init__()
@@ -99,7 +96,7 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
         self.segmentation = segmentation
         self.diarization = diarization
 
-        model: Model = get_model(segmentation, use_auth_token=use_auth_token, cache_dir=cache_dir)
+        model: Model = get_model(segmentation, token=token, cache_dir=cache_dir)
         self._segmentation = Inference(model)
 
         self._audio = model.audio
