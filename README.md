@@ -20,7 +20,7 @@ Consider switching to [pyannoteAI](https://www.pyannote.ai) for better and faste
 from pyannote.audio import Pipeline
 pipeline = Pipeline.from_pretrained(
     "pyannote/speaker-diarization-3.1",
-    use_auth_token="HUGGINGFACE_ACCESS_TOKEN_GOES_HERE")
+    token="HUGGINGFACE_ACCESS_TOKEN_GOES_HERE")
 
 # send pipeline to GPU (when available)
 import torch
