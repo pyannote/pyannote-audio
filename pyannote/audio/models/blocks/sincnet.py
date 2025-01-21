@@ -41,14 +41,14 @@ from pyannote.audio.utils.receptive_field import (
 
 
 class ConvBlock(nn.Module):
-    """Multi-channels convolution block. Channels are processed together.
+    """Multi-channel convolution block. Channels are processed together.
     Input shape: (batch, features, channels, frames)
     Output shape: (batch, features, frames)
 
     Parameters
     ----------
     num_channels: int
-        number of channels in audio
+        number of channels in input audio
     """
 
     def __init__(self, num_channels: int):
@@ -70,7 +70,10 @@ class ConvBlock(nn.Module):
 
 
 class SincNet(nn.Module):
-    """Multi-channels SincNet
+    """SincNet block. Support both mono and multi-channel audio.
+    Input shape: (batch, samples) or (batch, channels, samples)
+    Output shape : (batch, features, channels, frames) or (batch, features, frames)
+    depending on the values of `num_channels` and `channel_groups`
 
     Parameters
     ----------
@@ -79,10 +82,14 @@ class SincNet(nn.Module):
     stride: int, optional
         Kernel stride. Defaults to 1.
     num_channels: int, optional
-        Number of channels in audio. Defaults to 2.
-    per_channel: bool, optional
-        Whether to process audio's channel independently from each other.
-        Defaults is False.
+        Number of channels in audio. Defaults to 1.
+    channel_groups: dict of channel index list
+        Describe how to process channels.
+        Examples with 3 channels:
+            - {'g1': [0], 'g2': [1, 2]} -> process channel 0 on one side, and channels 1 and 2 together on the other side
+            - {'c0': [0], 'c1': [1], 'c2': [2]} -> process each channel individually
+            - {'all': [0, 1, 2]} -> all the channels are processed together
+        Notes: group names (ie dict's keys) could be anything you want
     """
 
     def __init__(
