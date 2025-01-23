@@ -10,7 +10,7 @@ Models can now be stored alongside their pipelines in the same repository, strea
 - accept `pyannote/speaker-diarization-x.x` pipeline user agreement
 - ~~accept `pyannote/segmentation-3.0` model user agreement~~
 - ~~accept `pyannote/wespeaker-voxceleb-resnet34-LM` model user agreement~~
-- load pipeline with `Pipeline.from_pretrained("pyannote/speaker-diarization-3.1", use_auth_token=True)`
+- load pipeline with `Pipeline.from_pretrained("pyannote/speaker-diarization-3.1", token=True)`
 
 #### Improve speech separation quality
 
@@ -18,6 +18,9 @@ Clipping and speaker/source alignment issues in speech separation pipeline have 
 
 ### Breaking changes
 
+- BREAKING(hub): rename `use_auth_token` to `token`
+- BREAKING(cache): rely on `huggingface_hub` caching directory (`PYANNOTE_CACHE` is no longer used)
+- BREAKING(inference): `Inference` now only supports already instantiated models
 - BREAKING(task): drop support for `multilabel` training in `SpeakerDiarization` task
 - BREAKING(task): drop support for `warm_up` option in `SpeakerDiarization` task
 - BREAKING(task): drop support for `weigh_by_cardinality` option in `SpeakerDiarization` task
@@ -32,6 +35,7 @@ Clipping and speaker/source alignment issues in speech separation pipeline have 
 - feat(utils): add `hidden` option to `ProgressHook`
 - feat(utils): add `FilterByNumberOfSpeakers` protocol files filter
 - feat(core): add `Calibration` class to calibrate logits/distances into probabilities
+- feat(metric): add detection, precision, and recall diarization metrics
 
 ### Improvements
 
