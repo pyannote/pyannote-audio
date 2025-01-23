@@ -706,13 +706,13 @@ visit https://hf.co/{model_id} to accept the user conditions."""
             metrics = loaded_checkpoint["pyannote.audio"]["task"]["metrics"]
             if metrics:
                 metric = {}
-                for name, metadata in metrics.items():
+                for metadata in metrics:
                     metric_module = import_module(metadata["module"])
                     metric_class = metadata["class"]
                     metric_kwargs = metadata["kwargs"]
 
                     MetricClass = getattr(metric_module, metric_class)
-                    metric[name] = MetricClass(**metric_kwargs)
+                    metric[metric_class] = MetricClass(**metric_kwargs)
             else:
                 metric = None
 

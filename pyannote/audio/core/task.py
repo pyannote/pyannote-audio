@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import inspect
 import itertools
+import json
 import multiprocessing
 import sys
 import warnings
@@ -915,44 +916,47 @@ class Task(pl.LightningDataModule):
             "hyper_parameters": self.hparams,
         }
 
-        # save augmentation:
-        def serialize_augmentation(augmentation) -> Dict:
-            return {
-                "module": augmentation.__class__.__module__,
-                "class": augmentation.__class__.__name__,
-                "kwargs": {
-                    param: getattr(augmentation, param, None)
-                    for param in inspect.signature(augmentation.__init__).parameters
-                }
+        def serialize_object(obj: Any) -> Dict:
+            serialized_obj = {
+                "module": obj.__class__.__module__,
+                "class": obj.__class__.__name__,
+                "kwargs": {},
             }
 
+            for param in inspect.signature(obj.__init__).parameters:
+                param_value = getattr(obj, param, None)
+                if isinstance(param_value, (bool, float, int, list, dict, str, type(None))):
+                    serialized_obj["kwargs"][param] = param_value
+                else:
+                    msg = f"Cannot serialize {obj.__class__.__name__}.{param}. This parameter will not be saved in model checkpoint."
+                    warnings.warn(msg, RuntimeWarning)
+
+            return serialized_obj
+
+        # save augmentation:
         if not self.augmentation:
             checkpoint["pyannote.audio"]["task"]["augmentation"] = None
         elif isinstance(self.augmentation, BaseWaveformTransform):
-            checkpoint["pyannote.audio"]["task"]["augmentation"] = serialize_augmentation(self.augmentation)
+            checkpoint["pyannote.audio"]["task"]["augmentation"] = serialize_object(
+                self.augmentation
+            )
         elif isinstance(self.augmentation, BaseCompose):
             checkpoint["pyannote.audio"]["task"]["augmentation"] = []
             for augmentation in self.augmentation.transforms:
-                checkpoint["pyannote.audio"]["task"]["augmentation"].append(serialize_augmentation(augmentation))
+                checkpoint["pyannote.audio"]["task"]["augmentation"].append(
+                    serialize_object(augmentation)
+                )
 
         # save metrics:
         if isinstance(self.metric, Metric):
-            metrics = {self.metric.__class__.__name__: self.metric}
-        elif isinstance(self.metric, Sequence):
-            metrics = {metric.__class__.__name__: metric for metric in self.metric}
-        else:
-            metrics = self.metric
-        
-        if metrics:
-            checkpoint["pyannote.audio"]["task"]["metrics"] = {
-                name: {
-                    "module": metric.__class__.__module__,
-                    "class": metric.__class__.__name__,
-                    "kwargs": {
-                        param : getattr(metric, param, None)
-                        for param in inspect.signature(metric.__init__).parameters
-                    }
-                } for name, metric in metrics.items()
-            }
+            checkpoint["pyannote.audio"]["task"]["metrics"] = [
+                json.dumps(self.metric, default=serialize_object)
+            ]
+        elif isinstance(self.metric, MetricCollection):
+            checkpoint["pyannote.audio"]["task"]["metrics"] = []
+            for metric in self.metric.values():
+                checkpoint["pyannote.audio"]["task"]["metrics"].append(
+                    serialize_object(metric)
+                )
         else:
             checkpoint["pyannote.audio"]["task"]["metrics"] = None
