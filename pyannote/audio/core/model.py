@@ -527,7 +527,7 @@ class Model(pl.LightningModule):
         strict: bool = True,
         subfolder: Optional[str] = None,
         token: Union[str, bool, None] = None,
-        cache_dir: Union[Path, Text] = CACHE_DIR,
+        cache_dir: Union[Path, str, None] = None
         protocol: Union[Protocol, None] = None,
         **kwargs,
     ) -> Optional["Model"]:
