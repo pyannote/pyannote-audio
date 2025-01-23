@@ -24,12 +24,10 @@ from .diarization import SpeakerDiarizationMixin
 from .getter import (
     PipelineAugmentation,
     PipelineCalibration,
-    PipelineInference,
     PipelineModel,
     get_augmentation,
     get_calibration,
     get_devices,
-    get_inference,
     get_model,
 )
 from .oracle import oracle_segmentation
@@ -40,8 +38,6 @@ __all__ = [
     "get_augmentation",
     "PipelineAugmentation",
     "get_devices",
-    "get_inference",
-    "PipelineInference",
     "get_model",
     "PipelineModel",
     "get_calibration",

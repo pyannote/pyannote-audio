@@ -23,6 +23,7 @@
 from typing import Optional
 
 import torch
+from einops import rearrange
 from torchmetrics import Metric
 
 from pyannote.audio.torchmetrics.functional.audio.diarization_error_rate import (
@@ -97,6 +98,61 @@ class DiarizationErrorRate(Metric):
             self.speaker_confusion,
             self.speech_total,
         )
+
+
+class SegmentationErrorRate(DiarizationErrorRate):
+    """Segmentation error rate
+
+    Computes local speaker diarization error rate on a sliding window.
+
+    Parameters
+    ----------
+    window_size : int
+        Number of frames in each window.
+    step_size : int, optional
+        Number of frames to skip between windows. Defaults to half the window size.
+    threshold : float, optional
+        Threshold used to binarize predictions. Defaults to 0.5.
+    """
+
+    def __init__(
+        self, window_size: int, step_size: Optional[int] = None, threshold: float = 0.5
+    ):
+        super().__init__(threshold=threshold)
+        self.window_size = window_size
+        self.step_size = step_size or window_size // 2
+
+    def update(
+        self,
+        preds: torch.Tensor,
+        target: torch.Tensor,
+    ) -> None:
+        """Compute and accumulate segmentation error rate components
+
+        Parameters
+        ----------
+        preds : torch.Tensor
+            (batch_size, num_speakers, num_frames)-shaped continuous predictions.
+        target : torch.Tensor
+            (batch_size, num_speakers, num_frames)-shaped (0 or 1) targets.
+
+        Returns
+        -------
+        false_alarm : torch.Tensor
+        missed_detection : torch.Tensor
+        speaker_confusion : torch.Tensor
+        speech_total : torch.Tensor
+            Segmentation error rate components accumulated over the whole batch.
+        """
+
+        windowed_preds = rearrange(
+            preds.unfold(2, self.window_size, self.step_size), "b s c f -> (b c) s f"
+        )
+        windowed_target = rearrange(
+            target.unfold(2, self.window_size, self.step_size), "b s c f -> (b c) s f"
+        )
+
+        super().update(windowed_preds, windowed_target)
 
 
 class SpeakerConfusionRate(DiarizationErrorRate):
