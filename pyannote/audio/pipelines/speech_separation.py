@@ -88,9 +88,9 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
         Defaults to {"collar": 0.0, "skip_overlap": False}. This is used in `get_metric`
         when instantiating the metric: GreedyDiarizationErrorRate(**der_variant).
     token : str or bool, optional
-        Token to be used for the download.
+        Huggingface token to be used for downloading from Huggingface hub.
     cache_dir: Path or str, optional
-        Path to the folder where cached files are stored.
+        Path to the folder where files downloaded from Huggingface hub are stored.
 
     Usage
     -----
