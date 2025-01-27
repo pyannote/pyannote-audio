@@ -36,6 +36,7 @@ Clipping and speaker/source alignment issues in speech separation pipeline have 
 - feat(utils): add `FilterByNumberOfSpeakers` protocol files filter
 - feat(core): add `Calibration` class to calibrate logits/distances into probabilities
 - feat(metric): add `DetectionErrorRate`, `SegmentationErrorRate`, `DiarizationPrecision`, and `DiarizationRecall` metrics
+- feat(cli): add CLI to apply (and benchmark) pretrained pipelines
 
 ### Improvements
 
