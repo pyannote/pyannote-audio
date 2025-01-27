@@ -76,9 +76,9 @@ class VoiceActivityDetection(Pipeline):
         Optimize (precision/recall) fscore. Defaults to optimizing detection
         error rate.
     token : str or bool, optional
-        Token to be used for the download.
+        Huggingface token to be used for downloading from Huggingface hub.
     cache_dir: Path or str, optional
-        Path to the folder where cached files are stored.
+        Path to the folder where files downloaded from Huggingface hub are stored.
     inference_kwargs : dict, optional
         Keywords arguments passed to Inference.
 

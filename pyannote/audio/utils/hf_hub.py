@@ -56,9 +56,9 @@ def download_from_hf_hub(
     subfolder : str, optional
         Folder inside the model repo.
     token : str or bool, optional
-        Token to be used for the download.
+        Huggingface token to be used for downloading from Huggingface hub.
     cache_dir: Path or str, optional
-        Path to the folder where cached files are stored.
+        Path to the folder where files downloaded from Huggingface hub are stored.
 
     See also
     --------
