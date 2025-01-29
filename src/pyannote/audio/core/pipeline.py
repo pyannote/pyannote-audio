@@ -150,9 +150,12 @@ class Pipeline(_Pipeline):
             Use at your own risk, as this may lead to unexpected behavior.
         """
 
+        # load checkpoint from a dict
+        if isinstance(checkpoint, dict):
+            config = checkpoint
         # if checkpoint is a directory, look for the pipeline checkpoint
         # inside this directory
-        if os.path.isdir(checkpoint):
+        elif os.path.isdir(checkpoint):
             model_id = Path(checkpoint)
             config_yml = model_id / AssetFileName.Pipeline.value
             revision = None
@@ -174,8 +177,9 @@ class Pipeline(_Pipeline):
             if config_yml is None:
                 return None
 
-        with open(config_yml, "r") as fp:
-            config = yaml.load(fp, Loader=yaml.SafeLoader)
+        if not isinstance(checkpoint, dict):
+            with open(config_yml, "r") as fp:
+                config = yaml.load(fp, Loader=yaml.SafeLoader)
 
         # expand $model/{subfolder}-like entries in config
         expand_subfolders(
