@@ -13,7 +13,8 @@ HF_SAMPLE_MODEL_ID = "pyannote/ci-segmentation"
 
 
 def test_hf_download_inference():
-    inference = Inference(HF_SAMPLE_MODEL_ID, device="cpu")
+    model = Model.from_pretrained(HF_SAMPLE_MODEL_ID)
+    inference = Inference(model, device="cpu")
     assert isinstance(inference, Inference)
 
 

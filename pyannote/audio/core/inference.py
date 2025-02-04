@@ -21,7 +21,6 @@
 # SOFTWARE.
 
 import warnings
-from pathlib import Path
 from typing import Callable, List, Optional, Text, Tuple, Union
 
 import numpy as np
@@ -74,15 +73,11 @@ class Inference(BaseInference):
     device : torch.device, optional
         Device used for inference. Defaults to `model.device`.
         In case `device` and `model.device` are different, model is sent to device.
-    use_auth_token : str, optional
-        When loading a private huggingface.co model, set `use_auth_token`
-        to True or to a string containing your hugginface.co authentication
-        token that can be obtained by running `huggingface-cli login`
     """
 
     def __init__(
         self,
-        model: Union[Model, Text, Path],
+        model: Model,
         window: Text = "sliding",
         duration: Optional[float] = None,
         step: Optional[float] = None,
@@ -91,20 +86,10 @@ class Inference(BaseInference):
         skip_conversion: bool = False,
         device: Optional[torch.device] = None,
         batch_size: int = 32,
-        use_auth_token: Union[Text, None] = None,
     ):
         # ~~~~ model ~~~~~
 
-        self.model = (
-            model
-            if isinstance(model, Model)
-            else Model.from_pretrained(
-                model,
-                map_location=device,
-                strict=False,
-                use_auth_token=use_auth_token,
-            )
-        )
+        self.model = model
 
         if device is None:
             device = self.model.device
@@ -616,7 +601,7 @@ class Inference(BaseInference):
             # mask ~ (num_frames_per_chunk, num_classes)-shaped np.ndarray
             mask = 1 - np.isnan(score)
             np.nan_to_num(score, copy=False, nan=0.0)
-            
+
             start_frame = frames.closest_frame(chunk.start + 0.5 * frames.duration)
 
             aggregated_output[start_frame : start_frame + num_frames_per_chunk] += (

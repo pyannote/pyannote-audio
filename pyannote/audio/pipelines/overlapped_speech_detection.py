@@ -23,6 +23,7 @@
 """Overlapped speech detection pipelines"""
 
 from functools import partial
+from pathlib import Path
 from typing import Callable, Optional, Text, Union
 
 import numpy as np
@@ -96,10 +97,10 @@ class OverlappedSpeechDetection(Pipeline):
     recall : float, optional
         Optimize precision at target recall
         Defaults to optimize precision/recall fscore
-    use_auth_token : str, optional
-        When loading private huggingface.co models, set `use_auth_token`
-        to True or to a string containing your hugginface.co authentication
-        token that can be obtained by running `huggingface-cli login`
+    token : str or bool, optional
+        Huggingface token to be used for downloading from Huggingface hub.
+    cache_dir: Path or str, optional
+        Path to the folder where files downloaded from Huggingface hub are stored.
     inference_kwargs : dict, optional
         Keywords arguments passed to Inference.
 
@@ -118,7 +119,8 @@ class OverlappedSpeechDetection(Pipeline):
         segmentation: PipelineModel = "pyannote/segmentation",
         precision: Optional[float] = None,
         recall: Optional[float] = None,
-        use_auth_token: Union[Text, None] = None,
+        token: Union[Text, None] = None,
+        cache_dir: Union[Path, Text, None] = None,
         **inference_kwargs,
     ):
         super().__init__()
@@ -126,7 +128,7 @@ class OverlappedSpeechDetection(Pipeline):
         self.segmentation = segmentation
 
         # load model
-        model = get_model(segmentation, use_auth_token=use_auth_token)
+        model = get_model(segmentation, token=token, cache_dir=cache_dir)
 
         if model.dimension > 1:
             inference_kwargs["pre_aggregation_hook"] = lambda scores: np.partition(

@@ -143,9 +143,6 @@ class PixIT(SegmentationTask):
         Defaults to AUROC (area under the ROC curve).
     separation_loss_weight : float, optional
         Scaling factor between diarization and separation losses. Defaults to 0.5.
-    finetune_wavlm : bool, optional
-        If True, the WavLM feature extractor will be fine-tuned during training.
-        Defaults to True.
 
     References
     ----------
@@ -175,7 +172,6 @@ class PixIT(SegmentationTask):
         ] = None,  # deprecated in favor of `max_speakers_per_chunk``
         loss: Literal["bce", "mse"] = None,  # deprecated
         separation_loss_weight: float = 0.5,
-        finetune_wavlm: bool = True,
     ):
         if not ASTEROID_IS_AVAILABLE:
             raise ImportError(
@@ -224,7 +220,6 @@ class PixIT(SegmentationTask):
         self.weight = weight
         self.separation_loss_weight = separation_loss_weight
         self.mixit_loss = MixITLossWrapper(multisrc_neg_sisdr, generalized=True)
-        self.finetune_wavlm = finetune_wavlm
 
     def setup(self, stage=None):
         super().setup(stage)
@@ -971,13 +966,6 @@ class PixIT(SegmentationTask):
         loss : {str: torch.tensor}
             {"loss": loss}
         """
-        # finetuning wavlm with a smaller learning rate requires two optimizers
-        # and manual gradient stepping
-        if self.finetune_wavlm:
-            wavlm_opt, rest_opt = self.model.optimizers()
-            wavlm_opt.zero_grad()
-            rest_opt.zero_grad()
-
         (
             seg_loss,
             separation_loss,
@@ -985,6 +973,7 @@ class PixIT(SegmentationTask):
             permutated_diarization,
             target,
         ) = self.common_step(batch)
+
         self.model.log(
             "loss/train/separation",
             separation_loss,
@@ -1020,20 +1009,22 @@ class PixIT(SegmentationTask):
             logger=True,
         )
 
-        if self.finetune_wavlm:
+        # using multiple optimizers requires manual optimization
+        if not self.automatic_optimization:
+            optimizers = self.model.optimizers()
+            optimizers = optimizers if isinstance(optimizers, list) else [optimizers]
+            for optimizer in optimizers:
+                optimizer.zero_grad()
+
             self.model.manual_backward(loss)
-            self.model.clip_gradients(
-                wavlm_opt,
-                gradient_clip_val=self.model.gradient_clip_val,
-                gradient_clip_algorithm="norm",
-            )
-            self.model.clip_gradients(
-                rest_opt,
-                gradient_clip_val=self.model.gradient_clip_val,
-                gradient_clip_algorithm="norm",
-            )
-            wavlm_opt.step()
-            rest_opt.step()
+
+            for optimizer in optimizers:
+                self.model.clip_gradients(
+                    optimizer,
+                    gradient_clip_val=self.model.gradient_clip_val,
+                    gradient_clip_algorithm="norm",
+                )
+                optimizer.step()
 
         return {"loss": loss}
 

@@ -3,7 +3,7 @@ Consider switching to [pyannoteAI](https://www.pyannote.ai) for better and faste
 
 # `pyannote.audio` speaker diarization toolkit
 
-`pyannote.audio` is an open-source toolkit written in Python for speaker diarization. Based on [PyTorch](pytorch.org) machine learning framework, it comes with state-of-the-art [pretrained models and pipelines](https://hf.co/pyannote), that can be further finetuned to your own data for even better performance.
+`pyannote.audio` is an open-source toolkit written in Python for speaker diarization. Based on [PyTorch](https://pytorch.org) machine learning framework, it comes with state-of-the-art [pretrained models and pipelines](https://hf.co/pyannote), that can be further finetuned to your own data for even better performance.
 
 <p align="center">
  <a href="https://www.youtube.com/watch?v=37R_R82lfwA"><img src="https://img.youtube.com/vi/37R_R82lfwA/0.jpg"></a>
@@ -18,16 +18,19 @@ Consider switching to [pyannoteAI](https://www.pyannote.ai) for better and faste
 
 ```python
 from pyannote.audio import Pipeline
+from pyannote.audio.pipelines.utils.hook import ProgressHook
+
 pipeline = Pipeline.from_pretrained(
     "pyannote/speaker-diarization-3.1",
-    use_auth_token="HUGGINGFACE_ACCESS_TOKEN_GOES_HERE")
+    token="HUGGINGFACE_ACCESS_TOKEN_GOES_HERE")
 
 # send pipeline to GPU (when available)
 import torch
 pipeline.to(torch.device("cuda"))
 
-# apply pretrained pipeline
-diarization = pipeline("audio.wav")
+# apply pretrained pipeline (with optional progress hook)
+with ProgressHook() as hook:
+    diarization = pipeline("audio.wav", hook=hook)
 
 # print the result
 for turn, _, speaker in diarization.itertracks(yield_label=True):

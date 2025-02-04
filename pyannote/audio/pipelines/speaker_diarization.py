@@ -27,7 +27,8 @@ import itertools
 import math
 import textwrap
 import warnings
-from typing import Callable, Optional, Text, Union
+from pathlib import Path
+from typing import Callable, Mapping, Optional, Text, Union
 
 import numpy as np
 import torch
@@ -45,6 +46,7 @@ from pyannote.audio.pipelines.utils import (
     SpeakerDiarizationMixin,
     get_model,
 )
+from pyannote.audio.pipelines.utils.diarization import set_num_speakers
 from pyannote.audio.utils.signal import binarize
 
 
@@ -68,7 +70,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         `segmentation_step` controls the step of this window, provided as a ratio of its
         duration. Defaults to 0.1 (i.e. 90% overlap between two consecuive windows).
     embedding : Model, str, or dict, optional
-        Pretrained embedding model. Defaults to "pyannote/embedding@2022.07".
+        Pretrained embedding model. Defaults to "speechbrain/spkrec-ecapa-voxceleb@5c0be38".
         See pyannote.audio.pipelines.utils.get_model for supported format.
     embedding_exclude_overlap : bool, optional
         Exclude overlapping speech regions when extracting embeddings.
@@ -84,10 +86,10 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         Optimize for a variant of diarization error rate.
         Defaults to {"collar": 0.0, "skip_overlap": False}. This is used in `get_metric`
         when instantiating the metric: GreedyDiarizationErrorRate(**der_variant).
-    use_auth_token : str, optional
-        When loading private huggingface.co models, set `use_auth_token`
-        to True or to a string containing your hugginface.co authentication
-        token that can be obtained by running `huggingface-cli login`
+    token : str or bool, optional
+        Huggingface token to be used for downloading from Huggingface hub.
+    cache_dir: Path or str, optional
+        Path to the folder where files downloaded from Huggingface hub are stored.
 
     Usage
     -----
@@ -122,12 +124,13 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         embedding_batch_size: int = 1,
         segmentation_batch_size: int = 1,
         der_variant: Optional[dict] = None,
-        use_auth_token: Union[Text, None] = None,
+        token: Union[Text, None] = None,
+        cache_dir: Union[Path, Text, None] = None,
     ):
         super().__init__()
 
         self.segmentation_model = segmentation
-        model: Model = get_model(segmentation, use_auth_token=use_auth_token)
+        model: Model = get_model(segmentation, token=token, cache_dir=cache_dir)
 
         self.segmentation_step = segmentation_step
 
@@ -164,7 +167,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
         else:
             self._embedding = PretrainedSpeakerEmbedding(
-                self.embedding, use_auth_token=use_auth_token
+                self.embedding, token=token, cache_dir=cache_dir
             )
             self._audio = Audio(sample_rate=self._embedding.sample_rate, mono="downmix")
             metric = self._embedding.metric
@@ -176,6 +179,8 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                 f'clustering must be one of [{", ".join(list(Clustering.__members__))}]'
             )
         self.clustering = Klustering.value(metric=metric)
+
+        self._expects_num_speakers = self.clustering.expects_num_clusters
 
     @property
     def segmentation_batch_size(self) -> int:
@@ -469,11 +474,24 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         # setup hook (e.g. for debugging purposes)
         hook = self.setup_hook(file, hook=hook)
 
-        num_speakers, min_speakers, max_speakers = self.set_num_speakers(
+        num_speakers, min_speakers, max_speakers = set_num_speakers(
             num_speakers=num_speakers,
             min_speakers=min_speakers,
             max_speakers=max_speakers,
         )
+
+        # when using KMeans clustering (or equivalent), the number of speakers must
+        # be provided alongside the audio file. also, during pipeline training, we
+        # infer the number of speakers from the reference annotation to avoid the
+        # pipeline complaining about missing number of speakers.
+        if self._expects_num_speakers and num_speakers is None:
+            if isinstance(file, Mapping) and "annotation" in file:
+                num_speakers = len(file["annotation"].labels())
+
+            else:
+                raise ValueError(
+                    f"num_speakers must be provided when using {self.klustering} clustering"
+                )
 
         segmentations = self.get_segmentations(file, hook=hook)
         hook("segmentation", segmentations)
