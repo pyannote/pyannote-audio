@@ -209,9 +209,9 @@ class SpeechBrainPretrainedSpeakerEmbedding(BaseInference):
     device : torch.device, optional
         Device
     token : str or bool, optional
-        Token to be used for the download.
+        Huggingface token to be used for downloading from Huggingface hub.
     cache_dir: Path or str, optional
-        Path to the folder where cached files are stored.
+        Path to the folder where files downloaded from Huggingface hub are stored.
 
     Usage
     -----
@@ -393,9 +393,9 @@ class ONNXWeSpeakerPretrainedSpeakerEmbedding(BaseInference):
     device : torch.device, optional
         Device
     token : str or bool, optional
-        Token to be used for the download.
+        Huggingface token to be used for downloading from Huggingface hub.
     cache_dir: Path or str, optional
-        Path to the folder where cached files are stored.
+        Path to the folder where files downloaded from Huggingface hub are stored.
 
     Usage
     -----
@@ -629,9 +629,9 @@ class PyannoteAudioPretrainedSpeakerEmbedding(BaseInference):
     device : torch.device, optional
         Device
     token : str or bool, optional
-        Token to be used for the download.
+        Huggingface token to be used for downloading from Huggingface hub.
     cache_dir: Path or str, optional
-        Path to the folder where cached files are stored.
+        Path to the folder where files downloaded from Huggingface hub are stored.
 
     Usage
     -----
@@ -732,9 +732,9 @@ def PretrainedSpeakerEmbedding(
     device : torch.device, optional
         Device
     token : str or bool, optional
-        Token to be used for the download.
+        Huggingface token to be used for downloading from Huggingface hub.
     cache_dir: Path or str, optional
-        Path to the folder where cached files are stored.
+        Path to the folder where files downloaded from Huggingface hub are stored.
 
     Usage
     -----
@@ -794,9 +794,9 @@ class SpeakerEmbedding(Pipeline):
         See pyannote.audio.pipelines.utils.get_model for supported format.
         Defaults to no voice activity detection.
     token : str or bool, optional
-        Token to be used for the download.
+        Huggingface token to be used for downloading from Huggingface hub.
     cache_dir: Path or str, optional
-        Path to the folder where cached files are stored.
+        Path to the folder where files downloaded from Huggingface hub are stored.
 
     Usage
     -----

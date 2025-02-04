@@ -49,9 +49,9 @@ def get_model(
         pretrained model on Huggingface.co and loads with `Model.from_pretrained(model)`
         When `dict`, loads with `Model.from_pretrained(**model)`.
     token : str or bool, optional
-        Token to be used for the download.
+        Huggingface token to be used for downloading from Huggingface hub.
     cache_dir: Path or str, optional
-        Path to the folder where cached files are stored.
+        Path to the folder where files downloaded from Huggingface hub are stored.
 
     Returns
     -------
@@ -117,9 +117,9 @@ def get_calibration(
         pretrained calibration on Huggingface.co and loads with `Calibration.from_pretrained(calibration)`.
         When `dict`, loads with `Calibration.from_pretrained(**calibration)`.
     token : str or bool, optional
-        Token to be used for the download.
+        Huggingface token to be used for downloading from Huggingface hub.
     cache_dir: Path or str, optional
-        Path to the folder where cached files are stored.
+        Path to the folder where files downloaded from Huggingface hub are stored.
 
     Returns
     -------
