@@ -134,18 +134,34 @@ class Calibration(IsotonicRegression):
         cache_dir: Path or str, optional
             Path to model cache directory.
         """
-        if os.path.isfile(checkpoint):
-            return cls.from_file(checkpoint)
 
-        _, _, path = download_from_hf_hub(
-            str(checkpoint),
-            AssetFileName.Calibration,
-            subfolder=subfolder,
-            cache_dir=cache_dir,
-            token=token,
-        )
+        # if checkpoint is a directory, look for the calibration checkpoint
+        # inside this directory (or inside a subfolder if specified)
+        if os.path.isdir(checkpoint):
+            if subfolder:
+                path_to_calibration_checkpoint = (
+                    Path(checkpoint) / subfolder / AssetFileName.Calibration.value
+                )
+            else:
+                path_to_calibration_checkpoint = (
+                    Path(checkpoint) / AssetFileName.Calibration.value
+                )
 
-        if path is None:
-            return None
+        # if checkpoint is a file, use it as is
+        elif os.path.isfile(checkpoint):
+            path_to_calibration_checkpoint = checkpoint
 
-        return cls.from_file(path)
+        # otherwise, assume that the checkpoint is hosted on HF model hub
+        else:
+            _, _, path_to_calibration_checkpoint = download_from_hf_hub(
+                str(checkpoint),
+                AssetFileName.Calibration,
+                subfolder=subfolder,
+                cache_dir=cache_dir,
+                token=token,
+            )
+
+            if path_to_calibration_checkpoint is None:
+                return None
+
+        return cls.from_file(path_to_calibration_checkpoint)
