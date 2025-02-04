@@ -27,6 +27,7 @@ import itertools
 import math
 import textwrap
 import warnings
+from pathlib import Path
 from typing import Callable, Optional, Text, Tuple, Union
 
 import numpy as np
@@ -86,10 +87,10 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
         Optimize for a variant of diarization error rate.
         Defaults to {"collar": 0.0, "skip_overlap": False}. This is used in `get_metric`
         when instantiating the metric: GreedyDiarizationErrorRate(**der_variant).
-    use_auth_token : str, optional
-        When loading private huggingface.co models, set `use_auth_token`
-        to True or to a string containing your hugginface.co authentication
-        token that can be obtained by running `huggingface-cli login`
+    token : str or bool, optional
+        Huggingface token to be used for downloading from Huggingface hub.
+    cache_dir: Path or str, optional
+        Path to the folder where files downloaded from Huggingface hub are stored.
 
     Usage
     -----
@@ -133,12 +134,13 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
         embedding_batch_size: int = 1,
         segmentation_batch_size: int = 1,
         der_variant: Optional[dict] = None,
-        use_auth_token: Union[Text, None] = None,
+        token: Union[Text, None] = None,
+        cache_dir: Union[Path, Text, None] = None,
     ):
         super().__init__()
 
         self.segmentation_model = segmentation
-        model: Model = get_model(segmentation, use_auth_token=use_auth_token)
+        model: Model = get_model(segmentation, token=token, cache_dir=cache_dir)
 
         self.segmentation_step = segmentation_step
 
@@ -177,7 +179,7 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
 
         else:
             self._embedding = PretrainedSpeakerEmbedding(
-                self.embedding, use_auth_token=use_auth_token
+                self.embedding, token=token, cache_dir=cache_dir
             )
             self._audio = Audio(sample_rate=self._embedding.sample_rate, mono="downmix")
             metric = self._embedding.metric
@@ -597,7 +599,7 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
             count,
         )
         discrete_diarization = self.to_diarization(discrete_diarization, count)
-       # remove file-wise inactive speakers from the diarization
+        # remove file-wise inactive speakers from the diarization
         active_speakers = np.sum(discrete_diarization, axis=0) > 0
         # shape: (num_speakers, )
         discrete_diarization.data = discrete_diarization.data[:, active_speakers]
@@ -630,10 +632,12 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
 
         _, num_sources = sources.data.shape
 
-        # In some cases, maximum num of simultaneous speakers is greater than num of clusters, 
-        # implying a num of speakers in the diarization greater than num of sources after calling 
+        # In some cases, maximum num of simultaneous speakers is greater than num of clusters,
+        # implying a num of speakers in the diarization greater than num of sources after calling
         # to_diarization(). So we add dummy sources to match the number of speakers in diarization.
-        sources.data = np.pad(sources.data, ((0, 0), (0, max(0, num_speakers - num_sources))))
+        sources.data = np.pad(
+            sources.data, ((0, 0), (0, max(0, num_speakers - num_sources)))
+        )
 
         # remove sources corresponding to file-wise inactive speakers
         sources.data = sources.data[:, active_speakers]
@@ -643,7 +647,7 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
         if self.separation.leakage_removal:
             asr_collar_frames = int(
                 self._segmentation.model.num_frames(
-                    self.separation.asr_collar * self._audio.sample_rate
+                    round(self.separation.asr_collar * self._audio.sample_rate)
                 )
             )
             if asr_collar_frames > 0:
@@ -651,10 +655,16 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
                 for i in range(num_speakers):
                     speaker_activation = discrete_diarization.data.T[i]
                     non_silent = speaker_activation != 0
-                    dilated_non_silent = binary_dilation(non_silent, [True] * (2 * asr_collar_frames))
-                    dilated_speaker_activations.T[i] = dilated_non_silent.astype(np.int8)
+                    dilated_non_silent = binary_dilation(
+                        non_silent, [True] * (2 * asr_collar_frames)
+                    )
+                    dilated_speaker_activations.T[i] = dilated_non_silent.astype(
+                        np.int8
+                    )
 
-            dilated_speaker_activations = SlidingWindowFeature(dilated_speaker_activations, discrete_diarization.sliding_window)
+            dilated_speaker_activations = SlidingWindowFeature(
+                dilated_speaker_activations, discrete_diarization.sliding_window
+            )
             sources.data = (
                 sources.data * dilated_speaker_activations.align(sources).data
             )

@@ -36,13 +36,10 @@ from torch.nn.utils.rnn import pad_sequence
 from pyannote.audio import Inference, Model, Pipeline
 from pyannote.audio.core.inference import BaseInference
 from pyannote.audio.core.io import AudioFile
-from pyannote.audio.core.model import CACHE_DIR
 from pyannote.audio.pipelines.utils import PipelineModel, get_model
 
 try:
-    from speechbrain.inference import (
-        EncoderClassifier as SpeechBrain_EncoderClassifier,
-    )
+    from speechbrain.inference import EncoderClassifier as SpeechBrain_EncoderClassifier
 
     SPEECHBRAIN_IS_AVAILABLE = True
 except ImportError:
@@ -211,10 +208,10 @@ class SpeechBrainPretrainedSpeakerEmbedding(BaseInference):
         Name of SpeechBrain model
     device : torch.device, optional
         Device
-    use_auth_token : str, optional
-        When loading private huggingface.co models, set `use_auth_token`
-        to True or to a string containing your hugginface.co authentication
-        token that can be obtained by running `huggingface-cli login`
+    token : str or bool, optional
+        Huggingface token to be used for downloading from Huggingface hub.
+    cache_dir: Path or str, optional
+        Path to the folder where files downloaded from Huggingface hub are stored.
 
     Usage
     -----
@@ -235,7 +232,8 @@ class SpeechBrainPretrainedSpeakerEmbedding(BaseInference):
         self,
         embedding: Text = "speechbrain/spkrec-ecapa-voxceleb",
         device: Optional[torch.device] = None,
-        use_auth_token: Union[Text, None] = None,
+        token: Union[Text, None] = None,
+        cache_dir: Union[Path, Text, None] = None,
     ):
         if not SPEECHBRAIN_IS_AVAILABLE:
             raise ImportError(
@@ -251,13 +249,15 @@ class SpeechBrainPretrainedSpeakerEmbedding(BaseInference):
             self.embedding = embedding
             self.revision = None
         self.device = device or torch.device("cpu")
-        self.use_auth_token = use_auth_token
+        self.token = token
+        self.cache_dir = cache_dir
 
         self.classifier_ = SpeechBrain_EncoderClassifier.from_hparams(
             source=self.embedding,
-            savedir=f"{CACHE_DIR}/speechbrain",
+            savedir=f"{self.cache_dir}/speechbrain",
             run_opts={"device": self.device},
-            use_auth_token=self.use_auth_token,
+            token=self.token,
+            huggingface_cache_dir=self.cache_dir,
             revision=self.revision,
         )
 
@@ -269,9 +269,10 @@ class SpeechBrainPretrainedSpeakerEmbedding(BaseInference):
 
         self.classifier_ = SpeechBrain_EncoderClassifier.from_hparams(
             source=self.embedding,
-            savedir=f"{CACHE_DIR}/speechbrain",
+            savedir=f"{self.cache_dir}/speechbrain",
             run_opts={"device": device},
-            use_auth_token=self.use_auth_token,
+            token=self.token,
+            huggingface_cache_dir=self.cache_dir,
             revision=self.revision,
         )
         self.device = device
@@ -391,6 +392,10 @@ class ONNXWeSpeakerPretrainedSpeakerEmbedding(BaseInference):
         Path to WeSpeaker pretrained speaker embedding
     device : torch.device, optional
         Device
+    token : str or bool, optional
+        Huggingface token to be used for downloading from Huggingface hub.
+    cache_dir: Path or str, optional
+        Path to the folder where files downloaded from Huggingface hub are stored.
 
     Usage
     -----
@@ -411,6 +416,8 @@ class ONNXWeSpeakerPretrainedSpeakerEmbedding(BaseInference):
         self,
         embedding: Text = "hbredin/wespeaker-voxceleb-resnet34-LM",
         device: Optional[torch.device] = None,
+        token: Union[Text, None] = None,
+        cache_dir: Union[Path, Text, None] = None,
     ):
         if not ONNX_IS_AVAILABLE:
             raise ImportError(
@@ -420,10 +427,13 @@ class ONNXWeSpeakerPretrainedSpeakerEmbedding(BaseInference):
         super().__init__()
 
         if not Path(embedding).exists():
+
             try:
                 embedding = hf_hub_download(
                     repo_id=embedding,
                     filename="speaker-embedding.onnx",
+                    token=token,
+                    cache_dir=cache_dir,
                 )
             except RepositoryNotFoundError:
                 raise ValueError(
@@ -618,10 +628,10 @@ class PyannoteAudioPretrainedSpeakerEmbedding(BaseInference):
         pyannote.audio model
     device : torch.device, optional
         Device
-    use_auth_token : str, optional
-        When loading private huggingface.co models, set `use_auth_token`
-        to True or to a string containing your hugginface.co authentication
-        token that can be obtained by running `huggingface-cli login`
+    token : str or bool, optional
+        Huggingface token to be used for downloading from Huggingface hub.
+    cache_dir: Path or str, optional
+        Path to the folder where files downloaded from Huggingface hub are stored.
 
     Usage
     -----
@@ -642,13 +652,14 @@ class PyannoteAudioPretrainedSpeakerEmbedding(BaseInference):
         self,
         embedding: PipelineModel = "pyannote/embedding",
         device: Optional[torch.device] = None,
-        use_auth_token: Union[Text, None] = None,
+        token: Union[Text, None] = None,
+        cache_dir: Union[Path, Text, None] = None,
     ):
         super().__init__()
         self.embedding = embedding
         self.device = device or torch.device("cpu")
 
-        self.model_: Model = get_model(self.embedding, use_auth_token=use_auth_token)
+        self.model_: Model = get_model(self.embedding, token=token, cache_dir=cache_dir)
         self.model_.eval()
         self.model_.to(self.device)
 
@@ -708,7 +719,8 @@ class PyannoteAudioPretrainedSpeakerEmbedding(BaseInference):
 def PretrainedSpeakerEmbedding(
     embedding: PipelineModel,
     device: Optional[torch.device] = None,
-    use_auth_token: Union[Text, None] = None,
+    token: Union[Text, None] = None,
+    cache_dir: Union[Path, Text, None] = None,
 ):
     """Pretrained speaker embedding
 
@@ -719,10 +731,10 @@ def PretrainedSpeakerEmbedding(
         or a pyannote.audio model.
     device : torch.device, optional
         Device
-    use_auth_token : str, optional
-        When loading private huggingface.co models, set `use_auth_token`
-        to True or to a string containing your hugginface.co authentication
-        token that can be obtained by running `huggingface-cli login`
+    token : str or bool, optional
+        Huggingface token to be used for downloading from Huggingface hub.
+    cache_dir: Path or str, optional
+        Path to the folder where files downloaded from Huggingface hub are stored.
 
     Usage
     -----
@@ -743,24 +755,26 @@ def PretrainedSpeakerEmbedding(
 
     if isinstance(embedding, str) and "pyannote" in embedding:
         return PyannoteAudioPretrainedSpeakerEmbedding(
-            embedding, device=device, use_auth_token=use_auth_token
+            embedding, device=device, token=token, cache_dir=cache_dir
         )
 
     elif isinstance(embedding, str) and "speechbrain" in embedding:
         return SpeechBrainPretrainedSpeakerEmbedding(
-            embedding, device=device, use_auth_token=use_auth_token
+            embedding, device=device, token=token, cache_dir=cache_dir
         )
 
     elif isinstance(embedding, str) and "nvidia" in embedding:
         return NeMoPretrainedSpeakerEmbedding(embedding, device=device)
 
     elif isinstance(embedding, str) and "wespeaker" in embedding:
-        return ONNXWeSpeakerPretrainedSpeakerEmbedding(embedding, device=device)
+        return ONNXWeSpeakerPretrainedSpeakerEmbedding(
+            embedding, device=device, token=token, cache_dir=cache_dir
+        )
 
     else:
         # fallback to pyannote in case we are loading a local model
         return PyannoteAudioPretrainedSpeakerEmbedding(
-            embedding, device=device, use_auth_token=use_auth_token
+            embedding, device=device, token=token, cache_dir=cache_dir
         )
 
 
@@ -779,10 +793,10 @@ class SpeakerEmbedding(Pipeline):
         Pretrained segmentation (or voice activity detection) model.
         See pyannote.audio.pipelines.utils.get_model for supported format.
         Defaults to no voice activity detection.
-    use_auth_token : str, optional
-        When loading private huggingface.co models, set `use_auth_token`
-        to True or to a string containing your hugginface.co authentication
-        token that can be obtained by running `huggingface-cli login`
+    token : str or bool, optional
+        Huggingface token to be used for downloading from Huggingface hub.
+    cache_dir: Path or str, optional
+        Path to the folder where files downloaded from Huggingface hub are stored.
 
     Usage
     -----
@@ -798,7 +812,8 @@ class SpeakerEmbedding(Pipeline):
         self,
         embedding: PipelineModel = "pyannote/embedding",
         segmentation: Optional[PipelineModel] = None,
-        use_auth_token: Union[Text, None] = None,
+        token: Union[Text, None] = None,
+        cache_dir: Union[Path, Text, None] = None,
     ):
         super().__init__()
 
@@ -806,12 +821,12 @@ class SpeakerEmbedding(Pipeline):
         self.segmentation = segmentation
 
         self.embedding_model_: Model = get_model(
-            embedding, use_auth_token=use_auth_token
+            embedding, token=token, cache_dir=cache_dir
         )
 
         if self.segmentation is not None:
             segmentation_model: Model = get_model(
-                self.segmentation, use_auth_token=use_auth_token
+                self.segmentation, token=token, cache_dir=cache_dir
             )
             self._segmentation = Inference(
                 segmentation_model,

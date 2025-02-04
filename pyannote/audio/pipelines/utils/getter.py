@@ -21,21 +21,23 @@
 # SOFTWARE.
 
 import itertools
+from pathlib import Path
 from typing import Dict, Mapping, Optional, Text, Union
 
 import torch
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torch_audiomentations.utils.config import from_dict as augmentation_from_dict
 
-from pyannote.audio import Inference, Model
 from pyannote.audio.core.calibration import Calibration
+from pyannote.audio.core.model import Model
 
 PipelineModel = Union[Model, Text, Mapping]
 
 
 def get_model(
     model: PipelineModel,
-    use_auth_token: Union[Text, None] = None,
+    token: Union[Text, None] = None,
+    cache_dir: Union[Path, Text, None] = None,
 ) -> Model:
     """Load pretrained model and set it into `eval` mode.
 
@@ -46,10 +48,10 @@ def get_model(
         When `str`, assumes that this is either the path to a checkpoint or the name of a
         pretrained model on Huggingface.co and loads with `Model.from_pretrained(model)`
         When `dict`, loads with `Model.from_pretrained(**model)`.
-    use_auth_token : str, optional
-        When loading a private or gated huggingface.co pipeline, set `use_auth_token`
-        to True or to a string containing your hugginface.co authentication
-        token that can be obtained by visiting https://hf.co/settings/tokens
+    token : str or bool, optional
+        Huggingface token to be used for downloading from Huggingface hub.
+    cache_dir: Path or str, optional
+        Path to the folder where files downloaded from Huggingface hub are stored.
 
     Returns
     -------
@@ -73,12 +75,15 @@ def get_model(
         pass
 
     elif isinstance(model, Text):
-        model = Model.from_pretrained(
-            model, use_auth_token=use_auth_token, strict=False
+        _model = Model.from_pretrained(
+            model, token=token, cache_dir=cache_dir, strict=False
         )
+        if _model:
+            model = _model
 
     elif isinstance(model, Mapping):
-        model.setdefault("use_auth_token", use_auth_token)
+        model.setdefault("token", token)
+        model.setdefault("cache_dir", cache_dir)
         model = Model.from_pretrained(**model)
 
     else:
@@ -91,54 +96,6 @@ def get_model(
     return model
 
 
-PipelineInference = Union[Inference, Model, Text, Mapping]
-
-
-def get_inference(inference: PipelineInference) -> Inference:
-    """Load inference
-
-    Parameter
-    ---------
-    inference : Inference, Model, str, or dict
-        When `Inference`, returns `inference` as is.
-        When `Model`, wraps it in `Inference(model)`.
-        When `str`, assumes that this is either the path to a checkpoint or the name of a
-        pretrained model on Huggingface.co and loads with `Inference(checkpoint)`.
-        When `dict`, loads with `Inference(**inference)`.
-
-    Returns
-    -------
-    inference : Inference
-        Inference.
-
-    Examples
-    --------
-    >>> inference = get_inference("hbredin/VoiceActivityDetection-PyanNet-DIHARD")
-    >>> inference = get_inference("/path/to/checkpoint.ckpt")
-    >>> inference = get_inference({"model": "hbredin/VoiceActivityDetection-PyanNet-DIHARD",
-    ...                            "window": "sliding"})
-
-    See also
-    --------
-    pyannote.audio.core.inference.Inference
-
-    """
-
-    if isinstance(inference, Inference):
-        return inference
-
-    if isinstance(inference, (Model, Text)):
-        return Inference(inference)
-
-    if isinstance(inference, Mapping):
-        return Inference(**inference)
-
-    raise TypeError(
-        f"Unsupported type ({type(inference)}) for loading inference: "
-        f"expected `Model`, `str` or `dict`."
-    )
-
-
 PipelineAugmentation = Union[BaseWaveformTransform, Mapping]
 
 
@@ -147,7 +104,8 @@ PipelineCalibration = Union[Calibration, Text, Dict]
 
 def get_calibration(
     calibration: PipelineCalibration,
-    use_auth_token: Union[Text, None] = None,
+    token: Union[Text, None] = None,
+    cache_dir: Union[Path, Text, None] = None,
 ) -> Optional[Calibration]:
     """Load pretrained calibration
 
@@ -158,6 +116,10 @@ def get_calibration(
         When `str`, assumes that this is either the path to a checkpoint or the name of a
         pretrained calibration on Huggingface.co and loads with `Calibration.from_pretrained(calibration)`.
         When `dict`, loads with `Calibration.from_pretrained(**calibration)`.
+    token : str or bool, optional
+        Huggingface token to be used for downloading from Huggingface hub.
+    cache_dir: Path or str, optional
+        Path to the folder where files downloaded from Huggingface hub are stored.
 
     Returns
     -------
@@ -174,11 +136,12 @@ def get_calibration(
 
     elif isinstance(calibration, Text):
         loaded_calibration = Calibration.from_pretrained(
-            calibration, use_auth_token=use_auth_token
+            calibration, token=token, cache_dir=cache_dir
         )
 
     elif isinstance(calibration, Dict):
-        calibration.setdefault("use_auth_token", use_auth_token)
+        calibration.setdefault("token", token)
+        calibration.setdefault("cache_dir", cache_dir)
         loaded_calibration = Calibration.from_pretrained(**calibration)
 
     else:

@@ -22,10 +22,12 @@
 
 from enum import Enum
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional, Tuple, Union
 
 from huggingface_hub import hf_hub_download
 from huggingface_hub.utils import HfHubHTTPError
+
+from pyannote.audio import __version__
 
 
 # Correspondence between asset_file type
@@ -42,7 +44,7 @@ def download_from_hf_hub(
     subfolder: Optional[str] = None,
     cache_dir: Optional[Union[str, Path]] = None,
     token: Union[bool, str, None] = None,
-) -> Optional[str]:
+) -> Tuple[str, Optional[str], Optional[str]]:
     """Download file from Huggingface Hub
 
     Parameters
@@ -52,14 +54,15 @@ def download_from_hf_hub(
     asset_file : AssetFileName
         Type of asset file to download.
     subfolder : str, optional
-        Folder inside the hf.co model repo.
-    token : str, optional
-        When loading a private hf.co model, set `use_auth_token`
-        to True or to a string containing your hugginface.co authentication
-        token that can be obtained by running `huggingface-cli login`
+        Folder inside the model repo.
+    token : str or bool, optional
+        Huggingface token to be used for downloading from Huggingface hub.
     cache_dir: Path or str, optional
-        Path to model cache directory. Defaults to content of PYANNOTE_CACHE
-        environment variable, or "~/.cache/torch/pyannote" when unset.
+        Path to the folder where files downloaded from Huggingface hub are stored.
+
+    See also
+    --------
+    `huggingface_hub.hf_hub_download`
     """
 
     if "@" in checkpoint:
@@ -68,15 +71,20 @@ def download_from_hf_hub(
         model_id, revision = checkpoint, None
 
     try:
-        return hf_hub_download(
+        return (
             model_id,
-            asset_file.value,
-            subfolder=subfolder,
-            repo_type="model",
-            revision=revision,
-            library_name="pyannote",
-            cache_dir=cache_dir,
-            token=token,
+            revision,
+            hf_hub_download(
+                model_id,
+                asset_file.value,
+                subfolder=subfolder,
+                repo_type="model",
+                revision=revision,
+                library_name="pyannote",
+                library_version=__version__,
+                cache_dir=cache_dir,
+                token=token,
+            ),
         )
     except HfHubHTTPError:
         print(
@@ -87,7 +95,7 @@ It might be because the repository is private or gated:
 * visit https://hf.co/{model_id} to accept user conditions
 * visit https://hf.co/settings/tokens to create an authentication token
 * load the {asset_file.name.lower()} with the `token` argument:
-    >>> {asset_file.name}.from_pretrained('{model_id}', use_auth_token=...)
+    >>> {asset_file.name}.from_pretrained('{model_id}', token=...)
 """
         )
-        return
+        raise

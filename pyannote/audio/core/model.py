@@ -34,8 +34,6 @@ import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.optim
-from huggingface_hub import hf_hub_download
-from huggingface_hub.utils import RepositoryNotFoundError
 from lightning_fabric.utilities.cloud_io import _load as pl_load
 from pyannote.core import SlidingWindow
 from pytorch_lightning.utilities.model_summary.model_summary import ModelSummary
@@ -49,13 +47,9 @@ from pyannote.audio.core.task import (
     Task,
     UnknownSpecificationsError,
 )
+from pyannote.audio.utils.hf_hub import AssetFileName, download_from_hf_hub
 from pyannote.audio.utils.multi_task import map_with_specifications
 from pyannote.audio.utils.version import check_version
-
-CACHE_DIR = os.getenv(
-    "PYANNOTE_CACHE",
-    os.path.expanduser("~/.cache/torch/pyannote"),
-)
 
 
 # NOTE: needed to backward compatibility to load models trained before pyannote.audio 3.x
@@ -82,8 +76,6 @@ class Model(pl.LightningModule):
     task : Task, optional
         Task addressed by the model.
     """
-
-    MODEL_CHECKPOINT = "pytorch_model.bin"
 
     def __init__(
         self,
@@ -531,10 +523,10 @@ class Model(pl.LightningModule):
         map_location=None,
         strict: bool = True,
         subfolder: Optional[str] = None,
-        use_auth_token: Union[Text, None] = None,  # todo: deprecate in favor of token
-        cache_dir: Union[Path, Text] = CACHE_DIR,
+        token: Union[str, bool, None] = None,
+        cache_dir: Union[Path, str, None] = None,
         **kwargs,
-    ) -> "Model":
+    ) -> Optional["Model"]:
         """Load pretrained model
 
         Parameters
@@ -543,7 +535,7 @@ class Model(pl.LightningModule):
             Model checkpoint, provided as one of the following:
             * path to a local `pytorch_model.bin` model checkpoint
             * path to a local directory containing such a file
-            * identifier of a model on huggingface.co model hub
+            * identifier of a model on Huggingface hub
         map_location: optional
             Same role as in torch.load().
             Defaults to `lambda storage, loc: storage`.
@@ -552,13 +544,10 @@ class Model(pl.LightningModule):
             the keys returned by this module’s state dict. Defaults to True.
         subfolder : str, optional
             Folder inside the hf.co model repo.
-        use_auth_token : str, optional
-            When loading a private hf.co model, set `use_auth_token`
-            to True or to a string containing your hugginface.co authentication
-            token that can be obtained by running `huggingface-cli login`
+        token : str or bool, optional
+            Token to be used for the download.
         cache_dir: Path or str, optional
-            Path to model cache directory. Defaults to content of PYANNOTE_CACHE
-            environment variable, or "~/.cache/torch/pyannote" when unset.
+            Path to the folder where cached files are stored.
         kwargs: optional
             Any extra keyword args needed to init the model.
             Can also be used to override saved hyperparameter values.
@@ -570,18 +559,18 @@ class Model(pl.LightningModule):
 
         See also
         --------
-        torch.load
-        """
+        `huggingface_hub.hf_hub_download`
 
+        """
         # if checkpoint is a directory, look for the model checkpoint
         # inside this directory (or inside a subfolder if specified)
         if os.path.isdir(checkpoint):
             if subfolder:
                 path_to_model_checkpoint = (
-                    Path(checkpoint) / subfolder / cls.MODEL_CHECKPOINT
+                    Path(checkpoint) / subfolder / AssetFileName.Model.value
                 )
             else:
-                path_to_model_checkpoint = Path(checkpoint) / cls.MODEL_CHECKPOINT
+                path_to_model_checkpoint = Path(checkpoint) / AssetFileName.Model.value
 
         # if checkpoint is a file, use it as is
         elif os.path.isfile(checkpoint):
@@ -589,39 +578,14 @@ class Model(pl.LightningModule):
 
         # otherwise, assume that the checkpoint is hosted on HF model hub
         else:
-            if "@" in checkpoint:
-                model_id = checkpoint.split("@")[0]
-                revision = checkpoint.split("@")[1]
-            else:
-                model_id = checkpoint
-                revision = None
-
-            try:
-                path_to_model_checkpoint = hf_hub_download(
-                    model_id,
-                    cls.MODEL_CHECKPOINT,
-                    subfolder=subfolder,
-                    repo_type="model",
-                    revision=revision,
-                    library_name="pyannote",
-                    library_version=__version__,
-                    cache_dir=cache_dir,
-                    token=use_auth_token,
-                )
-            except RepositoryNotFoundError:
-                print(
-                    f"""
-Could not download '{model_id}' model.
-It might be because the model is private or gated so make
-sure to authenticate. Visit https://hf.co/settings/tokens to
-create your access token and retry with:
-
-   >>> Model.from_pretrained('{model_id}',
-   ...                       use_auth_token=YOUR_AUTH_TOKEN)
-
-If this still does not work, it might be because the model is gated:
-visit https://hf.co/{model_id} to accept the user conditions."""
-                )
+            _, _, path_to_model_checkpoint = download_from_hf_hub(
+                str(checkpoint),
+                AssetFileName.Model,
+                subfolder=subfolder,
+                cache_dir=cache_dir,
+                token=token,
+            )
+            if path_to_model_checkpoint is None:
                 return None
 
         if map_location is None:
