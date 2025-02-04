@@ -134,11 +134,13 @@ class Pipeline(_Pipeline):
         if os.path.isdir(checkpoint):
             model_id = Path(checkpoint)
             config_yml = model_id / AssetFileName.Pipeline.value
+            revision = None
 
         # if checkpoint is a file, assume it is the pipeline checkpoint
         elif os.path.isfile(checkpoint):
             model_id = Path(checkpoint).parent
             config_yml = checkpoint
+            revision = None
 
         # otherwise, assume that the checkpoint is hosted on HF model hub
         else:
