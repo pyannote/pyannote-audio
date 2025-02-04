@@ -27,6 +27,7 @@ import itertools
 import math
 import textwrap
 import warnings
+from pathlib import Path
 from typing import Callable, Mapping, Optional, Text, Union
 
 import numpy as np
@@ -85,10 +86,10 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         Optimize for a variant of diarization error rate.
         Defaults to {"collar": 0.0, "skip_overlap": False}. This is used in `get_metric`
         when instantiating the metric: GreedyDiarizationErrorRate(**der_variant).
-    use_auth_token : str, optional
-        When loading private huggingface.co models, set `use_auth_token`
-        to True or to a string containing your hugginface.co authentication
-        token that can be obtained by running `huggingface-cli login`
+    token : str or bool, optional
+        Huggingface token to be used for downloading from Huggingface hub.
+    cache_dir: Path or str, optional
+        Path to the folder where files downloaded from Huggingface hub are stored.
 
     Usage
     -----
@@ -123,12 +124,13 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         embedding_batch_size: int = 1,
         segmentation_batch_size: int = 1,
         der_variant: Optional[dict] = None,
-        use_auth_token: Union[Text, None] = None,
+        token: Union[Text, None] = None,
+        cache_dir: Union[Path, Text, None] = None,
     ):
         super().__init__()
 
         self.segmentation_model = segmentation
-        model: Model = get_model(segmentation, use_auth_token=use_auth_token)
+        model: Model = get_model(segmentation, token=token, cache_dir=cache_dir)
 
         self.segmentation_step = segmentation_step
 
@@ -165,7 +167,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
         else:
             self._embedding = PretrainedSpeakerEmbedding(
-                self.embedding, use_auth_token=use_auth_token
+                self.embedding, token=token, cache_dir=cache_dir
             )
             self._audio = Audio(sample_rate=self._embedding.sample_rate, mono="downmix")
             metric = self._embedding.metric

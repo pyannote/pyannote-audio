@@ -23,6 +23,7 @@
 """Resegmentation pipeline"""
 
 from functools import partial
+from pathlib import Path
 from typing import Callable, Optional, Text, Union
 
 import numpy as np
@@ -67,10 +68,10 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
         Optimize for a variant of diarization error rate.
         Defaults to {"collar": 0.0, "skip_overlap": False}. This is used in `get_metric`
         when instantiating the metric: GreedyDiarizationErrorRate(**der_variant).
-    use_auth_token : str, optional
-        When loading private huggingface.co models, set `use_auth_token`
-        to True or to a string containing your hugginface.co authentication
-        token that can be obtained by running `huggingface-cli login`
+    token : str or bool, optional
+        Huggingface token to be used for downloading from Huggingface hub.
+    cache_dir: Path or str, optional
+        Path to the folder where files downloaded from Huggingface hub are stored.
 
     Hyper-parameters
     ----------------
@@ -87,14 +88,15 @@ class Resegmentation(SpeakerDiarizationMixin, Pipeline):
         segmentation: PipelineModel = "pyannote/segmentation",
         diarization: Text = "diarization",
         der_variant: Optional[dict] = None,
-        use_auth_token: Union[Text, None] = None,
+        token: Union[Text, None] = None,
+        cache_dir: Union[Path, Text, None] = None,
     ):
         super().__init__()
 
         self.segmentation = segmentation
         self.diarization = diarization
 
-        model: Model = get_model(segmentation, use_auth_token=use_auth_token)
+        model: Model = get_model(segmentation, token=token, cache_dir=cache_dir)
         self._segmentation = Inference(model)
 
         self._audio = model.audio
