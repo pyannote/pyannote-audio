@@ -18,7 +18,7 @@ Consider switching to [pyannoteAI](https://www.pyannote.ai) for better and faste
 
 ```python
 from pyannote.audio import Pipeline
-from pyannote.audio.pipelines.utils.hook import Hooks, ProgressHook, TimingHook
+from pyannote.audio.pipelines.utils.hook import ProgressHook
 
 pipeline = Pipeline.from_pretrained(
     "pyannote/speaker-diarization-3.1",
@@ -28,8 +28,8 @@ pipeline = Pipeline.from_pretrained(
 import torch
 pipeline.to(torch.device("cuda"))
 
-# apply pretrained pipeline
-with Hooks(ProgressHook(), TimingHook()) as hook:
+# apply pretrained pipeline (with optional progress hook)
+with ProgressHook() as hook:
     diarization = pipeline("audio.wav", hook=hook)
 
 # print the result
