@@ -113,7 +113,7 @@ class Calibration(IsotonicRegression):
     @classmethod
     def from_pretrained(
         cls,
-        checkpoint: str,
+        checkpoint: Union[Path, str],
         subfolder: Optional[str] = None,
         token: Optional[Text] = None,
         cache_dir: Optional[Union[str, Path]] = None,
@@ -138,7 +138,7 @@ class Calibration(IsotonicRegression):
             return cls.from_file(checkpoint)
 
         _, _, path = download_from_hf_hub(
-            checkpoint,
+            str(checkpoint),
             AssetFileName.Calibration,
             subfolder=subfolder,
             cache_dir=cache_dir,
