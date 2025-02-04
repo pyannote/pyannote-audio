@@ -342,7 +342,6 @@ class XVectorSincNet(Model):
             Batch of weights with shape (batch, frame).
         """
 
-        # outputs = self.sincnet(waveforms).squeeze(dim=1)
         outputs = self.sincnet(waveforms)
 
         for tdnn in self.tdnns:
