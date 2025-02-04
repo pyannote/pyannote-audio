@@ -20,7 +20,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import warnings
 from typing import Optional
 
 import torch
@@ -115,9 +114,6 @@ class StatsPool(nn.Module):
         _, _, num_frames = sequences.size()
         _, num_speakers, num_weights = weights.size()
         if num_frames != num_weights:
-            warnings.warn(
-                f"Mismatch between frames ({num_frames}) and weights ({num_weights}) numbers."
-            )
             weights = F.interpolate(weights, size=num_frames, mode="nearest")
 
         output = torch.stack(
