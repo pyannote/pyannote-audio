@@ -22,30 +22,27 @@
 
 from typing import Text
 
-from semver import VersionInfo
+from packaging.version import Version
 
 
 def check_version(library: Text, theirs: Text, mine: Text, what: Text = "Pipeline"):
 
-    theirs = ".".join(theirs.split(".")[:3])
-    mine = ".".join(mine.split(".")[:3])
+    their_version = Version(theirs)
+    my_version = Version(mine)
 
-    theirs = VersionInfo.parse(theirs)
-    mine = VersionInfo.parse(mine)
-
-    if theirs.major > mine.major:
+    if their_version.major > my_version.major:
         print(
             f"{what} was trained with {library} {theirs}, yours is {mine}. "
-            f"Bad things will probably happen unless you upgrade {library} to {theirs.major}.x."
+            f"Bad things will probably happen unless you upgrade {library} to {their_version.major}.x."
         )
 
-    elif theirs.major < mine.major:
+    elif their_version.major < my_version.major:
         print(
             f"{what} was trained with {library} {theirs}, yours is {mine}. "
-            f"Bad things might happen unless you revert {library} to {theirs.major}.x."
+            f"Bad things might happen unless you revert {library} to {their_version.major}.x."
         )
 
-    elif theirs.minor > mine.minor:
+    elif their_version.minor > my_version.minor:
         print(
             f"{what} was trained with {library} {theirs}, yours is {mine}. "
             f"This should be OK but you might want to upgrade {library}."
