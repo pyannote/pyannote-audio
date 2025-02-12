@@ -30,7 +30,4 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Run tests
-        run: uv run --extra test pytest -k "not test_cli.py"
-
-      - name: Run CLI tests
-        run: uv run --extra test --extra cli pytest tests/test_cli.py
+        run: uv run --extra test pytest
