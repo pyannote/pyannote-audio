@@ -1,9 +1,0 @@
-protocol: ???
-
-defaults:
-  - task: SpeakerDiarization
-  - model: PyanNet
-  - optimizer: Adam
-  - scheduler: CosineAnnealingWarmRestarts
-  - trainer: default
-  - hydra: default

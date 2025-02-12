@@ -1,4 +1,4 @@
-# Changelog
+# CHANGELOG
 
 ## develop
 
@@ -18,6 +18,8 @@ Clipping and speaker/source alignment issues in speech separation pipeline have 
 
 ### Breaking changes
 
+- BREAKING(setup): drop support to `Python` < 3.10
+- BREAKING(chore): switch to native namespace package
 - BREAKING(hub): rename `use_auth_token` to `token`
 - BREAKING(cache): rely on `huggingface_hub` caching directory (`PYANNOTE_CACHE` is no longer used)
 - BREAKING(inference): `Inference` now only supports already instantiated models
@@ -25,6 +27,7 @@ Clipping and speaker/source alignment issues in speech separation pipeline have 
 - BREAKING(task): drop support for `warm_up` option in `SpeakerDiarization` task
 - BREAKING(task): drop support for `weigh_by_cardinality` option in `SpeakerDiarization` task
 - BREAKING(task): drop support for `vad_loss` option in `SpeakerDiarization` task
+- BREAKING(cli): remove deprecated `pyannote-audio-train` CLI
 
 ### New features
 
@@ -42,6 +45,7 @@ Clipping and speaker/source alignment issues in speech separation pipeline have 
 
 - improve(model): improve WavLM (un)freezing support for `SSeRiouSS` architecture ([@clement-pages](https://github.com/clement-pages/))
 - improve(task): improve `SpeakerDiarization` training with manual optimization ([@clement-pages](https://github.com/clement-pages/))
+- improve(setup): switch to `uv`
 
 ### Fixes
 
