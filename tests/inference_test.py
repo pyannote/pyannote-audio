@@ -2,7 +2,7 @@ import lightning.pytorch as pl
 import numpy as np
 import pytest
 from pyannote.core import SlidingWindowFeature
-from pyannote.database import FileFinder, get_protocol
+from pyannote.database import FileFinder, registry
 
 from pyannote.audio import Inference, Model
 from pyannote.audio.core.task import Resolution
@@ -25,7 +25,7 @@ def test_hf_download_model():
 
 @pytest.fixture()
 def trained():
-    protocol = get_protocol(
+    protocol = registry.get_protocol(
         "Debug.SpeakerDiarization.Debug", preprocessors={"audio": FileFinder()}
     )
     vad = VoiceActivityDetection(protocol, duration=2.0, batch_size=16, num_workers=4)
@@ -42,7 +42,7 @@ def pretrained_model():
 
 @pytest.fixture()
 def dev_file():
-    protocol = get_protocol(
+    protocol = registry.get_protocol(
         "Debug.SpeakerDiarization.Debug", preprocessors={"audio": FileFinder()}
     )
     return next(protocol.development())

@@ -25,7 +25,7 @@ from tempfile import mkstemp
 
 import pytest
 from lightning.pytorch import Trainer
-from pyannote.database import FileFinder, get_protocol
+from pyannote.database import FileFinder, registry
 
 from pyannote.audio.models.embedding.debug import SimpleEmbeddingModel
 from pyannote.audio.models.segmentation.debug import SimpleSegmentationModel
@@ -40,7 +40,7 @@ from pyannote.audio.tasks import (
 
 @pytest.fixture()
 def protocol():
-    return get_protocol(
+    return registry.get_protocol(
         "Debug.SpeakerDiarization.Debug", preprocessors={"audio": FileFinder()}
     )
 
@@ -60,7 +60,7 @@ def gender_protocol():
     def classes(file):
         return ["M", "F"]
 
-    return get_protocol(
+    return registry.get_protocol(
         "Debug.SpeakerDiarization.Debug",
         preprocessors={
             "audio": FileFinder(),

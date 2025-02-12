@@ -1,13 +1,13 @@
 import torch
 from lightning.pytorch import seed_everything
-from pyannote.database import FileFinder, get_protocol
+from pyannote.database import FileFinder, registry
 
 from pyannote.audio.models.segmentation.debug import SimpleSegmentationModel
 from pyannote.audio.tasks import VoiceActivityDetection
 
 
 def setup_tasks(task):
-    protocol = get_protocol(
+    protocol = registry.get_protocol(
         "Debug.SpeakerDiarization.Debug", preprocessors={"audio": FileFinder()}
     )
     vad = task(protocol, duration=0.2, batch_size=32, num_workers=4)
