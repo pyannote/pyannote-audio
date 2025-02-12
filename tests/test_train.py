@@ -24,8 +24,8 @@
 from tempfile import mkstemp
 
 import pytest
+from lightning.pytorch import Trainer
 from pyannote.database import FileFinder, get_protocol
-from pytorch_lightning import Trainer
 
 from pyannote.audio.models.embedding.debug import SimpleEmbeddingModel
 from pyannote.audio.models.segmentation.debug import SimpleSegmentationModel

@@ -1,6 +1,6 @@
+import lightning.pytorch as pl
 import numpy as np
 import pytest
-import pytorch_lightning as pl
 from pyannote.core import SlidingWindowFeature
 from pyannote.database import FileFinder, get_protocol
 
