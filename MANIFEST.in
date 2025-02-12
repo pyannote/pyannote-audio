@@ -1,6 +1,6 @@
-recursive-include pyannote *.py
-recursive-include pyannote *.yaml
-recursive-include pyannote *.wav
-recursive-include pyannote *.rttm
+recursive-include src/pyannote *.py
+recursive-include src/pyannote *.yaml
+recursive-include src/pyannote *.wav
+recursive-include src/pyannote *.rttm
 global-exclude *.pyc
 global-exclude __pycache__
