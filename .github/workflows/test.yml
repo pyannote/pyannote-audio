@@ -1,33 +1,36 @@
-name: Tests
+name: Test
 
 on:
-  push:
-    branches: [develop]
   pull_request:
-    branches: [develop]
+    branches:
+      - develop
+  push:
+    branches:
+      - develop
+      - master
+      - release/*
+
 
 jobs:
-  build:
-    timeout-minutes: 20
-    runs-on: ${{ matrix.os }}
+  test:
+    name: Test
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        os: [ubuntu-latest]
-        python-version: ["3.9", "3.10", "3.11"]
+        python-version:
+          - "3.10"
+          - "3.11"
+          - "3.12"
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
     steps:
-      - uses: actions/checkout@v2
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v2
-        with:
-          python-version: ${{ matrix.python-version }}
-      - name: Install libsndfile
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install libsndfile1
-      - name: Install pyannote.audio
-        run: |
-          pip install -e .[dev,testing]
-      - name: Test with pytest
-        run: |
-          pytest -k "not test_cli.py"
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Run tests
+        run: uv run --extra test pytest -k "not test_cli.py"
+
+      - name: Run CLI tests
+        run: uv run --extra test --extra cli pytest tests/test_cli.py
