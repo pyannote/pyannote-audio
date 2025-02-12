@@ -28,6 +28,7 @@ dependencies = [
     "torchaudio>=2.6.0",
     "torchmetrics>=1.6.1",
     "soundfile>=0.13.1",
+    "matplotlib>=3.10.0",
 ]
 
 [project.scripts]
