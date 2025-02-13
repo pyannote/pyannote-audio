@@ -325,6 +325,9 @@ def benchmark(
             readable=True,
         ),
     ] = None,
+    num_speakers: Annotated[
+        NumSpeakers, typer.Option(help="Number of speakers (oracle or auto)")
+    ] = NumSpeakers.AUTO,
 ):
     """
     Benchmark a pretrained PIPELINE
@@ -347,13 +350,27 @@ def benchmark(
     if registry:
         pyannote.database.registry.load_database(registry)
 
+    preprocessors = {"audio": pyannote.database.FileFinder()}
+
+    # pass number of speakers to pipeline if requested
+    if num_speakers == NumSpeakers.ORACLE:
+        preprocessors["pipeline_kwargs"] = lambda protocol_file: {
+            "num_speakers": len(protocol_file["annotation"].labels())
+        }
+
     loaded_protocol = pyannote.database.registry.get_protocol(
-        protocol, {"audio": pyannote.database.FileFinder()}
+        protocol, preprocessors=preprocessors
     )
 
-    with open(into / f"{protocol}.{subset.value}.rttm", "w") as rttm:
+    benchmark_name = f"{protocol}.{subset.value}"
+    if num_speakers == NumSpeakers.ORACLE:
+        benchmark_name += ".OracleNumSpeakers"
+
+    with open(into / f"{benchmark_name}.rttm", "w") as rttm:
         for file in getattr(loaded_protocol, subset.value)():
-            prediction: Annotation = pretrained_pipeline(file)
+            prediction: Annotation = pretrained_pipeline(
+                file, **file.get("pipeline_kwargs", {})
+            )
             prediction.write_rttm(rttm)
             rttm.flush()
 
@@ -370,7 +387,7 @@ def benchmark(
     if metric is None:
         return
 
-    with open(into / f"{protocol}.{subset.value}.txt", "w") as txt:
+    with open(into / f"{benchmark_name}.txt", "w") as txt:
         txt.write(str(metric))
 
     print(str(metric))
