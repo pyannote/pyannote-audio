@@ -159,7 +159,8 @@ def optimize(
         getattr(loaded_protocol, subset.value)()
     )
 
-    # name of the optimization study
+    # setting study name to this allows to store multiple optimizations
+    # for the same pipeline in the same database
     study_name = f"{protocol}.{subset.value}"
     # add suffix if we are using oracle number of speakers
     if num_speakers == NumSpeakers.ORACLE:
@@ -168,13 +169,9 @@ def optimize(
     # journal file to store optimization results
     # if pipeline path is "config.yml", it will be stored in "config.journal"
     journal = pipeline.with_suffix(".journal")
-    # TODO: allow customizing journal path?
 
     result: Path = pipeline.with_suffix(f".{study_name}.yaml")
 
-    # setting study name to this allows to store multiple optimizations
-    # for the same pipeline in the same database
-    study_name = f"{protocol}.{subset.value}"
     optimizer = Optimizer(
         optimized_pipeline,
         db=journal,
