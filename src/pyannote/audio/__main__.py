@@ -231,6 +231,40 @@ def optimize(
             break
 
 
+@app.command("download")
+def download(
+    pipeline: Annotated[
+        str,
+        typer.Argument(
+            help="Pretrained pipeline (e.g. pyannote/speaker-diarization-3.1)"
+        ),
+    ],
+    token: Annotated[
+        str,
+        typer.Argument(
+            help="Huggingface token to be used for downloading from Huggingface hub."
+        ),
+    ],
+    cache: Annotated[
+        Path,
+        typer.Option(
+            help="Path to the folder where files downloaded from Huggingface hub are stored.",
+            exists=True,
+            dir_okay=True,
+            file_okay=False,
+            writable=True,
+            resolve_path=True,
+        ),
+    ] = None,
+):
+    """
+    Download a pretrained PIPELINE to disk for later offline use.
+    """
+
+    # load pretrained pipeline
+    _ = Pipeline.from_pretrained(pipeline, token=token, cache_dir=cache)
+
+
 @app.command("apply")
 def apply(
     pipeline: Annotated[
