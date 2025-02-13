@@ -19,7 +19,7 @@ dependencies = [
     "pyannote-core>=6.0.0rc1",
     "pyannote-database>=6.0.0rc1",
     "pyannote-metrics>=4.0.0rc1",
-    "pyannote-pipeline>=4.0.0rc1",
+    "pyannote-pipeline @ git+https://github.com/pyannote/pyannote-pipeline.git@6c635cd58d7c1a98473480869d2e76ffd19d19f9",
     "pytorch-metric-learning>=2.8.1",
     "rich>=13.9.4",
     "safetensors>=0.5.2",
@@ -33,7 +33,6 @@ dependencies = [
 
 [project.scripts]
 pyannote-audio = "pyannote.audio.__main__:app"
-
 
 [project.optional-dependencies]
 test = [
@@ -59,6 +58,9 @@ dev = [
 [build-system]
 requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.version]
 source = "vcs"
