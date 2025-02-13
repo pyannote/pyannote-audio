@@ -54,6 +54,11 @@ class Device(str, Enum):
     AUTO = "auto"
 
 
+class NumSpeakers(str, Enum):
+    ORACLE = "oracle"
+    AUTO = "auto"
+
+
 def parse_device(device: Device) -> torch.device:
     if device == Device.AUTO:
         if torch.cuda.is_available():
@@ -112,6 +117,9 @@ def optimize(
         Optional[int],
         typer.Option(help="Number of iterations to run. Defaults to run indefinitely."),
     ] = None,
+    num_speakers: Annotated[
+        NumSpeakers, typer.Option(help="Number of speakers (oracle or auto)")
+    ] = NumSpeakers.AUTO,
 ):
     """
     Optimize a PIPELINE
@@ -135,15 +143,27 @@ def optimize(
     if registry:
         pyannote.database.registry.load_database(registry)
 
+    preprocessors = {"audio": pyannote.database.FileFinder()}
+
+    # pass number of speakers to pipeline if requested
+    if num_speakers == NumSpeakers.ORACLE:
+        preprocessors["pipeline_kwargs"] = lambda protocol_file: {
+            "num_speakers": len(protocol_file["annotation"].labels())
+        }
+
     loaded_protocol = pyannote.database.registry.get_protocol(
-        protocol, {"audio": pyannote.database.FileFinder()}
+        protocol, preprocessors=preprocessors
     )
 
     files: list[pyannote.database.ProtocolFile] = list(
         getattr(loaded_protocol, subset.value)()
     )
 
+    # name of the optimization study
     study_name = f"{protocol}.{subset.value}"
+    # add suffix if we are using oracle number of speakers
+    if num_speakers == NumSpeakers.ORACLE:
+        study_name += ".OracleNumSpeakers"
 
     # journal file to store optimization results
     # if pipeline path is "config.yml", it will be stored in "config.journal"
