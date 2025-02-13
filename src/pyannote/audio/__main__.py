@@ -296,13 +296,24 @@ def apply(
     device: Annotated[
         Device, typer.Option(help="Accelerator to use (CPU, CUDA, MPS)")
     ] = Device.AUTO,
+    cache: Annotated[
+        Path,
+        typer.Option(
+            help="Path to the folder where files downloaded from Huggingface hub are stored.",
+            exists=True,
+            dir_okay=True,
+            file_okay=False,
+            writable=True,
+            resolve_path=True,
+        ),
+    ] = None,
 ):
     """
     Apply a pretrained PIPELINE to an AUDIO file
     """
 
     # load pretrained pipeline
-    pretrained_pipeline = Pipeline.from_pretrained(pipeline)
+    pretrained_pipeline = Pipeline.from_pretrained(pipeline, cache_dir=cache)
 
     # send pipeline to device
     torch_device = parse_device(device)
@@ -362,13 +373,24 @@ def benchmark(
     num_speakers: Annotated[
         NumSpeakers, typer.Option(help="Number of speakers (oracle or auto)")
     ] = NumSpeakers.AUTO,
+    cache: Annotated[
+        Path,
+        typer.Option(
+            help="Path to the folder where files downloaded from Huggingface hub are stored.",
+            exists=True,
+            dir_okay=True,
+            file_okay=False,
+            writable=True,
+            resolve_path=True,
+        ),
+    ] = None,
 ):
     """
     Benchmark a pretrained PIPELINE
     """
 
     # load pretrained pipeline
-    pretrained_pipeline = Pipeline.from_pretrained(pipeline)
+    pretrained_pipeline = Pipeline.from_pretrained(pipeline, cache_dir=cache)
 
     # send pipeline to device
     torch_device = parse_device(device)
