@@ -224,7 +224,7 @@ def optimize(
 
             local_best_loss = global_best_loss
 
-        if max_iterations and i >= max_iterations:
+        if max_iterations and i + 1 >= max_iterations:
             break
 
 
