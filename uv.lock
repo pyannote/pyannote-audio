@@ -2002,7 +2002,7 @@ wheels = [
 
 [[package]]
 name = "pyannote-audio"
-version = "3.3.3.dev52+ge662b9c2.d20250212"
+version = "3.3.3.dev45+g3f7ea316.d20250216"
 source = { editable = "." }
 dependencies = [
     { name = "asteroid-filterbanks" },
@@ -2015,6 +2015,7 @@ dependencies = [
     { name = "pyannote-metrics" },
     { name = "pyannote-pipeline" },
     { name = "pytorch-metric-learning" },
+    { name = "requests" },
     { name = "rich" },
     { name = "safetensors" },
     { name = "soundfile" },
@@ -2066,6 +2067,7 @@ requires-dist = [
     { name = "pyannote-pipeline", specifier = ">=4.0.0rc1" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.3.4" },
     { name = "pytorch-metric-learning", specifier = ">=2.8.1" },
+    { name = "requests", specifier = ">=2.32.3" },
     { name = "rich", specifier = ">=13.9.4" },
     { name = "safetensors", specifier = ">=0.5.2" },
     { name = "soundfile", specifier = ">=0.13.1" },
