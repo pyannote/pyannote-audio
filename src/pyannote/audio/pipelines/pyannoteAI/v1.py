@@ -89,8 +89,9 @@ class V1(Pipeline):
 
     Parameters
     ----------
-    token : str
-        pyannoteAI API key created from https://dashboard.pyannote.ai
+    token : str, optional
+        pyannoteAI API key created from https://dashboard.pyannote.ai.
+        Defaults to using `PYANNOTEAI_API_TOKEN` environment variable.
 
     Usage
     -----
