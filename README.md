@@ -22,7 +22,7 @@ from pyannote.audio.pipelines.utils.hook import ProgressHook
 
 pipeline = Pipeline.from_pretrained(
     "pyannote/speaker-diarization-3.1",
-    token="HUGGINGFACE_ACCESS_TOKEN_GOES_HERE")
+    use_auth_token="HUGGINGFACE_ACCESS_TOKEN_GOES_HERE")
 
 # send pipeline to GPU (when available)
 import torch
