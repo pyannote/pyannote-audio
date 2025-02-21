@@ -145,12 +145,20 @@ class SegmentationErrorRate(DiarizationErrorRate):
             Segmentation error rate components accumulated over the whole batch.
         """
 
-        windowed_preds = rearrange(
-            preds.unfold(2, self.window_size, self.step_size), "b s c f -> (b c) s f"
-        )
-        windowed_target = rearrange(
-            target.unfold(2, self.window_size, self.step_size), "b s c f -> (b c) s f"
-        )
+        _, _, num_frames = preds.shape
+        if num_frames <= self.window_size:
+            windowed_preds = preds
+            windowed_target = target
+
+        else:
+            windowed_preds = rearrange(
+                preds.unfold(2, self.window_size, self.step_size),
+                "b s c f -> (b c) s f",
+            )
+            windowed_target = rearrange(
+                target.unfold(2, self.window_size, self.step_size),
+                "b s c f -> (b c) s f",
+            )
 
         super().update(windowed_preds, windowed_target)
 
