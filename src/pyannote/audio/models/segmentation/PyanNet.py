@@ -110,10 +110,13 @@ class PyanNet(Model):
             self.lstm = nn.ModuleList(
                 [
                     nn.LSTM(
-                        60
-                        if i == 0
-                        else lstm["hidden_size"] * (2 if lstm["bidirectional"] else 1),
-                        **one_layer_lstm
+                        (
+                            60
+                            if i == 0
+                            else lstm["hidden_size"]
+                            * (2 if lstm["bidirectional"] else 1)
+                        ),
+                        **one_layer_lstm,
                     )
                     for i in range(num_layers)
                 ]
