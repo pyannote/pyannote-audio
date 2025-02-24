@@ -2002,7 +2002,7 @@ wheels = [
 
 [[package]]
 name = "pyannote-audio"
-version = "3.3.3.dev52+ge662b9c2.d20250212"
+version = "3.3.3.dev59+g45d30114"
 source = { editable = "." }
 dependencies = [
     { name = "asteroid-filterbanks" },
@@ -2063,7 +2063,7 @@ requires-dist = [
     { name = "pyannote-core", specifier = ">=6.0.0rc1" },
     { name = "pyannote-database", specifier = ">=6.0.0rc1" },
     { name = "pyannote-metrics", specifier = ">=4.0.0rc1" },
-    { name = "pyannote-pipeline", specifier = ">=4.0.0rc1" },
+    { name = "pyannote-pipeline", specifier = ">=4.0.0rc2" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.3.4" },
     { name = "pytorch-metric-learning", specifier = ">=2.8.1" },
     { name = "rich", specifier = ">=13.9.4" },
@@ -2130,7 +2130,7 @@ wheels = [
 
 [[package]]
 name = "pyannote-pipeline"
-version = "4.0.0rc1"
+version = "4.0.0rc2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "filelock" },
@@ -2140,9 +2140,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "tqdm" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f1/33/e24b58807851f6ce42de0929470b354dd71983590afb4492634a34440b97/pyannote_pipeline-4.0.0rc1.tar.gz", hash = "sha256:8b1f12b3f122f4608d311ba249bab4b04020f3ee1db68f8317452a1103451100", size = 348744 }
+sdist = { url = "https://files.pythonhosted.org/packages/59/5f/c3514701caef9db4b2b30c023a4f7341c71d15af1ecf5574807415650072/pyannote_pipeline-4.0.0rc2.tar.gz", hash = "sha256:ee140379669e5ade9033f3fdea0c3d7fbe865a41bfc1a17a4f1cf47102eb7c30", size = 348886 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/42/2e/d3b87cabb483e2c14b10ab799f443397d23554476284703e1eb1edb35f0f/pyannote_pipeline-4.0.0rc1-py3-none-any.whl", hash = "sha256:b8ad4fe06c96787e86d8f53ec26fadda54700c18b77656d7008497124fcb7cb8", size = 22134 },
+    { url = "https://files.pythonhosted.org/packages/8c/c8/86d75670b7deab167989fca5dbb050648dd0349c6a9ddd5e97d0bc07286f/pyannote_pipeline-4.0.0rc2-py3-none-any.whl", hash = "sha256:2307b5ba2c2233f61e998a324db06e62f1c4c2517df28140cff591a894ab0c93", size = 22254 },
 ]
 
 [[package]]
