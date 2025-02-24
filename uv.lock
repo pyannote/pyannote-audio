@@ -2002,7 +2002,7 @@ wheels = [
 
 [[package]]
 name = "pyannote-audio"
-version = "3.3.3.dev57+g495babba.d20250223"
+version = "3.3.3.dev59+g45d30114"
 source = { editable = "." }
 dependencies = [
     { name = "asteroid-filterbanks" },
