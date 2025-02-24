@@ -2002,7 +2002,7 @@ wheels = [
 
 [[package]]
 name = "pyannote-audio"
-version = "3.3.3.dev45+g491a662f.d20250213"
+version = "3.3.3.dev57+g495babba.d20250223"
 source = { editable = "." }
 dependencies = [
     { name = "asteroid-filterbanks" },
@@ -2063,7 +2063,7 @@ requires-dist = [
     { name = "pyannote-core", specifier = ">=6.0.0rc1" },
     { name = "pyannote-database", specifier = ">=6.0.0rc1" },
     { name = "pyannote-metrics", specifier = ">=4.0.0rc1" },
-    { name = "pyannote-pipeline", git = "https://github.com/pyannote/pyannote-pipeline.git?rev=6c635cd58d7c1a98473480869d2e76ffd19d19f9#6c635cd58d7c1a98473480869d2e76ffd19d19f9" },
+    { name = "pyannote-pipeline", specifier = ">=4.0.0rc2" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.3.4" },
     { name = "pytorch-metric-learning", specifier = ">=2.8.1" },
     { name = "rich", specifier = ">=13.9.4" },
@@ -2130,8 +2130,8 @@ wheels = [
 
 [[package]]
 name = "pyannote-pipeline"
-version = "4.0.0rc2.dev2+g6c635cd"
-source = { git = "https://github.com/pyannote/pyannote-pipeline.git?rev=6c635cd58d7c1a98473480869d2e76ffd19d19f9#6c635cd58d7c1a98473480869d2e76ffd19d19f9" }
+version = "4.0.0rc2"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "filelock" },
     { name = "optuna" },
@@ -2139,6 +2139,10 @@ dependencies = [
     { name = "pyannote-database" },
     { name = "pyyaml" },
     { name = "tqdm" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/59/5f/c3514701caef9db4b2b30c023a4f7341c71d15af1ecf5574807415650072/pyannote_pipeline-4.0.0rc2.tar.gz", hash = "sha256:ee140379669e5ade9033f3fdea0c3d7fbe865a41bfc1a17a4f1cf47102eb7c30", size = 348886 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8c/c8/86d75670b7deab167989fca5dbb050648dd0349c6a9ddd5e97d0bc07286f/pyannote_pipeline-4.0.0rc2-py3-none-any.whl", hash = "sha256:2307b5ba2c2233f61e998a324db06e62f1c4c2517df28140cff591a894ab0c93", size = 22254 },
 ]
 
 [[package]]
