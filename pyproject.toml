@@ -59,9 +59,6 @@ dev = [
 requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
-[tool.hatch.metadata]
-allow-direct-references = true
-
 [tool.hatch.version]
 source = "vcs"
 
