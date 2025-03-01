@@ -19,7 +19,7 @@ dependencies = [
     "pyannote-core>=6.0.0rc1",
     "pyannote-database>=6.0.0rc1",
     "pyannote-metrics>=4.0.0rc1",
-    "pyannote-pipeline>=4.0.0rc1",
+    "pyannote-pipeline>=4.0.0rc2",
     "pytorch-metric-learning>=2.8.1",
     "rich>=13.9.4",
     "safetensors>=0.5.2",
@@ -34,7 +34,6 @@ dependencies = [
 
 [project.scripts]
 pyannote-audio = "pyannote.audio.__main__:app"
-
 
 [project.optional-dependencies]
 test = [

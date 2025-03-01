@@ -48,7 +48,7 @@ diarization = pipeline("/path/to/conversation.wav")
 - feat(utils): add `FilterByNumberOfSpeakers` protocol files filter
 - feat(core): add `Calibration` class to calibrate logits/distances into probabilities
 - feat(metric): add `DetectionErrorRate`, `SegmentationErrorRate`, `DiarizationPrecision`, and `DiarizationRecall` metrics
-- feat(cli): add CLI to apply (and benchmark) pretrained pipelines
+- feat(cli): add CLI to download, apply, benchmark, or optimize pipelines
 
 ### Improvements
 
