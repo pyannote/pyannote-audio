@@ -14,13 +14,13 @@ Models can now be stored alongside their pipelines in the same repository, strea
 
 #### [pyannoteAI](https://www.pyannote.ai) premium speaker diarization
 
-Change one line of code to use [pyannoteAI web API](https://docs.pyannote.ai) and enjoy **more accurate speaker diarization**.
+Change one line of code to use [pyannoteAI](https://docs.pyannote.ai) and enjoy **more accurate speaker diarization**.
 
 ```diff
 from pyannote.audio import Pipeline
 pipeline = Pipeline.from_pretrained(
 -    "pyannote/speaker-diarization-3.1", token="huggingface-access-token")
-+    "pyannote/pyannoteAI-api@v1, token="pyannoteAI-api-key")
++    "pyannoteAI/speaker-diarization-precision, token="pyannoteAI-api-key")
 diarization = pipeline("/path/to/conversation.wav")
 ```
 
@@ -39,7 +39,7 @@ diarization = pipeline("/path/to/conversation.wav")
 
 ### New features
 
-- feat(pyannoteAI): add official client for pyannoteAI web API
+- feat(pyannoteAI): add wrapper around pyannoteAI SDK
 - improve(hub): add support for pipeline repos that also include underlying models
 - feat(clustering): add support for `k-means` clustering
 - feat(model): add `wav2vec_frozen` option to freeze/unfreeze `wav2vec` in `SSeRiouSS` architecture
