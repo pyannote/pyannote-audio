@@ -62,7 +62,7 @@ from pyannote.audio import Pipeline
 
 # Premium pyannoteAI speaker diarization service
 pipeline = Pipeline.from_pretrained(
-    "pyannoteAI/speaker-diarization", token="PYANNOTEAI_API_KEY")
+    "pyannoteAI/speaker-diarization-precision", token="PYANNOTEAI_API_KEY")
 
 diarization = pipeline("audio.wav")  # runs on pyannoteAI servers
 
@@ -81,7 +81,7 @@ for turn, _, speaker in diarization.itertracks(yield_label=True):
 Out of the box, `pyannote.audio` speaker diarization [pipeline](https://hf.co/pyannote/speaker-diarization-3.1) v3.1 is expected to be much better (and faster) than v2.x.
 Those numbers are diarization error rates (in %):
 
-| Benchmark  | [v2.1](https://hf.co/pyannote/speaker-diarization-2.1) | [v3.1](https://hf.co/pyannote/speaker-diarization-3.1) | <a href="https://docs.pyannote.ai"><img src="https://avatars.githubusercontent.com/u/162698670" width="32" /></a>        | 
+| Benchmark (2025-03)  | [v2.1](https://hf.co/pyannote/speaker-diarization-2.1) | [v3.1](https://hf.co/pyannote/speaker-diarization-3.1) | <a href="https://docs.pyannote.ai"><img src="https://avatars.githubusercontent.com/u/162698670" width="32" /></a>       | 
 | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------ | ------------------------------------------------ |
 | [AISHELL-4](https://arxiv.org/abs/2104.03603)                                                                               | 14.1                                                   | 12.2                                                   | 12.1                                             |
 | [AliMeeting](https://www.openslr.org/119/) (channel 1)                                                                      | 27.4                                                   | 24.5                                                   | 19.8                                             |
