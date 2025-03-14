@@ -25,12 +25,12 @@ from pathlib import Path
 from typing import Optional
 
 from pyannote.core import Annotation, Segment
-from pyannoteai import Client
+from pyannoteai.sdk import Client
 
 from pyannote.audio import Pipeline
 
 
-class PyannoteAISpeakerDiarization(Pipeline):
+class PremiumSpeakerDiarization(Pipeline):
     """Wrapper around official pyannoteAI API client
 
     Parameters
@@ -41,8 +41,8 @@ class PyannoteAISpeakerDiarization(Pipeline):
 
     Usage
     -----
-    >>> from pyannote.audio.pipelines.pyannoteAI import PyannoteAISpeakerDiarization
-    >>> pipeline = PyannoteAISpeakerDiarization(token="{PYANNOTEAI_API_KEY}")
+    >>> from pyannote.audio.pipelines.premium import PremiumSpeakerDiarization
+    >>> pipeline = PremiumSpeakerDiarization(token="{PYANNOTEAI_API_KEY}")
     >>> speaker_diarization = pipeline("/path/to/your/audio.wav")
     """
 

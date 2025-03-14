@@ -20,6 +20,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from .v1 import V1
+from .speaker_diarization import PremiumSpeakerDiarization
 
-__all__ = ["V1"]
+__all__ = ["PremiumSpeakerDiarization"]
