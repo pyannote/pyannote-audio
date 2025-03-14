@@ -75,11 +75,11 @@ for turn, _, speaker in diarization.itertracks(yield_label=True):
 # ...
 ```
 
+Visit [`docs.pyannote.ai`](https://docs.pyannote.ai) to learn about other pyannoteAI features (voiceprinting, confidence scores, ...)
 
 ## Benchmark
 
-Out of the box, `pyannote.audio` speaker diarization [pipeline](https://hf.co/pyannote/speaker-diarization-3.1) v3.1 is expected to be much better (and faster) than v2.x.
-Those numbers are diarization error rates (in %):
+Out of the box, `pyannote.audio` speaker diarization [pipeline v3.1](https://hf.co/pyannote/speaker-diarization-3.1) is expected to be much better (and faster) than v2.x. [`pyannoteAI`](https://www.pyannote.ai) premium model goes one step further. Those numbers are diarization error rates (in %) - the lower the better.
 
 | Benchmark (2025-03)  | [v2.1](https://hf.co/pyannote/speaker-diarization-2.1) | [v3.1](https://hf.co/pyannote/speaker-diarization-3.1) | <a href="https://docs.pyannote.ai"><img src="https://avatars.githubusercontent.com/u/162698670" width="32" /></a>       | 
 | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------ | ------------------------------------------------ |
