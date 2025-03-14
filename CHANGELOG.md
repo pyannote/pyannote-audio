@@ -4,7 +4,7 @@
 
 ### TL;DR
 
-#### Quality of life improvements
+#### Quality-of-Life improvements
 
 Models can now be stored alongside their pipelines in the same repository, streamlining gating mechanism:
 - accept `pyannote/speaker-diarization-x.x` pipeline user agreement
@@ -12,9 +12,17 @@ Models can now be stored alongside their pipelines in the same repository, strea
 - ~~accept `pyannote/wespeaker-voxceleb-resnet34-LM` model user agreement~~
 - load pipeline with `Pipeline.from_pretrained("pyannote/speaker-diarization-3.1", token=True)`
 
-#### Improve speech separation quality
+#### [pyannoteAI](https://www.pyannote.ai) premium speaker diarization
 
-Clipping and speaker/source alignment issues in speech separation pipeline have been fixed.
+Change one line of code to use [pyannoteAI](https://docs.pyannote.ai) and enjoy **more accurate speaker diarization**.
+
+```diff
+from pyannote.audio import Pipeline
+pipeline = Pipeline.from_pretrained(
+-    "pyannote/speaker-diarization-3.1", token="huggingface-access-token")
++    "pyannoteAI/speaker-diarization-precision, token="pyannoteAI-api-key")
+diarization = pipeline("/path/to/conversation.wav")
+```
 
 ### Breaking changes
 
@@ -31,6 +39,7 @@ Clipping and speaker/source alignment issues in speech separation pipeline have 
 
 ### New features
 
+- feat(pyannoteAI): add wrapper around pyannoteAI SDK
 - improve(hub): add support for pipeline repos that also include underlying models
 - feat(clustering): add support for `k-means` clustering
 - feat(model): add `wav2vec_frozen` option to freeze/unfreeze `wav2vec` in `SSeRiouSS` architecture

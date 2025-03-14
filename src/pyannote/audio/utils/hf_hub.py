@@ -70,6 +70,11 @@ def download_from_hf_hub(
     else:
         model_id, revision = checkpoint, None
 
+    # if provided token does not start with 'hf_', it is likely a pyannoteAI API key
+    # and therefore should not be passed to Huggingface Hub.
+    if token and not token.startswith("hf_"):
+        token = None
+
     try:
         return (
             model_id,
@@ -95,7 +100,7 @@ It might be because the repository is private or gated:
 * visit https://hf.co/{model_id} to accept user conditions
 * visit https://hf.co/settings/tokens to create an authentication token
 * load the {asset_file.name.lower()} with the `token` argument:
-    >>> {asset_file.name}.from_pretrained('{model_id}', token=...)
+    >>> {asset_file.name}.from_pretrained('{model_id}', token='hf_....')
 """
         )
         raise
