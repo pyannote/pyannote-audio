@@ -22,7 +22,7 @@
 
 from typing import List, Mapping, Optional, Text, Union
 
-from lightning.pytorch import Callback, Trainer
+from lightning import Callback, Trainer
 from lightning.pytorch.utilities.model_summary import ModelSummary
 
 from pyannote.audio import Model

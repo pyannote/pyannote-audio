@@ -24,7 +24,7 @@
 from tempfile import mkstemp
 
 import pytest
-from lightning.pytorch import Trainer
+from lightning import Trainer
 from pyannote.database import FileFinder, registry
 
 from pyannote.audio.models.embedding.debug import SimpleEmbeddingModel
