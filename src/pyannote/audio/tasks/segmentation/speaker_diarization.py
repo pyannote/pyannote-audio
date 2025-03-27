@@ -306,7 +306,7 @@ class SpeakerDiarization(SegmentationTask):
         sample["X"], _ = self.model.audio.crop(file, chunk, duration=duration)
 
         # gather all annotations of current file
-        start_id, end_id = self.prepared_data["audio-segments-id"][file_id]
+        start_id, end_id = self.prepared_data["audio-segments-ids"][file_id]
         annotations = self.prepared_data["annotations-segments"][start_id:end_id]
 
         # gather all annotations with non-empty intersection with current chunk

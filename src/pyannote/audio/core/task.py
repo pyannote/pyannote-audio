@@ -528,8 +528,8 @@ class Task(lightning.LightningDataModule):
                 # increment current segment id
                 segments_id += 1
 
-        # append segment IDs (start and end time)
-        audio_segments_ids.append((_segments_id, segments_id))
+            # append segment IDs (start and end time)
+            audio_segments_ids.append((_segments_id, segments_id))
 
         # since not all metadata keys are present in all files, fallback to -1 when a key is missing
         metadata = [
