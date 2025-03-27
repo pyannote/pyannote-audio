@@ -257,7 +257,7 @@ class SpeakerDiarization(SegmentationTask):
             resolution=Resolution.FRAME,
             duration=self.duration,
             min_duration=self.min_duration,
-            classes=[f"speaker#{i+1}" for i in range(self.max_speakers_per_chunk)],
+            classes=[f"speaker#{i + 1}" for i in range(self.max_speakers_per_chunk)],
             powerset_max_classes=self.max_speakers_per_frame,
             permutation_invariant=True,
         )
@@ -306,9 +306,8 @@ class SpeakerDiarization(SegmentationTask):
         sample["X"], _ = self.model.audio.crop(file, chunk, duration=duration)
 
         # gather all annotations of current file
-        annotations = self.prepared_data["annotations-segments"][
-            self.prepared_data["annotations-segments"]["file_id"] == file_id
-        ]
+        start_id, end_id = self.prepared_data["audio-segments-id"][file_id]
+        annotations = self.prepared_data["annotations-segments"][start_id:end_id]
 
         # gather all annotations with non-empty intersection with current chunk
         chunk_annotations = annotations[
