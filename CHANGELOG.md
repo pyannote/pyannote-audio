@@ -12,6 +12,9 @@ Models can now be stored alongside their pipelines in the same repository, strea
 - ~~accept `pyannote/wespeaker-voxceleb-resnet34-LM` model user agreement~~
 - load pipeline with `Pipeline.from_pretrained("pyannote/speaker-diarization-3.1", token=True)`
 
+Dataloaders are now much faster, especially for large scale training sets.
+
+
 #### [pyannoteAI](https://www.pyannote.ai) premium speaker diarization
 
 Change one line of code to use [pyannoteAI](https://docs.pyannote.ai) and enjoy **more accurate speaker diarization**.
@@ -23,6 +26,7 @@ pipeline = Pipeline.from_pretrained(
 +    "pyannoteAI/speaker-diarization-precision, token="pyannoteAI-api-key")
 diarization = pipeline("/path/to/conversation.wav")
 ```
+
 
 ### Breaking changes
 
@@ -54,6 +58,7 @@ diarization = pipeline("/path/to/conversation.wav")
 
 - improve(model): improve WavLM (un)freezing support for `SSeRiouSS` architecture ([@clement-pages](https://github.com/clement-pages/))
 - improve(task): improve `SpeakerDiarization` training with manual optimization ([@clement-pages](https://github.com/clement-pages/))
+- improve(train): speed up dataloaders
 - improve(setup): switch to `uv`
 - improve(setup): switch to `lightning` from `pytorch-lightning`
 
