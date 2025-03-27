@@ -36,7 +36,7 @@ from pathlib import Path
 from tempfile import mkstemp
 from typing import Dict, List, Literal, Optional, Sequence, Text, Tuple, Union
 
-import lightning.pytorch as pl
+import lightning
 import numpy as np
 import scipy.special
 import torch
@@ -185,7 +185,7 @@ def get_dtype(value: int) -> str:
     return filtered_list[0][1]
 
 
-class Task(pl.LightningDataModule):
+class Task(lightning.LightningDataModule):
     """Base task class
 
     A task is the combination of a "problem" and a "dataset".

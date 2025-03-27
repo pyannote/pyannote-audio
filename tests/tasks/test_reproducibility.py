@@ -1,5 +1,5 @@
 import torch
-from lightning.pytorch import seed_everything
+from lightning import seed_everything
 from pyannote.database import FileFinder, registry
 
 from pyannote.audio.models.segmentation.debug import SimpleSegmentationModel

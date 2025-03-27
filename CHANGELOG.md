@@ -55,6 +55,7 @@ diarization = pipeline("/path/to/conversation.wav")
 - improve(model): improve WavLM (un)freezing support for `SSeRiouSS` architecture ([@clement-pages](https://github.com/clement-pages/))
 - improve(task): improve `SpeakerDiarization` training with manual optimization ([@clement-pages](https://github.com/clement-pages/))
 - improve(setup): switch to `uv`
+- improve(setup): switch to `lightning` from `pytorch-lightning`
 
 ### Fixes
 

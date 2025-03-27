@@ -1,4 +1,4 @@
-import lightning.pytorch as pl
+from lightning import Trainer
 import numpy as np
 import pytest
 from pyannote.core import SlidingWindowFeature
@@ -30,7 +30,7 @@ def trained():
     )
     vad = VoiceActivityDetection(protocol, duration=2.0, batch_size=16, num_workers=4)
     model = SimpleSegmentationModel(task=vad)
-    trainer = pl.Trainer(fast_dev_run=True, accelerator="cpu")
+    trainer = Trainer(fast_dev_run=True, accelerator="cpu")
     trainer.fit(model)
     return protocol, model
 

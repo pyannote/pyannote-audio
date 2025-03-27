@@ -25,7 +25,7 @@
 import sys
 from pathlib import Path
 
-import lightning.pytorch as pl
+import lightning
 import torch
 
 import pyannote.audio.models.embedding.wespeaker as wespeaker
@@ -53,7 +53,7 @@ model.specifications = specifications
 
 checkpoint = {"state_dict": model.state_dict()}
 model.on_save_checkpoint(checkpoint)
-checkpoint["pytorch-lightning_version"] = pl.__version__
+checkpoint["pytorch-lightning_version"] = lightning.__version__
 
 pyannote_checkpoint = Path(wespeaker_checkpoint_dir) / "pytorch_model.bin"
 torch.save(checkpoint, pyannote_checkpoint)

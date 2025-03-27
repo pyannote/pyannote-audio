@@ -30,7 +30,7 @@ from importlib import import_module
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Text, Tuple, Union
 
-import lightning.pytorch as pl
+import lightning
 import torch
 import torch.nn as nn
 import torch.optim
@@ -64,7 +64,7 @@ class Output:
     frames: SlidingWindow
 
 
-class Model(pl.LightningModule):
+class Model(lightning.LightningModule):
     """Base model
 
     Parameters
@@ -274,7 +274,7 @@ class Model(pl.LightningModule):
         check_version(
             "pytorch-lightning",
             checkpoint["pytorch-lightning_version"],
-            pl.__version__,
+            lightning.__version__,
             what="Model",
         )
 
