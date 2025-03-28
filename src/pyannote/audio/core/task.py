@@ -323,7 +323,9 @@ class Task(lightning.LightningDataModule):
             'audio-encoding': array of N audio encodings
             'audio-annotated': array of N annotated duration (usually equals file duration but might be shorter if file is not fully annotated)
             'annotations-regions': array of M annotated regions
+            'audio-regions-ids': array of N start/end indices of annotated regions
             'annotations-segments': array of M' annotated segments
+            'audio-segments-ids': array of N start/end indices of annotated segments
             'metadata-values': dict of lists of values for subset, scope and database
             'metadata-`database-name`-labels': array of `database-name` labels. Each database with "database" scope labels has it own array.
             'metadata-labels': array of global scope labels
@@ -356,7 +358,11 @@ class Task(lightning.LightningDataModule):
 
         annotated_duration = list()  # total duration of annotated regions (per file)
         annotated_regions = list()  # annotated regions
+        audio_regions_ids = list()  # start/end indices of annotated regions (per file)
+
         annotations = list()  # actual annotations
+        audio_segments_ids = list()  # start/end indices of annotated segments (per file)
+
         unique_labels = list()
         database_unique_labels = {}
 
@@ -367,6 +373,10 @@ class Task(lightning.LightningDataModule):
             )
         else:
             files_iter = zip(itertools.repeat("train"), self.protocol.train())
+
+        regions_id: int = 0
+        segments_id: int = 0
+        
 
         for file_id, (subset, file) in enumerate(files_iter):
             # gather metadata and update metadata_unique_values so that each metadatum
@@ -438,6 +448,8 @@ class Task(lightning.LightningDataModule):
             )
             audio_encodings.append(audio_info.encoding)  # encoding
 
+            _regions_id = regions_id
+
             # annotated regions and duration
             _annotated_duration = 0.0
             for segment in file["annotated"]:
@@ -456,8 +468,16 @@ class Task(lightning.LightningDataModule):
                 # increment annotated duration
                 _annotated_duration += segment.duration
 
+                # increment current regions id
+                regions_id += 1
+
             # append annotated duration
             annotated_duration.append(_annotated_duration)
+
+            # append region IDs (start and end time)
+            audio_regions_ids.append((_regions_id, regions_id))
+
+            _segments_id = segments_id
 
             # annotations
             for segment, _, label in file["annotation"].itertracks(yield_label=True):
@@ -504,6 +524,12 @@ class Task(lightning.LightningDataModule):
                         global_label_idx,  # global-scope index
                     )
                 )
+
+                # increment current segment id
+                segments_id += 1
+
+            # append segment IDs (start and end time)
+            audio_segments_ids.append((_segments_id, segments_id))
 
         # since not all metadata keys are present in all files, fallback to -1 when a key is missing
         metadata = [
@@ -579,10 +605,20 @@ class Task(lightning.LightningDataModule):
         )
         annotated_regions.clear()
 
+        prepared_data["audio-regions-ids"] = np.array(
+            audio_regions_ids, dtype=[("start", "i"), ("end", "i")]
+        )
+        audio_regions_ids.clear()
+
         prepared_data["annotations-segments"] = np.array(
             annotations, dtype=segment_dtype
         )
         annotations.clear()
+
+        prepared_data["audio-segments-ids"] = np.array(
+            audio_segments_ids, dtype=[("start", "i"), ("end", "i")]
+        )
+        audio_segments_ids.clear()
 
         prepared_data["metadata-values"] = metadata_unique_values
 

@@ -127,28 +127,26 @@ class SegmentationTask(Task):
 
             # generate `num_chunks_per_file` chunks from this file
             for _ in range(num_chunks_per_file):
-                # find indices of annotated regions in this file
-                annotated_region_indices = np.where(
-                    self.prepared_data["annotations-regions"]["file_id"] == file_id
-                )[0]
+                # read indices of annotated regions in this file
+                start_id, end_id = self.prepared_data["audio-regions-ids"][file_id]
 
                 # turn annotated regions duration into a probability distribution
-
                 cum_prob_annotated_regions_duration = np.cumsum(
                     self.prepared_data["annotations-regions"]["duration"][
-                        annotated_region_indices
+                        start_id:end_id
                     ]
                     / np.sum(
                         self.prepared_data["annotations-regions"]["duration"][
-                            annotated_region_indices
+                            start_id:end_id
                         ]
                     )
                 )
 
                 # selected one annotated region at random (with probability proportional to its duration)
-                annotated_region_index = annotated_region_indices[
-                    cum_prob_annotated_regions_duration.searchsorted(rng.random())
-                ]
+                annotated_region_index = (
+                    start_id
+                    + cum_prob_annotated_regions_duration.searchsorted(rng.random())
+                )
 
                 # select one chunk at random in this annotated region
                 _, region_duration, start = self.prepared_data["annotations-regions"][
