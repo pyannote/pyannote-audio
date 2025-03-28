@@ -4,20 +4,14 @@
 
 ### TL;DR
 
-#### Quality-of-Life improvements
+#### Faster training
 
-Models can now be stored alongside their pipelines in the same repository, streamlining gating mechanism:
-- accept `pyannote/speaker-diarization-x.x` pipeline user agreement
-- ~~accept `pyannote/segmentation-3.0` model user agreement~~
-- ~~accept `pyannote/wespeaker-voxceleb-resnet34-LM` model user agreement~~
-- load pipeline with `Pipeline.from_pretrained("pyannote/speaker-diarization-3.1", token=True)`
-
-Dataloaders are now much faster, especially for large scale training sets.
-
+Metadata caching and optimized dataloaders make training on large scale datasets much faster.  
+This changes led to a 15x speed up on [pyannoteAI](https://www.pyannote.ai) internal large scale training.
 
 #### [pyannoteAI](https://www.pyannote.ai) premium speaker diarization
 
-Change one line of code to use [pyannoteAI](https://docs.pyannote.ai) and enjoy **more accurate speaker diarization**.
+Change one line of code to use [pyannoteAI](https://docs.pyannote.ai) premium models and enjoy **more accurate speaker diarization**.
 
 ```diff
 from pyannote.audio import Pipeline
@@ -26,6 +20,14 @@ pipeline = Pipeline.from_pretrained(
 +    "pyannoteAI/speaker-diarization-precision, token="pyannoteAI-api-key")
 diarization = pipeline("/path/to/conversation.wav")
 ```
+
+#### Quality-of-Life improvements
+
+Models can now be stored alongside their pipelines in the same repository, streamlining offline use and gating mechanism:
+- accept `pyannote/speaker-diarization-x.x` pipeline user agreement
+- ~~accept `pyannote/segmentation-3.0` model user agreement~~
+- ~~accept `pyannote/wespeaker-voxceleb-resnet34-LM` model user agreement~~
+- load pipeline with `Pipeline.from_pretrained("pyannote/speaker-diarization-3.1", token=True)`
 
 
 ### Breaking changes
