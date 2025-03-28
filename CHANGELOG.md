@@ -7,7 +7,7 @@
 #### Faster training
 
 Metadata caching and optimized dataloaders make training on large scale datasets much faster.  
-This changes led to a 15x speed up on [pyannoteAI](https://www.pyannote.ai) internal large scale training.
+This led to a 15x speed up on [pyannoteAI](https://www.pyannote.ai) internal large scale training.
 
 #### [pyannoteAI](https://www.pyannote.ai) premium speaker diarization
 
