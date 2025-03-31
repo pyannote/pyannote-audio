@@ -62,7 +62,7 @@ class PremiumSpeakerDiarization(Pipeline):
             speaker = turn["speaker"]
             annotation[segment, t] = speaker
 
-        return annotation
+        return annotation.rename_tracks('string')
 
     def __call__(
         self,
