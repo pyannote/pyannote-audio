@@ -256,7 +256,7 @@ class Task(lightning.LightningDataModule):
         num_workers: Optional[int] = None,
         pin_memory: bool = False,
         augmentation: Optional[BaseWaveformTransform] = None,
-        metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
+        metric: Union[Metric, Sequence[Metric], Dict[str, Metric], None] = None,
     ):
         super().__init__()
 

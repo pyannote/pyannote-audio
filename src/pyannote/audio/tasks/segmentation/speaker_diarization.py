@@ -48,6 +48,7 @@ from pyannote.audio.torchmetrics import (
     MissedDetectionRate,
     SpeakerConfusionRate,
 )
+from pyannote.audio.utils.balance import TaskBalancingSpecifications
 from pyannote.audio.utils.loss import nll_loss
 from pyannote.audio.utils.permutation import permutate
 from pyannote.audio.utils.powerset import Powerset
@@ -77,10 +78,11 @@ class SpeakerDiarization(SegmentationTask):
         Defaults to estimating it from the training set.
     max_speakers_per_frame : int, optional
         Maximum number of (overlapping) speakers per frame. Defaults to 2.
-    balance: Sequence[Text], optional
-        When provided, training samples are sampled uniformly with respect to these keys.
-        For instance, setting `balance` to ["database","subset"] will make sure that each
-        database & subset combination will be equally represented in the training samples.
+    balance: TaskBalancingSpecifications or Sequence[str] or dict, optional
+        Either a TaskBalancingSpecifications, its key argument, or
+        a dict with its kwargs (e.g. {'keys': ['database'], 'weighting_rules': {('AMI',): 3.0}})
+        Allows balancing of training samples according to multiple rules (e.g. see all datasets equally).
+        See the doc of `TaskBalancingSpecifications` for more details.
     weight: str, optional
         When provided, use this key as frame-wise weight in loss function.
     batch_size : int, optional
@@ -117,7 +119,7 @@ class SpeakerDiarization(SegmentationTask):
         duration: float = 10.0,
         max_speakers_per_chunk: Optional[int] = None,
         max_speakers_per_frame: int = 2,
-        balance: Optional[Sequence[Text]] = None,
+        balance: TaskBalancingSpecifications | Sequence[str] | dict | None = None,
         weight: Optional[Text] = None,
         batch_size: int = 32,
         num_workers: Optional[int] = None,
@@ -138,6 +140,7 @@ class SpeakerDiarization(SegmentationTask):
             augmentation=augmentation,
             metric=metric,
             cache=cache,
+            balance=balance,
         )
 
         if not isinstance(protocol, SpeakerDiarizationProtocol):
@@ -162,7 +165,6 @@ class SpeakerDiarization(SegmentationTask):
 
         self.max_speakers_per_chunk = max_speakers_per_chunk
         self.max_speakers_per_frame = max_speakers_per_frame
-        self.balance = balance
         self.weight = weight
 
     def setup(self, stage=None):

@@ -30,6 +30,7 @@ from torchmetrics import Metric
 
 from pyannote.audio.core.task import Problem, Resolution, Specifications
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTask
+from pyannote.audio.utils.balance import TaskBalancingSpecifications
 
 
 class VoiceActivityDetection(SegmentationTask):
@@ -60,10 +61,11 @@ class VoiceActivityDetection(SegmentationTask):
         parts, only the remaining central part of each chunk is used for computing the
         loss during training, and for aggregating scores during inference.
         Defaults to 0. (i.e. no warm-up).
-    balance: Sequence[Text], optional
-        When provided, training samples are sampled uniformly with respect to these keys.
-        For instance, setting `balance` to ["database","subset"] will make sure that each
-        database & subset combination will be equally represented in the training samples.
+    balance: TaskBalancingSpecifications or Sequence[str] or dict, optional
+        Either a TaskBalancingSpecifications, its key argument, or
+        a dict with its kwargs (e.g. {'keys': ['database'], 'weighting_rules': {('AMI',): 3.0}})
+        Allows balancing of training samples according to multiple rules (e.g. see all datasets equally).
+        See the doc of `TaskBalancingSpecifications` for more details.
     weight: str, optional
         When provided, use this key to as frame-wise weight in loss function.
     batch_size : int, optional
@@ -89,7 +91,7 @@ class VoiceActivityDetection(SegmentationTask):
         cache: Optional[Union[str, None]] = None,
         duration: float = 2.0,
         warm_up: Union[float, Tuple[float, float]] = 0.0,
-        balance: Optional[Sequence[Text]] = None,
+        balance: TaskBalancingSpecifications | Sequence[str] | dict | None = None,
         weight: Optional[Text] = None,
         batch_size: int = 32,
         num_workers: Optional[int] = None,
@@ -107,6 +109,7 @@ class VoiceActivityDetection(SegmentationTask):
             augmentation=augmentation,
             metric=metric,
             cache=cache,
+            balance=balance,
         )
 
         self.balance = balance
