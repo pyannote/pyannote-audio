@@ -91,6 +91,13 @@ def get_model(
             f"Unsupported type ({type(model)}) for loading model: "
             f"expected `str` or `dict`."
         )
+    
+    if not hasattr(model, 'eval') or not callable(model.eval):
+        raise ValueError(
+            "The model could not be loaded. "
+            "Please check the checkpoint path or the model name. "
+            f"Recieved: {model}"
+        )
 
     model.eval()
     return model
