@@ -286,6 +286,16 @@ class SSeRiouSS(Model):
             )
         return receptive_field_center
 
+
+    @property
+    def wav2vec_only(self) -> bool:
+        """Whether to only extract wav2vec features"""
+        return getattr(self, "_wav2vec_only", False)
+
+    @wav2vec_only.setter
+    def wav2vec_only(self, value: bool):
+        self._wav2vec_only = value
+
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
         """Pass forward
 
@@ -295,7 +305,9 @@ class SSeRiouSS(Model):
 
         Returns
         -------
-        scores : (batch, frame, classes)
+        output : (batch, frame, classes) or (batch, frame, wav2vec_dimension)
+            If `self.wav2vec_only` is True, returns wav2vec features (after weighted average)
+            If `self.wav2vec_only` is False, returns segmentation scores
         """
 
         num_layers = (
@@ -312,6 +324,10 @@ class SSeRiouSS(Model):
             )
         else:
             outputs = outputs[-1]
+
+        if self.wav2vec_only:
+            return outputs
+
 
         if self.hparams.lstm["monolithic"]:
             outputs, _ = self.lstm(outputs)
