@@ -55,7 +55,8 @@ Models can now be stored alongside their pipelines in the same repository, strea
 - feat(core): add `Calibration` class to calibrate logits/distances into probabilities
 - feat(metric): add `DetectionErrorRate`, `SegmentationErrorRate`, `DiarizationPrecision`, and `DiarizationRecall` metrics
 - feat(cli): add CLI to download, apply, benchmark, or optimize pipelines
-
+- feat(cli): add CLI to strip checkpoints to their bare minimum 
+ 
 ### Improvements
 
 - improve(model): improve WavLM (un)freezing support for `SSeRiouSS` architecture ([@clement-pages](https://github.com/clement-pages/))
