@@ -38,7 +38,7 @@ from pyannote.core import Annotation
 from pyannote.pipeline.optimizer import Optimizer
 from typing_extensions import Annotated
 
-from pyannote.audio import Pipeline
+from pyannote.audio import Pipeline, Model
 
 
 class Subset(str, Enum):
@@ -445,6 +445,58 @@ def benchmark(
 
     print(str(metric))
 
+
+@app.command("strip")
+def strip(
+    checkpoint: Annotated[
+        Path,
+        typer.Argument(
+            help="Path to pyannote.audio model checkpoint",
+            exists=True,
+            dir_okay=False,
+            file_okay=True,
+            resolve_path=True,
+        ),
+    ],
+    into: Annotated[
+        Path,
+        typer.Argument(
+            help="Path to the stripped checkpoint",
+            exists=False,
+            dir_okay=False,
+            file_okay=True,
+            writable=True,
+            resolve_path=True,
+        ),
+    ],
+):
+    """
+    Strip a pretrained CHECKPOINT to only keep the parts needed for inference.
+    """
+
+    keys = [
+        "pytorch-lightning_version",   # * pytorch-lightning needs
+        "hparams_name",                #   those values to initialize 
+        "hyper_parameters",            #   the model architecture
+        "state_dict",                  # * actual weights
+        "pyannote.audio",              # * pyannote.audio dependencies 
+    ]
+
+    old_checkpoint = torch.load(
+        checkpoint, map_location=torch.device("cpu"), weights_only=False
+    )
+    new_checkpoint = {
+        key: value for key, value in old_checkpoint.items() if key in keys
+    }
+    torch.save(new_checkpoint, into)
+
+    # check that the stripped checkpoint can be loaded again
+    try:
+        _ = Model.from_pretrained(into)
+    except Exception as e:
+        sys.exit(
+            f"Something went wrong while stripping the checkpoint as it could not be reloaded: {e}"
+        )
 
 if __name__ == "__main__":
     app()
