@@ -21,11 +21,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import warnings
-
-from packaging.version import Version, InvalidVersion
 import importlib.metadata
 from importlib.metadata import PackageNotFoundError
+
+from packaging.version import InvalidVersion, Version
 
 
 class MissingDependency(Exception):
@@ -33,7 +32,7 @@ class MissingDependency(Exception):
 
     def __init__(self, what: str, dependency: str, required: Version) -> None:
         super().__init__(
-            f"{what} requires {dependency}=={required} but it is not installed."
+            f"{what} requires {dependency} ~ {required} but it is not installed."
         )
         self.dependency = dependency
         self.required = required
@@ -46,7 +45,7 @@ class WrongDependencyVersion(Exception):
         self, what: str, dependency: str, required: Version, available: Version
     ) -> None:
         super().__init__(
-            f"{what} requires {dependency}=={required} but {available} is installed."
+            f"{what} requires {dependency} ~ {required} but {available} is installed."
         )
         self.dependency = dependency
         self.required = required
@@ -65,7 +64,6 @@ def check_dependencies(dependencies: dict[str, str], what: str) -> None:
     """
 
     for dependency, version in dependencies.items():
-
         required: Version = Version(version)
 
         try:
@@ -84,7 +82,6 @@ def check_dependencies(dependencies: dict[str, str], what: str) -> None:
             continue
 
         if available.major != required.major:
-
             # before pyannote.audio 4.x, we were not strict about the version. therefore,
             # we take our chance and let it fails later in the code (if it ever fails)
             if dependency == "pyannote.audio" and required.major < 4:
