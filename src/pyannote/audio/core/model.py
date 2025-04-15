@@ -1,6 +1,7 @@
 # MIT License
 #
-# Copyright (c) 2020- CNRS
+# Copyright (c) 2020-2025 CNRS
+# Copyright (c) 2025- pyannoteAI
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -49,7 +50,7 @@ from pyannote.audio.core.task import (
 )
 from pyannote.audio.utils.hf_hub import AssetFileName, download_from_hf_hub
 from pyannote.audio.utils.multi_task import map_with_specifications
-from pyannote.audio.utils.version import check_version
+from pyannote.audio.utils.dependencies import check_dependencies
 
 
 # NOTE: needed to backward compatibility to load models trained before pyannote.audio 3.x
@@ -246,7 +247,6 @@ class Model(lightning.LightningModule):
         # to avoid any future conflicts with pytorch-lightning updates
         checkpoint["pyannote.audio"] = {
             "versions": {
-                "torch": torch.__version__,
                 "pyannote.audio": __version__,
             },
             "architecture": {
@@ -257,26 +257,6 @@ class Model(lightning.LightningModule):
         }
 
     def on_load_checkpoint(self, checkpoint: Dict[str, Any]):
-        check_version(
-            "pyannote.audio",
-            checkpoint["pyannote.audio"]["versions"]["pyannote.audio"],
-            __version__,
-            what="Model",
-        )
-
-        check_version(
-            "torch",
-            checkpoint["pyannote.audio"]["versions"]["torch"],
-            torch.__version__,
-            what="Model",
-        )
-
-        check_version(
-            "pytorch-lightning",
-            checkpoint["pytorch-lightning_version"],
-            lightning.__version__,
-            what="Model",
-        )
 
         self.specifications = checkpoint["pyannote.audio"]["specifications"]
 
@@ -595,8 +575,14 @@ class Model(lightning.LightningModule):
 
             map_location = default_map_location
 
-        # obtain model class from the checkpoint
+        # load checkpoint using lightning
         loaded_checkpoint = pl_load(path_to_model_checkpoint, map_location=map_location)
+
+        # check that the checkpoint is compatible with the current version
+        versions = loaded_checkpoint["pyannote.audio"]["versions"]
+        check_dependencies({"pyannote.audio": versions["pyannote.audio"]}, "Model")
+
+        # obtain model class from the checkpoint
         module_name: str = loaded_checkpoint["pyannote.audio"]["architecture"]["module"]
         module = import_module(module_name)
         class_name: str = loaded_checkpoint["pyannote.audio"]["architecture"]["class"]
