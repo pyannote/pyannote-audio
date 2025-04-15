@@ -170,7 +170,7 @@ class Pipeline(_Pipeline):
 
         # check that dependencies are available (in their required version)
         dependencies: dict[str, str] = config.get("dependencies", dict())
-        check_dependencies(dependencies, str(model_id))
+        check_dependencies(dependencies, "Pipeline")
 
         # initialize pipeline
         pipeline_name = config["pipeline"]["name"]

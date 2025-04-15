@@ -31,11 +31,10 @@ from importlib.metadata import PackageNotFoundError
 class MissingDependency(Exception):
     """Exception raised when a required dependency is missing."""
 
-    def __init__(self, model_id: str, dependency: str, required: Version) -> None:
+    def __init__(self, what: str, dependency: str, required: Version) -> None:
         super().__init__(
-            f"{model_id} requires {dependency}=={required} but it is not installed."
+            f"{what} requires {dependency}=={required} but it is not installed."
         )
-        self.model_id = model_id
         self.dependency = dependency
         self.required = required
 
@@ -44,18 +43,17 @@ class WrongDependencyVersion(Exception):
     """Exception raised when a required dependency has an invalid version."""
 
     def __init__(
-        self, model_id: str, dependency: str, required: Version, available: Version
+        self, what: str, dependency: str, required: Version, available: Version
     ) -> None:
         super().__init__(
-            f"{model_id} requires {dependency}=={required} but {available} is installed."
+            f"{what} requires {dependency}=={required} but {available} is installed."
         )
-        self.model_id = model_id
         self.dependency = dependency
         self.required = required
         self.available = available
 
 
-def check_dependencies(dependencies: dict[str, str], model_id: str) -> None:
+def check_dependencies(dependencies: dict[str, str], what: str) -> None:
     """Check if required dependencies are installed
 
     Raises
@@ -74,7 +72,7 @@ def check_dependencies(dependencies: dict[str, str], model_id: str) -> None:
             _version = importlib.metadata.version(dependency)
 
         except PackageNotFoundError:
-            raise MissingDependency(model_id, dependency, required)
+            raise MissingDependency(what, dependency, required)
 
         _version = importlib.metadata.version(dependency)
 
@@ -94,4 +92,4 @@ def check_dependencies(dependencies: dict[str, str], model_id: str) -> None:
 
             else:
                 # for all other dependencies, we raise an error on major version mismatch
-                raise WrongDependencyVersion(model_id, dependency, available, required)
+                raise WrongDependencyVersion(what, dependency, required, available)
