@@ -477,8 +477,13 @@ def benchmark(
                     props_dict[attr] = value
 
         processing["device"] = props_dict
+        device_name = props_dict["name"].replace(" ", "-")    
+        speed_yml = into / f"{benchmark_name}.{device_name}.yml"
 
-    with open(into / f"{benchmark_name}.speed.yml", "w") as yml:
+    else:
+        speed_yml = into / f"{benchmark_name}.yml"
+
+    with open(speed_yml, "w") as yml:
         yaml.dump(processing, yml)
 
 if __name__ == "__main__":
