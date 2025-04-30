@@ -466,13 +466,17 @@ def benchmark(
     processing["total_processing_time"] = total_processing_time
 
     if torch_device.type == "cuda":
+
         props = torch.cuda.get_device_properties(torch_device)
-        props = {
-            attr: getattr(props, attr)
-            for attr in dir(props)
-            if not attr.startswith('_') and not callable(getattr(props, attr))
-        }
-        processing["device"] = props
+        props_dict = {}
+        for attr in dir(props):
+            if not attr.startswith("_"):
+                value = getattr(props, attr)
+                # Only include basic types (skip unpicklable like _CUuuid)
+                if isinstance(value, (int, float, str, bool, tuple, list)):
+                    props_dict[attr] = value
+
+        processing["device"] = props_dict
 
     with open(into / f"{benchmark_name}.speed.yml", "w") as yml:
         yaml.dump(processing, yml)
