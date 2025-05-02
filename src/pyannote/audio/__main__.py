@@ -29,6 +29,7 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Optional
+import time
 
 import pyannote.database
 import torch
@@ -38,7 +39,7 @@ from pyannote.core import Annotation
 from pyannote.pipeline.optimizer import Optimizer
 from typing_extensions import Annotated
 
-from pyannote.audio import Pipeline
+from pyannote.audio import Audio, Pipeline
 
 
 class Subset(str, Enum):
@@ -419,11 +420,24 @@ def benchmark(
     if num_speakers == NumSpeakers.ORACLE:
         benchmark_name += ".OracleNumSpeakers"
 
+    processing_time: dict[str, float] = dict()
+    playing_time: dict[str, float] = dict()
+
     with open(into / f"{benchmark_name}.rttm", "w") as rttm:
         for file in getattr(loaded_protocol, subset.value)():
+
+            uri: str = file["uri"]
+            playing_time[uri] = Audio().get_duration(file)
+
+            tic: float = time.time()
+
             prediction: Annotation = pretrained_pipeline(
                 file, **file.get("pipeline_kwargs", {})
             )
+
+            tac: float = time.time()
+            processing_time[uri] = tac - tic
+
             prediction.write_rttm(rttm)
             rttm.flush()
 
@@ -443,8 +457,34 @@ def benchmark(
     with open(into / f"{benchmark_name}.txt", "w") as txt:
         txt.write(str(metric))
 
-    print(str(metric))
+    # log processing time and capacity
+    processing = dict()
+    total_processing_time: float = sum(processing_time.values())
+    total_playing_time: float = sum(playing_time.values())
+    processing["seconds_per_hour"] = total_processing_time / (total_playing_time / 3600)
+    processing["times_faster_than_realtime"] = total_playing_time / total_processing_time
+    processing["total_processing_time"] = total_processing_time
 
+    if torch_device.type == "cuda":
+
+        props = torch.cuda.get_device_properties(torch_device)
+        props_dict = {}
+        for attr in dir(props):
+            if not attr.startswith("_"):
+                value = getattr(props, attr)
+                # Only include basic types (skip unpicklable like _CUuuid)
+                if isinstance(value, (int, float, str, bool, tuple, list)):
+                    props_dict[attr] = value
+
+        processing["device"] = props_dict
+        device_name = props_dict["name"].replace(" ", "-")    
+        speed_yml = into / f"{benchmark_name}.{device_name}.yml"
+
+    else:
+        speed_yml = into / f"{benchmark_name}.yml"
+
+    with open(speed_yml, "w") as yml:
+        yaml.dump(processing, yml)
 
 if __name__ == "__main__":
     app()
