@@ -513,7 +513,7 @@ class Model(lightning.LightningModule):
 
         Parameters
         ----------
-        checkpoint : Path or str
+        checkpoint : Path, str, or byte buffer
             Model checkpoint, provided as one of the following:
             * path to a local `pytorch_model.bin` model checkpoint
             * path to a local directory containing such a file
