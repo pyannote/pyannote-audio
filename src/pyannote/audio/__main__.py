@@ -37,6 +37,7 @@ import typer
 import yaml
 from pyannote.core import Annotation
 from pyannote.pipeline.optimizer import Optimizer
+from scipy.optimize import minimize_scalar
 from typing_extensions import Annotated
 
 from pyannote.audio import Audio, Pipeline
@@ -423,6 +424,8 @@ def benchmark(
     processing_time: dict[str, float] = dict()
     playing_time: dict[str, float] = dict()
 
+    # keep track of processed predictions and groundtruths
+    cached_data = {}
     with open(into / f"{benchmark_name}.rttm", "w") as rttm:
         for file in getattr(loaded_protocol, subset.value)():
 
@@ -431,9 +434,12 @@ def benchmark(
 
             tic: float = time.time()
 
-            prediction: Annotation = pretrained_pipeline(
-                file, **file.get("pipeline_kwargs", {})
+            prediction = pretrained_pipeline(
+                file["audio"], **file.get("pipeline_kwargs", {})
             )
+
+            if not isinstance(prediction, Annotation):
+                prediction: Annotation = prediction.speaker_diarization
 
             tac: float = time.time()
             processing_time[uri] = tac - tic
@@ -449,13 +455,47 @@ def benchmark(
                 continue
 
             annotated = file.get("annotated", None)
-            _ = metric(groundtruth, prediction, uem=annotated)
+
+            cached_data[uri] = {}
+            cached_data[uri]["prediction"] = prediction
+            cached_data[uri]["groundtruth"] = groundtruth
+            cached_data[uri]["annotated"] = annotated
 
     if metric is None:
         return
 
-    with open(into / f"{benchmark_name}.txt", "w") as txt:
-        txt.write(str(metric))
+    # report DER for all the tested collar values
+    reports = {}
+
+    def compute_metric(collar: float):
+        metric.reset()
+
+        collar = round(collar, 3)
+
+        for uri in cached_data:
+            prediction: Annotation = cached_data[uri]["prediction"]
+            prediction = prediction.support(collar=collar)
+
+            _ = metric(
+                prediction,
+                cached_data[uri]["groundtruth"],
+                uem=cached_data[uri]["annotated"],
+            )
+
+        reports[collar] = metric.report()
+        return abs(metric)
+
+    # find the collar minimizing the metric and report results
+    res = minimize_scalar(compute_metric, bounds=(0., 1.), method="Bounded")
+
+    best_collar = round(res.x, 3)
+    with open(into / f"{benchmark_name}-optimized-collar={best_collar}.txt", "w") as txt:
+        txt.write(str(reports[best_collar]))
+
+    # report DER results obtained whithout using collar
+    compute_metric(collar=0)
+    with open(into / f"{benchmark_name}-no-collar.txt", "w") as txt:
+        txt.write(str(reports[0]))
 
     # log processing time and capacity
     processing = dict()
