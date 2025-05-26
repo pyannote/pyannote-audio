@@ -24,12 +24,12 @@
 # SOFTWARE.
 
 import sys
+import time
 from contextlib import nullcontext
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Optional
-import time
 
 import pyannote.database
 import torch
@@ -37,10 +37,10 @@ import typer
 import yaml
 from pyannote.core import Annotation
 from pyannote.pipeline.optimizer import Optimizer
-from scipy.optimize import minimize_scalar
 from typing_extensions import Annotated
 
 from pyannote.audio import Audio, Pipeline
+from pyannote.audio.utils.collar import CollarOptimizer
 
 
 class Subset(str, Enum):
@@ -424,8 +424,9 @@ def benchmark(
     processing_time: dict[str, float] = dict()
     playing_time: dict[str, float] = dict()
 
-    # keep track of processed predictions and groundtruths
-    cached_data = {}
+    if metric:
+        collar_optimizer = CollarOptimizer(metric)
+
     with open(into / f"{benchmark_name}.rttm", "w") as rttm:
         for file in getattr(loaded_protocol, subset.value)():
 
@@ -434,12 +435,13 @@ def benchmark(
 
             tic: float = time.time()
 
-            prediction = pretrained_pipeline(
-                file["audio"], **file.get("pipeline_kwargs", {})
-            )
+            prediction = pretrained_pipeline(file, **file.get("pipeline_kwargs", {}))
 
-            if not isinstance(prediction, Annotation):
+            # if not isinstance(prediction, Annotation):
+            #     prediction: Annotation = prediction.speaker_diarization
+            if hasattr(prediction, "speaker_diarization"):
                 prediction: Annotation = prediction.speaker_diarization
+                # save job output into json file
 
             tac: float = time.time()
             processing_time[uri] = tac - tic
@@ -450,59 +452,48 @@ def benchmark(
             if metric is None:
                 continue
 
-            groundtruth = file.get("annotation", None)
-            if groundtruth is None:
+            annotation = file.get("annotation", None)
+            if annotation is None:
                 continue
 
             annotated = file.get("annotated", None)
 
-            cached_data[uri] = {}
-            cached_data[uri]["prediction"] = prediction
-            cached_data[uri]["groundtruth"] = groundtruth
-            cached_data[uri]["annotated"] = annotated
+            collar_optimizer[uri] = {
+                "prediction": prediction,
+                "annotation": annotation,
+                "annotated": annotated,
+            }
+
+            _ = metric(
+                prediction,
+                annotation,
+                uem=annotated,
+            )
 
     if metric is None:
         return
 
-    # report DER for all the tested collar values
-    reports = {}
-
-    def compute_metric(collar: float):
-        metric.reset()
-
-        collar = round(collar, 3)
-
-        for uri in cached_data:
-            prediction: Annotation = cached_data[uri]["prediction"]
-            prediction = prediction.support(collar=collar)
-
-            _ = metric(
-                prediction,
-                cached_data[uri]["groundtruth"],
-                uem=cached_data[uri]["annotated"],
-            )
-
-        reports[collar] = metric.report()
-        return abs(metric)
-
-    # find the collar minimizing the metric and report results
-    res = minimize_scalar(compute_metric, bounds=(0., 1.), method="Bounded")
-
-    best_collar = round(res.x, 3)
-    with open(into / f"{benchmark_name}-optimized-collar={best_collar}.txt", "w") as txt:
-        txt.write(str(reports[best_collar]))
-
-    # report DER results obtained whithout using collar
-    compute_metric(collar=0)
+    # report metric results obtained whithout using collar
     with open(into / f"{benchmark_name}-no-collar.txt", "w") as txt:
-        txt.write(str(reports[0]))
+        txt.write(str(metric))
+
+    # report metric results with an optimized collar
+    best_collar, metric_val = collar_optimizer.optimize()
+    with open(into / f"{benchmark_name}-optimized-collar.txt", "w") as txt:
+        txt.write(str(metric_val))
+
+    # report collar best value
+    with open(into / f"{benchmark_name}-optimized-collar-value.yml", "w") as yml:
+        yaml.dump({"best-collar": best_collar}, yml)
 
     # log processing time and capacity
     processing = dict()
     total_processing_time: float = sum(processing_time.values())
     total_playing_time: float = sum(playing_time.values())
     processing["seconds_per_hour"] = total_processing_time / (total_playing_time / 3600)
-    processing["times_faster_than_realtime"] = total_playing_time / total_processing_time
+    processing["times_faster_than_realtime"] = (
+        total_playing_time / total_processing_time
+    )
     processing["total_processing_time"] = total_processing_time
 
     if torch_device.type == "cuda":
@@ -517,7 +508,7 @@ def benchmark(
                     props_dict[attr] = value
 
         processing["device"] = props_dict
-        device_name = props_dict["name"].replace(" ", "-")    
+        device_name = props_dict["name"].replace(" ", "-")
         speed_yml = into / f"{benchmark_name}.{device_name}.yml"
 
     else:
@@ -525,6 +516,7 @@ def benchmark(
 
     with open(speed_yml, "w") as yml:
         yaml.dump(processing, yml)
+
 
 if __name__ == "__main__":
     app()
