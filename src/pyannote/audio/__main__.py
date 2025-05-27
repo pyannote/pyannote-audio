@@ -391,6 +391,12 @@ def benchmark(
             help="Set benchmark metric to pyannote.metric.diarization.DiarizationErrorRate",
         )
     ] = False,
+    optimize_collar: Annotated[
+        bool,
+        typer.Option(
+            help="Enable optimization of the collar value",
+        )
+    ] = False,
 ):
     """
     Benchmark a pretrained PIPELINE
@@ -436,7 +442,7 @@ def benchmark(
     processing_time: dict[str, float] = dict()
     playing_time: dict[str, float] = dict()
 
-    if metric:
+    if metric and optimize_collar:
         collar_optimizer = CollarOptimizer(metric)
 
     with open(into / f"{benchmark_name}.rttm", "w") as rttm:
@@ -486,17 +492,20 @@ def benchmark(
 
             annotated = file.get("annotated", None)
 
-            collar_optimizer[uri] = {
-                "prediction": prediction,
-                "annotation": annotation,
-                "annotated": annotated,
-            }
-
             _ = metric(
                 prediction,
                 annotation,
                 uem=annotated,
             )
+
+            if not optimize_collar:
+                continue
+
+            collar_optimizer[uri] = {
+                "prediction": prediction,
+                "annotation": annotation,
+                "annotated": annotated,
+            }
 
     if metric is None:
         return
@@ -508,15 +517,17 @@ def benchmark(
         txt.write(str(metric))
 
     # report metric results with an optimized collar
-    best_collar, metric_df = collar_optimizer.optimize()
-    with open(into / f"{benchmark_name}-optimized-collar.csv", "w") as csv:
-        metric_df.to_csv(csv)
-    with open(into / f"{benchmark_name}-optimized-collar.txt", "w") as txt:
-        txt.write(str(metric_df))
+    if optimize_collar:
+        best_collar, metric_df = collar_optimizer.optimize()
 
-    # report collar best value
-    with open(into / f"{benchmark_name}-optimized-collar.yml", "w") as yml:
-        yaml.dump({"best-collar": best_collar}, yml)
+        with open(into / f"{benchmark_name}-optimized-collar.csv", "w") as csv:
+            metric_df.to_csv(csv)
+        with open(into / f"{benchmark_name}-optimized-collar.txt", "w") as txt:
+            txt.write(str(metric_df))
+
+        # report collar best value
+        with open(into / f"{benchmark_name}-optimized-collar.yml", "w") as yml:
+            yaml.dump({"best-collar": best_collar}, yml)
 
     # log processing time and capacity
     processing = dict()
