@@ -23,6 +23,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import json
 import sys
 import time
 from contextlib import nullcontext
@@ -41,6 +42,7 @@ from typing_extensions import Annotated
 
 from pyannote.audio import Audio, Pipeline
 from pyannote.audio.utils.collar import CollarOptimizer
+from pyannote.metrics.diarization import DiarizationErrorRate
 
 
 class Subset(str, Enum):
@@ -383,6 +385,12 @@ def benchmark(
             resolve_path=True,
         ),
     ] = None,
+    diarization: Annotated[
+        bool,
+        typer.Option(
+            help="Set benchmark metric to pyannote.metric.diarization.DiarizationErrorRate",
+        )
+    ] = False,
 ):
     """
     Benchmark a pretrained PIPELINE
@@ -395,7 +403,10 @@ def benchmark(
     torch_device = parse_device(device)
     pretrained_pipeline.to(torch_device)
 
-    # load pipeline metric (when available)
+    # if --diarization flag was set, use DiarizationErrorRate metric
+    if diarization:
+        metric = DiarizationErrorRate()
+    # else try to load pipeline metric (when available)
     try:
         metric = pretrained_pipeline.get_metric()
     except NotImplementedError:
@@ -437,11 +448,23 @@ def benchmark(
 
             prediction = pretrained_pipeline(file, **file.get("pipeline_kwargs", {}))
 
-            # if not isinstance(prediction, Annotation):
-            #     prediction: Annotation = prediction.speaker_diarization
-            if hasattr(prediction, "speaker_diarization"):
+            # if result is an Annotation, assume it is speaker diarization
+            if isinstance(prediction, Annotation):
+                pass
+
+            # if result contains a dedicated output for diarization, use it
+            elif hasattr(prediction, "speaker_diarization"):
+
+                # save job output into json file if available
+                if hasattr(prediction, "raw_job_output"):
+                    with open(into / f"{benchmark_name}-{uri}.json", "w") as fp:
+                        json.dump(prediction.raw_job_output, fp, indent=2)
+
                 prediction: Annotation = prediction.speaker_diarization
-                # save job output into json file
+
+            # rais ean error if no speaker diarization is found
+            else:
+                raise ValueError("Could not find speaker diarization in results.")
 
             tac: float = time.time()
             processing_time[uri] = tac - tic
@@ -483,7 +506,7 @@ def benchmark(
         txt.write(str(metric_val))
 
     # report collar best value
-    with open(into / f"{benchmark_name}-optimized-collar-value.yml", "w") as yml:
+    with open(into / f"{benchmark_name}-optimized-collar.yml", "w") as yml:
         yaml.dump({"best-collar": best_collar}, yml)
 
     # log processing time and capacity
