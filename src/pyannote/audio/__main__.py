@@ -456,8 +456,12 @@ def benchmark(
             elif hasattr(prediction, "speaker_diarization"):
 
                 # save job output into json file if available
+                job_outputs = into / "job-outputs"
+                if not job_outputs.exists():
+                    job_outputs.mkdir()
+
                 if hasattr(prediction, "raw_job_output"):
-                    with open(into / f"{benchmark_name}-{uri}.json", "w") as fp:
+                    with open(job_outputs / f"{benchmark_name}-{uri}.json", "w") as fp:
                         json.dump(prediction.raw_job_output, fp, indent=2)
 
                 prediction: Annotation = prediction.speaker_diarization
