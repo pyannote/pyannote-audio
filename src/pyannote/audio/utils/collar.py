@@ -107,6 +107,6 @@ class CollarOptimizer:
         )
 
         best_collar = round(float(res.x), 3)
-        metric_val = self._dataframes[best_collar]
+        metric_df = self._dataframes[best_collar]
 
-        return best_collar, metric_val
+        return best_collar, metric_df

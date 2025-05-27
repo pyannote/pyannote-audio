@@ -407,10 +407,11 @@ def benchmark(
     if diarization:
         metric = DiarizationErrorRate()
     # else try to load pipeline metric (when available)
-    try:
-        metric = pretrained_pipeline.get_metric()
-    except NotImplementedError:
-        metric = None
+    else:
+        try:
+            metric = pretrained_pipeline.get_metric()
+        except NotImplementedError:
+            metric = None
 
     # load protocol from (optional) registry
     if registry:
@@ -461,7 +462,7 @@ def benchmark(
                     job_outputs.mkdir()
 
                 if hasattr(prediction, "raw_job_output"):
-                    with open(job_outputs / f"{benchmark_name}-{uri}.json", "w") as fp:
+                    with open(job_outputs / f"{benchmark_name}.{uri}.json", "w") as fp:
                         json.dump(prediction.raw_job_output, fp, indent=2)
 
                 prediction: Annotation = prediction.speaker_diarization
@@ -501,13 +502,17 @@ def benchmark(
         return
 
     # report metric results obtained whithout using collar
+    with open(into / f"{benchmark_name}-no-collar.csv", "w") as csv:
+        metric.report().to_csv(csv)
     with open(into / f"{benchmark_name}-no-collar.txt", "w") as txt:
         txt.write(str(metric))
 
     # report metric results with an optimized collar
-    best_collar, metric_val = collar_optimizer.optimize()
+    best_collar, metric_df = collar_optimizer.optimize()
+    with open(into / f"{benchmark_name}-optimized-collar.csv", "w") as csv:
+        metric_df.to_csv(csv)
     with open(into / f"{benchmark_name}-optimized-collar.txt", "w") as txt:
-        txt.write(str(metric_val))
+        txt.write(str(metric_df))
 
     # report collar best value
     with open(into / f"{benchmark_name}-optimized-collar.yml", "w") as yml:
