@@ -385,39 +385,31 @@ def benchmark(
             resolve_path=True,
         ),
     ] = None,
-    diarization: Annotated[
+    postprocess: Annotated[
         bool,
         typer.Option(
-            help="Set benchmark metric to pyannote.metric.diarization.DiarizationErrorRate",
-        )
-    ] = False,
-    optimize_collar: Annotated[
-        bool,
-        typer.Option(
-            help="Enable optimization of the collar value",
+            help="Evaluate both original and post-processed predictions.",
         )
     ] = False,
 ):
     """
-    Benchmark a pretrained PIPELINE
+    Benchmark a pretrained diarization PIPELINE
+
+    This will run the pipeline on all files in the specified protocol and subset,
+    save the results in RTTM format, and compute the Diarization Error Rate (DER)
+    for each file. If `--postprocess` is used, it will also postprocess predictions
+    by filling short within speaker gaps and save the results in a separate file.
     """
 
     # load pretrained pipeline
     pretrained_pipeline = Pipeline.from_pretrained(pipeline, cache_dir=cache)
+    if pretrained_pipeline is None:
+        print(f"Could not load pretrained pipeline from {pipeline}.")
+        raise typer.exit(code=1)
 
     # send pipeline to device
     torch_device = parse_device(device)
     pretrained_pipeline.to(torch_device)
-
-    # if --diarization flag was set, use DiarizationErrorRate metric
-    if diarization:
-        metric = DiarizationErrorRate()
-    # else try to load pipeline metric (when available)
-    else:
-        try:
-            metric = pretrained_pipeline.get_metric()
-        except NotImplementedError:
-            metric = None
 
     # load protocol from (optional) registry
     if registry:
@@ -442,8 +434,12 @@ def benchmark(
     processing_time: dict[str, float] = dict()
     playing_time: dict[str, float] = dict()
 
-    if metric and optimize_collar:
+    metric = DiarizationErrorRate()
+
+    if metric and postprocess:
         collar_optimizer = CollarOptimizer(metric)
+
+    serialized_predictions: dict[str, dict] = dict()
 
     with open(into / f"{benchmark_name}.rttm", "w") as rttm:
         for file in getattr(loaded_protocol, subset.value)():
@@ -455,36 +451,27 @@ def benchmark(
 
             prediction = pretrained_pipeline(file, **file.get("pipeline_kwargs", {}))
 
+            tac: float = time.time()
+            processing_time[uri] = tac - tic
+
             # if result is an Annotation, assume it is speaker diarization
             if isinstance(prediction, Annotation):
                 pass
 
             # if result contains a dedicated output for diarization, use it
             elif hasattr(prediction, "speaker_diarization"):
-
-                # save job output into json file if available
-                job_outputs = into / "job-outputs"
-                if not job_outputs.exists():
-                    job_outputs.mkdir()
-
-                if hasattr(prediction, "raw_job_output"):
-                    with open(job_outputs / f"{benchmark_name}.{uri}.json", "w") as fp:
-                        json.dump(prediction.raw_job_output, fp, indent=2)
-
                 prediction: Annotation = prediction.speaker_diarization
 
-            # rais ean error if no speaker diarization is found
+            # raise an error if no speaker diarization is found
             else:
                 raise ValueError("Could not find speaker diarization in results.")
 
-            tac: float = time.time()
-            processing_time[uri] = tac - tic
+            # if prediction has a built-in serialize method, save serialized version
+            if hasattr(prediction, "serialize"):
+                serialized_predictions[uri] = prediction.serialize()
 
             prediction.write_rttm(rttm)
             rttm.flush()
-
-            if metric is None:
-                continue
 
             annotation = file.get("annotation", None)
             if annotation is None:
@@ -498,7 +485,7 @@ def benchmark(
                 uem=annotated,
             )
 
-            if not optimize_collar:
+            if not postprocess:
                 continue
 
             collar_optimizer[uri] = {
@@ -507,26 +494,29 @@ def benchmark(
                 "annotated": annotated,
             }
 
-    if metric is None:
-        return
+    # save serialized predictions to disk (might contain more than just diarization results)
+    if serialized_predictions:
+        with open(into / f"{benchmark_name}.json", "w") as f:
+            json.dump(serialized_predictions, f, indent=2)
 
-    # report metric results obtained whithout using collar
-    with open(into / f"{benchmark_name}-no-collar.csv", "w") as csv:
+    # save metric results in both CSV and human-readable formats 
+    with open(into / f"{benchmark_name}.csv", "w") as csv:
         metric.report().to_csv(csv)
-    with open(into / f"{benchmark_name}-no-collar.txt", "w") as txt:
+
+    with open(into / f"{benchmark_name}.txt", "w") as txt:
         txt.write(str(metric))
 
     # report metric results with an optimized collar
-    if optimize_collar:
+    if postprocess:
         best_collar, metric_df = collar_optimizer.optimize()
 
-        with open(into / f"{benchmark_name}-optimized-collar.csv", "w") as csv:
+        with open(into / f"{benchmark_name}.Fillers.csv", "w") as csv:
             metric_df.to_csv(csv)
-        with open(into / f"{benchmark_name}-optimized-collar.txt", "w") as txt:
+        with open(into / f"{benchmark_name}.Fillers.txt", "w") as txt:
             txt.write(str(metric_df))
 
         # report collar best value
-        with open(into / f"{benchmark_name}-optimized-collar.yml", "w") as yml:
+        with open(into / f"{benchmark_name}.Fillers.yml", "w") as yml:
             yaml.dump({"best-collar": best_collar}, yml)
 
     # log processing time and capacity
