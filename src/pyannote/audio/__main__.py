@@ -41,7 +41,7 @@ from pyannote.pipeline.optimizer import Optimizer
 from typing_extensions import Annotated
 
 from pyannote.audio import Audio, Pipeline
-from pyannote.audio.utils.collar import CollarOptimizer
+from pyannote.audio.utils.postprocessing import MinDurationOffOptimizer
 from pyannote.metrics.diarization import DiarizationErrorRate
 
 
@@ -436,13 +436,12 @@ def benchmark(
 
     metric = DiarizationErrorRate()
 
-    if metric and postprocess:
-        collar_optimizer = CollarOptimizer(metric)
-
     serialized_predictions: dict[str, dict] = dict()
 
     with open(into / f"{benchmark_name}.rttm", "w") as rttm:
-        for file in getattr(loaded_protocol, subset.value)():
+
+        files = list(getattr(loaded_protocol, subset.value)())
+        for file in files:
 
             uri: str = file["uri"]
             playing_time[uri] = Audio().get_duration(file)
@@ -453,6 +452,10 @@ def benchmark(
 
             tac: float = time.time()
             processing_time[uri] = tac - tic
+
+            # if prediction has a built-in serialize method, save serialized version
+            if hasattr(prediction, "serialize"):
+                serialized_predictions[uri] = prediction.serialize()
 
             # if result is an Annotation, assume it is speaker diarization
             if isinstance(prediction, Annotation):
@@ -465,10 +468,6 @@ def benchmark(
             # raise an error if no speaker diarization is found
             else:
                 raise ValueError("Could not find speaker diarization in results.")
-
-            # if prediction has a built-in serialize method, save serialized version
-            if hasattr(prediction, "serialize"):
-                serialized_predictions[uri] = prediction.serialize()
 
             prediction.write_rttm(rttm)
             rttm.flush()
@@ -485,14 +484,9 @@ def benchmark(
                 uem=annotated,
             )
 
-            if not postprocess:
-                continue
+            # cache predictions
+            file["speaker_diarization"] = prediction
 
-            collar_optimizer[uri] = {
-                "prediction": prediction,
-                "annotation": annotation,
-                "annotated": annotated,
-            }
 
     # save serialized predictions to disk (might contain more than just diarization results)
     if serialized_predictions:
@@ -505,19 +499,6 @@ def benchmark(
 
     with open(into / f"{benchmark_name}.txt", "w") as txt:
         txt.write(str(metric))
-
-    # report metric results with an optimized collar
-    if postprocess:
-        best_collar, metric_df = collar_optimizer.optimize()
-
-        with open(into / f"{benchmark_name}.Fillers.csv", "w") as csv:
-            metric_df.to_csv(csv)
-        with open(into / f"{benchmark_name}.Fillers.txt", "w") as txt:
-            txt.write(str(metric_df))
-
-        # report collar best value
-        with open(into / f"{benchmark_name}.Fillers.yml", "w") as yml:
-            yaml.dump({"best-collar": best_collar}, yml)
 
     # log processing time and capacity
     processing = dict()
@@ -546,6 +527,22 @@ def benchmark(
 
     else:
         speed_yml = into / f"{benchmark_name}.yml"
+
+    # report metric results with an optimized min_duration_off
+    if postprocess:
+
+        minDurationOffOptimizer = MinDurationOffOptimizer()
+        best_min_duration_off, best_report = minDurationOffOptimizer(files, metric)
+
+        with open(into / f"{benchmark_name}.Optimized.csv", "w") as csv:
+            best_report.to_csv(csv)
+        with open(into / f"{benchmark_name}.Optimized.txt", "w") as txt:
+            txt.write(str(best_report))
+
+        # report collar best value
+        with open(into / f"{benchmark_name}.Optimized.yml", "w") as yml:
+            yaml.dump({"min_duration_off": best_min_duration_off}, yml)
+
 
     with open(speed_yml, "w") as yml:
         yaml.dump(processing, yml)
