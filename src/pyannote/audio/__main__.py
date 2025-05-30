@@ -78,8 +78,8 @@ def parse_device(device: Device) -> torch.device:
 
     return torch.device(device.value)
 
-def get_diarization(prediction) -> Annotation:
 
+def get_diarization(prediction) -> Annotation:
     # if result is an Annotation, assume it is speaker diarization
     if isinstance(prediction, Annotation):
         return prediction
@@ -89,7 +89,6 @@ def get_diarization(prediction) -> Annotation:
         return prediction.speaker_diarization
 
     raise ValueError("Could not find speaker diarization in prediction.")
-
 
 
 app = typer.Typer()
@@ -365,10 +364,11 @@ class MinDurationOffOptimizer:
     """
 
     def _compute_metric(self, files, metric, collar: float) -> float:
-        print(collar)
         metric.reset()
         for file in files:
-            file["temporary_speaker_diarization"] = file["speaker_diarization"].support(collar=collar)
+            file["temporary_speaker_diarization"] = file["speaker_diarization"].support(
+                collar=collar
+            )
             _ = metric(
                 file["annotation"],
                 file["temporary_speaker_diarization"],
@@ -382,35 +382,44 @@ class MinDurationOffOptimizer:
         if current_metric < self._best_metric:
             self._best_metric = current_metric
             for file in files:
-                file["best_speaker_diarization"] = file.pop("temporary_speaker_diarization")
+                file["best_speaker_diarization"] = file.pop(
+                    "temporary_speaker_diarization"
+                )
 
         return current_metric
 
-    def __call__(self, files, metric: BaseMetric) -> tuple[float, "DataFrame"]:
+    def __call__(
+        self, files, metric: BaseMetric, bounds: tuple[float, float] = (0.0, 1.0)
+    ) -> tuple[float, "DataFrame"]:
         """Optimize 'min_duration_off' value for `metric`
 
         Parameters
         ----------
         files : list[dict]
-            List of dictionaries containing 'uri', 'annotation', and 'annotated' keys.
-            Each dictionary represents a file with its corresponding annotation and UEM.
+            List of dictionaries containing 'annotation', 'annotated',
+            and 'speaker_diarization' keys.
         metric : BaseMetric
-            Metric to optimize against. It should be a subclass of `BaseMetric`.
+            Metric to optimize against (usually a DiarizationErrorRate instance).
+        bounds : tuple[float, float], optional
+            Lower and upper bounds for the `min_duration_off` parameter (in seconds).
+            Defaults to (0.0, 1.0).
 
         Returns
         -------
         best_min_duration_off : float
-            Optimize min_duration_off parameter.
+            Optimized min_duration_off parameter.
         best_report: pandas.DataFrame
-            Corresponding report.
+            Corresponding pyannote.metrics report.
         """
 
+        # assumes metric should be minimized
+        # TODO: use -inf when/if metric should be maximized
         self._best_metric = float("inf")
         self._reports: dict[float, "DataFrame"] = dict()
 
         res = minimize_scalar(
             partial(self._compute_metric, files, metric),
-            bounds=(0.0, 1.0),
+            bounds=bounds,
             method="Bounded",
         )
 
@@ -488,8 +497,8 @@ def benchmark(
 
     This will run the pipeline on all files in the specified protocol and subset,
     save the results in RTTM format, and compute the Diarization Error Rate (DER)
-    for each file. If `--optimize` is used, it will also optimize predictions by
-    filling short within speaker gaps and save the results in a separate file.
+    for each file. If `--optimize` is used, it will also post-process predictions
+    by filling short within speaker gaps and save the results in a separate file.
     """
 
     # load pretrained pipeline
