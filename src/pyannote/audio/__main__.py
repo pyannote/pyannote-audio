@@ -3,7 +3,8 @@
 
 # MIT License
 #
-# Copyright (c) 2024- CNRS
+# Copyright (c) 2024-2025 CNRS
+# Copyright (c) 2025 pyannoteAI
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -23,23 +24,27 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import json
 import sys
+import time
 from contextlib import nullcontext
 from datetime import datetime
 from enum import Enum
+from functools import partial
 from pathlib import Path
 from typing import Optional
-import time
 
 import pyannote.database
 import torch
 import typer
 import yaml
-from pyannote.core import Annotation
-from pyannote.pipeline.optimizer import Optimizer
-from typing_extensions import Annotated
-
 from pyannote.audio import Audio, Pipeline
+from pyannote.core import Annotation
+from pyannote.metrics.base import BaseMetric
+from pyannote.metrics.diarization import DiarizationErrorRate
+from pyannote.pipeline.optimizer import Optimizer
+from scipy.optimize import minimize_scalar
+from typing_extensions import Annotated
 
 
 class Subset(str, Enum):
@@ -72,6 +77,18 @@ def parse_device(device: Device) -> torch.device:
             device = Device.CPU
 
     return torch.device(device.value)
+
+
+def get_diarization(prediction) -> Annotation:
+    # if result is an Annotation, assume it is speaker diarization
+    if isinstance(prediction, Annotation):
+        return prediction
+
+    # if result contains a dedicated output for diarization, use it
+    if hasattr(prediction, "speaker_diarization"):
+        return prediction.speaker_diarization
+
+    raise ValueError("Could not find speaker diarization in prediction.")
 
 
 app = typer.Typer()
@@ -134,7 +151,8 @@ def optimize(
     # load pipeline
     optimized_pipeline = Pipeline.from_pretrained(pipeline)
     if optimized_pipeline is None:
-        raise ValueError(f"Could not load pipeline from {pipeline}")
+        print(f"Could not load pipeline from {pipeline}.")
+        raise typer.exit(code=1)
 
     # send pipeline to device
     torch_device = parse_device(device)
@@ -260,7 +278,12 @@ def download(
     """
 
     # load pretrained pipeline
-    _ = Pipeline.from_pretrained(pipeline, token=token, cache_dir=cache)
+    pretrained_pipeline = Pipeline.from_pretrained(
+        pipeline, token=token, cache_dir=cache
+    )
+    if pretrained_pipeline is None:
+        print(f"Could not load pretrained pipeline from {pipeline}.")
+        raise typer.exit(code=1)
 
 
 @app.command("apply")
@@ -312,6 +335,9 @@ def apply(
 
     # load pretrained pipeline
     pretrained_pipeline = Pipeline.from_pretrained(pipeline, cache_dir=cache)
+    if pretrained_pipeline is None:
+        print(f"Could not load pretrained pipeline from {pipeline}.")
+        raise typer.exit(code=1)
 
     # send pipeline to device
     torch_device = parse_device(device)
@@ -320,9 +346,86 @@ def apply(
     # apply pipeline to audio file
     prediction: Annotation = pretrained_pipeline(audio)
 
+    speaker_diarization = get_diarization(prediction)
+
     # save (or print) results
     with open(into, "w") if into else nullcontext(sys.stdout) as rttm:
-        prediction.write_rttm(rttm)
+        speaker_diarization.write_rttm(rttm)
+
+
+class MinDurationOffOptimizer:
+    """Utility to optimize `min_duration_off`
+
+    Depending on the pipeline used for speaker diarization, short breaks within speaker turns
+    (e.g. between each word) might lead to unfair missed detection rates.
+
+    This utility aims at finding the best value for `min_duration_off` parameter that controls
+    how short a within-speaker gap must be to be filled.
+    """
+
+    def _compute_metric(self, files, metric, collar: float) -> float:
+        metric.reset()
+        for file in files:
+            file["temporary_speaker_diarization"] = file["speaker_diarization"].support(
+                collar=collar
+            )
+            _ = metric(
+                file["annotation"],
+                file["temporary_speaker_diarization"],
+                uem=file["annotated"],
+            )
+        self._reports[collar] = metric.report()
+
+        current_metric = abs(metric)
+
+        # store best postprocessed speaker diarization
+        if current_metric < self._best_metric:
+            self._best_metric = current_metric
+            for file in files:
+                file["best_speaker_diarization"] = file.pop(
+                    "temporary_speaker_diarization"
+                )
+
+        return current_metric
+
+    def __call__(
+        self, files, metric: BaseMetric, bounds: tuple[float, float] = (0.0, 1.0)
+    ) -> tuple[float, "DataFrame"]:
+        """Optimize 'min_duration_off' value for `metric`
+
+        Parameters
+        ----------
+        files : list[dict]
+            List of dictionaries containing 'annotation', 'annotated',
+            and 'speaker_diarization' keys.
+        metric : BaseMetric
+            Metric to optimize against (usually a DiarizationErrorRate instance).
+        bounds : tuple[float, float], optional
+            Lower and upper bounds for the `min_duration_off` parameter (in seconds).
+            Defaults to (0.0, 1.0).
+
+        Returns
+        -------
+        best_min_duration_off : float
+            Optimized min_duration_off parameter.
+        best_report: pandas.DataFrame
+            Corresponding pyannote.metrics report.
+        """
+
+        # assumes metric should be minimized
+        # TODO: use -inf when/if metric should be maximized
+        self._best_metric = float("inf")
+        self._reports: dict[float, "DataFrame"] = dict()
+
+        res = minimize_scalar(
+            partial(self._compute_metric, files, metric),
+            bounds=bounds,
+            method="Bounded",
+        )
+
+        best_min_duration_off = float(res.x)
+
+        return best_min_duration_off, self._reports[best_min_duration_off]
 
 
 @app.command("benchmark")
@@ -382,28 +485,37 @@ def benchmark(
             resolve_path=True,
         ),
     ] = None,
+    optimize: Annotated[
+        bool,
+        typer.Option(
+            help="Evaluate both original and post-processed predictions.",
+        ),
+    ] = False,
 ):
     """
-    Benchmark a pretrained PIPELINE
+    Benchmark a pretrained diarization PIPELINE
+
+    This will run the pipeline on all files in the specified protocol and subset,
+    save the results in RTTM format, and compute the Diarization Error Rate (DER)
+    for each file. If `--optimize` is used, it will also post-process predictions
+    by filling short within speaker gaps and save the results in a separate file.
     """
 
     # load pretrained pipeline
     pretrained_pipeline = Pipeline.from_pretrained(pipeline, cache_dir=cache)
+    if pretrained_pipeline is None:
+        print(f"Could not load pretrained pipeline from {pipeline}.")
+        raise typer.exit(code=1)
 
     # send pipeline to device
     torch_device = parse_device(device)
     pretrained_pipeline.to(torch_device)
 
-    # load pipeline metric (when available)
-    try:
-        metric = pretrained_pipeline.get_metric()
-    except NotImplementedError:
-        metric = None
-
     # load protocol from (optional) registry
     if registry:
         pyannote.database.registry.load_database(registry)
 
+    # make sure an "audio" key is available in protocol files
     preprocessors = {"audio": pyannote.database.FileFinder()}
 
     # pass number of speakers to pipeline if requested
@@ -412,61 +524,92 @@ def benchmark(
             "num_speakers": len(protocol_file["annotation"].labels())
         }
 
+    # load benchmark files
     loaded_protocol = pyannote.database.registry.get_protocol(
         protocol, preprocessors=preprocessors
     )
+    files = list(getattr(loaded_protocol, subset.value)())
 
+    # check that manual annotation is available for all files
+    # (condition to actually run the benchmark)
+    skip_metric = False
+    if any(file.get("annotation", None) is None for file in files):
+        print(
+            f"Manual annotation is not available for files in {protocol} {subset.value} subset so skipping metric evaluation."
+        )
+        skip_metric = True
+
+    # `benchmark_name` is used as prefix to output files
     benchmark_name = f"{protocol}.{subset.value}"
     if num_speakers == NumSpeakers.ORACLE:
         benchmark_name += ".OracleNumSpeakers"
 
+    # used to store processing time and file duration
     processing_time: dict[str, float] = dict()
     playing_time: dict[str, float] = dict()
 
-    with open(into / f"{benchmark_name}.rttm", "w") as rttm:
-        for file in getattr(loaded_protocol, subset.value)():
+    # used to store raw predictions in JSON format
+    serialized_predictions: dict[str, dict] = dict()
 
+    if not skip_metric:
+        # initialize diarization error rate metric
+        metric = DiarizationErrorRate()
+
+    with open(into / f"{benchmark_name}.rttm", "w") as rttm:
+        # iterate over all files in the specified subset
+        for file in files:
+            # gather file metadata
             uri: str = file["uri"]
             playing_time[uri] = Audio().get_duration(file)
 
             tic: float = time.time()
 
-            prediction: Annotation = pretrained_pipeline(
-                file, **file.get("pipeline_kwargs", {})
-            )
+            # apply pretrained pipeline to file
+            prediction = pretrained_pipeline(file, **file.get("pipeline_kwargs", {}))
 
             tac: float = time.time()
             processing_time[uri] = tac - tic
 
-            prediction.write_rttm(rttm)
+            # if prediction has a built-in serialize method, save serialized version
+            if hasattr(prediction, "serialize"):
+                serialized_predictions[uri] = prediction.serialize()
+
+            # get speaker diarization from raw prediction
+            speaker_diarization = get_diarization(prediction)
+
+            # dump prediction to RTTM file
+            speaker_diarization.write_rttm(rttm)
             rttm.flush()
 
-            if metric is None:
-                continue
+            # compute metric when possible
+            if not skip_metric:
+                _ = metric(
+                    file["annotation"],
+                    speaker_diarization,
+                    uem=file.get("annotated", None),
+                )
 
-            groundtruth = file.get("annotation", None)
-            if groundtruth is None:
-                continue
+            # keep track of prediction for later "min_duration_off" optimization
+            if optimize:
+                file["speaker_diarization"] = speaker_diarization
 
-            annotated = file.get("annotated", None)
-            _ = metric(groundtruth, prediction, uem=annotated)
-
-    if metric is None:
-        return
-
-    with open(into / f"{benchmark_name}.txt", "w") as txt:
-        txt.write(str(metric))
+    # save serialized predictions to disk (might contain more than just diarization results)
+    if serialized_predictions:
+        with open(into / f"{benchmark_name}.json", "w") as f:
+            json.dump(serialized_predictions, f, indent=2)
 
     # log processing time and capacity
     processing = dict()
     total_processing_time: float = sum(processing_time.values())
     total_playing_time: float = sum(playing_time.values())
     processing["seconds_per_hour"] = total_processing_time / (total_playing_time / 3600)
-    processing["times_faster_than_realtime"] = total_playing_time / total_processing_time
+    processing["times_faster_than_realtime"] = (
+        total_playing_time / total_processing_time
+    )
     processing["total_processing_time"] = total_processing_time
 
+    # keep track of GPU device properties
     if torch_device.type == "cuda":
-
         props = torch.cuda.get_device_properties(torch_device)
         props_dict = {}
         for attr in dir(props):
@@ -477,7 +620,7 @@ def benchmark(
                     props_dict[attr] = value
 
         processing["device"] = props_dict
-        device_name = props_dict["name"].replace(" ", "-")    
+        device_name = props_dict["name"].replace(" ", "-")
         speed_yml = into / f"{benchmark_name}.{device_name}.yml"
 
     else:
@@ -485,6 +628,37 @@ def benchmark(
 
     with open(speed_yml, "w") as yml:
         yaml.dump(processing, yml)
+
+    # no need to go further than this point if evaluation is not possible
+    if skip_metric:
+        raise typer.exit()
+
+    # save metric results in both CSV and human-readable formats
+    with open(into / f"{benchmark_name}.csv", "w") as csv:
+        metric.report().to_csv(csv)
+
+    with open(into / f"{benchmark_name}.txt", "w") as txt:
+        txt.write(str(metric))
+
+    # report metric results with an optimized min_duration_off
+    if optimize:
+        minDurationOffOptimizer = MinDurationOffOptimizer()
+        best_min_duration_off, best_report = minDurationOffOptimizer(files, metric)
+
+        with open(into / f"{benchmark_name}.OptimizedMinDurationOff.csv", "w") as csv:
+            best_report.to_csv(csv)
+
+        with open(into / f"{benchmark_name}.OptimizedMinDurationOff.txt", "w") as txt:
+            txt.write(str(best_report))
+
+        # keep track of the best `min_duration_off` value for later reference
+        with open(into / f"{benchmark_name}.OptimizedMinDurationOff.yml", "w") as yml:
+            yaml.dump({"min_duration_off": best_min_duration_off}, yml)
+
+        # save output in RTTM format
+        with open(into / f"{benchmark_name}.OptimizedMinDurationOff.rttm", "w") as rttm:
+            for file in files:
+                file["best_speaker_diarization"].write_rttm(rttm)
 
 if __name__ == "__main__":
     app()
