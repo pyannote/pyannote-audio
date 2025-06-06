@@ -36,6 +36,7 @@ from typing import Optional
 
 import pyannote.database
 import torch
+import tqdm
 import typer
 import yaml
 from pyannote.audio import Audio, Pipeline
@@ -557,7 +558,7 @@ def benchmark(
 
     with open(into / f"{benchmark_name}.rttm", "w") as rttm:
         # iterate over all files in the specified subset
-        for file in files:
+        for file in tqdm.tqdm(files, total=len(list(files))):
             # gather file metadata
             uri: str = file["uri"]
             playing_time[uri] = Audio().get_duration(file)
