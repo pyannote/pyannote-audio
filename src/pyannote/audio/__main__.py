@@ -35,8 +35,8 @@ from pathlib import Path
 from typing import Optional
 
 import pyannote.database
+from rich.progress import track
 import torch
-import tqdm
 import typer
 import yaml
 from pyannote.audio import Audio, Pipeline
@@ -492,6 +492,12 @@ def benchmark(
             help="Evaluate both original and post-processed predictions.",
         ),
     ] = False,
+    progress: Annotated[
+        bool,
+        typer.Option(
+            help="Show progress",
+        ),
+    ] = False,
 ):
     """
     Benchmark a pretrained diarization PIPELINE
@@ -558,7 +564,7 @@ def benchmark(
 
     with open(into / f"{benchmark_name}.rttm", "w") as rttm:
         # iterate over all files in the specified subset
-        for file in tqdm.tqdm(files, total=len(list(files))):
+        for file in track(files, disable=not progress):
             # gather file metadata
             uri: str = file["uri"]
             playing_time[uri] = Audio().get_duration(file)
