@@ -24,6 +24,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import types
 import json
 import sys
 import time
@@ -42,7 +43,7 @@ import yaml
 from pyannote.audio import Audio, Pipeline
 from pyannote.core import Annotation
 from pyannote.metrics.base import BaseMetric
-from pyannote.metrics.diarization import DiarizationErrorRate
+from pyannote.metrics.diarization import DiarizationErrorRate, JaccardErrorRate
 from pyannote.pipeline.optimizer import Optimizer
 from scipy.optimize import minimize_scalar
 from typing_extensions import Annotated
@@ -64,6 +65,20 @@ class Device(str, Enum):
 class NumSpeakers(str, Enum):
     ORACLE = "oracle"
     AUTO = "auto"
+
+
+class Metric(str, Enum):
+    DiarizationErrorRate = "DiarizationErrorRate"
+    JaccardErrorRate = "JaccardErrorRate"
+
+    @classmethod
+    def from_str(cls, metric: str):
+        """Convert a string to a Metric enum value."""
+
+        if metric == "DiarizationErrorRate":
+            return DiarizationErrorRate()
+        elif metric == "JaccardErrorRate":
+            return JaccardErrorRate()
 
 
 def parse_device(device: Device) -> torch.device:
@@ -139,6 +154,13 @@ def optimize(
     num_speakers: Annotated[
         NumSpeakers, typer.Option(help="Number of speakers (oracle or auto)")
     ] = NumSpeakers.AUTO,
+    metric: Annotated[
+        Metric,
+        typer.Option(
+            help="Metric to optimize against",
+            case_sensitive=False,
+        ),
+    ] = Metric.DiarizationErrorRate,
 ):
     """
     Optimize a PIPELINE
@@ -178,6 +200,11 @@ def optimize(
     files: list[pyannote.database.ProtocolFile] = list(
         getattr(loaded_protocol, subset.value)()
     )
+
+    # update `get_metric` method to return the requested metric instance
+    def _get_metric(self):
+        return Metric.from_str(metric)
+    optimized_pipeline.get_metric = types.MethodType(_get_metric, optimized_pipeline)
 
     # setting study name to this allows to store multiple optimizations
     # for the same pipeline in the same database
