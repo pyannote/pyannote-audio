@@ -418,13 +418,21 @@ class MinDurationOffOptimizer:
         self._best_metric = float("inf")
         self._reports: dict[float, "DataFrame"] = dict()
 
+        # force test with no collar
+        no_collar_metric = self._compute_metric(files, metric, 0.)
+
         res = minimize_scalar(
             partial(self._compute_metric, files, metric),
             bounds=bounds,
             method="Bounded",
         )
 
-        best_min_duration_off = float(res.x)
+        # in case where better results are obtained without a collar
+        if no_collar_metric == self._best_metric:
+            best_min_duration_off = 0.
+
+        else:
+            best_min_duration_off = float(res.x)
 
         return best_min_duration_off, self._reports[best_min_duration_off]
 
