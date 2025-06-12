@@ -656,7 +656,11 @@ def benchmark(
             best_report.to_csv(csv)
 
         with open(into / f"{benchmark_name}.OptimizedMinDurationOff.txt", "w") as txt:
-            txt.write(str(best_report))
+            txt.write(
+                best_report.to_string(
+                    sparsify=False, float_format=lambda f: "{0:.2f}".format(f)
+                )
+            )
 
         # keep track of the best `min_duration_off` value for later reference
         with open(into / f"{benchmark_name}.OptimizedMinDurationOff.yml", "w") as yml:
@@ -666,6 +670,7 @@ def benchmark(
         with open(into / f"{benchmark_name}.OptimizedMinDurationOff.rttm", "w") as rttm:
             for file in files:
                 file["best_speaker_diarization"].write_rttm(rttm)
+
 
 if __name__ == "__main__":
     app()
