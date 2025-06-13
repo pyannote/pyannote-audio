@@ -1,6 +1,7 @@
 # MIT License
 #
-# Copyright (c) 2020- CNRS
+# Copyright (c) 2020-2025 CNRS
+# Copyright (c) 2025- pyannoteAI
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -23,6 +24,7 @@
 from __future__ import annotations
 
 import os
+import io
 import warnings
 from dataclasses import dataclass
 from functools import cached_property
@@ -49,7 +51,7 @@ from pyannote.audio.core.task import (
 )
 from pyannote.audio.utils.hf_hub import AssetFileName, download_from_hf_hub
 from pyannote.audio.utils.multi_task import map_with_specifications
-from pyannote.audio.utils.version import check_version
+from pyannote.audio.utils.dependencies import check_dependencies
 
 
 # NOTE: needed to backward compatibility to load models trained before pyannote.audio 3.x
@@ -246,7 +248,6 @@ class Model(lightning.LightningModule):
         # to avoid any future conflicts with pytorch-lightning updates
         checkpoint["pyannote.audio"] = {
             "versions": {
-                "torch": torch.__version__,
                 "pyannote.audio": __version__,
             },
             "architecture": {
@@ -257,26 +258,6 @@ class Model(lightning.LightningModule):
         }
 
     def on_load_checkpoint(self, checkpoint: Dict[str, Any]):
-        check_version(
-            "pyannote.audio",
-            checkpoint["pyannote.audio"]["versions"]["pyannote.audio"],
-            __version__,
-            what="Model",
-        )
-
-        check_version(
-            "torch",
-            checkpoint["pyannote.audio"]["versions"]["torch"],
-            torch.__version__,
-            what="Model",
-        )
-
-        check_version(
-            "pytorch-lightning",
-            checkpoint["pytorch-lightning_version"],
-            lightning.__version__,
-            what="Model",
-        )
 
         self.specifications = checkpoint["pyannote.audio"]["specifications"]
 
@@ -519,23 +500,25 @@ class Model(lightning.LightningModule):
     @classmethod
     def from_pretrained(
         cls,
-        checkpoint: Union[Path, Text],
+        checkpoint: Union[Path, Text, io.BytesIO],
         map_location=None,
         strict: bool = True,
         subfolder: Optional[str] = None,
         token: Union[str, bool, None] = None,
         cache_dir: Union[Path, str, None] = None,
+        skip_dependencies: bool = False,
         **kwargs,
     ) -> Optional["Model"]:
         """Load pretrained model
 
         Parameters
         ----------
-        checkpoint : Path or str
+        checkpoint : Path, str, or byte buffer
             Model checkpoint, provided as one of the following:
             * path to a local `pytorch_model.bin` model checkpoint
             * path to a local directory containing such a file
             * identifier of a model on Huggingface hub
+            * pre-loaded model checkpoint as a byte buffer
         map_location: optional
             Same role as in torch.load().
             Defaults to `lambda storage, loc: storage`.
@@ -551,6 +534,9 @@ class Model(lightning.LightningModule):
         kwargs: optional
             Any extra keyword args needed to init the model.
             Can also be used to override saved hyperparameter values.
+        skip_dependencies : bool, optional
+            If True, skip dependency check. Defaults to False.
+            Use at your own risk, as this may lead to unexpected behavior.
 
         Returns
         -------
@@ -562,19 +548,19 @@ class Model(lightning.LightningModule):
         `huggingface_hub.hf_hub_download`
 
         """
+        if isinstance(checkpoint, io.BytesIO) or os.path.isfile(checkpoint):
+            # if checkpoint is a BytesIO object or a file path, use it as is
+            path_to_model_checkpoint = checkpoint
+
         # if checkpoint is a directory, look for the model checkpoint
         # inside this directory (or inside a subfolder if specified)
-        if os.path.isdir(checkpoint):
+        elif os.path.isdir(checkpoint):
             if subfolder:
                 path_to_model_checkpoint = (
                     Path(checkpoint) / subfolder / AssetFileName.Model.value
                 )
             else:
                 path_to_model_checkpoint = Path(checkpoint) / AssetFileName.Model.value
-
-        # if checkpoint is a file, use it as is
-        elif os.path.isfile(checkpoint):
-            path_to_model_checkpoint = checkpoint
 
         # otherwise, assume that the checkpoint is hosted on HF model hub
         else:
@@ -595,14 +581,25 @@ class Model(lightning.LightningModule):
 
             map_location = default_map_location
 
-        # obtain model class from the checkpoint
+        # load checkpoint using lightning
         loaded_checkpoint = pl_load(path_to_model_checkpoint, map_location=map_location)
+
+        if not skip_dependencies:
+            # check that the checkpoint is compatible with the current version
+            versions = loaded_checkpoint["pyannote.audio"]["versions"]
+            check_dependencies({"pyannote.audio": versions["pyannote.audio"]}, "Model")
+
+        # obtain model class from the checkpoint
         module_name: str = loaded_checkpoint["pyannote.audio"]["architecture"]["module"]
         module = import_module(module_name)
         class_name: str = loaded_checkpoint["pyannote.audio"]["architecture"]["class"]
         Klass = getattr(module, class_name)
 
         try:
+            # if checkpoint is a BytesIO object, seek to the beginning so we can load it again
+            if isinstance(path_to_model_checkpoint, io.BytesIO):
+                path_to_model_checkpoint.seek(0)
+
             model = Klass.load_from_checkpoint(
                 path_to_model_checkpoint,
                 map_location=map_location,
@@ -611,6 +608,10 @@ class Model(lightning.LightningModule):
             )
         except RuntimeError as e:
             if "loss_func" in str(e):
+                # if checkpoint is a BytesIO object, seek to the beginning so we can load it again
+                if isinstance(path_to_model_checkpoint, io.BytesIO):
+                    path_to_model_checkpoint.seek(0)
+
                 msg = (
                     "Model has been trained with a task-dependent loss function. "
                     "Set 'strict' to False to load the model without its loss function "

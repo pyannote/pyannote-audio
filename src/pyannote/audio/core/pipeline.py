@@ -1,6 +1,7 @@
 # MIT License
 #
-# Copyright (c) 2021 CNRS
+# Copyright (c) 2021-2025 CNRS
+# Copyright (c) 2025- pyannoteAI
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -35,13 +36,13 @@ from pyannote.core.utils.helper import get_class_by_name
 from pyannote.database import FileFinder, ProtocolFile
 from pyannote.pipeline import Pipeline as _Pipeline
 
-from pyannote.audio import Audio, __version__
+from pyannote.audio import Audio
 from pyannote.audio.core.inference import BaseInference
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import Model
 from pyannote.audio.utils.hf_hub import AssetFileName, download_from_hf_hub
 from pyannote.audio.utils.reproducibility import fix_reproducibility
-from pyannote.audio.utils.version import check_version
+from pyannote.audio.utils.dependencies import check_dependencies
 
 
 def expand_subfolders(
@@ -50,6 +51,7 @@ def expand_subfolders(
     revision: Optional[Text] = None,
     cache_dir: Union[Path, str, None] = None,
     token: Optional[Text] = None,
+    skip_dependencies: bool = False,
 ) -> None:
     """Expand $model subfolders in config
 
@@ -69,6 +71,9 @@ def expand_subfolders(
         Huggingface token to be used for downloading from Huggingface hub.
     cache_dir: Path or str, optional
         Path to the folder where files downloaded from Huggingface hub are stored.
+    skip_dependencies : bool, optional
+        If True, skip dependency check. Defaults to False.
+        Use at your own risk, as this may lead to unexpected behavior.
     """
 
     if isinstance(config, dict):
@@ -81,10 +86,16 @@ def expand_subfolders(
                     "subfolder": subfolder,
                     "token": token,
                     "cache_dir": cache_dir,
+                    "skip_dependencies": skip_dependencies,
                 }
             else:
                 expand_subfolders(
-                    value, model_id, revision=revision, token=token, cache_dir=cache_dir
+                    value,
+                    model_id,
+                    revision=revision,
+                    token=token,
+                    cache_dir=cache_dir,
+                    skip_dependencies=skip_dependencies,
                 )
 
     elif isinstance(config, list):
@@ -97,10 +108,16 @@ def expand_subfolders(
                     "subfolder": subfolder,
                     "token": token,
                     "cache_dir": cache_dir,
+                    "skip_dependencies": skip_dependencies,
                 }
             else:
                 expand_subfolders(
-                    value, model_id, revision=revision, token=token, cache_dir=cache_dir
+                    value,
+                    model_id,
+                    revision=revision,
+                    token=token,
+                    cache_dir=cache_dir,
+                    skip_dependencies=skip_dependencies,
                 )
 
 
@@ -112,6 +129,7 @@ class Pipeline(_Pipeline):
         hparams_file: Union[Text, Path] = None,
         token: Union[Text, None] = None,
         cache_dir: Union[Path, Text, None] = None,
+        skip_dependencies: bool = False,
     ) -> Optional["Pipeline"]:
         """Load pretrained pipeline
 
@@ -127,6 +145,9 @@ class Pipeline(_Pipeline):
             Token to be used for the download.
         cache_dir: Path or str, optional
             Path to the folder where cached files are stored.
+        skip_dependencies : bool, optional
+            If True, skip dependency check. Defaults to False.
+            Use at your own risk, as this may lead to unexpected behavior.
         """
 
         # if checkpoint is a directory, look for the pipeline checkpoint
@@ -156,14 +177,26 @@ class Pipeline(_Pipeline):
         with open(config_yml, "r") as fp:
             config = yaml.load(fp, Loader=yaml.SafeLoader)
 
+        # expand $model/{subfolder}-like entries in config
         expand_subfolders(
-            config, model_id, revision=revision, token=token, cache_dir=cache_dir
+            config,
+            model_id,
+            revision=revision,
+            token=token,
+            cache_dir=cache_dir,
+            skip_dependencies=skip_dependencies,
         )
 
+        # before 4.x, pyannote.audio pipeline was using "version" key to
+        # specify the version of pyannote.audio used to train the pipeline
         if "version" in config:
-            check_version(
-                "pyannote.audio", config["version"], __version__, what="Pipeline"
-            )
+            config["dependencies"] = {"pyannote.audio": config["version"]}
+            del config["version"]
+
+        if not skip_dependencies:
+            # check that dependencies are available (in their required version)
+            dependencies: dict[str, str] = config.get("dependencies", dict())
+            check_dependencies(dependencies, "Pipeline")
 
         # initialize pipeline
         pipeline_name = config["pipeline"]["name"]

@@ -68,15 +68,15 @@ class Calibration(IsotonicRegression):
         }
 
         safetensors.numpy.save_file(tensor_dict, path)
-
+    
     @classmethod
-    def from_file(cls, path: str) -> "Calibration":
-        """Load calibration from disk
+    def from_tensor_dict(cls, tensor_dict: dict) -> "Calibration":
+        """Load calibration from a dictionary of tensors
 
         Parameters
         ----------
-        path : str
-            Path to the file where the calibration is saved
+        tensor_dict : dict
+            Dictionary containing the calibration tensors
 
         Returns
         -------
@@ -85,7 +85,6 @@ class Calibration(IsotonicRegression):
         """
         calibration = cls()
 
-        tensor_dict = safetensors.numpy.load_file(path)
         for key, value in tensor_dict.items():
             setattr(calibration, key, value)
 
@@ -109,6 +108,23 @@ class Calibration(IsotonicRegression):
         )
 
         return calibration
+
+    @classmethod
+    def from_file(cls, path: str) -> "Calibration":
+        """Load calibration from disk
+
+        Parameters
+        ----------
+        path : str
+            Path to the file where the calibration is saved
+
+        Returns
+        -------
+        calibration : Calibration
+            Fitted calibration
+        """
+        tensor_dict = safetensors.numpy.load_file(path)
+        return cls.from_tensor_dict(tensor_dict)
 
     @classmethod
     def from_pretrained(

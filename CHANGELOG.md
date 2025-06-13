@@ -64,6 +64,9 @@ Models can now be stored alongside their pipelines in the same repository, strea
 - improve(train): speed up dataloaders
 - improve(setup): switch to `uv`
 - improve(setup): switch to `lightning` from `pytorch-lightning`
+- improve(utils): improve dependency check when loading pretrained models and/or pipeline
+- improve(utils): add option to skip dependency check
+- improve(utils): add option to load a pretrained model checkpoint from an `io.BytesIO` buffer
 
 ### Fixes
 
