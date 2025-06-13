@@ -698,15 +698,6 @@ def benchmark(
         txt.write(str(metric))
 
 
-    # compute the average error in the speaker count prediction
-    speaker_count_error: float = np.mean(
-        [
-            abs(true_speakers - pred_speakers) * count
-            for true_speakers, pred_counts in speaker_count.items()
-            for pred_speakers, count in pred_counts.items()
-        ]
-    ) / np.sum(speaker_count_matrix)
-
     # turn speaker count confusion matrix into numpy array
     # and save it to disk as a CSV file
     max_true_speakers = max(speaker_count.keys())
@@ -720,7 +711,16 @@ def benchmark(
     for true_speakers, pred_counts in speaker_count.items():
         for pred_speakers, count in pred_counts.items():
             speaker_count_matrix[true_speakers, pred_speakers] = count
-    
+
+    # compute the average error in the speaker count prediction
+    speaker_count_error: float = np.mean(
+        [
+            abs(true_speakers - pred_speakers) * count
+            for true_speakers, pred_counts in speaker_count.items()
+            for pred_speakers, count in pred_counts.items()
+        ]
+    ) / np.sum(speaker_count_matrix)
+
     np.savetxt(
         into / f"{benchmark_name}.SpeakerCount.csv",
         speaker_count_matrix,
