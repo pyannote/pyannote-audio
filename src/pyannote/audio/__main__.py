@@ -731,7 +731,7 @@ def benchmark(
         speaker_count_matrix,
         delimiter=",",
         fmt="%3d",
-        footer=f"Accuracy = {speaker_count_accuracy:.1f%} / Average error = {speaker_count_error:.2f} speakers off",
+        footer=f"Accuracy = {speaker_count_accuracy:.1%} / Average error = {speaker_count_error:.2f} speakers off",
     )
 
     # report metric results with an optimized min_duration_off
