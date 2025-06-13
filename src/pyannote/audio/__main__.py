@@ -445,13 +445,21 @@ class MinDurationOffOptimizer:
         self._best_metric = float("inf")
         self._reports: dict[float, "DataFrame"] = dict()
 
+        # force test with no collar
+        no_collar_metric = self._compute_metric(files, metric, 0.)
+
         res = minimize_scalar(
             partial(self._compute_metric, files, metric),
             bounds=bounds,
             method="Bounded",
         )
 
-        best_min_duration_off = float(res.x)
+        # in case where better results are obtained without a collar
+        if no_collar_metric == self._best_metric:
+            best_min_duration_off = 0.
+
+        else:
+            best_min_duration_off = float(res.x)
 
         return best_min_duration_off, self._reports[best_min_duration_off]
 
@@ -683,7 +691,11 @@ def benchmark(
             best_report.to_csv(csv)
 
         with open(into / f"{benchmark_name}.OptimizedMinDurationOff.txt", "w") as txt:
-            txt.write(str(best_report))
+            txt.write(
+                best_report.to_string(
+                    sparsify=False, float_format=lambda f: "{0:.2f}".format(f)
+                )
+            )
 
         # keep track of the best `min_duration_off` value for later reference
         with open(into / f"{benchmark_name}.OptimizedMinDurationOff.yml", "w") as yml:
@@ -693,6 +705,7 @@ def benchmark(
         with open(into / f"{benchmark_name}.OptimizedMinDurationOff.rttm", "w") as rttm:
             for file in files:
                 file["best_speaker_diarization"].write_rttm(rttm)
+
 
 if __name__ == "__main__":
     app()
