@@ -24,10 +24,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import types
 import json
 import sys
 import time
+import types
 from contextlib import nullcontext
 from datetime import datetime
 from enum import Enum
@@ -35,8 +35,8 @@ from functools import partial
 from pathlib import Path
 from typing import Optional
 
+import numpy as np
 import pyannote.database
-from rich.progress import track
 import torch
 import typer
 import yaml
@@ -45,6 +45,7 @@ from pyannote.core import Annotation
 from pyannote.metrics.base import BaseMetric
 from pyannote.metrics.diarization import DiarizationErrorRate, JaccardErrorRate
 from pyannote.pipeline.optimizer import Optimizer
+from rich.progress import track
 from scipy.optimize import minimize_scalar
 from typing_extensions import Annotated
 
@@ -204,6 +205,7 @@ def optimize(
     # update `get_metric` method to return the requested metric instance
     def _get_metric(self):
         return Metric.from_str(metric)
+
     optimized_pipeline.get_metric = types.MethodType(_get_metric, optimized_pipeline)
 
     # setting study name to this allows to store multiple optimizations
@@ -597,6 +599,11 @@ def benchmark(
         # initialize diarization error rate metric
         metric = DiarizationErrorRate()
 
+    # speaker count confusion matrix
+    # speaker_count[i][j] is the number of files with i speakers in the
+    # manual annotation and j speakers in the prediction
+    speaker_count: dict[int, dict[int, int]] = dict()
+
     with open(into / f"{benchmark_name}.rttm", "w") as rttm:
         # iterate over all files in the specified subset
         for file in track(files, disable=not progress):
@@ -630,6 +637,14 @@ def benchmark(
                     speaker_diarization,
                     uem=file.get("annotated", None),
                 )
+
+            # increment speaker count confusion matrix
+            pred_num_speakers: int = len(speaker_diarization.labels())
+            true_num_speakers: int = len(file["annotation"].labels())
+            speaker_count.setdefault(true_num_speakers, dict()).setdefault(
+                pred_num_speakers, 0
+            )
+            speaker_count[true_num_speakers][pred_num_speakers] += 1
 
             # keep track of prediction for later "min_duration_off" optimization
             if optimize:
@@ -681,6 +696,43 @@ def benchmark(
 
     with open(into / f"{benchmark_name}.txt", "w") as txt:
         txt.write(str(metric))
+
+
+    # turn speaker count confusion matrix into numpy array
+    # and save it to disk as a CSV file
+    max_true_speakers = max(speaker_count.keys())
+    max_pred_speakers = max(
+        max(speaker_count[true_speakers].keys())
+        for true_speakers in speaker_count.keys()
+    )
+    speaker_count_matrix = np.zeros(
+        (max_true_speakers + 1, max_pred_speakers + 1), dtype=int
+    )
+    for true_speakers, pred_counts in speaker_count.items():
+        for pred_speakers, count in pred_counts.items():
+            speaker_count_matrix[true_speakers, pred_speakers] = count
+
+    # compute the average error in the speaker count prediction
+    speaker_count_error: float = np.sum(
+        [
+            abs(true_speakers - pred_speakers) * count
+            for true_speakers, pred_counts in speaker_count.items()
+            for pred_speakers, count in pred_counts.items()
+        ]
+    ) / np.sum(speaker_count_matrix)
+
+    # compute the accuracy of the speaker count prediction
+    speaker_count_accuracy: float = np.sum(
+        np.diag(speaker_count_matrix)
+    ) / np.sum(speaker_count_matrix)
+
+    np.savetxt(
+        into / f"{benchmark_name}.SpeakerCount.csv",
+        speaker_count_matrix,
+        delimiter=",",
+        fmt="%3d",
+        footer=f"Accuracy = {speaker_count_accuracy:.1%} / Average error = {speaker_count_error:.2f} speakers off",
+    )
 
     # report metric results with an optimized min_duration_off
     if optimize:
