@@ -713,7 +713,7 @@ def benchmark(
             speaker_count_matrix[true_speakers, pred_speakers] = count
 
     # compute the average error in the speaker count prediction
-    speaker_count_error: float = np.mean(
+    speaker_count_error: float = np.sum(
         [
             abs(true_speakers - pred_speakers) * count
             for true_speakers, pred_counts in speaker_count.items()
@@ -721,17 +721,17 @@ def benchmark(
         ]
     ) / np.sum(speaker_count_matrix)
 
+    # compute the accuracy of the speaker count prediction
+    speaker_count_accuracy: float = np.sum(
+        np.diag(speaker_count_matrix)
+    ) / np.sum(speaker_count_matrix)
+
     np.savetxt(
         into / f"{benchmark_name}.SpeakerCount.csv",
         speaker_count_matrix,
         delimiter=",",
         fmt="%3d",
-        # header with predicted speakers
-        header=",".join(
-            [str(i) for i in range(max_pred_speakers + 1)]
-        ),
-        # footer with average error
-        footer=f"Average error: {speaker_count_error:.2f} speakers",
+        footer=f"Accuracy = {speaker_count_accuracy:.1f%} / Average error = {speaker_count_error:.2f} speakers off",
     )
 
     # report metric results with an optimized min_duration_off
