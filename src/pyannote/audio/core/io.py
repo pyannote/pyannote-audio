@@ -398,10 +398,16 @@ class Audio:
 
         if mode == "raise":
             if num_frames > frames:
-                raise ValueError(
-                    f"requested fixed duration ({duration:6f}s, or {num_frames:d} frames) is longer "
-                    f"than file duration ({frames / sample_rate:.6f}s, or {frames:d} frames)."
-                )
+                if duration is not None:
+                    raise ValueError(
+                        f"requested fixed duration ({duration:.6f}s, or {num_frames:d} frames) is longer "
+                        f"than file duration ({frames / sample_rate:.6f}s, or {frames:d} frames)."
+                    )
+                else:
+                    raise ValueError(
+                        f"requested chunk duration ({segment.duration:.6f}s, or {num_frames:d} frames) is longer "
+                        f"than file duration ({frames / sample_rate:.6f}s, or {frames:d} frames)."
+                    )
 
             if end_frame > frames + math.ceil(self.PRECISION * sample_rate):
                 raise ValueError(
