@@ -152,7 +152,7 @@ class Pipeline(_Pipeline):
 
         # load checkpoint from a dict
         if isinstance(checkpoint, dict):
-            model_id = None
+            model_id = Path.cwd()
             revision = None
             config = checkpoint
         # if checkpoint is a directory, look for the pipeline checkpoint
@@ -184,7 +184,7 @@ class Pipeline(_Pipeline):
         # expand $model/{subfolder}-like entries in config
         expand_subfolders(
             config,
-            model_id,
+            model_id=model_id,
             revision=revision,
             token=token,
             cache_dir=cache_dir,
