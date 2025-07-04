@@ -226,7 +226,12 @@ class SSeRiouSS(Model):
         """
 
         num_frames = num_samples
-        for conv_layer in self.wav2vec.feature_extractor.conv_layers:
+
+        # Torchaudio's WAVLM_LARGE has an extra .model wrapper
+        wav2vec_model = getattr(self.model.wav2vec, "model", self.model.wav2vec)
+        fe = wav2vec_model.feature_extractor
+
+        for conv_layer in fe.conv_layers:
             num_frames = conv1d_num_frames(
                 num_frames,
                 kernel_size=conv_layer.kernel_size,
@@ -251,8 +256,12 @@ class SSeRiouSS(Model):
             Receptive field size.
         """
 
+        # Torchaudio's WAVLM_LARGE has an extra .model wrapper
+        wav2vec_model = getattr(self.model.wav2vec, "model", self.model.wav2vec)
+        fe = wav2vec_model.feature_extractor
+
         receptive_field_size = num_frames
-        for conv_layer in reversed(self.wav2vec.feature_extractor.conv_layers):
+        for conv_layer in reversed(fe.conv_layers):
             receptive_field_size = conv1d_receptive_field_size(
                 num_frames=receptive_field_size,
                 kernel_size=conv_layer.kernel_size,
@@ -275,8 +284,13 @@ class SSeRiouSS(Model):
         receptive_field_center : int
             Index of receptive field center.
         """
+
+        # Torchaudio's WAVLM_LARGE has an extra .model wrapper
+        wav2vec_model = getattr(self.model.wav2vec, "model", self.model.wav2vec)
+        fe = wav2vec_model.feature_extractor
+
         receptive_field_center = frame
-        for conv_layer in reversed(self.wav2vec.feature_extractor.conv_layers):
+        for conv_layer in reversed(fe.conv_layers):
             receptive_field_center = conv1d_receptive_field_center(
                 receptive_field_center,
                 kernel_size=conv_layer.kernel_size,
