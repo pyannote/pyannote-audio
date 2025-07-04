@@ -228,7 +228,7 @@ class SSeRiouSS(Model):
         num_frames = num_samples
 
         # Torchaudio's WAVLM_LARGE has an extra .model wrapper
-        wav2vec_model = getattr(self.wav2vec, "model", self.model.wav2vec)
+        wav2vec_model = getattr(self.wav2vec, "model", self.wav2vec)
         fe = wav2vec_model.feature_extractor
 
         for conv_layer in fe.conv_layers:
@@ -257,7 +257,7 @@ class SSeRiouSS(Model):
         """
 
         # Torchaudio's WAVLM_LARGE has an extra .model wrapper
-        wav2vec_model = getattr(self.wav2vec, "model", self.model.wav2vec)
+        wav2vec_model = getattr(self.wav2vec, "model", self.wav2vec)
         fe = wav2vec_model.feature_extractor
 
         receptive_field_size = num_frames
@@ -286,7 +286,7 @@ class SSeRiouSS(Model):
         """
 
         # Torchaudio's WAVLM_LARGE has an extra .model wrapper
-        wav2vec_model = getattr(self.wav2vec, "model", self.model.wav2vec)
+        wav2vec_model = getattr(self.wav2vec, "model", self.wav2vec)
         fe = wav2vec_model.feature_extractor
 
         receptive_field_center = frame
