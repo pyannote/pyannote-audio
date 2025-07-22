@@ -25,11 +25,11 @@ from pathlib import Path
 from typing import Dict, Mapping, Optional, Text, Union
 
 import torch
-from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
-from torch_audiomentations.utils.config import from_dict as augmentation_from_dict
-
 from pyannote.audio.core.calibration import Calibration
 from pyannote.audio.core.model import Model
+from pyannote.audio.core.plda import PLDA
+from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
+from torch_audiomentations.utils.config import from_dict as augmentation_from_dict
 
 PipelineModel = Union[Model, Text, Mapping]
 
@@ -54,7 +54,7 @@ def get_model(
     cache_dir: Path or str, optional
         Path to the folder where files downloaded from Huggingface hub are stored.
     skip_dependencies : bool, optional
-        If True, skip dependency check. Defaults to False. 
+        If True, skip dependency check. Defaults to False.
         Use at your own risk, as this may lead to unexpected behavior.
 
     Returns
@@ -80,7 +80,11 @@ def get_model(
 
     elif isinstance(model, Text):
         _model = Model.from_pretrained(
-            model, token=token, cache_dir=cache_dir, strict=False, skip_dependencies=skip_dependencies
+            model,
+            token=token,
+            cache_dir=cache_dir,
+            strict=False,
+            skip_dependencies=skip_dependencies,
         )
         if _model:
             model = _model
@@ -111,7 +115,7 @@ def get_calibration(
     calibration: PipelineCalibration,
     token: Union[Text, None] = None,
     cache_dir: Union[Path, Text, None] = None,
-    skip_dependencies: bool = False,    
+    skip_dependencies: bool = False,
 ) -> Optional[Calibration]:
     """Load pretrained calibration
 
@@ -145,7 +149,10 @@ def get_calibration(
 
     elif isinstance(calibration, Text):
         loaded_calibration = Calibration.from_pretrained(
-            calibration, token=token, cache_dir=cache_dir, skip_dependencies=skip_dependencies
+            calibration,
+            token=token,
+            cache_dir=cache_dir,
+            skip_dependencies=skip_dependencies,
         )
 
     elif isinstance(calibration, Dict):
@@ -161,6 +168,65 @@ def get_calibration(
         )
 
     return loaded_calibration
+
+
+PipelinePLDA = Union[PLDA, Text, Dict]
+
+
+def get_plda(
+    plda: PipelinePLDA,
+    token: Union[Text, None] = None,
+    cache_dir: Union[Path, Text, None] = None,
+    skip_dependencies: bool = False,
+) -> Optional[PLDA]:
+    """Load pretrained calibration
+
+    Parameters
+    ----------
+    plda : PLDA, str, or dict
+        When `PLDA`, returns `plda` as is.
+        When `str`, assumes that this is either the path to a checkpoint or the name of a
+        pretrained PLDA on Huggingface.co and loads with `PLDA.from_pretrained(PLDA)`.
+        When `dict`, loads with `PLDA.from_pretrained(**plda)`.
+    token : str or bool, optional
+        Huggingface token to be used for downloading from Huggingface hub.
+    cache_dir: Path or str, optional
+        Path to the folder where files downloaded from Huggingface hub are stored.
+    skip_dependencies : bool, optional
+        If True, skip dependency check. Defaults to False.
+        Use at your own risk, as this may lead to unexpected behavior.
+
+    Returns
+    -------
+    plda : PLDA
+        PLDA.
+
+    See also
+    --------
+    pyannote.audio.core.plda.PLDA.from_pretrained
+    """
+
+    if isinstance(plda, PLDA):
+        loaded_plda = plda
+
+    elif isinstance(plda, Text):
+        loaded_plda = PLDA.from_pretrained(
+            plda, token=token, cache_dir=cache_dir, skip_dependencies=skip_dependencies
+        )
+
+    elif isinstance(plda, Dict):
+        plda.setdefault("token", token)
+        plda.setdefault("cache_dir", cache_dir)
+        plda.setdefault("skip_dependencies", skip_dependencies)
+        loaded_plda = PLDA.from_pretrained(**plda)
+
+    else:
+        raise TypeError(
+            f"Unsupported type ({type(plda)}) for loading PLDA: "
+            f"expected `str` or `dict`."
+        )
+
+    return loaded_plda
 
 
 def get_augmentation(augmentation: PipelineAugmentation) -> BaseWaveformTransform:

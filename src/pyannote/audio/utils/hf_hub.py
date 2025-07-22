@@ -40,7 +40,7 @@ class AssetFileName(Enum):
 
 def download_from_hf_hub(
     checkpoint: str,
-    asset_file: AssetFileName,
+    asset_file: AssetFileName | str,
     subfolder: Optional[str] = None,
     cache_dir: Optional[Union[str, Path]] = None,
     token: Union[bool, str, None] = None,
@@ -81,7 +81,7 @@ def download_from_hf_hub(
             revision,
             hf_hub_download(
                 model_id,
-                asset_file.value,
+                asset_file.value if isinstance(asset_file, AssetFileName) else asset_file,
                 subfolder=subfolder,
                 repo_type="model",
                 revision=revision,
