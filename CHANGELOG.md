@@ -6,7 +6,7 @@
 
 #### Better speaker assignment
 
-`pyannote/speaker-diarization-4.0` pretrained pipeline relies on VBx clustering instead of agglomerative hierarchical clustering (as suggested by [BUT Speech@FIT](https://speech.fit.vut.cz/) researchers Petr Pálka and Jiangyu Han).
+`pyannote/speaker-diarization-4.0` pretrained pipeline relies on VBx clustering instead of agglomerative hierarchical clustering (as suggested by [BUT Speech@FIT](https://speech.fit.vut.cz/) researchers [Petr Pálka](https://github.com/Selesnyan) and [Jiangyu Han](https://github.com/jyhan03)).
 
 #### Faster training
 
@@ -49,7 +49,7 @@ Models can now be stored alongside their pipelines in the same repository, strea
 
 ### New features
 
-- feat(pipeline): add support for VBx clustering 
+- feat(pipeline): add support for VBx clustering ([@Selesnyan](https://github.com/Selesnyan) and [jyhan03](https://github.com/jyhan03))
 - feat(pyannoteAI): add wrapper around pyannoteAI SDK
 - improve(hub): add support for pipeline repos that also include underlying models
 - feat(clustering): add support for `k-means` clustering

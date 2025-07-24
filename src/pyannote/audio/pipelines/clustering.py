@@ -130,9 +130,6 @@ class BaseClustering(Pipeline):
         num_chunks, num_speakers, num_clusters = soft_clusters.shape
         # num_chunks, num_speakers, num_clusters
 
-        # FIXME: update soft_clusters to ensure than inactive speakers
-        # are never assigned to any cluster
-
         hard_clusters = -2 * np.ones((num_chunks, num_speakers), dtype=np.int8)
 
         for c, cost in enumerate(soft_clusters):
