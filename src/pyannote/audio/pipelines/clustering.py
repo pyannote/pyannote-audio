@@ -616,8 +616,6 @@ class VBxClustering(BaseClustering):
         num_chunks, num_speakers, dimension = embeddings.shape
         W = q[:, sp > 1e-7] # responsibilities of speakers that VBx kept
         centroids = W.T @ train_embeddings.reshape(-1, dimension) / W.sum(0, keepdims=True).T
-            -1, dimension
-        )  # not division needed, cos-sim follows
 
         e2k_distance = rearrange(
             cdist(
