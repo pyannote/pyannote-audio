@@ -617,7 +617,8 @@ class VBxClustering(BaseClustering):
 
         # calculate distance
         num_chunks, num_speakers, dimension = embeddings.shape
-        centroids = q[:, sp > 1e-7].T @ train_embeddings.reshape(
+        W = q[:, sp > 1e-7] # responsibilities of speakers that VBx kept
+        centroids = W.T @ train_embeddings.reshape(-1, dimension) / W.sum(0, keepdims=True).T
             -1, dimension
         )  # not division needed, cos-sim follows
 
@@ -635,6 +636,8 @@ class VBxClustering(BaseClustering):
 
         # assign each embedding to the cluster with the most similar centroid
         if self.constrained_assignment:
+            const = soft_clusters.min() - 1.   # const < any_valid_score
+            soft_clusters[segmentations.data.sum(1) == 0] = const
             hard_clusters = self.constrained_argmax(
                 soft_clusters,
             )
