@@ -15,7 +15,8 @@
 #   P. Pálka    28/4/2025 17:00PM - original version derived from the more
 #                                  complex VB_diarization.py avaiable at
 # https://github.com/BUTSpeechFIT/VBx/blob/e39af548bb41143a7136d08310765746192e34da/VBx/VB_diarization.py
-#.  H. Bredin   22/7/2025 07:00AM - update vbx_setup signature to expect two paths
+#   H. Bredin   12/8/2025 2:00PM - update vbx_setup signature to expect two paths
+#                                  remove support for HMM 
 
 import numpy as np
 from scipy.special import logsumexp
@@ -24,7 +25,7 @@ from scipy.linalg import eigh
 from scipy.special import softmax
 
 
-def VBx(X, Phi, loopProb=0.9, Fa=1.0, Fb=1.0, pi=10, gamma=None, maxIters=10,
+def VBx(X, Phi, Fa=1.0, Fb=1.0, pi=10, gamma=None, maxIters=10,
         epsilon=1e-4, alphaQInit=1.0, ref=None, plot=False,
         return_model=False, alpha=None, invL=None):
     """
@@ -34,8 +35,7 @@ def VBx(X, Phi, loopProb=0.9, Fa=1.0, Fb=1.0, pi=10, gamma=None, maxIters=10,
     Phi         - D array with across-class covariance matrix diagonal.
                   The model assumes zero mean, diagonal across-class and
                   identity within-class covariance matrix.
-    loopProb    - Probability of not switching speakers between frames
-    Fa          - Scale sufficient statiscits
+    Fa          - Scale sufficient statistics
     Fb          - Speaker regularization coefficient Fb controls the final number of speakers
     pi          - If integer value, it sets the maximum number of speakers
                   that can be found in the utterance.
@@ -96,22 +96,14 @@ def VBx(X, Phi, loopProb=0.9, Fa=1.0, Fb=1.0, pi=10, gamma=None, maxIters=10,
             alpha = Fa/Fb * invL * gamma.T.dot(rho)  # (16) for all speakers
         log_p_ = Fa * (rho.dot(alpha.T) - 0.5 * (invL+alpha**2).dot(Phi) + G)  # (23) for all speakers
 
-        if loopProb <= 0.:
-            # use GMM update instead as it is much faster for large amount of speakers
-            eps = 1e-8
-            lpi = np.log(pi + eps) 
-            log_p_x = logsumexp(log_p_ + lpi, axis=-1)  # marginal LLH of each data point
-            log_pX_ = np.sum(log_p_x, axis=0)  # total LLH over all data points (to monitor ELBO)
+        # use GMM update
+        eps = 1e-8
+        lpi = np.log(pi + eps) 
+        log_p_x = logsumexp(log_p_ + lpi, axis=-1)  # marginal LLH of each data point
+        log_pX_ = np.sum(log_p_x, axis=0)  # total LLH over all data points (to monitor ELBO)
 
-            gamma = np.exp(log_p_ + lpi - log_p_x[:, None])  # responsibilities
-            pi = np.sum(gamma, axis=0)
-        else:
-            # HMM (original code)         
-            tr = np.eye(len(pi)) * loopProb + (1-loopProb) * pi  # (1) transition probability matrix
-            gamma, log_pX_, logA, logB = forward_backward(log_p_, tr, pi)  # (19) gamma, (20) logA, (21) logB, (22) log_pX_
-            pi = gamma[0] + (1-loopProb)*pi * np.sum(np.exp(logsumexp(
-                logA[:-1], axis=1, keepdims=True) + log_p_[1:] + logB[1:] - log_pX_
-            ), axis=0)  # (24)
+        gamma = np.exp(log_p_ + lpi - log_p_x[:, None])  # responsibilities
+        pi = np.sum(gamma, axis=0)
 
         pi = pi / pi.sum()
 
@@ -124,14 +116,13 @@ def VBx(X, Phi, loopProb=0.9, Fa=1.0, Fb=1.0, pi=10, gamma=None, maxIters=10,
             break
     return (gamma, pi, Li) + ((alpha, invL) if return_model else ())
 
-def cluster_vbx(ahc_init, fea, Phi, Fa, Fb, loopProb=0.0, maxIters=20, init_smoothing=7.0):
+def cluster_vbx(ahc_init, fea, Phi, Fa, Fb, maxIters=20, init_smoothing=7.0):
     """ahc_init (T x N_clusters) """
     qinit = np.zeros((len(ahc_init), ahc_init.max() + 1))
     qinit[range(len(ahc_init)), ahc_init.astype(int)] = 1.0
     qinit = qinit if init_smoothing < 0 else softmax(qinit * init_smoothing, axis=1)
     gamma, pi, _, _, _ = VBx(
         fea, Phi, 
-        loopProb=loopProb, 
         Fa=Fa, Fb=Fb, 
         pi=qinit.shape[1], gamma=qinit, 
         maxIters=maxIters, return_model=True
