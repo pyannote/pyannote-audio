@@ -21,9 +21,8 @@ Consider switching to [pyannoteAI](https://www.pyannote.ai) for better and faste
 ## Open-source speaker diarization pipeline
 
 1. Install [`pyannote.audio`](https://github.com/pyannote/pyannote-audio) with `pip install pyannote.audio`
-2. Accept [`pyannote/segmentation-3.0`](https://hf.co/pyannote/segmentation-3.0) user conditions
-3. Accept [`pyannote/speaker-diarization-3.1`](https://hf.co/pyannote/speaker-diarization-3.1) user conditions
-4. Create Huggingface access token at [`hf.co/settings/tokens`](https://hf.co/settings/tokens).
+2. Accept [`pyannote/speaker-diarization-4.0`](https://hf.co/pyannote/speaker-diarization-4.0) user conditions
+3. Create Huggingface access token at [`hf.co/settings/tokens`](https://hf.co/settings/tokens).
 
 ```python
 import torch
@@ -32,7 +31,7 @@ from pyannote.audio.pipelines.utils.hook import ProgressHook
 
 # Open-source pyannote speaker diarization pipeline
 pipeline = Pipeline.from_pretrained(
-    "pyannote/speaker-diarization-3.1",
+    "pyannote/speaker-diarization-4.0",
     token="HUGGINGFACE_ACCESS_TOKEN")
 
 # send pipeline to GPU (when available)
@@ -54,8 +53,8 @@ for turn, _, speaker in diarization.itertracks(yield_label=True):
 
 ## Premium pyannoteAI speaker diarization pipeline
 
-1. Install [`pyannote.audio`](https://github.com/pyannote/pyannote-audio) with `pip install pyannote.audio`
-2. Create pyannoteAI API key at [`dashboard.pyannote.ai`](https://dashboard.pyannote.ai)
+1. Create pyannoteAI API key at [`dashboard.pyannote.ai`](https://dashboard.pyannote.ai) 
+2. Enjoy 150 hours of free credits!
 
 ```python
 from pyannote.audio import Pipeline
@@ -80,7 +79,7 @@ Visit [`docs.pyannote.ai`](https://docs.pyannote.ai) to learn about other pyanno
 ## Benchmark
 Out of the box, <img src="https://avatars.githubusercontent.com/u/7559051" width="20" style="vertical-align:text-bottom;" /> `pyannote.audio` speaker diarization [pipeline v4.0](https://hf.co/pyannote/speaker-diarization-4.0) is expected to be much better than v3.1.
 
-<img src="https://avatars.githubusercontent.com/u/162698670" width="20" style="vertical-align:text-bottom;" /> `pyannoteAI` premium model are even better (and faster) and can be tested by creating an account on [`pyannoteAI` website](https://dashboard.pyannote.ai) (you will get 150 hours of free credits). 
+<img src="https://avatars.githubusercontent.com/u/162698670" width="20" style="vertical-align:text-bottom;" /> `pyannoteAI` premium model are even better (and also faster).
 
 | Benchmark (2025-08) | <a href="https://hf.co/pyannote/speaker-diarization-3.1"><img src="https://avatars.githubusercontent.com/u/7559051" width="32" /><br/>v3.1</a> | <a href="https://hf.co/pyannote/speaker-diarization-4.0"><img src="https://avatars.githubusercontent.com/u/7559051" width="32" /><br/> v4.0</a> | <a href="https://docs.pyannote.ai"><img src="https://avatars.githubusercontent.com/u/162698670" width="32" /><br/>API</a> | <a href="https://docs.pyannote.ai"><img src="https://avatars.githubusercontent.com/u/162698670" width="32" /><br/>labs</a> | 
 | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | -------------------------------------------------| ------------------------------------------------ | --- |
@@ -98,7 +97,6 @@ Out of the box, <img src="https://avatars.githubusercontent.com/u/7559051" width
 | [VoxConverse](https://github.com/joonson/voxconverse) (v0.3)                                                                | 11.2 | 11.2 |  8.9 |  8.5 |
 
 [Diarization error rate](http://pyannote.github.io/pyannote-metrics/reference.html#diarization) (in %, the lower, the better)
-
 
 ## Documentation
 
