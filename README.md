@@ -1,5 +1,5 @@
-Using `pyannote.audio` open-source toolkit in production?
-Consider switching to [pyannoteAI](https://www.pyannote.ai) for better and faster options.
+Using <img src="https://avatars.githubusercontent.com/u/7559051" width="20" style="vertical-align:text-bottom;" />`pyannote.audio` open-source toolkit in production?
+Consider switching to [<img src="https://avatars.githubusercontent.com/u/162698670" width="20" style="vertical-align:text-bottom;" /> `pyannoteAI`](https://www.pyannote.ai) for better and faster options.
 
 # `pyannote` speaker diarization toolkit
 
@@ -18,7 +18,7 @@ Consider switching to [pyannoteAI](https://www.pyannote.ai) for better and faste
 - :snake: Python-first API
 - :zap: multi-GPU training with [pytorch-lightning](https://pytorchlightning.ai/)
 
-## Open-source speaker diarization pipeline
+## <img src="https://avatars.githubusercontent.com/u/7559051" width="20" style="vertical-align:text-bottom;" /> `pyannote.audio` open-source speaker diarization pipeline
 
 1. Install [`pyannote.audio`](https://github.com/pyannote/pyannote-audio) with `pip install pyannote.audio`
 2. Accept [`pyannote/speaker-diarization-4.0`](https://hf.co/pyannote/speaker-diarization-4.0) user conditions
@@ -51,7 +51,7 @@ for turn, _, speaker in diarization.itertracks(yield_label=True):
 
 ```
 
-## Premium pyannoteAI speaker diarization pipeline
+## <img src="https://avatars.githubusercontent.com/u/162698670" width="20" style="vertical-align:text-bottom;" /> `pyannoteAI` premium speaker diarization pipeline
 
 1. Create pyannoteAI API key at [`dashboard.pyannote.ai`](https://dashboard.pyannote.ai) 
 2. Enjoy 150 hours of free credits!
@@ -79,7 +79,7 @@ Visit [`docs.pyannote.ai`](https://docs.pyannote.ai) to learn about other pyanno
 ## Benchmark
 Out of the box, <img src="https://avatars.githubusercontent.com/u/7559051" width="20" style="vertical-align:text-bottom;" /> `pyannote.audio` speaker diarization [pipeline v4.0](https://hf.co/pyannote/speaker-diarization-4.0) is expected to be much better than v3.1.
 
-<img src="https://avatars.githubusercontent.com/u/162698670" width="20" style="vertical-align:text-bottom;" /> `pyannoteAI` premium model are even better (and also faster).
+<img src="https://avatars.githubusercontent.com/u/162698670" width="20" style="vertical-align:text-bottom;" /> `pyannoteAI` premium models are even better (and also faster). <img src="https://avatars.githubusercontent.com/u/162698670" width="20" style="vertical-align:text-bottom;" /> `labs` model is currently in private beta. 
 
 | Benchmark (2025-08) | <a href="https://hf.co/pyannote/speaker-diarization-3.1"><img src="https://avatars.githubusercontent.com/u/7559051" width="32" /><br/>v3.1</a> | <a href="https://hf.co/pyannote/speaker-diarization-4.0"><img src="https://avatars.githubusercontent.com/u/7559051" width="32" /><br/> v4.0</a> | <a href="https://docs.pyannote.ai"><img src="https://avatars.githubusercontent.com/u/162698670" width="32" /><br/>API</a> | <a href="https://docs.pyannote.ai"><img src="https://avatars.githubusercontent.com/u/162698670" width="32" /><br/>labs</a> | 
 | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | -------------------------------------------------| ------------------------------------------------ | --- |
@@ -101,32 +101,28 @@ Out of the box, <img src="https://avatars.githubusercontent.com/u/7559051" width
 ## Documentation
 
 - [Changelog](CHANGELOG.md)
-- [Frequently asked questions](FAQ.md)
-- Models
-  - Available tasks explained
-  - [Applying a pretrained model](tutorials/applying_a_model.ipynb)
-  - [Training, fine-tuning, and transfer learning](tutorials/training_a_model.ipynb)
-- Pipelines
-  - Available pipelines explained
-  - [Applying a pretrained pipeline](tutorials/applying_a_pipeline.ipynb)
-  - [Adapting a pretrained pipeline to your own data](tutorials/adapting_pretrained_pipeline.ipynb)
-  - [Training a pipeline](tutorials/voice_activity_detection.ipynb)
-- Contributing
-  - [Adding a new model](tutorials/add_your_own_model.ipynb)
-  - [Adding a new task](tutorials/add_your_own_task.ipynb)
-  - Adding a new pipeline
-  - Sharing pretrained models and pipelines
+- Videos
+  - [Speaker diarization, a ~~love~~ loss story](https://www.youtube.com/watch?v=CtjDotATEI0&list=PLSeS0sl8xpTwz7h5iJSniiF89iUdZXNJ2&index=13) / JSALT 2025 plenary talk / 60 min 
+  - [Introduction to speaker diarization](https://umotion.univ-lemans.fr/video/9513-speech-segmentation-and-speaker-diarization/) / JSALT 2023 summer school / 90 min
+  - [Speaker segmentation model](https://www.youtube.com/watch?v=wDH2rvkjymY) / Interspeech 2021 / 3 min
+  - [First release of pyannote.audio](https://www.youtube.com/watch?v=37R_R82lfwA) / ICASSP 2020 / 8 min
 - Blog
   - 2022-12-02 > ["How I reached 1st place at Ego4D 2022, 1st place at Albayzin 2022, and 6th place at VoxSRC 2022 speaker diarization challenges"](tutorials/adapting_pretrained_pipeline.ipynb)
   - 2022-10-23 > ["One speaker segmentation model to rule them all"](https://herve.niderb.fr/fastpages/2022/10/23/One-speaker-segmentation-model-to-rule-them-all)
   - 2021-08-05 > ["Streaming voice activity detection with pyannote.audio"](https://herve.niderb.fr/fastpages/2021/08/05/Streaming-voice-activity-detection-with-pyannote.html)
-- Videos
-  - [Introduction to speaker diarization](https://umotion.univ-lemans.fr/video/9513-speech-segmentation-and-speaker-diarization/) / JSALT 2023 summer school / 90 min
-  - [Speaker segmentation model](https://www.youtube.com/watch?v=wDH2rvkjymY) / Interspeech 2021 / 3 min
-  - [First release of pyannote.audio](https://www.youtube.com/watch?v=37R_R82lfwA) / ICASSP 2020 / 8 min
 - Community contributions (not maintained by the core team)
   - 2024-04-05 > [Offline speaker diarization (speaker-diarization-3.1)](tutorials/community/offline_usage_speaker_diarization.ipynb) by [Simon Ottenhaus](https://github.com/simonottenhauskenbun)
   - 2024-09-24 > [Evaluating `pyannote` pretrained speech separation pipelines](tutorials/community/eval_separation_pipeline.ipynb) by  [Clément Pagés](https://github.com/)
+- Tutorials  
+*Those tutorials were written for older versions of pyannote.audio and should be updated. Interested in working for pyannoteAI as a community manager or developer advocate? This might be a nice place to start!*
+  - [Applying a pretrained pipeline](tutorials/applying_a_pipeline.ipynb)
+  - [Adapting a pretrained pipeline to your own data](tutorials/adapting_pretrained_pipeline.ipynb)
+  - [Training a pipeline](tutorials/voice_activity_detection.ipynb)
+  - [Applying a pretrained model](tutorials/applying_a_model.ipynb)
+  - [Training, fine-tuning, and transfer learning](tutorials/training_a_model.ipynb)
+  - [Adding a new model](tutorials/add_your_own_model.ipynb)
+  - [Adding a new task](tutorials/add_your_own_task.ipynb)
+  - [Frequently asked questions](FAQ.md)
 
 ## Citations
 
