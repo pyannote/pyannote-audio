@@ -448,7 +448,7 @@ class MinDurationOffOptimizer:
         self._reports: dict[float, "DataFrame"] = dict()
 
         # force test with no collar
-        no_collar_metric = self._compute_metric(files, metric, 0.)
+        no_collar_metric = self._compute_metric(files, metric, 0.0)
 
         res = minimize_scalar(
             partial(self._compute_metric, files, metric),
@@ -458,7 +458,7 @@ class MinDurationOffOptimizer:
 
         # in case where better results are obtained without a collar
         if no_collar_metric == self._best_metric:
-            best_min_duration_off = 0.
+            best_min_duration_off = 0.0
 
         else:
             best_min_duration_off = float(res.x)
@@ -535,6 +535,12 @@ def benchmark(
             help="Show progress",
         ),
     ] = False,
+    skip_dependency_check: Annotated[
+        bool,
+        typer.Option(
+            help="Skip dependency check when loading pipeline. Use at your own risk."
+        ),
+    ] = False,
 ):
     """
     Benchmark a pretrained diarization PIPELINE
@@ -546,7 +552,9 @@ def benchmark(
     """
 
     # load pretrained pipeline
-    pretrained_pipeline = Pipeline.from_pretrained(pipeline, cache_dir=cache)
+    pretrained_pipeline = Pipeline.from_pretrained(
+        pipeline, cache_dir=cache, skip_dependencies=skip_dependency_check
+    )
     if pretrained_pipeline is None:
         print(f"Could not load pretrained pipeline from {pipeline}.")
         raise typer.exit(code=1)
@@ -697,7 +705,6 @@ def benchmark(
     with open(into / f"{benchmark_name}.txt", "w") as txt:
         txt.write(str(metric))
 
-
     # turn speaker count confusion matrix into numpy array
     # and save it to disk as a CSV file
     max_true_speakers = max(speaker_count.keys())
@@ -722,9 +729,9 @@ def benchmark(
     ) / np.sum(speaker_count_matrix)
 
     # compute the accuracy of the speaker count prediction
-    speaker_count_accuracy: float = np.sum(
-        np.diag(speaker_count_matrix)
-    ) / np.sum(speaker_count_matrix)
+    speaker_count_accuracy: float = np.sum(np.diag(speaker_count_matrix)) / np.sum(
+        speaker_count_matrix
+    )
 
     np.savetxt(
         into / f"{benchmark_name}.SpeakerCount.csv",
