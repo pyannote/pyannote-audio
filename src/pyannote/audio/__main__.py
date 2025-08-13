@@ -811,5 +811,6 @@ def strip(
             f"Something went wrong while stripping the checkpoint as it could not be reloaded: {e}"
         )
 
+
 if __name__ == "__main__":
     app()
