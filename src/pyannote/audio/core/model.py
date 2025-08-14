@@ -52,6 +52,7 @@ from pyannote.audio.core.task import (
 from pyannote.audio.utils.hf_hub import AssetFileName, download_from_hf_hub
 from pyannote.audio.utils.multi_task import map_with_specifications
 from pyannote.audio.utils.dependencies import check_dependencies
+from pyannote.audio.telemetry import track_model_init
 
 
 # NOTE: needed to backward compatibility to load models trained before pyannote.audio 3.x
@@ -551,6 +552,8 @@ class Model(lightning.LightningModule):
         if isinstance(checkpoint, io.BytesIO) or os.path.isfile(checkpoint):
             # if checkpoint is a BytesIO object or a file path, use it as is
             path_to_model_checkpoint = checkpoint
+            otel_origin: str = "local"
+
 
         # if checkpoint is a directory, look for the model checkpoint
         # inside this directory (or inside a subfolder if specified)
@@ -561,11 +564,13 @@ class Model(lightning.LightningModule):
                 )
             else:
                 path_to_model_checkpoint = Path(checkpoint) / AssetFileName.Model.value
+            otel_origin: str = "local"
 
         # otherwise, assume that the checkpoint is hosted on HF model hub
         else:
+            checkpoint = str(checkpoint)
             _, _, path_to_model_checkpoint = download_from_hf_hub(
-                str(checkpoint),
+                checkpoint,
                 AssetFileName.Model,
                 subfolder=subfolder,
                 cache_dir=cache_dir,
@@ -573,6 +578,13 @@ class Model(lightning.LightningModule):
             )
             if path_to_model_checkpoint is None:
                 return None
+            
+            otel_origin: str = (
+                checkpoint
+                if checkpoint.lower().startswith(("pyannote/", "pyannoteai/"))
+                else "huggingface"
+            )
+
 
         if map_location is None:
 
@@ -627,5 +639,10 @@ class Model(lightning.LightningModule):
                 return model
 
             raise e
+
+        # save model origin (HF, local, etc) as attribute for telemetry purposes
+        model._otel_origin = otel_origin
+        track_model_init(model)
+
 
         return model
