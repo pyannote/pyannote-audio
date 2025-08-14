@@ -9,7 +9,6 @@ Consider switching to [<img src="https://avatars.githubusercontent.com/u/1626986
  <a href="https://www.youtube.com/watch?v=37R_R82lfwA"><img src="https://img.youtube.com/vi/37R_R82lfwA/0.jpg"></a>
 </p>
 
-
 ## Highlights
 
 - :exploding_head: state-of-the-art performance (see [Benchmark](#benchmark))
@@ -105,6 +104,77 @@ __[Diarization error rate](http://pyannote.github.io/pyannote-metrics/reference.
 | [DIHARD 3](https://catalog.ldc.upenn.edu/LDC2022S14) ([full](https://arxiv.org/abs/2012.01477)), ~5min files        | 37s per hour of audio | 14s per hour of audio | 2.6x faster
 
 __Processing speed on a NVIDIA H100 80GB HBM3__
+
+## Telemetry
+
+With the optional telemetry feature in `pyannote.audio`, you can choose to send anonymous usage metrics to help the `pyannote` team improve the library.
+
+### What we track
+
+For each call to `Pipeline.from_pretrained({origin})` (or `Model.from_pretrained({origin})`), we track information about `{origin}` in the following privacy-preserving way:
+
+* If `{origin}` is an official `pyannote` or `pyannoteAI` pipeline (or model) hosted on `Huggingface`, we track it as `{origin}`.
+* If `{origin}` is a pipeline (or model) hosted on `Huggingface` from any other organization, we track it as `huggingface`.
+* If `{origin}` is a path to a local file or directory, we track it as `local`.
+
+We also track the pipeline Python class (e.g. `pyannote.audio.pipelines.SpeakerDiarization`).
+
+For each file processed with a pipeline, we track
+* the file duration in seconds
+* the value of `num_speakers`, `min_speakers`, and `max_speakers` for speaker diarization pipelines
+
+**We do not track any information that could identify who the user is.**
+
+### Configuring telemetry
+
+Telemetry can be configured in three ways:
+1. Using an environment variable
+2. Within the current Python session only
+3. Globally across sessions
+
+All of these options will modify the value of the environment variable for consistency.
+If the environment variable is not set, `pyannote.audio` will read the default value in the telemetry config.
+The default config can also be changed from Python.
+
+#### Using environment variable
+
+You can control telemetry by setting the `PYANNOTE_METRICS_ENABLED` environment variable:
+
+```bash
+# enable metrics
+export PYANNOTE_METRICS_ENABLED=1
+
+# disable metrics
+export PYANNOTE_METRICS_ENABLED=0
+```
+
+#### For current session
+
+To control telemetry for your current Python kernel session:
+
+```python
+from pyannote.audio.telemetry import set_telemetry_metrics
+
+# enable metrics for current session
+set_telemetry_metrics(True)
+
+# disable metrics for current session
+set_telemetry_metrics(False)
+```
+
+#### Global configuration
+
+To set telemetry preferences that persist across sessions:
+
+```python
+from pyannote.audio.telemetry import set_telemetry_metrics
+
+# enable metrics globally
+set_telemetry_metrics(True, save_choice_as_default=True)
+
+# disable metrics globally
+set_telemetry_metrics(False, save_choice_as_default=True)
+```
 
 ## Documentation
 

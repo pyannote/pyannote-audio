@@ -33,6 +33,9 @@ Models can now be stored alongside their pipelines in the same repository, strea
 - ~~accept `pyannote/wespeaker-voxceleb-resnet34-LM` model user agreement~~
 - load pipeline with `Pipeline.from_pretrained("pyannote/speaker-diarization-3.1", token=True)`
 
+#### Telemetry
+
+With the optional telemetry feature in `pyannote.audio`, you can choose to send anonymous usage metrics to help the `pyannote` team improve the library.
 
 ### Breaking changes
 

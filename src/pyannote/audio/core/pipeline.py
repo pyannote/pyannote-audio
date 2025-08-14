@@ -43,7 +43,7 @@ from pyannote.audio.core.model import Model
 from pyannote.audio.utils.hf_hub import AssetFileName, download_from_hf_hub
 from pyannote.audio.utils.reproducibility import fix_reproducibility
 from pyannote.audio.utils.dependencies import check_dependencies
-
+from pyannote.audio.telemetry import track_pipeline_init, track_pipeline_apply
 
 def expand_subfolders(
     config,
@@ -156,23 +156,32 @@ class Pipeline(_Pipeline):
             model_id = Path(checkpoint)
             config_yml = model_id / AssetFileName.Pipeline.value
             revision = None
+            otel_origin: str = "local"
 
         # if checkpoint is a file, assume it is the pipeline checkpoint
         elif os.path.isfile(checkpoint):
             model_id = Path(checkpoint).parent
             config_yml = checkpoint
             revision = None
+            otel_origin: str = "local"
 
         # otherwise, assume that the checkpoint is hosted on HF model hub
         else:
+            checkpoint = str(checkpoint)
             model_id, revision, config_yml = download_from_hf_hub(
-                str(checkpoint),
+                checkpoint,
                 AssetFileName.Pipeline,
                 cache_dir=cache_dir,
                 token=token,
             )
             if config_yml is None:
                 return None
+
+            otel_origin: str = (
+                checkpoint
+                if checkpoint.lower().startswith(("pyannote/", "pyannoteai/"))
+                else "huggingface"
+            )
 
         with open(config_yml, "r") as fp:
             config = yaml.load(fp, Loader=yaml.SafeLoader)
@@ -207,6 +216,11 @@ class Pipeline(_Pipeline):
         params.setdefault("token", token)
         params.setdefault("cache_dir", cache_dir)
         pipeline = Klass(**params)
+
+        # save pipeline origin (HF, local, etc) and class name as attributes for telemetry purposes
+        pipeline._otel_origin = otel_origin
+        pipeline._otel_name = pipeline_name
+        track_pipeline_init(pipeline)
 
         # freeze  parameters
         if "freeze" in config:
@@ -394,6 +408,10 @@ class Pipeline(_Pipeline):
 
         if hasattr(self, "preprocessors"):
             file = ProtocolFile(file, lazy=self.preprocessors)
+
+        # send file duration to telemetry as well as 
+        # requested number of speakers in case of diarization
+        track_pipeline_apply(self, file, **kwargs)
 
         return self.apply(file, **kwargs)
 
