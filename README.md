@@ -79,24 +79,32 @@ Visit [`docs.pyannote.ai`](https://docs.pyannote.ai) to learn about other pyanno
 ## Benchmark
 Out of the box, <img src="https://avatars.githubusercontent.com/u/7559051" width="20" style="vertical-align:text-bottom;" /> `pyannote.audio` speaker diarization [pipeline v4.0](https://hf.co/pyannote/speaker-diarization-4.0) is expected to be much better than v3.1.
 
-<img src="https://avatars.githubusercontent.com/u/162698670" width="20" style="vertical-align:text-bottom;" /> `pyannoteAI` premium models are even better (and also faster). <img src="https://avatars.githubusercontent.com/u/162698670" width="20" style="vertical-align:text-bottom;" /> `labs` model is currently in private beta. 
+<img src="https://avatars.githubusercontent.com/u/162698670" width="20" style="vertical-align:text-bottom;" /> `pyannoteAI` premium models are even better (and also 2x faster). <img src="https://avatars.githubusercontent.com/u/162698670" width="20" style="vertical-align:text-bottom;" /> `labs` model is currently in private beta.
 
-| Benchmark (2025-08) | <a href="https://hf.co/pyannote/speaker-diarization-3.1"><img src="https://avatars.githubusercontent.com/u/7559051" width="32" /><br/>v3.1</a> | <a href="https://hf.co/pyannote/speaker-diarization-4.0"><img src="https://avatars.githubusercontent.com/u/7559051" width="32" /><br/> v4.0</a> | <a href="https://docs.pyannote.ai"><img src="https://avatars.githubusercontent.com/u/162698670" width="32" /><br/>API</a> | <a href="https://docs.pyannote.ai"><img src="https://avatars.githubusercontent.com/u/162698670" width="32" /><br/>labs</a> | 
+
+| Benchmark (last updated in 2025-08) | <a href="https://hf.co/pyannote/speaker-diarization-3.1"><img src="https://avatars.githubusercontent.com/u/7559051" width="32" /><br/>v3.1</a> | <a href="https://hf.co/pyannote/speaker-diarization-4.0"><img src="https://avatars.githubusercontent.com/u/7559051" width="32" /><br/> v4.0</a> | <a href="https://docs.pyannote.ai"><img src="https://avatars.githubusercontent.com/u/162698670" width="32" /><br/>API</a> | <a href="https://docs.pyannote.ai"><img src="https://avatars.githubusercontent.com/u/162698670" width="32" /><br/>labs</a> | 
 | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | -------------------------------------------------| ------------------------------------------------ | --- |
-| [AISHELL-4](https://arxiv.org/abs/2104.03603)                                                                               | 12.2 | 11.6 | 11.9 | 11.4 | 
-| [AliMeeting](https://www.openslr.org/119/) (channel 1)                                                                      | 24.5 | 20.7 | 16.6 | 15.2 | 
-| [AMI](https://groups.inf.ed.ac.uk/ami/corpus/) (IHM)                                                                        | 18.8 | 17.4 | 13.2 | 12.9 |
-| [AMI](https://groups.inf.ed.ac.uk/ami/corpus/) (SDM)                                                                        | 22.7 | 19.8 | 15.8 | 15.6 |
-| [AVA-AVD](https://arxiv.org/abs/2111.14448)                                                                                 | 49.7 | 45.3 | 39.9 | 37.1 |
-| [CALLHOME](https://catalog.ldc.upenn.edu/LDC2001S97) ([part 2](https://github.com/BUTSpeechFIT/CALLHOME_sublists/issues/1)) | 28.4 | 27.5 | 17.8 | 16.6 |
-| [DIHARD 3](https://catalog.ldc.upenn.edu/LDC2022S14) ([full](https://arxiv.org/abs/2012.01477))                             | 21.4 | 20.5 | 15.7 | 14.7 |
-| [Ego4D](https://arxiv.org/abs/2110.07058) (dev.)                                                                            | 51.2 | 46.5 | 42.8 | 39.0 |
-| [MSDWild](https://github.com/X-LANCE/MSDWILD)                                                                               | 25.4 | 23.0 | 17.8 | 17.3 |
-| [RAMC](https://www.openslr.org/123/)                                                                                        | 22.2 | 20.9 | 10.6 | 10.5 |
+| [AISHELL-4](https://arxiv.org/abs/2104.03603)                                                                               | 12.2 | 11.7 | 11.8 | 11.4 | 
+| [AliMeeting](https://www.openslr.org/119/) (channel 1)                                                                      | 24.5 | 20.3 | 16.3 | 15.2 | 
+| [AMI](https://groups.inf.ed.ac.uk/ami/corpus/) (IHM)                                                                        | 18.8 | 17.0 | 13.2 | 12.9 |
+| [AMI](https://groups.inf.ed.ac.uk/ami/corpus/) (SDM)                                                                        | 22.7 | 19.9 | 15.8 | 15.6 |
+| [AVA-AVD](https://arxiv.org/abs/2111.14448)                                                                                 | 49.7 | 44.6 | 40.7 | 37.1 |
+| [CALLHOME](https://catalog.ldc.upenn.edu/LDC2001S97) ([part 2](https://github.com/BUTSpeechFIT/CALLHOME_sublists/issues/1)) | 28.5 | 26.7 | 17.6 | 16.6 |
+| [DIHARD 3](https://catalog.ldc.upenn.edu/LDC2022S14) ([full](https://arxiv.org/abs/2012.01477))                             | 21.4 | 20.2 | 15.7 | 14.7 |
+| [Ego4D](https://arxiv.org/abs/2110.07058) (dev.)                                                                            | 51.2 | 46.8 | 44.7 | 39.0 |
+| [MSDWild](https://github.com/X-LANCE/MSDWILD)                                                                               | 25.4 | 22.8 | 17.9 | 17.3 |
+| [RAMC](https://www.openslr.org/123/)                                                                                        | 22.2 | 20.8 | 10.6 | 10.5 |
 | [REPERE](https://www.islrn.org/resources/360-758-359-485-0/) (phase2)                                                       | 7.9  |  8.9 |  7.3 |  7.4 |
-| [VoxConverse](https://github.com/joonson/voxconverse) (v0.3)                                                                | 11.2 | 11.2 |  8.9 |  8.5 |
+| [VoxConverse](https://github.com/joonson/voxconverse) (v0.3)                                                                | 11.2 | 11.2 |  9.0 |  8.5 |
 
-[Diarization error rate](http://pyannote.github.io/pyannote-metrics/reference.html#diarization) (in %, the lower, the better)
+__[Diarization error rate](http://pyannote.github.io/pyannote-metrics/reference.html#diarization) (in %, the lower, the better)__
+
+| Benchmark (last updated in 2025-08) | <img src="https://avatars.githubusercontent.com/u/7559051" width="32" /> | <a href="https://docs.pyannote.ai"><img src="https://avatars.githubusercontent.com/u/162698670" width="32" /></a>  | Speed up
+| -------------- | ----------- | ----------- | ------ |
+| [AMI](https://groups.inf.ed.ac.uk/ami/corpus/) (IHM), ~1h files                                                     | 31s per hour of audio | 14s per hour of audio | 2.2x faster
+| [DIHARD 3](https://catalog.ldc.upenn.edu/LDC2022S14) ([full](https://arxiv.org/abs/2012.01477)), ~5min files        | 37s per hour of audio | 14s per hour of audio | 2.6x faster
+
+__Processing speed on a NVIDIA H100 80GB HBM3__
 
 ## Documentation
 
