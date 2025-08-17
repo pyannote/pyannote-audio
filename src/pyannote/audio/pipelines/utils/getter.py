@@ -1,6 +1,7 @@
 # The MIT License (MIT)
 #
-# Copyright (c) 2017- CNRS
+# Copyright (c) 2017-2025 CNRS
+# Copyright (c) 2025- pyannoteAI
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -22,22 +23,52 @@
 
 import itertools
 from pathlib import Path
-from typing import Dict, Mapping, Optional, Text, Union
+from typing import Dict, Mapping
 
 import torch
 from pyannote.audio.core.calibration import Calibration
 from pyannote.audio.core.model import Model
+from pyannote.audio.core.pipeline import Pipeline
 from pyannote.audio.core.plda import PLDA
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torch_audiomentations.utils.config import from_dict as augmentation_from_dict
 
-PipelineModel = Union[Model, Text, Mapping]
+
+def get_pipeline(
+    pipeline: Pipeline | str | dict,
+    token: str | None = None,
+    cache_dir: Path | str | None = None,
+) -> Pipeline:
+    if isinstance(pipeline, Pipeline):
+        _pipeline = pipeline
+
+    elif isinstance(pipeline, str):
+        _pipeline = Pipeline.from_pretrained(pipeline, token=token, cache_dir=cache_dir)
+
+    elif isinstance(pipeline, dict):
+        pipeline.setdefault("token", token)
+        pipeline.setdefault("cache_dir", cache_dir)
+        _pipeline = Pipeline.from_pretrained(**pipeline)
+
+    else:
+        raise TypeError(
+            f"Unsupported type ({type(pipeline)}) for loading pipeline: "
+            f"expected `str` or `dict`."
+        )
+
+    if _pipeline is None:
+        raise ValueError(f"Could not load pipeline: {pipeline}.")
+
+    return _pipeline
+
+
+PipelineModel = Model | str | Mapping
 
 
 def get_model(
     model: PipelineModel,
-    token: Union[Text, None] = None,
-    cache_dir: Union[Path, Text, None] = None,
+    token: str | None = None,
+    cache_dir: Path | str | None = None,
     skip_dependencies: bool = False,
 ) -> Model:
     """Load pretrained model and set it into `eval` mode.
@@ -78,7 +109,7 @@ def get_model(
     if isinstance(model, Model):
         pass
 
-    elif isinstance(model, Text):
+    elif isinstance(model, str):
         _model = Model.from_pretrained(
             model,
             token=token,
@@ -105,18 +136,18 @@ def get_model(
     return model
 
 
-PipelineAugmentation = Union[BaseWaveformTransform, Mapping]
+PipelineAugmentation = BaseWaveformTransform | Mapping
 
 
-PipelineCalibration = Union[Calibration, Text, Dict]
+PipelineCalibration = Calibration | str | Dict
 
 
 def get_calibration(
     calibration: PipelineCalibration,
-    token: Union[Text, None] = None,
-    cache_dir: Union[Path, Text, None] = None,
+    token: str | None = None,
+    cache_dir: Path | str | None = None,
     skip_dependencies: bool = False,
-) -> Optional[Calibration]:
+) -> Calibration | None:
     """Load pretrained calibration
 
     Parameters
@@ -147,7 +178,7 @@ def get_calibration(
     if isinstance(calibration, Calibration):
         loaded_calibration = calibration
 
-    elif isinstance(calibration, Text):
+    elif isinstance(calibration, str):
         loaded_calibration = Calibration.from_pretrained(
             calibration,
             token=token,
@@ -170,15 +201,15 @@ def get_calibration(
     return loaded_calibration
 
 
-PipelinePLDA = Union[PLDA, Text, Dict]
+PipelinePLDA = PLDA | str | Dict
 
 
 def get_plda(
     plda: PipelinePLDA,
-    token: Union[Text, None] = None,
-    cache_dir: Union[Path, Text, None] = None,
+    token: str | None = None,
+    cache_dir: Path | str | None = None,
     skip_dependencies: bool = False,
-) -> Optional[PLDA]:
+) -> PLDA | None:
     """Load pretrained calibration
 
     Parameters
@@ -209,7 +240,7 @@ def get_plda(
     if isinstance(plda, PLDA):
         loaded_plda = plda
 
-    elif isinstance(plda, Text):
+    elif isinstance(plda, str):
         loaded_plda = PLDA.from_pretrained(
             plda, token=token, cache_dir=cache_dir, skip_dependencies=skip_dependencies
         )
@@ -259,7 +290,7 @@ def get_augmentation(augmentation: PipelineAugmentation) -> BaseWaveformTransfor
     )
 
 
-def get_devices(needs: Optional[int] = None):
+def get_devices(needs: int | None = None):
     """Get devices that can be used by the pipeline
 
     Parameters
