@@ -31,6 +31,7 @@ from torchmetrics import Metric
 
 from pyannote.audio.core.task import Problem, Resolution, Specifications
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTask
+from pyannote.audio.utils.balance import TaskBalancingSpecifications
 
 
 class OverlappedSpeechDetection(SegmentationTask):
@@ -66,10 +67,11 @@ class OverlappedSpeechDetection(SegmentationTask):
         parts, only the remaining central part of each chunk is used for computing the
         loss during training, and for aggregating scores during inference.
         Defaults to 0. (i.e. no warm-up).
-    balance: Sequence[Text], optional
-        When provided, training samples are sampled uniformly with respect to these keys.
-        For instance, setting `balance` to ["database","subset"] will make sure that each
-        database & subset combination will be equally represented in the training samples.
+    balance: TaskBalancingSpecifications or Sequence[str] or dict, optional
+        Either a TaskBalancingSpecifications, its key argument, or
+        a dict with its kwargs (e.g. {'keys': ['database'], 'weighting_rules': {('AMI',): 3.0}})
+        Allows balancing of training samples according to multiple rules (e.g. see all datasets equally).
+        See the doc of `TaskBalancingSpecifications` for more details.
     overlap: dict, optional
         Controls how artificial chunks with overlapping speech are generated:
         - "probability" key is the probability of artificial overlapping chunks. Setting
@@ -78,7 +80,6 @@ class OverlappedSpeechDetection(SegmentationTask):
          chunks. Defaults to 0.5.
         - "snr_min" and "snr_max" keys control the minimum and maximum signal-to-noise
          ratio between summed chunks, in dB. Default to 0.0 and 10.
-
     weight: str, optional
         When provided, use this key to as frame-wise weight in loss function.
     batch_size : int, optional
@@ -106,13 +107,13 @@ class OverlappedSpeechDetection(SegmentationTask):
         duration: float = 2.0,
         warm_up: Union[float, Tuple[float, float]] = 0.0,
         overlap: dict = OVERLAP_DEFAULTS,
-        balance: Optional[Sequence[Text]] = None,
+        balance: Union[TaskBalancingSpecifications, Sequence[str], dict, None] = None,
         weight: Optional[Text] = None,
         batch_size: int = 32,
         num_workers: Optional[int] = None,
         pin_memory: bool = False,
         augmentation: Optional[BaseWaveformTransform] = None,
-        metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
+        metric: Union[Metric, Sequence[Metric], Dict[str, Metric], None] = None,
         cache: Optional[Union[str, None]] = None,
     ):
         super().__init__(
@@ -125,6 +126,7 @@ class OverlappedSpeechDetection(SegmentationTask):
             augmentation=augmentation,
             metric=metric,
             cache=cache,
+            balance=balance,
         )
 
         self.specifications = Specifications(
@@ -139,7 +141,6 @@ class OverlappedSpeechDetection(SegmentationTask):
         )
 
         self.overlap = overlap
-        self.balance = balance
         self.weight = weight
 
     def prepare_chunk(self, file_id: int, start_time: float, duration: float):

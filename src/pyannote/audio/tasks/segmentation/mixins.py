@@ -23,19 +23,22 @@
 import itertools
 import math
 import random
-from typing import Dict, Sequence, Union
+from typing import Any, Callable, Dict, Optional, Sequence, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from lightning.pytorch.loggers import MLFlowLogger, TensorBoardLogger
+from pyannote.database import Protocol
 from pyannote.database.protocol.protocol import Scope, Subset
 from torch.utils.data._utils.collate import default_collate
+from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchaudio import AudioMetaData
 from torchmetrics import Metric
 from torchmetrics.classification import BinaryAUROC, MulticlassAUROC, MultilabelAUROC
 
 from pyannote.audio.core.task import Problem, Task, get_dtype
+from pyannote.audio.utils.balance import TaskBalancingSpecifications
 from pyannote.audio.utils.random import create_rng_for_worker
 
 Subsets = list(Subset.__args__)
@@ -44,6 +47,40 @@ Scopes = list(Scope.__args__)
 
 class SegmentationTask(Task):
     """Methods common to most segmentation tasks"""
+
+    def __init__(
+        self,
+        protocol: Protocol,
+        cache: str | None = None,
+        duration: float = 2.0,
+        min_duration: float | None = None,
+        warm_up: float | tuple[float, float] = 0.0,
+        batch_size: int = 32,
+        num_workers: int | None = None,
+        pin_memory: bool = False,
+        augmentation: BaseWaveformTransform | None = None,
+        metric: Metric | Sequence[Metric] | Dict[str, Metric] | None = None,
+        balance: TaskBalancingSpecifications | Sequence[str] | dict | None = None,
+    ):
+        super().__init__(
+            protocol,
+            duration=duration,
+            cache=cache,
+            min_duration=min_duration,
+            warm_up=warm_up,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            pin_memory=pin_memory,
+            augmentation=augmentation,
+            metric=metric,
+        )
+
+        if balance is not None and not isinstance(balance, TaskBalancingSpecifications):
+            if isinstance(balance, dict):
+                balance = TaskBalancingSpecifications(**balance)
+            elif isinstance(balance, Sequence):
+                balance = TaskBalancingSpecifications(keys=balance)
+        self.balance: TaskBalancingSpecifications | None = balance
 
     def get_file(self, file_id):
         file = dict()
@@ -84,16 +121,39 @@ class SegmentationTask(Task):
                 f"The {self.specifications.problem} problem type hasn't been given a default segmentation metric yet."
             )
 
-    def train__iter__helper(self, rng: random.Random, **filters):
+    def _get_filtered_training_files(self, **filters) -> np.ndarray:
+        """Returns the ndarray of all training files ids. If filters are passed, only files that match the filters are returned.
+
+        filters, optional
+            When provided (as {key: value} dict), filter training files so that
+            only files such as file[key] == value are used for generating chunks.
+
+        Returns
+        -------
+        np.ndarray
+            IDs of (filtered) training files.
+        """
+        training = self.prepared_data["audio-metadata"]["subset"] == Subsets.index(
+            "train"
+        )
+        for key, value in filters.items():
+            training &= self.prepared_data["audio-metadata"][key] == self.prepared_data[
+                "metadata-values"
+            ].item()[key].index(value)
+        file_ids = np.where(training)[0]
+        return file_ids
+
+    def train__iter__helper(
+        self, rng: random.Random, file_ids: np.ndarray | None = None
+    ):
         """Iterate over training samples with optional domain filtering
 
         Parameters
         ----------
         rng : random.Random
             Random number generator
-        filters : dict, optional
-            When provided (as {key: value} dict), filter training files so that
-            only files such as file[key] == value are used for generating chunks.
+        file_ids : np.ndarray, optional
+            IDs of training files to use. If None, all training files are used.
 
         Yields
         ------
@@ -101,15 +161,8 @@ class SegmentationTask(Task):
             Training chunks.
         """
 
-        # indices of training files that matches domain filters
-        training = self.prepared_data["audio-metadata"]["subset"] == Subsets.index(
-            "train"
-        )
-        for key, value in filters.items():
-            training &= self.prepared_data["audio-metadata"][key] == self.prepared_data[
-                "metadata"
-            ][key].index(value)
-        file_ids = np.where(training)[0]
+        if file_ids is None:
+            file_ids = self._get_filtered_training_files()
 
         # turn annotated duration into a probability distribution
         annotated_duration = self.prepared_data["audio-annotated"][file_ids]
@@ -174,27 +227,40 @@ class SegmentationTask(Task):
         # create worker-specific random number generator
         rng = create_rng_for_worker(self.model)
 
-        balance = getattr(self, "balance", None)
+        balance: Optional[TaskBalancingSpecifications] = getattr(self, "balance", None)
         if balance is None:
             chunks = self.train__iter__helper(rng)
 
         else:
             # create a subchunk generator for each combination of "balance" keys
-            subchunks = dict()
+            subchunks: dict[tuple[Any, ...], Callable] = dict()
             for product in itertools.product(
-                *[self.prepared_data["metadata"][key] for key in balance]
+                *[
+                    self.prepared_data["metadata-values"].item()[key]
+                    for key in balance.keys
+                ]
             ):
                 # we iterate on the cartesian product of the values in metadata_unique_values
                 # eg: for balance=["database", "split"], with 2 databases and 2 splits:
                 # ("DIHARD", "A"), ("DIHARD", "B"), ("REPERE", "A"), ("REPERE", "B")
-                filters = {key: value for key, value in zip(balance, product)}
-                subchunks[product] = self.train__iter__helper(rng, **filters)
+                filters = {key: value for key, value in zip(balance.keys, product)}
+                matching_training_files = self._get_filtered_training_files(**filters)
+                # Make sure there's at least one matching files, some configurations might not have any.
+                if len(matching_training_files) > 0:
+                    subchunks[product] = self.train__iter__helper(
+                        rng, matching_training_files
+                    )
+
+            cumweights: list[float] = balance.compute_cumweights(list(subchunks.keys()))
 
         while True:
             # select one subchunk generator at random (with uniform probability)
             # so that it is balanced on average
             if balance is not None:
-                chunks = subchunks[rng.choice(list(subchunks))]
+                selected_filter = rng.choices(
+                    list(subchunks.keys()), cum_weights=cumweights, k=1
+                )[0]
+                chunks = subchunks[selected_filter]
 
             # generate random chunk
             yield next(chunks)
