@@ -1,6 +1,7 @@
 # MIT License
 #
-# Copyright (c) 2020- CNRS
+# Copyright (c) 2020-2025 CNRS
+# Copyright (c) 2025- pyannoteAI
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -29,14 +30,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 from lightning.pytorch.utilities.memory import is_oom_error
-from pyannote.core import Segment, SlidingWindow, SlidingWindowFeature
-
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import Model, Specifications
 from pyannote.audio.core.task import Resolution
 from pyannote.audio.utils.multi_task import map_with_specifications
 from pyannote.audio.utils.powerset import Powerset
 from pyannote.audio.utils.reproducibility import fix_reproducibility
+from pyannote.core import Segment, SlidingWindow, SlidingWindowFeature
 
 
 class BaseInference:
@@ -280,9 +280,9 @@ class Inference(BaseInference):
         def __empty_list(**kwargs):
             return list()
 
-        outputs: Union[
-            List[np.ndarray], Tuple[List[np.ndarray]]
-        ] = map_with_specifications(self.model.specifications, __empty_list)
+        outputs: Union[List[np.ndarray], Tuple[List[np.ndarray]]] = (
+            map_with_specifications(self.model.specifications, __empty_list)
+        )
 
         if hook is not None:
             hook(completed=0, total=num_chunks + has_last_chunk)
@@ -418,7 +418,6 @@ class Inference(BaseInference):
         self,
         file: AudioFile,
         chunk: Union[Segment, List[Segment]],
-        duration: Optional[float] = None,
         hook: Optional[Callable] = None,
     ) -> Union[
         Tuple[Union[SlidingWindowFeature, np.ndarray]],
@@ -436,10 +435,6 @@ class Inference(BaseInference):
             the smallest chunk that contains all chunks. In case window is set
             to "whole", this is equivalent to concatenating each chunk into one
             (artifical) chunk before processing it.
-        duration : float, optional
-            Enforce chunk duration (in seconds). This is a hack to avoid rounding
-            errors that may result in a different number of audio samples for two
-            chunks of the same duration.
         hook : callable, optional
             When a callable is provided, it is called everytime a batch is processed
             with two keyword arguments:
@@ -470,12 +465,10 @@ class Inference(BaseInference):
                 end = max(c.end for c in chunk)
                 chunk = Segment(start=start, end=end)
 
-            waveform, sample_rate = self.model.audio.crop(
-                file, chunk, duration=duration
+            waveform, sample_rate = self.model.audio.crop(file, chunk)
+            outputs: Union[SlidingWindowFeature, Tuple[SlidingWindowFeature]] = (
+                self.slide(waveform, sample_rate, hook=hook)
             )
-            outputs: Union[
-                SlidingWindowFeature, Tuple[SlidingWindowFeature]
-            ] = self.slide(waveform, sample_rate, hook=hook)
 
             def __shift(output: SlidingWindowFeature, **kwargs) -> SlidingWindowFeature:
                 frames = output.sliding_window
@@ -487,9 +480,7 @@ class Inference(BaseInference):
             return map_with_specifications(self.model.specifications, __shift, outputs)
 
         if isinstance(chunk, Segment):
-            waveform, sample_rate = self.model.audio.crop(
-                file, chunk, duration=duration
-            )
+            waveform, sample_rate = self.model.audio.crop(file, chunk)
         else:
             waveform = torch.cat(
                 [self.model.audio.crop(file, c)[0] for c in chunk], dim=1
@@ -610,13 +601,13 @@ class Inference(BaseInference):
 
             overlapping_chunk_count[
                 start_frame : start_frame + num_frames_per_chunk
-            ] += (mask * hamming_window * warm_up_window)
+            ] += mask * hamming_window * warm_up_window
 
-            aggregated_mask[
-                start_frame : start_frame + num_frames_per_chunk
-            ] = np.maximum(
-                aggregated_mask[start_frame : start_frame + num_frames_per_chunk],
-                mask,
+            aggregated_mask[start_frame : start_frame + num_frames_per_chunk] = (
+                np.maximum(
+                    aggregated_mask[start_frame : start_frame + num_frames_per_chunk],
+                    mask,
+                )
             )
 
         if skip_average:
@@ -649,9 +640,9 @@ class Inference(BaseInference):
             (num_chunks, trimmed_num_frames, num_speakers)-shaped scores
         """
 
-        assert (
-            scores.data.ndim == 3
-        ), "Inference.trim expects (num_chunks, num_frames, num_classes)-shaped `scores`"
+        assert scores.data.ndim == 3, (
+            "Inference.trim expects (num_chunks, num_frames, num_classes)-shaped `scores`"
+        )
         _, num_frames, _ = scores.data.shape
 
         chunks = scores.sliding_window

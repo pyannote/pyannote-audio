@@ -1,6 +1,7 @@
 # MIT License
 #
-# Copyright (c) 2020- CNRS
+# Copyright (c) 2020-2025 CNRS
+# Copyright (c) 2025- pyannoteAI
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -24,13 +25,12 @@
 from typing import Dict, Optional, Sequence, Text, Tuple, Union
 
 import numpy as np
+from pyannote.audio.core.task import Problem, Resolution, Specifications
+from pyannote.audio.tasks.segmentation.mixins import SegmentationTask
 from pyannote.core import Segment, SlidingWindowFeature
 from pyannote.database import Protocol
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchmetrics import Metric
-
-from pyannote.audio.core.task import Problem, Resolution, Specifications
-from pyannote.audio.tasks.segmentation.mixins import SegmentationTask
 
 
 class OverlappedSpeechDetection(SegmentationTask):
@@ -170,7 +170,7 @@ class OverlappedSpeechDetection(SegmentationTask):
         chunk = Segment(start_time, start_time + duration)
 
         sample = dict()
-        sample["X"], _ = self.model.audio.crop(file, chunk, duration=duration)
+        sample["X"], _ = self.model.audio.crop(file, chunk)
 
         # gather all annotations of current file
         annotations = self.prepared_data["annotations-segments"][

@@ -1,6 +1,7 @@
 # MIT License
 #
-# Copyright (c) 2020- CNRS
+# Copyright (c) 2020-2025 CNRS
+# Copyright (c) 2025- pyannoteAI
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -27,14 +28,13 @@ from typing import Dict, List, Optional, Sequence, Text, Tuple, Union
 import numpy as np
 import torch
 import torch.nn.functional as F
+from pyannote.audio.core.task import Problem, Resolution, Specifications
+from pyannote.audio.tasks.segmentation.mixins import SegmentationTask
 from pyannote.core import Segment, SlidingWindowFeature
 from pyannote.database import Protocol
 from pyannote.database.protocol import SegmentationProtocol
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchmetrics import Metric
-
-from pyannote.audio.core.task import Problem, Resolution, Specifications
-from pyannote.audio.tasks.segmentation.mixins import SegmentationTask
 
 
 class MultiLabelSegmentation(SegmentationTask):
@@ -163,7 +163,7 @@ class MultiLabelSegmentation(SegmentationTask):
                 if not file_classes:
                     msg = textwrap.dedent(
                         f"""
-                        File "{file['uri']}" (from {file['database']} database) does not
+                        File "{file["uri"]}" (from {file["database"]} database) does not
                         provide a 'classes' entry. Please make sure the corresponding
                         training protocol provides a 'classes' entry for all files. See
                         https://github.com/pyannote/pyannote-database#segmentation for more
@@ -190,7 +190,7 @@ class MultiLabelSegmentation(SegmentationTask):
                 if not file_classes:
                     msg = textwrap.dedent(
                         f"""
-                        File "{file['uri']}" (from {file['database']} database) does not
+                        File "{file["uri"]}" (from {file["database"]} database) does not
                         provide a 'classes' entry. Please make sure the corresponding
                         training protocol provides a 'classes' entry for all files. See
                         https://github.com/pyannote/pyannote-database#segmentation for more
@@ -203,8 +203,8 @@ class MultiLabelSegmentation(SegmentationTask):
                 if extra_classes:
                     msg = textwrap.dedent(
                         f"""
-                        File "{file['uri']}" (from {file['database']} database) provides
-                        extra classes ({', '.join(extra_classes)}) that are ignored.
+                        File "{file["uri"]}" (from {file["database"]} database) provides
+                        extra classes ({", ".join(extra_classes)}) that are ignored.
                         """
                     )
                     print(msg)
@@ -280,7 +280,7 @@ class MultiLabelSegmentation(SegmentationTask):
         chunk = Segment(start_time, start_time + duration)
 
         sample = dict()
-        sample["X"], _ = self.model.audio.crop(file, chunk, duration=duration)
+        sample["X"], _ = self.model.audio.crop(file, chunk)
         # gather all annotations of current file
         annotations = self.prepared_data["annotations-segments"][
             self.prepared_data["annotations-segments"]["file_id"] == file_id

@@ -34,10 +34,6 @@ from typing import Callable, Mapping, Optional, Text, Union
 import numpy as np
 import torch
 from einops import rearrange
-from pyannote.core import Annotation, SlidingWindowFeature
-from pyannote.metrics.diarization import GreedyDiarizationErrorRate
-from pyannote.pipeline.parameter import ParamDict, Uniform
-
 from pyannote.audio import Audio, Inference, Model, Pipeline
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.pipelines.clustering import Clustering
@@ -51,6 +47,9 @@ from pyannote.audio.pipelines.utils import (
 )
 from pyannote.audio.pipelines.utils.diarization import set_num_speakers
 from pyannote.audio.utils.signal import binarize
+from pyannote.core import Annotation, SlidingWindowFeature
+from pyannote.metrics.diarization import GreedyDiarizationErrorRate
+from pyannote.pipeline.parameter import ParamDict, Uniform
 
 
 def batchify(iterable, batch_size: int = 32, fillvalue=None):
@@ -186,7 +185,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             Klustering = Clustering[clustering]
         except KeyError:
             raise ValueError(
-                f'clustering must be one of [{", ".join(list(Clustering.__members__))}]'
+                f"clustering must be one of [{', '.join(list(Clustering.__members__))}]"
             )
 
         if self.klustering == "VBxClustering":
@@ -206,8 +205,8 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
     def default_parameters(self):
         return {
-            'segmentation': {'min_duration_off': 0.0},
-            'clustering': {'threshold': 0.6, 'Fa': 0.07, 'Fb': 0.8}
+            "segmentation": {"min_duration_off": 0.0},
+            "clustering": {"threshold": 0.6, "Fa": 0.07, "Fb": 0.8},
         }
 
     def classes(self):
@@ -324,7 +323,6 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                 waveform, _ = self._audio.crop(
                     file,
                     chunk,
-                    duration=duration,
                     mode="pad",
                 )
                 # waveform: (1, num_samples) torch.Tensor
