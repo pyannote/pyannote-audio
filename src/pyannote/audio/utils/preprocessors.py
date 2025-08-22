@@ -3,7 +3,8 @@
 
 # The MIT License (MIT)
 
-# Copyright (c) 2022- CNRS
+# Copyright (c) 2022-2025 CNRS
+# Copyright (c) 2025- pyannoteAI
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -29,10 +30,9 @@
 from functools import reduce
 from typing import Dict, List, Optional, Set
 
+from pyannote.audio.core.io import Audio, get_audio_metadata
 from pyannote.core import Annotation, Segment
 from pyannote.database import ProtocolFile
-
-from pyannote.audio.core.io import Audio, get_torchaudio_info
 
 
 class LowerTemporalResolution:
@@ -141,4 +141,4 @@ class Waveform:
 
 class SampleRate:
     def __call__(self, file: ProtocolFile):
-        return get_torchaudio_info(file).sample_rate
+        return get_audio_metadata(file).sample_rate

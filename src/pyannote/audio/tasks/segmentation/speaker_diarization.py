@@ -1,6 +1,7 @@
 # MIT License
 #
-# Copyright (c) 2020- CNRS
+# Copyright (c) 2020-2025 CNRS
+# Copyright (c) 2025- pyannoteAI
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -27,16 +28,8 @@ from typing import Dict, Literal, Optional, Sequence, Text, Union
 
 import numpy as np
 import torch
-import torch.nn.functional
 from lightning.pytorch.loggers import MLFlowLogger, TensorBoardLogger
 from matplotlib import pyplot as plt
-from pyannote.core import Segment, SlidingWindowFeature
-from pyannote.database.protocol import SpeakerDiarizationProtocol
-from pyannote.database.protocol.protocol import Scope, Subset
-from rich.progress import track
-from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
-from torchmetrics import Metric
-
 from pyannote.audio.core.task import Problem, Resolution, Specifications
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTask
 from pyannote.audio.torchmetrics import (
@@ -51,6 +44,12 @@ from pyannote.audio.torchmetrics import (
 from pyannote.audio.utils.loss import nll_loss
 from pyannote.audio.utils.permutation import permutate
 from pyannote.audio.utils.powerset import Powerset
+from pyannote.core import Segment, SlidingWindowFeature
+from pyannote.database.protocol import SpeakerDiarizationProtocol
+from pyannote.database.protocol.protocol import Scope, Subset
+from rich.progress import track
+from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
+from torchmetrics import Metric
 
 Subsets = list(Subset.__args__)
 Scopes = list(Scope.__args__)
@@ -303,7 +302,7 @@ class SpeakerDiarization(SegmentationTask):
         chunk = Segment(start_time, start_time + duration)
 
         sample = dict()
-        sample["X"], _ = self.model.audio.crop(file, chunk, duration=duration)
+        sample["X"], _ = self.model.audio.crop(file, chunk)
 
         # gather all annotations of current file
         start_id, end_id = self.prepared_data["audio-segments-ids"][file_id]
@@ -640,13 +639,12 @@ class SpeakerDiarization(SegmentationTask):
 def evaluate(protocol: str, subset: str = "test", model: str = "pyannote/segmentation"):
     """Evaluate a segmentation model"""
 
-    from pyannote.database import FileFinder, get_protocol
-    from rich.progress import Progress
-
     from pyannote.audio import Inference
     from pyannote.audio.pipelines.utils import get_devices
     from pyannote.audio.utils.metric import DiscreteDiarizationErrorRate
     from pyannote.audio.utils.signal import binarize
+    from pyannote.database import FileFinder, get_protocol
+    from rich.progress import Progress
 
     (device,) = get_devices(needs=1)
     metric = DiscreteDiarizationErrorRate()

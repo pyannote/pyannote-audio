@@ -1,6 +1,7 @@
 # MIT License
 #
-# Copyright (c) 2020- CNRS
+# Copyright (c) 2020-2025 CNRS
+# Copyright (c) 2025- pyannoteAI
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -25,6 +26,9 @@ from typing import Dict, Sequence, Union
 
 import torch
 import torch.nn.functional as F
+from pyannote.audio.core.task import Problem, Resolution, Specifications
+from pyannote.audio.torchmetrics.classification import EqualErrorRate
+from pyannote.audio.utils.random import create_rng_for_worker
 from pyannote.core import Segment
 from pyannote.database.protocol import (
     SpeakerDiarizationProtocol,
@@ -34,10 +38,6 @@ from torch.utils.data._utils.collate import default_collate
 from torchmetrics import Metric
 from torchmetrics.classification import BinaryAUROC
 from tqdm import tqdm
-
-from pyannote.audio.core.task import Problem, Resolution, Specifications
-from pyannote.audio.torchmetrics.classification import EqualErrorRate
-from pyannote.audio.utils.random import create_rng_for_worker
 
 
 class SupervisedRepresentationLearningTaskMixin:
@@ -195,7 +195,6 @@ class SupervisedRepresentationLearningTaskMixin:
                         X, _ = self.model.audio.crop(
                             file,
                             chunk,
-                            duration=batch_duration,
                         )
 
                     yield {"X": X, "y": y}
@@ -261,7 +260,7 @@ class SupervisedRepresentationLearningTaskMixin:
                         0.5 * duration - 0.5 * self.duration,
                         0.5 * duration + 0.5 * self.duration,
                     )
-                    X, _ = self.model.audio.crop(file, middle, duration=self.duration)
+                    X, _ = self.model.audio.crop(file, middle)
                 else:
                     X, _ = self.model.audio(file)
                     num_missing_frames = (

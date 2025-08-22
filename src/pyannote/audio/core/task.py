@@ -1,6 +1,8 @@
 # MIT License
 #
-# Copyright (c) 2020- CNRS
+# Copyright (c) 2020-2025 CNRS
+# Copyright (c) 2025- pyannoteAI
+
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -40,15 +42,14 @@ import lightning
 import numpy as np
 import scipy.special
 import torch
+from pyannote.audio.utils.loss import binary_cross_entropy, nll_loss
+from pyannote.audio.utils.protocol import check_protocol
 from pyannote.database import Protocol
 from pyannote.database.protocol.protocol import Scope, Subset
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 from torch_audiomentations import Identity
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchmetrics import Metric, MetricCollection
-
-from pyannote.audio.utils.loss import binary_cross_entropy, nll_loss
-from pyannote.audio.utils.protocol import check_protocol
 
 Subsets = list(Subset.__args__)
 Scopes = list(Scope.__args__)
@@ -319,8 +320,6 @@ class Task(lightning.LightningDataModule):
             'protocol': name of the protocol
             'audio-path': array of N paths to audio
             'audio-metadata': array of N audio infos such as audio subset, scope and database
-            'audio-info': array of N audio torchaudio.info struct
-            'audio-encoding': array of N audio encodings
             'audio-annotated': array of N annotated duration (usually equals file duration but might be shorter if file is not fully annotated)
             'annotations-regions': array of M annotated regions
             'audio-regions-ids': array of N start/end indices of annotated regions
@@ -352,8 +351,6 @@ class Task(lightning.LightningDataModule):
         metadata_unique_values["scope"] = Scopes
 
         audios = list()  # list of path to audio files
-        audio_infos = list()
-        audio_encodings = list()
         metadata = list()  # list of metadata
 
         annotated_duration = list()  # total duration of annotated regions (per file)
@@ -361,7 +358,9 @@ class Task(lightning.LightningDataModule):
         audio_regions_ids = list()  # start/end indices of annotated regions (per file)
 
         annotations = list()  # actual annotations
-        audio_segments_ids = list()  # start/end indices of annotated segments (per file)
+        audio_segments_ids = (
+            list()
+        )  # start/end indices of annotated segments (per file)
 
         unique_labels = list()
         database_unique_labels = {}
@@ -376,7 +375,6 @@ class Task(lightning.LightningDataModule):
 
         regions_id: int = 0
         segments_id: int = 0
-        
 
         for file_id, (subset, file) in enumerate(files_iter):
             # gather metadata and update metadata_unique_values so that each metadatum
@@ -401,7 +399,6 @@ class Task(lightning.LightningDataModule):
                     "database",
                     "subset",
                     "audio",
-                    "torchaudio.info",
                     "scope",
                     "classes",
                     "annotation",
@@ -435,18 +432,6 @@ class Task(lightning.LightningDataModule):
 
             # path to audio file
             audios.append(str(file["audio"]))
-
-            # audio info
-            audio_info = file["torchaudio.info"]
-            audio_infos.append(
-                (
-                    audio_info.sample_rate,  # sample rate
-                    audio_info.num_frames,  # number of frames
-                    audio_info.num_channels,  # number of channels
-                    audio_info.bits_per_sample,  # bits per sample
-                )
-            )
-            audio_encodings.append(audio_info.encoding)  # encoding
 
             _regions_id = regions_id
 
@@ -541,21 +526,6 @@ class Task(lightning.LightningDataModule):
             for i, key in enumerate(metadata_unique_values)
         ]
 
-        # turn list of files metadata into a single numpy array
-        # TODO: improve using https://github.com/pytorch/pytorch/issues/13246#issuecomment-617140519
-        info_dtype = [
-            (
-                "sample_rate",
-                get_dtype(max(ai[0] for ai in audio_infos)),
-            ),
-            (
-                "num_frames",
-                get_dtype(max(ai[1] for ai in audio_infos)),
-            ),
-            ("num_channels", "B"),
-            ("bits_per_sample", "B"),
-        ]
-
         # turn list of annotated regions into a single numpy array
         region_dtype = [
             (
@@ -590,12 +560,6 @@ class Task(lightning.LightningDataModule):
 
         prepared_data["audio-metadata"] = np.array(metadata, dtype=metadata_dtype)
         metadata.clear()
-
-        prepared_data["audio-info"] = np.array(audio_infos, dtype=info_dtype)
-        audio_infos.clear()
-
-        prepared_data["audio-encoding"] = np.array(audio_encodings, dtype=np.str_)
-        audio_encodings.clear()
 
         prepared_data["audio-annotated"] = np.array(annotated_duration)
         annotated_duration.clear()

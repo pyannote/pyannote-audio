@@ -39,21 +39,23 @@ With the optional telemetry feature in `pyannote.audio`, you can choose to send 
 
 ### Breaking changes
 
+- BREAKING(io): remove support for `sox` and `soundfile` audio I/O backends (only `ffmpeg` or in-memory audio is supported)
 - BREAKING(setup): drop support to `Python` < 3.10
-- BREAKING(chore): switch to native namespace package
 - BREAKING(hub): rename `use_auth_token` to `token`
+- BREAKING(task): remove `OverlappedSpeechDetection` task (part of `SpeakerDiarization` task)
+- BREAKING(pipeline): remove `OverlappedSpeechDetection` and `Resegmentation` unmaintained pipelines (part of `SpeakerDiarization`)
 - BREAKING(cache): rely on `huggingface_hub` caching directory (`PYANNOTE_CACHE` is no longer used)
 - BREAKING(inference): `Inference` now only supports already instantiated models
 - BREAKING(task): drop support for `multilabel` training in `SpeakerDiarization` task
 - BREAKING(task): drop support for `warm_up` option in `SpeakerDiarization` task
 - BREAKING(task): drop support for `weigh_by_cardinality` option in `SpeakerDiarization` task
 - BREAKING(task): drop support for `vad_loss` option in `SpeakerDiarization` task
-- BREAKING(task): remove `OverlappedSpeechDetection` task (part of `SpeakerDiarization` task)
+- BREAKING(chore): switch to native namespace package
 - BREAKING(cli): remove deprecated `pyannote-audio-train` CLI
-- BREAKING(pipeline): remove `OverlappedSpeechDetection` and `Resegmentation` unmaintained pipelines (part of `SpeakerDiarization`)
 
 ### New features
 
+- feat(io): switch from `torchaudio` to `torchcodec` for audio I/O
 - feat(pipeline): add support for VBx clustering ([@Selesnyan](https://github.com/Selesnyan) and [jyhan03](https://github.com/jyhan03))
 - feat(pyannoteAI): add wrapper around pyannoteAI SDK
 - improve(hub): add support for pipeline repos that also include underlying models
