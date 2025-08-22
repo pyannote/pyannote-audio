@@ -203,7 +203,7 @@ class MultiLabelSegmentation(SegmentationTask):
                 if extra_classes:
                     msg = textwrap.dedent(
                         f"""
-                        File "{file["uri"]}" (from {file["database"]} database) provides
+                        File "{file['uri']}" (from {file['database']} database) provides
                         extra classes ({", ".join(extra_classes)}) that are ignored.
                         """
                     )
