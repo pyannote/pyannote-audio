@@ -351,12 +351,16 @@ class Audio:
             waveform = file["waveform"]
             _, num_samples = waveform.shape
             sample_rate = file["sample_rate"]
+            duration = num_samples / sample_rate
 
             start_sample: int = self.get_num_samples(segment.start, sample_rate)
             pad_start: int = max(0, -start_sample)
             if start_sample < 0:
                 if mode == "raise":
-                    raise
+                    raise ValueError(
+                        f"requested chunk with negative start time (t={segment.start:.3f}s)"
+                    )
+
                 else:
                     start_sample = 0
 
@@ -364,7 +368,10 @@ class Audio:
             pad_end: int = max(end_sample, num_samples) - num_samples
             if end_sample >= num_samples:
                 if mode == "raise":
-                    raise
+                    raise ValueError(
+                        f"requested chunk with end time (t={segment.end:.3f}s) greater than "
+                        f"{file.get('uri', 'in-memory')} file duration ({duration:.3f}s)."
+                    )
                 else:
                     end_sample = num_samples
 
@@ -401,7 +408,8 @@ class Audio:
         if end > duration:
             if mode == "raise":
                 raise ValueError(
-                    f"requested chunk with end time (t={end:.3f}s) greater than {file.get('uri', 'in-memory')} file duration ({duration:.3f}s)."
+                    f"requested chunk with end time (t={end:.3f}s) greater than "
+                    f"{file.get('uri', 'in-memory')} file duration ({duration:.3f}s)."
                 )
             else:
                 end = duration
