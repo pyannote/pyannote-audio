@@ -1,6 +1,7 @@
 # MIT License
 #
-# Copyright (c) 2020-2021 CNRS
+# Copyright (c) 2020-2025 CNRS
+# Copyright (c) 2025- pyannoteAI
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -24,13 +25,7 @@ from .segmentation.multilabel import MultiLabelSegmentation  # isort:skip
 from .segmentation.speaker_diarization import SpeakerDiarization  # isort:skip
 from .separation.PixIT import PixIT  # isort:skip
 from .segmentation.voice_activity_detection import VoiceActivityDetection  # isort:skip
-from .segmentation.overlapped_speech_detection import (  # isort:skip
-    OverlappedSpeechDetection,
-)
 from .embedding.arcface import SupervisedRepresentationLearningWithArcFace  # isort:skip
-
-# Segmentation has been renamed to SpeakerDiarization but we keep Segmentation here for backward compatibility
-Segmentation = SpeakerDiarization
 
 # SpeakerEmbedding is more human-friendly
 SpeakerEmbedding = SupervisedRepresentationLearningWithArcFace
@@ -38,9 +33,7 @@ SpeakerEmbedding = SupervisedRepresentationLearningWithArcFace
 __all__ = [
     "SpeakerDiarization",
     "VoiceActivityDetection",
-    "OverlappedSpeechDetection",
     "MultiLabelSegmentation",
     "SpeakerEmbedding",
-    "Segmentation",
     "PixIT",
 ]
