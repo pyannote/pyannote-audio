@@ -1,6 +1,7 @@
 # The MIT License (MIT)
 #
-# Copyright (c) 2022- CNRS
+# Copyright (c) 2022-2025 CNRS
+# Copyright (c) 2025- pyannoteAI
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -28,14 +29,13 @@ from functools import partial
 from pathlib import Path
 from typing import Callable, Optional, Text, Union
 
-from pyannote.core import Annotation, SlidingWindowFeature
-from pyannote.metrics.identification import IdentificationErrorRate
-from pyannote.pipeline.parameter import ParamDict, Uniform
-
 from pyannote.audio import Inference
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.pipeline import Pipeline
 from pyannote.audio.utils.metric import MacroAverageFMeasure
+from pyannote.core import Annotation, SlidingWindowFeature
+from pyannote.metrics.identification import IdentificationErrorRate
+from pyannote.pipeline.parameter import ParamDict, Uniform
 
 from ..utils.signal import Binarize
 from .utils import PipelineModel, get_model
@@ -83,7 +83,6 @@ class MultiLabelSegmentation(Pipeline):
         cache_dir: Union[Path, Text, None] = None,
         **inference_kwargs,
     ):
-
         super().__init__()
 
         if segmentation is None:

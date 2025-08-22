@@ -50,6 +50,7 @@ With the optional telemetry feature in `pyannote.audio`, you can choose to send 
 - BREAKING(task): drop support for `vad_loss` option in `SpeakerDiarization` task
 - BREAKING(task): remove `OverlappedSpeechDetection` task (part of `SpeakerDiarization` task)
 - BREAKING(cli): remove deprecated `pyannote-audio-train` CLI
+- BREAKING(pipeline): remove `OverlappedSpeechDetection` and `Resegmentation` unmaintained pipelines (part of `SpeakerDiarization`)
 
 ### New features
 
