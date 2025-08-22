@@ -21,11 +21,13 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+from .multilabel import MultiLabelSegmentation
 from .speaker_diarization import SpeakerDiarization
 from .speech_separation import SpeechSeparation
 from .voice_activity_detection import VoiceActivityDetection
 
 __all__ = [
+    "MultiLabelSegmentation",
     "VoiceActivityDetection",
     "SpeakerDiarization",
     "SpeechSeparation",

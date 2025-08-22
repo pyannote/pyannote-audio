@@ -49,7 +49,7 @@ With the optional telemetry feature in `pyannote.audio`, you can choose to send 
 - BREAKING(task): drop support for `weigh_by_cardinality` option in `SpeakerDiarization` task
 - BREAKING(task): drop support for `vad_loss` option in `SpeakerDiarization` task
 - BREAKING(cli): remove deprecated `pyannote-audio-train` CLI
-- BREAKING(pipeline): remove `MultiLabelSegmentation`, `OracleOverlappedSpeechDetection`, and `Resegmentation` unmaintained pipelines
+- BREAKING(pipeline): remove `OracleOverlappedSpeechDetection` and `Resegmentation` unmaintained pipelines (part of `SpeakerDiairzation`)
 
 ### New features
 
