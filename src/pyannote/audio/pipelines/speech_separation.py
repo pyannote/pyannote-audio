@@ -1,6 +1,7 @@
 # The MIT License (MIT)
 #
-# Copyright (c) 2024- CNRS
+# Copyright (c) 2024-2025 CNRS
+# Copyright (c) 2025- pyannoteAI
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -33,11 +34,6 @@ from typing import Callable, Optional, Text, Tuple, Union
 import numpy as np
 import torch
 from einops import rearrange
-from pyannote.core import Annotation, SlidingWindow, SlidingWindowFeature
-from pyannote.metrics.diarization import GreedyDiarizationErrorRate
-from pyannote.pipeline.parameter import Categorical, ParamDict, Uniform
-from scipy.ndimage import binary_dilation
-
 from pyannote.audio import Audio, Inference, Model, Pipeline
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.pipelines.clustering import Clustering
@@ -49,6 +45,10 @@ from pyannote.audio.pipelines.utils import (
 )
 from pyannote.audio.pipelines.utils.diarization import set_num_speakers
 from pyannote.audio.utils.signal import binarize
+from pyannote.core import Annotation, SlidingWindow, SlidingWindowFeature
+from pyannote.metrics.diarization import GreedyDiarizationErrorRate
+from pyannote.pipeline.parameter import Categorical, ParamDict, Uniform
+from scipy.ndimage import binary_dilation
 
 
 def batchify(iterable, batch_size: int = 32, fillvalue=None):
@@ -186,7 +186,7 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
             Klustering = Clustering[clustering]
         except KeyError:
             raise ValueError(
-                f'clustering must be one of [{", ".join(list(Clustering.__members__))}]'
+                f"clustering must be one of [{', '.join(list(Clustering.__members__))}]"
             )
         self.clustering = Klustering.value(metric=metric)
 
@@ -323,7 +323,6 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
                 waveform, _ = self._audio.crop(
                     file,
                     chunk,
-                    duration=duration,
                     mode="pad",
                 )
                 # waveform: (1, num_samples) torch.Tensor
