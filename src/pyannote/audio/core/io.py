@@ -346,7 +346,7 @@ class Audio:
         file = self.validate_file(file)
         channel = file.get("channel", None)
 
-        #
+        # If the audio data is already loaded in memory as a waveform, crop and pad directly.
         if "waveform" in file:
             waveform = file["waveform"]
             _, num_samples = waveform.shape
