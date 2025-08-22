@@ -1,6 +1,7 @@
 # MIT License
 #
-# Copyright (c) 2024- CNRS
+# Copyright (c) 2024-2025 CNRS
+# Copyright (c) 2025- pyannoteAI
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -32,17 +33,8 @@ from typing import Dict, Literal, Optional, Sequence, Text, Union
 
 import numpy as np
 import torch
-import torch.nn.functional
 from lightning.pytorch.loggers import MLFlowLogger, TensorBoardLogger
 from matplotlib import pyplot as plt
-from pyannote.core import Segment, SlidingWindowFeature
-from pyannote.database.protocol import SpeakerDiarizationProtocol
-from pyannote.database.protocol.protocol import Scope, Subset
-from rich.progress import track
-from torch.utils.data import DataLoader, IterableDataset
-from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
-from torchmetrics import Metric
-
 from pyannote.audio.core.task import Problem, Resolution, Specifications
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTask, Task
 from pyannote.audio.torchmetrics import (
@@ -55,6 +47,13 @@ from pyannote.audio.torchmetrics import (
 from pyannote.audio.utils.loss import binary_cross_entropy
 from pyannote.audio.utils.permutation import permutate
 from pyannote.audio.utils.random import create_rng_for_worker
+from pyannote.core import Segment, SlidingWindowFeature
+from pyannote.database.protocol import SpeakerDiarizationProtocol
+from pyannote.database.protocol.protocol import Scope, Subset
+from rich.progress import track
+from torch.utils.data import DataLoader, IterableDataset
+from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
+from torchmetrics import Metric
 
 try:
     from asteroid.losses import MixITLossWrapper, multisrc_neg_sisdr
@@ -320,7 +319,7 @@ class PixIT(SegmentationTask):
                 else Problem.MONO_LABEL_CLASSIFICATION
             ),
             permutation_invariant=True,
-            classes=[f"speaker#{i+1}" for i in range(self.max_speakers_per_chunk)],
+            classes=[f"speaker#{i + 1}" for i in range(self.max_speakers_per_chunk)],
             powerset_max_classes=self.max_speakers_per_frame,
         )
 
@@ -328,7 +327,7 @@ class PixIT(SegmentationTask):
             duration=self.duration,
             resolution=Resolution.FRAME,
             problem=Problem.MONO_LABEL_CLASSIFICATION,  # Doesn't matter
-            classes=[f"speaker#{i+1}" for i in range(self.max_speakers_per_chunk)],
+            classes=[f"speaker#{i + 1}" for i in range(self.max_speakers_per_chunk)],
         )
 
         self.specifications = (speaker_diarization, speaker_separation)
@@ -368,7 +367,7 @@ class PixIT(SegmentationTask):
         chunk = Segment(start_time, start_time + duration)
 
         sample = dict()
-        sample["X"], _ = self.model.audio.crop(file, chunk, duration=duration)
+        sample["X"], _ = self.model.audio.crop(file, chunk)
 
         # gather all annotations of current file
         annotations = self.prepared_data["annotations-segments"][

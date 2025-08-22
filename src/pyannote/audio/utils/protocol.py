@@ -1,6 +1,7 @@
 # MIT License
 #
-# Copyright (c) 2020- CNRS
+# Copyright (c) 2020-2025 CNRS
+# Copyright (c) 2025- pyannoteAI
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -20,15 +21,12 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from functools import partial
 from typing import Optional
 
-import torchaudio
+from pyannote.audio.core.io import Audio
 from pyannote.core import Annotation
 from pyannote.database import FileFinder, Protocol, get_annotated
 from pyannote.database.protocol import SpeakerVerificationProtocol
-
-from pyannote.audio.core.io import Audio, get_torchaudio_info
 
 get_duration = Audio(mono="downmix").get_duration
 
@@ -88,22 +86,6 @@ def check_protocol(protocol: Protocol) -> Protocol:
                     f"on how to do that yourself."
                 )
                 print(msg)
-
-    if "waveform" not in file and "torchaudio.info" not in file:
-        # use soundfile when available (it usually is faster than ffmpeg for getting info)
-        backends = (
-            torchaudio.list_audio_backends()
-        )  # e.g ['ffmpeg', 'soundfile', 'sox']
-        backend = "soundfile" if "soundfile" in backends else backends[0]
-        protocol.preprocessors["torchaudio.info"] = partial(
-            get_torchaudio_info, backend=backend
-        )
-        msg = (
-            f"Protocol {protocol.name} does not precompute the output of torchaudio.info(): "
-            f"adding a 'torchaudio.info' preprocessor for you to speed up dataloaders. "
-            f"See pyannote.database documentation on how to do that yourself."
-        )
-        print(msg)
 
     if "annotated" not in file:
         if "duration" not in file:

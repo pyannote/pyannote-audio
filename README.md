@@ -19,9 +19,10 @@ Consider switching to [<img src="https://avatars.githubusercontent.com/u/1626986
 
 ## <img src="https://avatars.githubusercontent.com/u/7559051" width="20" style="vertical-align:text-bottom;" /> `pyannote.audio` open-source speaker diarization pipeline
 
-1. Install [`pyannote.audio`](https://github.com/pyannote/pyannote-audio) with `pip install pyannote.audio`
-2. Accept [`pyannote/speaker-diarization-4.0`](https://hf.co/pyannote/speaker-diarization-4.0) user conditions
-3. Create Huggingface access token at [`hf.co/settings/tokens`](https://hf.co/settings/tokens).
+1. Make sure [`ffmpeg`](https://ffmpeg.org/) is installed on your machine (needed by [`torchcodec`](https://docs.pytorch.org/torchcodec/) audio decoding library)
+2. Install with [`uv`](https://docs.astral.sh/uv/)`add pyannote.audio` (recommended) or `pip install pyannote.audio`
+3. Accept [`pyannote/speaker-diarization-4.0`](https://hf.co/pyannote/speaker-diarization-4.0) user conditions
+4. Create Huggingface access token at [`hf.co/settings/tokens`](https://hf.co/settings/tokens)
 
 ```python
 import torch
