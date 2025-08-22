@@ -541,7 +541,7 @@ def benchmark(
             help="Skip dependency check when loading pipeline. Use at your own risk."
         ),
     ] = False,
-    per_audio: Annotated[
+    per_file: Annotated[
         bool,
         typer.Option(
             help="Save one RTTM/JSON file per processed audio file."
@@ -618,7 +618,7 @@ def benchmark(
     # manual annotation and j speakers in the prediction
     speaker_count: dict[int, dict[int, int]] = dict()
 
-    if per_audio:
+    if per_file:
         rttm_dir = into / "rttms"
         rttm_dir.mkdir()
 
@@ -638,11 +638,11 @@ def benchmark(
 
         # if prediction has a built-in serialize method, save serialized version
         if hasattr(prediction, "serialize"):
-            if per_audio:
+            if per_file:
                 json_dir = into / "jsons"
                 json_dir.mkdir(exist_ok=True)
 
-                with open(json_dir / f"{benchmark_name}.{uri}.json", "w") as f:
+                with open(json_dir / f"{uri}.json", "w") as f:
                     json.dump(prediction.serialize(), f, indent=2)
             else:
                 serialized_predictions[uri] = prediction.serialize()
@@ -651,8 +651,8 @@ def benchmark(
         speaker_diarization = get_diarization(prediction)
 
         # dump prediction to RTTM file
-        if per_audio:
-            rttm_file = rttm_dir / f"{benchmark_name}.{uri}.rttm"
+        if per_file:
+            rttm_file = rttm_dir / f"{uri}.rttm"
         else:
             rttm_file = into / f"{benchmark_name}.rttm"
 
@@ -680,7 +680,7 @@ def benchmark(
             file["speaker_diarization"] = speaker_diarization
 
     # save serialized predictions to disk (might contain more than just diarization results)
-    if serialized_predictions and not per_audio:
+    if serialized_predictions and not per_file:
         with open(into / f"{benchmark_name}.json", "w") as f:
             json.dump(serialized_predictions, f, indent=2)
 
