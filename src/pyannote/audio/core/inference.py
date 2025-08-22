@@ -466,7 +466,7 @@ class Inference(BaseInference):
                 chunk = Segment(start=start, end=end)
 
             waveform, sample_rate = self.model.audio.crop(file, chunk)
-            outputs: Union[SlidingWindowFeature, Tuple[SlidingWindowFeature]] = (
+            outputs: SlidingWindowFeature | tuple[SlidingWindowFeature] = (
                 self.slide(waveform, sample_rate, hook=hook)
             )
 
