@@ -623,8 +623,9 @@ def benchmark(
         rttm_dir.mkdir(parents=True, exist_ok=True)
     else:
         rttm_file = into / f"{benchmark_name}.rttm"
-        # make sure we start from a clean RTTM file
-        rttm_file.unlink(missing_ok=True)
+        # make sure we don't overwrite previous results
+        if rttm_file.exists():
+            raise FileExistsError(f"{rttm_file} already exists.")
 
     # iterate over all files in the specified subset
     for file in track(files, disable=not progress):
