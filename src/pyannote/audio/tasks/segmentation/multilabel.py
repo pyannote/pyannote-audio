@@ -190,7 +190,7 @@ class MultiLabelSegmentation(SegmentationTask):
                 if not file_classes:
                     msg = textwrap.dedent(
                         f"""
-                        File "{file["uri"]}" (from {file["database"]} database) does not
+                        File "{file['uri']}" (from {file['database']} database) does not
                         provide a 'classes' entry. Please make sure the corresponding
                         training protocol provides a 'classes' entry for all files. See
                         https://github.com/pyannote/pyannote-database#segmentation for more
