@@ -620,7 +620,7 @@ def benchmark(
 
     if per_file:
         rttm_dir = into / benchmark_name / "rttm"
-        rttm_dir.mkdir()
+        rttm_dir.mkdir(parents=True, exist_ok=True)
 
     # iterate over all files in the specified subset
     for file in track(files, disable=not progress):
@@ -656,7 +656,8 @@ def benchmark(
         else:
             rttm_file = into / f"{benchmark_name}.rttm"
 
-        with open(rttm_file, "a") as rttm:
+        mode = "w" if per_file else "a"
+        with open(rttm_file, mode) as rttm:
             speaker_diarization.write_rttm(rttm)
 
         # compute metric when possible
