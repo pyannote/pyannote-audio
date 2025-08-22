@@ -621,6 +621,10 @@ def benchmark(
     if per_file:
         rttm_dir = into / benchmark_name / "rttm"
         rttm_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        rttm_file = into / f"{benchmark_name}.rttm"
+        # make sure we start from a clean RTTM file
+        rttm_file.unlink(missing_ok=True)
 
     # iterate over all files in the specified subset
     for file in track(files, disable=not progress):
@@ -653,8 +657,6 @@ def benchmark(
         # dump prediction to RTTM file
         if per_file:
             rttm_file = rttm_dir / f"{uri}.rttm"
-        else:
-            rttm_file = into / f"{benchmark_name}.rttm"
 
         mode = "w" if per_file else "a"
         with open(rttm_file, mode) as rttm:
