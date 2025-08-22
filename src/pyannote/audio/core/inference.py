@@ -280,7 +280,7 @@ class Inference(BaseInference):
         def __empty_list(**kwargs):
             return list()
 
-        outputs: Union[List[np.ndarray], Tuple[List[np.ndarray]]] = (
+        outputs: list[np.ndarray] | tuple[list[np.ndarray]] = (
             map_with_specifications(self.model.specifications, __empty_list)
         )
 
