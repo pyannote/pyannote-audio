@@ -43,7 +43,7 @@ from pyannote.audio.core.model import Model
 from pyannote.audio.utils.hf_hub import AssetFileName, download_from_hf_hub
 from pyannote.audio.utils.reproducibility import fix_reproducibility
 from pyannote.audio.utils.dependencies import check_dependencies
-
+from pyannote.audio.telemetry import track_pipeline_init, track_pipeline_apply
 
 def expand_subfolders(
     config,
@@ -51,6 +51,7 @@ def expand_subfolders(
     revision: Optional[Text] = None,
     cache_dir: Union[Path, str, None] = None,
     token: Optional[Text] = None,
+    skip_dependencies: bool = False,
 ) -> None:
     """Expand $model subfolders in config
 
@@ -70,6 +71,9 @@ def expand_subfolders(
         Huggingface token to be used for downloading from Huggingface hub.
     cache_dir: Path or str, optional
         Path to the folder where files downloaded from Huggingface hub are stored.
+    skip_dependencies : bool, optional
+        If True, skip dependency check. Defaults to False.
+        Use at your own risk, as this may lead to unexpected behavior.
     """
 
     if isinstance(config, dict):
@@ -82,10 +86,16 @@ def expand_subfolders(
                     "subfolder": subfolder,
                     "token": token,
                     "cache_dir": cache_dir,
+                    "skip_dependencies": skip_dependencies,
                 }
             else:
                 expand_subfolders(
-                    value, model_id, revision=revision, token=token, cache_dir=cache_dir
+                    value,
+                    model_id,
+                    revision=revision,
+                    token=token,
+                    cache_dir=cache_dir,
+                    skip_dependencies=skip_dependencies,
                 )
 
     elif isinstance(config, list):
@@ -98,10 +108,16 @@ def expand_subfolders(
                     "subfolder": subfolder,
                     "token": token,
                     "cache_dir": cache_dir,
+                    "skip_dependencies": skip_dependencies,
                 }
             else:
                 expand_subfolders(
-                    value, model_id, revision=revision, token=token, cache_dir=cache_dir
+                    value,
+                    model_id,
+                    revision=revision,
+                    token=token,
+                    cache_dir=cache_dir,
+                    skip_dependencies=skip_dependencies,
                 )
 
 
@@ -113,6 +129,7 @@ class Pipeline(_Pipeline):
         hparams_file: Union[Text, Path] = None,
         token: Union[Text, None] = None,
         cache_dir: Union[Path, Text, None] = None,
+        skip_dependencies: bool = False,
     ) -> Optional["Pipeline"]:
         """Load pretrained pipeline
 
@@ -128,6 +145,9 @@ class Pipeline(_Pipeline):
             Token to be used for the download.
         cache_dir: Path or str, optional
             Path to the folder where cached files are stored.
+        skip_dependencies : bool, optional
+            If True, skip dependency check. Defaults to False.
+            Use at your own risk, as this may lead to unexpected behavior.
         """
 
         # if checkpoint is a directory, look for the pipeline checkpoint
@@ -136,17 +156,20 @@ class Pipeline(_Pipeline):
             model_id = Path(checkpoint)
             config_yml = model_id / AssetFileName.Pipeline.value
             revision = None
+            otel_origin: str = "local"
 
         # if checkpoint is a file, assume it is the pipeline checkpoint
         elif os.path.isfile(checkpoint):
             model_id = Path(checkpoint).parent
             config_yml = checkpoint
             revision = None
+            otel_origin: str = "local"
 
         # otherwise, assume that the checkpoint is hosted on HF model hub
         else:
+            checkpoint = str(checkpoint)
             model_id, revision, config_yml = download_from_hf_hub(
-                str(checkpoint),
+                checkpoint,
                 AssetFileName.Pipeline,
                 cache_dir=cache_dir,
                 token=token,
@@ -154,12 +177,23 @@ class Pipeline(_Pipeline):
             if config_yml is None:
                 return None
 
+            otel_origin: str = (
+                checkpoint
+                if checkpoint.lower().startswith(("pyannote/", "pyannoteai/"))
+                else "huggingface"
+            )
+
         with open(config_yml, "r") as fp:
             config = yaml.load(fp, Loader=yaml.SafeLoader)
 
         # expand $model/{subfolder}-like entries in config
         expand_subfolders(
-            config, model_id, revision=revision, token=token, cache_dir=cache_dir
+            config,
+            model_id,
+            revision=revision,
+            token=token,
+            cache_dir=cache_dir,
+            skip_dependencies=skip_dependencies,
         )
 
         # before 4.x, pyannote.audio pipeline was using "version" key to
@@ -168,9 +202,10 @@ class Pipeline(_Pipeline):
             config["dependencies"] = {"pyannote.audio": config["version"]}
             del config["version"]
 
-        # check that dependencies are available (in their required version)
-        dependencies: dict[str, str] = config.get("dependencies", dict())
-        check_dependencies(dependencies, "Pipeline")
+        if not skip_dependencies:
+            # check that dependencies are available (in their required version)
+            dependencies: dict[str, str] = config.get("dependencies", dict())
+            check_dependencies(dependencies, "Pipeline")
 
         # initialize pipeline
         pipeline_name = config["pipeline"]["name"]
@@ -181,6 +216,11 @@ class Pipeline(_Pipeline):
         params.setdefault("token", token)
         params.setdefault("cache_dir", cache_dir)
         pipeline = Klass(**params)
+
+        # save pipeline origin (HF, local, etc) and class name as attributes for telemetry purposes
+        pipeline._otel_origin = otel_origin
+        pipeline._otel_name = pipeline_name
+        track_pipeline_init(pipeline)
 
         # freeze  parameters
         if "freeze" in config:
@@ -368,6 +408,10 @@ class Pipeline(_Pipeline):
 
         if hasattr(self, "preprocessors"):
             file = ProtocolFile(file, lazy=self.preprocessors)
+
+        # send file duration to telemetry as well as 
+        # requested number of speakers in case of diarization
+        track_pipeline_apply(self, file, **kwargs)
 
         return self.apply(file, **kwargs)
 

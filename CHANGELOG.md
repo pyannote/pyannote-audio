@@ -1,8 +1,12 @@
 # CHANGELOG
 
-## develop
+## develop 
 
 ### TL;DR
+
+#### Better speaker assignment
+
+`pyannote/speaker-diarization-4.0` pretrained pipeline relies on VBx clustering instead of agglomerative hierarchical clustering (as suggested by [BUT Speech@FIT](https://speech.fit.vut.cz/) researchers [Petr Pálka](https://github.com/Selesnyan) and [Jiangyu Han](https://github.com/jyhan03)).
 
 #### Faster training
 
@@ -29,6 +33,9 @@ Models can now be stored alongside their pipelines in the same repository, strea
 - ~~accept `pyannote/wespeaker-voxceleb-resnet34-LM` model user agreement~~
 - load pipeline with `Pipeline.from_pretrained("pyannote/speaker-diarization-3.1", token=True)`
 
+#### Telemetry
+
+With the optional telemetry feature in `pyannote.audio`, you can choose to send anonymous usage metrics to help the `pyannote` team improve the library.
 
 ### Breaking changes
 
@@ -41,10 +48,13 @@ Models can now be stored alongside their pipelines in the same repository, strea
 - BREAKING(task): drop support for `warm_up` option in `SpeakerDiarization` task
 - BREAKING(task): drop support for `weigh_by_cardinality` option in `SpeakerDiarization` task
 - BREAKING(task): drop support for `vad_loss` option in `SpeakerDiarization` task
+- BREAKING(task): remove `OverlappedSpeechDetection` task (part of `SpeakerDiarization` task)
 - BREAKING(cli): remove deprecated `pyannote-audio-train` CLI
+- BREAKING(pipeline): remove `OverlappedSpeechDetection` and `Resegmentation` unmaintained pipelines (part of `SpeakerDiarization`)
 
 ### New features
 
+- feat(pipeline): add support for VBx clustering ([@Selesnyan](https://github.com/Selesnyan) and [jyhan03](https://github.com/jyhan03))
 - feat(pyannoteAI): add wrapper around pyannoteAI SDK
 - improve(hub): add support for pipeline repos that also include underlying models
 - feat(clustering): add support for `k-means` clustering
@@ -54,8 +64,9 @@ Models can now be stored alongside their pipelines in the same repository, strea
 - feat(utils): add `FilterByNumberOfSpeakers` protocol files filter
 - feat(core): add `Calibration` class to calibrate logits/distances into probabilities
 - feat(metric): add `DetectionErrorRate`, `SegmentationErrorRate`, `DiarizationPrecision`, and `DiarizationRecall` metrics
-- feat(cli): add CLI to download, apply, benchmark, or optimize pipelines
-
+- feat(cli): add CLI to download, apply, benchmark, and optimize pipelines
+- feat(cli): add CLI to strip checkpoints to their bare inference minimum 
+ 
 ### Improvements
 
 - improve(model): improve WavLM (un)freezing support for `SSeRiouSS` architecture ([@clement-pages](https://github.com/clement-pages/))
@@ -64,6 +75,8 @@ Models can now be stored alongside their pipelines in the same repository, strea
 - improve(setup): switch to `uv`
 - improve(setup): switch to `lightning` from `pytorch-lightning`
 - improve(utils): improve dependency check when loading pretrained models and/or pipeline
+- improve(utils): add option to skip dependency check
+- improve(utils): add option to load a pretrained model checkpoint from an `io.BytesIO` buffer
 
 ### Fixes
 

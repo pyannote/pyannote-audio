@@ -25,10 +25,12 @@ from .getter import (
     PipelineAugmentation,
     PipelineCalibration,
     PipelineModel,
+    PipelinePLDA,
     get_augmentation,
     get_calibration,
     get_devices,
     get_model,
+    get_plda,
 )
 from .oracle import oracle_segmentation
 
@@ -40,6 +42,8 @@ __all__ = [
     "get_devices",
     "get_model",
     "PipelineModel",
+    "get_plda",
+    "PipelinePLDA",
     "get_calibration",
     "PipelineCalibration",
 ]

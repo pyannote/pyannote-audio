@@ -1,5 +1,5 @@
-Using `pyannote.audio` open-source toolkit in production?
-Consider switching to [pyannoteAI](https://www.pyannote.ai) for better and faster options.
+Using <img src="https://avatars.githubusercontent.com/u/7559051" width="20" style="vertical-align:text-bottom;" />`pyannote.audio` open-source toolkit in production?
+Consider switching to [<img src="https://avatars.githubusercontent.com/u/162698670" width="20" style="vertical-align:text-bottom;" /> `pyannoteAI`](https://www.pyannote.ai) for better and faster options.
 
 # `pyannote` speaker diarization toolkit
 
@@ -9,7 +9,6 @@ Consider switching to [pyannoteAI](https://www.pyannote.ai) for better and faste
  <a href="https://www.youtube.com/watch?v=37R_R82lfwA"><img src="https://img.youtube.com/vi/37R_R82lfwA/0.jpg"></a>
 </p>
 
-
 ## Highlights
 
 - :exploding_head: state-of-the-art performance (see [Benchmark](#benchmark))
@@ -18,12 +17,11 @@ Consider switching to [pyannoteAI](https://www.pyannote.ai) for better and faste
 - :snake: Python-first API
 - :zap: multi-GPU training with [pytorch-lightning](https://pytorchlightning.ai/)
 
-## Open-source speaker diarization pipeline
+## <img src="https://avatars.githubusercontent.com/u/7559051" width="20" style="vertical-align:text-bottom;" /> `pyannote.audio` open-source speaker diarization pipeline
 
 1. Install [`pyannote.audio`](https://github.com/pyannote/pyannote-audio) with `pip install pyannote.audio`
-2. Accept [`pyannote/segmentation-3.0`](https://hf.co/pyannote/segmentation-3.0) user conditions
-3. Accept [`pyannote/speaker-diarization-3.1`](https://hf.co/pyannote/speaker-diarization-3.1) user conditions
-4. Create Huggingface access token at [`hf.co/settings/tokens`](https://hf.co/settings/tokens).
+2. Accept [`pyannote/speaker-diarization-4.0`](https://hf.co/pyannote/speaker-diarization-4.0) user conditions
+3. Create Huggingface access token at [`hf.co/settings/tokens`](https://hf.co/settings/tokens).
 
 ```python
 import torch
@@ -32,7 +30,7 @@ from pyannote.audio.pipelines.utils.hook import ProgressHook
 
 # Open-source pyannote speaker diarization pipeline
 pipeline = Pipeline.from_pretrained(
-    "pyannote/speaker-diarization-3.1",
+    "pyannote/speaker-diarization-4.0",
     token="HUGGINGFACE_ACCESS_TOKEN")
 
 # send pipeline to GPU (when available)
@@ -52,10 +50,10 @@ for turn, _, speaker in diarization.itertracks(yield_label=True):
 
 ```
 
-## Premium pyannoteAI speaker diarization pipeline
+## <img src="https://avatars.githubusercontent.com/u/162698670" width="20" style="vertical-align:text-bottom;" /> `pyannoteAI` premium speaker diarization pipeline
 
-1. Install [`pyannote.audio`](https://github.com/pyannote/pyannote-audio) with `pip install pyannote.audio`
-2. Create pyannoteAI API key at [`dashboard.pyannote.ai`](https://dashboard.pyannote.ai)
+1. Create pyannoteAI API key at [`dashboard.pyannote.ai`](https://dashboard.pyannote.ai) 
+2. Enjoy 150 hours of free credits!
 
 ```python
 from pyannote.audio import Pipeline
@@ -78,57 +76,131 @@ for turn, _, speaker in diarization.itertracks(yield_label=True):
 Visit [`docs.pyannote.ai`](https://docs.pyannote.ai) to learn about other pyannoteAI features (voiceprinting, confidence scores, ...)
 
 ## Benchmark
+Out of the box, <img src="https://avatars.githubusercontent.com/u/7559051" width="20" style="vertical-align:text-bottom;" /> `pyannote.audio` speaker diarization [pipeline v4.0](https://hf.co/pyannote/speaker-diarization-4.0) is expected to be much better than v3.1.
 
-Out of the box, `pyannote.audio` speaker diarization [pipeline v3.1](https://hf.co/pyannote/speaker-diarization-3.1) is expected to be much better (and faster) than v2.x. [`pyannoteAI`](https://www.pyannote.ai) premium model goes one step further. Those numbers are diarization error rates (in %) - the lower the better.
+<img src="https://avatars.githubusercontent.com/u/162698670" width="20" style="vertical-align:text-bottom;" /> `pyannoteAI` premium models are even better (and also 2x faster). <img src="https://avatars.githubusercontent.com/u/162698670" width="20" style="vertical-align:text-bottom;" /> `labs` model is currently in private beta.
 
-| Benchmark (2025-03)  | [v2.1](https://hf.co/pyannote/speaker-diarization-2.1) | [v3.1](https://hf.co/pyannote/speaker-diarization-3.1) | <a href="https://docs.pyannote.ai"><img src="https://avatars.githubusercontent.com/u/162698670" width="32" /></a>       | 
-| --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------ | ------------------------------------------------ |
-| [AISHELL-4](https://arxiv.org/abs/2104.03603)                                                                               | 14.1                                                   | 12.2                                                   | 12.1                                             |
-| [AliMeeting](https://www.openslr.org/119/) (channel 1)                                                                      | 27.4                                                   | 24.5                                                   | 19.8                                             |
-| [AMI](https://groups.inf.ed.ac.uk/ami/corpus/) (IHM)                                                                        | 18.9                                                   | 18.8                                                   | 15.8                                             |
-| [AMI](https://groups.inf.ed.ac.uk/ami/corpus/) (SDM)                                                                        | 27.1                                                   | 22.7                                                   | 18.3                                             |
-| [AVA-AVD](https://arxiv.org/abs/2111.14448)                                                                                 | 66.3                                                   | 49.7                                                   | 45.3                                             |
-| [CALLHOME](https://catalog.ldc.upenn.edu/LDC2001S97) ([part 2](https://github.com/BUTSpeechFIT/CALLHOME_sublists/issues/1)) | 31.6                                                   | 28.4                                                   | 20.1                                             |
-| [DIHARD 3](https://catalog.ldc.upenn.edu/LDC2022S14) ([full](https://arxiv.org/abs/2012.01477))                             | 26.9                                                   | 21.4                                                   | 17.2                                             |
-| [Earnings21](https://github.com/revdotcom/speech-datasets)                                                                  | 17.0                                                   | 9.4                                                    | 9.0                                              |
-| [Ego4D](https://arxiv.org/abs/2110.07058) (dev.)                                                                            | 61.5                                                   | 51.2                                                   | 45.8                                             |
-| [MSDWild](https://github.com/X-LANCE/MSDWILD)                                                                               | 32.8                                                   | 25.4                                                   | 19.7                                             |
-| [RAMC](https://www.openslr.org/123/)                                                                                        | 22.5                                                   | 22.2                                                   | 11.1                                             |
-| [REPERE](https://www.islrn.org/resources/360-758-359-485-0/) (phase2)                                                       | 8.2                                                    | 7.9                                                    |  7.6                                             |
-| [VoxConverse](https://github.com/joonson/voxconverse) (v0.3)                                                                | 11.2                                                   | 11.2                                                   |  9.9                                             |
 
-[Diarization error rate](http://pyannote.github.io/pyannote-metrics/reference.html#diarization) (in %)
+| Benchmark (last updated in 2025-08) | <a href="https://hf.co/pyannote/speaker-diarization-3.1"><img src="https://avatars.githubusercontent.com/u/7559051" width="32" /><br/>v3.1</a> | <a href="https://hf.co/pyannote/speaker-diarization-4.0"><img src="https://avatars.githubusercontent.com/u/7559051" width="32" /><br/> v4.0</a> | <a href="https://docs.pyannote.ai"><img src="https://avatars.githubusercontent.com/u/162698670" width="32" /><br/>API</a> | <a href="https://docs.pyannote.ai"><img src="https://avatars.githubusercontent.com/u/162698670" width="32" /><br/>labs</a> | 
+| --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | -------------------------------------------------| ------------------------------------------------ | --- |
+| [AISHELL-4](https://arxiv.org/abs/2104.03603)                                                                               | 12.2 | 11.7 | 11.8 | 11.4 | 
+| [AliMeeting](https://www.openslr.org/119/) (channel 1)                                                                      | 24.5 | 20.3 | 16.3 | 15.2 | 
+| [AMI](https://groups.inf.ed.ac.uk/ami/corpus/) (IHM)                                                                        | 18.8 | 17.0 | 13.2 | 12.9 |
+| [AMI](https://groups.inf.ed.ac.uk/ami/corpus/) (SDM)                                                                        | 22.7 | 19.9 | 15.8 | 15.6 |
+| [AVA-AVD](https://arxiv.org/abs/2111.14448)                                                                                 | 49.7 | 44.6 | 40.7 | 37.1 |
+| [CALLHOME](https://catalog.ldc.upenn.edu/LDC2001S97) ([part 2](https://github.com/BUTSpeechFIT/CALLHOME_sublists/issues/1)) | 28.5 | 26.7 | 17.6 | 16.6 |
+| [DIHARD 3](https://catalog.ldc.upenn.edu/LDC2022S14) ([full](https://arxiv.org/abs/2012.01477))                             | 21.4 | 20.2 | 15.7 | 14.7 |
+| [Ego4D](https://arxiv.org/abs/2110.07058) (dev.)                                                                            | 51.2 | 46.8 | 44.7 | 39.0 |
+| [MSDWild](https://github.com/X-LANCE/MSDWILD)                                                                               | 25.4 | 22.8 | 17.9 | 17.3 |
+| [RAMC](https://www.openslr.org/123/)                                                                                        | 22.2 | 20.8 | 10.6 | 10.5 |
+| [REPERE](https://www.islrn.org/resources/360-758-359-485-0/) (phase2)                                                       | 7.9  |  8.9 |  7.3 |  7.4 |
+| [VoxConverse](https://github.com/joonson/voxconverse) (v0.3)                                                                | 11.2 | 11.2 |  9.0 |  8.5 |
 
+__[Diarization error rate](http://pyannote.github.io/pyannote-metrics/reference.html#diarization) (in %, the lower, the better)__
+
+| Benchmark (last updated in 2025-08) | <img src="https://avatars.githubusercontent.com/u/7559051" width="32" /> | <a href="https://docs.pyannote.ai"><img src="https://avatars.githubusercontent.com/u/162698670" width="32" /></a>  | Speed up
+| -------------- | ----------- | ----------- | ------ |
+| [AMI](https://groups.inf.ed.ac.uk/ami/corpus/) (IHM), ~1h files                                                     | 31s per hour of audio | 14s per hour of audio | 2.2x faster
+| [DIHARD 3](https://catalog.ldc.upenn.edu/LDC2022S14) ([full](https://arxiv.org/abs/2012.01477)), ~5min files        | 37s per hour of audio | 14s per hour of audio | 2.6x faster
+
+__Processing speed on a NVIDIA H100 80GB HBM3__
+
+## Telemetry
+
+With the optional telemetry feature in `pyannote.audio`, you can choose to send anonymous usage metrics to help the `pyannote` team improve the library.
+
+### What we track
+
+For each call to `Pipeline.from_pretrained({origin})` (or `Model.from_pretrained({origin})`), we track information about `{origin}` in the following privacy-preserving way:
+
+* If `{origin}` is an official `pyannote` or `pyannoteAI` pipeline (or model) hosted on `Huggingface`, we track it as `{origin}`.
+* If `{origin}` is a pipeline (or model) hosted on `Huggingface` from any other organization, we track it as `huggingface`.
+* If `{origin}` is a path to a local file or directory, we track it as `local`.
+
+We also track the pipeline Python class (e.g. `pyannote.audio.pipelines.SpeakerDiarization`).
+
+For each file processed with a pipeline, we track
+* the file duration in seconds
+* the value of `num_speakers`, `min_speakers`, and `max_speakers` for speaker diarization pipelines
+
+**We do not track any information that could identify who the user is.**
+
+### Configuring telemetry
+
+Telemetry can be configured in three ways:
+1. Using an environment variable
+2. Within the current Python session only
+3. Globally across sessions
+
+All of these options will modify the value of the environment variable for consistency.
+If the environment variable is not set, `pyannote.audio` will read the default value in the telemetry config.
+The default config can also be changed from Python.
+
+#### Using environment variable
+
+You can control telemetry by setting the `PYANNOTE_METRICS_ENABLED` environment variable:
+
+```bash
+# enable metrics
+export PYANNOTE_METRICS_ENABLED=1
+
+# disable metrics
+export PYANNOTE_METRICS_ENABLED=0
+```
+
+#### For current session
+
+To control telemetry for your current Python kernel session:
+
+```python
+from pyannote.audio.telemetry import set_telemetry_metrics
+
+# enable metrics for current session
+set_telemetry_metrics(True)
+
+# disable metrics for current session
+set_telemetry_metrics(False)
+```
+
+#### Global configuration
+
+To set telemetry preferences that persist across sessions:
+
+```python
+from pyannote.audio.telemetry import set_telemetry_metrics
+
+# enable metrics globally
+set_telemetry_metrics(True, save_choice_as_default=True)
+
+# disable metrics globally
+set_telemetry_metrics(False, save_choice_as_default=True)
+```
 
 ## Documentation
 
 - [Changelog](CHANGELOG.md)
-- [Frequently asked questions](FAQ.md)
-- Models
-  - Available tasks explained
-  - [Applying a pretrained model](tutorials/applying_a_model.ipynb)
-  - [Training, fine-tuning, and transfer learning](tutorials/training_a_model.ipynb)
-- Pipelines
-  - Available pipelines explained
-  - [Applying a pretrained pipeline](tutorials/applying_a_pipeline.ipynb)
-  - [Adapting a pretrained pipeline to your own data](tutorials/adapting_pretrained_pipeline.ipynb)
-  - [Training a pipeline](tutorials/voice_activity_detection.ipynb)
-- Contributing
-  - [Adding a new model](tutorials/add_your_own_model.ipynb)
-  - [Adding a new task](tutorials/add_your_own_task.ipynb)
-  - Adding a new pipeline
-  - Sharing pretrained models and pipelines
+- Videos
+  - [Speaker diarization, a ~~love~~ loss story](https://www.youtube.com/watch?v=CtjDotATEI0&list=PLSeS0sl8xpTwz7h5iJSniiF89iUdZXNJ2&index=13) / JSALT 2025 plenary talk / 60 min 
+  - [Introduction to speaker diarization](https://umotion.univ-lemans.fr/video/9513-speech-segmentation-and-speaker-diarization/) / JSALT 2023 summer school / 90 min
+  - [Speaker segmentation model](https://www.youtube.com/watch?v=wDH2rvkjymY) / Interspeech 2021 / 3 min
+  - [First release of pyannote.audio](https://www.youtube.com/watch?v=37R_R82lfwA) / ICASSP 2020 / 8 min
 - Blog
   - 2022-12-02 > ["How I reached 1st place at Ego4D 2022, 1st place at Albayzin 2022, and 6th place at VoxSRC 2022 speaker diarization challenges"](tutorials/adapting_pretrained_pipeline.ipynb)
   - 2022-10-23 > ["One speaker segmentation model to rule them all"](https://herve.niderb.fr/fastpages/2022/10/23/One-speaker-segmentation-model-to-rule-them-all)
   - 2021-08-05 > ["Streaming voice activity detection with pyannote.audio"](https://herve.niderb.fr/fastpages/2021/08/05/Streaming-voice-activity-detection-with-pyannote.html)
-- Videos
-  - [Introduction to speaker diarization](https://umotion.univ-lemans.fr/video/9513-speech-segmentation-and-speaker-diarization/) / JSALT 2023 summer school / 90 min
-  - [Speaker segmentation model](https://www.youtube.com/watch?v=wDH2rvkjymY) / Interspeech 2021 / 3 min
-  - [First release of pyannote.audio](https://www.youtube.com/watch?v=37R_R82lfwA) / ICASSP 2020 / 8 min
 - Community contributions (not maintained by the core team)
   - 2024-04-05 > [Offline speaker diarization (speaker-diarization-3.1)](tutorials/community/offline_usage_speaker_diarization.ipynb) by [Simon Ottenhaus](https://github.com/simonottenhauskenbun)
   - 2024-09-24 > [Evaluating `pyannote` pretrained speech separation pipelines](tutorials/community/eval_separation_pipeline.ipynb) by  [Clément Pagés](https://github.com/)
+- Tutorials  
+*Those tutorials were written for older versions of pyannote.audio and should be updated. Interested in working for pyannoteAI as a community manager or developer advocate? This might be a nice place to start!*
+  - [Applying a pretrained pipeline](tutorials/applying_a_pipeline.ipynb)
+  - [Adapting a pretrained pipeline to your own data](tutorials/adapting_pretrained_pipeline.ipynb)
+  - [Training a pipeline](tutorials/voice_activity_detection.ipynb)
+  - [Applying a pretrained model](tutorials/applying_a_model.ipynb)
+  - [Training, fine-tuning, and transfer learning](tutorials/training_a_model.ipynb)
+  - [Adding a new model](tutorials/add_your_own_model.ipynb)
+  - [Adding a new task](tutorials/add_your_own_task.ipynb)
+  - [Frequently asked questions](FAQ.md)
 
 ## Citations
 

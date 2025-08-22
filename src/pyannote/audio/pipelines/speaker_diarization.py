@@ -1,6 +1,7 @@
 # The MIT License (MIT)
 #
-# Copyright (c) 2021- CNRS
+# Copyright (c) 2021-2025 CNRS
+# Copyright (c) 2025- pyannoteAI
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -43,8 +44,10 @@ from pyannote.audio.pipelines.clustering import Clustering
 from pyannote.audio.pipelines.speaker_verification import PretrainedSpeakerEmbedding
 from pyannote.audio.pipelines.utils import (
     PipelineModel,
+    PipelinePLDA,
     SpeakerDiarizationMixin,
     get_model,
+    get_plda,
 )
 from pyannote.audio.pipelines.utils.diarization import set_num_speakers
 from pyannote.audio.utils.signal import binarize
@@ -116,11 +119,15 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
     def __init__(
         self,
-        segmentation: PipelineModel = "pyannote/segmentation@2022.07",
+        segmentation: PipelineModel = "pyannote/segmentation-3.0",
         segmentation_step: float = 0.1,
-        embedding: PipelineModel = "speechbrain/spkrec-ecapa-voxceleb@5c0be3875fda05e81f3c004ed8c7c06be308de1e",
+        embedding: PipelineModel = "pyannote/wespeaker-voxceleb-resnet34-LM",
         embedding_exclude_overlap: bool = False,
-        clustering: str = "AgglomerativeClustering",
+        plda: PipelinePLDA = {
+            "checkpoint": "BUT-FIT/diarizen-wavlm-large-s80-md",
+            "subfolder": "plda",
+        },
+        clustering: str = "VBxClustering",
         embedding_batch_size: int = 1,
         segmentation_batch_size: int = 1,
         der_variant: Optional[dict] = None,
@@ -137,6 +144,9 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         self.embedding = embedding
         self.embedding_batch_size = embedding_batch_size
         self.embedding_exclude_overlap = embedding_exclude_overlap
+
+        self.plda = plda
+        self._plda = get_plda(plda, token=token, cache_dir=cache_dir)
 
         self.klustering = clustering
 
@@ -178,7 +188,11 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             raise ValueError(
                 f'clustering must be one of [{", ".join(list(Clustering.__members__))}]'
             )
-        self.clustering = Klustering.value(metric=metric)
+
+        if self.klustering == "VBxClustering":
+            self.clustering = Klustering.value(self._plda, metric=metric)
+        else:
+            self.clustering = Klustering.value(metric=metric)
 
         self._expects_num_speakers = self.clustering.expects_num_clusters
 
@@ -191,7 +205,10 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         self._segmentation.batch_size = batch_size
 
     def default_parameters(self):
-        raise NotImplementedError()
+        return {
+            'segmentation': {'min_duration_off': 0.0},
+            'clustering': {'threshold': 0.6, 'Fa': 0.07, 'Fb': 0.8}
+        }
 
     def classes(self):
         speaker = 0
@@ -435,6 +452,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         num_speakers: Optional[int] = None,
         min_speakers: Optional[int] = None,
         max_speakers: Optional[int] = None,
+        exclusive_diarization: bool = False,
         return_embeddings: bool = False,
         hook: Optional[Callable] = None,
     ) -> Annotation:
@@ -450,6 +468,9 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             Minimum number of speakers. Has no effect when `num_speakers` is provided.
         max_speakers : int, optional
             Maximum number of speakers. Has no effect when `num_speakers` is provided.
+        exclusive_diarization : bool, optional
+            Enforce exclusive diarization, i.e. only one speaker can be active at a time.
+            Defaults to False, i.e. overlapping speech is allowed.
         return_embeddings : bool, optional
             Return representative speaker embeddings.
         hook : callable, optional
@@ -517,6 +538,9 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         hook("speaker_counting", count)
         #   shape: (num_frames, 1)
         #   dtype: int
+
+        if exclusive_diarization:
+            count.data = np.minimum(count.data, 1).astype(np.int8)
 
         # exit early when no speaker is ever active
         if np.nanmax(count.data) == 0.0:
