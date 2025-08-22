@@ -401,7 +401,7 @@ class Audio:
         if end > duration:
             if mode == "raise":
                 raise ValueError(
-                    f"requested chunk with end time (t={start:.3f}s) greater than {file.get('uri', 'in-memory')} file duration ({duration:.3f}s)."
+                    f"requested chunk with end time (t={end:.3f}s) greater than {file.get('uri', 'in-memory')} file duration ({duration:.3f}s)."
                 )
             else:
                 end = duration
