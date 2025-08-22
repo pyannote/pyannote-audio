@@ -28,7 +28,6 @@ pyannote.audio relies on torchcodec for reading and torchaudio for resampling.
 
 """
 
-import math
 import random
 from io import IOBase
 from pathlib import Path
@@ -275,7 +274,7 @@ class Audio:
                 "`sample_rate` must be provided to compute number of samples."
             )
 
-        return math.floor(duration * sample_rate)
+        return round(duration * sample_rate)
 
     def __call__(self, file: AudioFile) -> Tuple[Tensor, int]:
         """Obtain waveform
@@ -350,7 +349,7 @@ class Audio:
         #
         if "waveform" in file:
             waveform = file["waveform"]
-            _, num_samples = waveform.shape[1]
+            _, num_samples = waveform.shape
             sample_rate = file["sample_rate"]
 
             start_sample: int = self.get_num_samples(segment.start, sample_rate)
@@ -408,22 +407,29 @@ class Audio:
                 end = duration
 
         samples: AudioSamples = decoder.get_samples_played_in_range(start, end)
+        data = samples.data
+        sample_rate = samples.sample_rate
 
         # rewind if needed (not sure this is needed with torchcodec)
         if isinstance(file["audio"], IOBase):
             file["audio"].seek(0)
 
-        data = samples.data
-
-        expected_num_samples = self.get_num_samples(
-            segment.end, sample_rate
-        ) - self.get_num_samples(segment.start, sample_rate)
+        # raise if we did not get the expected number of samples (with a 1 sample tolerance)
+        expected_num_samples = self.get_num_samples(segment.duration, sample_rate)
         _, actual_num_samples = data.shape
+        difference = pad_start + actual_num_samples + pad_end - expected_num_samples
+        if abs(difference) > 1:
+            raise ValueError(
+                f"requested chunk {segment} from {file.get('uri', 'in-memory')} file resulted in {actual_num_samples} samples "
+                f"instead of the expected {expected_num_samples} samples."
+            )
 
-        # raise if we did not get the expect number of samples
-        if pad_start + actual_num_samples + pad_end != expected_num_samples:
-            raise
+        if difference == 1:
+            # we got one sample too many, trim the end
+            data = data[:, :-1]
+        elif difference == -1:
+            # we got one sample too few, pad the end
+            pad_end += 1
 
-        sample_rate = samples.sample_rate
         data = F.pad(data, (pad_start, pad_end))
         return self.downmix_and_resample(data, sample_rate, channel=channel)
