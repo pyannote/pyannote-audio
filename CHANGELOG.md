@@ -49,9 +49,11 @@ With the optional telemetry feature in `pyannote.audio`, you can choose to send 
 - BREAKING(task): drop support for `weigh_by_cardinality` option in `SpeakerDiarization` task
 - BREAKING(task): drop support for `vad_loss` option in `SpeakerDiarization` task
 - BREAKING(cli): remove deprecated `pyannote-audio-train` CLI
-
+- BREAKING(io): remove support for `sox` and `soundfile` audio I/O backends (only `ffmpeg` or in-memory audio is supported)
+  
 ### New features
 
+- feat(io): switch from `torchaudio` to `torchcodec` for audio I/O
 - feat(pipeline): add support for VBx clustering ([@Selesnyan](https://github.com/Selesnyan) and [jyhan03](https://github.com/jyhan03))
 - feat(pyannoteAI): add wrapper around pyannoteAI SDK
 - improve(hub): add support for pipeline repos that also include underlying models
