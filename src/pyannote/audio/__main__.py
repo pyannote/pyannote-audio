@@ -620,10 +620,12 @@ def benchmark(
 
     if per_file:
         benchmark_dir = into / benchmark_name
-        benchmark_dir.mkdir(parents=True)
+        if benchmark_dir.exists():
+            raise FileExistsError(f"{benchmark_dir} already exists.")
 
         rttm_dir = benchmark_dir / "rttm"
-        rttm_dir.mkdir()
+        rttm_dir.mkdir(parents=True)
+
     else:
         rttm_file = into / f"{benchmark_name}.rttm"
         # make sure we don't overwrite previous results
