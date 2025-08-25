@@ -659,8 +659,7 @@ def benchmark(
         if per_file:
             rttm_file = rttm_dir / f"{uri}.rttm"
 
-        mode = "w" if per_file else "a"
-        with open(rttm_file, mode) as rttm:
+        with open(rttm_file, "w" if per_file else "a") as rttm:
             speaker_diarization.write_rttm(rttm)
 
         # compute metric when possible
