@@ -619,8 +619,11 @@ def benchmark(
     speaker_count: dict[int, dict[int, int]] = dict()
 
     if per_file:
-        rttm_dir = into / benchmark_name / "rttm"
-        rttm_dir.mkdir(parents=True, exist_ok=True)
+        benchmark_dir = into / benchmark_name
+        benchmark_dir.mkdir(parents=True)
+
+        rttm_dir = benchmark_dir / "rttm"
+        rttm_dir.mkdir()
     else:
         rttm_file = into / f"{benchmark_name}.rttm"
         # make sure we don't overwrite previous results
@@ -644,7 +647,7 @@ def benchmark(
         # if prediction has a built-in serialize method, save serialized version
         if hasattr(prediction, "serialize"):
             if per_file:
-                json_dir = into / benchmark_name / "json"
+                json_dir = benchmark_dir / "json"
                 json_dir.mkdir(exist_ok=True)
 
                 with open(json_dir / f"{uri}.json", "w") as f:
