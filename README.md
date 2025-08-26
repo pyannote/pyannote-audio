@@ -1,5 +1,5 @@
-Using `pyannote.audio` open-source toolkit in production?  
-Consider switching to [pyannoteAI](https://www.pyannote.ai) for better and faster options.
+# Pyannote with "BAD THINGS" suppressed
+This fork just removed the poorly engineered bogus boo called "Bad things might happen ..." from pyannote.
 
 # `pyannote.audio` speaker diarization toolkit
 
