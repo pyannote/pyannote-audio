@@ -414,7 +414,7 @@ class Audio:
             else:
                 end = duration
 
-        samples: AudioSamples = decoder.get_samples_played_in_range(start, end)
+        samples: AudioSamples = decoder.get_samples_played_in_range(float(start), float(end))
         data = samples.data
         sample_rate = samples.sample_rate
 
