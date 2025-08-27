@@ -181,8 +181,6 @@ class SegmentationTask(Task):
             # generate random chunk
             yield next(chunks)
 
-    #def collate_X(self, batch) -> torch.Tensor:
-    #    return default_collate([b["X"] for b in batch])
 
     def collate_X(self, batch) -> torch.Tensor:
         xs = [b["X"] for b in batch]
