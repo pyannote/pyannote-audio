@@ -71,8 +71,6 @@ def download_from_hf_hub(
     `huggingface_hub.hf_hub_download`
     """
 
-    print(f"Downloading {model_id} / {subfolder} / {asset_file} @ {revision}")
-
     # if provided token does not start with 'hf_', it is likely a pyannoteAI API key
     # and therefore should not be passed to Huggingface Hub.
     if isinstance(token, str) and not token.startswith("hf_"):
