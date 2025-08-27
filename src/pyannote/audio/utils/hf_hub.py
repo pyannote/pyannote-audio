@@ -1,6 +1,7 @@
 # MIT License
 #
-# Copyright (c) 2024- CNRS
+# Copyright (c) 2024-2025 CNRS
+# Copyright (c) 2025- pyannoteAI
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -22,7 +23,6 @@
 
 from enum import Enum
 from pathlib import Path
-from typing import Optional, Tuple, Union
 
 from huggingface_hub import hf_hub_download
 from huggingface_hub.utils import HfHubHTTPError
@@ -37,24 +37,30 @@ class AssetFileName(Enum):
     Model = "pytorch_model.bin"
     Pipeline = "config.yaml"
 
+    def __str__(self) -> str:
+        return self.value
+
 
 def download_from_hf_hub(
-    checkpoint: str,
+    model_id: str,
     asset_file: AssetFileName | str,
-    subfolder: Optional[str] = None,
-    cache_dir: Optional[Union[str, Path]] = None,
-    token: Union[bool, str, None] = None,
-) -> Tuple[str, Optional[str], Optional[str]]:
+    subfolder: str | None = None,
+    revision: str | None = None,
+    cache_dir: str | Path | None = None,
+    token: bool | str | None = None,
+) -> str | None:
     """Download file from Huggingface Hub
 
     Parameters
     ----------
-    checkpoint : Path or str
+    model_id : str
         Model identifier from the hf.co model hub.
     asset_file : AssetFileName
         Type of asset file to download.
     subfolder : str, optional
         Folder inside the model repo.
+    revision : str, optional
+        Revision when loading from the huggingface.co model hub.
     token : str or bool, optional
         Huggingface token to be used for downloading from Huggingface hub.
     cache_dir: Path or str, optional
@@ -65,42 +71,36 @@ def download_from_hf_hub(
     `huggingface_hub.hf_hub_download`
     """
 
-    if "@" in checkpoint:
-        model_id, revision = checkpoint.split("@")
-    else:
-        model_id, revision = checkpoint, None
+    print(f"Downloading {model_id} / {subfolder} / {asset_file} @ {revision}")
 
     # if provided token does not start with 'hf_', it is likely a pyannoteAI API key
     # and therefore should not be passed to Huggingface Hub.
-    if token and not token.startswith("hf_"):
+    if isinstance(token, str) and not token.startswith("hf_"):
         token = None
 
     try:
-        return (
+        return hf_hub_download(
             model_id,
-            revision,
-            hf_hub_download(
-                model_id,
-                asset_file.value if isinstance(asset_file, AssetFileName) else asset_file,
-                subfolder=subfolder,
-                repo_type="model",
-                revision=revision,
-                library_name="pyannote",
-                library_version=__version__,
-                cache_dir=cache_dir,
-                token=token,
-            ),
+            asset_file.value if isinstance(asset_file, AssetFileName) else asset_file,
+            subfolder=subfolder,
+            repo_type="model",
+            revision=revision,
+            library_name="pyannote",
+            library_version=__version__,
+            cache_dir=cache_dir,
+            token=token,
         )
     except HfHubHTTPError:
+        asset_file_name: str = asset_file.name if isinstance(asset_file, AssetFileName) else asset_file
         print(
             f"""
-Could not download {asset_file.name.lower()} from {model_id}.
+Could not download {asset_file_name} from {model_id}.
 It might be because the repository is private or gated:
 
 * visit https://hf.co/{model_id} to accept user conditions
 * visit https://hf.co/settings/tokens to create an authentication token
-* load the {asset_file.name.lower()} with the `token` argument:
-    >>> {asset_file.name}.from_pretrained('{model_id}', token='hf_....')
+* load the {asset_file_name} with the `token` argument:
+    >>> {asset_file_name}.from_pretrained('{model_id}', token='hf_....')
 """
         )
         raise

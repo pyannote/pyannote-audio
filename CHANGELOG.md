@@ -42,6 +42,7 @@ With the optional telemetry feature in `pyannote.audio`, you can choose to send 
 - BREAKING(io): remove support for `sox` and `soundfile` audio I/O backends (only `ffmpeg` or in-memory audio is supported)
 - BREAKING(setup): drop support to `Python` < 3.10
 - BREAKING(hub): rename `use_auth_token` to `token`
+- BREAKING(hub): drop support for `{pipeline_name}@{revision}` syntax in `Model.from_pretrained(...)` and `Pipeline.from_pretrained(...)` -- use new `revision` keyword argument instead
 - BREAKING(task): remove `OverlappedSpeechDetection` task (part of `SpeakerDiarization` task)
 - BREAKING(pipeline): remove `OverlappedSpeechDetection` and `Resegmentation` unmaintained pipelines (part of `SpeakerDiarization`)
 - BREAKING(cache): rely on `huggingface_hub` caching directory (`PYANNOTE_CACHE` is no longer used)
