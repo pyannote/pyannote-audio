@@ -65,14 +65,14 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
     Parameters
     ----------
     segmentation : Model, str, or dict, optional
-        Pretrained segmentation model. Defaults to "pyannote/segmentation@2022.07".
+        Pretrained segmentation model. Defaults to "pyannote/segmentation-3.0".
         See pyannote.audio.pipelines.utils.get_model for supported format.
     segmentation_step: float, optional
         The segmentation model is applied on a window sliding over the whole audio file.
         `segmentation_step` controls the step of this window, provided as a ratio of its
         duration. Defaults to 0.1 (i.e. 90% overlap between two consecuive windows).
     embedding : Model, str, or dict, optional
-        Pretrained embedding model. Defaults to "speechbrain/spkrec-ecapa-voxceleb@5c0be38".
+        Pretrained embedding model. Defaults to "pyannote/wespeaker-voxceleb-resnet34-LM".
         See pyannote.audio.pipelines.utils.get_model for supported format.
     embedding_exclude_overlap : bool, optional
         Exclude overlapping speech regions when extracting embeddings.
