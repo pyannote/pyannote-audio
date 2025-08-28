@@ -389,10 +389,11 @@ class Audio:
             metadata.duration_seconds_from_header, sample_rate
         )
 
-        start: float = segment.start
-        end: float = segment.end
+        # convert to float to avoid issues with np.float32 rounding errors when training
+        start: float = float(segment.start)
+        end: float = float(segment.end)
 
-        pad_start: int = max(0, self.get_num_samples(-segment.start, sample_rate))
+        pad_start: int = max(0, self.get_num_samples(-start, sample_rate))
         if start < 0:
             if mode == "raise":
                 raise ValueError(
@@ -402,7 +403,7 @@ class Audio:
                 start = 0.0
 
         pad_end: int = (
-            max(self.get_num_samples(segment.end, sample_rate), num_samples)
+            max(self.get_num_samples(end, sample_rate), num_samples)
             - num_samples
         )
         if end > duration:
@@ -414,7 +415,7 @@ class Audio:
             else:
                 end = duration
 
-        samples: AudioSamples = decoder.get_samples_played_in_range(float(start), float(end))
+        samples: AudioSamples = decoder.get_samples_played_in_range(start, end)
         data = samples.data
         sample_rate = samples.sample_rate
 
