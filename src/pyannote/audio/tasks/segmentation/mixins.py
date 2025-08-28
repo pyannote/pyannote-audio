@@ -33,11 +33,10 @@ from lightning.pytorch.loggers import MLFlowLogger, TensorBoardLogger
 from pyannote.audio.core.task import Problem, Task, get_dtype
 from pyannote.audio.utils.random import create_rng_for_worker
 from pyannote.database.protocol.protocol import Scope, Subset
+from torch.nn import functional as F
 from torch.utils.data._utils.collate import default_collate
 from torchmetrics import Metric
 from torchmetrics.classification import BinaryAUROC, MulticlassAUROC, MultilabelAUROC
-
-from torch.nn import functional as F
 
 Subsets = list(Subset.__args__)
 Scopes = list(Scope.__args__)
@@ -181,15 +180,18 @@ class SegmentationTask(Task):
             # generate random chunk
             yield next(chunks)
 
-
     def collate_X(self, batch) -> torch.Tensor:
-        xs = [b["X"] for b in batch]
-        max_len = max(x.shape[-1] for x in xs)
+        lengths = set(b["X"].shape[-1] for b in batch)
 
-        # pad with 0.0 to the right
-        xs = [F.pad(x, (0, max_len - x.shape[-1])) for x in xs]
+        # just stack waveforms as they are if they all have the same length
+        if len(lengths) == 1:
+            return default_collate([b["X"] for b in batch])
 
-        return default_collate(xs)
+        # pad with 0.0 to the right in case there are variable-length waveforms
+        max_len = max(lengths)
+        return default_collate(
+            [F.pad(b["X"], (0, max_len - b["X"].shape[-1])) for b in batch]
+        )
 
     def collate_y(self, batch) -> torch.Tensor:
         return default_collate([b["y"].data for b in batch])
