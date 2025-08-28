@@ -27,30 +27,30 @@ from collections import OrderedDict
 from collections.abc import Iterator
 from functools import partial
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Text, Union
+from typing import Callable, Dict, List, Optional
 
 import torch
 import torch.nn as nn
 import yaml
-from pyannote.core.utils.helper import get_class_by_name
-from pyannote.database import FileFinder, ProtocolFile
-from pyannote.pipeline import Pipeline as _Pipeline
-
 from pyannote.audio import Audio
 from pyannote.audio.core.inference import BaseInference
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import Model
+from pyannote.audio.telemetry import track_pipeline_apply, track_pipeline_init
+from pyannote.audio.utils.dependencies import check_dependencies
 from pyannote.audio.utils.hf_hub import AssetFileName, download_from_hf_hub
 from pyannote.audio.utils.reproducibility import fix_reproducibility
-from pyannote.audio.utils.dependencies import check_dependencies
-from pyannote.audio.telemetry import track_pipeline_init, track_pipeline_apply
+from pyannote.core.utils.helper import get_class_by_name
+from pyannote.database import FileFinder, ProtocolFile
+from pyannote.pipeline import Pipeline as _Pipeline
+
 
 def expand_subfolders(
     config,
-    model_id: Optional[Text] = None,
-    revision: Optional[Text] = None,
-    cache_dir: Union[Path, str, None] = None,
-    token: Optional[Text] = None,
+    model_id: str | None = None,
+    parent_revision: str | None = None,
+    cache_dir: Path | str | None = None,
+    token: str | None = None,
     skip_dependencies: bool = False,
 ) -> None:
     """Expand $model subfolders in config
@@ -65,7 +65,7 @@ def expand_subfolders(
     config : dict
     model_id : str, optional
         Model identifier when loading from the huggingface.co model hub.
-    revision : str, optional
+    parent_revision : str, optional
         Revision when loading from the huggingface.co model hub.
     token : str or bool, optional
         Huggingface token to be used for downloading from Huggingface hub.
@@ -79,7 +79,16 @@ def expand_subfolders(
     if isinstance(config, dict):
         for key, value in config.items():
             if isinstance(value, str) and value.startswith("$model/"):
+
                 subfolder = "/".join(value.split("/")[1:])
+
+                # if subfolder contains '@', split it to get revision
+                if "@" in subfolder:
+                    subfolder, revision = subfolder.split("@")
+                # otherwise, use parent revision if any
+                else:
+                    revision = parent_revision
+
                 config[key] = {
                     "checkpoint": model_id,
                     "revision": revision,
@@ -92,7 +101,7 @@ def expand_subfolders(
                 expand_subfolders(
                     value,
                     model_id,
-                    revision=revision,
+                    parent_revision=parent_revision,
                     token=token,
                     cache_dir=cache_dir,
                     skip_dependencies=skip_dependencies,
@@ -101,7 +110,16 @@ def expand_subfolders(
     elif isinstance(config, list):
         for idx, value in enumerate(config):
             if isinstance(value, str) and value.startswith("$model/"):
+
                 subfolder = "/".join(value.split("/")[1:])
+
+                # if subfolder contains '@', split it to get revision
+                if "@" in subfolder:
+                    subfolder, revision = subfolder.split("@")
+                # otherwise, use parent revision if any
+                else:
+                    revision = parent_revision
+
                 config[idx] = {
                     "checkpoint": model_id,
                     "revision": revision,
@@ -110,11 +128,12 @@ def expand_subfolders(
                     "cache_dir": cache_dir,
                     "skip_dependencies": skip_dependencies,
                 }
+
             else:
                 expand_subfolders(
                     value,
                     model_id,
-                    revision=revision,
+                    parent_revision=parent_revision,
                     token=token,
                     cache_dir=cache_dir,
                     skip_dependencies=skip_dependencies,
@@ -125,10 +144,11 @@ class Pipeline(_Pipeline):
     @classmethod
     def from_pretrained(
         cls,
-        checkpoint: Union[Text, Path],
-        hparams_file: Union[Text, Path] = None,
-        token: Union[Text, None] = None,
-        cache_dir: Union[Path, Text, None] = None,
+        checkpoint: str | Path,
+        revision: str | None = None,
+        hparams_file: str | Path | None = None,
+        token: str | bool | None = None,
+        cache_dir: Path | str | None = None,
         skip_dependencies: bool = False,
     ) -> Optional["Pipeline"]:
         """Load pretrained pipeline
@@ -140,6 +160,8 @@ class Pipeline(_Pipeline):
             * path to a local `config.yaml` pipeline checkpoint
             * path to a local directory containing such a file
             * identifier of a pipeline on huggingface.co model hub
+        revision : str, optional
+            Revision when loading from the huggingface.co model hub.
         hparams_file: Path or str, optional
         token : str or bool, optional
             Token to be used for the download.
@@ -153,6 +175,9 @@ class Pipeline(_Pipeline):
         # if checkpoint is a directory, look for the pipeline checkpoint
         # inside this directory
         if os.path.isdir(checkpoint):
+            if revision is not None:
+                raise ValueError("Revisions cannot be used with local checkpoints.")
+
             model_id = Path(checkpoint)
             config_yml = model_id / AssetFileName.Pipeline.value
             revision = None
@@ -160,6 +185,9 @@ class Pipeline(_Pipeline):
 
         # if checkpoint is a file, assume it is the pipeline checkpoint
         elif os.path.isfile(checkpoint):
+            if revision is not None:
+                raise ValueError("Revisions cannot be used with local checkpoints.")
+
             model_id = Path(checkpoint).parent
             config_yml = checkpoint
             revision = None
@@ -167,10 +195,17 @@ class Pipeline(_Pipeline):
 
         # otherwise, assume that the checkpoint is hosted on HF model hub
         else:
-            checkpoint = str(checkpoint)
-            model_id, revision, config_yml = download_from_hf_hub(
-                checkpoint,
+            model_id = str(checkpoint)
+
+            if "@" in model_id:
+                raise ValueError(
+                    "Revisions must be passed with `revision` keyword argument."
+                )
+
+            config_yml = download_from_hf_hub(
+                model_id,
                 AssetFileName.Pipeline,
+                revision=revision,
                 cache_dir=cache_dir,
                 token=token,
             )
@@ -178,8 +213,8 @@ class Pipeline(_Pipeline):
                 return None
 
             otel_origin: str = (
-                checkpoint
-                if checkpoint.lower().startswith(("pyannote/", "pyannoteai/"))
+                model_id
+                if model_id.lower().startswith(("pyannote/", "pyannoteai/"))
                 else "huggingface"
             )
 
@@ -190,7 +225,7 @@ class Pipeline(_Pipeline):
         expand_subfolders(
             config,
             model_id,
-            revision=revision,
+            parent_revision=revision,
             token=token,
             cache_dir=cache_dir,
             skip_dependencies=skip_dependencies,
@@ -350,7 +385,7 @@ class Pipeline(_Pipeline):
             super().__delattr__(name)
 
     @staticmethod
-    def setup_hook(file: AudioFile, hook: Optional[Callable] = None) -> Callable:
+    def setup_hook(file: AudioFile, hook: Callable | None = None) -> Callable:
         def noop(*args, **kwargs):
             return
 
@@ -359,7 +394,7 @@ class Pipeline(_Pipeline):
     def default_parameters(self):
         raise NotImplementedError()
 
-    def classes(self) -> Union[List, Iterator]:
+    def classes(self) -> List | Iterator:
         """Classes returned by the pipeline
 
         Returns
@@ -409,7 +444,7 @@ class Pipeline(_Pipeline):
         if hasattr(self, "preprocessors"):
             file = ProtocolFile(file, lazy=self.preprocessors)
 
-        # send file duration to telemetry as well as 
+        # send file duration to telemetry as well as
         # requested number of speakers in case of diarization
         track_pipeline_apply(self, file, **kwargs)
 

@@ -1,6 +1,7 @@
 # MIT License
 #
-# Copyright (c) 2024- CNRS
+# Copyright (c) 2024-2025 CNRS
+# Copyright (c) 2025- pyannoteAI
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -23,15 +24,14 @@
 
 import os
 from pathlib import Path
-from typing import Optional, Text, Union
+from typing import Optional
 
 import numpy as np
 import safetensors.numpy
 import scipy.interpolate
+from pyannote.audio.utils.hf_hub import AssetFileName, download_from_hf_hub
 from sklearn.isotonic import IsotonicRegression
 from sklearn.utils.validation import NotFittedError, check_is_fitted
-
-from pyannote.audio.utils.hf_hub import AssetFileName, download_from_hf_hub
 
 
 class Calibration(IsotonicRegression):
@@ -68,7 +68,7 @@ class Calibration(IsotonicRegression):
         }
 
         safetensors.numpy.save_file(tensor_dict, path)
-    
+
     @classmethod
     def from_tensor_dict(cls, tensor_dict: dict) -> "Calibration":
         """Load calibration from a dictionary of tensors
@@ -129,10 +129,11 @@ class Calibration(IsotonicRegression):
     @classmethod
     def from_pretrained(
         cls,
-        checkpoint: Union[Path, str],
-        subfolder: Optional[str] = None,
-        token: Optional[Text] = None,
-        cache_dir: Optional[Union[str, Path]] = None,
+        checkpoint: Path | str,
+        subfolder: str | None = None,
+        revision: str | None = None,
+        token: str | bool | None = None,
+        cache_dir: Path | str | None = None,
         **kwargs,
     ) -> Optional["Calibration"]:
         """Load calibration from disk or Huggingface Hub
@@ -143,6 +144,8 @@ class Calibration(IsotonicRegression):
             Path to checkpoint or a model identifier from the hf.co model hub.
         subfolder : str, optional
             Folder inside the hf.co model repo.
+        revision : str, optional
+            Revision when loading from the huggingface.co model hub.
         token : str, optional
             When loading a private hf.co model, set `token`
             to True or to a string containing your hugginface.co authentication
@@ -154,6 +157,9 @@ class Calibration(IsotonicRegression):
         # if checkpoint is a directory, look for the calibration checkpoint
         # inside this directory (or inside a subfolder if specified)
         if os.path.isdir(checkpoint):
+            if revision is not None:
+                raise ValueError("Revisions cannot be used with local checkpoints.")
+
             if subfolder:
                 path_to_calibration_checkpoint = (
                     Path(checkpoint) / subfolder / AssetFileName.Calibration.value
@@ -165,14 +171,24 @@ class Calibration(IsotonicRegression):
 
         # if checkpoint is a file, use it as is
         elif os.path.isfile(checkpoint):
+            if revision is not None:
+                raise ValueError("Revisions cannot be used with local checkpoints.")
+
             path_to_calibration_checkpoint = checkpoint
 
         # otherwise, assume that the checkpoint is hosted on HF model hub
         else:
-            _, _, path_to_calibration_checkpoint = download_from_hf_hub(
-                str(checkpoint),
+            checkpoint = str(checkpoint)
+            if "@" in checkpoint:
+                raise ValueError(
+                    "Revisions must be passed with `revision` keyword argument."
+                )
+
+            path_to_calibration_checkpoint = download_from_hf_hub(
+                checkpoint,
                 AssetFileName.Calibration,
                 subfolder=subfolder,
+                revision=revision,
                 cache_dir=cache_dir,
                 token=token,
             )
