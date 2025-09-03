@@ -345,9 +345,14 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             mask_batch = torch.vstack(masks)
             # (batch_size, num_frames) torch.Tensor
 
-            embedding_batch: np.ndarray = self._embedding(
-                waveform_batch, masks=mask_batch
-            )
+            # remove items from batch which have all zero masks, only compute embeddings for the rest
+            embedding_batch =  np.zeros((mask_batch.shape[0],256), dtype=np.float32)
+            nonzero_masks = np.where(np.linalg.norm(mask_batch, axis=1) > 0)
+            if nonzero_masks[0].shape[0] > 0:
+                embedding_batch_reduced: np.ndarray = self._embedding(
+                    waveform_batch[nonzero_masks], masks=mask_batch[nonzero_masks]
+                )
+                embedding_batch[nonzero_masks] = embedding_batch_reduced
             # (batch_size, dimension) np.ndarray
 
             embedding_batches.append(embedding_batch)
