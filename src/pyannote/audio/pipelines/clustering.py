@@ -573,9 +573,9 @@ class VBxClustering(BaseClustering):
         self,
         embeddings: np.ndarray,
         segmentations: Optional[SlidingWindowFeature] = None,
-        num_clusters: Optional[int] = None,  # not used but kept for compatibility
-        min_clusters: Optional[int] = None,  # not used but kept for compatibility
-        max_clusters: Optional[int] = None,  # not used but kept for compatibility
+        num_clusters: Optional[int] = None,
+        min_clusters: Optional[int] = None,
+        max_clusters: Optional[int] = None,
         **kwargs,
     ) -> np.ndarray:
         train_embeddings, _, _ = self.filter_embeddings(
@@ -612,11 +612,30 @@ class VBxClustering(BaseClustering):
             maxIters=20,
         )
 
-        # calculate distance
         num_chunks, num_speakers, dimension = embeddings.shape
         W = q[:, sp > 1e-7] # responsibilities of speakers that VBx kept
         centroids = W.T @ train_embeddings.reshape(-1, dimension) / W.sum(0, keepdims=True).T
 
+        # (optional) K-Means
+        # re-cluster with Kmeans only in case the automatically determined
+        # number of clusters does not match the requested number of speakers
+        # (either too low, or too high, or different from the requested number)
+        auto_num_clusters, _ = centroids.shape
+        if auto_num_clusters < min_clusters:
+            num_clusters = min_clusters
+        elif auto_num_clusters > max_clusters:
+            num_clusters = max_clusters
+        if num_clusters and num_clusters != auto_num_clusters:
+            kmeans_clusters = KMeans(
+                n_clusters=num_clusters, n_init=3, random_state=42, copy_x=False
+            ).fit_predict(train_embeddings_normed)
+            centroids = np.vstack(
+                [
+                    np.mean(train_embeddings[kmeans_clusters == k], axis=0)
+                    for k in range(num_clusters)
+                ])
+
+        # calculate distance
         e2k_distance = rearrange(
             cdist(
                 rearrange(embeddings, "c s d -> (c s) d"),
