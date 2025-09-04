@@ -801,7 +801,6 @@ def benchmark(
         for file in files:
             if per_file:
                 optimized_rttm_file = optimized_rttm_dir / f"{file['uri']}.OptimizedMinDurationOff.rttm"
-  
             with open(optimized_rttm_file, "w" if per_file else "a") as rttm:
                 file["best_speaker_diarization"].write_rttm(rttm)
 
