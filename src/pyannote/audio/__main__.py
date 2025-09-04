@@ -798,7 +798,6 @@ def benchmark(
             # make sure we don't overwrite previous results
             if optimized_rttm_file.exists():
                 raise FileExistsError(f"{optimized_rttm_file} already exists.")
-        
         for file in files:
             if per_file:
                 optimized_rttm_file = optimized_rttm_dir / f"{file['uri']}_OptimizedMinDurationOff.rttm"
