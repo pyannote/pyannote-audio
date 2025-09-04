@@ -795,7 +795,7 @@ def benchmark(
             optimized_rttm_dir.mkdir()
         else:
             optimized_rttm_file = into / f"{benchmark_name}.OptimizedMinDurationOff.rttm"
-            # make suire we don't overwrite previous results
+            # make sure we don't overwrite previous results
             if optimized_rttm_file.exists():
                 raise FileExistsError(f"{optimized_rttm_file} already exists.")
         
