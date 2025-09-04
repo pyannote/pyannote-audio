@@ -789,18 +789,17 @@ def benchmark(
         with open(into / f"{benchmark_name}.OptimizedMinDurationOff.yml", "w") as yml:
             yaml.dump({"min_duration_off": best_min_duration_off}, yml)
 
-        # save output in RTTM format
-        if per_file:
-            optimized_rttm_dir = benchmark_dir / "rttm_OptimizedMinDurationOff"
-            optimized_rttm_dir.mkdir()
-        else:
+        if not per_file:
             optimized_rttm_file = into / f"{benchmark_name}.OptimizedMinDurationOff.rttm"
+
             # make sure we don't overwrite previous results
             if optimized_rttm_file.exists():
                 raise FileExistsError(f"{optimized_rttm_file} already exists.")
+
         for file in files:
             if per_file:
-                optimized_rttm_file = optimized_rttm_dir / f"{file['uri']}.OptimizedMinDurationOff.rttm"
+                optimized_rttm_file = rttm_dir / f"{file['uri']}.OptimizedMinDurationOff.rttm"
+
             with open(optimized_rttm_file, "w" if per_file else "a") as rttm:
                 file["best_speaker_diarization"].write_rttm(rttm)
 
