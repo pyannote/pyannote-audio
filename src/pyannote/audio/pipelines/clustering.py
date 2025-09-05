@@ -556,7 +556,7 @@ class VBxClustering(BaseClustering):
         self,
         plda: PLDA,
         metric: str = "cosine",
-        constrained_assignment: bool = True,
+        constrained_assignment: bool = False,
     ):
         super().__init__(
             metric=metric,
