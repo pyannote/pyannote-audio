@@ -415,6 +415,21 @@ class Audio:
             else:
                 end = duration
 
+        # handle streams that actually begin after t=0 according to the header.
+        # torchcodec returns samples only from `begin_stream_seconds_from_header` onward.
+        # if the requested `start` is before this, we need to pad the beginning so that
+        # requesting [t, T] yields T - t samples, not T - begin_stream_seconds_from_header.
+        begin_stream = getattr(metadata, "begin_stream_seconds_from_header", 0.0) or 0.0
+
+        # add left padding for the gap between requested start and the actual stream begin,
+        # but only for the portion that overlaps the requested interval [start, end].
+        if start < begin_stream:
+            gap_seconds: float = max(0.0, min(begin_stream, end) - start)
+            if gap_seconds > 0:
+                pad_start += self.get_num_samples(gap_seconds, sample_rate)
+            # read from the max of requested start and actual stream start.
+            start = max(start, begin_stream)
+
         samples: AudioSamples = decoder.get_samples_played_in_range(start, end)
         data = samples.data
         sample_rate = samples.sample_rate
