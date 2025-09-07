@@ -594,7 +594,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             warnings.warn(
                 textwrap.dedent(
                     f"""
-                The detected number of speakers ({num_different_speakers}) is outside
+                The detected number of speakers ({num_different_speakers}) for {file["uri"]} is outside
                 the given bounds [{min_speakers}, {max_speakers}]. This can happen if the
                 given audio file is too short to contain {min_speakers} or more speakers.
                 Try to lower the desired minimal number of speakers.
