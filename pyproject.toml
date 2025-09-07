@@ -53,7 +53,7 @@ source = "vcs"
 packages = ["src/pyannote"]
 
 [tool.uv.sources]
-pyannoteai-sdk = { git = "https://github.com/pyannoteAI/pyannoteAI-python-sdk", rev = "b1f6ae2b9cb9e0e1d2693aee53711d020b2a19ce" }
+pyannoteai-sdk = { git = "https://github.com/pyannoteAI/pyannoteAI-python-sdk", rev = "dafef1ae5e1142efe93269245daa9dd8c8b922ec" }
 
 [dependency-groups]
 dev = ["ipykernel>=6.29.5"]
