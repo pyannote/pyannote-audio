@@ -24,10 +24,10 @@
 from pathlib import Path
 from typing import Optional
 
-from pyannote.core import Annotation, Segment
-from pyannoteai.sdk import Client
-
 from pyannote.audio import Pipeline
+from pyannote.core import Annotation, Segment
+
+from pyannoteai.sdk import Client
 
 
 class PremiumSpeakerDiarization(Pipeline):
@@ -62,7 +62,7 @@ class PremiumSpeakerDiarization(Pipeline):
             speaker = turn["speaker"]
             annotation[segment, t] = speaker
 
-        return annotation.rename_tracks('string')
+        return annotation.rename_tracks("string")
 
     def __call__(
         self,
@@ -70,6 +70,7 @@ class PremiumSpeakerDiarization(Pipeline):
         num_speakers: Optional[int] = None,
         min_speakers: Optional[int] = None,
         max_speakers: Optional[int] = None,
+        model: str = "precision-2",
     ) -> Annotation:
         """Speaker diarization using pyannoteAI web API
 
@@ -88,7 +89,9 @@ class PremiumSpeakerDiarization(Pipeline):
             Not supported yet. Minimum number of speakers. Has no effect when `num_speakers` is provided.
         max_speakers : int, optional
             Not supported yet. Maximum number of speakers. Has no effect when `num_speakers` is provided.
-
+        model : str, optional
+            pyannoteAI diarization model to use. Defaults to "precision-2".
+            
         Returns
         -------
         speaker_diarization : Annotation
@@ -114,6 +117,7 @@ class PremiumSpeakerDiarization(Pipeline):
             min_speakers=min_speakers,
             max_speakers=max_speakers,
             confidence=False,
+            model=model,
         )
 
         # retrieve job output (once completed)
