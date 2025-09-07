@@ -29,7 +29,7 @@ dependencies = [
     "torchmetrics>=1.6.1",
     "soundfile>=0.13.1",
     "matplotlib>=3.10.0",
-    "pyannoteai.sdk>=0.1.0",
+    "pyannoteai-sdk>=0.1.0",
 ]
 
 [project.scripts]
@@ -51,6 +51,9 @@ source = "vcs"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pyannote"]
+
+[tool.uv.sources]
+pyannoteai-sdk = { git = "https://github.com/pyannoteAI/pyannoteAI-python-sdk", rev = "b1f6ae2b9cb9e0e1d2693aee53711d020b2a19ce" }
 
 [dependency-groups]
 dev = ["ipykernel>=6.29.5"]
