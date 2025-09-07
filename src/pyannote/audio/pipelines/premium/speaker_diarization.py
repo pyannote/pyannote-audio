@@ -71,6 +71,7 @@ class PremiumSpeakerDiarization(Pipeline):
         min_speakers: Optional[int] = None,
         max_speakers: Optional[int] = None,
         model: str = "precision-2",
+        exclusive_diarization: bool = False,
     ) -> Annotation:
         """Speaker diarization using pyannoteAI web API
 
@@ -91,7 +92,9 @@ class PremiumSpeakerDiarization(Pipeline):
             Not supported yet. Maximum number of speakers. Has no effect when `num_speakers` is provided.
         model : str, optional
             pyannoteAI diarization model to use. Defaults to "precision-2".
-            
+        exclusive_diarization : bool, optional
+            Enable exclusive diarization.
+                        
         Returns
         -------
         speaker_diarization : Annotation
@@ -118,6 +121,7 @@ class PremiumSpeakerDiarization(Pipeline):
             max_speakers=max_speakers,
             confidence=False,
             model=model,
+            exclusive=exclusive_diarization,
         )
 
         # retrieve job output (once completed)
