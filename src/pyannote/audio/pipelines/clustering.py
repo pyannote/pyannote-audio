@@ -1,6 +1,7 @@
 # The MIT License (MIT)
 #
-# Copyright (c) 2021- CNRS
+# Copyright (c) 2021-2025 CNRS
+# Copyright (c) 2025- pyannoteAI
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -23,7 +24,6 @@
 """Clustering pipelines"""
 
 from enum import Enum
-from typing import Optional, Tuple
 
 import numpy as np
 from einops import rearrange
@@ -54,9 +54,9 @@ class BaseClustering(Pipeline):
     def set_num_clusters(
         self,
         num_embeddings: int,
-        num_clusters: Optional[int] = None,
-        min_clusters: Optional[int] = None,
-        max_clusters: Optional[int] = None,
+        num_clusters: int | None = None,
+        min_clusters: int | None = None,
+        max_clusters: int | None = None,
     ):
         min_clusters = num_clusters or min_clusters or 1
         min_clusters = max(1, min(num_embeddings, min_clusters))
@@ -77,9 +77,9 @@ class BaseClustering(Pipeline):
     def filter_embeddings(
         self,
         embeddings: np.ndarray,
-        segmentations: Optional[SlidingWindowFeature] = None,
+        segmentations: SlidingWindowFeature | None = None,
         min_active_ratio: float = 0.2,
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Filter embeddings before clustering
 
         Embeddings that are removed:
@@ -214,10 +214,10 @@ class BaseClustering(Pipeline):
     def __call__(
         self,
         embeddings: np.ndarray,
-        segmentations: Optional[SlidingWindowFeature] = None,
-        num_clusters: Optional[int] = None,
-        min_clusters: Optional[int] = None,
-        max_clusters: Optional[int] = None,
+        segmentations: SlidingWindowFeature | None = None,
+        num_clusters: int | None = None,
+        min_clusters: int | None = None,
+        max_clusters: int | None = None,
         **kwargs,
     ) -> np.ndarray:
         """Apply clustering
@@ -330,9 +330,9 @@ class AgglomerativeClustering(BaseClustering):
     def cluster(
         self,
         embeddings: np.ndarray,
-        min_clusters: Optional[int] = None,
-        max_clusters: Optional[int] = None,
-        num_clusters: Optional[int] = None,
+        min_clusters: int | None = None,
+        max_clusters: int | None = None,
+        num_clusters: int | None = None,
     ):
         """
 
@@ -509,9 +509,9 @@ class KMeansClustering(BaseClustering):
     def cluster(
         self,
         embeddings: np.ndarray,
-        min_clusters: Optional[int] = None,
-        max_clusters: Optional[int] = None,
-        num_clusters: Optional[int] = None,
+        min_clusters: int | None = None,
+        max_clusters: int | None = None,
+        num_clusters: int | None = None,
     ):
         """Perform KMeans clustering
 
@@ -572,12 +572,15 @@ class VBxClustering(BaseClustering):
     def __call__(
         self,
         embeddings: np.ndarray,
-        segmentations: Optional[SlidingWindowFeature] = None,
-        num_clusters: Optional[int] = None,  # not used but kept for compatibility
-        min_clusters: Optional[int] = None,  # not used but kept for compatibility
-        max_clusters: Optional[int] = None,  # not used but kept for compatibility
+        segmentations: SlidingWindowFeature | None = None,
+        num_clusters: int | None = None,
+        min_clusters: int | None = None,
+        max_clusters: int | None = None,
         **kwargs,
     ) -> np.ndarray:
+        
+        constrained_assignment = self.constrained_assignment
+
         train_embeddings, _, _ = self.filter_embeddings(
             embeddings, segmentations=segmentations
         )
@@ -612,11 +615,33 @@ class VBxClustering(BaseClustering):
             maxIters=20,
         )
 
-        # calculate distance
         num_chunks, num_speakers, dimension = embeddings.shape
         W = q[:, sp > 1e-7] # responsibilities of speakers that VBx kept
         centroids = W.T @ train_embeddings.reshape(-1, dimension) / W.sum(0, keepdims=True).T
 
+        # (optional) K-Means
+        # re-cluster with Kmeans only in case the automatically determined
+        # number of clusters does not match the requested number of speakers
+        # (either too low, or too high, or different from the requested number)
+        auto_num_clusters, _ = centroids.shape
+        if auto_num_clusters < min_clusters:
+            num_clusters = min_clusters
+        elif auto_num_clusters > max_clusters:
+            num_clusters = max_clusters
+        if num_clusters and num_clusters != auto_num_clusters:
+            # disable constrained assignment when forcing number of clusters
+            # as it might results in artificially increasing the number of clusters
+            constrained_assignment = False
+            kmeans_clusters = KMeans(
+                n_clusters=num_clusters, n_init=3, random_state=42, copy_x=False
+            ).fit_predict(train_embeddings_normed)
+            centroids = np.vstack(
+                [
+                    np.mean(train_embeddings[kmeans_clusters == k], axis=0)
+                    for k in range(num_clusters)
+                ])
+
+        # calculate distance
         e2k_distance = rearrange(
             cdist(
                 rearrange(embeddings, "c s d -> (c s) d"),
@@ -630,7 +655,7 @@ class VBxClustering(BaseClustering):
         soft_clusters = 2 - e2k_distance
 
         # assign each embedding to the cluster with the most similar centroid
-        if self.constrained_assignment:
+        if constrained_assignment:
             const = soft_clusters.min() - 1.   # const < any_valid_score
             soft_clusters[segmentations.data.sum(1) == 0] = const
             hard_clusters = self.constrained_argmax(
@@ -653,10 +678,10 @@ class OracleClustering(BaseClustering):
 
     def __call__(
         self,
-        embeddings: Optional[np.ndarray] = None,
-        segmentations: Optional[SlidingWindowFeature] = None,
-        file: Optional[AudioFile] = None,
-        frames: Optional[SlidingWindow] = None,
+        embeddings: np.ndarray | None = None,
+        segmentations: SlidingWindowFeature | None = None,
+        file: AudioFile | None = None,
+        frames: SlidingWindow | None = None,
         **kwargs,
     ) -> np.ndarray:
         """Apply oracle clustering
