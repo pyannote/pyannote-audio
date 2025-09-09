@@ -450,7 +450,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         num_speakers: Optional[int] = None,
         min_speakers: Optional[int] = None,
         max_speakers: Optional[int] = None,
-        exclusive_diarization: bool = False,
+        exclusive: bool = False,
         return_embeddings: bool = False,
         hook: Optional[Callable] = None,
     ) -> Annotation:
@@ -466,7 +466,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             Minimum number of speakers. Has no effect when `num_speakers` is provided.
         max_speakers : int, optional
             Maximum number of speakers. Has no effect when `num_speakers` is provided.
-        exclusive_diarization : bool, optional
+        exclusive : bool, optional
             Enforce exclusive diarization, i.e. only one speaker can be active at a time.
             Defaults to False, i.e. overlapping speech is allowed.
         return_embeddings : bool, optional
@@ -537,7 +537,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         #   shape: (num_frames, 1)
         #   dtype: int
 
-        if exclusive_diarization:
+        if exclusive:
             count.data = np.minimum(count.data, 1).astype(np.int8)
 
         # exit early when no speaker is ever active
