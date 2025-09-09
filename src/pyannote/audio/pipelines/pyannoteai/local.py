@@ -44,7 +44,7 @@ class Local(Pipeline):
     >>> speaker_diarization = pipeline("/path/to/your/audio.wav")
     """
 
-    def __init__(self, token: Optional[str] = None, **kwargs):
+    def __init__(self, token: str | None = None, **kwargs):
         super().__init__()
 
         from pyannoteai.local import Pipeline as _LocalPipeline
