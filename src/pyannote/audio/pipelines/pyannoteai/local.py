@@ -69,9 +69,9 @@ class Local(Pipeline):
     def apply(
         self,
         file: Path,
-        num_speakers: Optional[int] = None,
-        min_speakers: Optional[int] = None,
-        max_speakers: Optional[int] = None,
+        num_speakers: int | None = None,
+        min_speakers: int | None = None,
+        max_speakers: int | None = None,
         exclusive: bool = False,
     ) -> Annotation:
         """Speaker diarization using pyannoteAI on-premise package
