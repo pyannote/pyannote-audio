@@ -52,8 +52,5 @@ source = "vcs"
 [tool.hatch.build.targets.wheel]
 packages = ["src/pyannote"]
 
-[tool.uv.sources]
-pyannoteai-sdk = { git = "https://github.com/pyannoteAI/pyannoteAI-python-sdk", rev = "dafef1ae5e1142efe93269245daa9dd8c8b922ec" }
-
 [dependency-groups]
 dev = ["ipykernel>=6.29.5"]
