@@ -46,7 +46,7 @@ class SDK(Pipeline):
     >>> speaker_diarization = pipeline("/path/to/your/audio.wav")
     """
 
-    def __init__(self, token: Optional[str] = None, **kwargs):
+    def __init__(self, token: str | None = None, **kwargs):
         super().__init__()
 
         self.token = token or os.environ.get("PYANNOTEAI_API_KEY", None)
