@@ -22,7 +22,6 @@
 
 import os
 from pathlib import Path
-from typing import Optional
 
 from pyannote.audio import Pipeline
 from pyannote.core import Annotation, Segment
@@ -89,7 +88,7 @@ class Local(Pipeline):
             Not supported yet. Maximum number of speakers. Has no effect when `num_speakers` is provided.
         exclusive : bool, optional
             Enable exclusive diarization.
-                        
+
         Returns
         -------
         speaker_diarization : Annotation
@@ -106,7 +105,7 @@ class Local(Pipeline):
         """
 
         predictions = self._pipeline.diarize(
-            file['audio'],
+            file["audio"],
             num_speakers=num_speakers,
             min_speakers=min_speakers,
             max_speakers=max_speakers,
@@ -125,4 +124,3 @@ class Local(Pipeline):
             speaker = turn["speaker"]
             annotation[segment, t] = speaker
         return annotation.rename_tracks("string")
-

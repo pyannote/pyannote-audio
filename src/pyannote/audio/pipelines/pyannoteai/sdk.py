@@ -22,7 +22,6 @@
 
 import os
 from pathlib import Path
-from typing import Optional
 
 from pyannote.audio import Pipeline
 from pyannote.core import Annotation, Segment
@@ -55,9 +54,9 @@ class SDK(Pipeline):
     def apply(
         self,
         file: Path,
-        num_speakers: Optional[int] = None,
-        min_speakers: Optional[int] = None,
-        max_speakers: Optional[int] = None,
+        num_speakers: int | None = None,
+        min_speakers: int | None = None,
+        max_speakers: int | None = None,
         model: str = "precision-2",
         exclusive: bool = False,
     ) -> Annotation:
@@ -82,7 +81,7 @@ class SDK(Pipeline):
             pyannoteAI diarization model to use. Defaults to "precision-2".
         exclusive : bool, optional
             Enable exclusive diarization.
-                        
+
         Returns
         -------
         speaker_diarization : Annotation
@@ -128,4 +127,3 @@ class SDK(Pipeline):
             speaker = turn["speaker"]
             annotation[segment, t] = speaker
         return annotation.rename_tracks("string")
-
