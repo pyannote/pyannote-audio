@@ -128,9 +128,6 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
     Parameters
     ----------
-    diarization_only : bool, optional
-        Return only the diarization output. Defaults to return the full output
-        with diarization, exclusive diarization, and speaker embeddings.
      segmentation : Model, str, or dict, optional
         Pretrained segmentation model. Defaults to "pyannote/segmentation-3.0".
         See pyannote.audio.pipelines.utils.get_model for supported format.
@@ -159,7 +156,10 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         Huggingface token to be used for downloading from Huggingface hub.
     cache_dir: Path or str, optional
         Path to the folder where files downloaded from Huggingface hub are stored.
-
+    legacy : bool, optional
+        Return only the diarization output. Defaults to return the full output
+        with diarization, exclusive diarization, and speaker embeddings.
+        
     Usage
     -----
     # perform (unconstrained) diarization
@@ -185,7 +185,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
     def __init__(
         self,
-        diarization_only: bool = False,
+        legacy: bool = False,
         segmentation: PipelineModel = "pyannote/segmentation-3.0",
         segmentation_step: float = 0.1,
         embedding: PipelineModel = "pyannote/wespeaker-voxceleb-resnet34-LM",
@@ -203,7 +203,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
     ):
         super().__init__()
 
-        self.diarization_only = diarization_only
+        self.legacy = legacy
 
         self.segmentation_model = segmentation
         model: Model = get_model(segmentation, token=token, cache_dir=cache_dir)
@@ -545,7 +545,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
         Returns
         -------
-        output : DiarizeOutput (or Annotation if `self.diarization_only` is True)
+        output : DiarizeOutput (or Annotation if `self.legacy` is True)
         """
 
         # setup hook (e.g. for debugging purposes)
@@ -603,7 +603,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                 speaker_embeddings=np.zeros((0, self._embedding.dimension)),
             )
 
-            if self.diarization_only:
+            if self.legacy:
                 return output.speaker_diarization
 
             return output
@@ -730,7 +730,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                 exclusive_speaker_diarization=exclusive_diarization,
                 speaker_embeddings=centroids,
             )
-            if self.diarization_only:
+            if self.legacy:
                 return output.speaker_diarization
 
             return output
@@ -758,7 +758,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             speaker_embeddings=centroids,
         )
 
-        if self.diarization_only:
+        if self.legacy:
             return output.speaker_diarization
 
         return output
