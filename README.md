@@ -39,10 +39,10 @@ pipeline.to(torch.device("cuda"))
 
 # apply pretrained pipeline (with optional progress hook)
 with ProgressHook() as hook:
-    diarization = pipeline("audio.wav", hook=hook)  # runs locally
+    output = pipeline("audio.wav", hook=hook)  # runs locally
 
 # print the result
-for turn, _, speaker in diarization.itertracks(yield_label=True):
+for turn, _, speaker in output.speaker_diarization.itertracks(yield_label=True):
     print(f"start={turn.start:.1f}s stop={turn.end:.1f}s speaker_{speaker}")
 # start=0.2s stop=1.5s speaker_0
 # start=1.8s stop=3.9s speaker_1
@@ -61,7 +61,7 @@ from pyannote.audio import Pipeline
 
 # Premium pyannoteAI speaker diarization service
 pipeline = Pipeline.from_pretrained(
-    "pyannoteAI/speaker-diarization-precision", token="PYANNOTEAI_API_KEY")
+    "pyannote/speaker-diarization-precision-2", token="PYANNOTEAI_API_KEY")
 
 diarization = pipeline("audio.wav")  # runs on pyannoteAI servers
 
