@@ -29,7 +29,8 @@ import math
 import textwrap
 import warnings
 from pathlib import Path
-from typing import Callable, Mapping, Optional, Text, Union
+from typing import Callable, Mapping, Optional, Text, Union, Any
+from dataclasses import dataclass
 
 import numpy as np
 import torch
@@ -59,12 +60,78 @@ def batchify(iterable, batch_size: int = 32, fillvalue=None):
     return itertools.zip_longest(*args, fillvalue=fillvalue)
 
 
+@dataclass
+class DiarizeOutput:
+    # speaker diarization
+    speaker_diarization: Annotation
+
+    # one speaker embedding per speaker
+    # as (num_speakers, dimension) array
+    # sorted in speaker_diarization.labels() order
+    speaker_embeddings: np.ndarray
+
+    # speaker diarization adapted to downstream transcription
+    # (does not contain overlapping speech turns)
+    exclusive_speaker_diarization: Annotation
+
+    def serialize(self) -> dict[str, Any]:
+        """Serialize diarization output
+
+        Example
+        -------
+        {
+            'diarization': [{
+                'start': 6.665,
+                'end': 7.165,
+                'speaker': 'SPEAKER_00'},
+                ...],
+            'exclusive_diarization': [{
+                'start': 6.665,
+                'end': 7.165,
+                'speaker': 'SPEAKER_00'},
+                ...],
+        }
+        """
+
+        diarization = []
+        for speech_turn, _, speaker in self.speaker_diarization.itertracks(
+            yield_label=True
+        ):
+            diarization.append(
+                {
+                    "start": round(speech_turn.start, 3),
+                    "end": round(speech_turn.end, 3),
+                    "speaker": speaker,
+                }
+            )
+
+        exclusive_diarization = []
+        for speech_turn, _, speaker in self.exclusive_speaker_diarization.itertracks(
+            yield_label=True
+        ):
+            exclusive_diarization.append(
+                {
+                    "start": round(speech_turn.start, 3),
+                    "end": round(speech_turn.end, 3),
+                    "speaker": speaker,
+                }
+            )
+
+        return {
+            "diarization": diarization,
+            "exclusive_diarization": exclusive_diarization,
+        }
+
+
 class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
     """Speaker diarization pipeline
 
     Parameters
     ----------
-    segmentation : Model, str, or dict, optional
+    diarization_only : bool, optional
+        Return only the diarization output. Defaults to return the full output
+        with diarization, exclusive diarization, and speaker embeddings.
+     segmentation : Model, str, or dict, optional
         Pretrained segmentation model. Defaults to "pyannote/segmentation-3.0".
         See pyannote.audio.pipelines.utils.get_model for supported format.
     segmentation_step: float, optional
@@ -118,6 +185,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
     def __init__(
         self,
+        diarization_only: bool = False,
         segmentation: PipelineModel = "pyannote/segmentation-3.0",
         segmentation_step: float = 0.1,
         embedding: PipelineModel = "pyannote/wespeaker-voxceleb-resnet34-LM",
@@ -134,6 +202,8 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         cache_dir: Union[Path, Text, None] = None,
     ):
         super().__init__()
+
+        self.diarization_only = diarization_only
 
         self.segmentation_model = segmentation
         model: Model = get_model(segmentation, token=token, cache_dir=cache_dir)
@@ -450,10 +520,8 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         num_speakers: Optional[int] = None,
         min_speakers: Optional[int] = None,
         max_speakers: Optional[int] = None,
-        exclusive: bool = False,
-        return_embeddings: bool = False,
         hook: Optional[Callable] = None,
-    ) -> Annotation:
+    ) -> DiarizeOutput | Annotation:
         """Apply speaker diarization
 
         Parameters
@@ -466,11 +534,6 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             Minimum number of speakers. Has no effect when `num_speakers` is provided.
         max_speakers : int, optional
             Maximum number of speakers. Has no effect when `num_speakers` is provided.
-        exclusive : bool, optional
-            Enforce exclusive diarization, i.e. only one speaker can be active at a time.
-            Defaults to False, i.e. overlapping speech is allowed.
-        return_embeddings : bool, optional
-            Return representative speaker embeddings.
         hook : callable, optional
             Callback called after each major steps of the pipeline as follows:
                 hook(step_name,      # human-readable name of current step
@@ -482,12 +545,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
         Returns
         -------
-        diarization : Annotation
-            Speaker diarization
-        embeddings : np.array, optional
-            Representative speaker embeddings such that `embeddings[i]` is the
-            speaker embedding for i-th speaker in diarization.labels().
-            Only returned when `return_embeddings` is True.
+        output : DiarizeOutput (or Annotation if `self.diarization_only` is True)
         """
 
         # setup hook (e.g. for debugging purposes)
@@ -537,49 +595,39 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         #   shape: (num_frames, 1)
         #   dtype: int
 
-        if exclusive:
-            count.data = np.minimum(count.data, 1).astype(np.int8)
-
         # exit early when no speaker is ever active
         if np.nanmax(count.data) == 0.0:
-            diarization = Annotation(uri=file["uri"])
-            if return_embeddings:
-                return diarization, np.zeros((0, self._embedding.dimension))
-
-            return diarization
-
-        # skip speaker embedding extraction and clustering when only one speaker
-        if not return_embeddings and max_speakers < 2:
-            hard_clusters = np.zeros((num_chunks, local_num_speakers), dtype=np.int8)
-            embeddings = None
-            centroids = None
-
-        else:
-            # skip speaker embedding extraction with oracle clustering
-            if self.klustering == "OracleClustering" and not return_embeddings:
-                embeddings = None
-
-            else:
-                embeddings = self.get_embeddings(
-                    file,
-                    binarized_segmentations,
-                    exclude_overlap=self.embedding_exclude_overlap,
-                    hook=hook,
-                )
-                hook("embeddings", embeddings)
-                #   shape: (num_chunks, local_num_speakers, dimension)
-
-            hard_clusters, _, centroids = self.clustering(
-                embeddings=embeddings,
-                segmentations=binarized_segmentations,
-                num_clusters=num_speakers,
-                min_clusters=min_speakers,
-                max_clusters=max_speakers,
-                file=file,  # <== for oracle clustering
-                frames=self._segmentation.model.receptive_field,  # <== for oracle clustering
+            output = DiarizeOutput(
+                speaker_diarization=Annotation(uri=file["uri"]),
+                exclusive_speaker_diarization=Annotation(uri=file["uri"]),
+                speaker_embeddings=np.zeros((0, self._embedding.dimension)),
             )
-            # hard_clusters: (num_chunks, num_speakers)
-            # centroids: (num_speakers, dimension)
+
+            if self.diarization_only:
+                return output.speaker_diarization
+
+            return output
+
+        embeddings = self.get_embeddings(
+            file,
+            binarized_segmentations,
+            exclude_overlap=self.embedding_exclude_overlap,
+            hook=hook,
+        )
+        hook("embeddings", embeddings)
+        #   shape: (num_chunks, local_num_speakers, dimension)
+
+        hard_clusters, _, centroids = self.clustering(
+            embeddings=embeddings,
+            segmentations=binarized_segmentations,
+            num_clusters=num_speakers,
+            min_clusters=min_speakers,
+            max_clusters=max_speakers,
+            file=file,  # <== for oracle clustering
+            frames=self._segmentation.model.receptive_field,  # <== for oracle clustering
+        )
+        # hard_clusters: (num_chunks, num_speakers)
+        # centroids: (num_speakers, dimension)
 
         # number of detected clusters is the number of different speakers
         num_different_speakers = np.max(hard_clusters) + 1
@@ -613,21 +661,36 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         inactive_speakers = np.sum(binarized_segmentations.data, axis=1) == 0
         #   shape: (num_chunks, num_speakers)
 
+        # force-assign them to throw-away cluster
         hard_clusters[inactive_speakers] = -2
+
+        # convert to continuous diarization
         discrete_diarization = self.reconstruct(
             segmentations,
             hard_clusters,
             count,
         )
         hook("discrete_diarization", discrete_diarization)
-
-        # convert to continuous diarization
         diarization = self.to_annotation(
             discrete_diarization,
             min_duration_on=0.0,
             min_duration_off=self.segmentation.min_duration_off,
         )
         diarization.uri = file["uri"]
+
+        # convert to continuous exclusive diarization
+        count.data = np.minimum(count.data, 1).astype(np.int8)
+        exclusive_discrete_diarization = self.reconstruct(
+            segmentations,
+            hard_clusters,
+            count,
+        )
+        exclusive_diarization = self.to_annotation(
+            exclusive_discrete_diarization,
+            min_duration_on=0.0,
+            min_duration_off=self.segmentation.min_duration_off,
+        )
+        exclusive_diarization.uri = file["uri"]
 
         # at this point, `diarization` speaker labels are integers
         # from 0 to `num_speakers - 1`, aligned with `centroids` rows.
@@ -654,17 +717,23 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             }
 
         diarization = diarization.rename_labels(mapping=mapping)
+        exclusive_diarization = exclusive_diarization.rename_labels(mapping=mapping)
 
         # at this point, `diarization` speaker labels are strings (or mix of
         # strings and integers when reference is available and some hypothesis
         # speakers are not present in the reference)
 
-        if not return_embeddings:
-            return diarization
-
-        # this can happen when we use OracleClustering
+        # centroids may be None when we use OracleClustering
         if centroids is None:
-            return diarization, None
+            output = DiarizeOutput(
+                speaker_diarization=diarization,
+                exclusive_speaker_diarization=exclusive_diarization,
+                speaker_embeddings=centroids,
+            )
+            if self.diarization_only:
+                return output.speaker_diarization
+
+            return output
 
         # The number of centroids may be smaller than the number of speakers
         # in the annotation. This can happen if the number of active speakers
@@ -683,7 +752,16 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             [inverse_mapping[label] for label in diarization.labels()]
         ]
 
-        return diarization, centroids
+        output = DiarizeOutput(
+            speaker_diarization=diarization,
+            exclusive_speaker_diarization=exclusive_diarization,
+            speaker_embeddings=centroids,
+        )
+
+        if self.diarization_only:
+            return output.speaker_diarization
+
+        return output
 
     def get_metric(self) -> GreedyDiarizationErrorRate:
         return GreedyDiarizationErrorRate(**self.der_variant)
