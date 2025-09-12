@@ -664,10 +664,8 @@ class VBxClustering(BaseClustering):
         else:
             hard_clusters = np.argmax(soft_clusters, axis=2)
 
-        # re-number clusters from 0 to num_large_clusters
-        _, hard_clusters = np.unique(hard_clusters, return_inverse=True)
         hard_clusters = hard_clusters.reshape(num_chunks, num_speakers)
-
+        
         return hard_clusters, soft_clusters, centroids
 
 
