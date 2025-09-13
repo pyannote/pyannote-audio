@@ -28,12 +28,16 @@ from pyannote.core import Annotation, Segment
 
 from pyannoteai.sdk import Client
 
+from pyannote.audio.pipelines.speaker_diarization import DiarizeOutput
 
 class SDK(Pipeline):
     """Wrapper around official pyannoteAI API client
 
     Parameters
     ----------
+    model : str, optional
+        pyannoteAI speaker diarization model.
+        Defaults to "precision-2".
     token : str, optional
         pyannoteAI API key created from https://dashboard.pyannote.ai.
         Defaults to using `PYANNOTEAI_API_TOKEN` environment variable.
@@ -45,11 +49,22 @@ class SDK(Pipeline):
     >>> speaker_diarization = pipeline("/path/to/your/audio.wav")
     """
 
-    def __init__(self, token: str | None = None, **kwargs):
+    def __init__(self, model: str = "precision-2", token: str | None = None, **kwargs):
         super().__init__()
 
+        self.model = model
         self.token = token or os.environ.get("PYANNOTEAI_API_KEY", None)
         self._client = Client(self.token)
+
+    def _deserialize(self, diarization: list[dict]) -> Annotation:
+        # deserialize the output into a good-old Annotation instance
+        annotation = Annotation()
+        for t, turn in enumerate(diarization):
+            segment = Segment(start=turn["start"], end=turn["end"])
+            speaker = turn["speaker"]
+            annotation[segment, t] = speaker
+        return annotation.rename_tracks("string")
+
 
     def apply(
         self,
@@ -57,9 +72,7 @@ class SDK(Pipeline):
         num_speakers: int | None = None,
         min_speakers: int | None = None,
         max_speakers: int | None = None,
-        model: str = "precision-2",
-        exclusive: bool = False,
-    ) -> Annotation:
+    ) -> DiarizeOutput:
         """Speaker diarization using pyannoteAI web API
 
         This method will upload `file`, initiate a diarization job,
@@ -77,10 +90,6 @@ class SDK(Pipeline):
             Not supported yet. Minimum number of speakers. Has no effect when `num_speakers` is provided.
         max_speakers : int, optional
             Not supported yet. Maximum number of speakers. Has no effect when `num_speakers` is provided.
-        model : str, optional
-            pyannoteAI diarization model to use. Defaults to "precision-2".
-        exclusive : bool, optional
-            Enable exclusive diarization.
 
         Returns
         -------
@@ -107,23 +116,18 @@ class SDK(Pipeline):
             min_speakers=min_speakers,
             max_speakers=max_speakers,
             confidence=False,
-            model=model,
-            exclusive=exclusive,
+            model=self.model,
+            exclusive=True,
         )
 
         # retrieve job output (once completed)
         job_output = self._client.retrieve(job_id)
 
-        # use exclusive diarization whenever requested
-        if exclusive:
-            diarization: list[dict] = job_output["output"]["exclusiveDiarization"]
-        else:
-            diarization: list[dict] = job_output["output"]["diarization"]
+        speaker_diarization: Annotation = self._deserialize(job_output["output"]["diarization"])
+        exclusive_speaker_diarization: Annotation = self._deserialize(job_output["output"]["exclusiveDiarization"])
 
-        # deserialize the output into a good-old Annotation instance
-        annotation = Annotation()
-        for t, turn in enumerate(diarization):
-            segment = Segment(start=turn["start"], end=turn["end"])
-            speaker = turn["speaker"]
-            annotation[segment, t] = speaker
-        return annotation.rename_tracks("string")
+        return DiarizeOutput(
+            speaker_diarization=speaker_diarization,
+            exclusive_speaker_diarization=exclusive_speaker_diarization,
+        )
+

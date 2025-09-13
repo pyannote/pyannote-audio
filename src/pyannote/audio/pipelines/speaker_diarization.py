@@ -65,14 +65,15 @@ class DiarizeOutput:
     # speaker diarization
     speaker_diarization: Annotation
 
-    # one speaker embedding per speaker
-    # as (num_speakers, dimension) array
-    # sorted in speaker_diarization.labels() order
-    speaker_embeddings: np.ndarray
-
     # speaker diarization adapted to downstream transcription
     # (does not contain overlapping speech turns)
     exclusive_speaker_diarization: Annotation
+
+    # one speaker embedding per speaker
+    # as (num_speakers, dimension) array
+    # sorted in speaker_diarization.labels() order
+    speaker_embeddings: np.ndarray | None = None
+
 
     def serialize(self) -> dict[str, Any]:
         """Serialize diarization output
