@@ -128,22 +128,28 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
     Parameters
     ----------
-     segmentation : Model, str, or dict, optional
-        Pretrained segmentation model. Defaults to "pyannote/segmentation-3.0".
+    legacy : bool, optional
+        Return only the diarization output. Defaults to return the full output
+        with diarization, exclusive diarization, and speaker embeddings.
+    segmentation : Model, str, or dict, optional
+        Pretrained segmentation model. 
         See pyannote.audio.pipelines.utils.get_model for supported format.
     segmentation_step: float, optional
         The segmentation model is applied on a window sliding over the whole audio file.
         `segmentation_step` controls the step of this window, provided as a ratio of its
         duration. Defaults to 0.1 (i.e. 90% overlap between two consecuive windows).
     embedding : Model, str, or dict, optional
-        Pretrained embedding model. Defaults to "pyannote/wespeaker-voxceleb-resnet34-LM".
+        Pretrained embedding model. 
         See pyannote.audio.pipelines.utils.get_model for supported format.
     embedding_exclude_overlap : bool, optional
         Exclude overlapping speech regions when extracting embeddings.
         Defaults (False) to use the whole speech.
+    plda : PLDA, str, or dict, optional
+        Pretrained PLDA.
+        See pyannote.audio.pipelines.utils.get_plda for supported format.
     clustering : str, optional
         Clustering algorithm. See pyannote.audio.pipelines.clustering.Clustering
-        for available options. Defaults to "AgglomerativeClustering".
+        for available options. 
     segmentation_batch_size : int, optional
         Batch size used for speaker segmentation. Defaults to 1.
     embedding_batch_size : int, optional
@@ -156,42 +162,48 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         Huggingface token to be used for downloading from Huggingface hub.
     cache_dir: Path or str, optional
         Path to the folder where files downloaded from Huggingface hub are stored.
-    legacy : bool, optional
-        Return only the diarization output. Defaults to return the full output
-        with diarization, exclusive diarization, and speaker embeddings.
         
     Usage
     -----
-    # perform (unconstrained) diarization
-    >>> diarization = pipeline("/path/to/audio.wav")
+    # process audio file
+    >>> output = pipeline("/path/to/audio.wav")
 
-    # perform diarization, targetting exactly 4 speakers
-    >>> diarization = pipeline("/path/to/audio.wav", num_speakers=4)
+    # print diarization
+    >>> assert isinstance(output.speaker_diarization, pyannote.core.Annotation)
+    >>> for turn, _, speaker in output.speaker_diarization.itertracks(yield_label=True):
+    ...     print(f"start={turn.start:.1f}s stop={turn.end:.1f}s speaker_{speaker}")
+    
+    # get one speaker embedding per speaker
+    >>> assert isinstance(output.speaker_embeddings, np.ndarray)
+    >>> for s, speaker in enumerate(output.speaker_diarization.labels()):
+    ...     # output.speaker_embeddings[s] is the embedding of speaker `speaker`
 
-    # perform diarization, with at least 2 speakers and at most 10 speakers
-    >>> diarization = pipeline("/path/to/audio.wav", min_speakers=2, max_speakers=10)
+    # exclusive diarization is the same as diarization except 
+    # that it does not contain overlapping speech segments
+    >>> assert isinstance(output.exclusive_speaker_diarization, pyannote.core.Annotation)
 
-    # perform diarization and get one representative embedding per speaker
-    >>> diarization, embeddings = pipeline("/path/to/audio.wav", return_embeddings=True)
-    >>> for s, speaker in enumerate(diarization.labels()):
-    ...     # embeddings[s] is the embedding of speaker `speaker`
+    # force exactly 4 speakers
+    >>> output = pipeline("/path/to/audio.wav", num_speakers=4)
 
-    Hyper-parameters
-    ----------------
-    segmentation.threshold
-    segmentation.min_duration_off
-    clustering.???
+    # force between 2 and 10 speakers
+    >>> output = pipeline("/path/to/audio.wav", min_speakers=2, max_speakers=10)
     """
 
     def __init__(
         self,
         legacy: bool = False,
-        segmentation: PipelineModel = "pyannote/segmentation-3.0",
+        segmentation: PipelineModel = {
+            "checkpoint": "pyannote/speaker-diarization-4.0",
+            "subfolder": "segmentation",
+        },
         segmentation_step: float = 0.1,
-        embedding: PipelineModel = "pyannote/wespeaker-voxceleb-resnet34-LM",
+        embedding: PipelineModel = {
+            "checkpoint": "pyannote/speaker-diarization-4.0",
+            "subfolder": "embedding",
+        },
         embedding_exclude_overlap: bool = False,
         plda: PipelinePLDA = {
-            "checkpoint": "BUT-FIT/diarizen-wavlm-large-s80-md",
+            "checkpoint": "pyannote/speaker-diarization-4.0",
             "subfolder": "plda",
         },
         clustering: str = "VBxClustering",
