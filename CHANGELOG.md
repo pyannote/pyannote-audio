@@ -6,17 +6,17 @@
 
 #### Improved speaker assignment and counting
 
-`pyannote/speaker-diarization-4.0` pretrained pipeline relies on VBx clustering instead of agglomerative hierarchical clustering (as suggested by [BUT Speech@FIT](https://speech.fit.vut.cz/) researchers [Petr Pálka](https://github.com/Selesnyan) and [Jiangyu Han](https://github.com/jyhan03)).
+`pyannote/speaker-diarization-community-1` pretrained pipeline relies on VBx clustering instead of agglomerative hierarchical clustering (as suggested by [BUT Speech@FIT](https://speech.fit.vut.cz/) researchers [Petr Pálka](https://github.com/Selesnyan) and [Jiangyu Han](https://github.com/jyhan03)).
 
 #### *Exclusive* speaker diarization
 
-`pyannote/speaker-diarization-4.0` pretrained pipeline returns a new *exclusive* speaker diarization, on top of the regular speaker diarization.
+`pyannote/speaker-diarization-community-1` pretrained pipeline returns a new *exclusive* speaker diarization, on top of the regular speaker diarization.
 This is a feature which is [backported from our latest commercial model](https://www.pyannote.ai/blog/precision-2) that simplifies the reconciliation between fine-grained speaker diarization timestamps and (sometimes not so precise) transcription timestamps.
 
 ```python
 from pyannote.audio import Pipeline
 pipeline = Pipeline.from_pretrained(
-    "pyannote/speaker-diarization-4.0", token="huggingface-access-token")
+    "pyannote/speaker-diarization-community-1", token="huggingface-access-token")
 output = pipeline("/path/to/conversation.wav")
 print(output.speaker_diarization)            # regular speaker diarization
 print(output.exclusive_speaker_diarization)  # exclusive speaker diarization
@@ -34,7 +34,7 @@ Change one line of code to use [pyannoteAI](https://docs.pyannote.ai) premium mo
 ```diff
 from pyannote.audio import Pipeline
 pipeline = Pipeline.from_pretrained(
--    "pyannote/speaker-diarization-4.0", token="huggingface-access-token")
+-    "pyannote/speaker-diarization-community-1", token="huggingface-access-token")
 +    "pyannote/speaker-diarization-precision-2, token="pyannoteAI-api-key")
 diarization = pipeline("/path/to/conversation.wav")
 ```
@@ -43,12 +43,12 @@ diarization = pipeline("/path/to/conversation.wav")
 
 Pipelines can now be stored alongside their internal models in the same repository, streamlining fully offline use.
 
-1. Accept `pyannote/speaker-diarization-4.0` pipeline [user agreement](https://hf.co/pyannote/speaker-diarization-4.0)
+1. Accept `pyannote/speaker-diarization-community-1` pipeline [user agreement](https://hf.co/pyannote/speaker-diarization-community-1)
 2. Clone the pipeline repository from Huggingface (if prompted for a password, use a Huggingface access token with correct permissions)
 
     ```bash
     $ git lfs install
-    $ git clone https://hf.co/pyannote/speaker-diarization-4.0 /path/to/directory/pyannote-speaker-diarization-4.0
+    $ git clone https://hf.co/pyannote/speaker-diarization-community-1 /path/to/directory/pyannote-speaker-diarization-community-1
     ```
 
 3. Enjoy!
@@ -56,7 +56,7 @@ Pipelines can now be stored alongside their internal models in the same reposito
     ```python
     # load pipeline from disk (works without internet connection)
     from pyannote.audio import Pipeline
-    pipeline = Pipeline.from_pretrained('/path/to/directory/pyannote-speaker-diarization-4.0')
+    pipeline = Pipeline.from_pretrained('/path/to/directory/pyannote-speaker-diarization-community-1')
 
     # run the pipeline locally on your computer
     diarization = pipeline("audio.wav")

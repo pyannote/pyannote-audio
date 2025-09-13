@@ -194,17 +194,17 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         self,
         legacy: bool = False,
         segmentation: PipelineModel = {
-            "checkpoint": "pyannote/speaker-diarization-4.0",
+            "checkpoint": "pyannote/speaker-diarization-community-1",
             "subfolder": "segmentation",
         },
         segmentation_step: float = 0.1,
         embedding: PipelineModel = {
-            "checkpoint": "pyannote/speaker-diarization-4.0",
+            "checkpoint": "pyannote/speaker-diarization-community-1",
             "subfolder": "embedding",
         },
         embedding_exclude_overlap: bool = False,
         plda: PipelinePLDA = {
-            "checkpoint": "pyannote/speaker-diarization-4.0",
+            "checkpoint": "pyannote/speaker-diarization-community-1",
             "subfolder": "plda",
         },
         clustering: str = "VBxClustering",

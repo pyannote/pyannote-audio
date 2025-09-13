@@ -21,7 +21,7 @@ Consider switching to [<img src="https://avatars.githubusercontent.com/u/1626986
 
 1. Make sure [`ffmpeg`](https://ffmpeg.org/) is installed on your machine (needed by [`torchcodec`](https://docs.pytorch.org/torchcodec/) audio decoding library)
 2. Install with [`uv`](https://docs.astral.sh/uv/)`add pyannote.audio` (recommended) or `pip install pyannote.audio`
-3. Accept [`pyannote/speaker-diarization-4.0`](https://hf.co/pyannote/speaker-diarization-4.0) user conditions
+3. Accept [`pyannote/speaker-diarization-community-1`](https://hf.co/pyannote/speaker-diarization-community-1) user conditions
 4. Create Huggingface access token at [`hf.co/settings/tokens`](https://hf.co/settings/tokens)
 
 ```python
@@ -31,7 +31,7 @@ from pyannote.audio.pipelines.utils.hook import ProgressHook
 
 # Open-source pyannote speaker diarization pipeline
 pipeline = Pipeline.from_pretrained(
-    "pyannote/speaker-diarization-4.0",
+    "pyannote/speaker-diarization-community-1",
     token="HUGGINGFACE_ACCESS_TOKEN")
 
 # send pipeline to GPU (when available)
@@ -77,12 +77,12 @@ for turn, _, speaker in diarization.itertracks(yield_label=True):
 Visit [`docs.pyannote.ai`](https://docs.pyannote.ai) to learn about other pyannoteAI features (voiceprinting, confidence scores, ...)
 
 ## Benchmark
-Out of the box, <img src="https://avatars.githubusercontent.com/u/7559051" width="20" style="vertical-align:text-bottom;" /> `pyannote.audio` speaker diarization [pipeline v4.0](https://hf.co/pyannote/speaker-diarization-4.0) is expected to be much better than v3.1.
+Out of the box, <img src="https://avatars.githubusercontent.com/u/7559051" width="20" style="vertical-align:text-bottom;" /> `pyannote.audio` speaker diarization [pipeline v4.0](https://hf.co/pyannote/speaker-diarization-community-1) is expected to be much better than v3.1.
 
 <img src="https://avatars.githubusercontent.com/u/162698670" width="20" style="vertical-align:text-bottom;" /> `pyannoteAI` premium models are even better (and also 2x faster). <img src="https://avatars.githubusercontent.com/u/162698670" width="20" style="vertical-align:text-bottom;" /> `labs` model is currently in private beta.
 
 
-| Benchmark (last updated in 2025-08) | <a href="https://hf.co/pyannote/speaker-diarization-3.1"><img src="https://avatars.githubusercontent.com/u/7559051" width="32" /><br/>v3.1</a> | <a href="https://hf.co/pyannote/speaker-diarization-4.0"><img src="https://avatars.githubusercontent.com/u/7559051" width="32" /><br/> v4.0</a> | <a href="https://docs.pyannote.ai"><img src="https://avatars.githubusercontent.com/u/162698670" width="32" /><br/>API</a> | <a href="https://docs.pyannote.ai"><img src="https://avatars.githubusercontent.com/u/162698670" width="32" /><br/>labs</a> | 
+| Benchmark (last updated in 2025-08) | <a href="https://hf.co/pyannote/speaker-diarization-3.1"><img src="https://avatars.githubusercontent.com/u/7559051" width="32" /><br/>v3.1</a> | <a href="https://hf.co/pyannote/speaker-diarization-community-1"><img src="https://avatars.githubusercontent.com/u/7559051" width="32" /><br/> v4.0</a> | <a href="https://docs.pyannote.ai"><img src="https://avatars.githubusercontent.com/u/162698670" width="32" /><br/>API</a> | <a href="https://docs.pyannote.ai"><img src="https://avatars.githubusercontent.com/u/162698670" width="32" /><br/>labs</a> | 
 | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | -------------------------------------------------| ------------------------------------------------ | --- |
 | [AISHELL-4](https://arxiv.org/abs/2104.03603)                                                                               | 12.2 | 11.7 | 11.8 | 11.4 | 
 | [AliMeeting](https://www.openslr.org/119/) (channel 1)                                                                      | 24.5 | 20.3 | 16.3 | 15.2 | 
