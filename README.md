@@ -1,7 +1,11 @@
-Using <img src="https://avatars.githubusercontent.com/u/7559051" width="20" style="vertical-align:text-bottom;" />`pyannote.audio` open-source toolkit in production?
-Consider switching to [<img src="https://avatars.githubusercontent.com/u/162698670" width="20" style="vertical-align:text-bottom;" /> `pyannoteAI`](https://www.pyannote.ai) for better and faster options.
+<p align="center">
+  <a href="https://pyannote.ai/" target="blank"><img src="https://avatars.githubusercontent.com/u/162698670" width="64" /></a>
+</p>
 
-# `pyannote` speaker diarization toolkit
+<div align="center">
+    <h1><code>pyannote</code> speaker diarization toolkit</h1>
+</div>
+
 
 `pyannote.audio` is an open-source toolkit written in Python for speaker diarization. Based on [PyTorch](https://pytorch.org) machine learning framework, it comes with state-of-the-art [pretrained models and pipelines](https://hf.co/pyannote), that can be further finetuned to your own data for even better performance.
 
@@ -17,7 +21,7 @@ Consider switching to [<img src="https://avatars.githubusercontent.com/u/1626986
 - :snake: Python-first API
 - :zap: multi-GPU training with [pytorch-lightning](https://pytorchlightning.ai/)
 
-## <img src="https://avatars.githubusercontent.com/u/7559051" width="20" style="vertical-align:text-bottom;" /> `pyannote.audio` open-source speaker diarization pipeline
+## `community-1` open-source speaker diarization
 
 1. Make sure [`ffmpeg`](https://ffmpeg.org/) is installed on your machine (needed by [`torchcodec`](https://docs.pytorch.org/torchcodec/) audio decoding library)
 2. Install with [`uv`](https://docs.astral.sh/uv/)`add pyannote.audio` (recommended) or `pip install pyannote.audio`
@@ -29,7 +33,7 @@ import torch
 from pyannote.audio import Pipeline
 from pyannote.audio.pipelines.utils.hook import ProgressHook
 
-# Open-source pyannote speaker diarization pipeline
+# Community-1 open-source speaker diarization pipeline
 pipeline = Pipeline.from_pretrained(
     "pyannote/speaker-diarization-community-1",
     token="HUGGINGFACE_ACCESS_TOKEN")
@@ -51,15 +55,15 @@ for turn, _, speaker in output.speaker_diarization.itertracks(yield_label=True):
 
 ```
 
-## <img src="https://avatars.githubusercontent.com/u/162698670" width="20" style="vertical-align:text-bottom;" /> `pyannoteAI` premium speaker diarization pipeline
+## `precision-2` premium speaker diarization
 
 1. Create pyannoteAI API key at [`dashboard.pyannote.ai`](https://dashboard.pyannote.ai) 
-2. Enjoy 150 hours of free credits!
+2. Enjoy free credits!
 
 ```python
 from pyannote.audio import Pipeline
 
-# Premium pyannoteAI speaker diarization service
+# Precision-2 premium speaker diarization service
 pipeline = Pipeline.from_pretrained(
     "pyannote/speaker-diarization-precision-2", token="PYANNOTEAI_API_KEY")
 
@@ -77,34 +81,33 @@ for turn, _, speaker in diarization.itertracks(yield_label=True):
 Visit [`docs.pyannote.ai`](https://docs.pyannote.ai) to learn about other pyannoteAI features (voiceprinting, confidence scores, ...)
 
 ## Benchmark
-Out of the box, <img src="https://avatars.githubusercontent.com/u/7559051" width="20" style="vertical-align:text-bottom;" /> `pyannote.audio` speaker diarization [pipeline v4.0](https://hf.co/pyannote/speaker-diarization-community-1) is expected to be much better than v3.1.
 
-<img src="https://avatars.githubusercontent.com/u/162698670" width="20" style="vertical-align:text-bottom;" /> `pyannoteAI` premium models are even better (and also 2x faster). <img src="https://avatars.githubusercontent.com/u/162698670" width="20" style="vertical-align:text-bottom;" /> `labs` model is currently in private beta.
-
-
-| Benchmark (last updated in 2025-08) | <a href="https://hf.co/pyannote/speaker-diarization-3.1"><img src="https://avatars.githubusercontent.com/u/7559051" width="32" /><br/>v3.1</a> | <a href="https://hf.co/pyannote/speaker-diarization-community-1"><img src="https://avatars.githubusercontent.com/u/7559051" width="32" /><br/> v4.0</a> | <a href="https://docs.pyannote.ai"><img src="https://avatars.githubusercontent.com/u/162698670" width="32" /><br/>API</a> | <a href="https://docs.pyannote.ai"><img src="https://avatars.githubusercontent.com/u/162698670" width="32" /><br/>labs</a> | 
-| --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | -------------------------------------------------| ------------------------------------------------ | --- |
-| [AISHELL-4](https://arxiv.org/abs/2104.03603)                                                                               | 12.2 | 11.7 | 11.8 | 11.4 | 
-| [AliMeeting](https://www.openslr.org/119/) (channel 1)                                                                      | 24.5 | 20.3 | 16.3 | 15.2 | 
-| [AMI](https://groups.inf.ed.ac.uk/ami/corpus/) (IHM)                                                                        | 18.8 | 17.0 | 13.2 | 12.9 |
-| [AMI](https://groups.inf.ed.ac.uk/ami/corpus/) (SDM)                                                                        | 22.7 | 19.9 | 15.8 | 15.6 |
-| [AVA-AVD](https://arxiv.org/abs/2111.14448)                                                                                 | 49.7 | 44.6 | 40.7 | 37.1 |
-| [CALLHOME](https://catalog.ldc.upenn.edu/LDC2001S97) ([part 2](https://github.com/BUTSpeechFIT/CALLHOME_sublists/issues/1)) | 28.5 | 26.7 | 17.6 | 16.6 |
-| [DIHARD 3](https://catalog.ldc.upenn.edu/LDC2022S14) ([full](https://arxiv.org/abs/2012.01477))                             | 21.4 | 20.2 | 15.7 | 14.7 |
-| [Ego4D](https://arxiv.org/abs/2110.07058) (dev.)                                                                            | 51.2 | 46.8 | 44.7 | 39.0 |
-| [MSDWild](https://github.com/X-LANCE/MSDWILD)                                                                               | 25.4 | 22.8 | 17.9 | 17.3 |
-| [RAMC](https://www.openslr.org/123/)                                                                                        | 22.2 | 20.8 | 10.6 | 10.5 |
-| [REPERE](https://www.islrn.org/resources/360-758-359-485-0/) (phase2)                                                       | 7.9  |  8.9 |  7.3 |  7.4 |
-| [VoxConverse](https://github.com/joonson/voxconverse) (v0.3)                                                                | 11.2 | 11.2 |  9.0 |  8.5 |
+| Benchmark (last updated in 2025-09) | <a href="https://hf.co/pyannote/speaker-diarization-3.1">`legacy` (3.1)</a>| <a href="https://hf.co/pyannote/speaker-diarization-community-1">`community-1`</a> | <a href="https://docs.pyannote.ai">`precision-2`</a> | 
+| --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | -------------------------------------------------| ------------------------------------------------ |
+| [AISHELL-4](https://arxiv.org/abs/2104.03603)                                                                               | 12.2 | 11.7 | 11.8 |
+| [AliMeeting](https://www.openslr.org/119/) (channel 1)                                                                      | 24.5 | 20.3 | 16.3 |
+| [AMI](https://groups.inf.ed.ac.uk/ami/corpus/) (IHM)                                                                        | 18.8 | 17.0 | 13.2 |
+| [AMI](https://groups.inf.ed.ac.uk/ami/corpus/) (SDM)                                                                        | 22.7 | 19.9 | 15.8 |
+| [AVA-AVD](https://arxiv.org/abs/2111.14448)                                                                                 | 49.7 | 44.6 | 40.7 |
+| [CALLHOME](https://catalog.ldc.upenn.edu/LDC2001S97) ([part 2](https://github.com/BUTSpeechFIT/CALLHOME_sublists/issues/1)) | 28.5 | 26.7 | 17.6 |
+| [DIHARD 3](https://catalog.ldc.upenn.edu/LDC2022S14) ([full](https://arxiv.org/abs/2012.01477))                             | 21.4 | 20.2 | 15.7 |
+| [Ego4D](https://arxiv.org/abs/2110.07058) (dev.)                                                                            | 51.2 | 46.8 | 44.7 |
+| [MSDWild](https://github.com/X-LANCE/MSDWILD)                                                                               | 25.4 | 22.8 | 17.9 |
+| [RAMC](https://www.openslr.org/123/)                                                                                        | 22.2 | 20.8 | 10.6 |
+| [REPERE](https://www.islrn.org/resources/360-758-359-485-0/) (phase2)                                                       | 7.9  |  8.9 |  7.3 |
+| [VoxConverse](https://github.com/joonson/voxconverse) (v0.3)                                                                | 11.2 | 11.2 |  9.0 |
 
 __[Diarization error rate](http://pyannote.github.io/pyannote-metrics/reference.html#diarization) (in %, the lower, the better)__
 
-| Benchmark (last updated in 2025-08) | <img src="https://avatars.githubusercontent.com/u/7559051" width="32" /> | <a href="https://docs.pyannote.ai"><img src="https://avatars.githubusercontent.com/u/162698670" width="32" /></a>  | Speed up
+Compared to the [`3.1`](https://hf.co/pyannote/speaker-diarization-3.1) legacy pipeline, [`community-1`](https://hf.co/pyannote/speaker-diarization-community-1) brings significant improvement in terms of speaker counting and assignment.
+[`precision-2`](https://www.pyannote.ai/blog/precision-2) premium pipeline further improves accuracy as well as processing speed (in its self-hosted version).
+
+| Benchmark (last updated in 2025-09) | <a href="https://hf.co/pyannote/speaker-diarization-community-1">`community-1`</a> | <a href="https://docs.pyannote.ai">`precision-2`</a> | Speed up
 | -------------- | ----------- | ----------- | ------ |
 | [AMI](https://groups.inf.ed.ac.uk/ami/corpus/) (IHM), ~1h files                                                     | 31s per hour of audio | 14s per hour of audio | 2.2x faster
 | [DIHARD 3](https://catalog.ldc.upenn.edu/LDC2022S14) ([full](https://arxiv.org/abs/2012.01477)), ~5min files        | 37s per hour of audio | 14s per hour of audio | 2.6x faster
 
-__Processing speed on a NVIDIA H100 80GB HBM3__
+__Self-hosted speed on a NVIDIA H100 80GB HBM3__
 
 ## Telemetry
 
