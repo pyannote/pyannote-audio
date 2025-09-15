@@ -347,3 +347,46 @@ visit https://hf.co/{model_id} to accept the user conditions."""
         self.device = device
 
         return self
+
+    def optimize_for_gpu(self, batch_size: int = None):
+        """Optimize pipeline for GPU usage by setting appropriate batch sizes
+        
+        Parameters
+        ----------
+        batch_size : int, optional
+            Batch size to use for GPU processing. If None, will auto-detect
+            based on available GPU memory. Larger values may improve GPU 
+            utilization but require more memory.
+        
+        Returns
+        -------
+        self : Pipeline
+            Returns self for method chaining.
+        """
+        if batch_size is None:
+            # Auto-detect optimal batch size based on GPU memory
+            if torch.cuda.is_available():
+                gpu_memory_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+                if gpu_memory_gb >= 24:  # High-end GPU (RTX 4090, A100, etc.)
+                    batch_size = 64
+                elif gpu_memory_gb >= 12:  # Mid-range GPU (RTX 3080, RTX 4070 Ti, etc.)
+                    batch_size = 32
+                elif gpu_memory_gb >= 8:   # Lower-end GPU (RTX 3060, etc.)
+                    batch_size = 16
+                else:                      # Very low memory GPU
+                    batch_size = 8
+            else:
+                batch_size = 32  # Default for CPU or when CUDA not available
+        
+        # Set batch sizes for segmentation and embedding if they exist
+        if hasattr(self, "segmentation_batch_size"):
+            self.segmentation_batch_size = batch_size
+        if hasattr(self, "embedding_batch_size"):
+            self.embedding_batch_size = batch_size
+        
+        # Set batch size for inference objects
+        for _, inference in self._inferences.items():
+            if hasattr(inference, "batch_size"):
+                inference.batch_size = batch_size
+        
+        return self

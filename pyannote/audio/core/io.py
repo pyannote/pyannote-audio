@@ -430,35 +430,57 @@ class Audio:
             data = file["waveform"][:, start_frame:end_frame]
 
         else:
-            try:
-                data, _ = torchaudio.load(
-                    file["audio"],
-                    frame_offset=start_frame,
-                    num_frames=num_frames,
-                    backend=self.backend,
-                )
-                # rewind if needed
-                if isinstance(file["audio"], IOBase):
-                    file["audio"].seek(0)
-            except RuntimeError:
-                if isinstance(file["audio"], IOBase):
-                    msg = "torchaudio failed to seek-and-read in file-like object."
-                    raise RuntimeError(msg)
+            # Check if we should cache the entire file for better performance
+            # This is especially beneficial for repeated access to the same file
+            should_cache = (
+                hasattr(file.get("audio"), "seek") is False and  # Not a file-like object
+                num_frames < frames and  # We're not loading the entire file already
+                frames <= 48000 * 3600  # File is less than 1 hour at 48kHz (reasonable memory limit)
+            )
+            
+            if should_cache:
+                try:
+                    # Load entire file and cache it
+                    waveform, file_sample_rate = torchaudio.load(
+                        file["audio"], backend=self.backend
+                    )
+                    file["waveform"] = waveform
+                    file["sample_rate"] = file_sample_rate
+                    data = waveform[:, start_frame:end_frame]
+                except RuntimeError:
+                    # Fall back to seeking if full load fails
+                    should_cache = False
+            
+            if not should_cache:
+                try:
+                    data, _ = torchaudio.load(
+                        file["audio"],
+                        frame_offset=start_frame,
+                        num_frames=num_frames,
+                        backend=self.backend,
+                    )
+                    # rewind if needed
+                    if isinstance(file["audio"], IOBase):
+                        file["audio"].seek(0)
+                except RuntimeError:
+                    if isinstance(file["audio"], IOBase):
+                        msg = "torchaudio failed to seek-and-read in file-like object."
+                        raise RuntimeError(msg)
 
-                msg = (
-                    f"torchaudio failed to seek-and-read in {file['audio']}: "
-                    f"loading the whole file instead."
-                )
+                    msg = (
+                        f"torchaudio failed to seek-and-read in {file['audio']}: "
+                        f"loading the whole file instead."
+                    )
 
-                warnings.warn(msg)
-                waveform, sample_rate = self.__call__(file)
-                data = waveform[:, start_frame:end_frame]
+                    warnings.warn(msg)
+                    waveform, sample_rate = self.__call__(file)
+                    data = waveform[:, start_frame:end_frame]
 
-                # storing waveform and sample_rate for next time
-                # as it is very likely that seek-and-read will
-                # fail again for this particular file
-                file["waveform"] = waveform
-                file["sample_rate"] = sample_rate
+                    # storing waveform and sample_rate for next time
+                    # as it is very likely that seek-and-read will
+                    # fail again for this particular file
+                    file["waveform"] = waveform
+                    file["sample_rate"] = sample_rate
 
         if channel is not None:
             data = data[channel : channel + 1, :]

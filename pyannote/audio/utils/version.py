@@ -33,20 +33,20 @@ def check_version(library: Text, theirs: Text, mine: Text, what: Text = "Pipelin
     theirs = VersionInfo.parse(theirs)
     mine = VersionInfo.parse(mine)
 
-    if theirs.major > mine.major:
-        print(
-            f"{what} was trained with {library} {theirs}, yours is {mine}. "
-            f"Bad things will probably happen unless you upgrade {library} to {theirs.major}.x."
-        )
+    # if theirs.major > mine.major:
+    #     print(
+    #         f"{what} was trained with {library} {theirs}, yours is {mine}. "
+    #         f"Bad things will probably happen unless you upgrade {library} to {theirs.major}.x."
+    #     )
 
-    elif theirs.major < mine.major:
-        print(
-            f"{what} was trained with {library} {theirs}, yours is {mine}. "
-            f"Bad things might happen unless you revert {library} to {theirs.major}.x."
-        )
+    # elif theirs.major < mine.major:
+    #     print(
+    #         f"{what} was trained with {library} {theirs}, yours is {mine}. "
+    #         f"Bad things might happen unless you revert {library} to {theirs.major}.x."
+    #     )
 
-    elif theirs.minor > mine.minor:
-        print(
-            f"{what} was trained with {library} {theirs}, yours is {mine}. "
-            f"This should be OK but you might want to upgrade {library}."
-        )
+    # elif theirs.minor > mine.minor:
+    #     print(
+    #         f"{what} was trained with {library} {theirs}, yours is {mine}. "
+    #         f"This should be OK but you might want to upgrade {library}."
+    #     )

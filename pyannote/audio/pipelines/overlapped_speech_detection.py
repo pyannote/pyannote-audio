@@ -128,6 +128,10 @@ class OverlappedSpeechDetection(Pipeline):
         # load model
         model = get_model(segmentation, use_auth_token=use_auth_token)
 
+        # Set default batch size for better GPU utilization if not specified
+        if "batch_size" not in inference_kwargs:
+            inference_kwargs["batch_size"] = 32
+
         if model.dimension > 1:
             inference_kwargs["pre_aggregation_hook"] = lambda scores: np.partition(
                 scores, -2, axis=-1
