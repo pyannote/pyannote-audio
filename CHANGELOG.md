@@ -1,5 +1,9 @@
 # Changelog
 
+## Version 3.4.0 (2025-09-09)
+
+- setup: pin pyannote.{core,database,metrics,pipeline} dependencies as future releases of these packages will break the 3.x branch
+
 ## Version 3.3.2 (2024-09-11)
 
 ### Fixes
