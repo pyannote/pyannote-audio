@@ -77,9 +77,9 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         Clustering algorithm. See pyannote.audio.pipelines.clustering.Clustering
         for available options. Defaults to "AgglomerativeClustering".
     segmentation_batch_size : int, optional
-        Batch size used for speaker segmentation. Defaults to 1.
+        Batch size used for speaker segmentation. Defaults to 32.
     embedding_batch_size : int, optional
-        Batch size used for speaker embedding. Defaults to 1.
+        Batch size used for speaker embedding. Defaults to 32.
     der_variant : dict, optional
         Optimize for a variant of diarization error rate.
         Defaults to {"collar": 0.0, "skip_overlap": False}. This is used in `get_metric`
@@ -119,8 +119,8 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         embedding: PipelineModel = "speechbrain/spkrec-ecapa-voxceleb@5c0be3875fda05e81f3c004ed8c7c06be308de1e",
         embedding_exclude_overlap: bool = False,
         clustering: str = "AgglomerativeClustering",
-        embedding_batch_size: int = 1,
-        segmentation_batch_size: int = 1,
+        embedding_batch_size: int = 32,
+        segmentation_batch_size: int = 32,
         der_variant: Optional[dict] = None,
         use_auth_token: Union[Text, None] = None,
     ):
