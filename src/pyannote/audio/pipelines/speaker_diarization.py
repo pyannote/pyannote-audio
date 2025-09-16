@@ -171,7 +171,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
     # print diarization
     >>> assert isinstance(output.speaker_diarization, pyannote.core.Annotation)
-    >>> for turn, _, speaker in output.speaker_diarization.itertracks(yield_label=True):
+    >>> for turn, speaker in output.speaker_diarization:
     ...     print(f"start={turn.start:.1f}s stop={turn.end:.1f}s speaker_{speaker}")
     
     # get one speaker embedding per speaker

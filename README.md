@@ -46,7 +46,7 @@ with ProgressHook() as hook:
     output = pipeline("audio.wav", hook=hook)  # runs locally
 
 # print the result
-for turn, _, speaker in output.speaker_diarization.itertracks(yield_label=True):
+for turn, speaker in output.speaker_diarization:
     print(f"start={turn.start:.1f}s stop={turn.end:.1f}s speaker_{speaker}")
 # start=0.2s stop=1.5s speaker_0
 # start=1.8s stop=3.9s speaker_1
@@ -67,10 +67,10 @@ from pyannote.audio import Pipeline
 pipeline = Pipeline.from_pretrained(
     "pyannote/speaker-diarization-precision-2", token="PYANNOTEAI_API_KEY")
 
-diarization = pipeline("audio.wav")  # runs on pyannoteAI servers
+output = pipeline("audio.wav")  # runs on pyannoteAI servers
 
 # print the result
-for turn, _, speaker in diarization.itertracks(yield_label=True):
+for turn, speaker in output.speaker_diarization:
     print(f"start={turn.start:.1f}s stop={turn.end:.1f}s {speaker}")
 # start=0.2s stop=1.6s SPEAKER_00
 # start=1.8s stop=4.0s SPEAKER_01 
