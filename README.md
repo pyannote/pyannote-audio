@@ -127,7 +127,7 @@ For each file processed with a pipeline, we track
 * the file duration in seconds
 * the value of `num_speakers`, `min_speakers`, and `max_speakers` for speaker diarization pipelines
 
-**We do not track any information that could identify who the user is.**
+**We [do not track](https://github.com/pyannote/pyannote-audio/blob/main/src/pyannote/audio/telemetry/metrics.py) any information that could identify who the user is.**
 
 ### Configuring telemetry
 
