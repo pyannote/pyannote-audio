@@ -79,7 +79,6 @@ def expand_subfolders(
     if isinstance(config, dict):
         for key, value in config.items():
             if isinstance(value, str) and value.startswith("$model/"):
-
                 subfolder = "/".join(value.split("/")[1:])
 
                 # if subfolder contains '@', split it to get revision
@@ -110,7 +109,6 @@ def expand_subfolders(
     elif isinstance(config, list):
         for idx, value in enumerate(config):
             if isinstance(value, str) and value.startswith("$model/"):
-
                 subfolder = "/".join(value.split("/")[1:])
 
                 # if subfolder contains '@', split it to get revision
@@ -173,12 +171,12 @@ class Pipeline(_Pipeline):
             Use at your own risk, as this may lead to unexpected behavior.
         """
 
-        # if checkpoint is a dict, assume it is the actual content of 
+        # if checkpoint is a dict, assume it is the actual content of
         # a config file
         if isinstance(checkpoint, dict):
             if revision is not None:
                 raise ValueError("Revisions cannot be used with local checkpoints.")
-            model_id = Path.cwd()            
+            model_id = Path.cwd()
             config = checkpoint
             otel_origin: str = "local"
 
@@ -195,7 +193,6 @@ class Pipeline(_Pipeline):
         elif os.path.isfile(checkpoint):
             if revision is not None:
                 raise ValueError("Revisions cannot be used with local checkpoints.")
-
             model_id = Path(checkpoint).parent
             config_yml = checkpoint
             otel_origin: str = "local"
