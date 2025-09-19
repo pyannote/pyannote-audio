@@ -110,6 +110,7 @@ With the optional telemetry feature in `pyannote.audio`, you can choose to send 
 - improve(utils): improve dependency check when loading pretrained models and/or pipeline
 - improve(utils): add option to skip dependency check
 - improve(utils): add option to load a pretrained model checkpoint from an `io.BytesIO` buffer
+- improve(pipeline): add option to load a pretrained pipeline from a `dict` ([@benniekiss](https://github.com/benniekiss/))
 
 ### Fixes
 
