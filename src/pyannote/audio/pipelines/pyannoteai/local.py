@@ -20,18 +20,15 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-
+import os
 from pathlib import Path
-from typing import Optional
-
-from pyannote.core import Annotation, Segment
-from pyannoteai.sdk import Client
 
 from pyannote.audio import Pipeline
+from pyannote.core import Annotation, Segment
 
 
-class PremiumSpeakerDiarization(Pipeline):
-    """Wrapper around official pyannoteAI API client
+class Local(Pipeline):
+    """Wrapper around official pyannoteAI on-premise package
 
     Parameters
     ----------
@@ -41,14 +38,18 @@ class PremiumSpeakerDiarization(Pipeline):
 
     Usage
     -----
-    >>> from pyannote.audio.pipelines.premium import PremiumSpeakerDiarization
-    >>> pipeline = PremiumSpeakerDiarization(token="{PYANNOTEAI_API_KEY}")
+    >>> from pyannote.audio.pipelines.pyannoteai.local import Local
+    >>> pipeline = Local(token="{PYANNOTEAI_API_KEY}")
     >>> speaker_diarization = pipeline("/path/to/your/audio.wav")
     """
 
-    def __init__(self, token: Optional[str] = None, **kwargs):
+    def __init__(self, token: str | None = None, **kwargs):
         super().__init__()
-        self._client = Client(token)
+
+        from pyannoteai.local import Pipeline as _LocalPipeline
+
+        self.token = token or os.environ.get("PYANNOTEAI_API_KEY", None)
+        self._pipeline = _LocalPipeline(self.token)
 
     def _to_annotation(self, completed_job: dict) -> Annotation:
         """Deserialize job output into pyannote.core Annotation"""
@@ -62,20 +63,17 @@ class PremiumSpeakerDiarization(Pipeline):
             speaker = turn["speaker"]
             annotation[segment, t] = speaker
 
-        return annotation.rename_tracks('string')
+        return annotation.rename_tracks("string")
 
-    def __call__(
+    def apply(
         self,
         file: Path,
-        num_speakers: Optional[int] = None,
-        min_speakers: Optional[int] = None,
-        max_speakers: Optional[int] = None,
+        num_speakers: int | None = None,
+        min_speakers: int | None = None,
+        max_speakers: int | None = None,
+        exclusive: bool = False,
     ) -> Annotation:
-        """Speaker diarization using pyannoteAI web API
-
-        This method will upload `file`, initiate a diarization job,
-        retrieve its output, and deserialize the latter into a good
-        old pyannote.core.Annotation instance.
+        """Speaker diarization using pyannoteAI on-premise package
 
         Parameters
         ----------
@@ -88,6 +86,8 @@ class PremiumSpeakerDiarization(Pipeline):
             Not supported yet. Minimum number of speakers. Has no effect when `num_speakers` is provided.
         max_speakers : int, optional
             Not supported yet. Maximum number of speakers. Has no effect when `num_speakers` is provided.
+        exclusive : bool, optional
+            Enable exclusive diarization.
 
         Returns
         -------
@@ -104,20 +104,23 @@ class PremiumSpeakerDiarization(Pipeline):
             If something else went wrong
         """
 
-        # upload file to pyannoteAI cloud API
-        media_url: str = self._client.upload(file)
-
-        # initiate diarization job
-        job_id = self._client.diarize(
-            media_url,
+        predictions = self._pipeline.diarize(
+            file["audio"],
             num_speakers=num_speakers,
             min_speakers=min_speakers,
             max_speakers=max_speakers,
-            confidence=False,
         )
 
-        # retrieve job output (once completed)
-        job_output = self._client.retrieve(job_id)
+        # use exclusive diarization whenever requested
+        if exclusive:
+            diarization = predictions["exclusive_diarization"]
+        else:
+            diarization = predictions["diarization"]
 
         # deserialize the output into a good-old Annotation instance
-        return self._to_annotation(job_output)
+        annotation = Annotation()
+        for t, turn in enumerate(diarization):
+            segment = Segment(start=turn["start"], end=turn["end"])
+            speaker = turn["speaker"]
+            annotation[segment, t] = speaker
+        return annotation.rename_tracks("string")

@@ -23,14 +23,14 @@
 
 from __future__ import annotations
 
-import os
 import io
+import os
 import warnings
 from dataclasses import dataclass
 from functools import cached_property
 from importlib import import_module
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Text, Tuple, Union
+from typing import Any, Optional
 
 import lightning
 import torch
@@ -38,9 +38,6 @@ import torch.nn as nn
 import torch.optim
 from lightning.fabric.utilities.cloud_io import _load as pl_load
 from lightning.pytorch.utilities.model_summary.model_summary import ModelSummary
-from pyannote.core import SlidingWindow
-from torch.utils.data import DataLoader
-
 from pyannote.audio import __version__
 from pyannote.audio.core.io import Audio
 from pyannote.audio.core.task import (
@@ -49,9 +46,12 @@ from pyannote.audio.core.task import (
     Task,
     UnknownSpecificationsError,
 )
+from pyannote.audio.telemetry import track_model_init
+from pyannote.audio.utils.dependencies import check_dependencies
 from pyannote.audio.utils.hf_hub import AssetFileName, download_from_hf_hub
 from pyannote.audio.utils.multi_task import map_with_specifications
-from pyannote.audio.utils.dependencies import check_dependencies
+from pyannote.core import SlidingWindow
+from torch.utils.data import DataLoader
 
 
 # NOTE: needed to backward compatibility to load models trained before pyannote.audio 3.x
@@ -83,13 +83,13 @@ class Model(lightning.LightningModule):
         self,
         sample_rate: int = 16000,
         num_channels: int = 1,
-        task: Optional[Task] = None,
+        task: Task | None = None,
     ):
         super().__init__()
 
-        assert (
-            num_channels == 1
-        ), "Only mono audio is supported for now (num_channels = 1)"
+        assert num_channels == 1, (
+            "Only mono audio is supported for now (num_channels = 1)"
+        )
 
         self.save_hyperparameters("sample_rate", "num_channels")
 
@@ -112,7 +112,7 @@ class Model(lightning.LightningModule):
         pass
 
     @property
-    def specifications(self) -> Union[Specifications, Tuple[Specifications]]:
+    def specifications(self) -> Specifications | tuple[Specifications]:
         if self.task is None:
             try:
                 specifications = self._specifications
@@ -129,9 +129,7 @@ class Model(lightning.LightningModule):
         return specifications
 
     @specifications.setter
-    def specifications(
-        self, specifications: Union[Specifications, Tuple[Specifications]]
-    ):
+    def specifications(self, specifications: Specifications | tuple[Specifications]):
         if not isinstance(specifications, (Specifications, tuple)):
             raise ValueError(
                 "Only regular specifications or tuple of specifications are supported."
@@ -152,7 +150,7 @@ class Model(lightning.LightningModule):
         if hasattr(self, "_specifications"):
             del self._specifications
 
-    def __example_input_array(self, duration: Optional[float] = None) -> torch.Tensor:
+    def __example_input_array(self, duration: float | None = None) -> torch.Tensor:
         duration = duration or next(iter(self.specifications)).duration
         return torch.randn(
             (
@@ -257,8 +255,7 @@ class Model(lightning.LightningModule):
             "specifications": self.specifications,
         }
 
-    def on_load_checkpoint(self, checkpoint: Dict[str, Any]):
-
+    def on_load_checkpoint(self, checkpoint: dict[str, Any]):
         self.specifications = checkpoint["pyannote.audio"]["specifications"]
 
         # add task-dependent (e.g. final classifier) layers
@@ -266,12 +263,12 @@ class Model(lightning.LightningModule):
 
     def forward(
         self, waveforms: torch.Tensor, **kwargs
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor]]:
+    ) -> torch.Tensor | tuple[torch.Tensor]:
         msg = "Class {self.__class__.__name__} should define a `forward` method."
         raise NotImplementedError(msg)
 
     # convenience function to automate the choice of the final activation function
-    def default_activation(self) -> Union[nn.Module, Tuple[nn.Module]]:
+    def default_activation(self) -> nn.Module | tuple[nn.Module]:
         """Guess default activation function according to task specification
 
             * sigmoid for binary classification
@@ -285,7 +282,7 @@ class Model(lightning.LightningModule):
         """
 
         def __default_activation(
-            specifications: Optional[Specifications] = None,
+            specifications: Specifications | None = None,
         ) -> nn.Module:
             if specifications.problem == Problem.BINARY_CLASSIFICATION:
                 return nn.Sigmoid()
@@ -325,7 +322,7 @@ class Model(lightning.LightningModule):
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=1e-3)
 
-    def __up_to(self, module_name: Text, requires_grad: bool = False) -> List[Text]:
+    def __up_to(self, module_name: str, requires_grad: bool = False) -> list[str]:
         """Helper function for freeze_up_to and unfreeze_up_to"""
 
         tokens = module_name.split(".")
@@ -359,7 +356,7 @@ class Model(lightning.LightningModule):
 
         return updated_modules
 
-    def freeze_up_to(self, module_name: Text) -> List[Text]:
+    def freeze_up_to(self, module_name: str) -> list[str]:
         """Freeze model up to specific module
 
         Parameters
@@ -384,7 +381,7 @@ class Model(lightning.LightningModule):
         """
         return self.__up_to(module_name, requires_grad=False)
 
-    def unfreeze_up_to(self, module_name: Text) -> List[Text]:
+    def unfreeze_up_to(self, module_name: str) -> list[str]:
         """Unfreeze model up to specific module
 
         Parameters
@@ -411,10 +408,10 @@ class Model(lightning.LightningModule):
 
     def __by_name(
         self,
-        modules: Union[List[Text], Text],
+        modules: list[str] | str,
         recurse: bool = True,
         requires_grad: bool = False,
-    ) -> List[Text]:
+    ) -> list[str]:
         """Helper function for freeze_by_name and unfreeze_by_name"""
 
         updated_modules = list()
@@ -441,9 +438,9 @@ class Model(lightning.LightningModule):
 
     def freeze_by_name(
         self,
-        modules: Union[Text, List[Text]],
+        modules: str | list[str],
         recurse: bool = True,
-    ) -> List[Text]:
+    ) -> list[str]:
         """Freeze modules
 
         Parameters
@@ -472,9 +469,9 @@ class Model(lightning.LightningModule):
 
     def unfreeze_by_name(
         self,
-        modules: Union[List[Text], Text],
+        modules: list[str] | str,
         recurse: bool = True,
-    ) -> List[Text]:
+    ) -> list[str]:
         """Unfreeze modules
 
         Parameters
@@ -500,12 +497,13 @@ class Model(lightning.LightningModule):
     @classmethod
     def from_pretrained(
         cls,
-        checkpoint: Union[Path, Text, io.BytesIO],
+        checkpoint: Path | str | io.BytesIO,
         map_location=None,
         strict: bool = True,
-        subfolder: Optional[str] = None,
-        token: Union[str, bool, None] = None,
-        cache_dir: Union[Path, str, None] = None,
+        subfolder: str | None = None,
+        revision: str | None = None,
+        token: str | bool | None = None,
+        cache_dir: Path | str | None = None,
         skip_dependencies: bool = False,
         **kwargs,
     ) -> Optional["Model"]:
@@ -527,6 +525,8 @@ class Model(lightning.LightningModule):
             the keys returned by this module’s state dict. Defaults to True.
         subfolder : str, optional
             Folder inside the hf.co model repo.
+        revision : str, optional
+            Revision when loading from the huggingface.co model hub.
         token : str or bool, optional
             Token to be used for the download.
         cache_dir: Path or str, optional
@@ -549,30 +549,51 @@ class Model(lightning.LightningModule):
 
         """
         if isinstance(checkpoint, io.BytesIO) or os.path.isfile(checkpoint):
+            if revision is not None:
+                raise ValueError("Revisions cannot be used with local checkpoints.")
+
             # if checkpoint is a BytesIO object or a file path, use it as is
             path_to_model_checkpoint = checkpoint
+            otel_origin: str = "local"
 
         # if checkpoint is a directory, look for the model checkpoint
         # inside this directory (or inside a subfolder if specified)
         elif os.path.isdir(checkpoint):
+            if revision is not None:
+                raise ValueError("Revisions cannot be used with local checkpoints.")
+
             if subfolder:
                 path_to_model_checkpoint = (
                     Path(checkpoint) / subfolder / AssetFileName.Model.value
                 )
             else:
                 path_to_model_checkpoint = Path(checkpoint) / AssetFileName.Model.value
+            otel_origin: str = "local"
 
         # otherwise, assume that the checkpoint is hosted on HF model hub
         else:
-            _, _, path_to_model_checkpoint = download_from_hf_hub(
-                str(checkpoint),
+            checkpoint = str(checkpoint)
+            if "@" in checkpoint:
+                raise ValueError(
+                    "Revisions must be passed with `revision` keyword argument."
+                )
+
+            path_to_model_checkpoint = download_from_hf_hub(
+                checkpoint,
                 AssetFileName.Model,
                 subfolder=subfolder,
+                revision=revision,
                 cache_dir=cache_dir,
                 token=token,
             )
             if path_to_model_checkpoint is None:
                 return None
+
+            otel_origin: str = (
+                checkpoint
+                if checkpoint.lower().startswith(("pyannote/", "pyannoteai/"))
+                else "huggingface"
+            )
 
         if map_location is None:
 
@@ -627,5 +648,9 @@ class Model(lightning.LightningModule):
                 return model
 
             raise e
+
+        # save model origin (HF, local, etc) as attribute for telemetry purposes
+        model._otel_origin = otel_origin
+        track_model_init(model)
 
         return model

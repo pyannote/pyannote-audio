@@ -1,6 +1,7 @@
 # The MIT License (MIT)
 #
-# Copyright (c) 2021- CNRS
+# Copyright (c) 2021-2025 CNRS
+# Copyright (c) 2025- pyannoteAI
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -22,12 +23,15 @@
 
 """Clustering pipelines"""
 
-import random
 from enum import Enum
-from typing import Optional, Tuple
 
 import numpy as np
 from einops import rearrange
+from pyannote.audio.core.io import AudioFile
+from pyannote.audio.core.plda import PLDA
+from pyannote.audio.pipelines.utils import oracle_segmentation
+from pyannote.audio.utils.permutation import permutate
+from pyannote.audio.utils.vbx import cluster_vbx
 from pyannote.core import SlidingWindow, SlidingWindowFeature
 from pyannote.pipeline import Pipeline
 from pyannote.pipeline.parameter import Categorical, Integer, Uniform
@@ -36,29 +40,23 @@ from scipy.optimize import linear_sum_assignment
 from scipy.spatial.distance import cdist
 from sklearn.cluster import KMeans
 
-from pyannote.audio.core.io import AudioFile
-from pyannote.audio.pipelines.utils import oracle_segmentation
-from pyannote.audio.utils.permutation import permutate
-
 
 class BaseClustering(Pipeline):
     def __init__(
         self,
         metric: str = "cosine",
-        max_num_embeddings: int = 1000,
         constrained_assignment: bool = False,
     ):
         super().__init__()
         self.metric = metric
-        self.max_num_embeddings = max_num_embeddings
         self.constrained_assignment = constrained_assignment
 
     def set_num_clusters(
         self,
         num_embeddings: int,
-        num_clusters: Optional[int] = None,
-        min_clusters: Optional[int] = None,
-        max_clusters: Optional[int] = None,
+        num_clusters: int | None = None,
+        min_clusters: int | None = None,
+        max_clusters: int | None = None,
     ):
         min_clusters = num_clusters or min_clusters or 1
         min_clusters = max(1, min(num_embeddings, min_clusters))
@@ -79,9 +77,14 @@ class BaseClustering(Pipeline):
     def filter_embeddings(
         self,
         embeddings: np.ndarray,
-        segmentations: Optional[SlidingWindowFeature] = None,
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Filter NaN embeddings and downsample embeddings
+        segmentations: SlidingWindowFeature | None = None,
+        min_active_ratio: float = 0.2,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Filter embeddings before clustering
+
+        Embeddings that are removed:
+        * NaN embeddings
+        * embeddings speaking less than `min_active_ratio` times the chunk duration
 
         Parameters
         ----------
@@ -89,6 +92,9 @@ class BaseClustering(Pipeline):
             Sequence of embeddings.
         segmentations : (num_chunks, num_frames, num_speakers) array
             Binary segmentations.
+        min_active_ratio : float, optional
+            Minimum active ratio for a speaker to be considered active
+            during clustering.
 
         Returns
         -------
@@ -97,26 +103,29 @@ class BaseClustering(Pipeline):
         speaker_idx : (num_embeddings, ) array
         """
 
-        # whether speaker is active
-        active = np.sum(segmentations.data, axis=1) > 0
+        _, num_frames, _ = segmentations.data.shape
+
+        # frames where only one speaker is active
+        single_active_mask = (np.sum(segmentations.data, axis=2, keepdims=True) == 1)
+        
+        # count number of clean frames per chunk and speaker
+        num_clean_frames = np.sum(segmentations.data * single_active_mask, axis=1)
+        # num_chunks, num_speakers
+                
+        # whether speaker is active enough on their own
+        active = num_clean_frames >= min_active_ratio * num_frames
+        # num_chunks, num_speakers
+
         # whether speaker embedding extraction went fine
         valid = ~np.any(np.isnan(embeddings), axis=2)
 
-        # indices of embeddings that are both active and valid
+        # indices of embeddings that are both active enough and valid
         chunk_idx, speaker_idx = np.where(active * valid)
-
-        # sample max_num_embeddings embeddings
-        num_embeddings = len(chunk_idx)
-        if num_embeddings > self.max_num_embeddings:
-            indices = list(range(num_embeddings))
-            random.shuffle(indices)
-            indices = sorted(indices[: self.max_num_embeddings])
-            chunk_idx = chunk_idx[indices]
-            speaker_idx = speaker_idx[indices]
 
         return embeddings[chunk_idx, speaker_idx], chunk_idx, speaker_idx
 
     def constrained_argmax(self, soft_clusters: np.ndarray) -> np.ndarray:
+        
         soft_clusters = np.nan_to_num(soft_clusters, nan=np.nanmin(soft_clusters))
         num_chunks, num_speakers, num_clusters = soft_clusters.shape
         # num_chunks, num_speakers, num_clusters
@@ -205,10 +214,10 @@ class BaseClustering(Pipeline):
     def __call__(
         self,
         embeddings: np.ndarray,
-        segmentations: Optional[SlidingWindowFeature] = None,
-        num_clusters: Optional[int] = None,
-        min_clusters: Optional[int] = None,
-        max_clusters: Optional[int] = None,
+        segmentations: SlidingWindowFeature | None = None,
+        num_clusters: int | None = None,
+        min_clusters: int | None = None,
+        max_clusters: int | None = None,
         **kwargs,
     ) -> np.ndarray:
         """Apply clustering
@@ -303,12 +312,10 @@ class AgglomerativeClustering(BaseClustering):
     def __init__(
         self,
         metric: str = "cosine",
-        max_num_embeddings: int = np.inf,
         constrained_assignment: bool = False,
     ):
         super().__init__(
             metric=metric,
-            max_num_embeddings=max_num_embeddings,
             constrained_assignment=constrained_assignment,
         )
 
@@ -323,9 +330,9 @@ class AgglomerativeClustering(BaseClustering):
     def cluster(
         self,
         embeddings: np.ndarray,
-        min_clusters: Optional[int] = None,
-        max_clusters: Optional[int] = None,
-        num_clusters: Optional[int] = None,
+        min_clusters: int | None = None,
+        max_clusters: int | None = None,
+        num_clusters: int | None = None,
     ):
         """
 
@@ -502,9 +509,9 @@ class KMeansClustering(BaseClustering):
     def cluster(
         self,
         embeddings: np.ndarray,
-        min_clusters: Optional[int] = None,
-        max_clusters: Optional[int] = None,
-        num_clusters: Optional[int] = None,
+        min_clusters: int | None = None,
+        max_clusters: int | None = None,
+        num_clusters: int | None = None,
     ):
         """Perform KMeans clustering
 
@@ -540,6 +547,128 @@ class KMeansClustering(BaseClustering):
         ).fit_predict(embeddings)
 
 
+class VBxClustering(BaseClustering):
+
+    expects_num_clusters: bool = False
+
+
+    def __init__(
+        self,
+        plda: PLDA,
+        metric: str = "cosine",
+        constrained_assignment: bool = True,
+    ):
+        super().__init__(
+            metric=metric,
+            constrained_assignment=constrained_assignment,
+        )
+
+        self.plda = plda
+
+        self.threshold = Uniform(0.5, 0.8)  # assume unit-normalized embeddings
+        self.Fa = Uniform(0.01, 0.5)
+        self.Fb = Uniform(0.01, 15.0)
+
+    def __call__(
+        self,
+        embeddings: np.ndarray,
+        segmentations: SlidingWindowFeature | None = None,
+        num_clusters: int | None = None,
+        min_clusters: int | None = None,
+        max_clusters: int | None = None,
+        **kwargs,
+    ) -> np.ndarray:
+        
+        constrained_assignment = self.constrained_assignment
+
+        train_embeddings, _, _ = self.filter_embeddings(
+            embeddings, segmentations=segmentations
+        )
+
+        if train_embeddings.shape[0] < 2:
+            # do NOT apply clustering when the number of training embeddings is less than 2
+            num_chunks, num_speakers, _ = embeddings.shape
+            hard_clusters = np.zeros((num_chunks, num_speakers), dtype=np.int8)
+            soft_clusters = np.ones((num_chunks, num_speakers, 1))
+            centroids = np.mean(train_embeddings, axis=0, keepdims=True)
+            return hard_clusters, soft_clusters, centroids
+
+        # AHC
+        train_embeddings_normed = train_embeddings / np.linalg.norm(
+            train_embeddings, axis=1, keepdims=True
+        )
+        dendrogram = linkage(
+            train_embeddings_normed, method="centroid", metric="euclidean"
+        )
+        ahc_clusters = fcluster(dendrogram, self.threshold, criterion="distance") - 1
+        _, ahc_clusters = np.unique(ahc_clusters, return_inverse=True)
+
+        # VBx
+
+        fea = self.plda(train_embeddings)
+        q, sp = cluster_vbx(
+            ahc_clusters,
+            fea,
+            self.plda.phi,
+            Fa=self.Fa,
+            Fb=self.Fb,
+            maxIters=20,
+        )
+
+        num_chunks, num_speakers, dimension = embeddings.shape
+        W = q[:, sp > 1e-7] # responsibilities of speakers that VBx kept
+        centroids = W.T @ train_embeddings.reshape(-1, dimension) / W.sum(0, keepdims=True).T
+
+        # (optional) K-Means
+        # re-cluster with Kmeans only in case the automatically determined
+        # number of clusters does not match the requested number of speakers
+        # (either too low, or too high, or different from the requested number)
+        auto_num_clusters, _ = centroids.shape
+        if auto_num_clusters < min_clusters:
+            num_clusters = min_clusters
+        elif auto_num_clusters > max_clusters:
+            num_clusters = max_clusters
+        if num_clusters and num_clusters != auto_num_clusters:
+            # disable constrained assignment when forcing number of clusters
+            # as it might results in artificially increasing the number of clusters
+            constrained_assignment = False
+            kmeans_clusters = KMeans(
+                n_clusters=num_clusters, n_init=3, random_state=42, copy_x=False
+            ).fit_predict(train_embeddings_normed)
+            centroids = np.vstack(
+                [
+                    np.mean(train_embeddings[kmeans_clusters == k], axis=0)
+                    for k in range(num_clusters)
+                ])
+
+        # calculate distance
+        e2k_distance = rearrange(
+            cdist(
+                rearrange(embeddings, "c s d -> (c s) d"),
+                centroids,
+                metric=self.metric,
+            ),
+            "(c s) k -> c s k",
+            c=num_chunks,
+            s=num_speakers,
+        )
+        soft_clusters = 2 - e2k_distance
+
+        # assign each embedding to the cluster with the most similar centroid
+        if constrained_assignment:
+            const = soft_clusters.min() - 1.   # const < any_valid_score
+            soft_clusters[segmentations.data.sum(1) == 0] = const
+            hard_clusters = self.constrained_argmax(
+                soft_clusters,
+            )
+        else:
+            hard_clusters = np.argmax(soft_clusters, axis=2)
+
+        hard_clusters = hard_clusters.reshape(num_chunks, num_speakers)
+        
+        return hard_clusters, soft_clusters, centroids
+
+
 class OracleClustering(BaseClustering):
     """Oracle clustering"""
 
@@ -547,10 +676,10 @@ class OracleClustering(BaseClustering):
 
     def __call__(
         self,
-        embeddings: Optional[np.ndarray] = None,
-        segmentations: Optional[SlidingWindowFeature] = None,
-        file: Optional[AudioFile] = None,
-        frames: Optional[SlidingWindow] = None,
+        embeddings: np.ndarray | None = None,
+        segmentations: SlidingWindowFeature | None = None,
+        file: AudioFile | None = None,
+        frames: SlidingWindow | None = None,
         **kwargs,
     ) -> np.ndarray:
         """Apply oracle clustering
@@ -630,4 +759,5 @@ class OracleClustering(BaseClustering):
 class Clustering(Enum):
     AgglomerativeClustering = AgglomerativeClustering
     KMeansClustering = KMeansClustering
+    VBxClustering = VBxClustering
     OracleClustering = OracleClustering

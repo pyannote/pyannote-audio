@@ -1,6 +1,7 @@
 # The MIT License (MIT)
 #
-# Copyright (c) 2024- CNRS
+# Copyright (c) 2024-2025 CNRS
+# Copyright (c) 2025- pyannoteAI
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -25,17 +26,15 @@ from tempfile import mkstemp
 
 import pytest
 from lightning import Trainer
-from pyannote.database import FileFinder, registry
-
 from pyannote.audio.models.embedding.debug import SimpleEmbeddingModel
 from pyannote.audio.models.segmentation.debug import SimpleSegmentationModel
 from pyannote.audio.tasks import (
     MultiLabelSegmentation,
-    OverlappedSpeechDetection,
     SpeakerDiarization,
     SupervisedRepresentationLearningWithArcFace,
     VoiceActivityDetection,
 )
+from pyannote.database import FileFinder, registry
 
 
 @pytest.fixture()
@@ -133,27 +132,6 @@ def test_train_voice_activity_detection_with_cached_data_mono_device(protocol, c
     first_trainer.fit(first_model)
 
     second_task = VoiceActivityDetection(protocol, cache=cache)
-    second_model = SimpleSegmentationModel(task=second_task)
-    second_trainer = Trainer(fast_dev_run=True, accelerator="cpu", devices=1)
-    second_trainer.fit(second_model)
-
-
-def test_train_overlapped_speech_detection(protocol):
-    overlapped_speech_detection = OverlappedSpeechDetection(protocol)
-    model = SimpleSegmentationModel(task=overlapped_speech_detection)
-    trainer = Trainer(fast_dev_run=True, accelerator="cpu")
-    trainer.fit(model)
-
-
-def test_train_overlapped_speech_detection_with_cached_data_mono_device(
-    protocol, cache
-):
-    first_task = OverlappedSpeechDetection(protocol, cache=cache)
-    first_model = SimpleSegmentationModel(task=first_task)
-    first_trainer = Trainer(fast_dev_run=True, accelerator="cpu", devices=1)
-    first_trainer.fit(first_model)
-
-    second_task = OverlappedSpeechDetection(protocol, cache=cache)
     second_model = SimpleSegmentationModel(task=second_task)
     second_trainer = Trainer(fast_dev_run=True, accelerator="cpu", devices=1)
     second_trainer.fit(second_model)

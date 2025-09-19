@@ -1,6 +1,7 @@
 # MIT License
 #
-# Copyright (c) 2020- CNRS
+# Copyright (c) 2020-2025 CNRS
+# Copyright (c) 2025- pyannoteAI
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -29,14 +30,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from lightning.pytorch.loggers import MLFlowLogger, TensorBoardLogger
-from pyannote.database.protocol.protocol import Scope, Subset
-from torch.utils.data._utils.collate import default_collate
-from torchaudio import AudioMetaData
-from torchmetrics import Metric
-from torchmetrics.classification import BinaryAUROC, MulticlassAUROC, MultilabelAUROC
-
 from pyannote.audio.core.task import Problem, Task, get_dtype
 from pyannote.audio.utils.random import create_rng_for_worker
+from pyannote.database.protocol.protocol import Scope, Subset
+from torch.nn import functional as F
+from torch.utils.data._utils.collate import default_collate
+from torchmetrics import Metric
+from torchmetrics.classification import BinaryAUROC, MulticlassAUROC, MultilabelAUROC
 
 Subsets = list(Subset.__args__)
 Scopes = list(Scope.__args__)
@@ -46,26 +46,7 @@ class SegmentationTask(Task):
     """Methods common to most segmentation tasks"""
 
     def get_file(self, file_id):
-        file = dict()
-
-        file["audio"] = self.prepared_data["audio-path"][file_id]
-
-        _audio_info = self.prepared_data["audio-info"][file_id]
-        encoding = self.prepared_data["audio-encoding"][file_id]
-
-        sample_rate = _audio_info["sample_rate"]
-        num_frames = _audio_info["num_frames"]
-        num_channels = _audio_info["num_channels"]
-        bits_per_sample = _audio_info["bits_per_sample"]
-        file["torchaudio.info"] = AudioMetaData(
-            sample_rate=sample_rate,
-            num_frames=num_frames,
-            num_channels=num_channels,
-            bits_per_sample=bits_per_sample,
-            encoding=encoding,
-        )
-
-        return file
+        return {"audio": self.prepared_data["audio-path"][file_id]}
 
     def default_metric(
         self,
@@ -200,7 +181,17 @@ class SegmentationTask(Task):
             yield next(chunks)
 
     def collate_X(self, batch) -> torch.Tensor:
-        return default_collate([b["X"] for b in batch])
+        lengths = set(b["X"].shape[-1] for b in batch)
+
+        # just stack waveforms as they are if they all have the same length
+        if len(lengths) == 1:
+            return default_collate([b["X"] for b in batch])
+
+        # pad with 0.0 to the right in case there are variable-length waveforms
+        max_len = max(lengths)
+        return default_collate(
+            [F.pad(b["X"], (0, max_len - b["X"].shape[-1])) for b in batch]
+        )
 
     def collate_y(self, batch) -> torch.Tensor:
         return default_collate([b["y"].data for b in batch])

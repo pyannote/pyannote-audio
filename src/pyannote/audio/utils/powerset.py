@@ -1,6 +1,7 @@
 # MIT License
 #
-# Copyright (c) 2023- CNRS
+# Copyright (c) 2023-2025 CNRS
+# Copyright (c) 2025- pyannotAI
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -28,7 +29,6 @@ from functools import cached_property
 from itertools import combinations, permutations
 from typing import Dict, Tuple
 
-import scipy.special
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -53,17 +53,29 @@ class Powerset(nn.Module):
         self.register_buffer("mapping", self.build_mapping(), persistent=False)
         self.register_buffer("cardinality", self.build_cardinality(), persistent=False)
 
+
+    @cached_property
+    def powerset_classes(self) -> list[set[int]]:
+        """List of powerset classes
+
+        e.g. with num_classes = 3 and max_set_size = 2:
+        {}, {0}, {1}, {2}, {0, 1}, {0, 2}, {1, 2}
+
+        Returns
+        -------
+        powerset_classes : list of set[int]
+            List of powerset classes, each represented as a set of regular class indices.
+        """
+        powerset_classes = []
+        for set_size in range(0, self.max_set_size + 1):
+            for current_set in combinations(range(self.num_classes), set_size):
+                powerset_classes.append(set(current_set))
+        return powerset_classes
+
     @cached_property
     def num_powerset_classes(self) -> int:
-        # compute number of subsets of size at most "max_set_size"
-        # e.g. with num_classes = 3 and max_set_size = 2:
-        # {}, {0}, {1}, {2}, {0, 1}, {0, 2}, {1, 2}
-        return int(
-            sum(
-                scipy.special.binom(self.num_classes, i)
-                for i in range(0, self.max_set_size + 1)
-            )
-        )
+        """Number of powerset classes"""
+        return len(self.powerset_classes)
 
     def build_mapping(self) -> torch.Tensor:
         """Compute powerset to regular mapping
