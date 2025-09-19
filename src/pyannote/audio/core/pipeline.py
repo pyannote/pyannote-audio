@@ -144,7 +144,7 @@ class Pipeline(_Pipeline):
     @classmethod
     def from_pretrained(
         cls,
-        checkpoint: str | Path,
+        checkpoint: str | Path | dict,
         revision: str | None = None,
         hparams_file: str | Path | None = None,
         token: str | bool | None = None,
@@ -159,7 +159,8 @@ class Pipeline(_Pipeline):
             Pipeline checkpoint, provided as one of the following:
             * path to a local `config.yaml` pipeline checkpoint
             * path to a local directory containing such a file
-            * identifier of a pipeline on huggingface.co model hub
+            * identifier (str) of a pipeline on huggingface.co model hub
+            * dictionary containing the actual content of a config file
         revision : str, optional
             Revision when loading from the huggingface.co model hub.
         hparams_file: Path or str, optional
@@ -175,8 +176,9 @@ class Pipeline(_Pipeline):
         # if checkpoint is a dict, assume it is the actual content of 
         # a config file
         if isinstance(checkpoint, dict):
-            model_id = Path.cwd()
-            revision = None
+            if revision is not None:
+                raise ValueError("Revisions cannot be used with local checkpoints.")
+            model_id = Path.cwd()            
             config = checkpoint
             otel_origin: str = "local"
 
@@ -218,14 +220,15 @@ class Pipeline(_Pipeline):
             if config_yml is None:
                 return None
 
-        if not isinstance(checkpoint, dict):
-            with open(config_yml, "r") as fp:
-                config = yaml.load(fp, Loader=yaml.SafeLoader)
             otel_origin: str = (
                 model_id
                 if model_id.lower().startswith(("pyannote/", "pyannoteai/"))
                 else "huggingface"
             )
+
+        if not isinstance(checkpoint, dict):
+            with open(config_yml, "r") as fp:
+                config = yaml.load(fp, Loader=yaml.SafeLoader)
 
         # expand $model/{subfolder}-like entries in config
         expand_subfolders(
