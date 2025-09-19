@@ -35,7 +35,7 @@ class MissingDependency(Exception):
     def __init__(self, what: str, dependency: str, required: Version) -> None:
         super().__init__(
             f"{what} requires {dependency} ~ {required} but it is not installed. "
-            "Use PYANNOTE_SKIP_DEPENDENCY_CHECK=1 to skip this check."
+            "Use PYANNOTE_SKIP_DEPENDENCY_CHECK=1 to proceed anyway."
         )
         self.dependency = dependency
         self.required = required
@@ -49,7 +49,7 @@ class WrongDependencyVersion(Exception):
     ) -> None:
         super().__init__(
             f"{what} requires {dependency} ~ {required} but {available} is installed. "
-            "Use PYANNOTE_SKIP_DEPENDENCY_CHECK=1 to skip this check."
+            "Use PYANNOTE_SKIP_DEPENDENCY_CHECK=1 to proceed anyway."
         )
         self.dependency = dependency
         self.required = required
@@ -87,7 +87,8 @@ def check_dependencies(dependencies: dict[str, str], what: str) -> None:
         except PackageNotFoundError:
             if skip_dependency_check:
                 warnings.warn(
-                    f"{what} requires {dependency} ~ {required} but it is not installed.",
+                    f"{what} requires {dependency} ~ {required} but it is not installed. "
+                    "Proceeding anyway.",
                     UserWarning,
                 )
             else:
@@ -104,7 +105,7 @@ def check_dependencies(dependencies: dict[str, str], what: str) -> None:
             if not skip_dependency_check:
                 warnings.warn(
                     f"{what} requires {dependency} ~ {required} but we could not figure out which version is installed. "
-                    "Use PYANNOTE_SKIP_DEPENDENCY_CHECK=1 to skip this check.",
+                    "Proceeding anyway. Use PYANNOTE_SKIP_DEPENDENCY_CHECK=1 to remove this warning.",
                     UserWarning,
                 )
             continue
@@ -119,7 +120,8 @@ def check_dependencies(dependencies: dict[str, str], what: str) -> None:
                 # for all other dependencies, we raise an error (or warn) on major version mismatch
                 if skip_dependency_check:
                     warnings.warn(
-                        f"{what} requires {dependency} ~ {required} but {available} is installed.",
+                        f"{what} requires {dependency} ~ {required} but {available} is installed. "
+                        "Proceeding anyway.",
                         UserWarning,
                     )
                 else:
