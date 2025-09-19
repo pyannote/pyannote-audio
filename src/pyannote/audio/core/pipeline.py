@@ -51,7 +51,6 @@ def expand_subfolders(
     parent_revision: str | None = None,
     cache_dir: Path | str | None = None,
     token: str | None = None,
-    skip_dependencies: bool = False,
 ) -> None:
     """Expand $model subfolders in config
 
@@ -71,9 +70,6 @@ def expand_subfolders(
         Huggingface token to be used for downloading from Huggingface hub.
     cache_dir: Path or str, optional
         Path to the folder where files downloaded from Huggingface hub are stored.
-    skip_dependencies : bool, optional
-        If True, skip dependency check. Defaults to False.
-        Use at your own risk, as this may lead to unexpected behavior.
     """
 
     if isinstance(config, dict):
@@ -94,7 +90,6 @@ def expand_subfolders(
                     "subfolder": subfolder,
                     "token": token,
                     "cache_dir": cache_dir,
-                    "skip_dependencies": skip_dependencies,
                 }
             else:
                 expand_subfolders(
@@ -103,7 +98,6 @@ def expand_subfolders(
                     parent_revision=parent_revision,
                     token=token,
                     cache_dir=cache_dir,
-                    skip_dependencies=skip_dependencies,
                 )
 
     elif isinstance(config, list):
@@ -124,7 +118,6 @@ def expand_subfolders(
                     "subfolder": subfolder,
                     "token": token,
                     "cache_dir": cache_dir,
-                    "skip_dependencies": skip_dependencies,
                 }
 
             else:
@@ -134,7 +127,6 @@ def expand_subfolders(
                     parent_revision=parent_revision,
                     token=token,
                     cache_dir=cache_dir,
-                    skip_dependencies=skip_dependencies,
                 )
 
 
@@ -147,7 +139,6 @@ class Pipeline(_Pipeline):
         hparams_file: str | Path | None = None,
         token: str | bool | None = None,
         cache_dir: Path | str | None = None,
-        skip_dependencies: bool = False,
     ) -> Optional["Pipeline"]:
         """Load pretrained pipeline
 
@@ -166,9 +157,6 @@ class Pipeline(_Pipeline):
             Token to be used for the download.
         cache_dir: Path or str, optional
             Path to the folder where cached files are stored.
-        skip_dependencies : bool, optional
-            If True, skip dependency check. Defaults to False.
-            Use at your own risk, as this may lead to unexpected behavior.
         """
 
         # if checkpoint is a dict, assume it is the actual content of
@@ -233,7 +221,6 @@ class Pipeline(_Pipeline):
             parent_revision=revision,
             token=token,
             cache_dir=cache_dir,
-            skip_dependencies=skip_dependencies,
         )
 
         # before 4.x, pyannote.audio pipeline was using "version" key to
@@ -242,10 +229,9 @@ class Pipeline(_Pipeline):
             config["dependencies"] = {"pyannote.audio": config["version"]}
             del config["version"]
 
-        if not skip_dependencies:
-            # check that dependencies are available (in their required version)
-            dependencies: dict[str, str] = config.get("dependencies", dict())
-            check_dependencies(dependencies, "Pipeline")
+        # check that dependencies are available (in their required version)
+        dependencies: dict[str, str] = config.get("dependencies", dict())
+        check_dependencies(dependencies, "Pipeline")
 
         # initialize pipeline
         pipeline_name = config["pipeline"]["name"]

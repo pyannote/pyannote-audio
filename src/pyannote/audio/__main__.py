@@ -535,12 +535,6 @@ def benchmark(
             help="Show progress",
         ),
     ] = False,
-    skip_dependency_check: Annotated[
-        bool,
-        typer.Option(
-            help="Skip dependency check when loading pipeline. Use at your own risk."
-        ),
-    ] = False,
     per_file: Annotated[
         bool,
         typer.Option(
@@ -558,9 +552,7 @@ def benchmark(
     """
 
     # load pretrained pipeline
-    pretrained_pipeline = Pipeline.from_pretrained(
-        pipeline, cache_dir=cache, skip_dependencies=skip_dependency_check
-    )
+    pretrained_pipeline = Pipeline.from_pretrained(pipeline, cache_dir=cache)
     if pretrained_pipeline is None:
         print(f"Could not load pretrained pipeline from {pipeline}.")
         raise typer.exit(code=1)

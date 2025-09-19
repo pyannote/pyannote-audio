@@ -504,7 +504,6 @@ class Model(lightning.LightningModule):
         revision: str | None = None,
         token: str | bool | None = None,
         cache_dir: Path | str | None = None,
-        skip_dependencies: bool = False,
         **kwargs,
     ) -> Optional["Model"]:
         """Load pretrained model
@@ -534,9 +533,6 @@ class Model(lightning.LightningModule):
         kwargs: optional
             Any extra keyword args needed to init the model.
             Can also be used to override saved hyperparameter values.
-        skip_dependencies : bool, optional
-            If True, skip dependency check. Defaults to False.
-            Use at your own risk, as this may lead to unexpected behavior.
 
         Returns
         -------
@@ -605,10 +601,9 @@ class Model(lightning.LightningModule):
         # load checkpoint using lightning
         loaded_checkpoint = pl_load(path_to_model_checkpoint, map_location=map_location)
 
-        if not skip_dependencies:
-            # check that the checkpoint is compatible with the current version
-            versions = loaded_checkpoint["pyannote.audio"]["versions"]
-            check_dependencies({"pyannote.audio": versions["pyannote.audio"]}, "Model")
+        # check that the checkpoint is compatible with the current version
+        versions = loaded_checkpoint["pyannote.audio"]["versions"]
+        check_dependencies({"pyannote.audio": versions["pyannote.audio"]}, "Model")
 
         # obtain model class from the checkpoint
         module_name: str = loaded_checkpoint["pyannote.audio"]["architecture"]["module"]
