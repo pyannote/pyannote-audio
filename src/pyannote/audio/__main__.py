@@ -282,7 +282,7 @@ def download(
     pipeline: Annotated[
         str,
         typer.Argument(
-            help="Pretrained pipeline (e.g. pyannote/speaker-diarization-3.1)"
+            help="Pretrained pipeline (e.g. pyannote/speaker-diarization-community-1)"
         ),
     ],
     token: Annotated[
@@ -321,7 +321,7 @@ def apply(
     pipeline: Annotated[
         str,
         typer.Argument(
-            help="Pretrained pipeline (e.g. pyannote/speaker-diarization-3.1)"
+            help="Pretrained pipeline (e.g. pyannote/speaker-diarization-community-1)"
         ),
     ],
     audio: Annotated[
@@ -471,7 +471,7 @@ def benchmark(
     pipeline: Annotated[
         str,
         typer.Argument(
-            help="Pretrained pipeline (e.g. pyannote/speaker-diarization-3.1)"
+            help="Pretrained pipeline (e.g. pyannote/speaker-diarization-community-1)"
         ),
     ],
     protocol: Annotated[
