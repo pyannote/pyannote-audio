@@ -79,7 +79,6 @@ def expand_subfolders(
     if isinstance(config, dict):
         for key, value in config.items():
             if isinstance(value, str) and value.startswith("$model/"):
-
                 subfolder = "/".join(value.split("/")[1:])
 
                 # if subfolder contains '@', split it to get revision
@@ -110,7 +109,6 @@ def expand_subfolders(
     elif isinstance(config, list):
         for idx, value in enumerate(config):
             if isinstance(value, str) and value.startswith("$model/"):
-
                 subfolder = "/".join(value.split("/")[1:])
 
                 # if subfolder contains '@', split it to get revision
@@ -144,7 +142,7 @@ class Pipeline(_Pipeline):
     @classmethod
     def from_pretrained(
         cls,
-        checkpoint: str | Path,
+        checkpoint: str | Path | dict,
         revision: str | None = None,
         hparams_file: str | Path | None = None,
         token: str | bool | None = None,
@@ -159,7 +157,8 @@ class Pipeline(_Pipeline):
             Pipeline checkpoint, provided as one of the following:
             * path to a local `config.yaml` pipeline checkpoint
             * path to a local directory containing such a file
-            * identifier of a pipeline on huggingface.co model hub
+            * identifier (str) of a pipeline on huggingface.co model hub
+            * dictionary containing the actual content of a config file
         revision : str, optional
             Revision when loading from the huggingface.co model hub.
         hparams_file: Path or str, optional
@@ -172,25 +171,30 @@ class Pipeline(_Pipeline):
             Use at your own risk, as this may lead to unexpected behavior.
         """
 
-        # if checkpoint is a directory, look for the pipeline checkpoint
-        # inside this directory
-        if os.path.isdir(checkpoint):
+        # if checkpoint is a dict, assume it is the actual content of
+        # a config file
+        if isinstance(checkpoint, dict):
             if revision is not None:
                 raise ValueError("Revisions cannot be used with local checkpoints.")
+            model_id = Path.cwd()
+            config = checkpoint
+            otel_origin: str = "local"
 
+        # if checkpoint is a directory, look for the pipeline checkpoint
+        # inside this directory
+        elif os.path.isdir(checkpoint):
+            if revision is not None:
+                raise ValueError("Revisions cannot be used with local checkpoints.")
             model_id = Path(checkpoint)
             config_yml = model_id / AssetFileName.Pipeline.value
-            revision = None
             otel_origin: str = "local"
 
         # if checkpoint is a file, assume it is the pipeline checkpoint
         elif os.path.isfile(checkpoint):
             if revision is not None:
                 raise ValueError("Revisions cannot be used with local checkpoints.")
-
             model_id = Path(checkpoint).parent
             config_yml = checkpoint
-            revision = None
             otel_origin: str = "local"
 
         # otherwise, assume that the checkpoint is hosted on HF model hub
@@ -218,8 +222,9 @@ class Pipeline(_Pipeline):
                 else "huggingface"
             )
 
-        with open(config_yml, "r") as fp:
-            config = yaml.load(fp, Loader=yaml.SafeLoader)
+        if not isinstance(checkpoint, dict):
+            with open(config_yml, "r") as fp:
+                config = yaml.load(fp, Loader=yaml.SafeLoader)
 
         # expand $model/{subfolder}-like entries in config
         expand_subfolders(
