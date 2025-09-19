@@ -197,7 +197,6 @@ class Pipeline(_Pipeline):
                 raise ValueError("Revisions cannot be used with local checkpoints.")
 
             model_id = Path(checkpoint).parent
-            revision = None
             config_yml = checkpoint
             otel_origin: str = "local"
 
