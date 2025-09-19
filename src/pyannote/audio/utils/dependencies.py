@@ -22,6 +22,8 @@
 # SOFTWARE.
 
 import importlib.metadata
+import os
+import warnings
 from importlib.metadata import PackageNotFoundError
 
 from packaging.version import InvalidVersion, Version
@@ -32,7 +34,8 @@ class MissingDependency(Exception):
 
     def __init__(self, what: str, dependency: str, required: Version) -> None:
         super().__init__(
-            f"{what} requires {dependency} ~ {required} but it is not installed."
+            f"{what} requires {dependency} ~ {required} but it is not installed. "
+            "Use PYANNOTE_SKIP_DEPENDENCY_CHECK=1 to skip this check."
         )
         self.dependency = dependency
         self.required = required
@@ -45,7 +48,8 @@ class WrongDependencyVersion(Exception):
         self, what: str, dependency: str, required: Version, available: Version
     ) -> None:
         super().__init__(
-            f"{what} requires {dependency} ~ {required} but {available} is installed."
+            f"{what} requires {dependency} ~ {required} but {available} is installed. "
+            "Use PYANNOTE_SKIP_DEPENDENCY_CHECK=1 to skip this check."
         )
         self.dependency = dependency
         self.required = required
@@ -63,6 +67,17 @@ def check_dependencies(dependencies: dict[str, str], what: str) -> None:
         If a required dependency has an incompatible version.
     """
 
+    skip_dependency_check: bool = os.getenv(
+        "PYANNOTE_SKIP_DEPENDENCY_CHECK", False
+    ) in [
+        True,
+        "1",
+        "true",
+        "True",
+        "yes",
+        "Yes",
+    ]
+
     for dependency, version in dependencies.items():
         required: Version = Version(version)
 
@@ -70,7 +85,13 @@ def check_dependencies(dependencies: dict[str, str], what: str) -> None:
             _version = importlib.metadata.version(dependency)
 
         except PackageNotFoundError:
-            raise MissingDependency(what, dependency, required)
+            if skip_dependency_check:
+                warnings.warn(
+                    f"{what} requires {dependency} ~ {required} but it is not installed.",
+                    UserWarning,
+                )
+            else:
+                raise MissingDependency(what, dependency, required)
 
         _version = importlib.metadata.version(dependency)
 
@@ -78,7 +99,14 @@ def check_dependencies(dependencies: dict[str, str], what: str) -> None:
             available: Version = Version(_version)
 
         except InvalidVersion:
-            # if the version cannot be parsed, we take our chance and assume it is compatible
+            # if the version cannot be parsed, we take our chance and assume it is compatible but warn
+            # the user that something fishy is going on (unless they asked us to skip the check)
+            if not skip_dependency_check:
+                warnings.warn(
+                    f"{what} requires {dependency} ~ {required} but we could not figure out which version is installed. "
+                    "Use PYANNOTE_SKIP_DEPENDENCY_CHECK=1 to skip this check.",
+                    UserWarning,
+                )
             continue
 
         if available.major != required.major:
@@ -88,5 +116,11 @@ def check_dependencies(dependencies: dict[str, str], what: str) -> None:
                 continue
 
             else:
-                # for all other dependencies, we raise an error on major version mismatch
-                raise WrongDependencyVersion(what, dependency, required, available)
+                # for all other dependencies, we raise an error (or warn) on major version mismatch
+                if skip_dependency_check:
+                    warnings.warn(
+                        f"{what} requires {dependency} ~ {required} but {available} is installed.",
+                        UserWarning,
+                    )
+                else:
+                    raise WrongDependencyVersion(what, dependency, required, available)
