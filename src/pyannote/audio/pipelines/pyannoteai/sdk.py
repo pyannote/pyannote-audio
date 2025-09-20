@@ -40,7 +40,7 @@ class SDK(Pipeline):
         Defaults to "precision-2".
     token : str, optional
         pyannoteAI API key created from https://dashboard.pyannote.ai.
-        Defaults to using `PYANNOTEAI_API_TOKEN` environment variable.
+        Defaults to using `PYANNOTEAI_API_KEY` environment variable.
 
     Usage
     -----
