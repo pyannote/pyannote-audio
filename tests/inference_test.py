@@ -1,8 +1,8 @@
+from lightning import Trainer
 import numpy as np
 import pytest
-import pytorch_lightning as pl
 from pyannote.core import SlidingWindowFeature
-from pyannote.database import FileFinder, get_protocol
+from pyannote.database import FileFinder, registry
 
 from pyannote.audio import Inference, Model
 from pyannote.audio.core.task import Resolution
@@ -13,7 +13,8 @@ HF_SAMPLE_MODEL_ID = "pyannote/ci-segmentation"
 
 
 def test_hf_download_inference():
-    inference = Inference(HF_SAMPLE_MODEL_ID, device="cpu")
+    model = Model.from_pretrained(HF_SAMPLE_MODEL_ID)
+    inference = Inference(model, device="cpu")
     assert isinstance(inference, Inference)
 
 
@@ -24,12 +25,12 @@ def test_hf_download_model():
 
 @pytest.fixture()
 def trained():
-    protocol = get_protocol(
+    protocol = registry.get_protocol(
         "Debug.SpeakerDiarization.Debug", preprocessors={"audio": FileFinder()}
     )
     vad = VoiceActivityDetection(protocol, duration=2.0, batch_size=16, num_workers=4)
     model = SimpleSegmentationModel(task=vad)
-    trainer = pl.Trainer(fast_dev_run=True, accelerator="cpu")
+    trainer = Trainer(fast_dev_run=True, accelerator="cpu")
     trainer.fit(model)
     return protocol, model
 
@@ -41,7 +42,7 @@ def pretrained_model():
 
 @pytest.fixture()
 def dev_file():
-    protocol = get_protocol(
+    protocol = registry.get_protocol(
         "Debug.SpeakerDiarization.Debug", preprocessors={"audio": FileFinder()}
     )
     return next(protocol.development())

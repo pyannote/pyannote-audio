@@ -1,13 +1,13 @@
 import pytest
 from IPython.display import Audio
+from pyannote.core import Segment
+from pyannote.database import FileFinder, registry
 
 from pyannote.audio.utils.preview import listen
-from pyannote.core import Segment
-from pyannote.database import FileFinder, get_protocol
 
 
 def test_file():
-    protocol = get_protocol(
+    protocol = registry.get_protocol(
         "Debug.SpeakerDiarization.Debug", preprocessors={"audio": FileFinder()}
     )
     return next(protocol.train())

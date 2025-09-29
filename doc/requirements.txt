@@ -1,4 +1,0 @@
-ipython==8.10.0
-recommonmark
-Sphinx==3.0.4
-sphinx_rtd_theme==0.4.3

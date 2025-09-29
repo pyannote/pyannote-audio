@@ -1,5 +1,5 @@
 import pytest
-from pyannote.database import FileFinder, get_protocol
+from pyannote.database import FileFinder, registry
 
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import UnknownSpecificationsError
@@ -8,7 +8,7 @@ from pyannote.audio.tasks import SpeakerDiarization
 
 @pytest.fixture()
 def protocol():
-    return get_protocol(
+    return registry.get_protocol(
         "Debug.SpeakerDiarization.Debug", preprocessors={"audio": FileFinder()}
     )
 
