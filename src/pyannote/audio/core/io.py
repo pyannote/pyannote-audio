@@ -37,8 +37,15 @@ import torch.nn.functional as F
 import torchaudio
 from pyannote.core import Segment
 from torch import Tensor
-from torchcodec import AudioSamples
-from torchcodec.decoders import AudioDecoder, AudioStreamMetadata
+
+try:
+    from torchcodec import AudioSamples
+    from torchcodec.decoders import AudioDecoder, AudioStreamMetadata
+except Exception as e:
+    print("torchcodec is not installed correctly so built-in audio decoding will fail. Solutions are:")
+    print(f"* fix torchcodec installation, error message was {e};")
+    print("* use audio preloaded in-memory as a {'waveform': (channel, time) torch.Tensor, 'sample_rate': int} dictionary;")
+
 
 AudioFile = str | Path | IOBase | Mapping
 
