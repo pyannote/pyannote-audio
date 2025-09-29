@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## develop 
+## Version 4.0.0 (2025-09-29) 
 
 ### TL;DR
 
@@ -61,7 +61,6 @@ Pipelines can now be stored alongside their internal models in the same reposito
     # run the pipeline locally on your computer
     diarization = pipeline("audio.wav")
     ```
-
 
 #### Telemetry
 
