@@ -46,9 +46,15 @@ def get_pipeline(
         _pipeline = Pipeline.from_pretrained(pipeline, token=token, cache_dir=cache_dir)
 
     elif isinstance(pipeline, dict):
-        pipeline.setdefault("token", token)
-        pipeline.setdefault("cache_dir", cache_dir)
-        _pipeline = Pipeline.from_pretrained(**pipeline)
+        if "checkpoint" in pipeline:
+            pipeline.setdefault("token", token)
+            pipeline.setdefault("cache_dir", cache_dir)
+            _pipeline = Pipeline.from_pretrained(**pipeline)
+
+        else:
+            _pipeline = Pipeline.from_pretrained(
+                pipeline, token=token, cache_dir=cache_dir
+            )
 
     else:
         raise TypeError(
