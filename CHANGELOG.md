@@ -3,7 +3,8 @@
 ## `develop` branch
 
 - feat: allow passing preloaded pipeline config to `get_pipeline`
-- fix: relax version constraint on OpenTelemetry dependency
+- fix: relax version constraint on OpenTelemetry dependencies
+- setup: update pyannoteai-sdk dependency
 
 ## Version 4.0.0 (2025-09-29) 
 
