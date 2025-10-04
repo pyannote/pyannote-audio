@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## Next
+
+- fix: relax version constraint on OpenTelemetry dependency
+
 ## Version 4.0.0 (2025-09-29) 
 
 ### TL;DR
