@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## Next
+
+- feat: allow passing preloaded pipeline config to `get_pipeline`
+
 ## Version 4.0.0 (2025-09-29) 
 
 ### TL;DR
