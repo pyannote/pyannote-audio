@@ -128,6 +128,10 @@ With the optional telemetry feature in `pyannote.audio`, you can choose to send 
 - fix(task): fix corner case with small (<9) number of validation samples ([@antoinelaurent](https://github.com/antoinelaurent/))
 - fix(doc): fix default embedding in `SpeechSeparation` and `SpeakerDiarization` docstring ([@razi-tm](https://github.com/razi-tm/)).
 
+## Version 3.4.0 (2025-09-09)
+
+- setup: pin pyannote.{core,database,metrics,pipeline} dependencies as future releases of these packages will break the 3.x branch
+
 ## Version 3.3.2 (2024-09-11)
 
 ### Fixes
