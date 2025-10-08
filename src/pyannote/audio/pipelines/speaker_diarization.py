@@ -534,6 +534,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         min_speakers: Optional[int] = None,
         max_speakers: Optional[int] = None,
         hook: Optional[Callable] = None,
+        **kwargs,
     ) -> DiarizeOutput | Annotation:
         """Apply speaker diarization
 
@@ -560,6 +561,12 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         -------
         output : DiarizeOutput (or Annotation if `self.legacy` is True)
         """
+
+        # warn about unsupported kwargs
+        if len(kwargs) > 0:
+            warnings.warn(
+                f"Ignoring unexpected keyword arguments: {', '.join(list(kwargs.keys()))}"
+            )
 
         # setup hook (e.g. for debugging purposes)
         hook = self.setup_hook(file, hook=hook)
