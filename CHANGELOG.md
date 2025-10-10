@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## Version 4.0.1 (2025-10-10)
+
+- feat: allow passing preloaded pipeline config to `get_pipeline`
+- setup: update `pyannoteai-sdk` dependency to `0.3.0`
+- fix: relax version constraint on `OpenTelemetry` dependencies
+- improve: warn (instead of raise) when passing unsupported arguments to speaker diarization pipeline
+
 ## Version 4.0.0 (2025-09-29) 
 
 ### TL;DR
