@@ -29,7 +29,7 @@ dependencies = [
     "torchmetrics>=1.6.1",
     "soundfile>=0.13.1",
     "matplotlib>=3.10.0",
-    "pyannoteai-sdk>=0.2.2",
+    "pyannoteai-sdk>=0.3.0",
 ]
 
 [project.scripts]
