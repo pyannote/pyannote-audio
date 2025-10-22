@@ -385,6 +385,11 @@ def apply(
         jsons: list[Path | None] = [into / (path.stem + ".json") for path in inputs]
 
     else:
+        
+        if not (into is None or into.is_file()):
+            typer.echo("When AUDIO is a file, INTO must also be a file.")
+            raise typer.exit(code=1)
+
         inputs = [audio]
         rttms: list[Path | None] = [into]
         jsons: list[Path | None] = [into.with_suffix(".json") if into else None]
@@ -398,7 +403,7 @@ def apply(
         with open(current_rttm, "w") if current_rttm else nullcontext(sys.stdout) as r:
             speaker_diarization.write_rttm(r)
 
-        if hasattr(prediction, "serialize"):
+        if hasattr(prediction, "serialize") and current_json:
             serialized: dict = prediction.serialize()
             with open(current_json, "w") as j:
                 json.dump(serialized, j, indent=2)
