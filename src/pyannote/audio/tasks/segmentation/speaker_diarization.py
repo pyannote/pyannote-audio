@@ -123,6 +123,7 @@ class SpeakerDiarization(SegmentationTask):
         pin_memory: bool = False,
         augmentation: Optional[BaseWaveformTransform] = None,
         metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
+        audio_crop_mode: str = "raise",
         max_num_speakers: Optional[
             int
         ] = None,  # deprecated in favor of `max_speakers_per_chunk``
@@ -163,6 +164,7 @@ class SpeakerDiarization(SegmentationTask):
         self.max_speakers_per_frame = max_speakers_per_frame
         self.balance = balance
         self.weight = weight
+        self._audio_crop_mode = audio_crop_mode
 
     def setup(self, stage=None):
         super().setup(stage)
@@ -302,7 +304,7 @@ class SpeakerDiarization(SegmentationTask):
         chunk = Segment(start_time, start_time + duration)
 
         sample = dict()
-        sample["X"], _ = self.model.audio.crop(file, chunk)
+        sample["X"], _ = self.model.audio.crop(file, chunk, mode=self._audio_crop_mode)
 
         # gather all annotations of current file
         start_id, end_id = self.prepared_data["audio-segments-ids"][file_id]
