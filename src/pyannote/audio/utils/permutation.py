@@ -130,12 +130,19 @@ def permutate_torch(
         # y1_ is (num_samples, num_classes_1)-shaped
         # y2_ is (num_samples, num_classes_2)-shaped
         with torch.no_grad():
-            cost = torch.stack(
-                [
-                    cost_func(y2_, y1_[:, i : i + 1].expand(-1, num_classes_2))
-                    for i in range(num_classes_1)
-                ],
-            )
+            if cost_func == mse_cost_func:
+                diff = y1_.unsqueeze(2) - y2_.unsqueeze(1)
+                cost = torch.mean(diff * diff, dim=0)  # (C1, C2)
+            elif cost_func == mae_cost_func:
+                diff = y1_.unsqueeze(2) - y2_.unsqueeze(1)
+                cost = torch.mean(torch.abs(diff), dim=0)  # (C1, C2)
+            else:
+                cost = torch.stack(
+                    [
+                        cost_func(y2_, y1_[:, i : i + 1].expand(-1, num_classes_2))
+                        for i in range(num_classes_1)
+                    ],
+                )
 
         if num_classes_2 > num_classes_1:
             padded_cost = F.pad(
