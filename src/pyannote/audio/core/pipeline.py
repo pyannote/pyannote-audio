@@ -406,7 +406,7 @@ class Pipeline(_Pipeline):
         """
         raise NotImplementedError()
 
-    def __call__(self, file: AudioFile, **kwargs):
+    def __call__(self, file: AudioFile, preload_waveform: bool = False, **kwargs):
         fix_reproducibility(getattr(self, "device", torch.device("cpu")))
 
         if not self.instantiated:
@@ -432,8 +432,23 @@ class Pipeline(_Pipeline):
 
         file = Audio.validate_file(file)
 
+        preproc_waveform = False
+
+        # Check if the instance has preprocessors and wrap the file if so
         if hasattr(self, "preprocessors"):
             file = ProtocolFile(file, lazy=self.preprocessors)
+            preproc_waveform = "waveform" in self.preprocessors
+
+        # Load the waveform if requested, unless already available
+        if preload_waveform:
+            if preproc_waveform or "waveform" in file:
+                raise ValueError(
+                    "Cannot preload waveform: it is already loaded in the file or through a preprocessor."
+                )
+
+            audio = Audio()
+            file["waveform"], file["sample_rate"] = audio(file)
+            file.pop("channel", None)
 
         # send file duration to telemetry as well as
         # requested number of speakers in case of diarization
