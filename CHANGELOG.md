@@ -2,8 +2,9 @@
 
 ## next
 
+- feat(pipeline): add `preload` option to base `Pipeline.__call__` to force preloading audio in memory ([@antoinelaurent](https://github.com/antoinelaurent/))
 - feat(cli): add option to apply pipeline on a directory of audio files
-- improve(util): make `permutate` faster thanks to vectorized cost function
+- improve(util): make `permutate` faster thanks to vectorized cost function ([@joonaskalda](https://github.com/joonaskalda/))
 
 ## Version 4.0.1 (2025-10-10)
 
