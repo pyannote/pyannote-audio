@@ -1,6 +1,7 @@
 # MIT License
 #
-# Copyright (c) 2024- CNRS
+# Copyright (c) 2024-2025 CNRS
+# Copyright (c) 2025- pyannoteAI
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -66,6 +67,7 @@ class PLDA:
         cls,
         checkpoint: Path | str,
         subfolder: str | None = None,
+        revision: str | None = None,
         token: str | None = None,
         cache_dir: str | Path | None = None,
         **kwargs,
@@ -78,6 +80,8 @@ class PLDA:
             Path to checkpoint or a model identifier from the hf.co model hub.
         subfolder : str, optional
             Folder inside the hf.co model repo.
+        revision : str, optional
+            Revision when loading from the huggingface.co model hub.
         token : str, optional
             When loading a private hf.co model, set `token`
             to True or to a string containing your hugginface.co authentication
@@ -89,6 +93,9 @@ class PLDA:
         # if checkpoint is a directory, look for the PLDA checkpoint
         # inside this directory (or inside a subfolder if specified)
         if os.path.isdir(checkpoint):
+            if revision is not None:
+                raise ValueError("Revisions cannot be used with local checkpoints.")
+
             if subfolder:
                 path_to_transform = Path(checkpoint) / subfolder / "xvec_transform.npz"
                 path_to_plda = Path(checkpoint) / subfolder / "plda.npz"
@@ -98,18 +105,26 @@ class PLDA:
 
         # otherwise, assume that the checkpoint is hosted on HF model hub
         else:
-            _, _, path_to_transform = download_from_hf_hub(
-                str(checkpoint),
+            checkpoint = str(checkpoint)
+            if "@" in checkpoint:
+                raise ValueError(
+                    "Revisions must be passed with `revision` keyword argument."
+                )
+
+            path_to_transform = download_from_hf_hub(
+                checkpoint,
                 "xvec_transform.npz",
                 subfolder=subfolder,
+                revision=revision,
                 cache_dir=cache_dir,
                 token=token,
             )
 
-            _, _, path_to_plda = download_from_hf_hub(
-                str(checkpoint),
+            path_to_plda = download_from_hf_hub(
+                checkpoint,
                 "plda.npz",
                 subfolder=subfolder,
+                revision=revision,
                 cache_dir=cache_dir,
                 token=token,
             )

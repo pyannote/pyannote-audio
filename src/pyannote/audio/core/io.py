@@ -29,6 +29,7 @@ pyannote.audio relies on torchcodec for reading and torchaudio for resampling.
 """
 
 import random
+import warnings
 from io import IOBase
 from pathlib import Path
 from typing import Mapping, Optional, Tuple
@@ -37,8 +38,19 @@ import torch.nn.functional as F
 import torchaudio
 from pyannote.core import Segment
 from torch import Tensor
-from torchcodec import AudioSamples
-from torchcodec.decoders import AudioDecoder, AudioStreamMetadata
+
+try:
+    import torchcodec
+    from torchcodec import AudioSamples
+    from torchcodec.decoders import AudioDecoder, AudioStreamMetadata
+except Exception as e:
+    warnings.warn(
+        "\ntorchcodec is not installed correctly so built-in audio decoding will fail. Solutions are:\n"
+        "* use audio preloaded in-memory as a {'waveform': (channel, time) torch.Tensor, 'sample_rate': int} dictionary;\n"
+        "* fix torchcodec installation. Error message was:\n\n"
+        f"{e}"
+    )
+
 
 AudioFile = str | Path | IOBase | Mapping
 
@@ -55,7 +67,7 @@ integer to load a specific channel: {"audio": "stereo.wav", "channel": 0}
 """
 
 
-def get_audio_metadata(file: AudioFile) -> AudioStreamMetadata:
+def get_audio_metadata(file: AudioFile) -> "AudioStreamMetadata":
     """Protocol preprocessor used to cache audio metadata
 
     This is useful to speed future random access to this file, e.g.
@@ -389,10 +401,11 @@ class Audio:
             metadata.duration_seconds_from_header, sample_rate
         )
 
-        start: float = segment.start
-        end: float = segment.end
+        # convert to float to avoid issues with np.float32 rounding errors when training
+        start: float = float(segment.start)
+        end: float = float(segment.end)
 
-        pad_start: int = max(0, self.get_num_samples(-segment.start, sample_rate))
+        pad_start: int = max(0, self.get_num_samples(-start, sample_rate))
         if start < 0:
             if mode == "raise":
                 raise ValueError(
@@ -402,8 +415,7 @@ class Audio:
                 start = 0.0
 
         pad_end: int = (
-            max(self.get_num_samples(segment.end, sample_rate), num_samples)
-            - num_samples
+            max(self.get_num_samples(end, sample_rate), num_samples) - num_samples
         )
         if end > duration:
             if mode == "raise":

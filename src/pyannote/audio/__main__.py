@@ -282,7 +282,7 @@ def download(
     pipeline: Annotated[
         str,
         typer.Argument(
-            help="Pretrained pipeline (e.g. pyannote/speaker-diarization-3.1)"
+            help="Pretrained pipeline (e.g. pyannote/speaker-diarization-community-1)"
         ),
     ],
     token: Annotated[
@@ -321,24 +321,25 @@ def apply(
     pipeline: Annotated[
         str,
         typer.Argument(
-            help="Pretrained pipeline (e.g. pyannote/speaker-diarization-3.1)"
+            help="Pretrained pipeline (e.g. pyannote/speaker-diarization-community-1)"
         ),
     ],
     audio: Annotated[
         Path,
         typer.Argument(
-            help="Path to audio file",
+            help="Path to audio file or directory",
             exists=True,
             file_okay=True,
+            dir_okay=True,
             readable=True,
         ),
     ],
     into: Annotated[
         Path,
         typer.Option(
-            help="Path to file where results are saved.",
+            help="Path to file or directory where results are saved.",
             exists=False,
-            dir_okay=False,
+            dir_okay=True,
             file_okay=True,
             writable=True,
             resolve_path=True,
@@ -360,7 +361,7 @@ def apply(
     ] = None,
 ):
     """
-    Apply a pretrained PIPELINE to an AUDIO file
+    Apply a pretrained PIPELINE to an AUDIO file or directory
     """
 
     # load pretrained pipeline
@@ -373,14 +374,39 @@ def apply(
     torch_device = parse_device(device)
     pretrained_pipeline.to(torch_device)
 
-    # apply pipeline to audio file
-    prediction: Annotation = pretrained_pipeline(audio)
+    if audio.is_dir():
 
-    speaker_diarization = get_diarization(prediction)
+        if into is None or not into.is_dir():
+            typer.echo("When AUDIO is a directory, INTO must also be a directory.")
+            raise typer.exit(code=1)
 
-    # save (or print) results
-    with open(into, "w") if into else nullcontext(sys.stdout) as rttm:
-        speaker_diarization.write_rttm(rttm)
+        inputs: list[Path] = sorted(path for path in audio.iterdir() if path.is_file())
+        rttms: list[Path | None] = [into / (path.stem + ".rttm") for path in inputs]
+        jsons: list[Path | None] = [into / (path.stem + ".json") for path in inputs]
+
+    else:
+        
+        if not (into is None or into.is_file()):
+            typer.echo("When AUDIO is a file, INTO must also be a file.")
+            raise typer.exit(code=1)
+
+        inputs = [audio]
+        rttms: list[Path | None] = [into]
+        jsons: list[Path | None] = [into.with_suffix(".json") if into else None]
+
+    for current_input, current_rttm, current_json in zip(inputs, rttms, jsons):
+
+        prediction = pretrained_pipeline(current_input)
+
+        speaker_diarization = get_diarization(prediction)
+
+        with open(current_rttm, "w") if current_rttm else nullcontext(sys.stdout) as r:
+            speaker_diarization.write_rttm(r)
+
+        if hasattr(prediction, "serialize") and current_json:
+            serialized: dict = prediction.serialize()
+            with open(current_json, "w") as j:
+                json.dump(serialized, j, indent=2)
 
 
 class MinDurationOffOptimizer:
@@ -471,7 +497,7 @@ def benchmark(
     pipeline: Annotated[
         str,
         typer.Argument(
-            help="Pretrained pipeline (e.g. pyannote/speaker-diarization-3.1)"
+            help="Pretrained pipeline (e.g. pyannote/speaker-diarization-community-1)"
         ),
     ],
     protocol: Annotated[
@@ -535,11 +561,11 @@ def benchmark(
             help="Show progress",
         ),
     ] = False,
-    skip_dependency_check: Annotated[
+    per_file: Annotated[
         bool,
         typer.Option(
-            help="Skip dependency check when loading pipeline. Use at your own risk."
-        ),
+            help="Save one RTTM/JSON file per processed audio file."
+        )
     ] = False,
 ):
     """
@@ -552,9 +578,7 @@ def benchmark(
     """
 
     # load pretrained pipeline
-    pretrained_pipeline = Pipeline.from_pretrained(
-        pipeline, cache_dir=cache, skip_dependencies=skip_dependency_check
-    )
+    pretrained_pipeline = Pipeline.from_pretrained(pipeline, cache_dir=cache)
     if pretrained_pipeline is None:
         print(f"Could not load pretrained pipeline from {pipeline}.")
         raise typer.exit(code=1)
@@ -612,54 +636,77 @@ def benchmark(
     # manual annotation and j speakers in the prediction
     speaker_count: dict[int, dict[int, int]] = dict()
 
-    with open(into / f"{benchmark_name}.rttm", "w") as rttm:
-        # iterate over all files in the specified subset
-        for file in track(files, disable=not progress):
-            # gather file metadata
-            uri: str = file["uri"]
-            playing_time[uri] = Audio().get_duration(file)
+    if per_file:
+        benchmark_dir = into / benchmark_name
+        if benchmark_dir.exists():
+            raise FileExistsError(f"{benchmark_dir} already exists.")
 
-            tic: float = time.time()
+        rttm_dir = benchmark_dir / "rttm"
+        rttm_dir.mkdir(parents=True)
 
-            # apply pretrained pipeline to file
-            prediction = pretrained_pipeline(file, **file.get("pipeline_kwargs", {}))
+    else:
+        rttm_file = into / f"{benchmark_name}.rttm"
+        # make sure we don't overwrite previous results
+        if rttm_file.exists():
+            raise FileExistsError(f"{rttm_file} already exists.")
 
-            tac: float = time.time()
-            processing_time[uri] = tac - tic
+    # iterate over all files in the specified subset
+    for file in track(files, disable=not progress):
+        # gather file metadata
+        uri: str = file["uri"]
+        playing_time[uri] = Audio().get_duration(file)
 
-            # if prediction has a built-in serialize method, save serialized version
-            if hasattr(prediction, "serialize"):
+        tic: float = time.time()
+
+        # apply pretrained pipeline to file
+        prediction = pretrained_pipeline(file, **file.get("pipeline_kwargs", {}))
+
+        tac: float = time.time()
+        processing_time[uri] = tac - tic
+
+        # if prediction has a built-in serialize method, save serialized version
+        if hasattr(prediction, "serialize"):
+            if per_file:
+                json_dir = benchmark_dir / "json"
+                json_dir.mkdir(exist_ok=True)
+
+                with open(json_dir / f"{uri}.json", "w") as f:
+                    json.dump(prediction.serialize(), f, indent=2)
+            else:
                 serialized_predictions[uri] = prediction.serialize()
 
-            # get speaker diarization from raw prediction
-            speaker_diarization = get_diarization(prediction)
+        # get speaker diarization from raw prediction
+        speaker_diarization = get_diarization(prediction)
 
-            # dump prediction to RTTM file
+        # dump prediction to RTTM file
+        if per_file:
+            rttm_file = rttm_dir / f"{uri}.rttm"
+
+        with open(rttm_file, "w" if per_file else "a") as rttm:
             speaker_diarization.write_rttm(rttm)
-            rttm.flush()
 
-            # compute metric when possible
-            if not skip_metric:
-                _ = metric(
-                    file["annotation"],
-                    speaker_diarization,
-                    uem=file.get("annotated", None),
-                )
-
-            # increment speaker count confusion matrix
-            pred_num_speakers: int = len(speaker_diarization.labels())
-            true_num_speakers: int = len(file["annotation"].labels())
-            speaker_count.setdefault(true_num_speakers, dict()).setdefault(
-                pred_num_speakers, 0
+        # compute metric when possible
+        if not skip_metric:
+            _ = metric(
+                file["annotation"],
+                speaker_diarization,
+                uem=file.get("annotated", None),
             )
-            speaker_count[true_num_speakers][pred_num_speakers] += 1
 
-            # keep track of prediction for later "min_duration_off" optimization
-            if optimize:
-                file["speaker_diarization"] = speaker_diarization
+        # increment speaker count confusion matrix
+        pred_num_speakers: int = len(speaker_diarization.labels())
+        true_num_speakers: int = len(file["annotation"].labels())
+        speaker_count.setdefault(true_num_speakers, dict()).setdefault(
+            pred_num_speakers, 0
+        )
+        speaker_count[true_num_speakers][pred_num_speakers] += 1
+
+        # keep track of prediction for later "min_duration_off" optimization
+        if optimize:
+            file["speaker_diarization"] = speaker_diarization
 
     # save serialized predictions to disk (might contain more than just diarization results)
-    if serialized_predictions:
+    if serialized_predictions and not per_file:
         with open(into / f"{benchmark_name}.json", "w") as f:
             json.dump(serialized_predictions, f, indent=2)
 
@@ -760,9 +807,18 @@ def benchmark(
         with open(into / f"{benchmark_name}.OptimizedMinDurationOff.yml", "w") as yml:
             yaml.dump({"min_duration_off": best_min_duration_off}, yml)
 
-        # save output in RTTM format
-        with open(into / f"{benchmark_name}.OptimizedMinDurationOff.rttm", "w") as rttm:
-            for file in files:
+        if not per_file:
+            optimized_rttm_file = into / f"{benchmark_name}.OptimizedMinDurationOff.rttm"
+
+            # make sure we don't overwrite previous results
+            if optimized_rttm_file.exists():
+                raise FileExistsError(f"{optimized_rttm_file} already exists.")
+
+        for file in files:
+            if per_file:
+                optimized_rttm_file = rttm_dir / f"{file['uri']}.OptimizedMinDurationOff.rttm"
+
+            with open(optimized_rttm_file, "w" if per_file else "a") as rttm:
                 file["best_speaker_diarization"].write_rttm(rttm)
 
 

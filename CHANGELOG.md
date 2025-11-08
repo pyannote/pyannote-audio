@@ -1,12 +1,38 @@
 # CHANGELOG
 
-## develop 
+## next
+
+- feat(cli): add option to apply pipeline on a directory of audio files
+- improve(util): make `permutate` faster thanks to vectorized cost function
+
+## Version 4.0.1 (2025-10-10)
+
+- feat: allow passing preloaded pipeline config to `get_pipeline`
+- setup: update `pyannoteai-sdk` dependency to `0.3.0`
+- fix: relax version constraint on `OpenTelemetry` dependencies
+- improve: warn (instead of raise) when passing unsupported arguments to speaker diarization pipeline
+
+## Version 4.0.0 (2025-09-29) 
 
 ### TL;DR
 
-#### Better speaker assignment
+#### Improved speaker assignment and counting
 
-`pyannote/speaker-diarization-4.0` pretrained pipeline relies on VBx clustering instead of agglomerative hierarchical clustering (as suggested by [BUT Speech@FIT](https://speech.fit.vut.cz/) researchers [Petr Pálka](https://github.com/Selesnyan) and [Jiangyu Han](https://github.com/jyhan03)).
+`pyannote/speaker-diarization-community-1` pretrained pipeline relies on VBx clustering instead of agglomerative hierarchical clustering (as suggested by [BUT Speech@FIT](https://speech.fit.vut.cz/) researchers [Petr Pálka](https://github.com/Selesnyan) and [Jiangyu Han](https://github.com/jyhan03)).
+
+#### *Exclusive* speaker diarization
+
+`pyannote/speaker-diarization-community-1` pretrained pipeline returns a new *exclusive* speaker diarization, on top of the regular speaker diarization.
+This is a feature which is [backported from our latest commercial model](https://www.pyannote.ai/blog/precision-2) that simplifies the reconciliation between fine-grained speaker diarization timestamps and (sometimes not so precise) transcription timestamps.
+
+```python
+from pyannote.audio import Pipeline
+pipeline = Pipeline.from_pretrained(
+    "pyannote/speaker-diarization-community-1", token="huggingface-access-token")
+output = pipeline("/path/to/conversation.wav")
+print(output.speaker_diarization)            # regular speaker diarization
+print(output.exclusive_speaker_diarization)  # exclusive speaker diarization
+```
 
 #### Faster training
 
@@ -20,18 +46,33 @@ Change one line of code to use [pyannoteAI](https://docs.pyannote.ai) premium mo
 ```diff
 from pyannote.audio import Pipeline
 pipeline = Pipeline.from_pretrained(
--    "pyannote/speaker-diarization-3.1", token="huggingface-access-token")
-+    "pyannoteAI/speaker-diarization-precision, token="pyannoteAI-api-key")
+-    "pyannote/speaker-diarization-community-1", token="huggingface-access-token")
++    "pyannote/speaker-diarization-precision-2, token="pyannoteAI-api-key")
 diarization = pipeline("/path/to/conversation.wav")
 ```
 
-#### Quality-of-Life improvements
+#### Offline (air-gapped) use
 
-Models can now be stored alongside their pipelines in the same repository, streamlining offline use and gating mechanism:
-- accept `pyannote/speaker-diarization-x.x` pipeline user agreement
-- ~~accept `pyannote/segmentation-3.0` model user agreement~~
-- ~~accept `pyannote/wespeaker-voxceleb-resnet34-LM` model user agreement~~
-- load pipeline with `Pipeline.from_pretrained("pyannote/speaker-diarization-3.1", token=True)`
+Pipelines can now be stored alongside their internal models in the same repository, streamlining fully offline use.
+
+1. Accept `pyannote/speaker-diarization-community-1` pipeline [user agreement](https://hf.co/pyannote/speaker-diarization-community-1)
+2. Clone the pipeline repository from Huggingface (if prompted for a password, use a Huggingface access token with correct permissions)
+
+    ```bash
+    $ git lfs install
+    $ git clone https://hf.co/pyannote/speaker-diarization-community-1 /path/to/directory/pyannote-speaker-diarization-community-1
+    ```
+
+3. Enjoy!
+
+    ```python
+    # load pipeline from disk (works without internet connection)
+    from pyannote.audio import Pipeline
+    pipeline = Pipeline.from_pretrained('/path/to/directory/pyannote-speaker-diarization-community-1')
+
+    # run the pipeline locally on your computer
+    diarization = pipeline("audio.wav")
+    ```
 
 #### Telemetry
 
@@ -42,6 +83,7 @@ With the optional telemetry feature in `pyannote.audio`, you can choose to send 
 - BREAKING(io): remove support for `sox` and `soundfile` audio I/O backends (only `ffmpeg` or in-memory audio is supported)
 - BREAKING(setup): drop support to `Python` < 3.10
 - BREAKING(hub): rename `use_auth_token` to `token`
+- BREAKING(hub): drop support for `{pipeline_name}@{revision}` syntax in `Model.from_pretrained(...)` and `Pipeline.from_pretrained(...)` -- use new `revision` keyword argument instead
 - BREAKING(task): remove `OverlappedSpeechDetection` task (part of `SpeakerDiarization` task)
 - BREAKING(pipeline): remove `OverlappedSpeechDetection` and `Resegmentation` unmaintained pipelines (part of `SpeakerDiarization`)
 - BREAKING(cache): rely on `huggingface_hub` caching directory (`PYANNOTE_CACHE` is no longer used)
@@ -79,6 +121,7 @@ With the optional telemetry feature in `pyannote.audio`, you can choose to send 
 - improve(utils): improve dependency check when loading pretrained models and/or pipeline
 - improve(utils): add option to skip dependency check
 - improve(utils): add option to load a pretrained model checkpoint from an `io.BytesIO` buffer
+- improve(pipeline): add option to load a pretrained pipeline from a `dict` ([@benniekiss](https://github.com/benniekiss/))
 
 ### Fixes
 
@@ -90,6 +133,10 @@ With the optional telemetry feature in `pyannote.audio`, you can choose to send 
 - fix(doc): fix link to pytorch ([@emmanuel-ferdman](https://github.com/emmanuel-ferdman/))
 - fix(task): fix corner case with small (<9) number of validation samples ([@antoinelaurent](https://github.com/antoinelaurent/))
 - fix(doc): fix default embedding in `SpeechSeparation` and `SpeakerDiarization` docstring ([@razi-tm](https://github.com/razi-tm/)).
+
+## Version 3.4.0 (2025-09-09)
+
+- setup: pin pyannote.{core,database,metrics,pipeline} dependencies as future releases of these packages will break the 3.x branch
 
 ## Version 3.3.2 (2024-09-11)
 
