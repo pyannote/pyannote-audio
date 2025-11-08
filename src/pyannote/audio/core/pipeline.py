@@ -406,7 +406,23 @@ class Pipeline(_Pipeline):
         """
         raise NotImplementedError()
 
-    def __call__(self, file: AudioFile, preload_waveform: bool = False, **kwargs):
+    def __call__(self, file: AudioFile, preload: bool = False, **kwargs):
+        """Validate file, (optionally) load it in memory, then process it
+
+        Parameters
+        ----------
+        file : AudioFile
+            File to process
+        preload : bool, optional
+            Whether to preload waveform before applying the pipeline.
+        kwargs : keyword arguments, optional
+            Additional keyword arguments passed to `self.apply(...)`
+
+        Returns
+        -------
+        output : Any
+            Whatever `self.apply(...)` returns
+        """
         fix_reproducibility(getattr(self, "device", torch.device("cpu")))
 
         if not self.instantiated:
@@ -432,22 +448,26 @@ class Pipeline(_Pipeline):
 
         file = Audio.validate_file(file)
 
-        preproc_waveform = False
-
-        # Check if the instance has preprocessors and wrap the file if so
+        # check if the instance has preprocessors and wrap the file if so
         if hasattr(self, "preprocessors"):
             file = ProtocolFile(file, lazy=self.preprocessors)
-            preproc_waveform = "waveform" in self.preprocessors
 
-        # Load the waveform if requested, unless already available
-        if preload_waveform:
-            if preproc_waveform or "waveform" in file:
+        # pre-load the audio in memory if requested
+        if preload:
+            # raise error if `waveform`` is already in memory (or will be via a preprocessor)
+            if (
+                "waveform" in getattr(self, "preprocessors", dict())
+                or "waveform" in file
+            ):
                 raise ValueError(
-                    "Cannot preload waveform: it is already loaded in the file or through a preprocessor."
+                    "Cannot preload audio: `waveform` key is already available or will be via a preprocessor."
                 )
 
-            audio = Audio()
-            file["waveform"], file["sample_rate"] = audio(file)
+            # load waveform in memory (and keep track of its original sample rate)
+            file["waveform"], file["sample_rate"] = Audio()(file)
+
+            # the above line already took care of channel selection,
+            # therefore we remove the `channel` key from the file
             file.pop("channel", None)
 
         # send file duration to telemetry as well as
