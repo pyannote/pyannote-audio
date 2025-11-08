@@ -1,6 +1,18 @@
 # CHANGELOG
 
-## develop 
+## next
+
+- feat(cli): add option to apply pipeline on a directory of audio files
+- improve(util): make `permutate` faster thanks to vectorized cost function
+
+## Version 4.0.1 (2025-10-10)
+
+- feat: allow passing preloaded pipeline config to `get_pipeline`
+- setup: update `pyannoteai-sdk` dependency to `0.3.0`
+- fix: relax version constraint on `OpenTelemetry` dependencies
+- improve: warn (instead of raise) when passing unsupported arguments to speaker diarization pipeline
+
+## Version 4.0.0 (2025-09-29) 
 
 ### TL;DR
 
@@ -62,7 +74,6 @@ Pipelines can now be stored alongside their internal models in the same reposito
     diarization = pipeline("audio.wav")
     ```
 
-
 #### Telemetry
 
 With the optional telemetry feature in `pyannote.audio`, you can choose to send anonymous usage metrics to help the `pyannote` team improve the library.
@@ -122,6 +133,10 @@ With the optional telemetry feature in `pyannote.audio`, you can choose to send 
 - fix(doc): fix link to pytorch ([@emmanuel-ferdman](https://github.com/emmanuel-ferdman/))
 - fix(task): fix corner case with small (<9) number of validation samples ([@antoinelaurent](https://github.com/antoinelaurent/))
 - fix(doc): fix default embedding in `SpeechSeparation` and `SpeakerDiarization` docstring ([@razi-tm](https://github.com/razi-tm/)).
+
+## Version 3.4.0 (2025-09-09)
+
+- setup: pin pyannote.{core,database,metrics,pipeline} dependencies as future releases of these packages will break the 3.x branch
 
 ## Version 3.3.2 (2024-09-11)
 
