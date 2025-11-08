@@ -1,6 +1,7 @@
 # MIT License
 #
-# Copyright (c) 2020-2022 CNRS
+# Copyright (c) 2020-2025 CNRS
+# Copyright (c) 2025- pyannoteAI
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -23,7 +24,7 @@
 
 import math
 from functools import partial, singledispatch
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, List, Literal, Tuple
 
 import networkx as nx
 import numpy as np
@@ -34,7 +35,7 @@ from scipy.optimize import linear_sum_assignment
 
 
 @singledispatch
-def permutate(y1, y2, cost_func: Optional[Callable] = None, return_cost: bool = False):
+def permutate(y1, y2, cost_func: Callable | Literal["mse", "mae"] = "mse", return_cost: bool = False):
     """Find cost-minimizing permutation
 
     Parameters
@@ -43,9 +44,11 @@ def permutate(y1, y2, cost_func: Optional[Callable] = None, return_cost: bool = 
         (batch_size, num_samples, num_classes_1)
     y2 : np.ndarray or torch.Tensor
         (num_samples, num_classes_2) or (batch_size, num_samples, num_classes_2)
-    cost_func : callable
-        Takes two (num_samples, num_classes) sequences and returns (num_classes, ) pairwise cost.
-        Defaults to computing mean squared error.
+    cost_func : callable or {"mse", "mae"}, optional
+        Can be either "mse" (mean squared error) or "mae" (mean absolute error) or a callable.
+        When callable, takes two (num_samples, num_classes) sequences 
+        and returns (num_classes, ) pairwise cost.
+        Defaults to computing mean squared error ("mse").
     return_cost : bool, optional
         Whether to return cost matrix. Defaults to False.
 
@@ -97,7 +100,7 @@ def mae_cost_func(Y, y, **kwargs):
 def permutate_torch(
     y1: torch.Tensor,
     y2: torch.Tensor,
-    cost_func: Optional[Callable] = None,
+    cost_func: Callable | Literal["mse", "mae"] = "mse",
     return_cost: bool = False,
 ) -> Tuple[torch.Tensor, List[Tuple[int]]]:
 
@@ -116,7 +119,7 @@ def permutate_torch(
         raise ValueError(msg)
 
     if cost_func is None:
-        cost_func = mse_cost_func
+        cost_func = "mse"
 
     permutations = []
     permutated_y2 = []
@@ -130,10 +133,10 @@ def permutate_torch(
         # y1_ is (num_samples, num_classes_1)-shaped
         # y2_ is (num_samples, num_classes_2)-shaped
         with torch.no_grad():
-            if cost_func == mse_cost_func:
+            if cost_func == "mse":
                 diff = y1_.unsqueeze(2) - y2_.unsqueeze(1)
                 cost = torch.mean(diff * diff, dim=0)  # (C1, C2)
-            elif cost_func == mae_cost_func:
+            elif cost_func == "mae":
                 diff = y1_.unsqueeze(2) - y2_.unsqueeze(1)
                 cost = torch.mean(torch.abs(diff), dim=0)  # (C1, C2)
             else:
@@ -174,7 +177,7 @@ def permutate_torch(
 def permutate_numpy(
     y1: np.ndarray,
     y2: np.ndarray,
-    cost_func: Optional[Callable] = None,
+    cost_func: Callable | Literal["mse", "mae"] = "mse",
     return_cost: bool = False,
 ) -> Tuple[np.ndarray, List[Tuple[int]]]:
 
