@@ -26,6 +26,8 @@ from pathlib import Path
 from pyannote.audio import Pipeline
 from pyannote.core import Annotation, Segment
 
+from ..speaker_diarization import DiarizeOutput
+
 
 class Local(Pipeline):
     """Wrapper around official pyannoteAI on-premise package
@@ -51,18 +53,13 @@ class Local(Pipeline):
         self.token = token or os.environ.get("PYANNOTEAI_API_KEY", None)
         self._pipeline = _LocalPipeline(self.token)
 
-    def _to_annotation(self, completed_job: dict) -> Annotation:
-        """Deserialize job output into pyannote.core Annotation"""
-
-        output = completed_job["output"]["diarization"]
-        job_id = completed_job["jobId"]
-
-        annotation = Annotation(uri=job_id)
-        for t, turn in enumerate(output):
+    def _deserialize(self, diarization: list[dict]) -> Annotation:
+        # deserialize the output into a good-old Annotation instance
+        annotation = Annotation()
+        for t, turn in enumerate(diarization):
             segment = Segment(start=turn["start"], end=turn["end"])
             speaker = turn["speaker"]
             annotation[segment, t] = speaker
-
         return annotation.rename_tracks("string")
 
     def apply(
@@ -71,9 +68,9 @@ class Local(Pipeline):
         num_speakers: int | None = None,
         min_speakers: int | None = None,
         max_speakers: int | None = None,
-        exclusive: bool = False,
-    ) -> Annotation:
-        """Speaker diarization using pyannoteAI on-premise package
+        **kwargs,
+    ) -> DiarizeOutput:
+        """On-premise pyannoteAI package
 
         Parameters
         ----------
@@ -86,22 +83,10 @@ class Local(Pipeline):
             Not supported yet. Minimum number of speakers. Has no effect when `num_speakers` is provided.
         max_speakers : int, optional
             Not supported yet. Maximum number of speakers. Has no effect when `num_speakers` is provided.
-        exclusive : bool, optional
-            Enable exclusive diarization.
 
         Returns
         -------
-        speaker_diarization : Annotation
-            Speaker diarization result (when successful)
-
-        Raises
-        ------
-        PyannoteAIFailedJob
-            If the job failed
-        PyannoteAICanceledJob
-            If the job was canceled
-        HTTPError
-            If something else went wrong
+        output : DiarizeOutput
         """
 
         predictions = self._pipeline.diarize(
@@ -109,18 +94,15 @@ class Local(Pipeline):
             num_speakers=num_speakers,
             min_speakers=min_speakers,
             max_speakers=max_speakers,
+            **kwargs,
         )
 
-        # use exclusive diarization whenever requested
-        if exclusive:
-            diarization = predictions["exclusive_diarization"]
-        else:
-            diarization = predictions["diarization"]
+        speaker_diarization: Annotation = self._deserialize(predictions["diarization"])
+        exclusive_speaker_diarization: Annotation = self._deserialize(
+            predictions["exclusive_diarization"]
+        )
 
-        # deserialize the output into a good-old Annotation instance
-        annotation = Annotation()
-        for t, turn in enumerate(diarization):
-            segment = Segment(start=turn["start"], end=turn["end"])
-            speaker = turn["speaker"]
-            annotation[segment, t] = speaker
-        return annotation.rename_tracks("string")
+        return DiarizeOutput(
+            speaker_diarization=speaker_diarization,
+            exclusive_speaker_diarization=exclusive_speaker_diarization,
+        )
