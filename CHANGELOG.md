@@ -8,6 +8,7 @@
 - feat(pipeline): add `preload` option to base `Pipeline.__call__` to force preloading audio in memory ([@antoinelaurent](https://github.com/antoinelaurent/))
 - feat(pipeline): add `Pipeline.cuda()` convenience method [@tkanarsky](https://github.com/tkanarsky/)
 - improve(util): make `permutate` faster thanks to vectorized cost function
+- improve(pyannoteAI): update pyannoteAI wrapper to return both regular and exclusive diarization
 
 ## Version 4.0.1 (2025-10-10)
 
