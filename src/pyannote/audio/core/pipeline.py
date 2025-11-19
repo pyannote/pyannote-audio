@@ -21,6 +21,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+from __future__ import annotations
 import os
 import warnings
 from collections import OrderedDict
@@ -441,7 +442,7 @@ class Pipeline(_Pipeline):
 
         return self.apply(file, **kwargs)
 
-    def to(self, device: torch.device):
+    def to(self, device: torch.device) -> Pipeline:
         """Send pipeline to `device`"""
 
         if not isinstance(device, torch.device):
@@ -462,3 +463,14 @@ class Pipeline(_Pipeline):
         self.device = device
 
         return self
+
+    def cuda(self, device: torch.device | int | None = None) -> Pipeline:
+        """Send pipeline to (optionally specified) cuda device"""
+        if device is None:
+            return self.to(torch.device("cuda"))
+        elif isinstance(device, int):
+            return self.to(torch.device("cuda", device))
+        else:
+            if device.type != "cuda":
+                raise ValueError("Expected CUDA device. Use `Pipeline.to(device)` for other devices.")
+            return self.to(device)
