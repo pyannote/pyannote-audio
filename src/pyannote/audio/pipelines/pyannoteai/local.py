@@ -21,10 +21,11 @@
 # SOFTWARE.
 
 import os
-from pathlib import Path
 
 from pyannote.audio import Pipeline
+from pyannote.audio.core.io import AudioFile
 from pyannote.core import Annotation, Segment
+
 
 from ..speaker_diarization import DiarizeOutput
 
@@ -64,7 +65,7 @@ class Local(Pipeline):
 
     def apply(
         self,
-        file: Path,
+        file: AudioFile,
         num_speakers: int | None = None,
         min_speakers: int | None = None,
         max_speakers: int | None = None,
