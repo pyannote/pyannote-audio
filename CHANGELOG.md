@@ -3,6 +3,7 @@
 ## next
 
 - BREAKING(util): make `Binarize.__call__` return `string` tracks (instead of `int`) [@benniekiss](https://github.com/benniekiss/)
+- setup(torch): pin `torch`, `torchcodec`, and `torchaudio` versions to [avoid segmentation fault](https://github.com/meta-pytorch/torchcodec/issues/995) 
 - feat(cli): add option to apply pipeline on a directory of audio files
 - feat(pipeline): add `preload` option to base `Pipeline.__call__` to force preloading audio in memory ([@antoinelaurent](https://github.com/antoinelaurent/))
 - feat(pipeline): add `Pipeline.cuda()` convenience method [@tkanarsky](https://github.com/tkanarsky/)
