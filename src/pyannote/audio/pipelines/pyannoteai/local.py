@@ -87,6 +87,7 @@ class Local(Pipeline):
         Returns
         -------
         output : DiarizeOutput
+            DiarizeOutput object containing both regular and exclusive speaker diarization results.
         """
 
         # if file provides "audio" path
