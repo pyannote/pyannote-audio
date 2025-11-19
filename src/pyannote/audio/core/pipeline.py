@@ -21,6 +21,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+from __future__ import annotations
 import os
 import warnings
 from collections import OrderedDict
@@ -406,7 +407,23 @@ class Pipeline(_Pipeline):
         """
         raise NotImplementedError()
 
-    def __call__(self, file: AudioFile, **kwargs):
+    def __call__(self, file: AudioFile, preload: bool = False, **kwargs):
+        """Validate file, (optionally) load it in memory, then process it
+
+        Parameters
+        ----------
+        file : AudioFile
+            File to process
+        preload : bool, optional
+            Whether to preload waveform before applying the pipeline.
+        kwargs : keyword arguments, optional
+            Additional keyword arguments passed to `self.apply(...)`
+
+        Returns
+        -------
+        output : Any
+            Whatever `self.apply(...)` returns
+        """
         fix_reproducibility(getattr(self, "device", torch.device("cpu")))
 
         if not self.instantiated:
@@ -432,8 +449,27 @@ class Pipeline(_Pipeline):
 
         file = Audio.validate_file(file)
 
+        # check if the instance has preprocessors and wrap the file if so
         if hasattr(self, "preprocessors"):
             file = ProtocolFile(file, lazy=self.preprocessors)
+
+        # pre-load the audio in memory if requested
+        if preload:
+            # raise error if `waveform`` is already in memory (or will be via a preprocessor)
+            if (
+                "waveform" in getattr(self, "preprocessors", dict())
+                or "waveform" in file
+            ):
+                raise ValueError(
+                    "Cannot preload audio: `waveform` key is already available or will be via a preprocessor."
+                )
+
+            # load waveform in memory (and keep track of its original sample rate)
+            file["waveform"], file["sample_rate"] = Audio()(file)
+
+            # the above line already took care of channel selection,
+            # therefore we remove the `channel` key from the file
+            file.pop("channel", None)
 
         # send file duration to telemetry as well as
         # requested number of speakers in case of diarization
@@ -441,7 +477,7 @@ class Pipeline(_Pipeline):
 
         return self.apply(file, **kwargs)
 
-    def to(self, device: torch.device):
+    def to(self, device: torch.device) -> Pipeline:
         """Send pipeline to `device`"""
 
         if not isinstance(device, torch.device):
@@ -462,3 +498,14 @@ class Pipeline(_Pipeline):
         self.device = device
 
         return self
+
+    def cuda(self, device: torch.device | int | None = None) -> Pipeline:
+        """Send pipeline to (optionally specified) cuda device"""
+        if device is None:
+            return self.to(torch.device("cuda"))
+        elif isinstance(device, int):
+            return self.to(torch.device("cuda", device))
+        else:
+            if device.type != "cuda":
+                raise ValueError("Expected CUDA device. Use `Pipeline.to(device)` for other devices.")
+            return self.to(device)
