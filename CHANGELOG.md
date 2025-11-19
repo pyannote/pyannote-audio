@@ -4,6 +4,7 @@
 
 - BREAKING(util): make `Binarize.__call__` return `string` tracks (instead of `int`) [@benniekiss](https://github.com/benniekiss/)
 - feat(cli): add option to apply pipeline on a directory of audio files
+- feat(pipeline): add `preload` option to base `Pipeline.__call__` to force preloading audio in memory ([@antoinelaurent](https://github.com/antoinelaurent/))
 - feat(pipeline): add `Pipeline.cuda()` convenience method [@tkanarsky](https://github.com/tkanarsky/)
 - improve(util): make `permutate` faster thanks to vectorized cost function
 

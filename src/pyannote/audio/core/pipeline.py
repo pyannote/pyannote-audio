@@ -407,7 +407,23 @@ class Pipeline(_Pipeline):
         """
         raise NotImplementedError()
 
-    def __call__(self, file: AudioFile, **kwargs):
+    def __call__(self, file: AudioFile, preload: bool = False, **kwargs):
+        """Validate file, (optionally) load it in memory, then process it
+
+        Parameters
+        ----------
+        file : AudioFile
+            File to process
+        preload : bool, optional
+            Whether to preload waveform before applying the pipeline.
+        kwargs : keyword arguments, optional
+            Additional keyword arguments passed to `self.apply(...)`
+
+        Returns
+        -------
+        output : Any
+            Whatever `self.apply(...)` returns
+        """
         fix_reproducibility(getattr(self, "device", torch.device("cpu")))
 
         if not self.instantiated:
@@ -433,8 +449,27 @@ class Pipeline(_Pipeline):
 
         file = Audio.validate_file(file)
 
+        # check if the instance has preprocessors and wrap the file if so
         if hasattr(self, "preprocessors"):
             file = ProtocolFile(file, lazy=self.preprocessors)
+
+        # pre-load the audio in memory if requested
+        if preload:
+            # raise error if `waveform`` is already in memory (or will be via a preprocessor)
+            if (
+                "waveform" in getattr(self, "preprocessors", dict())
+                or "waveform" in file
+            ):
+                raise ValueError(
+                    "Cannot preload audio: `waveform` key is already available or will be via a preprocessor."
+                )
+
+            # load waveform in memory (and keep track of its original sample rate)
+            file["waveform"], file["sample_rate"] = Audio()(file)
+
+            # the above line already took care of channel selection,
+            # therefore we remove the `channel` key from the file
+            file.pop("channel", None)
 
         # send file duration to telemetry as well as
         # requested number of speakers in case of diarization
