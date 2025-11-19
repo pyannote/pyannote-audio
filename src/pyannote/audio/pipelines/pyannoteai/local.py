@@ -70,7 +70,7 @@ class Local(Pipeline):
         max_speakers: int | None = None,
         **kwargs,
     ) -> DiarizeOutput:
-        """On-premise pyannoteAI package
+        """Speaker diarization using on-premise pyannoteAI package.
 
         Parameters
         ----------
