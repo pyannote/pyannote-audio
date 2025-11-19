@@ -23,9 +23,9 @@ dependencies = [
     "rich>=13.9.4",
     "safetensors>=0.5.2",
     "torch-audiomentations>=0.12.0",
-    "torch>=2.8.0",
-    "torchaudio>=2.8.0",
-    "torchcodec>=0.6.0",
+    "torch==2.8.0",
+    "torchaudio==2.8.0",
+    "torchcodec==0.7.0",
     "torchmetrics>=1.6.1",
     "soundfile>=0.13.1",
     "matplotlib>=3.10.0",
@@ -36,7 +36,7 @@ dependencies = [
 pyannote-audio = "pyannote.audio.__main__:app"
 
 [project.optional-dependencies]
-test = ["papermill>=2.6.0", "pytest>=8.3.4", "speechbrain>=1.0.2"]
+test = ["papermill>=2.6.0", "pytest>=8.3.4"]
 doc = ["sphinx-rtd-theme>=3.0.2", "sphinx>=8.1.3"]
 cli = ["typer>=0.15.1"]
 separation = ["asteroid>=0.5.2", "transformers>=4.48.3"]

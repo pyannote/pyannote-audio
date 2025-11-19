@@ -38,7 +38,7 @@ import einops
 import numpy as np
 import scipy.signal
 from pyannote.core import Annotation, Segment, SlidingWindowFeature, Timeline
-from pyannote.core.utils.generators import pairwise
+from pyannote.core.utils.generators import pairwise, string_generator
 
 
 @singledispatch
@@ -271,10 +271,11 @@ class Binarize:
 
         # annotation meant to store 'active' regions
         active = Annotation()
+        track_generator = string_generator()
 
         for k, k_scores in enumerate(scores.data.T):
-
             label = k if scores.labels is None else scores.labels[k]
+            track = next(track_generator)
 
             # initial state
             start = timestamps[0]
@@ -287,7 +288,7 @@ class Binarize:
                     # switching from active to inactive
                     if y < self.offset:
                         region = Segment(start - self.pad_onset, t + self.pad_offset)
-                        active[region, k] = label
+                        active[region, track] = label
                         start = t
                         is_active = False
 
@@ -301,7 +302,7 @@ class Binarize:
             # if active at the end, add final region
             if is_active:
                 region = Segment(start - self.pad_onset, t + self.pad_offset)
-                active[region, k] = label
+                active[region, track] = label
 
         # because of padding, some active regions might be overlapping: merge them.
         # also: fill same speaker gaps shorter than min_duration_off
