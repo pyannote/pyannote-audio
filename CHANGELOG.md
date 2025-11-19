@@ -5,6 +5,7 @@
 - feat(cli): add option to apply pipeline on a directory of audio files
 - improve(util): make `permutate` faster thanks to vectorized cost function
 - BREAKING(util): make `Binarize.__call__` return `string` tracks (instead of `int`) [@benniekiss](https://github.com/benniekiss/)
+- setup: pin `torch`, `torchcodec`, and `torchaudio` versions to [avoid segmentation fault](https://github.com/meta-pytorch/torchcodec/issues/995) 
 
 ## Version 4.0.1 (2025-10-10)
 
