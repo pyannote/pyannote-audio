@@ -472,5 +472,5 @@ class Pipeline(_Pipeline):
             return self.to(torch.device("cuda", device))
         else:
             if device.type != "cuda":
-                raise ValueError("expected cuda device, please use Pipeline.to(device) if requested device isn't a cuda device")
+                raise ValueError("Expected CUDA device. Use `Pipeline.to(device)` for other devices.")
             return self.to(device)
