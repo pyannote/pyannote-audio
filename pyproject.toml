@@ -17,7 +17,7 @@ dependencies = [
     "opentelemetry-exporter-otlp>=1.34.0",
     "pyannote-core>=6.0.1",
     "pyannote-database>=6.0.0",
-    "pyannote-metrics>=4.0.0",
+    "pyannote-metrics[transcription]>=4.0.0",
     "pyannote-pipeline>=4.0.0",
     "pytorch-metric-learning>=2.8.1",
     "rich>=13.9.4",
@@ -51,6 +51,9 @@ source = "vcs"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pyannote"]
+
+[tool.uv.sources]
+pyannote-metrics = { git = "https://github.com/clement-pages/pyannote-metrics.git", rev = "PYA-1148-add-transcription-metric" }
 
 [dependency-groups]
 dev = ["ipykernel>=6.29.5"]
