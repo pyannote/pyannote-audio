@@ -48,6 +48,7 @@ from pyannote.metrics.transcription import (
     WordErrorRate,
     TimeConstrainedMinimumPermutationWordErrorRate,
 )
+from pyannote.metrics.normalizers import get_normalizer, Normalizer
 from pyannote.pipeline.optimizer import Optimizer
 from rich.progress import track
 from scipy.optimize import minimize_scalar
@@ -708,13 +709,15 @@ def benchmark(
         der_metric = DiarizationErrorRate()
 
     if not skip_transcription_metric:
+        # get normalizer for protocol language
+        normalizer = get_normalizer(files[0], Normalizer.FILE)
         # initialize word-level transcription metrics
-        word_level_wer_metric = WordErrorRate()
-        word_level_tcpwer_metric = TimeConstrainedMinimumPermutationWordErrorRate()
+        word_level_wer_metric = WordErrorRate(normalizer=normalizer)
+        word_level_tcpwer_metric = TimeConstrainedMinimumPermutationWordErrorRate(normalizer=normalizer)
 
         # initialize turn-level transcription metrics
-        turn_level_wer_metric = WordErrorRate()
-        turn_level_tcpwer_metric = TimeConstrainedMinimumPermutationWordErrorRate()
+        turn_level_wer_metric = WordErrorRate(normalizer=normalizer)
+        turn_level_tcpwer_metric = TimeConstrainedMinimumPermutationWordErrorRate(normalizer=normalizer)
 
     # speaker count confusion matrix
     # speaker_count[i][j] is the number of files with i speakers in the
@@ -727,7 +730,7 @@ def benchmark(
             raise FileExistsError(f"{benchmark_dir} already exists.")
 
         if is_sd_pipeline:
-            diarization_dir = benchmark_dir / "diarization"
+            diarization_dir = benchmark_dir / "speaker_diarization"
 
             rttm_dir = diarization_dir / "rttm"
             rttm_dir.mkdir(parents=True)
