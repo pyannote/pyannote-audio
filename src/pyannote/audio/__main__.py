@@ -710,7 +710,13 @@ def benchmark(
 
     if not skip_transcription_metric:
         # get normalizer for protocol language
+        dataset_language = files[0].get("language")
+        # only support single-language benchmarks
+        if not all(file.get("language") == dataset_language for file in files):
+            raise ValueError("Benchmarking multi-language protocols is not supported.")
+
         normalizer = get_normalizer(files[0], Normalizer.FILE)
+
         # initialize word-level transcription metrics
         word_level_wer_metric = WordErrorRate(normalizer=normalizer)
         word_level_tcpwer_metric = TimeConstrainedMinimumPermutationWordErrorRate(normalizer=normalizer)
