@@ -1556,7 +1556,7 @@ wheels = [
 
 [[package]]
 name = "lightning"
-version = "2.5.6"
+version = "2.6.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fsspec", extra = ["http"] },
@@ -1569,9 +1569,9 @@ dependencies = [
     { name = "tqdm" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e9/da/289e17b2d4631b885771ce10ab7fe19c6c0ab2b1208d1dda418818ffbbfd/lightning-2.5.6.tar.gz", hash = "sha256:57b6abe87080895bc237fb7f36b7b4abaa2793760cbca00e3907e56607e0ed27", size = 640106 }
+sdist = { url = "https://files.pythonhosted.org/packages/1a/d5/892ea38816925b3511493e87b0b32494122bf8a20e66f4f2cd2667f95625/lightning-2.6.0.tar.gz", hash = "sha256:881841716b59c1837ae0c562c2e64fea9bcf49ef9de3867bd1f868557ec23d04", size = 656539 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/23/dc/d7804f13928b6a81a0e948cfecbf0071e8cc74e3f341c704e23e75e504ad/lightning-2.5.6-py3-none-any.whl", hash = "sha256:25bb2053078c2efc57c082fda89dfbd975dfa76beb08def191947c2b571a8c8a", size = 827915 },
+    { url = "https://files.pythonhosted.org/packages/d6/e9/36b340c7ec01dad6f034481e98fc9fc0133307beb05c714c0542af98bbde/lightning-2.6.0-py3-none-any.whl", hash = "sha256:f1a13a48909960a3454518486f113fae4fadb2db0e28e9c50d8d38d46c9dc3d6", size = 845956 },
 ]
 
 [[package]]
@@ -3032,8 +3032,8 @@ wheels = [
 
 [[package]]
 name = "pyannote-metrics"
-version = "0.1.dev405+gf2a9dc4ec"
-source = { git = "https://github.com/clement-pages/pyannote-metrics.git?rev=PYA-1148-add-transcription-metric#f2a9dc4ec42897c23e442c29d7691effeb1d1df7" }
+version = "0.1.dev406+gfe4809163"
+source = { git = "https://github.com/clement-pages/pyannote-metrics.git?rev=PYA-1148-add-transcription-metric#fe480916327a1b27d6520dfae4814d432096c71f" }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
