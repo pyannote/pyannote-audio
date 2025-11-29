@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## next
+
+- feat(cli): add `--revision` option to most CLI commands
+
 ## Version 4.0.2 (2025-11-19)
 
 - BREAKING(util): make `Binarize.__call__` return `string` tracks (instead of `int`) [@benniekiss](https://github.com/benniekiss/)
