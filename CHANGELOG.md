@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## next
+
+- feat(util): add `Calibration.safe_transform` method (supports NaNs as well as any shape)
+
 ## Version 4.0.2 (2025-11-19)
 
 - BREAKING(util): make `Binarize.__call__` return `string` tracks (instead of `int`) [@benniekiss](https://github.com/benniekiss/)
