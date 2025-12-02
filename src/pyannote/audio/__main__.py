@@ -733,15 +733,31 @@ def benchmark(
 
         # initialize word-level transcription metrics
         word_level_wer_metric = WordErrorRate(normalizer=normalizer)
-        word_level_cpwer_metric = ConcatenatedMinimumPermutationWordErrorRate(normalizer=normalizer)
-        word_level_tcpwer_metric = TimeConstrainedMinimumPermutationWordErrorRate(normalizer=normalizer)
-        word_level_tcorcwer_metric = TimeConstrainedOptimalReferenceCombinationWordErrorRate(normalizer=normalizer)
+        word_level_cpwer_metric = ConcatenatedMinimumPermutationWordErrorRate(
+            normalizer=normalizer
+        )
+        word_level_tcpwer_metric = TimeConstrainedMinimumPermutationWordErrorRate(
+            normalizer=normalizer
+        )
+        word_level_tcorcwer_metric = (
+            TimeConstrainedOptimalReferenceCombinationWordErrorRate(
+                normalizer=normalizer
+            )
+        )
 
         # initialize turn-level transcription metrics
         turn_level_wer_metric = WordErrorRate(normalizer=normalizer)
-        turn_level_cpwer_metric = ConcatenatedMinimumPermutationWordErrorRate(normalizer=normalizer)
-        turn_level_tcpwer_metric = TimeConstrainedMinimumPermutationWordErrorRate(normalizer=normalizer)
-        turn_level_tcorcwer_metric = TimeConstrainedOptimalReferenceCombinationWordErrorRate(normalizer=normalizer)
+        turn_level_cpwer_metric = ConcatenatedMinimumPermutationWordErrorRate(
+            normalizer=normalizer
+        )
+        turn_level_tcpwer_metric = TimeConstrainedMinimumPermutationWordErrorRate(
+            normalizer=normalizer
+        )
+        turn_level_tcorcwer_metric = (
+            TimeConstrainedOptimalReferenceCombinationWordErrorRate(
+                normalizer=normalizer
+            )
+        )
 
     # speaker count confusion matrix
     # speaker_count[i][j] is the number of files with i speakers in the
