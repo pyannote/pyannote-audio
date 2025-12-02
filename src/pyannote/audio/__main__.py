@@ -46,6 +46,7 @@ from pyannote.metrics.base import BaseMetric
 from pyannote.metrics.diarization import DiarizationErrorRate, JaccardErrorRate
 from pyannote.metrics.transcription import (
     WordErrorRate,
+    ConcatenatedMinimumPermutationWordErrorRate,
     TimeConstrainedMinimumPermutationWordErrorRate,
     TimeConstrainedOptimalReferenceCombinationWordErrorRate
 )
@@ -145,6 +146,18 @@ def get_transcription(prediction, granularity: Granularity, uri: str) -> SegLST:
             for e, entry in enumerate(transcription)
         ]
     )
+
+
+def metric_to_csv(metric: BaseMetric, file_path: Path):
+    """Write metric report to CSV file"""
+    with open(file_path, "w") as csv:
+        metric.report().to_csv(csv)
+
+
+def metric_to_txt(metric: BaseMetric, file_path: Path):
+    """Write metric report to TXT file"""
+    with open(file_path, "w") as txt:
+        txt.write(str(metric))
 
 
 def write_stm(
@@ -720,11 +733,13 @@ def benchmark(
 
         # initialize word-level transcription metrics
         word_level_wer_metric = WordErrorRate(normalizer=normalizer)
+        word_level_cpwer_metric = ConcatenatedMinimumPermutationWordErrorRate(normalizer=normalizer)
         word_level_tcpwer_metric = TimeConstrainedMinimumPermutationWordErrorRate(normalizer=normalizer)
         word_level_tcorcwer_metric = TimeConstrainedOptimalReferenceCombinationWordErrorRate(normalizer=normalizer)
 
         # initialize turn-level transcription metrics
         turn_level_wer_metric = WordErrorRate(normalizer=normalizer)
+        turn_level_cpwer_metric = ConcatenatedMinimumPermutationWordErrorRate(normalizer=normalizer)
         turn_level_tcpwer_metric = TimeConstrainedMinimumPermutationWordErrorRate(normalizer=normalizer)
         turn_level_tcorcwer_metric = TimeConstrainedOptimalReferenceCombinationWordErrorRate(normalizer=normalizer)
 
@@ -864,7 +879,11 @@ def benchmark(
                     turn_level_transcription,
                     uri=uri,
                 )
-
+                _ = turn_level_cpwer_metric(
+                    file["transcription"],
+                    turn_level_transcription,
+                    uri=uri,
+                )
                 _ = turn_level_tcpwer_metric(
                     file["transcription"],
                     turn_level_transcription,
@@ -883,6 +902,12 @@ def benchmark(
                     uri=uri,
                 )
 
+                _ = word_level_cpwer_metric(
+                    file["transcription"],
+                    word_level_transcription,
+                    uri=uri,
+                )
+
                 _ = word_level_tcpwer_metric(
                     file["transcription"],
                     word_level_transcription,
@@ -892,6 +917,7 @@ def benchmark(
                 _ = word_level_tcorcwer_metric(
                     file["transcription"],
                     word_level_transcription,
+                    uri=uri,
                 )
 
         # if the pipeline is not a speaker diarization pipeline,
@@ -953,70 +979,45 @@ def benchmark(
 
     # save diarization metrics results in both CSV and human-readable formats
     if not skip_diarization_metric:
-        with open(diarization_dir / f"{benchmark_name}.DiarizationErrorRate.csv", "w") as csv:
-            der_metric.report().to_csv(csv)
-
-        with open(diarization_dir / f"{benchmark_name}.DiarizationErrorRate.txt", "w") as txt:
-            txt.write(str(der_metric))
+        metric_to_csv(der_metric, diarization_dir / f"{benchmark_name}.DiarizationErrorRate.csv")
+        metric_to_txt(der_metric, diarization_dir / f"{benchmark_name}.DiarizationErrorRate.txt")
 
     # save word level transcription metrics results in both CSV and human-readable formats
     if not skip_transcription_metric and word_level_transcription:
-        with open(
-            transcription_dir / f"{benchmark_name}.WordLevelTranscription.WordErrorRate.csv", "w"
-        ) as csv:
-            word_level_wer_metric.report().to_csv(csv)
+        level = "WordLevelTranscription"
+        # write WER
+        metric_to_csv(word_level_wer_metric, transcription_dir / f"{benchmark_name}.{level}.WordErrorRate.csv")
+        metric_to_txt(word_level_wer_metric, transcription_dir / f"{benchmark_name}.{level}.WordErrorRate.txt")
 
-        with open(
-            transcription_dir / f"{benchmark_name}.WordLevelTranscription.WordErrorRate.txt", "w"
-        ) as txt:
-            txt.write(str(word_level_wer_metric))
+        # write cpWER
+        metric_to_csv(word_level_cpwer_metric, transcription_dir / f"{benchmark_name}.{level}.CPWordErrorRate.csv")
+        metric_to_txt(word_level_cpwer_metric, transcription_dir / f"{benchmark_name}.{level}.CPWordErrorRate.txt")
 
-        with open(
-            transcription_dir / f"{benchmark_name}.WordLevelTranscription.TCPWordErrorRate.csv", "w"
-        ) as csv:
-            word_level_tcpwer_metric.report().to_csv(csv)
+        # write tcpWER
+        metric_to_csv(word_level_tcpwer_metric, transcription_dir / f"{benchmark_name}.{level}.TCPWordErrorRate.csv")
+        metric_to_txt(word_level_tcpwer_metric, transcription_dir / f"{benchmark_name}.{level}.TCPWordErrorRate.txt")
 
-        with open(
-            transcription_dir / f"{benchmark_name}.WordLevelTranscription.TCPWordErrorRate.txt", "w"
-        ) as txt:
-            txt.write(str(word_level_tcpwer_metric))
-        with open(
-            transcription_dir / f"{benchmark_name}.WordLevelTranscription.TCORCWordErrorRate.csv", "w"
-        ) as csv:
-            word_level_tcorcwer_metric.report().to_csv(csv)
-        with open(
-            transcription_dir / f"{benchmark_name}.WordLevelTranscription.TCORCWordErrorRate.txt", "w"
-        ) as txt:
-            txt.write(str(word_level_tcorcwer_metric))
+        # write tcorcWER
+        metric_to_csv(word_level_tcorcwer_metric, transcription_dir / f"{benchmark_name}.{level}.TCORCWordErrorRate.csv")
+        metric_to_txt(word_level_tcorcwer_metric, transcription_dir / f"{benchmark_name}.{level}.TCORCWordErrorRate.txt")
 
     if not skip_transcription_metric and turn_level_transcription:
-        with open(
-            transcription_dir / f"{benchmark_name}.TurnLevelTranscription.WordErrorRate.csv", "w"
-        ) as csv:
-            turn_level_wer_metric.report().to_csv(csv)
+        level = "TurnLevelTranscription"
+        # write WER
+        metric_to_csv(turn_level_wer_metric, transcription_dir / f"{benchmark_name}.{level}.WordErrorRate.csv")
+        metric_to_txt(turn_level_wer_metric, transcription_dir / f"{benchmark_name}.{level}.WordErrorRate.txt")
 
-        with open(
-            transcription_dir / f"{benchmark_name}.TurnLevelTranscription.WordErrorRate.txt", "w"
-        ) as txt:
-            txt.write(str(turn_level_wer_metric))
+        # write cpWER
+        metric_to_csv(turn_level_cpwer_metric, transcription_dir / f"{benchmark_name}.{level}.CPWordErrorRate.csv")
+        metric_to_txt(turn_level_cpwer_metric, transcription_dir / f"{benchmark_name}.{level}.CPWordErrorRate.txt")
 
-        with open(
-            transcription_dir / f"{benchmark_name}.TurnLevelTranscription.TCPWordErrorRate.csv", "w"
-        ) as csv:
-            turn_level_tcpwer_metric.report().to_csv(csv)
+        # write tcpWER
+        metric_to_csv(turn_level_tcpwer_metric, transcription_dir / f"{benchmark_name}.{level}.TCPWordErrorRate.csv")
+        metric_to_txt(turn_level_tcpwer_metric, transcription_dir / f"{benchmark_name}.{level}.TCPWordErrorRate.txt")
 
-        with open(
-            transcription_dir / f"{benchmark_name}.TurnLevelTranscription.TCPWordErrorRate.txt", "w"
-        ) as txt:
-            txt.write(str(turn_level_tcpwer_metric))
-        with open(
-            transcription_dir / f"{benchmark_name}.TurnLevelTranscription.TCORCWordErrorRate.csv", "w"
-        ) as csv:
-            turn_level_tcorcwer_metric.report().to_csv(csv)
-        with open(
-            transcription_dir / f"{benchmark_name}.TurnLevelTranscription.TCORCWordErrorRate.txt", "w"
-        ) as txt:
-            txt.write(str(turn_level_tcorcwer_metric))
+        # write tcorcWER
+        metric_to_csv(turn_level_tcorcwer_metric, transcription_dir / f"{benchmark_name}.{level}.TCORCWordErrorRate.csv")
+        metric_to_txt(turn_level_tcorcwer_metric, transcription_dir / f"{benchmark_name}.{level}.TCORCWordErrorRate.txt")
 
     # no need to go further than this point
     # if pipeline is not a speaker diarization one

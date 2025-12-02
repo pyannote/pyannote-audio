@@ -3032,8 +3032,8 @@ wheels = [
 
 [[package]]
 name = "pyannote-metrics"
-version = "0.1.dev407+ge30bec12f"
-source = { git = "https://github.com/clement-pages/pyannote-metrics.git?rev=PYA-1148-add-transcription-metric#e30bec12f885242ff9606598bc890bd1da6d920a" }
+version = "0.1.dev410+gf4a8db38c"
+source = { git = "https://github.com/clement-pages/pyannote-metrics.git?rev=PYA-1148-add-transcription-metric#f4a8db38c38357302c642c791ab568f077e7652a" }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
