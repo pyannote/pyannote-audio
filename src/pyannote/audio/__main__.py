@@ -861,26 +861,31 @@ def benchmark(
                 _ = turn_level_wer_metric(
                     file["transcription"],
                     turn_level_transcription,
+                    uri=uri,
                 )
 
                 _ = turn_level_tcpwer_metric(
                     file["transcription"],
                     turn_level_transcription,
+                    uri=uri,
                 )
                 _ = turn_level_tcorcwer_metric(
                     file["transcription"],
                     turn_level_transcription,
+                    uri=uri,
                 )
 
             if word_level_transcription:
                 _ = word_level_wer_metric(
                     file["transcription"],
                     word_level_transcription,
+                    uri=uri,
                 )
 
                 _ = word_level_tcpwer_metric(
                     file["transcription"],
                     word_level_transcription,
+                    uri=uri,
                 )
 
                 _ = word_level_tcorcwer_metric(
