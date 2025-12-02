@@ -128,7 +128,7 @@ def get_transcription(prediction, granularity: Granularity, uri: str) -> SegLST:
         if granularity == Granularity.WORD
         else "turn_level_transcription"
     )
-    transcription = getattr(prediction, level)
+    transcription = getattr(prediction, level, None)
 
     if not transcription:
         return None
