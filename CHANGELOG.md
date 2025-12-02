@@ -2,7 +2,7 @@
 
 ## Version 4.0.3 (TBD)
 
-- fix(model): set `weights_only=False` in `Model.from_pretrained` to support PyTorch 2.6+ ([#1960](https://github.com/pyannote/pyannote-audio/issues/1960))
+- fix(model): fix `Model.from_pretrained` to support `lightning` 2.6+
 
 ## Version 4.0.2 (2025-11-19)
 
