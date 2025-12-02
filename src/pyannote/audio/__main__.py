@@ -804,7 +804,8 @@ def benchmark(
                 serialized_predictions[uri] = prediction.serialize()
 
         # get speaker diarization from raw prediction
-        speaker_diarization = get_diarization(prediction)
+        if is_sd_pipeline:
+            speaker_diarization = get_diarization(prediction)
 
         # get transcriptions from raw prediction
         if is_transcription_pipeline:
@@ -892,6 +893,11 @@ def benchmark(
                     file["transcription"],
                     word_level_transcription,
                 )
+
+        # if the pipeline is not a speaker diarization pipeline,
+        # nothing more to do
+        if not is_sd_pipeline:
+            continue
 
         # increment speaker count confusion matrix
         pred_num_speakers: int = len(speaker_diarization.labels())
@@ -1012,6 +1018,11 @@ def benchmark(
         ) as txt:
             txt.write(str(turn_level_tcorcwer_metric))
 
+    # no need to go further than this point
+    # if pipeline is not a speaker diarization one
+    if not is_sd_pipeline:
+        raise typer.exit()
+
     # turn speaker count confusion matrix into numpy array
     # and save it to disk as a CSV file
     max_true_speakers = max(speaker_count.keys())
@@ -1041,7 +1052,7 @@ def benchmark(
     )
 
     np.savetxt(
-        into / f"{benchmark_name}.SpeakerCount.csv",
+        diarization_dir / f"{benchmark_name}.SpeakerCount.csv",
         speaker_count_matrix,
         delimiter=",",
         fmt="%3d",
