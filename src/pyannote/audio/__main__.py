@@ -47,6 +47,7 @@ from pyannote.metrics.diarization import DiarizationErrorRate, JaccardErrorRate
 from pyannote.metrics.transcription import (
     WordErrorRate,
     TimeConstrainedMinimumPermutationWordErrorRate,
+    TimeConstrainedOptimalReferenceCombinationWordErrorRate
 )
 from pyannote.metrics.normalizers import get_normalizer, Normalizer
 from pyannote.pipeline.optimizer import Optimizer
@@ -720,10 +721,12 @@ def benchmark(
         # initialize word-level transcription metrics
         word_level_wer_metric = WordErrorRate(normalizer=normalizer)
         word_level_tcpwer_metric = TimeConstrainedMinimumPermutationWordErrorRate(normalizer=normalizer)
+        word_level_tcorcwer_metric = TimeConstrainedOptimalReferenceCombinationWordErrorRate(normalizer=normalizer)
 
         # initialize turn-level transcription metrics
         turn_level_wer_metric = WordErrorRate(normalizer=normalizer)
         turn_level_tcpwer_metric = TimeConstrainedMinimumPermutationWordErrorRate(normalizer=normalizer)
+        turn_level_tcorcwer_metric = TimeConstrainedOptimalReferenceCombinationWordErrorRate(normalizer=normalizer)
 
     # speaker count confusion matrix
     # speaker_count[i][j] is the number of files with i speakers in the
@@ -864,6 +867,10 @@ def benchmark(
                     file["transcription"],
                     turn_level_transcription,
                 )
+                _ = turn_level_tcorcwer_metric(
+                    file["transcription"],
+                    turn_level_transcription,
+                )
 
             if word_level_transcription:
                 _ = word_level_wer_metric(
@@ -872,6 +879,11 @@ def benchmark(
                 )
 
                 _ = word_level_tcpwer_metric(
+                    file["transcription"],
+                    word_level_transcription,
+                )
+
+                _ = word_level_tcorcwer_metric(
                     file["transcription"],
                     word_level_transcription,
                 )
@@ -957,6 +969,14 @@ def benchmark(
             transcription_dir / f"{benchmark_name}.WordLevelTranscription.TCPWordErrorRate.txt", "w"
         ) as txt:
             txt.write(str(word_level_tcpwer_metric))
+        with open(
+            transcription_dir / f"{benchmark_name}.WordLevelTranscription.TCORCWordErrorRate.csv", "w"
+        ) as csv:
+            word_level_tcorcwer_metric.report().to_csv(csv)
+        with open(
+            transcription_dir / f"{benchmark_name}.WordLevelTranscription.TCORCWordErrorRate.txt", "w"
+        ) as txt:
+            txt.write(str(word_level_tcorcwer_metric))
 
     if not skip_transcription_metric and turn_level_transcription:
         with open(
@@ -978,6 +998,14 @@ def benchmark(
             transcription_dir / f"{benchmark_name}.TurnLevelTranscription.TCPWordErrorRate.txt", "w"
         ) as txt:
             txt.write(str(turn_level_tcpwer_metric))
+        with open(
+            transcription_dir / f"{benchmark_name}.TurnLevelTranscription.TCORCWordErrorRate.csv", "w"
+        ) as csv:
+            turn_level_tcorcwer_metric.report().to_csv(csv)
+        with open(
+            transcription_dir / f"{benchmark_name}.TurnLevelTranscription.TCORCWordErrorRate.txt", "w"
+        ) as txt:
+            txt.write(str(turn_level_tcorcwer_metric))
 
     # turn speaker count confusion matrix into numpy array
     # and save it to disk as a CSV file
