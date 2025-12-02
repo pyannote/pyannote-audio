@@ -122,7 +122,7 @@ def get_diarization(prediction) -> Annotation:
     raise ValueError("Could not find speaker diarization in prediction.")
 
 
-def get_transcription(prediction, granularity: Granularity, uri: str) -> SegLST:
+def get_transcription(prediction, granularity: Granularity, uri: str) -> SegLST | None:
     level = (
         "word_level_transcription"
         if granularity == Granularity.WORD
