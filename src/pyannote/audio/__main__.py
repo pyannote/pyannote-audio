@@ -783,7 +783,7 @@ def benchmark(
 
     else:
         if is_sd_pipeline:
-            diarization_dir = into / "diarization"
+            diarization_dir = into / "speaker_diarization"
             diarization_dir.mkdir(parents=True)
 
             rttm_file = diarization_dir / f"{benchmark_name}.rttm"
