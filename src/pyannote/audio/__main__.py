@@ -854,8 +854,10 @@ def benchmark(
             if is_transcription_pipeline:
                 if word_level_transcription:
                     word_level_stm_file = stm_dir / f"{uri}.WordLevelTranscription.stm"
+                    word_level_stm_file.parent.mkdir(parents=True, exist_ok=True)
                 if turn_level_transcription:
                     turn_level_stm_file = stm_dir / f"{uri}.TurnLevelTranscription.stm"
+                    turn_level_stm_file.parent.mkdir(parents=True, exist_ok=True)
 
         if is_sd_pipeline:
             # dump prediction to RTTM file
