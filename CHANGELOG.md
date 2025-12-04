@@ -2,6 +2,7 @@
 
 ## next
 
+- feat(cli): add `--revision` option to most CLI commands
 - feat(util): add `Calibration.safe_transform` method (supports NaNs as well as any shape)
 - fix(model): fix `Model.from_pretrained` to support `lightning` 2.6+
 
