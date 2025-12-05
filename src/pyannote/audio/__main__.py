@@ -659,6 +659,18 @@ def benchmark(
     per_file: Annotated[
         bool, typer.Option(help="Save one RTTM/JSON file per processed audio file.")
     ] = False,
+    diarization: Annotated[
+        bool,
+        typer.Option(
+            help="Benchmark on speaker diarization task",
+        ),
+    ] = False,
+    transcription: Annotated[
+        bool,
+        typer.Option(
+            help="Benchmark on transcription task",
+        )
+    ] = False,
 ):
     """
     Benchmark a pretrained diarization PIPELINE
@@ -674,12 +686,6 @@ def benchmark(
     if pretrained_pipeline is None:
         print(f"Could not load pretrained pipeline from {pipeline}.")
         raise typer.exit(code=1)
-
-    tags = getattr(pretrained_pipeline, "tags", [])
-    # last case needed as pyannote.audio pipelines might not have any tags at all
-    is_sd_pipeline = "speaker_diarization" in tags or len(tags) == 0
-    is_streaming_sd_pipeline = "streaming_speaker_diarization" in tags
-    is_transcription_pipeline = "speaker_attributed_transcription" in tags
 
     # send pipeline to device
     torch_device = parse_device(device)
@@ -705,8 +711,8 @@ def benchmark(
     files = list(getattr(loaded_protocol, subset.value)())
 
     # check that manual speaker diarization annotation is available for all files
-    # (condition to actually run the benchmark)
-    skip_diarization_metric = not (is_sd_pipeline or is_streaming_sd_pipeline)
+    # (condition to actually run the benchmark on this task)
+    skip_diarization_metric = not diarization
     if not skip_diarization_metric and any(
         file.get("annotation", None) is None for file in files
     ):
@@ -716,8 +722,8 @@ def benchmark(
         skip_diarization_metric = True
 
     # check that manual transcription annotation is available for all files
-    # (condition to actually run the benchmark)
-    skip_transcription_metric = not is_transcription_pipeline
+    # (condition to actually run the benchmark on this task)
+    skip_transcription_metric = not transcription
     if not skip_transcription_metric and any(
         file.get("transcription", None) is None for file in files
     ):
@@ -789,20 +795,20 @@ def benchmark(
         if benchmark_dir.exists():
             raise FileExistsError(f"{benchmark_dir} already exists.")
 
-        if is_sd_pipeline:
+        if diarization:
             diarization_dir = benchmark_dir / "speaker_diarization"
 
             rttm_dir = diarization_dir / "rttm"
             rttm_dir.mkdir(parents=True)
 
-        if is_transcription_pipeline:
+        if transcription:
             transcription_dir = benchmark_dir / "transcription"
 
             stm_dir = transcription_dir / "stm"
             stm_dir.mkdir(parents=True)
 
     else:
-        if is_sd_pipeline:
+        if diarization:
             diarization_dir = into / "speaker_diarization"
             diarization_dir.mkdir(parents=True)
 
@@ -811,7 +817,7 @@ def benchmark(
             if rttm_file.exists():
                 raise FileExistsError(f"{rttm_file} already exists.")
 
-        if is_transcription_pipeline:
+        if transcription:
             transcription_dir = into / "transcription"
             transcription_dir.mkdir(parents=True)
 
@@ -855,11 +861,11 @@ def benchmark(
                 serialized_predictions[uri] = prediction.serialize()
 
         # get speaker diarization from raw prediction
-        if is_sd_pipeline:
+        if diarization:
             speaker_diarization = get_diarization(prediction)
 
         # get transcriptions from raw prediction
-        if is_transcription_pipeline:
+        if transcription:
             word_level_transcription = get_transcription(
                 prediction, Granularity.WORD, uri
             )
@@ -868,10 +874,10 @@ def benchmark(
             )
 
         if per_file:
-            if is_sd_pipeline:
+            if diarization:
                 rttm_file = rttm_dir / f"{uri}.rttm"
 
-            if is_transcription_pipeline:
+            if transcription:
                 if word_level_transcription:
                     word_level_stm_file = stm_dir / f"{uri}.WordLevelTranscription.stm"
                     word_level_stm_file.parent.mkdir(parents=True, exist_ok=True)
@@ -879,12 +885,12 @@ def benchmark(
                     turn_level_stm_file = stm_dir / f"{uri}.TurnLevelTranscription.stm"
                     turn_level_stm_file.parent.mkdir(parents=True, exist_ok=True)
 
-        if is_sd_pipeline:
+        if diarization:
             # dump prediction to RTTM file
             with open(rttm_file, "w" if per_file else "a") as rttm:
                 speaker_diarization.write_rttm(rttm)
 
-        if is_transcription_pipeline:
+        if transcription:
             if word_level_transcription:
                 # dump word-level transcription to STM file
                 with open(word_level_stm_file, "w" if per_file else "a") as stm:
@@ -960,7 +966,7 @@ def benchmark(
 
         # if the pipeline is not a speaker diarization pipeline,
         # nothing more to do
-        if not is_sd_pipeline:
+        if not diarization:
             continue
 
         # increment speaker count confusion matrix
@@ -1111,7 +1117,7 @@ def benchmark(
 
     # no need to go further than this point
     # if pipeline is not a speaker diarization one
-    if not is_sd_pipeline:
+    if not diarization:
         raise typer.exit()
 
     # turn speaker count confusion matrix into numpy array
