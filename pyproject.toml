@@ -39,6 +39,7 @@ pyannote-audio = "pyannote.audio.__main__:app"
 test = ["papermill>=2.6.0", "pytest>=8.3.4"]
 doc = ["sphinx-rtd-theme>=3.0.2", "sphinx>=8.1.3"]
 cli = [
+    "meeteval>=0.4.3",
     "pyannote-metrics[transcription]",
     "typer>=0.15.1",
 ]

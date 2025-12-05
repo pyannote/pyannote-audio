@@ -2932,6 +2932,7 @@ dependencies = [
 
 [package.optional-dependencies]
 cli = [
+    { name = "meeteval" },
     { name = "pyannote-metrics", extra = ["transcription"] },
     { name = "typer" },
 ]
@@ -2967,6 +2968,7 @@ requires-dist = [
     { name = "ipython", marker = "extra == 'dev'", specifier = ">=8.32.0" },
     { name = "lightning", specifier = ">=2.4" },
     { name = "matplotlib", specifier = ">=3.10.0" },
+    { name = "meeteval", marker = "extra == 'cli'", specifier = ">=0.4.3" },
     { name = "opentelemetry-api", specifier = ">=1.34.0" },
     { name = "opentelemetry-exporter-otlp", specifier = ">=1.34.0" },
     { name = "opentelemetry-sdk", specifier = ">=1.34.0" },
