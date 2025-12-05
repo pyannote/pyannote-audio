@@ -380,16 +380,20 @@ def download(
             help="Pretrained pipeline (e.g. pyannote/speaker-diarization-community-1)"
         ),
     ],
-    token: Annotated[
-        str,
-        typer.Argument(
-            help="Huggingface token to be used for downloading from Huggingface hub."
-        ),
-    ],
-    cache: Annotated[
-        Path,
+    revision: Annotated[
+        Optional[str],
         typer.Option(
-            help="Path to the folder where files downloaded from Huggingface hub are stored.",
+            help="Pretrained pipeline revision.",
+        ),
+    ] = None,
+    token: Annotated[
+        Optional[str],
+        typer.Argument(help="Huggingface token."),
+    ] = None,
+    cache: Annotated[
+        Optional[Path],
+        typer.Option(
+            help="Path to the folder where files downloaded from Huggingface are stored.",
             exists=True,
             dir_okay=True,
             file_okay=False,
@@ -404,7 +408,7 @@ def download(
 
     # load pretrained pipeline
     pretrained_pipeline = Pipeline.from_pretrained(
-        pipeline, token=token, cache_dir=cache
+        pipeline, revision=revision, token=token, cache_dir=cache
     )
     if pretrained_pipeline is None:
         print(f"Could not load pretrained pipeline from {pipeline}.")
@@ -430,7 +434,7 @@ def apply(
         ),
     ],
     into: Annotated[
-        Path,
+        Optional[Path],
         typer.Option(
             help="Path to file or directory where results are saved.",
             exists=False,
@@ -440,13 +444,20 @@ def apply(
             resolve_path=True,
         ),
     ] = None,
-    device: Annotated[
-        Device, typer.Option(help="Accelerator to use (CPU, CUDA, MPS)")
-    ] = Device.AUTO,
-    cache: Annotated[
-        Path,
+    revision: Annotated[
+        Optional[str],
         typer.Option(
-            help="Path to the folder where files downloaded from Huggingface hub are stored.",
+            help="Pretrained pipeline revision.",
+        ),
+    ] = None,
+    token: Annotated[
+        Optional[str],
+        typer.Argument(help="Huggingface token."),
+    ] = None,
+    cache: Annotated[
+        Optional[Path],
+        typer.Option(
+            help="Path to the folder where files downloaded from Huggingface are stored.",
             exists=True,
             dir_okay=True,
             file_okay=False,
@@ -454,13 +465,18 @@ def apply(
             resolve_path=True,
         ),
     ] = None,
+    device: Annotated[
+        Device, typer.Option(help="Accelerator to use (CPU, CUDA, MPS)")
+    ] = Device.AUTO,
 ):
     """
     Apply a pretrained PIPELINE to an AUDIO file or directory
     """
 
     # load pretrained pipeline
-    pretrained_pipeline = Pipeline.from_pretrained(pipeline, cache_dir=cache)
+    pretrained_pipeline = Pipeline.from_pretrained(
+        pipeline, revision=revision, token=token, cache_dir=cache
+    )
     if pretrained_pipeline is None:
         print(f"Could not load pretrained pipeline from {pipeline}.")
         raise typer.exit(code=1)
@@ -470,7 +486,6 @@ def apply(
     pretrained_pipeline.to(torch_device)
 
     if audio.is_dir():
-
         if into is None or not into.is_dir():
             typer.echo("When AUDIO is a directory, INTO must also be a directory.")
             raise typer.exit(code=1)
@@ -480,7 +495,6 @@ def apply(
         jsons: list[Path | None] = [into / (path.stem + ".json") for path in inputs]
 
     else:
-
         if not (into is None or into.is_file()):
             typer.echo("When AUDIO is a file, INTO must also be a file.")
             raise typer.exit(code=1)
@@ -490,7 +504,6 @@ def apply(
         jsons: list[Path | None] = [into.with_suffix(".json") if into else None]
 
     for current_input, current_rttm, current_json in zip(inputs, rttms, jsons):
-
         prediction = pretrained_pipeline(current_input)
 
         speaker_diarization = get_diarization(prediction)
@@ -617,6 +630,27 @@ def benchmark(
             case_sensitive=False,
         ),
     ] = Subset.test,
+    revision: Annotated[
+        Optional[str],
+        typer.Option(
+            help="Pretrained pipeline revision.",
+        ),
+    ] = None,
+    token: Annotated[
+        Optional[str],
+        typer.Argument(help="Huggingface token."),
+    ] = None,
+    cache: Annotated[
+        Optional[Path],
+        typer.Option(
+            help="Path to the folder where files downloaded from Huggingface are stored.",
+            exists=True,
+            dir_okay=True,
+            file_okay=False,
+            writable=True,
+            resolve_path=True,
+        ),
+    ] = None,
     device: Annotated[
         Device, typer.Option(help="Accelerator to use (CPU, CUDA, MPS)")
     ] = Device.AUTO,
@@ -633,17 +667,6 @@ def benchmark(
     num_speakers: Annotated[
         NumSpeakers, typer.Option(help="Number of speakers (oracle or auto)")
     ] = NumSpeakers.AUTO,
-    cache: Annotated[
-        Path,
-        typer.Option(
-            help="Path to the folder where files downloaded from Huggingface hub are stored.",
-            exists=True,
-            dir_okay=True,
-            file_okay=False,
-            writable=True,
-            resolve_path=True,
-        ),
-    ] = None,
     optimize: Annotated[
         bool,
         typer.Option(
@@ -669,7 +692,7 @@ def benchmark(
         bool,
         typer.Option(
             help="Benchmark on transcription task",
-        )
+        ),
     ] = False,
 ):
     """
@@ -682,7 +705,12 @@ def benchmark(
     """
 
     # load pretrained pipeline
-    pretrained_pipeline = Pipeline.from_pretrained(pipeline, cache_dir=cache)
+    pretrained_pipeline = Pipeline.from_pretrained(
+        pipeline,
+        revision=revision,
+        token=token,
+        cache_dir=cache,
+    )
     if pretrained_pipeline is None:
         print(f"Could not load pretrained pipeline from {pipeline}.")
         raise typer.exit(code=1)
