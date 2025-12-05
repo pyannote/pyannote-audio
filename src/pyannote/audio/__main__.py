@@ -28,6 +28,7 @@ import json
 import sys
 import time
 import types
+import warnings
 from contextlib import nullcontext
 from datetime import datetime
 from enum import Enum, auto
@@ -40,17 +41,34 @@ import pyannote.database
 import torch
 import typer
 import yaml
-from meeteval.io.seglst import SegLST, SegLstSegment
+
+try:
+    from meeteval.io.seglst import SegLST, SegLstSegment
+except ImportError:
+    warnings.warn(
+        "meeteval is not installed. Transcription-related features will not be available. "
+        "You can install it with `uv add pyannote-audio[cli]`"
+    )
+
 from pyannote.core import Annotation
 from pyannote.metrics.base import BaseMetric
 from pyannote.metrics.diarization import DiarizationErrorRate, JaccardErrorRate
-from pyannote.metrics.transcription import (
-    WordErrorRate,
-    ConcatenatedMinimumPermutationWordErrorRate,
-    TimeConstrainedMinimumPermutationWordErrorRate,
-    TimeConstrainedOptimalReferenceCombinationWordErrorRate
-)
-from pyannote.metrics.normalizers import get_normalizer, Normalizer
+from pyannote.metrics.normalizers import Normalizer, get_normalizer
+
+try:
+    from pyannote.metrics.transcription import (
+        ConcatenatedMinimumPermutationWordErrorRate,
+        TimeConstrainedMinimumPermutationWordErrorRate,
+        TimeConstrainedOptimalReferenceCombinationWordErrorRate,
+        WordErrorRate,
+    )
+except ImportError:
+    warnings.warn(
+        "Cannot import transcription metrics from pyannote.metrics. "
+        "If you intend to use transcription benchmarking, "
+        "install them with `uv add pyannote-audio[cli]`"
+    )
+
 from pyannote.pipeline.optimizer import Optimizer
 from rich.progress import track
 from scipy.optimize import minimize_scalar
@@ -122,7 +140,9 @@ def get_diarization(prediction) -> Annotation:
     raise ValueError("Could not find speaker diarization in prediction.")
 
 
-def get_transcription(prediction, granularity: Granularity, uri: str) -> SegLST | None:
+def get_transcription(
+    prediction, granularity: Granularity, uri: str
+) -> "SegLST" | None:
     level = (
         "word_level_transcription"
         if granularity == Granularity.WORD
@@ -161,7 +181,7 @@ def metric_to_txt(metric: BaseMetric, file_path: Path):
 
 
 def write_stm(
-    transcription: SegLST,
+    transcription: "SegLST",
     file,
 ):
     """Write transcription to STM file
@@ -997,45 +1017,97 @@ def benchmark(
 
     # save diarization metrics results in both CSV and human-readable formats
     if not skip_diarization_metric:
-        metric_to_csv(der_metric, diarization_dir / f"{benchmark_name}.DiarizationErrorRate.csv")
-        metric_to_txt(der_metric, diarization_dir / f"{benchmark_name}.DiarizationErrorRate.txt")
+        metric_to_csv(
+            der_metric, diarization_dir / f"{benchmark_name}.DiarizationErrorRate.csv"
+        )
+        metric_to_txt(
+            der_metric, diarization_dir / f"{benchmark_name}.DiarizationErrorRate.txt"
+        )
 
     # save word level transcription metrics results in both CSV and human-readable formats
     if not skip_transcription_metric and word_level_transcription:
         level = "WordLevelTranscription"
         # write WER
-        metric_to_csv(word_level_wer_metric, transcription_dir / f"{benchmark_name}.{level}.WordErrorRate.csv")
-        metric_to_txt(word_level_wer_metric, transcription_dir / f"{benchmark_name}.{level}.WordErrorRate.txt")
+        metric_to_csv(
+            word_level_wer_metric,
+            transcription_dir / f"{benchmark_name}.{level}.WordErrorRate.csv",
+        )
+        metric_to_txt(
+            word_level_wer_metric,
+            transcription_dir / f"{benchmark_name}.{level}.WordErrorRate.txt",
+        )
 
         # write cpWER
-        metric_to_csv(word_level_cpwer_metric, transcription_dir / f"{benchmark_name}.{level}.CPWordErrorRate.csv")
-        metric_to_txt(word_level_cpwer_metric, transcription_dir / f"{benchmark_name}.{level}.CPWordErrorRate.txt")
+        metric_to_csv(
+            word_level_cpwer_metric,
+            transcription_dir / f"{benchmark_name}.{level}.CPWordErrorRate.csv",
+        )
+        metric_to_txt(
+            word_level_cpwer_metric,
+            transcription_dir / f"{benchmark_name}.{level}.CPWordErrorRate.txt",
+        )
 
         # write tcpWER
-        metric_to_csv(word_level_tcpwer_metric, transcription_dir / f"{benchmark_name}.{level}.TCPWordErrorRate.csv")
-        metric_to_txt(word_level_tcpwer_metric, transcription_dir / f"{benchmark_name}.{level}.TCPWordErrorRate.txt")
+        metric_to_csv(
+            word_level_tcpwer_metric,
+            transcription_dir / f"{benchmark_name}.{level}.TCPWordErrorRate.csv",
+        )
+        metric_to_txt(
+            word_level_tcpwer_metric,
+            transcription_dir / f"{benchmark_name}.{level}.TCPWordErrorRate.txt",
+        )
 
         # write tcorcWER
-        metric_to_csv(word_level_tcorcwer_metric, transcription_dir / f"{benchmark_name}.{level}.TCORCWordErrorRate.csv")
-        metric_to_txt(word_level_tcorcwer_metric, transcription_dir / f"{benchmark_name}.{level}.TCORCWordErrorRate.txt")
+        metric_to_csv(
+            word_level_tcorcwer_metric,
+            transcription_dir / f"{benchmark_name}.{level}.TCORCWordErrorRate.csv",
+        )
+        metric_to_txt(
+            word_level_tcorcwer_metric,
+            transcription_dir / f"{benchmark_name}.{level}.TCORCWordErrorRate.txt",
+        )
 
     if not skip_transcription_metric and turn_level_transcription:
         level = "TurnLevelTranscription"
         # write WER
-        metric_to_csv(turn_level_wer_metric, transcription_dir / f"{benchmark_name}.{level}.WordErrorRate.csv")
-        metric_to_txt(turn_level_wer_metric, transcription_dir / f"{benchmark_name}.{level}.WordErrorRate.txt")
+        metric_to_csv(
+            turn_level_wer_metric,
+            transcription_dir / f"{benchmark_name}.{level}.WordErrorRate.csv",
+        )
+        metric_to_txt(
+            turn_level_wer_metric,
+            transcription_dir / f"{benchmark_name}.{level}.WordErrorRate.txt",
+        )
 
         # write cpWER
-        metric_to_csv(turn_level_cpwer_metric, transcription_dir / f"{benchmark_name}.{level}.CPWordErrorRate.csv")
-        metric_to_txt(turn_level_cpwer_metric, transcription_dir / f"{benchmark_name}.{level}.CPWordErrorRate.txt")
+        metric_to_csv(
+            turn_level_cpwer_metric,
+            transcription_dir / f"{benchmark_name}.{level}.CPWordErrorRate.csv",
+        )
+        metric_to_txt(
+            turn_level_cpwer_metric,
+            transcription_dir / f"{benchmark_name}.{level}.CPWordErrorRate.txt",
+        )
 
         # write tcpWER
-        metric_to_csv(turn_level_tcpwer_metric, transcription_dir / f"{benchmark_name}.{level}.TCPWordErrorRate.csv")
-        metric_to_txt(turn_level_tcpwer_metric, transcription_dir / f"{benchmark_name}.{level}.TCPWordErrorRate.txt")
+        metric_to_csv(
+            turn_level_tcpwer_metric,
+            transcription_dir / f"{benchmark_name}.{level}.TCPWordErrorRate.csv",
+        )
+        metric_to_txt(
+            turn_level_tcpwer_metric,
+            transcription_dir / f"{benchmark_name}.{level}.TCPWordErrorRate.txt",
+        )
 
         # write tcorcWER
-        metric_to_csv(turn_level_tcorcwer_metric, transcription_dir / f"{benchmark_name}.{level}.TCORCWordErrorRate.csv")
-        metric_to_txt(turn_level_tcorcwer_metric, transcription_dir / f"{benchmark_name}.{level}.TCORCWordErrorRate.txt")
+        metric_to_csv(
+            turn_level_tcorcwer_metric,
+            transcription_dir / f"{benchmark_name}.{level}.TCORCWordErrorRate.csv",
+        )
+        metric_to_txt(
+            turn_level_tcorcwer_metric,
+            transcription_dir / f"{benchmark_name}.{level}.TCORCWordErrorRate.txt",
+        )
 
     # no need to go further than this point
     # if pipeline is not a speaker diarization one
@@ -1083,10 +1155,14 @@ def benchmark(
         minDurationOffOptimizer = MinDurationOffOptimizer()
         best_min_duration_off, best_report = minDurationOffOptimizer(files, der_metric)
 
-        with open(diarization_dir / f"{benchmark_name}.OptimizedMinDurationOff.csv", "w") as csv:
+        with open(
+            diarization_dir / f"{benchmark_name}.OptimizedMinDurationOff.csv", "w"
+        ) as csv:
             best_report.to_csv(csv)
 
-        with open(diarization_dir / f"{benchmark_name}.OptimizedMinDurationOff.txt", "w") as txt:
+        with open(
+            diarization_dir / f"{benchmark_name}.OptimizedMinDurationOff.txt", "w"
+        ) as txt:
             txt.write(
                 best_report.to_string(
                     sparsify=False, float_format=lambda f: "{0:.2f}".format(f)
@@ -1094,7 +1170,9 @@ def benchmark(
             )
 
         # keep track of the best `min_duration_off` value for later reference
-        with open(diarization_dir / f"{benchmark_name}.OptimizedMinDurationOff.yml", "w") as yml:
+        with open(
+            diarization_dir / f"{benchmark_name}.OptimizedMinDurationOff.yml", "w"
+        ) as yml:
             yaml.dump({"min_duration_off": best_min_duration_off}, yml)
 
         if not per_file:
