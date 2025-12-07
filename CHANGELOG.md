@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## next
+## Version 4.0.3 (2025-12-07)
 
 - feat(cli): add `--revision` option to most CLI commands
 - feat(util): add `Calibration.safe_transform` method (supports NaNs as well as any shape)
