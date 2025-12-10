@@ -140,9 +140,7 @@ def get_diarization(prediction) -> Annotation:
     raise ValueError("Could not find speaker diarization in prediction.")
 
 
-def get_transcription(
-    prediction, granularity: Granularity, uri: str
-) -> "SegLST":
+def get_transcription(prediction, granularity: Granularity, uri: str) -> "SegLST":
     level = (
         "word_level_transcription"
         if granularity == Granularity.WORD
@@ -710,7 +708,8 @@ def benchmark(
 
     if not diarization and not transcription:
         typer.echo(
-            "At least one of `--diarization` or `--transcription` must be specified."
+            "[ERROR] At least one of `--diarization` or `--transcription` must be specified.",
+            err=True,
         )
         raise typer.Exit(code=1)
 
@@ -722,7 +721,9 @@ def benchmark(
         cache_dir=cache,
     )
     if pretrained_pipeline is None:
-        print(f"Could not load pretrained pipeline from {pipeline}.")
+        typer.echo(
+            f"[ERROR] Could not load pretrained pipeline from {pipeline}.", err=True
+        )
         raise typer.Exit(code=1)
 
     # send pipeline to device
@@ -747,6 +748,12 @@ def benchmark(
         protocol, preprocessors=preprocessors
     )
     files = list(getattr(loaded_protocol, subset.value)())
+
+    if len(files) == 0:
+        typer.echo(
+            f"[ERROR] No files found in {protocol} {subset.value} subset.", err=True
+        )
+        raise typer.Exit(code=1)
 
     # check that manual speaker diarization annotation is available for all files
     # (condition to actually run the benchmark on this task)
