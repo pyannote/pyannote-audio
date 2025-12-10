@@ -723,7 +723,7 @@ def benchmark(
     )
     if pretrained_pipeline is None:
         print(f"Could not load pretrained pipeline from {pipeline}.")
-        raise typer.exit(code=1)
+        raise typer.Exit(code=1)
 
     # send pipeline to device
     torch_device = parse_device(device)
@@ -1057,7 +1057,7 @@ def benchmark(
 
     # no need to go further than this point if evaluation is not possible on any task
     if skip_diarization_metric and skip_transcription_metric:
-        raise typer.exit()
+        raise typer.Exit(code=0)
 
     # save diarization metrics results in both CSV and human-readable formats
     if not skip_diarization_metric:
@@ -1156,7 +1156,7 @@ def benchmark(
     # no need to go further than this point
     # if pipeline is not a speaker diarization one
     if not diarization:
-        raise typer.exit()
+        raise typer.Exit(code=0)
 
     # turn speaker count confusion matrix into numpy array
     # and save it to disk as a CSV file
