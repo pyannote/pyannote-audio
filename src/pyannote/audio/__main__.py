@@ -777,6 +777,10 @@ def benchmark(
         )
         skip_transcription_metric = True
 
+    if skip_diarization_metric and skip_transcription_metric:
+        typer.echo("[WARNING] Skipping evaluation of all metrics. Nothing to do.")
+        raise typer.Exit(code=0)
+
     # `benchmark_name` is used as prefix to output files
     benchmark_name = f"{protocol}.{subset.value}"
     if num_speakers == NumSpeakers.ORACLE:
