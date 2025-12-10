@@ -166,6 +166,37 @@ def get_transcription(prediction, granularity: Granularity, uri: str) -> "SegLST
     )
 
 
+def compute_transcription_metric(
+    metric: BaseMetric,
+    reference: "SegLST",
+    hypothesis: "SegLST",
+    uri: Optional[str] = None,
+):
+    """Compute transcription metric and handle exceptions gracefully
+
+    Parameters
+    ----------
+    metric : BaseMetric
+        metric to compute
+    reference : SegLST
+        reference transcription
+    hypothesis : SegLST
+        hypothesis transcription
+    uri : str, optional
+        file URI
+
+    Returns
+    -------
+    result : float or dict
+        computed metric value or dictionary of metric components
+    """
+    try:
+        return metric(reference, hypothesis, uri=uri, )
+    except Exception as e:
+        typer.echo(f"[WARNING] Could not compute {metric.name} for file {uri}: {e}")
+        return None
+
+
 def metric_to_csv(metric: BaseMetric, file_path: Path):
     """Write metric report to CSV file"""
     with open(file_path, "w") as csv:
@@ -967,47 +998,52 @@ def benchmark(
         # compute transcription metrics when possible
         if not skip_transcription_metric:
             if turn_level_transcription:
-                _ = turn_level_wer_metric(
+                _ = compute_transcription_metric(
+                    turn_level_wer_metric,
                     file["transcription"],
                     turn_level_transcription,
                     uri=uri,
                 )
-                _ = turn_level_cpwer_metric(
+                _ = compute_transcription_metric(
+                    turn_level_cpwer_metric,
                     file["transcription"],
                     turn_level_transcription,
                     uri=uri,
                 )
-                _ = turn_level_tcpwer_metric(
+                _ = compute_transcription_metric(
+                    turn_level_tcpwer_metric,
                     file["transcription"],
                     turn_level_transcription,
                     uri=uri,
                 )
-                _ = turn_level_tcorcwer_metric(
+                _ = compute_transcription_metric(
+                    turn_level_tcorcwer_metric,
                     file["transcription"],
                     turn_level_transcription,
                     uri=uri,
                 )
 
             if word_level_transcription:
-                _ = word_level_wer_metric(
+                _ = compute_transcription_metric(
+                    word_level_wer_metric,
                     file["transcription"],
                     word_level_transcription,
                     uri=uri,
                 )
-
-                _ = word_level_cpwer_metric(
+                _ = compute_transcription_metric(
+                    word_level_cpwer_metric,
                     file["transcription"],
                     word_level_transcription,
                     uri=uri,
                 )
-
-                _ = word_level_tcpwer_metric(
+                _ = compute_transcription_metric(
+                    word_level_tcpwer_metric,
                     file["transcription"],
                     word_level_transcription,
                     uri=uri,
                 )
-
-                _ = word_level_tcorcwer_metric(
+                _ = compute_transcription_metric(
+                    word_level_tcorcwer_metric,
                     file["transcription"],
                     word_level_transcription,
                     uri=uri,
