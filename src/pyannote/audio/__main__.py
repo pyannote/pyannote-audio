@@ -53,9 +53,9 @@ except ImportError:
 from pyannote.core import Annotation
 from pyannote.metrics.base import BaseMetric
 from pyannote.metrics.diarization import DiarizationErrorRate, JaccardErrorRate
-from pyannote.metrics.normalizers import Normalizer, get_normalizer
 
 try:
+    from pyannote.metrics.normalizers import Normalizer, get_normalizer
     from pyannote.metrics.transcription import (
         ConcatenatedMinimumPermutationWordErrorRate,
         TimeConstrainedMinimumPermutationWordErrorRate,
@@ -64,7 +64,7 @@ try:
     )
 except ImportError:
     warnings.warn(
-        "Cannot import transcription metrics from pyannote.metrics. "
+        "Cannot import normalizers or transcription metrics from pyannote.metrics. "
         "If you intend to use transcription benchmarking, "
         "install them with `uv add pyannote-audio[cli]`"
     )
