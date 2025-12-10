@@ -1082,86 +1082,90 @@ def benchmark(
     # save word level transcription metrics results in both CSV and human-readable formats
     if not skip_transcription_metric and word_level_transcription:
         level = "WordLevelTranscription"
+        word_level_dir = transcription_dir / level
+        word_level_dir.mkdir(parents=True)
         # write WER
         metric_to_csv(
             word_level_wer_metric,
-            transcription_dir / f"{benchmark_name}.{level}.WordErrorRate.csv",
+            word_level_dir / f"{benchmark_name}.{level}.WordErrorRate.csv",
         )
         metric_to_txt(
             word_level_wer_metric,
-            transcription_dir / f"{benchmark_name}.{level}.WordErrorRate.txt",
+            word_level_dir / f"{benchmark_name}.{level}.WordErrorRate.txt",
         )
 
         # write cpWER
         metric_to_csv(
             word_level_cpwer_metric,
-            transcription_dir / f"{benchmark_name}.{level}.CPWordErrorRate.csv",
+            word_level_dir / f"{benchmark_name}.{level}.CPWordErrorRate.csv",
         )
         metric_to_txt(
             word_level_cpwer_metric,
-            transcription_dir / f"{benchmark_name}.{level}.CPWordErrorRate.txt",
+            word_level_dir / f"{benchmark_name}.{level}.CPWordErrorRate.txt",
         )
 
         # write tcpWER
         metric_to_csv(
             word_level_tcpwer_metric,
-            transcription_dir / f"{benchmark_name}.{level}.TCPWordErrorRate.csv",
+            word_level_dir / f"{benchmark_name}.{level}.TCPWordErrorRate.csv",
         )
         metric_to_txt(
             word_level_tcpwer_metric,
-            transcription_dir / f"{benchmark_name}.{level}.TCPWordErrorRate.txt",
+            word_level_dir / f"{benchmark_name}.{level}.TCPWordErrorRate.txt",
         )
 
         # write tcorcWER
         metric_to_csv(
             word_level_tcorcwer_metric,
-            transcription_dir / f"{benchmark_name}.{level}.TCORCWordErrorRate.csv",
+            word_level_dir / f"{benchmark_name}.{level}.TCORCWordErrorRate.csv",
         )
         metric_to_txt(
             word_level_tcorcwer_metric,
-            transcription_dir / f"{benchmark_name}.{level}.TCORCWordErrorRate.txt",
+            word_level_dir / f"{benchmark_name}.{level}.TCORCWordErrorRate.txt",
         )
 
     if not skip_transcription_metric and turn_level_transcription:
         level = "TurnLevelTranscription"
+        turn_level_dir = transcription_dir / level
+        turn_level_dir.mkdir(parents=True)
         # write WER
         metric_to_csv(
             turn_level_wer_metric,
-            transcription_dir / f"{benchmark_name}.{level}.WordErrorRate.csv",
+            turn_level_dir / f"{benchmark_name}.{level}.WordErrorRate.csv",
         )
         metric_to_txt(
             turn_level_wer_metric,
-            transcription_dir / f"{benchmark_name}.{level}.WordErrorRate.txt",
+            turn_level_dir / f"{benchmark_name}.{level}.WordErrorRate.txt",
         )
 
         # write cpWER
         metric_to_csv(
             turn_level_cpwer_metric,
-            transcription_dir / f"{benchmark_name}.{level}.CPWordErrorRate.csv",
+            turn_level_dir / f"{benchmark_name}.{level}.CPWordErrorRate.csv",
         )
         metric_to_txt(
             turn_level_cpwer_metric,
-            transcription_dir / f"{benchmark_name}.{level}.CPWordErrorRate.txt",
+            turn_level_dir / f"{benchmark_name}.{level}.CPWordErrorRate.txt",
         )
 
         # write tcpWER
         metric_to_csv(
             turn_level_tcpwer_metric,
-            transcription_dir / f"{benchmark_name}.{level}.TCPWordErrorRate.csv",
+            turn_level_dir / f"{benchmark_name}.{level}.TCPWordErrorRate.csv",
         )
         metric_to_txt(
             turn_level_tcpwer_metric,
-            transcription_dir / f"{benchmark_name}.{level}.TCPWordErrorRate.txt",
+            turn_level_dir / f"{benchmark_name}.{level}.TCPWordErrorRate.txt",
         )
 
         # write tcorcWER
         metric_to_csv(
             turn_level_tcorcwer_metric,
-            transcription_dir / f"{benchmark_name}.{level}.TCORCWordErrorRate.csv",
+            turn_level_dir / f"{benchmark_name}.{level}.TCORCWordErrorRate.csv",
         )
         metric_to_txt(
             turn_level_tcorcwer_metric,
-            transcription_dir / f"{benchmark_name}.{level}.TCORCWordErrorRate.txt",
+            turn_level_dir / f"{benchmark_name}.{level}.TCORCWordErrorRate.txt",
         )
 
     # no need to go further than this point
