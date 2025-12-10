@@ -696,13 +696,23 @@ def benchmark(
     ] = False,
 ):
     """
-    Benchmark a pretrained diarization PIPELINE
-
-    This will run the pipeline on all files in the specified protocol and subset,
-    save the results in RTTM format, and compute the Diarization Error Rate (DER)
-    for each file. If `--optimize` is used, it will also post-process predictions
-    by filling short within speaker gaps and save the results in a separate file.
+    Benchmark a pretrained diarization PIPELINE. Available tasks are (choose at least one):
+    - Speaker diarization (with `--diarization`)
+        This will run the pipeline on all files in the specified protocol and subset,
+        save the results in RTTM format, and compute the Diarization Error Rate (DER)
+        for each file. If `--optimize` is used, it will also post-process predictions
+        by filling short within speaker gaps and save the results in a separate file.
+    - Transcription (with `--transcription`)
+        This will run the pipeline on all files in the specified protocol and subset,
+        save the results in STM format, and compute word-level and turn-level
+        transcription metrics for each file.
     """
+
+    if not diarization and not transcription:
+        typer.echo(
+            "At least one of `--diarization` or `--transcription` must be specified."
+        )
+        raise typer.Exit(code=1)
 
     # load pretrained pipeline
     pretrained_pipeline = Pipeline.from_pretrained(
