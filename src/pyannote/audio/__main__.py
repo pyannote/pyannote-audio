@@ -142,7 +142,7 @@ def get_diarization(prediction) -> Annotation:
 
 def get_transcription(
     prediction, granularity: Granularity, uri: str
-) -> "SegLST" | None:
+) -> "SegLST":
     level = (
         "word_level_transcription"
         if granularity == Granularity.WORD
