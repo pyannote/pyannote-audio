@@ -895,8 +895,11 @@ def benchmark(
         if transcription:
             transcription_dir = benchmark_dir / "transcription"
 
-            stm_dir = transcription_dir / "stm"
-            stm_dir.mkdir(parents=True)
+            word_level_stm_dir = transcription_dir / "WordLevelTranscription" / "stm"
+            word_level_stm_dir.mkdir(parents=True, exist_ok=True)
+
+            turn_level_stm_dir = transcription_dir / "TurnLevelTranscription" / "stm"
+            turn_level_stm_dir.mkdir(parents=True, exist_ok=True)
 
     else:
         if diarization:
@@ -910,18 +913,19 @@ def benchmark(
 
         if transcription:
             transcription_dir = into / "transcription"
-            transcription_dir.mkdir(parents=True)
 
             word_level_stm_file = (
-                transcription_dir / f"{benchmark_name}.WordLevelTranscription.stm"
+                transcription_dir / "WordLevelTranscription" / f"{benchmark_name}.WordLevelTranscription.stm"
             )
+            word_level_stm_file.parent.mkdir(parents=True, exist_ok=True)
             # make sure we don't overwrite previous results
             if word_level_stm_file.exists():
                 raise FileExistsError(f"{word_level_stm_file} already exists.")
 
             turn_level_stm_file = (
-                transcription_dir / f"{benchmark_name}.TurnLevelTranscription.stm"
+                transcription_dir / "TurnLevelTranscription" / f"{benchmark_name}.TurnLevelTranscription.stm"
             )
+            turn_level_stm_file.parent.mkdir(parents=True, exist_ok=True)
             # make sure we don't overwrite previous results
             if turn_level_stm_file.exists():
                 raise FileExistsError(f"{turn_level_stm_file} already exists.")
@@ -970,10 +974,10 @@ def benchmark(
 
             if transcription:
                 if word_level_transcription:
-                    word_level_stm_file = stm_dir / f"{uri}.WordLevelTranscription.stm"
+                    word_level_stm_file = word_level_stm_dir / f"{uri}.WordLevelTranscription.stm"
                     word_level_stm_file.parent.mkdir(parents=True, exist_ok=True)
                 if turn_level_transcription:
-                    turn_level_stm_file = stm_dir / f"{uri}.TurnLevelTranscription.stm"
+                    turn_level_stm_file = turn_level_stm_dir / f"{uri}.TurnLevelTranscription.stm"
                     turn_level_stm_file.parent.mkdir(parents=True, exist_ok=True)
 
         if diarization:
@@ -1146,7 +1150,6 @@ def benchmark(
     if not skip_transcription_metric and word_level_transcription:
         level = "WordLevelTranscription"
         word_level_dir = transcription_dir / level
-        word_level_dir.mkdir(parents=True)
         # write WER
         metric_to_csv(
             word_level_wer_metric,
@@ -1190,7 +1193,6 @@ def benchmark(
     if not skip_transcription_metric and turn_level_transcription:
         level = "TurnLevelTranscription"
         turn_level_dir = transcription_dir / level
-        turn_level_dir.mkdir(parents=True)
         # write WER
         metric_to_csv(
             turn_level_wer_metric,
