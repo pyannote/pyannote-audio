@@ -171,6 +171,7 @@ def compute_transcription_metric(
     reference: "SegLST",
     hypothesis: "SegLST",
     uri: Optional[str] = None,
+    continue_on_error: bool = False,
 ):
     """Compute transcription metric and handle exceptions gracefully
 
@@ -192,7 +193,11 @@ def compute_transcription_metric(
     """
     try:
         return metric(reference, hypothesis, uri=uri, )
+
     except Exception as e:
+        if not continue_on_error:
+            raise e
+
         typer.echo(f"[WARNING] Could not compute {metric.name} for file {uri}: {e}")
         return None
 
@@ -723,6 +728,12 @@ def benchmark(
             help="Benchmark on transcription task",
         ),
     ] = False,
+    continue_on_error: Annotated[
+        bool,
+        typer.Option(
+            help="Continue if an error occurs while computing metrics for a file.",
+        )
+    ] = False,
 ):
     """
     Benchmark a pretrained diarization PIPELINE. Available tasks are (choose at least one):
@@ -989,11 +1000,19 @@ def benchmark(
 
         # compute speaker diarization metrics when possible
         if not skip_diarization_metric:
-            _ = der_metric(
-                file["annotation"],
-                speaker_diarization,
-                uem=file.get("annotated", None),
-            )
+            try:
+                _ = der_metric(
+                    file["annotation"],
+                    speaker_diarization,
+                    uem=file.get("annotated", None),
+                )
+            except Exception as e:
+                if not continue_on_error:
+                    raise e
+
+                typer.echo(
+                    f"[WARNING] Could not compute DER for file {uri}: {e}",
+                )
 
         # compute transcription metrics when possible
         if not skip_transcription_metric:
@@ -1003,24 +1022,28 @@ def benchmark(
                     file["transcription"],
                     turn_level_transcription,
                     uri=uri,
+                    continue_on_error=continue_on_error,
                 )
                 _ = compute_transcription_metric(
                     turn_level_cpwer_metric,
                     file["transcription"],
                     turn_level_transcription,
                     uri=uri,
+                    continue_on_error=continue_on_error,
                 )
                 _ = compute_transcription_metric(
                     turn_level_tcpwer_metric,
                     file["transcription"],
                     turn_level_transcription,
                     uri=uri,
+                    continue_on_error=continue_on_error,
                 )
                 _ = compute_transcription_metric(
                     turn_level_tcorcwer_metric,
                     file["transcription"],
                     turn_level_transcription,
                     uri=uri,
+                    continue_on_error=continue_on_error,
                 )
 
             if word_level_transcription:
@@ -1029,24 +1052,28 @@ def benchmark(
                     file["transcription"],
                     word_level_transcription,
                     uri=uri,
+                    continue_on_error=continue_on_error,
                 )
                 _ = compute_transcription_metric(
                     word_level_cpwer_metric,
                     file["transcription"],
                     word_level_transcription,
                     uri=uri,
+                    continue_on_error=continue_on_error,
                 )
                 _ = compute_transcription_metric(
                     word_level_tcpwer_metric,
                     file["transcription"],
                     word_level_transcription,
                     uri=uri,
+                    continue_on_error=continue_on_error,
                 )
                 _ = compute_transcription_metric(
                     word_level_tcorcwer_metric,
                     file["transcription"],
                     word_level_transcription,
                     uri=uri,
+                    continue_on_error=continue_on_error,
                 )
 
         # if the pipeline is not a speaker diarization pipeline,
