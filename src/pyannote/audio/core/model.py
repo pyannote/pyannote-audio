@@ -599,7 +599,9 @@ class Model(lightning.LightningModule):
             map_location = default_map_location
 
         # load checkpoint using lightning
-        loaded_checkpoint = pl_load(path_to_model_checkpoint, map_location=map_location)
+        loaded_checkpoint = pl_load(
+            path_to_model_checkpoint, map_location=map_location, weights_only=False
+        )
 
         # check that the checkpoint is compatible with the current version
         versions = loaded_checkpoint["pyannote.audio"]["versions"]
@@ -620,6 +622,7 @@ class Model(lightning.LightningModule):
                 path_to_model_checkpoint,
                 map_location=map_location,
                 strict=strict,
+                weights_only=False,
                 **kwargs,
             )
         except RuntimeError as e:
@@ -638,6 +641,7 @@ class Model(lightning.LightningModule):
                     path_to_model_checkpoint,
                     map_location=map_location,
                     strict=False,
+                    weights_only=False,
                     **kwargs,
                 )
                 return model

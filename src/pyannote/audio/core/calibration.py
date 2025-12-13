@@ -40,6 +40,34 @@ class Calibration(IsotonicRegression):
     def __init__(self):
         super().__init__(y_min=0.0, y_max=1.0, increasing="auto", out_of_bounds="clip")
 
+    def safe_transform(
+        self,
+        values: np.ndarray,
+        nan_value: float = 2.0,
+    ) -> np.ndarray:
+        """Apply calibration handling NaN values and any shape gracefully
+        
+        Parameters
+        ----------
+        values : np.ndarray
+            Values to calibrate
+        nan_value : float, optional
+            Value to use in place of NaN values during calibration. Default is 2.0.
+
+        Returns
+        -------
+        calibrated_values : np.ndarray
+            Calibrated values
+        """
+        # temporarily replace NaN values with `nan_value` so `transform()` does not fail
+        transformed = np.nan_to_num(values.reshape(-1), nan=nan_value)
+
+        # apply calibration
+        transformed: np.ndarray = self.transform(transformed)
+
+        # recover original shape
+        return transformed.reshape(values.shape)
+
     def save(self, path: str):
         """Save fitted calibration to disk
 
