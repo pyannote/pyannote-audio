@@ -46,9 +46,15 @@ def get_pipeline(
         _pipeline = Pipeline.from_pretrained(pipeline, token=token, cache_dir=cache_dir)
 
     elif isinstance(pipeline, dict):
-        pipeline.setdefault("token", token)
-        pipeline.setdefault("cache_dir", cache_dir)
-        _pipeline = Pipeline.from_pretrained(**pipeline)
+        if "checkpoint" in pipeline:
+            pipeline.setdefault("token", token)
+            pipeline.setdefault("cache_dir", cache_dir)
+            _pipeline = Pipeline.from_pretrained(**pipeline)
+
+        else:
+            _pipeline = Pipeline.from_pretrained(
+                pipeline, token=token, cache_dir=cache_dir
+            )
 
     else:
         raise TypeError(
@@ -69,7 +75,6 @@ def get_model(
     model: PipelineModel,
     token: str | None = None,
     cache_dir: Path | str | None = None,
-    skip_dependencies: bool = False,
 ) -> Model:
     """Load pretrained model and set it into `eval` mode.
 
@@ -84,9 +89,6 @@ def get_model(
         Huggingface token to be used for downloading from Huggingface hub.
     cache_dir: Path or str, optional
         Path to the folder where files downloaded from Huggingface hub are stored.
-    skip_dependencies : bool, optional
-        If True, skip dependency check. Defaults to False.
-        Use at your own risk, as this may lead to unexpected behavior.
 
     Returns
     -------
@@ -115,7 +117,6 @@ def get_model(
             token=token,
             cache_dir=cache_dir,
             strict=False,
-            skip_dependencies=skip_dependencies,
         )
         if _model:
             model = _model
@@ -123,7 +124,6 @@ def get_model(
     elif isinstance(model, Mapping):
         model.setdefault("token", token)
         model.setdefault("cache_dir", cache_dir)
-        model.setdefault("skip_dependencies", skip_dependencies)
         model = Model.from_pretrained(**model)
 
     else:
@@ -146,7 +146,6 @@ def get_calibration(
     calibration: PipelineCalibration,
     token: str | None = None,
     cache_dir: Path | str | None = None,
-    skip_dependencies: bool = False,
 ) -> Calibration | None:
     """Load pretrained calibration
 
@@ -161,9 +160,6 @@ def get_calibration(
         Huggingface token to be used for downloading from Huggingface hub.
     cache_dir: Path or str, optional
         Path to the folder where files downloaded from Huggingface hub are stored.
-    skip_dependencies : bool, optional
-        If True, skip dependency check. Defaults to False.
-        Use at your own risk, as this may lead to unexpected behavior.
 
     Returns
     -------
@@ -183,13 +179,11 @@ def get_calibration(
             calibration,
             token=token,
             cache_dir=cache_dir,
-            skip_dependencies=skip_dependencies,
         )
 
     elif isinstance(calibration, Dict):
         calibration.setdefault("token", token)
         calibration.setdefault("cache_dir", cache_dir)
-        calibration.setdefault("skip_dependencies", skip_dependencies)
         loaded_calibration = Calibration.from_pretrained(**calibration)
 
     else:
@@ -208,7 +202,6 @@ def get_plda(
     plda: PipelinePLDA,
     token: str | None = None,
     cache_dir: Path | str | None = None,
-    skip_dependencies: bool = False,
 ) -> PLDA | None:
     """Load pretrained calibration
 
@@ -223,9 +216,6 @@ def get_plda(
         Huggingface token to be used for downloading from Huggingface hub.
     cache_dir: Path or str, optional
         Path to the folder where files downloaded from Huggingface hub are stored.
-    skip_dependencies : bool, optional
-        If True, skip dependency check. Defaults to False.
-        Use at your own risk, as this may lead to unexpected behavior.
 
     Returns
     -------
@@ -241,14 +231,11 @@ def get_plda(
         loaded_plda = plda
 
     elif isinstance(plda, str):
-        loaded_plda = PLDA.from_pretrained(
-            plda, token=token, cache_dir=cache_dir, skip_dependencies=skip_dependencies
-        )
+        loaded_plda = PLDA.from_pretrained(plda, token=token, cache_dir=cache_dir)
 
     elif isinstance(plda, Dict):
         plda.setdefault("token", token)
         plda.setdefault("cache_dir", cache_dir)
-        plda.setdefault("skip_dependencies", skip_dependencies)
         loaded_plda = PLDA.from_pretrained(**plda)
 
     else:

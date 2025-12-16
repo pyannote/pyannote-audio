@@ -1,6 +1,30 @@
 # CHANGELOG
 
-## develop 
+## Version 4.0.3 (2025-12-07)
+
+- feat(cli): add `--revision` option to most CLI commands
+- feat(util): add `Calibration.safe_transform` method (supports NaNs as well as any shape)
+- fix(model): fix `Model.from_pretrained` to support `lightning` 2.6+
+- setup: update `pyannote-database` dependency to `6.1+`
+
+## Version 4.0.2 (2025-11-19)
+
+- BREAKING(util): make `Binarize.__call__` return `string` tracks (instead of `int`) [@benniekiss](https://github.com/benniekiss/)
+- fix(torch): pin `torch`, `torchcodec`, and `torchaudio` versions to [avoid segmentation fault](https://github.com/meta-pytorch/torchcodec/issues/995) 
+- fix(pyannoteAI): update pyannoteAI wrapper to return both regular and exclusive diarization
+- feat(pipeline): add `Pipeline.cuda()` convenience method [@tkanarsky](https://github.com/tkanarsky/)
+- feat(pipeline): add `preload` option to base `Pipeline.__call__` to force preloading audio in memory ([@antoinelaurent](https://github.com/antoinelaurent/))
+- feat(cli): add option to apply pipeline on a directory of audio files
+- improve(util): make `permutate` faster thanks to vectorized cost function
+
+## Version 4.0.1 (2025-10-10)
+
+- feat: allow passing preloaded pipeline config to `get_pipeline`
+- setup: update `pyannoteai-sdk` dependency to `0.3.0`
+- fix: relax version constraint on `OpenTelemetry` dependencies
+- improve: warn (instead of raise) when passing unsupported arguments to speaker diarization pipeline
+
+## Version 4.0.0 (2025-09-29) 
 
 ### TL;DR
 
@@ -62,7 +86,6 @@ Pipelines can now be stored alongside their internal models in the same reposito
     diarization = pipeline("audio.wav")
     ```
 
-
 #### Telemetry
 
 With the optional telemetry feature in `pyannote.audio`, you can choose to send anonymous usage metrics to help the `pyannote` team improve the library.
@@ -110,6 +133,7 @@ With the optional telemetry feature in `pyannote.audio`, you can choose to send 
 - improve(utils): improve dependency check when loading pretrained models and/or pipeline
 - improve(utils): add option to skip dependency check
 - improve(utils): add option to load a pretrained model checkpoint from an `io.BytesIO` buffer
+- improve(pipeline): add option to load a pretrained pipeline from a `dict` ([@benniekiss](https://github.com/benniekiss/))
 
 ### Fixes
 
@@ -121,6 +145,10 @@ With the optional telemetry feature in `pyannote.audio`, you can choose to send 
 - fix(doc): fix link to pytorch ([@emmanuel-ferdman](https://github.com/emmanuel-ferdman/))
 - fix(task): fix corner case with small (<9) number of validation samples ([@antoinelaurent](https://github.com/antoinelaurent/))
 - fix(doc): fix default embedding in `SpeechSeparation` and `SpeakerDiarization` docstring ([@razi-tm](https://github.com/razi-tm/)).
+
+## Version 3.4.0 (2025-09-09)
+
+- setup: pin pyannote.{core,database,metrics,pipeline} dependencies as future releases of these packages will break the 3.x branch
 
 ## Version 3.3.2 (2024-09-11)
 

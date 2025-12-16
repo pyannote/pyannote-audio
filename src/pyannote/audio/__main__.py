@@ -40,7 +40,7 @@ import pyannote.database
 import torch
 import typer
 import yaml
-from pyannote.audio import Audio, Pipeline, Model
+from pyannote.audio import Audio, Model, Pipeline
 from pyannote.core import Annotation
 from pyannote.metrics.base import BaseMetric
 from pyannote.metrics.diarization import DiarizationErrorRate, JaccardErrorRate
@@ -282,19 +282,23 @@ def download(
     pipeline: Annotated[
         str,
         typer.Argument(
-            help="Pretrained pipeline (e.g. pyannote/speaker-diarization-3.1)"
+            help="Pretrained pipeline (e.g. pyannote/speaker-diarization-community-1)"
         ),
     ],
-    token: Annotated[
-        str,
-        typer.Argument(
-            help="Huggingface token to be used for downloading from Huggingface hub."
-        ),
-    ],
-    cache: Annotated[
-        Path,
+    revision: Annotated[
+        Optional[str],
         typer.Option(
-            help="Path to the folder where files downloaded from Huggingface hub are stored.",
+            help="Pretrained pipeline revision.",
+        ),
+    ] = None,
+    token: Annotated[
+        Optional[str],
+        typer.Argument(help="Huggingface token."),
+    ] = None,
+    cache: Annotated[
+        Optional[Path],
+        typer.Option(
+            help="Path to the folder where files downloaded from Huggingface are stored.",
             exists=True,
             dir_okay=True,
             file_okay=False,
@@ -309,7 +313,7 @@ def download(
 
     # load pretrained pipeline
     pretrained_pipeline = Pipeline.from_pretrained(
-        pipeline, token=token, cache_dir=cache
+        pipeline, revision=revision, token=token, cache_dir=cache
     )
     if pretrained_pipeline is None:
         print(f"Could not load pretrained pipeline from {pipeline}.")
@@ -321,36 +325,44 @@ def apply(
     pipeline: Annotated[
         str,
         typer.Argument(
-            help="Pretrained pipeline (e.g. pyannote/speaker-diarization-3.1)"
+            help="Pretrained pipeline (e.g. pyannote/speaker-diarization-community-1)"
         ),
     ],
     audio: Annotated[
         Path,
         typer.Argument(
-            help="Path to audio file",
+            help="Path to audio file or directory",
             exists=True,
             file_okay=True,
+            dir_okay=True,
             readable=True,
         ),
     ],
     into: Annotated[
-        Path,
+        Optional[Path],
         typer.Option(
-            help="Path to file where results are saved.",
+            help="Path to file or directory where results are saved.",
             exists=False,
-            dir_okay=False,
+            dir_okay=True,
             file_okay=True,
             writable=True,
             resolve_path=True,
         ),
     ] = None,
-    device: Annotated[
-        Device, typer.Option(help="Accelerator to use (CPU, CUDA, MPS)")
-    ] = Device.AUTO,
-    cache: Annotated[
-        Path,
+    revision: Annotated[
+        Optional[str],
         typer.Option(
-            help="Path to the folder where files downloaded from Huggingface hub are stored.",
+            help="Pretrained pipeline revision.",
+        ),
+    ] = None,
+    token: Annotated[
+        Optional[str],
+        typer.Argument(help="Huggingface token."),
+    ] = None,
+    cache: Annotated[
+        Optional[Path],
+        typer.Option(
+            help="Path to the folder where files downloaded from Huggingface are stored.",
             exists=True,
             dir_okay=True,
             file_okay=False,
@@ -358,13 +370,18 @@ def apply(
             resolve_path=True,
         ),
     ] = None,
+    device: Annotated[
+        Device, typer.Option(help="Accelerator to use (CPU, CUDA, MPS)")
+    ] = Device.AUTO,
 ):
     """
-    Apply a pretrained PIPELINE to an AUDIO file
+    Apply a pretrained PIPELINE to an AUDIO file or directory
     """
 
     # load pretrained pipeline
-    pretrained_pipeline = Pipeline.from_pretrained(pipeline, cache_dir=cache)
+    pretrained_pipeline = Pipeline.from_pretrained(
+        pipeline, revision=revision, token=token, cache_dir=cache
+    )
     if pretrained_pipeline is None:
         print(f"Could not load pretrained pipeline from {pipeline}.")
         raise typer.exit(code=1)
@@ -373,14 +390,36 @@ def apply(
     torch_device = parse_device(device)
     pretrained_pipeline.to(torch_device)
 
-    # apply pipeline to audio file
-    prediction: Annotation = pretrained_pipeline(audio)
+    if audio.is_dir():
+        if into is None or not into.is_dir():
+            typer.echo("When AUDIO is a directory, INTO must also be a directory.")
+            raise typer.exit(code=1)
 
-    speaker_diarization = get_diarization(prediction)
+        inputs: list[Path] = sorted(path for path in audio.iterdir() if path.is_file())
+        rttms: list[Path | None] = [into / (path.stem + ".rttm") for path in inputs]
+        jsons: list[Path | None] = [into / (path.stem + ".json") for path in inputs]
 
-    # save (or print) results
-    with open(into, "w") if into else nullcontext(sys.stdout) as rttm:
-        speaker_diarization.write_rttm(rttm)
+    else:
+        if not (into is None or into.is_file()):
+            typer.echo("When AUDIO is a file, INTO must also be a file.")
+            raise typer.exit(code=1)
+
+        inputs = [audio]
+        rttms: list[Path | None] = [into]
+        jsons: list[Path | None] = [into.with_suffix(".json") if into else None]
+
+    for current_input, current_rttm, current_json in zip(inputs, rttms, jsons):
+        prediction = pretrained_pipeline(current_input)
+
+        speaker_diarization = get_diarization(prediction)
+
+        with open(current_rttm, "w") if current_rttm else nullcontext(sys.stdout) as r:
+            speaker_diarization.write_rttm(r)
+
+        if hasattr(prediction, "serialize") and current_json:
+            serialized: dict = prediction.serialize()
+            with open(current_json, "w") as j:
+                json.dump(serialized, j, indent=2)
 
 
 class MinDurationOffOptimizer:
@@ -471,7 +510,7 @@ def benchmark(
     pipeline: Annotated[
         str,
         typer.Argument(
-            help="Pretrained pipeline (e.g. pyannote/speaker-diarization-3.1)"
+            help="Pretrained pipeline (e.g. pyannote/speaker-diarization-community-1)"
         ),
     ],
     protocol: Annotated[
@@ -496,6 +535,27 @@ def benchmark(
             case_sensitive=False,
         ),
     ] = Subset.test,
+    revision: Annotated[
+        Optional[str],
+        typer.Option(
+            help="Pretrained pipeline revision.",
+        ),
+    ] = None,
+    token: Annotated[
+        Optional[str],
+        typer.Argument(help="Huggingface token."),
+    ] = None,
+    cache: Annotated[
+        Optional[Path],
+        typer.Option(
+            help="Path to the folder where files downloaded from Huggingface are stored.",
+            exists=True,
+            dir_okay=True,
+            file_okay=False,
+            writable=True,
+            resolve_path=True,
+        ),
+    ] = None,
     device: Annotated[
         Device, typer.Option(help="Accelerator to use (CPU, CUDA, MPS)")
     ] = Device.AUTO,
@@ -512,17 +572,6 @@ def benchmark(
     num_speakers: Annotated[
         NumSpeakers, typer.Option(help="Number of speakers (oracle or auto)")
     ] = NumSpeakers.AUTO,
-    cache: Annotated[
-        Path,
-        typer.Option(
-            help="Path to the folder where files downloaded from Huggingface hub are stored.",
-            exists=True,
-            dir_okay=True,
-            file_okay=False,
-            writable=True,
-            resolve_path=True,
-        ),
-    ] = None,
     optimize: Annotated[
         bool,
         typer.Option(
@@ -535,17 +584,8 @@ def benchmark(
             help="Show progress",
         ),
     ] = False,
-    skip_dependency_check: Annotated[
-        bool,
-        typer.Option(
-            help="Skip dependency check when loading pipeline. Use at your own risk."
-        ),
-    ] = False,
     per_file: Annotated[
-        bool,
-        typer.Option(
-            help="Save one RTTM/JSON file per processed audio file."
-        )
+        bool, typer.Option(help="Save one RTTM/JSON file per processed audio file.")
     ] = False,
 ):
     """
@@ -559,7 +599,7 @@ def benchmark(
 
     # load pretrained pipeline
     pretrained_pipeline = Pipeline.from_pretrained(
-        pipeline, cache_dir=cache, skip_dependencies=skip_dependency_check
+        pipeline, revision=revision, token=token, cache_dir=cache, 
     )
     if pretrained_pipeline is None:
         print(f"Could not load pretrained pipeline from {pipeline}.")
@@ -790,7 +830,9 @@ def benchmark(
             yaml.dump({"min_duration_off": best_min_duration_off}, yml)
 
         if not per_file:
-            optimized_rttm_file = into / f"{benchmark_name}.OptimizedMinDurationOff.rttm"
+            optimized_rttm_file = (
+                into / f"{benchmark_name}.OptimizedMinDurationOff.rttm"
+            )
 
             # make sure we don't overwrite previous results
             if optimized_rttm_file.exists():
@@ -798,7 +840,9 @@ def benchmark(
 
         for file in files:
             if per_file:
-                optimized_rttm_file = rttm_dir / f"{file['uri']}.OptimizedMinDurationOff.rttm"
+                optimized_rttm_file = (
+                    rttm_dir / f"{file['uri']}.OptimizedMinDurationOff.rttm"
+                )
 
             with open(optimized_rttm_file, "w" if per_file else "a") as rttm:
                 file["best_speaker_diarization"].write_rttm(rttm)
@@ -833,11 +877,11 @@ def strip(
     """
 
     keys = [
-        "pytorch-lightning_version",   # * pytorch-lightning needs
-        "hparams_name",                #   those values to initialize 
-        "hyper_parameters",            #   the model architecture
-        "state_dict",                  # * actual weights
-        "pyannote.audio",              # * pyannote.audio dependencies 
+        "pytorch-lightning_version",  # * pytorch-lightning needs
+        "hparams_name",  #   those values to initialize
+        "hyper_parameters",  #   the model architecture
+        "state_dict",  # * actual weights
+        "pyannote.audio",  # * pyannote.audio dependencies
     ]
 
     old_checkpoint = torch.load(

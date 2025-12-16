@@ -21,9 +21,9 @@
 # SOFTWARE.
 
 import os
-from pathlib import Path
 
 from pyannote.audio import Pipeline
+from pyannote.audio.core.io import AudioFile
 from pyannote.core import Annotation, Segment
 
 from pyannoteai.sdk import Client
@@ -40,7 +40,7 @@ class SDK(Pipeline):
         Defaults to "precision-2".
     token : str, optional
         pyannoteAI API key created from https://dashboard.pyannote.ai.
-        Defaults to using `PYANNOTEAI_API_TOKEN` environment variable.
+        Defaults to using `PYANNOTEAI_API_KEY` environment variable.
 
     Usage
     -----
@@ -68,7 +68,7 @@ class SDK(Pipeline):
 
     def apply(
         self,
-        file: Path,
+        file: AudioFile,
         num_speakers: int | None = None,
         min_speakers: int | None = None,
         max_speakers: int | None = None,
