@@ -23,10 +23,29 @@
 
 from pathlib import Path
 
+from pyannote.audio.core.io import Audio, AudioFile
 from pyannote.core import Annotation, Segment, Timeline
 from pyannote.database.util import load_rttm
 
-from pyannote.audio.core.io import Audio, AudioFile
+
+def load_stm(file_stm: str) -> dict[str, list[dict]]:
+    session_ids = {}
+
+    with open(file_stm, "r") as stm:
+        for i, line in enumerate(stm):
+            infos = line.strip().split()
+            session_id, _, spk, start, end, *words = infos
+
+            entry = {
+                "start": float(start),
+                "end": float(end),
+                "text": " ".join(words),
+                "speaker": spk,
+            }
+
+            session_ids.setdefault(session_id, []).append(entry)
+
+    return session_ids
 
 
 def _sample() -> AudioFile:
@@ -37,19 +56,22 @@ def _sample() -> AudioFile:
     waveform, sample_rate = audio(sample_wav)
 
     sample_rttm = Path(__file__).parent / "sample.rttm"
-
-    annotation: Annotation = load_rttm(sample_rttm)[uri]
+    diarization: Annotation = load_rttm(sample_rttm)[uri]
     duration = audio.get_duration(sample_wav)
 
     annotated: Timeline = Timeline([Segment(0.0, duration)], uri=uri)
+
+    sample_stm = Path(__file__).parent / "sample.stm"
+    transcription = load_stm(sample_stm)["sample"]
 
     return {
         "audio": sample_wav,
         "uri": "sample",
         "waveform": waveform,
         "sample_rate": sample_rate,
-        "annotation": annotation,
+        "annotation": diarization,
         "annotated": annotated,
+        "transcription": transcription,
     }
 
 
