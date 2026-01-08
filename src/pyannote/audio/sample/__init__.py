@@ -71,6 +71,7 @@ def _sample() -> AudioFile:
         "sample_rate": sample_rate,
         "annotation": diarization,
         "annotated": annotated,
+        "diarization": diarization,
         "transcription": transcription,
     }
 
