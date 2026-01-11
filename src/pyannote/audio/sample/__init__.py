@@ -1,6 +1,7 @@
 # MIT License
 #
-# Copyright (c) 2024- CNRS
+# Copyright (c) 2024-2025 CNRS
+# Copyright (c) 2026- pyannoteAI
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -28,11 +29,11 @@ from pyannote.core import Annotation, Segment, Timeline
 from pyannote.database.util import load_rttm
 
 
-def load_stm(file_stm: str) -> dict[str, list[dict]]:
+def load_stm(file_stm: str | Path) -> dict[str, list[dict]]:
     session_ids = {}
 
     with open(file_stm, "r") as stm:
-        for i, line in enumerate(stm):
+        for line in stm:
             infos = line.strip().split()
             session_id, _, spk, start, end, *words = infos
 
