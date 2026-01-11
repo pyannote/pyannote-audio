@@ -49,25 +49,24 @@ def load_stm(file_stm: str | Path) -> dict[str, list[dict]]:
     return session_ids
 
 
-def _sample() -> AudioFile:
-    sample_wav = Path(__file__).parent / "sample.wav"
-    uri = "sample"
+def _sample(uri: str = "sample") -> AudioFile:
+    sample_wav = Path(__file__).parent / f"{uri}.wav"
 
     audio = Audio()
     waveform, sample_rate = audio(sample_wav)
 
-    sample_rttm = Path(__file__).parent / "sample.rttm"
+    sample_rttm = Path(__file__).parent / f"{uri}.rttm"
     diarization: Annotation = load_rttm(sample_rttm)[uri]
     duration = audio.get_duration(sample_wav)
 
     annotated: Timeline = Timeline([Segment(0.0, duration)], uri=uri)
 
-    sample_stm = Path(__file__).parent / "sample.stm"
-    transcription = load_stm(sample_stm)["sample"]
+    sample_stm = Path(__file__).parent / f"{uri}.stm"
+    transcription = load_stm(sample_stm)[uri]
 
     return {
         "audio": sample_wav,
-        "uri": "sample",
+        "uri": uri,
         "waveform": waveform,
         "sample_rate": sample_rate,
         "annotation": diarization,
@@ -77,4 +76,4 @@ def _sample() -> AudioFile:
     }
 
 
-SAMPLE_FILE = _sample()
+SAMPLE_FILE = _sample(uri="sample")
