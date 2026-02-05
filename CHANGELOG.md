@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## Next
+
+- feat(sample): add transcription of sample file
+
 ## Version 4.0.3 (2025-12-07)
 
 - feat(cli): add `--revision` option to most CLI commands
