@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## Next
+## Version 4.0.4 (2026-02-07)
 
 - feat(sample): add transcription of sample file
 - setup: relax torch dependencies constraints
