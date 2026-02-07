@@ -3,6 +3,7 @@
 ## Next
 
 - feat(sample): add transcription of sample file
+- setup: relax torch dependencies constraints
 
 ## Version 4.0.3 (2025-12-07)
 
