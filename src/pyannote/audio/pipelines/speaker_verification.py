@@ -256,7 +256,7 @@ class SpeechBrainPretrainedSpeakerEmbedding(BaseInference):
             source=self.embedding,
             savedir=f"{self.cache_dir}/speechbrain",
             run_opts={"device": self.device},
-            use_auth_token=self.token,
+            token=self.token,
             huggingface_cache_dir=self.cache_dir,
             revision=self.revision,
         )
@@ -271,7 +271,7 @@ class SpeechBrainPretrainedSpeakerEmbedding(BaseInference):
             source=self.embedding,
             savedir=f"{self.cache_dir}/speechbrain",
             run_opts={"device": device},
-            use_auth_token=self.token,
+            token=self.token,
             huggingface_cache_dir=self.cache_dir,
             revision=self.revision,
         )
