@@ -126,6 +126,7 @@ class SpeakerDiarization(SegmentationTask):
         max_num_speakers: Optional[
             int
         ] = None,  # deprecated in favor of `max_speakers_per_chunk``
+        validate_chunk: bool = False, # if validation data follows max_speakers_per_chunk
         loss: Literal["bce", "mse"] = None,  # deprecated
     ):
         super().__init__(
@@ -328,7 +329,8 @@ class SpeakerDiarization(SegmentationTask):
         num_labels = len(labels)
 
         if num_labels > self.max_speakers_per_chunk:
-            pass
+            if self.validate_chunk: 
+                return None # skip this chunk and return None. 
 
         # initial frame-level targets
         num_frames = self.model.num_frames(
