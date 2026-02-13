@@ -86,11 +86,11 @@ class SegmentationTask(Task):
         training = self.prepared_data["audio-metadata"]["subset"] == Subsets.index(
             "train"
         )
+        #cartesian product style filtering: pick subsets that satisfy metadata combination specified in filter
         for key, value in filters.items():
             training &= self.prepared_data["audio-metadata"][key] == self.prepared_data[
                 "metadata"
             ][key].index(value)
-        file_ids = np.where(training)[0]
 
         # turn annotated duration into a probability distribution
         annotated_duration = self.prepared_data["audio-annotated"][file_ids]
@@ -106,8 +106,9 @@ class SegmentationTask(Task):
             # select one file at random (with probability proportional to its annotated duration)
             file_id = file_ids[cum_prob_annotated_duration.searchsorted(rng.random())]
 
-            # generate `num_chunks_per_file` chunks from this file
-            for _ in range(num_chunks_per_file):
+            # generate `num_chunks_per_file` chunks from this file, defaults to 1
+            num_chunks = 0 # chunk-level filtering
+            while num_chunks < num_chunks_per_file: 
                 # read indices of annotated regions in this file
                 start_id, end_id = self.prepared_data["audio-regions-ids"][file_id]
 
@@ -134,8 +135,13 @@ class SegmentationTask(Task):
                     annotated_region_index
                 ]
                 start_time = rng.uniform(start, start + region_duration - duration)
-
-                yield self.prepare_chunk(file_id, start_time, duration)
+                sample = self.prepare_chunk(file_id, start_time, duration)
+                if sample: # only yield when satisfying less than max speakers 
+                    num_chunks += 1
+                    yield sample 
+                else: #skip file if None   
+                    num_chunks = num_chunks_per_file + 1
+      
 
     def train__iter__(self):
         """Iterate over training samples
@@ -274,8 +280,19 @@ class SegmentationTask(Task):
                 # iterate over chunks
                 for c in range(num_chunks):
                     start_time = annotated_region["start"] + c * self.duration
-                    validation_chunks.append((file_id, start_time, self.duration))
+                    ## chunk-level filtering : remove or not chunk-level filtering
+                    if self.validate_chunk:
+                        sample = self.prepare_chunk(
+                            file_id,
+                            start_time,
+                            duration=self.duration,
+                        )
+                        if sample:
+                            validation_chunks.append((file_id, start_time, self.duration))
+                    else:
+                        validation_chunks.append((file_id, start_time, self.duration))
 
+               
         dtype = [
             (
                 "file_id",
@@ -285,7 +302,7 @@ class SegmentationTask(Task):
             ("duration", "f"),
         ]
 
-        prepared_data["validation"] = np.array(validation_chunks, dtype=dtype)
+        prepared_data["validation"] = np.array(validation_chunks, dtype=dtype) # important to make sure all prepared data are not None!
         validation_chunks.clear()
 
     def val__getitem__(self, idx):
