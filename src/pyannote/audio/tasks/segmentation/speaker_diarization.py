@@ -164,6 +164,7 @@ class SpeakerDiarization(SegmentationTask):
         self.max_speakers_per_frame = max_speakers_per_frame
         self.balance = balance
         self.weight = weight
+        self.validate_chunk = validate_chunk
 
     def setup(self, stage=None):
         super().setup(stage)
