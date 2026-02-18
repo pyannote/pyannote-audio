@@ -92,6 +92,7 @@ class SegmentationTask(Task):
             training &= self.prepared_data["audio-metadata"][key] == self.prepared_data[
                 "metadata"
             ][key].index(value)
+        file_ids = np.where(training)[0]
 
         # turn annotated duration into a probability distribution
         annotated_duration = self.prepared_data["audio-annotated"][file_ids]
@@ -295,7 +296,7 @@ class SegmentationTask(Task):
                     else:
                         validation_chunks.append((file_id, start_time, self.duration))
                     unvalidated_chunks.append((file_id, start_time, self.duration))
-               
+           
         dtype = [
             (
                 "file_id",
