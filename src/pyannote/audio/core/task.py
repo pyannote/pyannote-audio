@@ -331,7 +331,6 @@ class Task(lightning.LightningDataModule):
         }
 
         """
-
         if self.cache:
             # check if cache exists and is not empty:
             if self.cache.exists() and self.cache.stat().st_size > 0:
@@ -343,7 +342,7 @@ class Task(lightning.LightningDataModule):
             # if no cache was provided by user, create a temporary file
             # in system directory used for temp files
             self.cache = Path(mkstemp()[1])
-
+        
         # list of possible values for each metadata key
         # (will become .prepared_data[""])
         metadata_unique_values = defaultdict(list)
@@ -417,9 +416,9 @@ class Task(lightning.LightningDataModule):
                     metadatum[key] = metadata_unique_values[key].index(value)
 
                 elif isinstance(value, int):
-                    if value not in metadata_unique_values[key]: # this way i created the key for int
+                    if value not in metadata_unique_values[key]:
                         metadata_unique_values[key].append(value)
-                    metadatum[key] = value # but if values are int, it never gets tranmitted to the final stage???
+                    metadatum[key] = value
 
                 else:
                     warnings.warn(
@@ -550,13 +549,12 @@ class Task(lightning.LightningDataModule):
             ("database_label_idx", get_dtype(max(a[4] for a in annotations))),
             ("global_label_idx", get_dtype(max(a[5] for a in annotations))),
         ]
-
+        
         # save all protocol data in a dict
         prepared_data = {}
-
         # keep track of protocol name
         prepared_data["protocol"] = self.protocol.name
-
+        
         prepared_data["audio-path"] = np.array(audios, dtype=np.str_)
         audios.clear()
 
@@ -570,7 +568,7 @@ class Task(lightning.LightningDataModule):
             annotated_regions, dtype=region_dtype
         )
         annotated_regions.clear()
-
+        
         prepared_data["audio-regions-ids"] = np.array(
             audio_regions_ids, dtype=[("start", "i"), ("end", "i")]
         )
@@ -587,7 +585,7 @@ class Task(lightning.LightningDataModule):
         audio_segments_ids.clear()
 
         prepared_data["metadata-values"] = metadata_unique_values
-
+        
         for database, labels in database_unique_labels.items():
             prepared_data[f"metadata-{database}-labels"] = np.array(
                 labels, dtype=np.str_
@@ -596,12 +594,12 @@ class Task(lightning.LightningDataModule):
 
         prepared_data["metadata-labels"] = np.array(unique_labels, dtype=np.str_)
         unique_labels.clear()
-
+        
         if self.has_validation:
             self.prepare_validation(prepared_data)
 
         self.post_prepare_data(prepared_data)
-
+        
         # save prepared data on the disk
         with open(self.cache, "wb") as cache_file:
             np.savez_compressed(cache_file, **prepared_data)
