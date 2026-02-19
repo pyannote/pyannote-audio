@@ -140,10 +140,15 @@ class SegmentationTask(Task):
                 ]
                 start_time = rng.uniform(start, start + region_duration - duration)
                 sample = self.prepare_chunk(file_id, start_time, duration)
-                if sample: # only yield when satisfying less than max speakers 
+                # `sample` can be None when some task-specific condition is not meant
+                # (e.g. upper bound on the number of speakers in a chunk for the 
+                # segmentation task)
+                if sample: 
                     num_chunks += 1
                     yield sample 
-                else: #skip file if None   
+                # when `sample` is None, go to next file
+                # TODO: this might break training of tasks (e.g. PixIT) that expects a fixed (and greater than 1) number of chunks per file
+                else:    
                     num_chunks = num_chunks_per_file + 1
       
 
