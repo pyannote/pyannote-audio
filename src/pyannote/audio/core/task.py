@@ -519,7 +519,7 @@ class Task(lightning.LightningDataModule):
 
         # since not all metadata keys are present in all files, fallback to -1 when a key is missing
         metadata = [
-            tuple(metadatum.get(key, -1) for key in metadata_unique_values)
+            tuple(metadatum.get(key, -1) for key in metadata_unique_values) # only the keys in metadata_unique_values got transmitted!!!
             for metadatum in metadata
         ]
         metadata_dtype = [
