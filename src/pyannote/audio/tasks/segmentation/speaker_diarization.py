@@ -329,9 +329,8 @@ class SpeakerDiarization(SegmentationTask):
         labels = list(np.unique(chunk_annotations[label_scope_key]))
         num_labels = len(labels)
 
-        if num_labels > self.max_speakers_per_chunk:
-            if self.validate_chunk: 
-                return None # skip this chunk and return None. 
+        if num_labels > self.max_speakers_per_chunk and self.validate_chunk:
+            return None # skip this chunk and return None. 
 
         # initial frame-level targets
         num_frames = self.model.num_frames(
