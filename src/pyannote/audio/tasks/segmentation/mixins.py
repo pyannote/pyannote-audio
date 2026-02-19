@@ -38,6 +38,7 @@ from torch.nn import functional as F
 from torch.utils.data._utils.collate import default_collate
 from torchmetrics import Metric
 from torchmetrics.classification import BinaryAUROC, MulticlassAUROC, MultilabelAUROC
+from pyannote.core import Segment, SlidingWindowFeature
 
 Subsets = list(Subset.__args__)
 Scopes = list(Scope.__args__)
@@ -289,9 +290,23 @@ class SegmentationTask(Task):
                     start_time = annotated_region["start"] + c * self.duration
                     ## chunk-level filtering : remove or not chunk-level filtering
                     if self.validate_chunk:
-                        idx_n = prepared_data["audio-metadata"][file_id].dtype.names.index("num_speakers")
-                        num_speakers = prepared_data["audio-metadata"][file_id][idx_n]
-                        if num_speakers <= self.max_speakers_per_chunk:
+                        # get label scope
+                        label_scope = Scopes[prepared_data["audio-metadata"][file_id]["scope"]]
+                        label_scope_key = f"{label_scope}_label_idx"
+                        chunk = Segment(start_time, start_time + self.duration)
+
+                        # gather all annotations of current file
+                        start_id, end_id = prepared_data["audio-segments-ids"][file_id]
+                        annotations = prepared_data["annotations-segments"][start_id:end_id]
+
+                        # gather all annotations with non-empty intersection with current chunk
+                        chunk_annotations = annotations[
+                            (annotations["start"] < chunk.end) & (annotations["end"] > chunk.start)
+                        ]
+                        # get list and number of labels for current scope
+                        labels = list(np.unique(chunk_annotations[label_scope_key]))
+                        num_labels = len(labels)
+                        if num_labels <= self.max_speakers_per_chunk:
                             validation_chunks.append((file_id, start_time, self.duration))
                     else:
                         validation_chunks.append((file_id, start_time, self.duration))
