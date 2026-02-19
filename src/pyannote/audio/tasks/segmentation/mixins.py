@@ -25,6 +25,7 @@ import itertools
 import math
 import random
 from typing import Dict, Sequence, Union
+import warnings
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -91,6 +92,8 @@ class SegmentationTask(Task):
             training &= self.prepared_data["audio-metadata"][key] == self.prepared_data[
                 "metadata"
             ][key].index(value)
+        
+        file_ids = np.where(training)[0]
 
         # turn annotated duration into a probability distribution
         annotated_duration = self.prepared_data["audio-annotated"][file_ids]
@@ -259,6 +262,7 @@ class SegmentationTask(Task):
 
     def prepare_validation(self, prepared_data: Dict):
         validation_chunks = list()
+        unvalidated_chunks = list()
 
         # obtain indexes of files in the validation subset
         validation_file_ids = np.where(
@@ -282,28 +286,33 @@ class SegmentationTask(Task):
                     start_time = annotated_region["start"] + c * self.duration
                     ## chunk-level filtering : remove or not chunk-level filtering
                     if self.validate_chunk:
-                        sample = self.prepare_chunk(
-                            file_id,
-                            start_time,
-                            duration=self.duration,
-                        )
-                        if sample:
+                        num_speakers = prepared_data["audio-metadata"][file_id].dtype.names.index("num_speakers")
+                        if num_speakers < self.max_speakers_per_chunk:
                             validation_chunks.append((file_id, start_time, self.duration))
                     else:
                         validation_chunks.append((file_id, start_time, self.duration))
-
+                    unvalidated_chunks.append((file_id, start_time, self.duration))
                
         dtype = [
             (
                 "file_id",
-                get_dtype(max(v[0] for v in validation_chunks)),
+                get_dtype(max(v[0] for v in unvalidated_chunks)),
             ),
             ("start", "f"),
             ("duration", "f"),
         ]
+        if len(validation_chunks) == 0: # Verifying if all files got filtered
+            warnings.warn(
+                "No file satisfies max_speakers_per_chunk in the validation set"
+                "using unvalidated chunks."
+            )
+            prepared_data["validation"] = np.array(unvalidated_chunks, dtype=dtype) 
+            validation_chunks.clear()
+            unvalidated_chunks.clear()
 
-        prepared_data["validation"] = np.array(validation_chunks, dtype=dtype) # important to make sure all prepared data are not None!
-        validation_chunks.clear()
+        else:
+            prepared_data["validation"] = np.array(validation_chunks, dtype=dtype) # important to make sure all prepared data are not None!
+            validation_chunks.clear()
 
     def val__getitem__(self, idx):
         validation_chunk = self.prepared_data["validation"][idx]

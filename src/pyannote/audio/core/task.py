@@ -417,7 +417,9 @@ class Task(lightning.LightningDataModule):
                     metadatum[key] = metadata_unique_values[key].index(value)
 
                 elif isinstance(value, int):
-                    metadatum[key] = value
+                    if value not in metadata_unique_values[key]: # this way i created the key for int
+                        metadata_unique_values[key].append(value)
+                    metadatum[key] = value # but if values are int, it never gets tranmitted to the final stage???
 
                 else:
                     warnings.warn(
@@ -518,7 +520,7 @@ class Task(lightning.LightningDataModule):
 
         # since not all metadata keys are present in all files, fallback to -1 when a key is missing
         metadata = [
-            tuple(metadatum.get(key, -1) for key in metadata_unique_values)
+            tuple(metadatum.get(key, -1) for key in metadata_unique_values) # only the keys in metadata_unique_values got transmitted!!!
             for metadatum in metadata
         ]
         metadata_dtype = [
