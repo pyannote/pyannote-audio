@@ -1,5 +1,8 @@
 # CHANGELOG
 
+## Version 4.0.5 (2026-02-20)
+- fix(task.py): fix  `Task.prepare_data` to support saving preprocessors that produce `int` values in metadata [@lylyhan](http://github.com/lylyhan)
+
 ## Version 4.0.4 (2026-02-07)
 
 - feat(sample): add transcription of sample file
