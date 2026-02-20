@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## Version 4.0.5 (2026-02-20)
+## develop (xxxx-xx-xx)
 
 - fix(task): fix  `Task.prepare_data` to support saving preprocessors that produce `int` values in metadata [@lylyhan](http://github.com/lylyhan)
 
