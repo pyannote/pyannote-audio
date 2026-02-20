@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## Version 4.0.4 (2026-02-07)
+
+- feat(sample): add transcription of sample file
+- setup: relax torch dependencies constraints
+- fix(pipeline): fix HF authentication for Speechbrain speaker embedding [@krisoye](https://github.com/krisoye)
+
 ## Version 4.0.3 (2025-12-07)
 
 - feat(cli): add `--revision` option to most CLI commands
