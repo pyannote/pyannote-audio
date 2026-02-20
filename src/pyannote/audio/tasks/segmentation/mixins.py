@@ -315,7 +315,7 @@ class SegmentationTask(Task):
             validation_chunks.clear()
             unvalidated_chunks.clear()
         else:
-            prepared_data["validation"] = np.array(validation_chunks, dtype=dtype) # important to make sure all prepared data are not None!
+            prepared_data["validation"] = np.array(validation_chunks, dtype=dtype)
             validation_chunks.clear()
             unvalidated_chunks.clear()
 

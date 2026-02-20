@@ -76,6 +76,8 @@ class SpeakerDiarization(SegmentationTask):
         Defaults to estimating it from the training set.
     max_speakers_per_frame : int, optional
         Maximum number of (overlapping) speakers per frame. Defaults to 2.
+    validate_chunk : bool, optional
+        if True, training and validation data will only include chunks with less than max_speakers_per_chunk. Defaults to None
     balance: Sequence[Text], optional
         When provided, training samples are sampled uniformly with respect to these keys.
         For instance, setting `balance` to ["database","subset"] will make sure that each
@@ -126,7 +128,7 @@ class SpeakerDiarization(SegmentationTask):
         max_num_speakers: Optional[
             int
         ] = None,  # deprecated in favor of `max_speakers_per_chunk``
-        validate_chunk: bool = False, # if validation data follows max_speakers_per_chunk
+        validate_chunk: bool = False, 
         loss: Literal["bce", "mse"] = None,  # deprecated
     ):
         super().__init__(
