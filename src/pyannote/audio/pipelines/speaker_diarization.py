@@ -291,7 +291,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         self._onnx_cpu = onnx_cpu
 
         # torch.compile() for kernel fusion (10-30% faster after warmup)
-        if torch_compile and self._segmentation.device.type == "cuda":
+        if torch_compile and self._segmentation.device.type in ("cuda", "mps"):
             try:
                 if self.klustering != "OracleClustering":
                     self._embedding.model_ = torch.compile(
@@ -377,8 +377,15 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         self._segmentation.model.cpu()
         if hasattr(self, '_embedding') and hasattr(self._embedding, 'model_'):
             self._embedding.model_.cpu()
+        self._gpu_empty_cache()
+
+    @staticmethod
+    def _gpu_empty_cache():
+        """Release cached GPU memory on CUDA or MPS devices."""
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+        elif hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
+            torch.mps.empty_cache()
 
     def default_parameters(self):
         return {
@@ -558,22 +565,35 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
         total_items = flat_waveforms.shape[0]
 
-        # Auto-select embedding batch size based on GPU VRAM if not explicitly
+        # Auto-select embedding batch size based on GPU memory if not explicitly
         # set to a high value. Each item needs ~60MB VRAM for fbank+resnet.
         # Optimal throughput is at batch_size 64-128; above 256 returns diminish.
         # VRAM per batch: 32→1.6GB, 64→3.8GB, 128→7.6GB, 256→15.2GB
         effective_batch_size = self.embedding_batch_size
-        if (
-            effective_batch_size <= 32
-            and hasattr(self._embedding, "device")
-            and self._embedding.device.type == "cuda"
-        ):
+        device_type = (
+            self._embedding.device.type
+            if hasattr(self._embedding, "device")
+            else "cpu"
+        )
+        if effective_batch_size <= 32 and device_type in ("cuda", "mps"):
             try:
-                free_vram_mb = (
-                    torch.cuda.get_device_properties(self._embedding.device).total_mem
-                    - torch.cuda.memory_reserved(self._embedding.device)
-                ) / (1024 * 1024)
-                # Use 40% of free VRAM, clamp to [64, 256] for best throughput
+                if device_type == "cuda":
+                    free_vram_mb = (
+                        torch.cuda.get_device_properties(self._embedding.device).total_mem
+                        - torch.cuda.memory_reserved(self._embedding.device)
+                    ) / (1024 * 1024)
+                else:
+                    # MPS: Apple Unified Memory — use conservative estimate.
+                    # driver_allocated_memory gives current usage; total is
+                    # not directly queryable, so default to 16GB budget.
+                    allocated = (
+                        torch.mps.driver_allocated_memory() / (1024 * 1024)
+                        if hasattr(torch.mps, "driver_allocated_memory")
+                        else 0
+                    )
+                    # Assume 16GB budget for Apple Silicon (conservative)
+                    free_vram_mb = max(0, 16384 - allocated)
+                # Use 40% of free memory, clamp to [64, 256] for best throughput
                 auto_bs = max(64, min(256, int(free_vram_mb * 0.4 / 60)))
                 # Round down to nearest power of 2 for GPU efficiency
                 auto_bs = 2 ** int(math.log2(auto_bs))
@@ -590,14 +610,14 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             hook("embeddings", None, total=batch_count, completed=0)
 
         # --- Optimized embedding pipeline ---
-        # Strategy: pre-compute fbank features for all chunks, then run resnet
-        # in batches with double-buffered GPU prefetching.
-        # This separates the FFT-heavy fbank (benefits from large batches) from
-        # the CNN-heavy resnet (benefits from GPU pipelining).
+        # Strategy: call compute_fbank() + resnet() directly per batch,
+        # bypassing the PyAnnote wrapper overhead. On CUDA, uses double-
+        # buffered CUDA stream prefetch and TF32 acceleration. On MPS,
+        # uses direct model calls without CUDA-specific features.
         use_split_pipeline = (
             batch_count > 1
             and hasattr(self._embedding, "device")
-            and self._embedding.device.type == "cuda"
+            and self._embedding.device.type in ("cuda", "mps")
             and hasattr(self._embedding, "model_")
             and hasattr(self._embedding.model_, "compute_fbank")
             and hasattr(self._embedding.model_, "resnet")
@@ -606,51 +626,60 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         if use_split_pipeline:
             import warnings as _w
             device = self._embedding.device
+            is_cuda = device.type == "cuda"
 
-            # Enable TF32 for Tensor Core acceleration on Ampere+ GPUs.
-            # Must be set here because fix_reproducibility() disables it
-            # during segmentation. TF32 is safe for inference and provides
-            # ~15-20% speedup on Ampere+ (RTX 3000+, A-series, RTX 4000+).
-            # On pre-Ampere GPUs, these flags have no effect.
-            torch.backends.cuda.matmul.allow_tf32 = True
-            torch.backends.cudnn.allow_tf32 = True
+            if is_cuda:
+                # Enable TF32 for Tensor Core acceleration on Ampere+ GPUs.
+                # Must be set here because fix_reproducibility() disables it
+                # during segmentation. TF32 is safe for inference and provides
+                # ~15-20% speedup on Ampere+ (RTX 3000+, A-series, RTX 4000+).
+                # On pre-Ampere GPUs, these flags have no effect.
+                torch.backends.cuda.matmul.allow_tf32 = True
+                torch.backends.cudnn.allow_tf32 = True
 
-            # Combined fbank + resnet pipeline with double-buffered prefetch
-            # Compute fbank and resnet together per batch (keeps data on GPU),
-            # while prefetching the next batch's waveforms via a separate stream.
-            transfer_stream = torch.cuda.Stream(device=device)
+                # Double-buffered prefetch: transfer batch N+1 while GPU
+                # processes batch N via a separate CUDA stream.
+                transfer_stream = torch.cuda.Stream(device=device)
 
-            def prefetch_waveforms(idx):
-                """Pin and transfer waveform batch to GPU on transfer_stream."""
-                s = idx * effective_batch_size
-                e = min(s + effective_batch_size, total_items)
-                with torch.cuda.stream(transfer_stream):
-                    wf_gpu = flat_waveforms[s:e].pin_memory().to(
-                        device, non_blocking=True
-                    )
-                    mk_gpu = flat_masks_tensor[s:e].pin_memory().to(
-                        device, non_blocking=True
-                    )
-                return wf_gpu, mk_gpu
+                def prefetch_waveforms(idx):
+                    """Pin and transfer waveform batch to GPU on transfer_stream."""
+                    s = idx * effective_batch_size
+                    e = min(s + effective_batch_size, total_items)
+                    with torch.cuda.stream(transfer_stream):
+                        wf_gpu = flat_waveforms[s:e].pin_memory().to(
+                            device, non_blocking=True
+                        )
+                        mk_gpu = flat_masks_tensor[s:e].pin_memory().to(
+                            device, non_blocking=True
+                        )
+                    return wf_gpu, mk_gpu
 
-            # Prefetch first batch
-            next_wf, next_mk = prefetch_waveforms(0)
+                # Prefetch first batch
+                next_wf, next_mk = prefetch_waveforms(0)
 
             for i in range(batch_count):
-                # Wait for current batch transfer to complete
-                torch.cuda.current_stream(device).wait_stream(
-                    transfer_stream
-                )
-                cur_wf, cur_mk = next_wf, next_mk
+                if is_cuda:
+                    # Wait for current batch transfer to complete
+                    torch.cuda.current_stream(device).wait_stream(
+                        transfer_stream
+                    )
+                    cur_wf, cur_mk = next_wf, next_mk
 
-                # Start prefetching next batch while GPU computes
-                if i + 1 < batch_count:
-                    next_wf, next_mk = prefetch_waveforms(i + 1)
+                    # Start prefetching next batch while GPU computes
+                    if i + 1 < batch_count:
+                        next_wf, next_mk = prefetch_waveforms(i + 1)
+                else:
+                    # MPS path: simple .to(device) transfer (no pin_memory,
+                    # no CUDA streams — MPS uses unified memory)
+                    s = i * effective_batch_size
+                    e = min(s + effective_batch_size, total_items)
+                    cur_wf = flat_waveforms[s:e].to(device)
+                    cur_mk = flat_masks_tensor[s:e].to(device)
 
                 with torch.inference_mode():
                     with _w.catch_warnings():
                         _w.simplefilter("ignore")
-                        # fbank + resnet in one shot, data stays on GPU
+                        # fbank + resnet in one shot, data stays on device
                         fbank = self._embedding.model_.compute_fbank(cur_wf)
                         # Interpolate masks to fbank frame-level
                         num_frames = fbank.shape[1]
@@ -825,11 +854,12 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                     f"num_speakers must be provided when using {self.klustering} clustering"
                 )
 
-        # Mixed precision context for Ampere+ GPUs (~40% faster)
+        # Mixed precision context for Ampere+ GPUs / Apple Silicon
         from contextlib import nullcontext
+        seg_device_type = self._segmentation.device.type
         amp_ctx = (
-            torch.amp.autocast("cuda", dtype=torch.float16)
-            if self._mixed_precision and self._segmentation.device.type == "cuda"
+            torch.amp.autocast(seg_device_type, dtype=torch.float16)
+            if self._mixed_precision and seg_device_type in ("cuda", "mps")
             else nullcontext()
         )
 
@@ -839,8 +869,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
         hook("vram_cleanup_post_segmentation", None)
         # Free GPU memory used by segmentation before embedding stage
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        self._gpu_empty_cache()
 
         #   shape: (num_chunks, num_frames, local_num_speakers)
         num_chunks, num_frames, local_num_speakers = segmentations.data.shape
@@ -895,8 +924,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
         hook("vram_cleanup_post_embedding", None)
         # Free GPU memory used by embeddings before clustering stage
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        self._gpu_empty_cache()
 
         #   shape: (num_chunks, local_num_speakers, dimension)
 

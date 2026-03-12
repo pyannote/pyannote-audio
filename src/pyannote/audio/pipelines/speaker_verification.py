@@ -711,16 +711,27 @@ class PyannoteAudioPretrainedSpeakerEmbedding(BaseInference):
     ) -> np.ndarray:
         with torch.inference_mode():
             if self.device.type == "cuda":
-                wf_gpu = waveforms.pin_memory().to(self.device, non_blocking=True)
+                # CUDA: use pinned memory + non-blocking transfers for DMA
+                wf_dev = waveforms.pin_memory().to(self.device, non_blocking=True)
                 if masks is not None:
-                    mk_gpu = masks.pin_memory().to(self.device, non_blocking=True)
+                    mk_dev = masks.pin_memory().to(self.device, non_blocking=True)
                     torch.cuda.current_stream().synchronize()
                     with warnings.catch_warnings():
                         warnings.simplefilter("ignore")
-                        embeddings = self.model_(wf_gpu, weights=mk_gpu)
+                        embeddings = self.model_(wf_dev, weights=mk_dev)
                 else:
                     torch.cuda.current_stream().synchronize()
-                    embeddings = self.model_(wf_gpu)
+                    embeddings = self.model_(wf_dev)
+            elif self.device.type == "mps":
+                # MPS: direct transfer (no pin_memory support, unified memory)
+                wf_dev = waveforms.to(self.device)
+                if masks is not None:
+                    mk_dev = masks.to(self.device)
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        embeddings = self.model_(wf_dev, weights=mk_dev)
+                else:
+                    embeddings = self.model_(wf_dev)
             else:
                 if masks is None:
                     embeddings = self.model_(waveforms.to(self.device))
