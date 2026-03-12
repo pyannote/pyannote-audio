@@ -585,7 +585,12 @@ class ONNXWeSpeakerPretrainedSpeakerEmbedding(BaseInference):
         batch_size, num_channels, num_samples = waveforms.shape
         assert num_channels == 1
 
-        features = self.compute_fbank(waveforms.to(self.device))
+        if self.device.type == "cuda":
+            features = self.compute_fbank(
+                waveforms.pin_memory().to(self.device, non_blocking=True)
+            )
+        else:
+            features = self.compute_fbank(waveforms.to(self.device))
         _, num_frames, _ = features.shape
 
         if masks is None:
@@ -705,14 +710,26 @@ class PyannoteAudioPretrainedSpeakerEmbedding(BaseInference):
         self, waveforms: torch.Tensor, masks: Optional[torch.Tensor] = None
     ) -> np.ndarray:
         with torch.inference_mode():
-            if masks is None:
-                embeddings = self.model_(waveforms.to(self.device))
+            if self.device.type == "cuda":
+                wf_gpu = waveforms.pin_memory().to(self.device, non_blocking=True)
+                if masks is not None:
+                    mk_gpu = masks.pin_memory().to(self.device, non_blocking=True)
+                    torch.cuda.current_stream().synchronize()
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        embeddings = self.model_(wf_gpu, weights=mk_gpu)
+                else:
+                    torch.cuda.current_stream().synchronize()
+                    embeddings = self.model_(wf_gpu)
             else:
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    embeddings = self.model_(
-                        waveforms.to(self.device), weights=masks.to(self.device)
-                    )
+                if masks is None:
+                    embeddings = self.model_(waveforms.to(self.device))
+                else:
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        embeddings = self.model_(
+                            waveforms.to(self.device), weights=masks.to(self.device)
+                        )
         return embeddings.cpu().numpy()
 
 
