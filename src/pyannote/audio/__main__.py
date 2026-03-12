@@ -948,9 +948,9 @@ def benchmark(
         if hasattr(prediction, "serialize"):
             if per_file:
                 json_dir = benchmark_dir / "json"
-                json_dir.mkdir(exist_ok=True)
-
-                with open(json_dir / f"{uri}.json", "w") as f:
+                json_file = json_dir / f"{uri}.json"
+                json_file.parent.mkdir(parents=True, exist_ok=True)
+                with open(json_file, "w") as f:
                     json.dump(prediction.serialize(), f, indent=2)
             else:
                 serialized_predictions[uri] = prediction.serialize()
@@ -958,6 +958,7 @@ def benchmark(
         # get speaker diarization from raw prediction
         if diarization:
             speaker_diarization = get_diarization(prediction)
+            speaker_diarization.uri = uri
 
         # get transcriptions from raw prediction
         if transcription:
@@ -971,6 +972,7 @@ def benchmark(
         if per_file:
             if diarization:
                 rttm_file = rttm_dir / f"{uri}.rttm"
+                rttm_file.parent.mkdir(parents=True, exist_ok=True)
 
             if transcription:
                 if word_level_transcription:
