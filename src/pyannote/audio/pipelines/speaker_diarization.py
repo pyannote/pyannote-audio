@@ -559,11 +559,11 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         flat_masks_tensor = torch.from_numpy(flat_masks)
         # (num_chunks * num_speakers, num_frames)
 
-        # Repeat chunks for each speaker: each chunk appears num_speakers times
-        # (num_chunks * num_speakers, 1, window_samples)
-        flat_waveforms = all_chunks.repeat_interleave(num_speakers, dim=0).unsqueeze(1)
-
-        total_items = flat_waveforms.shape[0]
+        # Total items = num_chunks * num_speakers. Instead of materializing
+        # all combinations via repeat_interleave (which copies the full
+        # waveform data — 59GB for 4.7h/21-speaker files), we index into
+        # all_chunks on-the-fly per batch using: chunk_idx = item_idx // num_speakers
+        total_items = num_chunks * num_speakers
 
         # Auto-select embedding batch size based on GPU memory if not explicitly
         # set to a high value. Each item needs ~60MB VRAM for fbank+resnet.
@@ -583,23 +583,32 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                         - torch.cuda.memory_reserved(self._embedding.device)
                     ) / (1024 * 1024)
                 else:
-                    # MPS: Apple Unified Memory — use conservative estimate.
-                    # driver_allocated_memory gives current usage; total is
-                    # not directly queryable, so default to 16GB budget.
+                    # MPS: Apple Unified Memory — query actual limits.
+                    # recommended_max_memory() returns ~2/3 of total RAM,
+                    # which is a safe upper bound for GPU allocations.
+                    # Falls back to 75% of total system RAM, then 8GB.
                     allocated = (
                         torch.mps.driver_allocated_memory() / (1024 * 1024)
                         if hasattr(torch.mps, "driver_allocated_memory")
                         else 0
                     )
-                    # Assume 16GB budget for Apple Silicon (conservative)
-                    free_vram_mb = max(0, 16384 - allocated)
+                    if hasattr(torch.mps, "recommended_max_memory"):
+                        budget_mb = torch.mps.recommended_max_memory() / (1024 * 1024)
+                    else:
+                        try:
+                            import os as _os
+                            total_ram = _os.sysconf("SC_PHYS_PAGES") * _os.sysconf("SC_PAGE_SIZE")
+                            budget_mb = total_ram * 0.75 / (1024 * 1024)
+                        except (ValueError, OSError):
+                            budget_mb = 8192  # 8GB safe fallback
+                    free_vram_mb = max(0, budget_mb - allocated)
                 # Use 40% of free memory, clamp to [64, 256] for best throughput
                 auto_bs = max(64, min(256, int(free_vram_mb * 0.4 / 60)))
                 # Round down to nearest power of 2 for GPU efficiency
                 auto_bs = 2 ** int(math.log2(auto_bs))
                 effective_batch_size = auto_bs
             except Exception:
-                effective_batch_size = 128
+                effective_batch_size = 64
 
         batch_count = math.ceil(total_items / effective_batch_size)
 
@@ -613,7 +622,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         # Strategy: call compute_fbank() + resnet() directly per batch,
         # bypassing the PyAnnote wrapper overhead. On CUDA, uses double-
         # buffered CUDA stream prefetch and TF32 acceleration. On MPS,
-        # uses direct model calls without CUDA-specific features.
+        # uses direct model calls with native MPS FFT (PyTorch 2.3+).
         use_split_pipeline = (
             batch_count > 1
             and hasattr(self._embedding, "device")
@@ -622,6 +631,15 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             and hasattr(self._embedding.model_, "compute_fbank")
             and hasattr(self._embedding.model_, "resnet")
         )
+
+        def _get_batch_waveforms(start: int, end: int) -> torch.Tensor:
+            """Build waveform batch from all_chunks without materializing all combinations.
+
+            Each flat index i corresponds to chunk i // num_speakers. We gather
+            the relevant chunks and add a channel dimension.
+            """
+            chunk_indices = torch.arange(start, end) // num_speakers
+            return all_chunks[chunk_indices].unsqueeze(1)
 
         if use_split_pipeline:
             import warnings as _w
@@ -646,7 +664,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                     s = idx * effective_batch_size
                     e = min(s + effective_batch_size, total_items)
                     with torch.cuda.stream(transfer_stream):
-                        wf_gpu = flat_waveforms[s:e].pin_memory().to(
+                        wf_gpu = _get_batch_waveforms(s, e).pin_memory().to(
                             device, non_blocking=True
                         )
                         mk_gpu = flat_masks_tensor[s:e].pin_memory().to(
@@ -673,7 +691,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                     # no CUDA streams — MPS uses unified memory)
                     s = i * effective_batch_size
                     e = min(s + effective_batch_size, total_items)
-                    cur_wf = flat_waveforms[s:e].to(device)
+                    cur_wf = _get_batch_waveforms(s, e).to(device)
                     cur_mk = flat_masks_tensor[s:e].to(device)
 
                 with torch.inference_mode():
@@ -707,7 +725,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                 start = i * effective_batch_size
                 end = min(start + effective_batch_size, total_items)
 
-                waveform_batch = flat_waveforms[start:end]
+                waveform_batch = _get_batch_waveforms(start, end)
                 mask_batch = flat_masks_tensor[start:end]
 
                 embedding_batch: np.ndarray = self._embedding(
