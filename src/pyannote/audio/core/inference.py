@@ -197,7 +197,12 @@ class Inference(BaseInference):
 
         with torch.inference_mode():
             try:
-                outputs = self.model(chunks.to(self.device))
+                if self.device.type == "cuda":
+                    outputs = self.model(
+                        chunks.pin_memory().to(self.device, non_blocking=True)
+                    )
+                else:
+                    outputs = self.model(chunks.to(self.device))
             except RuntimeError as exception:
                 if is_oom_error(exception):
                     raise MemoryError(
