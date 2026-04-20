@@ -221,8 +221,22 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         onnx_cpu: bool = False,
         onnx_quantize: bool = True,
         onnx_num_threads: int = 0,
+        # --- VRAM budget (Phase B) ---
+        vram_budget_mb: Optional[int] = None,
+        embedding_mixed_precision: bool = False,
     ):
         super().__init__()
+
+        # Phase B: optional explicit VRAM budget in megabytes. When provided,
+        # the embedding-stage batch sizer uses this instead of querying live
+        # free VRAM (useful when coexisting with another model like Whisper).
+        # None means "query device"; see _budget.recommend_embedding_batch.
+        self.vram_budget_mb = vram_budget_mb
+        # Separate from the existing ``mixed_precision`` (which wraps the
+        # segmentation forward pass). This controls autocast around the
+        # embedding forward pass. Phase A DER data shows enabling this
+        # collapses speaker count on the measured corpus -- default False.
+        self.embedding_mixed_precision = embedding_mixed_precision
 
         self.legacy = legacy
 
@@ -565,50 +579,70 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         # all_chunks on-the-fly per batch using: chunk_idx = item_idx // num_speakers
         total_items = num_chunks * num_speakers
 
-        # Auto-select embedding batch size based on GPU memory if not explicitly
-        # set to a high value. Each item needs ~60MB VRAM for fbank+resnet.
-        # Optimal throughput is at batch_size 64-128; above 256 returns diminish.
-        # VRAM per batch: 32→1.6GB, 64→3.8GB, 128→7.6GB, 256→15.2GB
+        # Budget-aware embedding batch selection (Phase B, see _budget.py).
+        # Phase A (2026-04-20) empirically showed embedding throughput
+        # saturates at bs=16 for fp32; higher batches waste 3-7 GB of VRAM
+        # for <3 % speed gain. The prior auto-scaler chose bs=64-256 based
+        # on a scan of free VRAM and is removed here.
+        from pyannote.audio.pipelines._budget import recommend_embedding_batch
+
         effective_batch_size = self.embedding_batch_size
         device_type = (
             self._embedding.device.type
             if hasattr(self._embedding, "device")
             else "cpu"
         )
-        if effective_batch_size <= 32 and device_type in ("cuda", "mps"):
+
+        # Escape hatch preserved for the OpenTranscribe Phase A probe harness
+        # and for reproducing the measurement matrix. Not advertised as user
+        # API; the supported surface is the pipeline's vram_budget_mb kwarg
+        # (see __init__) plus embedding_batch_size.
+        _force = os.environ.get("PYANNOTE_FORCE_EMBEDDING_BATCH_SIZE")
+        if _force and _force.isdigit() and int(_force) > 0:
+            effective_batch_size = int(_force)
+        elif effective_batch_size <= 32 and device_type in ("cuda", "mps"):
+            # Only auto-select when caller left the default; >32 means the
+            # caller is explicitly overriding and we must honor it.
+            budget_mb = getattr(self, "vram_budget_mb", None)
             try:
-                if device_type == "cuda":
-                    free_vram_mb = (
-                        torch.cuda.get_device_properties(self._embedding.device).total_mem
-                        - torch.cuda.memory_reserved(self._embedding.device)
-                    ) / (1024 * 1024)
-                else:
-                    # MPS: Apple Unified Memory — query actual limits.
-                    # recommended_max_memory() returns ~2/3 of total RAM,
-                    # which is a safe upper bound for GPU allocations.
-                    # Falls back to 75% of total system RAM, then 8GB.
-                    allocated = (
-                        torch.mps.driver_allocated_memory() / (1024 * 1024)
-                        if hasattr(torch.mps, "driver_allocated_memory")
-                        else 0
-                    )
-                    if hasattr(torch.mps, "recommended_max_memory"):
-                        budget_mb = torch.mps.recommended_max_memory() / (1024 * 1024)
+                if budget_mb is None:
+                    if device_type == "cuda":
+                        budget_mb = (
+                            torch.cuda.get_device_properties(
+                                self._embedding.device
+                            ).total_mem
+                            - torch.cuda.memory_reserved(self._embedding.device)
+                        ) / (1024 * 1024)
                     else:
-                        try:
-                            import os as _os
-                            total_ram = _os.sysconf("SC_PHYS_PAGES") * _os.sysconf("SC_PAGE_SIZE")
-                            budget_mb = total_ram * 0.75 / (1024 * 1024)
-                        except (ValueError, OSError):
-                            budget_mb = 8192  # 8GB safe fallback
-                    free_vram_mb = max(0, budget_mb - allocated)
-                # Use 40% of free memory, clamp to [64, 256] for best throughput
-                auto_bs = max(64, min(256, int(free_vram_mb * 0.4 / 60)))
-                # Round down to nearest power of 2 for GPU efficiency
-                auto_bs = 2 ** int(math.log2(auto_bs))
-                effective_batch_size = auto_bs
+                        # MPS: Apple Unified Memory — estimate a safe budget.
+                        allocated = (
+                            torch.mps.driver_allocated_memory() / (1024 * 1024)
+                            if hasattr(torch.mps, "driver_allocated_memory")
+                            else 0
+                        )
+                        if hasattr(torch.mps, "recommended_max_memory"):
+                            total_mb = (
+                                torch.mps.recommended_max_memory() / (1024 * 1024)
+                            )
+                        else:
+                            try:
+                                import os as _os
+
+                                total_ram = _os.sysconf("SC_PHYS_PAGES") * _os.sysconf(
+                                    "SC_PAGE_SIZE"
+                                )
+                                total_mb = total_ram * 0.75 / (1024 * 1024)
+                            except (ValueError, OSError):
+                                total_mb = 8192  # 8 GB safe fallback
+                        budget_mb = max(0, total_mb - allocated)
+                rec = recommend_embedding_batch(
+                    free_mb=int(budget_mb), device=device_type
+                )
+                effective_batch_size = rec.batch_size
             except Exception:
-                effective_batch_size = 64
+                # Fall back to the old ceiling only if something upstream
+                # broke the budget query — never above 16.
+                effective_batch_size = 16
 
         batch_count = math.ceil(total_items / effective_batch_size)
 
