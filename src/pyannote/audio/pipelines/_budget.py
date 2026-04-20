@@ -24,21 +24,40 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-# Measured 2026-04-20 on RTX A6000 with fork davidamacey/pyannote-audio
-# @gpu-optimizations, torch 2.8.0+cu128.
+# Measured 2026-04-20 with fork davidamacey/pyannote-audio@gpu-optimizations.
 #
 # Process footprint (MB) during the diarization "embeddings" stage at a given
 # batch size, excluding CUDA context and idle-GPU baseline.
 #
-# These numbers are the ceiling observed across the small-batch sweep; using
-# them for budget decisions is pessimistic on purpose so a budget of exactly
-# _DIARIZATION_FOOTPRINT_MB[k] will actually complete.
-_DIARIZATION_FOOTPRINT_MB: dict[int, int] = {
-    4: 640,
-    8: 640,  # bs=8 reuses the torch allocator pool from bs=4
-    16: 954,
-    32: 1946,  # included for diagnostics; policy never selects bs=32
+# Device-specific because allocator behaviour differs:
+# - CUDA (RTX A6000, torch 2.8.0+cu128): allocator grows gradually with the
+#   actual per-batch demand. bs=4/8 share a ~640 MB pool, bs=16 steps up
+#   to ~950 MB, bs=32 to ~1.9 GB.
+# - MPS (Apple Silicon M2 Max, torch 2.8.0 mps backend): allocator
+#   pre-reserves ~1.9 GB up front for any bs in [1, 16], then doubles at
+#   bs=32. A CUDA-sized budget on MPS would OOM; keep a dedicated table.
+#
+# Numbers are ceilings observed across the --small-batch-sweep runs; budget
+# decisions using them are pessimistic so a budget of exactly the tabled
+# value will actually complete.
+_DIARIZATION_FOOTPRINT_MB_BY_DEVICE: dict[str, dict[int, int]] = {
+    "cuda": {
+        4: 640,
+        8: 640,  # bs=8 reuses the torch allocator pool from bs=4
+        16: 954,
+        32: 1946,  # diagnostic; policy never selects bs=32
+    },
+    "mps": {
+        4: 1900,
+        8: 1900,  # MPS pre-reserves at bs <= 16
+        16: 1900,
+        32: 3914,  # diagnostic
+    },
 }
+
+# Back-compat alias: callers and tests that pre-date the device split read
+# the CUDA table by default.
+_DIARIZATION_FOOTPRINT_MB: dict[int, int] = _DIARIZATION_FOOTPRINT_MB_BY_DEVICE["cuda"]
 
 # Absolute throughput ceiling. Phase A found bs=16 saturates wall time.
 # Do not raise without re-running the --small-batch-sweep on the target
@@ -72,6 +91,19 @@ class BudgetRecommendation:
     batch_size: int
     status: str
     expected_peak_mb: int
+
+
+def _footprint_table(device: str) -> dict[int, int]:
+    """Return the measured footprint table for the given device.
+
+    Unknown devices fall back to the CUDA table (pessimistic on MPS,
+    conservative elsewhere). Device name is matched case-insensitively
+    and only the prefix before any colon is inspected (``cuda:0`` -> ``cuda``).
+    """
+    key = device.split(":", 1)[0].lower()
+    return _DIARIZATION_FOOTPRINT_MB_BY_DEVICE.get(
+        key, _DIARIZATION_FOOTPRINT_MB_BY_DEVICE["cuda"]
+    )
 
 
 def recommend_embedding_batch(
@@ -112,13 +144,14 @@ def recommend_embedding_batch(
         # CPU path has no VRAM budget; use bs=1 for minimum RAM pressure.
         return BudgetRecommendation(batch_size=1, status="cpu", expected_peak_mb=0)
 
+    table = _footprint_table(device)
     headroom = max(0, free_mb - safety_margin_mb)
 
     # Walk the ladder from the ceiling down; pick the largest entry that fits.
-    # "Optimal" means we hit bs=16 (throughput saturation). "Tight" means we
-    # had to step down.
-    for bs in sorted((k for k in _DIARIZATION_FOOTPRINT_MB if k <= ceiling), reverse=True):
-        cost = _DIARIZATION_FOOTPRINT_MB[bs]
+    # "Optimal" means we hit the ceiling (measured throughput saturation);
+    # "tight" means we had to step down.
+    for bs in sorted((k for k in table if k <= ceiling), reverse=True):
+        cost = table[bs]
         if headroom >= cost:
             status = "optimal" if bs == ceiling else "tight"
             return BudgetRecommendation(
@@ -129,7 +162,7 @@ def recommend_embedding_batch(
     return BudgetRecommendation(
         batch_size=4,
         status="insufficient",
-        expected_peak_mb=_DIARIZATION_FOOTPRINT_MB[4],
+        expected_peak_mb=table[4],
     )
 
 
