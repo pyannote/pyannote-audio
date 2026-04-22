@@ -25,10 +25,12 @@
 
 import functools
 import itertools
+import logging
 import math
 import os
 import textwrap
 import warnings
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Callable, Mapping, Optional, Text, Union, Any
 from dataclasses import dataclass
@@ -38,6 +40,8 @@ import torch
 import torch.nn.functional as F
 from einops import rearrange
 from torch.profiler import record_function
+
+logger = logging.getLogger(__name__)
 from pyannote.audio import Audio, Inference, Model, Pipeline
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.pipelines.clustering import Clustering
@@ -305,7 +309,10 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         self._mixed_precision = mixed_precision
         self._onnx_cpu = onnx_cpu
 
-        # torch.compile() for kernel fusion (10-30% faster after warmup)
+        # torch.compile() for kernel fusion (10-30% faster after warmup).
+        # Surface failures via the logger so silent fallbacks are visible;
+        # historically this was `except: pass` which hid Dynamo graph breaks
+        # that cost 10-20% of embedding-stage throughput without any signal.
         if torch_compile and self._segmentation.device.type in ("cuda", "mps"):
             try:
                 if self.klustering != "OracleClustering":
@@ -315,8 +322,21 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                 self._segmentation.model = torch.compile(
                     self._segmentation.model, fullgraph=False
                 )
-            except Exception:
-                pass  # Graceful fallback if torch.compile unavailable
+                logger.info(
+                    "torch.compile enabled for segmentation + embedding on %s",
+                    self._segmentation.device.type,
+                )
+            except Exception as exc:  # noqa: BLE001 (torch.compile raises bare Exception)
+                logger.warning(
+                    "torch.compile unavailable, falling back to eager execution: %s",
+                    exc,
+                )
+
+        # cuDNN algorithm autotuning for fixed-shape segmentation/embedding
+        # convolutions. Safe for inference; pyannote's fix_reproducibility()
+        # does not touch this flag so one-time init is sufficient.
+        if self._segmentation.device.type == "cuda":
+            torch.backends.cudnn.benchmark = True
 
         # ONNX CPU-only mode: export models to ONNX and replace forward passes
         if onnx_cpu:
@@ -730,23 +750,33 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                     cur_wf = _get_batch_waveforms(s, e).to(device)
                     cur_mk = flat_masks_tensor[s:e].to(device)
 
-                with torch.inference_mode():
-                    with _w.catch_warnings():
-                        _w.simplefilter("ignore")
-                        # fbank + resnet in one shot, data stays on device
-                        with record_function("pyannote::embedding_fbank"):
-                            fbank = self._embedding.model_.compute_fbank(cur_wf)
-                            # Interpolate masks to fbank frame-level
-                            num_frames = fbank.shape[1]
-                            imasks = F.interpolate(
-                                cur_mk.unsqueeze(1).to(device),
-                                size=num_frames, mode="nearest"
-                            ).squeeze(1)
-                            imasks = (imasks > 0.5).float()
-                        with record_function("pyannote::embedding_resnet"):
-                            _, emb_tensor = self._embedding.model_.resnet(
-                                fbank, weights=imasks
-                            )
+                # Phase 2.4: embedding_mixed_precision flag plumbed through.
+                # Default False preserves byte-exact fp32 behavior. Phase A DER
+                # measurements rejected fp16 (26-33% DER collapse in WeSpeaker
+                # std() pooling). The flag exists so future Phase B/C work can
+                # A/B test bf16 without re-plumbing; it is NOT a green-lit
+                # pipeline option yet.
+                amp_ctx = (
+                    torch.autocast(device.type, dtype=torch.float16)
+                    if self.embedding_mixed_precision and device.type in ("cuda", "mps")
+                    else nullcontext()
+                )
+                with torch.inference_mode(), _w.catch_warnings(), amp_ctx:
+                    _w.simplefilter("ignore")
+                    # fbank + resnet in one shot, data stays on device
+                    with record_function("pyannote::embedding_fbank"):
+                        fbank = self._embedding.model_.compute_fbank(cur_wf)
+                        # Interpolate masks to fbank frame-level
+                        num_frames = fbank.shape[1]
+                        imasks = F.interpolate(
+                            cur_mk.unsqueeze(1).to(device),
+                            size=num_frames, mode="nearest"
+                        ).squeeze(1)
+                        imasks = (imasks > 0.5).float()
+                    with record_function("pyannote::embedding_resnet"):
+                        _, emb_tensor = self._embedding.model_.resnet(
+                            fbank, weights=imasks
+                        )
 
                 embedding_batch = emb_tensor.cpu().numpy()
                 embedding_batches.append(embedding_batch)

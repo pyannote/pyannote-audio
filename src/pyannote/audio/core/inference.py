@@ -21,6 +21,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import functools
 import warnings
 from typing import Callable, List, Optional, Text, Tuple, Union
 
@@ -38,6 +39,21 @@ from pyannote.audio.utils.multi_task import map_with_specifications
 from pyannote.audio.utils.powerset import Powerset
 from pyannote.audio.utils.reproducibility import fix_reproducibility
 from pyannote.core import Segment, SlidingWindow, SlidingWindowFeature
+
+
+@functools.lru_cache(maxsize=4)
+def _cached_hamming_window(num_frames_per_chunk: int) -> np.ndarray:
+    """Pre-computed Hamming window for the overlap-add aggregation loop.
+
+    Keyed by ``num_frames_per_chunk``, which is constant for a given segmentation
+    model's frame resolution. Previously recomputed from scratch on every
+    :py:meth:`Inference.aggregate` call; caching is byte-equivalent because
+    numpy.hamming is deterministic and the returned array is treated as
+    read-only by the callers (used only as a broadcasting multiplier).
+    """
+    window = np.hamming(num_frames_per_chunk).reshape(-1, 1)
+    window.flags.writeable = False  # catch accidental in-place mutation early
+    return window
 
 
 class BaseInference:
@@ -556,9 +572,12 @@ class Inference(BaseInference):
             step=frames.step,
         )
 
-        # Hamming window used for overlap-add aggregation
+        # Hamming window used for overlap-add aggregation. Cached per
+        # num_frames_per_chunk (constant for a given segmentation model) to
+        # avoid recomputing on every aggregate() call. The fallback ones
+        # array is cheap enough to leave uncached.
         hamming_window = (
-            np.hamming(num_frames_per_chunk).reshape(-1, 1)
+            _cached_hamming_window(num_frames_per_chunk)
             if hamming
             else np.ones((num_frames_per_chunk, 1))
         )
