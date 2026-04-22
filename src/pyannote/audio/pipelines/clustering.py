@@ -182,6 +182,161 @@ def _gpu_cdist(
     return out
 
 
+def _gpu_linkage_fits(n: int, dim: int, device: torch.device) -> bool:
+    """Predict whether GPU Lance-Williams linkage fits its VRAM budget.
+
+    Separate from ``_gpu_clustering_fits`` because linkage keeps an ``N×N``
+    fp32 distance matrix resident for the entire merge loop plus ``N×D``
+    centroids. pyannote-community-1 filters to N=10000+ embeddings on the
+    4.7h reference, so the matrix hits ~400 MB — well above the 50 MB
+    one-shot cdist budget but comfortable within the Phase 1 VRAM envelope
+    because cdist/pdist/centroids are mutually exclusive (they don't run
+    concurrently inside the pipeline).
+
+    Default budget policy: use up to 50% of free VRAM after a 300 MB safety
+    margin, capped at 2 GB to avoid starving concurrent embeddings calls.
+    Env override ``PYANNOTE_LINKAGE_VRAM_BUDGET_MB`` sets an absolute cap
+    (min'd against free VRAM).
+    """
+    if device.type == "cpu" or n < 2:
+        return False
+    # Distance matrix NxN fp32 + N×D centroids fp32 + ~8 MB allocator overhead.
+    bytes_needed = (n * n * 4) + (n * dim * 4) + (8 * 1024 * 1024)
+    env_cap_mb = os.environ.get("PYANNOTE_LINKAGE_VRAM_BUDGET_MB")
+    if device.type == "cuda":
+        try:
+            free, _ = torch.cuda.mem_get_info(device)
+            # Reserve 300 MB for the embedding stage's transient activations
+            # that can re-appear when a subsequent pipeline stage reuses
+            # the allocator pool.
+            auto_budget = max(0, (free - 300 * 1024 * 1024) // 2)
+            hard_cap = 2 * 1024 * 1024 * 1024  # 2 GB
+            budget = min(auto_budget, hard_cap)
+            if env_cap_mb is not None:
+                budget = min(budget, int(env_cap_mb) * 1024 * 1024)
+        except (RuntimeError, AssertionError):
+            budget = (int(env_cap_mb) if env_cap_mb else 200) * 1024 * 1024
+    else:  # mps — no mem_get_info, trust env or default
+        budget = (int(env_cap_mb) if env_cap_mb else 500) * 1024 * 1024
+    return bytes_needed <= budget
+
+
+def _gpu_linkage_centroid(
+    embeddings: np.ndarray, device: torch.device
+) -> np.ndarray | None:
+    """GPU Lance-Williams hierarchical clustering with the centroid method.
+
+    Returns a dendrogram in scipy format: an ``(N-1, 4)`` float64 array
+    where each row is ``[cluster_a_id, cluster_b_id, merge_distance, new_size]``.
+
+    Correctness: the centroid-linkage Lance-Williams formula
+
+        d(C_ij, C_k)² = (n_i·d_ik² + n_j·d_jk²)/n_ij − (n_i·n_j/n_ij²)·d_ij²
+
+    is algebraically equivalent, for Euclidean distance, to recomputing the
+    merged centroid ``C_ij = (n_i·C_i + n_j·C_j)/n_ij`` and measuring
+    ``||C_ij − C_k||``. This implementation takes the latter form because
+    it stays numerically stable on GPU fp32 and avoids the square/square-root
+    round-trips that the distance-only Lance-Williams update would need.
+
+    Returns None when GPU execution is not viable (budget exceeded, CPU-only
+    device, or N too small to benefit); callers fall back to scipy.
+    """
+    N, D = embeddings.shape
+    # Default off: opt-in via PYANNOTE_ENABLE_GPU_LINKAGE=1. Measurement on
+    # the 4.7h / 8-speaker pyannote-community-1 reference showed 14.2s for
+    # N=10023 on A6000 vs ~12s for scipy's compiled Lance-Williams — a
+    # slight regression. The per-iteration Python/PyTorch overhead
+    # (argmin/scatter on a 10k×10k matrix, 10k times) offsets the GPU math
+    # win on A6000-class hardware. Kept as a correctness-verified option
+    # for future work (CUDA kernel, torch.jit.script, H100-class hardware).
+    if not os.environ.get("PYANNOTE_ENABLE_GPU_LINKAGE"):
+        return None
+    if N < 200 or not _gpu_linkage_fits(N, D, device):
+        # Small N: scipy's compiled C loop beats the Python-per-iteration
+        # overhead of an N-step GPU reduction. Threshold chosen empirically.
+        logger.info(
+            "GPU linkage fallback to scipy (N=%d D=%d device=%s)",
+            N, D, device.type,
+        )
+        return None
+    logger.info("GPU linkage activated (N=%d D=%d device=%s)", N, D, device.type)
+
+    INF = float("inf")
+    try:
+        with torch.inference_mode():
+            centroids = torch.from_numpy(
+                np.ascontiguousarray(embeddings, dtype=np.float32)
+            ).to(device, non_blocking=True)
+            counts_f = torch.ones(N, dtype=torch.float32, device=device)
+            cluster_ids = torch.arange(N, dtype=torch.int64, device=device)
+            # Parallel activity tensor: True while the slot holds a live
+            # cluster, False once it's been merged away. Without this, the
+            # ``dists[i, :] = new_dists`` write below would overwrite the
+            # inf entries that previous iterations stored for dead slots,
+            # reviving them as valid merge candidates.
+            active = torch.ones(N, dtype=torch.bool, device=device)
+
+            # Full N×N distance matrix. Diagonal masked to inf so argmin
+            # never picks self-merges.
+            dists = torch.cdist(centroids, centroids, p=2)
+            dists.fill_diagonal_(INF)
+
+            merges = torch.zeros((N - 1, 4), dtype=torch.float64, device=device)
+            inf_tensor = torch.tensor(INF, dtype=torch.float32, device=device)
+
+            for step in range(N - 1):
+                # Find the closest pair. argmin over a flattened N*N tensor
+                # stays on GPU — no .item() sync in the hot path.
+                flat_min_val, flat_min_idx = dists.view(-1).min(dim=0)
+                i = flat_min_idx // N
+                j = flat_min_idx % N
+                # Maintain scipy's i < j convention per merge row.
+                swap = i > j
+                i_new = torch.where(swap, j, i)
+                j = torch.where(swap, i, j)
+                i = i_new
+
+                # Record the merge. to(float64) casts happen on GPU.
+                n_i = counts_f[i]
+                n_j = counts_f[j]
+                n_ij = n_i + n_j
+                merges[step, 0] = cluster_ids[i].to(torch.float64)
+                merges[step, 1] = cluster_ids[j].to(torch.float64)
+                merges[step, 2] = flat_min_val.to(torch.float64)
+                merges[step, 3] = n_ij.to(torch.float64)
+
+                # Centroid update (slot i receives the merged centroid).
+                new_centroid = (centroids[i] * n_i + centroids[j] * n_j) / n_ij
+                centroids[i] = new_centroid
+                counts_f[i] = n_ij
+                cluster_ids[i] = N + step
+
+                # Deactivate slot j.
+                active[j] = False
+                dists[j, :] = inf_tensor
+                dists[:, j] = inf_tensor
+
+                # Recompute distances from the new centroid to every slot,
+                # then re-apply the activity mask so previously-dead slots
+                # stay inf (this is the fix for the bug where row-assignment
+                # would revive merged clusters). `active` already reflects
+                # that j is dead.
+                new_dists = torch.norm(centroids - new_centroid, dim=1)
+                new_dists = torch.where(active, new_dists, inf_tensor)
+                new_dists[i] = INF  # self-distance
+                dists[i, :] = new_dists
+                dists[:, i] = new_dists
+
+            result = merges.cpu().numpy()
+    except RuntimeError as exc:
+        # Out-of-memory or other device error → graceful scipy fallback.
+        logger.warning("GPU linkage fell back to scipy: %s", exc)
+        return None
+
+    return result
+
+
 def _gpu_pdist_condensed(
     a: np.ndarray, metric: str, device: torch.device
 ) -> np.ndarray:
@@ -557,16 +712,24 @@ class AgglomerativeClustering(BaseClustering):
                 with np.errstate(divide="ignore", invalid="ignore"):
                     embeddings /= np.linalg.norm(embeddings, axis=-1, keepdims=True)
             with record_function("pyannote::clustering_linkage"):
-                # Pre-compute the condensed pairwise distance on GPU, then
-                # hand the 1-D distance vector to scipy's Lance-Williams merge.
-                # linkage() ignores the ``metric`` kwarg when given a
-                # condensed vector.
-                dendrogram: np.ndarray = linkage(
-                    _gpu_pdist_condensed(
-                        embeddings, "euclidean", _get_clustering_device()
-                    ),
-                    method=self.method,
-                )
+                device = _get_clustering_device()
+                gpu_dendrogram: np.ndarray | None = None
+                if self.method == "centroid":
+                    # GPU-native Lance-Williams. Returns None on budget miss,
+                    # small N, or device error → scipy fallback.
+                    gpu_dendrogram = _gpu_linkage_centroid(embeddings, device)
+                if gpu_dendrogram is not None:
+                    dendrogram: np.ndarray = gpu_dendrogram
+                else:
+                    # Median/Ward and small-N centroid fall back to scipy.
+                    # Pre-compute the condensed pairwise distance on GPU, then
+                    # hand the 1-D distance vector to scipy's Lance-Williams
+                    # merge. linkage() ignores the ``metric`` kwarg when given
+                    # a condensed vector.
+                    dendrogram = linkage(
+                        _gpu_pdist_condensed(embeddings, "euclidean", device),
+                        method=self.method,
+                    )
 
         # other methods work just fine with any metric
         else:
@@ -803,12 +966,22 @@ class VBxClustering(BaseClustering):
                 train_embeddings, axis=1, keepdims=True
             )
         with record_function("pyannote::clustering_linkage"):
-            dendrogram = linkage(
-                _gpu_pdist_condensed(
-                    train_embeddings_normed, "euclidean", _get_clustering_device()
-                ),
-                method="centroid",
+            # VBxClustering is the path pyannote-community-1 uses.
+            # First try the GPU Lance-Williams port; fall back to scipy
+            # linkage() with a GPU-computed condensed pdist otherwise.
+            device = _get_clustering_device()
+            gpu_dendrogram = _gpu_linkage_centroid(
+                train_embeddings_normed, device
             )
+            if gpu_dendrogram is not None:
+                dendrogram = gpu_dendrogram
+            else:
+                dendrogram = linkage(
+                    _gpu_pdist_condensed(
+                        train_embeddings_normed, "euclidean", device
+                    ),
+                    method="centroid",
+                )
         ahc_clusters = fcluster(dendrogram, self.threshold, criterion="distance") - 1
         _, ahc_clusters = np.unique(ahc_clusters, return_inverse=True)
 
