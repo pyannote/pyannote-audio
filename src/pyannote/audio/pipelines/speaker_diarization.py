@@ -37,6 +37,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from einops import rearrange
+from torch.profiler import record_function
 from pyannote.audio import Audio, Inference, Model, Pipeline
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.pipelines.clustering import Clustering
@@ -433,14 +434,15 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         if hook is not None:
             hook = functools.partial(hook, "segmentation", None)
 
-        if self.training:
-            if self.CACHED_SEGMENTATION in file:
-                segmentations = file[self.CACHED_SEGMENTATION]
+        with record_function("pyannote::segmentation"):
+            if self.training:
+                if self.CACHED_SEGMENTATION in file:
+                    segmentations = file[self.CACHED_SEGMENTATION]
+                else:
+                    segmentations = self._segmentation(file, hook=hook)
+                    file[self.CACHED_SEGMENTATION] = segmentations
             else:
-                segmentations = self._segmentation(file, hook=hook)
-                file[self.CACHED_SEGMENTATION] = segmentations
-        else:
-            segmentations: SlidingWindowFeature = self._segmentation(file, hook=hook)
+                segmentations: SlidingWindowFeature = self._segmentation(file, hook=hook)
 
         return segmentations
 
@@ -732,17 +734,19 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                     with _w.catch_warnings():
                         _w.simplefilter("ignore")
                         # fbank + resnet in one shot, data stays on device
-                        fbank = self._embedding.model_.compute_fbank(cur_wf)
-                        # Interpolate masks to fbank frame-level
-                        num_frames = fbank.shape[1]
-                        imasks = F.interpolate(
-                            cur_mk.unsqueeze(1).to(device),
-                            size=num_frames, mode="nearest"
-                        ).squeeze(1)
-                        imasks = (imasks > 0.5).float()
-                        _, emb_tensor = self._embedding.model_.resnet(
-                            fbank, weights=imasks
-                        )
+                        with record_function("pyannote::embedding_fbank"):
+                            fbank = self._embedding.model_.compute_fbank(cur_wf)
+                            # Interpolate masks to fbank frame-level
+                            num_frames = fbank.shape[1]
+                            imasks = F.interpolate(
+                                cur_mk.unsqueeze(1).to(device),
+                                size=num_frames, mode="nearest"
+                            ).squeeze(1)
+                            imasks = (imasks > 0.5).float()
+                        with record_function("pyannote::embedding_resnet"):
+                            _, emb_tensor = self._embedding.model_.resnet(
+                                fbank, weights=imasks
+                            )
 
                 embedding_batch = emb_tensor.cpu().numpy()
                 embedding_batches.append(embedding_batch)
@@ -762,9 +766,10 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                 waveform_batch = _get_batch_waveforms(start, end)
                 mask_batch = flat_masks_tensor[start:end]
 
-                embedding_batch: np.ndarray = self._embedding(
-                    waveform_batch, masks=mask_batch
-                )
+                with record_function("pyannote::embedding_batch"):
+                    embedding_batch: np.ndarray = self._embedding(
+                        waveform_batch, masks=mask_batch
+                    )
 
                 embedding_batches.append(embedding_batch)
 

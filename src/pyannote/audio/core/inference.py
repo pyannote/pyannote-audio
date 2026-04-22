@@ -30,6 +30,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 from lightning.pytorch.utilities.memory import is_oom_error
+from torch.profiler import record_function
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import Model, Specifications
 from pyannote.audio.core.task import Resolution
@@ -531,6 +532,21 @@ class Inference(BaseInference):
             Aggregated scores. Shape is (num_frames, num_classes)
         """
 
+        with record_function("pyannote::aggregation"):
+            return Inference._aggregate_impl(
+                scores, frames, warm_up, epsilon, hamming, missing, skip_average
+            )
+
+    @staticmethod
+    def _aggregate_impl(
+        scores: SlidingWindowFeature,
+        frames: SlidingWindow,
+        warm_up: Tuple[float, float] = (0.0, 0.0),
+        epsilon: float = 1e-12,
+        hamming: bool = False,
+        missing: float = np.nan,
+        skip_average: bool = False,
+    ) -> SlidingWindowFeature:
         num_chunks, num_frames_per_chunk, num_classes = scores.data.shape
 
         chunks = scores.sliding_window

@@ -39,6 +39,7 @@ from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.optimize import linear_sum_assignment
 from scipy.spatial.distance import cdist
 from sklearn.cluster import KMeans
+from torch.profiler import record_function
 
 
 class BaseClustering(Pipeline):
@@ -187,16 +188,17 @@ class BaseClustering(Pipeline):
         )
 
         # compute distance between embeddings and clusters
-        e2k_distance = rearrange(
-            cdist(
-                rearrange(embeddings, "c s d -> (c s) d"),
-                centroids,
-                metric=self.metric,
-            ),
-            "(c s) k -> c s k",
-            c=num_chunks,
-            s=num_speakers,
-        )
+        with record_function("pyannote::clustering_cdist"):
+            e2k_distance = rearrange(
+                cdist(
+                    rearrange(embeddings, "c s d -> (c s) d"),
+                    centroids,
+                    metric=self.metric,
+                ),
+                "(c s) k -> c s k",
+                c=num_chunks,
+                s=num_speakers,
+            )
         soft_clusters = 2 - e2k_distance
 
         # assign each embedding to the cluster with the most similar centroid
@@ -369,17 +371,20 @@ class AgglomerativeClustering(BaseClustering):
         # centroid, median, and Ward method only support "euclidean" metric
         # therefore we unit-normalize embeddings to somehow make them "euclidean"
         if self.metric == "cosine" and self.method in ["centroid", "median", "ward"]:
-            with np.errstate(divide="ignore", invalid="ignore"):
-                embeddings /= np.linalg.norm(embeddings, axis=-1, keepdims=True)
-            dendrogram: np.ndarray = linkage(
-                embeddings, method=self.method, metric="euclidean"
-            )
+            with record_function("pyannote::clustering_normalize"):
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    embeddings /= np.linalg.norm(embeddings, axis=-1, keepdims=True)
+            with record_function("pyannote::clustering_linkage"):
+                dendrogram: np.ndarray = linkage(
+                    embeddings, method=self.method, metric="euclidean"
+                )
 
         # other methods work just fine with any metric
         else:
-            dendrogram: np.ndarray = linkage(
-                embeddings, method=self.method, metric=self.metric
-            )
+            with record_function("pyannote::clustering_linkage"):
+                dendrogram: np.ndarray = linkage(
+                    embeddings, method=self.method, metric=self.metric
+                )
 
         # apply the predefined threshold
         clusters = fcluster(dendrogram, self.threshold, criterion="distance") - 1
@@ -471,7 +476,8 @@ class AgglomerativeClustering(BaseClustering):
                 for small_k in small_clusters
             ]
         )
-        centroids_cdist = cdist(large_centroids, small_centroids, metric=self.metric)
+        with record_function("pyannote::clustering_cdist_merge"):
+            centroids_cdist = cdist(large_centroids, small_centroids, metric=self.metric)
         for small_k, large_k in enumerate(np.argmin(centroids_cdist, axis=0)):
             clusters[clusters == small_clusters[small_k]] = large_clusters[large_k]
 
@@ -538,13 +544,15 @@ class KMeansClustering(BaseClustering):
 
         # unit-normalize embeddings to use 'euclidean' distance
         if self.metric == "cosine":
-            with np.errstate(divide="ignore", invalid="ignore"):
-                embeddings /= np.linalg.norm(embeddings, axis=-1, keepdims=True)
+            with record_function("pyannote::clustering_normalize"):
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    embeddings /= np.linalg.norm(embeddings, axis=-1, keepdims=True)
 
         # perform Kmeans clustering
-        return KMeans(
-            n_clusters=num_clusters, n_init=3, random_state=42, copy_x=False
-        ).fit_predict(embeddings)
+        with record_function("pyannote::clustering_kmeans"):
+            return KMeans(
+                n_clusters=num_clusters, n_init=3, random_state=42, copy_x=False
+            ).fit_predict(embeddings)
 
 
 class VBxClustering(BaseClustering):
@@ -594,12 +602,14 @@ class VBxClustering(BaseClustering):
             return hard_clusters, soft_clusters, centroids
 
         # AHC
-        train_embeddings_normed = train_embeddings / np.linalg.norm(
-            train_embeddings, axis=1, keepdims=True
-        )
-        dendrogram = linkage(
-            train_embeddings_normed, method="centroid", metric="euclidean"
-        )
+        with record_function("pyannote::clustering_normalize"):
+            train_embeddings_normed = train_embeddings / np.linalg.norm(
+                train_embeddings, axis=1, keepdims=True
+            )
+        with record_function("pyannote::clustering_linkage"):
+            dendrogram = linkage(
+                train_embeddings_normed, method="centroid", metric="euclidean"
+            )
         ahc_clusters = fcluster(dendrogram, self.threshold, criterion="distance") - 1
         _, ahc_clusters = np.unique(ahc_clusters, return_inverse=True)
 
@@ -642,16 +652,17 @@ class VBxClustering(BaseClustering):
                 ])
 
         # calculate distance
-        e2k_distance = rearrange(
-            cdist(
-                rearrange(embeddings, "c s d -> (c s) d"),
-                centroids,
-                metric=self.metric,
-            ),
-            "(c s) k -> c s k",
-            c=num_chunks,
-            s=num_speakers,
-        )
+        with record_function("pyannote::clustering_cdist"):
+            e2k_distance = rearrange(
+                cdist(
+                    rearrange(embeddings, "c s d -> (c s) d"),
+                    centroids,
+                    metric=self.metric,
+                ),
+                "(c s) k -> c s k",
+                c=num_chunks,
+                s=num_speakers,
+            )
         soft_clusters = 2 - e2k_distance
 
         # assign each embedding to the cluster with the most similar centroid
