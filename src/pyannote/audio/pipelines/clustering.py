@@ -23,9 +23,13 @@
 
 """Clustering pipelines"""
 
+import logging
+import os
 from enum import Enum
 
 import numpy as np
+import torch
+import torch.nn.functional as F
 from einops import rearrange
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.plda import PLDA
@@ -37,9 +41,181 @@ from pyannote.pipeline import Pipeline
 from pyannote.pipeline.parameter import Categorical, Integer, Uniform
 from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.optimize import linear_sum_assignment
-from scipy.spatial.distance import cdist
+from scipy.spatial.distance import cdist, pdist
 from sklearn.cluster import KMeans
 from torch.profiler import record_function
+
+logger = logging.getLogger(__name__)
+
+# =============================================================================
+# Phase 3: GPU clustering via torch.cdist (VRAM-budgeted)
+# =============================================================================
+# scipy.spatial.distance.{cdist, pdist} + scipy.cluster.hierarchy.linkage run
+# on CPU only. For long multi-speaker diarization (e.g. 4.7h / 21 speakers
+# with ~12000 segments), clustering reaches 41% of end-to-end wall time on
+# CUDA — the single largest remaining stage per Phase 1 baseline.
+#
+# The helpers below replace the O(N²) pairwise-distance step with a GPU
+# implementation (torch.cdist / manual cosine via F.normalize) while keeping
+# scipy.cluster.hierarchy.linkage's Lance-Williams merge on CPU (cheap per
+# step, nontrivial to GPU-port without a heavy dependency). The speedup
+# therefore targets the distance-computation portion only, but that portion
+# dominates the stage on long files.
+#
+# Hard invariants (Phase 3 acceptance gate):
+#   1. numeric parity with scipy within rtol=1e-5 on fixed-seed synthetic
+#   2. DER delta < 0.1 pp absolute on all reference files both devices
+#   3. Peak VRAM delta ≤ +50 MB over Phase 2 baseline (1.05 GB ceiling)
+#   4. Fallback to scipy when budget exceeded (N ≥ ~4000 for default budget)
+#
+# Configuration:
+#   PYANNOTE_CLUSTERING_DEVICE       override auto-detected device
+#                                    (cuda, cuda:0, mps, cpu). Default: auto.
+#   PYANNOTE_CLUSTERING_VRAM_BUDGET_MB  byte budget for clustering tensors
+#                                    (default: 50, from vram-budget-table.md).
+#   PYANNOTE_CLUSTERING_DISABLE_GPU  if set, bypass GPU path entirely.
+# =============================================================================
+
+
+def _get_clustering_device() -> torch.device:
+    """Return the device to use for GPU clustering, with env override + fallback."""
+    if os.environ.get("PYANNOTE_CLUSTERING_DISABLE_GPU"):
+        return torch.device("cpu")
+    env = os.environ.get("PYANNOTE_CLUSTERING_DEVICE", "").strip()
+    if env:
+        try:
+            dev = torch.device(env)
+            if dev.type == "cuda" and not torch.cuda.is_available():
+                return torch.device("cpu")
+            if dev.type == "mps" and not (
+                hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
+            ):
+                return torch.device("cpu")
+            return dev
+        except (RuntimeError, ValueError):
+            logger.warning(
+                "Invalid PYANNOTE_CLUSTERING_DEVICE=%r, falling back to auto-detection",
+                env,
+            )
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
+
+
+def _gpu_clustering_budget_bytes(device: torch.device) -> int:
+    """Byte budget for clustering-stage GPU tensors.
+
+    On CUDA this is min(env-override, free_vram - 200 MB headroom). On MPS
+    we trust the env override (no reliable free-memory API). On CPU
+    returns 0 so every call falls back to scipy.
+    """
+    if device.type == "cpu":
+        return 0
+    budget_mb = int(os.environ.get("PYANNOTE_CLUSTERING_VRAM_BUDGET_MB", "50"))
+    if device.type == "cuda":
+        try:
+            free, _ = torch.cuda.mem_get_info(device)
+            # Keep 200 MB safety margin for the embedding-stage peak that
+            # may still be resident in the allocator's reserved pool.
+            return min(budget_mb * 1024 * 1024, max(0, free - 200 * 1024 * 1024))
+        except (RuntimeError, AssertionError):
+            return budget_mb * 1024 * 1024
+    return budget_mb * 1024 * 1024
+
+
+def _gpu_clustering_fits(n: int, dim: int, device: torch.device) -> bool:
+    """Predict whether clustering on ``(n × dim)`` fp32 embeddings fits the budget.
+
+    Accounts for two normalized copies plus an N×N pairwise matrix plus a
+    small (8 MB) torch-allocator overhead for transient buffers. Upper-bounds
+    the condensed-pdist path (which uses half the memory of the full matrix).
+
+    The ``_gpu_clustering_budget_bytes`` helper already applies a 200 MB
+    headroom against free VRAM on CUDA, so we do NOT double-count that
+    here — otherwise even N=500 would fail on a 50 MB budget.
+    """
+    if device.type == "cpu" or n <= 0:
+        return False
+    bytes_needed = (2 * n * dim * 4) + (n * n * 4) + (8 * 1024 * 1024)
+    return bytes_needed <= _gpu_clustering_budget_bytes(device)
+
+
+def _gpu_cdist(
+    a: np.ndarray, b: np.ndarray, metric: str, device: torch.device
+) -> np.ndarray:
+    """GPU pairwise distance; mirrors ``scipy.spatial.distance.cdist`` semantics.
+
+    Falls back to scipy when the output would exceed the VRAM budget or for
+    metrics without a fast GPU path. Supported fast-path metrics: ``cosine``,
+    ``euclidean``.
+    """
+    n_a, dim = a.shape
+    n_b = b.shape[0]
+    if not _gpu_clustering_fits(max(n_a, n_b), dim, device):
+        logger.debug(
+            "GPU clustering fallback (cdist n_a=%d n_b=%d dim=%d device=%s): "
+            "budget exceeded",
+            n_a, n_b, dim, device.type,
+        )
+        return cdist(a, b, metric=metric)
+    if metric not in ("cosine", "euclidean"):
+        return cdist(a, b, metric=metric)
+    a_t = torch.from_numpy(np.ascontiguousarray(a, dtype=np.float32)).to(
+        device, non_blocking=True
+    )
+    b_t = torch.from_numpy(np.ascontiguousarray(b, dtype=np.float32)).to(
+        device, non_blocking=True
+    )
+    with torch.inference_mode():
+        if metric == "cosine":
+            a_n = F.normalize(a_t, dim=1)
+            b_n = F.normalize(b_t, dim=1)
+            result = 1.0 - a_n @ b_n.T
+        else:  # euclidean
+            result = torch.cdist(a_t, b_t, p=2)
+    out = result.cpu().numpy().astype(a.dtype, copy=False)
+    del a_t, b_t, result
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
+    return out
+
+
+def _gpu_pdist_condensed(
+    a: np.ndarray, metric: str, device: torch.device
+) -> np.ndarray:
+    """GPU condensed pdist (scipy-ordered upper-triangular, flattened).
+
+    Equivalent to ``scipy.spatial.distance.pdist(a, metric=metric)``.
+    Falls back to scipy when the output exceeds the VRAM budget or for
+    unsupported metrics.
+    """
+    n, dim = a.shape
+    if not _gpu_clustering_fits(n, dim, device):
+        logger.debug(
+            "GPU clustering fallback (pdist n=%d dim=%d device=%s): budget exceeded",
+            n, dim, device.type,
+        )
+        return pdist(a, metric=metric)
+    if metric not in ("cosine", "euclidean"):
+        return pdist(a, metric=metric)
+    a_t = torch.from_numpy(np.ascontiguousarray(a, dtype=np.float32)).to(
+        device, non_blocking=True
+    )
+    with torch.inference_mode():
+        if metric == "cosine":
+            a_n = F.normalize(a_t, dim=1)
+            full = 1.0 - a_n @ a_n.T
+        else:  # euclidean
+            full = torch.cdist(a_t, a_t, p=2)
+        triu_idx = torch.triu_indices(n, n, offset=1, device=device)
+        condensed = full[triu_idx[0], triu_idx[1]]
+    out = condensed.cpu().numpy().astype(a.dtype, copy=False)
+    del a_t, full, triu_idx, condensed
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
+    return out
 
 
 class BaseClustering(Pipeline):
@@ -190,10 +366,11 @@ class BaseClustering(Pipeline):
         # compute distance between embeddings and clusters
         with record_function("pyannote::clustering_cdist"):
             e2k_distance = rearrange(
-                cdist(
+                _gpu_cdist(
                     rearrange(embeddings, "c s d -> (c s) d"),
                     centroids,
-                    metric=self.metric,
+                    self.metric,
+                    _get_clustering_device(),
                 ),
                 "(c s) k -> c s k",
                 c=num_chunks,
@@ -375,15 +552,25 @@ class AgglomerativeClustering(BaseClustering):
                 with np.errstate(divide="ignore", invalid="ignore"):
                     embeddings /= np.linalg.norm(embeddings, axis=-1, keepdims=True)
             with record_function("pyannote::clustering_linkage"):
+                # Pre-compute the condensed pairwise distance on GPU, then
+                # hand the 1-D distance vector to scipy's Lance-Williams merge.
+                # linkage() ignores the ``metric`` kwarg when given a
+                # condensed vector.
                 dendrogram: np.ndarray = linkage(
-                    embeddings, method=self.method, metric="euclidean"
+                    _gpu_pdist_condensed(
+                        embeddings, "euclidean", _get_clustering_device()
+                    ),
+                    method=self.method,
                 )
 
         # other methods work just fine with any metric
         else:
             with record_function("pyannote::clustering_linkage"):
                 dendrogram: np.ndarray = linkage(
-                    embeddings, method=self.method, metric=self.metric
+                    _gpu_pdist_condensed(
+                        embeddings, self.metric, _get_clustering_device()
+                    ),
+                    method=self.method,
                 )
 
         # apply the predefined threshold
@@ -608,7 +795,10 @@ class VBxClustering(BaseClustering):
             )
         with record_function("pyannote::clustering_linkage"):
             dendrogram = linkage(
-                train_embeddings_normed, method="centroid", metric="euclidean"
+                _gpu_pdist_condensed(
+                    train_embeddings_normed, "euclidean", _get_clustering_device()
+                ),
+                method="centroid",
             )
         ahc_clusters = fcluster(dendrogram, self.threshold, criterion="distance") - 1
         _, ahc_clusters = np.unique(ahc_clusters, return_inverse=True)
@@ -654,10 +844,11 @@ class VBxClustering(BaseClustering):
         # calculate distance
         with record_function("pyannote::clustering_cdist"):
             e2k_distance = rearrange(
-                cdist(
+                _gpu_cdist(
                     rearrange(embeddings, "c s d -> (c s) d"),
                     centroids,
-                    metric=self.metric,
+                    self.metric,
+                    _get_clustering_device(),
                 ),
                 "(c s) k -> c s k",
                 c=num_chunks,
