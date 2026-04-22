@@ -302,17 +302,19 @@ class BaseClustering(Pipeline):
         return embeddings[chunk_idx, speaker_idx], chunk_idx, speaker_idx
 
     def constrained_argmax(self, soft_clusters: np.ndarray) -> np.ndarray:
-        
+
         soft_clusters = np.nan_to_num(soft_clusters, nan=np.nanmin(soft_clusters))
         num_chunks, num_speakers, num_clusters = soft_clusters.shape
         # num_chunks, num_speakers, num_clusters
 
         hard_clusters = -2 * np.ones((num_chunks, num_speakers), dtype=np.int8)
 
+        # linear_sum_assignment is inherently per-chunk (cost matrix is 2-D),
+        # but the inner zip-loop that scatters the assignment into
+        # hard_clusters[c, :] is trivially vectorizable.
         for c, cost in enumerate(soft_clusters):
             speakers, clusters = linear_sum_assignment(cost, maximize=True)
-            for s, k in zip(speakers, clusters):
-                hard_clusters[c, s] = k
+            hard_clusters[c, speakers] = clusters
 
         return hard_clusters
 
@@ -356,12 +358,15 @@ class BaseClustering(Pipeline):
 
         train_embeddings = embeddings[train_chunk_idx, train_speaker_idx]
 
-        centroids = np.vstack(
-            [
-                np.mean(train_embeddings[train_clusters == k], axis=0)
-                for k in range(num_clusters)
-            ]
+        # Vectorized centroid computation: scatter-add embeddings per cluster
+        # then divide by count. Replaces a Python list-comp that issued
+        # num_clusters separate np.mean calls.
+        counts = np.bincount(train_clusters, minlength=num_clusters).astype(
+            train_embeddings.dtype
         )
+        sums = np.zeros((num_clusters, train_embeddings.shape[1]), dtype=train_embeddings.dtype)
+        np.add.at(sums, train_clusters, train_embeddings)
+        centroids = sums / np.maximum(counts[:, None], 1.0)
 
         # compute distance between embeddings and clusters
         with record_function("pyannote::clustering_cdist"):
@@ -665,8 +670,12 @@ class AgglomerativeClustering(BaseClustering):
         )
         with record_function("pyannote::clustering_cdist_merge"):
             centroids_cdist = cdist(large_centroids, small_centroids, metric=self.metric)
-        for small_k, large_k in enumerate(np.argmin(centroids_cdist, axis=0)):
-            clusters[clusters == small_clusters[small_k]] = large_clusters[large_k]
+        # Vectorized cluster remap: build a lookup table from old small-cluster
+        # labels to their nearest large-cluster label, then apply in one shot.
+        nearest_large = large_clusters[np.argmin(centroids_cdist, axis=0)]
+        remap = np.arange(clusters.max() + 1)
+        remap[small_clusters] = nearest_large
+        clusters = remap[clusters]
 
         # re-number clusters from 0 to num_large_clusters
         _, clusters = np.unique(clusters, return_inverse=True)

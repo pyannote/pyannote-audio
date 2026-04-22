@@ -858,6 +858,13 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             (num_chunks, num_frames, num_clusters)
         )
 
+        # Per-chunk loop intentionally preserved. Phase 3.5 measured a naive
+        # broadcast-max rewrite against this form on the 4.7h/8-speaker
+        # benchmark and it was 57% slower (10.74s vs 6.85s) — numpy's
+        # contiguous-slice ``segmentation[:, cluster == k]`` + axis=1 max
+        # beats scattered broadcast ops on CPU by a wide margin. A GPU port
+        # of this loop is the right long-term fix (Phase 5.2 territory);
+        # the naive CPU vectorization is an anti-pattern.
         for c, (cluster, (chunk, segmentation)) in enumerate(
             zip(hard_clusters, segmentations)
         ):

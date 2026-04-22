@@ -625,7 +625,14 @@ class Inference(BaseInference):
             (num_frames, num_classes), dtype=np.float32
         )
 
-        # loop on the scores of sliding chunks
+        # Per-chunk loop intentionally preserved. Phase 3.5 measured a
+        # vectorized rewrite using np.add.at / np.maximum.at against a flat
+        # scatter index; on the 4.7h/8-speaker benchmark discrete_diarization
+        # went from 12.5s to 16.9s (+35%) because numpy's ufunc.at primitives
+        # disable the contiguous-stride optimization that this loop's
+        # `aggregated_output[sf:sf+F] += ...` contiguous slice assignment
+        # benefits from. Scatter-add is a GPU anti-pattern on CPU.
+        # A GPU port of this loop belongs to Phase 5.2.
         for chunk, score in scores:
             # chunk ~ Segment
             # score ~ (num_frames_per_chunk, num_classes)-shaped np.ndarray
