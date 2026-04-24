@@ -342,6 +342,21 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         if onnx_cpu:
             self._setup_onnx_cpu(onnx_quantize, onnx_num_threads)
 
+        # Phase 6.2 ONNX Runtime mode (CUDA EP / CoreML EP / CPU EP — opt-in
+        # via PYANNOTE_USE_ONNX=1 env var). Patches the segmentation infer()
+        # path and the embedding resnet/fbank pair without touching the hot
+        # call sites. See pyannote.audio.onnx for the runtime wrappers.
+        self._onnx_seg_runtime = None
+        self._onnx_emb_runtime = None
+        try:
+            from pyannote.audio.onnx import onnx_enabled
+            if onnx_enabled():
+                self._setup_phase6_onnx()
+        except Exception as exc:  # pragma: no cover — never break pipeline init
+            logger.warning("Phase 6.2 ONNX setup failed, falling back to eager: %s", exc)
+            self._onnx_seg_runtime = None
+            self._onnx_emb_runtime = None
+
     @property
     def segmentation_batch_size(self) -> int:
         return self._segmentation.batch_size
@@ -349,6 +364,108 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
     @segmentation_batch_size.setter
     def segmentation_batch_size(self, batch_size: int):
         self._segmentation.batch_size = batch_size
+
+    def _setup_phase6_onnx(self) -> None:
+        """Wire Phase 6.2 ONNX Runtime into the segmentation + embedding paths.
+
+        Triggered by ``PYANNOTE_USE_ONNX=1`` + ``PYANNOTE_ONNX_MODELS_DIR``
+        env vars. Loads per-device ORT sessions (CUDA EP, CoreML EP, or CPU
+        EP) and monkey-patches the inference call sites — the hot path in
+        ``get_segmentations()`` / ``get_embeddings()`` stays unchanged.
+
+        Provider order when ENABLE_TENSORRT=1 is set: TRT EP → CUDA EP → CPU
+        EP. ORT falls back automatically if any provider fails to build.
+
+        Falls back to eager PyTorch silently if artifacts are missing; the
+        attribute references stay ``None`` and the hot path branches use
+        PyTorch as before.
+        """
+        from pyannote.audio.onnx import (
+            ONNXSegmentationRuntime,
+            ONNXEmbeddingRuntime,
+            compute_fbank_batched,
+        )
+        from pyannote.audio.onnx.runtime import _onnx_models_dir
+
+        models_dir = _onnx_models_dir()
+        if models_dir is None:
+            logger.warning(
+                "PYANNOTE_USE_ONNX=1 but PYANNOTE_ONNX_MODELS_DIR is unset or "
+                "missing; ONNX runtime disabled."
+            )
+            return
+
+        seg_path = models_dir / "segmentation.onnx"
+        emb_path = models_dir / "embedding.onnx"
+        device = self._segmentation.device
+
+        # ---- segmentation ---------------------------------------------------
+        if seg_path.exists():
+            try:
+                self._onnx_seg_runtime = ONNXSegmentationRuntime(seg_path, device)
+                logger.info(
+                    "Phase 6.2 ONNX: segmentation via %s",
+                    self._onnx_seg_runtime.providers[0],
+                )
+                orig_seg_runtime = self._onnx_seg_runtime
+
+                def _onnx_seg_infer(chunks):
+                    if not isinstance(chunks, torch.Tensor):
+                        chunks = torch.as_tensor(chunks, dtype=torch.float32)
+                    out = orig_seg_runtime(chunks)
+                    return out.detach().cpu().numpy()
+
+                self._segmentation.infer = _onnx_seg_infer
+            except Exception as exc:
+                logger.warning("ONNX segmentation runtime init failed: %s", exc)
+                self._onnx_seg_runtime = None
+
+        # ---- embedding ------------------------------------------------------
+        if emb_path.exists():
+            try:
+                self._onnx_emb_runtime = ONNXEmbeddingRuntime(emb_path, device)
+                logger.info(
+                    "Phase 6.2 ONNX: embedding via %s",
+                    self._onnx_emb_runtime.providers[0],
+                )
+
+                # Monkey-patch the WeSpeakerResNet34 backbone: the pipeline
+                # calls ``self._embedding.model_.resnet(fbank, weights=imasks)``
+                # and unpacks (_, emb_tensor). We return a 2-tuple whose last
+                # element is the ONNX embedding so the unpack still works.
+                resnet = self._embedding.model_.resnet
+                onnx_emb = self._onnx_emb_runtime
+
+                def _onnx_resnet_forward(fbank, weights=None):
+                    emb = onnx_emb(fbank, weights=weights)
+                    return torch.zeros((), device=emb.device, dtype=emb.dtype), emb
+
+                # Replace the bound forward with our callable. The wrapping
+                # preserves __call__ → forward dispatch so the pipeline's
+                # ``resnet(fbank, weights=imasks)`` syntax keeps working.
+                resnet.forward = _onnx_resnet_forward
+
+                # Replace compute_fbank with the batched helper (no vmap).
+                wespeaker_model = self._embedding.model_
+                fbank_fn = wespeaker_model._fbank
+                centering_span = wespeaker_model.hparams.fbank_centering_span
+                sample_rate = wespeaker_model.hparams.sample_rate
+                frame_length_ms = wespeaker_model.hparams.frame_length
+                frame_shift_ms = wespeaker_model.hparams.frame_shift
+
+                def _batched_compute_fbank(waveforms):
+                    return compute_fbank_batched(
+                        waveforms, fbank_fn,
+                        fbank_centering_span=centering_span,
+                        sample_rate=sample_rate,
+                        frame_length_ms=frame_length_ms,
+                        frame_shift_ms=frame_shift_ms,
+                    )
+
+                wespeaker_model.compute_fbank = _batched_compute_fbank
+            except Exception as exc:
+                logger.warning("ONNX embedding runtime init failed: %s", exc)
+                self._onnx_emb_runtime = None
 
     def _setup_onnx_cpu(self, quantize: bool = True, num_threads: int = 0) -> None:
         """Load pre-cached ONNX models for CPU inference (no runtime conversion).
