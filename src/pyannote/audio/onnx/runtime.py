@@ -33,36 +33,84 @@ def _onnx_models_dir() -> Optional[Path]:
     return p if p.is_dir() else None
 
 
-def _select_providers(device: torch.device) -> list:
-    """Map a torch device to an ORT provider list with safe fallbacks."""
+def _shapes_to_str(shape_map: Optional[dict]) -> Optional[str]:
+    """Convert ``{input_name: (d0, d1, ...)}`` → ORT's comma/x-joined string.
+
+    Example: ``{"input": (1, 1, 80000)}`` → ``"input:1x1x80000"``. Multiple
+    inputs become comma-separated: ``"a:2x3,b:4x5"``.
+    """
+    if not shape_map:
+        return None
+    return ",".join(
+        f"{name}:{'x'.join(str(d) for d in shape)}"
+        for name, shape in shape_map.items()
+    )
+
+
+def _select_providers(
+    device: torch.device,
+    shape_profile: Optional[dict] = None,
+) -> list:
+    """Map a torch device to an ORT provider list with safe fallbacks.
+
+    Parameters
+    ----------
+    device
+        Target device; drives provider selection.
+    shape_profile
+        Optional ``{"min": {name: shape}, "opt": {name: shape}, "max": {...}}``
+        for TRT EP's engine-plan builder. Without a shape profile, TRT EP
+        rebuilds the plan on every distinct input shape it sees — catastrophic
+        for pyannote which emits variable batch sizes.
+    """
     if device.type == "cuda":
         idx = device.index if device.index is not None else 0
         providers: list = []
-        # TensorRT EP (Phase 6.3 — opt-in; leave at front when enabled so ORT
-        # picks it first). Cache dir must be stable across restarts for the
-        # cached engine plan to be reused.
         if os.environ.get("ENABLE_TENSORRT", "").strip().lower() in {"1", "true", "yes", "on"}:
             trt_cache = os.environ.get(
                 "TENSORRT_CACHE_DIR",
                 str(Path.home() / ".cache" / "tensorrt" / f"sm_{torch.cuda.get_device_capability(idx)[0]}{torch.cuda.get_device_capability(idx)[1]}"),
             )
             Path(trt_cache).mkdir(parents=True, exist_ok=True)
-            providers.append((
-                "TensorrtExecutionProvider",
-                {
-                    "device_id": idx,
-                    "trt_engine_cache_enable": True,
-                    "trt_engine_cache_path": trt_cache,
-                    "trt_fp16_enable": False,  # fp32-only per DER invariant
-                    "trt_max_workspace_size": 2 << 30,
-                },
-            ))
+            trt_opts: dict = {
+                "device_id": idx,
+                "trt_engine_cache_enable": True,
+                "trt_engine_cache_path": trt_cache,
+                "trt_fp16_enable": False,  # fp32-only per DER invariant
+                "trt_max_workspace_size": 2 << 30,
+            }
+            if shape_profile:
+                min_s = _shapes_to_str(shape_profile.get("min"))
+                opt_s = _shapes_to_str(shape_profile.get("opt"))
+                max_s = _shapes_to_str(shape_profile.get("max"))
+                if min_s and opt_s and max_s:
+                    trt_opts["trt_profile_min_shapes"] = min_s
+                    trt_opts["trt_profile_opt_shapes"] = opt_s
+                    trt_opts["trt_profile_max_shapes"] = max_s
+            providers.append(("TensorrtExecutionProvider", trt_opts))
         providers.append(("CUDAExecutionProvider", {"device_id": idx}))
         providers.append("CPUExecutionProvider")
         return providers
     if device.type == "mps":
         return ["CoreMLExecutionProvider", "CPUExecutionProvider"]
     return ["CPUExecutionProvider"]
+
+
+# Shape profiles for the two ONNX graphs the pipeline exports. Values chosen
+# to bracket the shapes the real pipeline emits on a 10s chunk @ 16 kHz with
+# embedding_batch_size=16 (Phase A pin) and segmentation_batch_size=32.
+
+_SEGMENTATION_SHAPE_PROFILE = {
+    "min": {"input_values": (1, 1, 80000)},
+    "opt": {"input_values": (32, 1, 80000)},
+    "max": {"input_values": (32, 1, 160000)},
+}
+
+_EMBEDDING_SHAPE_PROFILE = {
+    "min": {"fbank_features": (1, 50, 80), "weights": (1, 50)},
+    "opt": {"fbank_features": (16, 200, 80), "weights": (16, 200)},
+    "max": {"fbank_features": (32, 500, 80), "weights": (32, 500)},
+}
 
 
 # ---------------------------------------------------------------------------
@@ -163,7 +211,7 @@ class ONNXSegmentationRuntime:
         sess_options.log_severity_level = 3  # warnings+
         self.session = ort.InferenceSession(
             str(self._path), sess_options=sess_options,
-            providers=_select_providers(device),
+            providers=_select_providers(device, shape_profile=_SEGMENTATION_SHAPE_PROFILE),
         )
         self._input_name = self.session.get_inputs()[0].name
         self._output_name = self.session.get_outputs()[0].name
@@ -204,7 +252,7 @@ class ONNXEmbeddingRuntime:
         sess_options.log_severity_level = 3
         self.session = ort.InferenceSession(
             str(self._path), sess_options=sess_options,
-            providers=_select_providers(device),
+            providers=_select_providers(device, shape_profile=_EMBEDDING_SHAPE_PROFILE),
         )
         self._inputs = [i.name for i in self.session.get_inputs()]
         self._output_name = self.session.get_outputs()[0].name

@@ -399,8 +399,21 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         emb_path = models_dir / "embedding.onnx"
         device = self._segmentation.device
 
+        # Phase 6.3 hybrid mode: allow skipping segmentation ONNX (keeps the
+        # fast eager PyTorch path) while still routing embedding through
+        # ORT+TensorRT. The segmentation ONNX is either a regression on
+        # CUDA EP (LSTM/If fallback) or roughly-parity on TRT EP; until its
+        # shape profile is tuned it is safer to leave it eager. Gate on
+        # PYANNOTE_ONNX_SEG_ENABLED (default "1" to preserve prior behavior).
+        seg_enabled = os.environ.get("PYANNOTE_ONNX_SEG_ENABLED", "1").strip().lower() in {
+            "1", "true", "yes", "on"
+        }
+        emb_enabled = os.environ.get("PYANNOTE_ONNX_EMB_ENABLED", "1").strip().lower() in {
+            "1", "true", "yes", "on"
+        }
+
         # ---- segmentation ---------------------------------------------------
-        if seg_path.exists():
+        if seg_enabled and seg_path.exists():
             try:
                 self._onnx_seg_runtime = ONNXSegmentationRuntime(seg_path, device)
                 logger.info(
@@ -421,7 +434,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                 self._onnx_seg_runtime = None
 
         # ---- embedding ------------------------------------------------------
-        if emb_path.exists():
+        if emb_enabled and emb_path.exists():
             try:
                 self._onnx_emb_runtime = ONNXEmbeddingRuntime(emb_path, device)
                 logger.info(
