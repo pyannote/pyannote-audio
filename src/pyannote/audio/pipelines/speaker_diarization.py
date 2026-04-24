@@ -316,6 +316,17 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         if torch_compile and self._segmentation.device.type in ("cuda", "mps"):
             try:
                 if self.klustering != "OracleClustering":
+                    # Attempted in Phase 6.3 follow-up (2026-04-23): compile
+                    # ``resnet`` explicitly because the pipeline calls
+                    # ``model_.resnet(...)`` directly. Result: E2E REGRESSED
+                    # (170s mean with cv=35% on 2.2h, embedding stage 92s vs
+                    # baseline 75s). Root cause: Dynamo recompiles on every
+                    # unique batch shape the pipeline emits (same class of
+                    # issue as the TRT EP rebuild storm). Without dynamic=True
+                    # torch.compile punishes pipelines with variable shapes.
+                    # Reverted to compiling only model_ (matches prior
+                    # Phase 2.1/6.1 behavior — noise-level change, not a win
+                    # but not a regression either).
                     self._embedding.model_ = torch.compile(
                         self._embedding.model_, mode="reduce-overhead"
                     )
