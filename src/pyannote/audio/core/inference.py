@@ -549,9 +549,91 @@ class Inference(BaseInference):
         """
 
         with record_function("pyannote::aggregation"):
+            # Phase 5.2: opt-in GPU scatter-add path. Default off; gated by
+            # PYANNOTE_GPU_AGGREGATE=1 env var + CUDA availability. Falls
+            # back to the numpy loop silently on any failure.
+            try:
+                from pyannote.audio.gpu_ops import gpu_aggregate_enabled
+                if gpu_aggregate_enabled():
+                    result = Inference._aggregate_impl_gpu(
+                        scores, frames, warm_up, epsilon, hamming, missing, skip_average
+                    )
+                    if result is not None:
+                        return result
+            except Exception:
+                pass  # fall back to CPU implementation
             return Inference._aggregate_impl(
                 scores, frames, warm_up, epsilon, hamming, missing, skip_average
             )
+
+    @staticmethod
+    def _aggregate_impl_gpu(
+        scores: SlidingWindowFeature,
+        frames: SlidingWindow,
+        warm_up: Tuple[float, float] = (0.0, 0.0),
+        epsilon: float = 1e-12,
+        hamming: bool = False,
+        missing: float = np.nan,
+        skip_average: bool = False,
+    ) -> "SlidingWindowFeature | None":
+        """Phase 5.2 GPU scatter-add aggregate. Returns None if GPU path declined
+        (VRAM budget exceeded, CUDA unavailable, etc)."""
+        from pyannote.audio.gpu_ops import try_aggregate_gpu
+
+        num_chunks, num_frames_per_chunk, num_classes = scores.data.shape
+        chunks = scores.sliding_window
+        frames_out = SlidingWindow(
+            start=chunks.start,
+            duration=frames.duration,
+            step=frames.step,
+        )
+
+        hamming_window = (
+            _cached_hamming_window(num_frames_per_chunk)
+            if hamming
+            else np.ones((num_frames_per_chunk, 1))
+        )
+        warm_up_window = np.ones((num_frames_per_chunk, 1))
+        warm_up_left = round(
+            warm_up[0] / scores.sliding_window.duration * num_frames_per_chunk
+        )
+        warm_up_window[:warm_up_left] = epsilon
+        warm_up_right = round(
+            warm_up[1] / scores.sliding_window.duration * num_frames_per_chunk
+        )
+        warm_up_window[num_frames_per_chunk - warm_up_right :] = epsilon
+
+        num_frames = (
+            frames_out.closest_frame(
+                scores.sliding_window.start
+                + scores.sliding_window.duration
+                + (num_chunks - 1) * scores.sliding_window.step
+                + 0.5 * frames_out.duration
+            )
+            + 1
+        )
+
+        # Build start-frame indices per chunk (mirrors the CPU loop's
+        # `frames.closest_frame(chunk.start + 0.5 * frames.duration)`).
+        start_frames = np.empty(num_chunks, dtype=np.int64)
+        for i, (chunk, _) in enumerate(scores):
+            start_frames[i] = frames_out.closest_frame(
+                chunk.start + 0.5 * frames_out.duration
+            )
+
+        out = try_aggregate_gpu(
+            scores.data, start_frames, num_frames, hamming_window, warm_up_window,
+        )
+        if out is None:
+            return None
+        agg_out, overlap, agg_mask = out
+
+        if skip_average:
+            average = agg_out
+        else:
+            average = agg_out / np.maximum(overlap, epsilon)
+        average[agg_mask == 0.0] = missing
+        return SlidingWindowFeature(average, frames_out)
 
     @staticmethod
     def _aggregate_impl(

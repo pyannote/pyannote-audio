@@ -971,6 +971,20 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         num_chunks, num_frames, local_num_speakers = segmentations.data.shape
 
         num_clusters = np.max(hard_clusters) + 1
+
+        # Phase 5.2: opt-in GPU scatter-reduce path (PYANNOTE_GPU_RECONSTRUCT=1).
+        # Falls back to the CPU loop silently on budget/availability failure.
+        try:
+            from pyannote.audio.gpu_ops import try_reconstruct_gpu
+            gpu_result = try_reconstruct_gpu(
+                segmentations.data, hard_clusters, num_clusters
+            )
+        except Exception:
+            gpu_result = None
+
+        if gpu_result is not None:
+            return SlidingWindowFeature(gpu_result, segmentations.sliding_window)
+
         clustered_segmentations = np.nan * np.zeros(
             (num_chunks, num_frames, num_clusters)
         )
@@ -979,9 +993,9 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         # broadcast-max rewrite against this form on the 4.7h/8-speaker
         # benchmark and it was 57% slower (10.74s vs 6.85s) — numpy's
         # contiguous-slice ``segmentation[:, cluster == k]`` + axis=1 max
-        # beats scattered broadcast ops on CPU by a wide margin. A GPU port
-        # of this loop is the right long-term fix (Phase 5.2 territory);
-        # the naive CPU vectorization is an anti-pattern.
+        # beats scattered broadcast ops on CPU by a wide margin. Phase 5.2
+        # provides an opt-in GPU port (see gpu_ops.py); the naive CPU
+        # vectorization remains an anti-pattern.
         for c, (cluster, (chunk, segmentation)) in enumerate(
             zip(hard_clusters, segmentations)
         ):
