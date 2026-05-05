@@ -214,7 +214,7 @@ class Task(lightning.LightningDataModule):
     duration : float, optional
         Chunks duration in seconds. Defaults to two seconds (2.).
     min_duration : float, optional
-        Sample training chunks duration uniformely between `min_duration`
+        Sample training chunks duration uniformly between `min_duration`
         and `duration`. Defaults to `duration` (i.e. fixed length chunks).
     warm_up : float or (float, float), optional
         Use that many seconds on the left- and rightmost parts of each chunk
@@ -604,7 +604,7 @@ class Task(lightning.LightningDataModule):
         Parameters
         ----------
         prepared_data: dict
-            dictionnary containing protocol data prepared by
+            dictionary containing protocol data prepared by
             `prepare_data()`
         Note
         ----
@@ -799,7 +799,7 @@ class Task(lightning.LightningDataModule):
         return {"loss": loss}
 
     # default training_step provided for convenience
-    # can obviously be overriden for each task
+    # can obviously be overridden for each task
     def training_step(self, batch, batch_idx: int):
         return self.common_step(batch, batch_idx, "train")
 
@@ -827,7 +827,7 @@ class Task(lightning.LightningDataModule):
             return None
 
     # default validation_step provided for convenience
-    # can obviously be overriden for each task
+    # can obviously be overridden for each task
     def validation_step(self, batch, batch_idx: int):
         return self.common_step(batch, batch_idx, "val")
 

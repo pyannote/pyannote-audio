@@ -47,16 +47,16 @@ class PyanNet(Model):
     num_channels : int, optional
         Number of channels. Defaults to mono (1).
     sincnet : dict, optional
-        Keyword arugments passed to the SincNet block.
+        Keyword arguments passed to the SincNet block.
         Defaults to {"stride": 1}.
     lstm : dict, optional
         Keyword arguments passed to the LSTM layer.
         Defaults to {"hidden_size": 128, "num_layers": 2, "bidirectional": True},
         i.e. two bidirectional layers with 128 units each.
         Set "monolithic" to False to split monolithic multi-layer LSTM into multiple mono-layer LSTMs.
-        This may proove useful for probing LSTM internals.
+        This may prove useful for probing LSTM internals.
     linear : dict, optional
-        Keyword arugments used to initialize linear layers
+        Keyword arguments used to initialize linear layers
         Defaults to {"hidden_size": 128, "num_layers": 2},
         i.e. two linear layers with 128 units each.
     """

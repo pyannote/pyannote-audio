@@ -210,7 +210,7 @@ class DiscreteDiarizationErrorRate(BaseMetric):
                     components[name] += segment_component[name]
             return components
 
-        # if (num_chunks, num_frames, num_speakers)-shaed, compute one DER per chunk and aggregate
+        # if (num_chunks, num_frames, num_speakers)-shared, compute one DER per chunk and aggregate
         elif ndim == 3:
 
             components = self.init_components()
