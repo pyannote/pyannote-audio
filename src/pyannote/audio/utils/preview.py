@@ -165,7 +165,7 @@ def preview(
         duration = audio.get_duration(audio_file)
         segment = Segment(start=0.0, end=duration)
 
-    # load waveform as SlidingWindowFeautre
+    # load waveform as SlidingWindowFeature
     data, sample_rate = audio.crop(audio_file, segment)
     data = data.numpy().T
     samples = SlidingWindow(
