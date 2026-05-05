@@ -158,7 +158,7 @@ class SimpleSegmentationModel(Model):
         """
         # extract MFCC
         mfcc = self.mfcc(waveforms)
-        # pass MFCC sequeence into the recurrent layer
+        # pass MFCC sequence into the recurrent layer
         output, hidden = self.lstm(rearrange(mfcc, "b c f t -> b t (c f)"))
         # apply the final classifier to get logits
         return self.activation(self.classifier(output))
