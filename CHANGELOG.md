@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## develop (xxxx-xx-xx)
+
+- fix(task): fix  `Task.prepare_data` to support saving preprocessors that produce `int` values in metadata [@lylyhan](http://github.com/lylyhan)
+
 ## Version 4.0.4 (2026-02-07)
 
 - feat(sample): add transcription of sample file
