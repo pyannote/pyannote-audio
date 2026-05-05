@@ -446,7 +446,7 @@ class PixIT(SegmentationTask):
                 Audio chunks.
             y: (frame, )
                 Frame-level targets. Note that frame < time.
-                `frame` is infered automagically from the
+                `frame` is inferred automagically from the
                 example model output.
             ...
         """
