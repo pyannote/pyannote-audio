@@ -439,7 +439,7 @@ class Pipeline(_Pipeline):
                 self.instantiate(default_parameters)
             except ValueError:
                 raise RuntimeError(
-                    "A pipeline must be instantiated with `pipeline.instantiate(paramaters)` before it can be applied. "
+                    "A pipeline must be instantiated with `pipeline.instantiate(parameters)` before it can be applied. "
                     "Tried to use parameters provided by `pipeline.default_parameters()` but those are not compatible. "
                 )
 
