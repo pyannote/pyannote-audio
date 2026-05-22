@@ -72,19 +72,19 @@ class ToTaToNet(Model):
     num_channels : int, optional
         Number of channels. Defaults to mono (1).
     sincnet : dict, optional
-        Keyword arugments passed to the SincNet block.
+        Keyword arguments passed to the SincNet block.
         Defaults to {"stride": 1}.
     linear : dict, optional
-        Keyword arugments used to initialize linear layers
+        Keyword arguments used to initialize linear layers
         See ToTaToNet.LINEAR_DEFAULTS for default values.
     diar : dict, optional
-        Keyword arguments used to initalize the average pooling in the diarization branch.
+        Keyword arguments used to initialize the average pooling in the diarization branch.
         See ToTaToNet.DIAR_DEFAULTS for default values.
     encoder_decoder : dict, optional
-        Keyword arguments used to initalize the encoder and decoder.
+        Keyword arguments used to initialize the encoder and decoder.
         See ToTaToNet.ENCODER_DECODER_DEFAULTS for default values.
     dprnn : dict, optional
-        Keyword arguments used to initalize the DPRNN model.
+        Keyword arguments used to initialize the DPRNN model.
         See ToTaToNet.DPRNN_DEFAULTS for default values.
     sample_rate : int, optional
         Audio sample rate. Defaults to 16000.
@@ -208,14 +208,14 @@ class ToTaToNet(Model):
         self.average_pool = nn.AvgPool1d(
             self.diarization_scaling, stride=self.diarization_scaling
         )
-        linaer_input_features = n_feats_out
+        linear_input_features = n_feats_out
         if linear["num_layers"] > 0:
             self.linear = nn.ModuleList(
                 [
                     nn.Linear(in_features, out_features)
                     for in_features, out_features in pairwise(
                         [
-                            linaer_input_features,
+                            linear_input_features,
                         ]
                         + [self.hparams.linear["hidden_size"]]
                         * self.hparams.linear["num_layers"]
