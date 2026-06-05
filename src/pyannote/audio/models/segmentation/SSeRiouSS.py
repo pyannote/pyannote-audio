@@ -62,9 +62,9 @@ class SSeRiouSS(Model):
         Defaults to {"hidden_size": 128, "num_layers": 4, "bidirectional": True},
         i.e. two bidirectional layers with 128 units each.
         Set "monolithic" to False to split monolithic multi-layer LSTM into multiple mono-layer LSTMs.
-        This may proove useful for probing LSTM internals.
+        This may prove useful for probing LSTM internals.
     linear : dict, optional
-        Keyword arugments used to initialize linear layers
+        Keyword arguments used to initialize linear layers
         Defaults to {"hidden_size": 128, "num_layers": 2},
         i.e. two linear layers with 128 units each.
     """
