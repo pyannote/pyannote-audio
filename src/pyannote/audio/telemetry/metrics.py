@@ -41,9 +41,9 @@ SESSION_ID = str(uuid4())
 DEFAULT_LOG_LEVEL = CONFIG["telemetry_log_level"]
 
 # Initialize metrics with basic setup
-exporter = OTLPSpanExporter(endpoint=OTLP_ENDPOINT, headers=OTLP_HEADERS, timeout=10)
-provider = TracerProvider(shutdown_on_exit=True)
-provider.add_span_processor(BatchSpanProcessor(exporter, schedule_delay_millis=1000))
+exporter = OTLPSpanExporter(endpoint=OTLP_ENDPOINT, headers=OTLP_HEADERS, timeout=5)
+provider = TracerProvider(shutdown_on_exit=False)
+provider.add_span_processor(BatchSpanProcessor(exporter, schedule_delay_millis=500, export_timeout_millis=5000))
 tracer = provider.get_tracer(__name__)
 
 
