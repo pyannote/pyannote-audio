@@ -16,19 +16,19 @@ To activate / deactivate globally:
 
 from __future__ import annotations
 
+import atexit
 import logging
 import os
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-import yaml
-from opentelemetry import metrics
-from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
-from opentelemetry.sdk.metrics import MeterProvider
-from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-from pyannote.audio import __version__
 import numpy as np
+import yaml
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from pyannote.audio import __version__
 
 CONFIG_FILE = Path(__file__).parent / "config.yaml"
 
@@ -42,19 +42,12 @@ SESSION_ID = str(uuid4())
 DEFAULT_LOG_LEVEL = CONFIG["telemetry_log_level"]
 
 # Initialize metrics with basic setup
-exporter = OTLPMetricExporter(endpoint=OTLP_ENDPOINT, headers=OTLP_HEADERS)
-reader = PeriodicExportingMetricReader(exporter, export_interval_millis=60000)
+exporter = OTLPSpanExporter(endpoint=OTLP_ENDPOINT, headers=OTLP_HEADERS)
+provider = TracerProvider()
+provider.add_span_processor(BatchSpanProcessor(exporter))
+tracer = provider.get_tracer(__name__)
+atexit.register(provider.shutdown)
 
-provider = MeterProvider(metric_readers=[reader])
-metrics.set_meter_provider(provider)
-meter = metrics.get_meter(__name__)
-
-# track model initialization
-model_init_counter = meter.create_counter(
-    name="oss-model-init",
-    description="Number of model initializations",
-    unit="1",
-)
 
 def track_model_init(model: "Model") -> None:
     """
@@ -66,22 +59,14 @@ def track_model_init(model: "Model") -> None:
         Instantiated model
     """
     if is_metrics_enabled():
-        model_init_counter.add(
-            1,
-            {
-                "origin": getattr(model, "_otel_origin", "unknown"),
-                "version": __version__,
-                "session_id": SESSION_ID,
-            },
-        )
-
-
-# track pipeline initialization
-pipeline_init_counter = meter.create_counter(
-    name="oss-pipeline-init",
-    description="Number of pipeline initializations",
-    unit="1",
-)
+        with tracer.start_as_current_span("oss-model-init") as span:
+            span.set_attributes(
+                {
+                    "origin": getattr(model, "_otel_origin", "unknown"),
+                    "version": __version__,
+                    "session_id": SESSION_ID,
+                },
+            )
 
 
 def track_pipeline_init(pipeline: "Pipeline") -> None:
@@ -94,37 +79,16 @@ def track_pipeline_init(pipeline: "Pipeline") -> None:
         Instantiated pipeline
     """
     if is_metrics_enabled():
-        pipeline_init_counter.add(
-            1,
-            {
-                "origin": getattr(pipeline, "_otel_origin", "unknown"),
-                "name": getattr(pipeline, "_otel_name", "unknown"),
-                "version": __version__,
-                "session_id": SESSION_ID,
-            },
-        )
+        with tracer.start_as_current_span("oss-pipeline-init") as span:
+            span.set_attributes(
+                {
+                    "origin": getattr(pipeline, "_otel_origin", "unknown"),
+                    "name": getattr(pipeline, "_otel_name", "unknown"),
+                    "version": __version__,
+                    "session_id": SESSION_ID,
+                },
+            )
 
-# track pipeline application
-file_duration_bucket = meter.create_histogram(
-    name="oss-pipeline-apply",
-    explicit_bucket_boundaries_advisory=[
-        10,  # 10 seconds
-        20,  # 20 seconds
-        30,  # 30 seconds
-        60,  # 1 minute
-        120,  # 2 minutes
-        300,  # 5 minutes
-        600,  # 10 minutes
-        1800,  # 30 minutes
-        3600,  # 1 hour
-        7200,  # 2 hours
-        14400,  # 4 hours
-        28800,  # 8 hours
-        86400,  # 24 hours
-    ],
-    description="Duration of file in seconds",
-    unit="s",
-)
 
 def track_pipeline_apply(
     pipeline: "Pipeline",
@@ -158,18 +122,20 @@ def track_pipeline_apply(
             max_speakers=max_speakers,
         )
 
-        file_duration_bucket.record(
-            duration,
-            {
-                "origin": getattr(pipeline, "_otel_origin", "unknown"),
-                "name": getattr(pipeline, "_otel_name", "unknown"),
-                "version": __version__,
-                "session_id": SESSION_ID,
-                "num_speakers": num_speakers,
-                "min_speakers": min_speakers,
-                "max_speakers": max_speakers if np.isfinite(max_speakers) else "inf",
-            },
-        )
+        with tracer.start_as_current_span("oss-pipeline-apply") as span:
+            span.set_attributes(
+                {
+                    "origin": getattr(pipeline, "_otel_origin", "unknown"),
+                    "name": getattr(pipeline, "_otel_name", "unknown"),
+                    "version": __version__,
+                    "session_id": SESSION_ID,
+                    "duration": duration,
+                    "num_speakers": num_speakers,
+                    "min_speakers": min_speakers,
+                    "max_speakers": max_speakers if np.isfinite(max_speakers) else "inf",
+                },
+            )
+
 
 # Set initial metrics enabled state in env var if not already set
 if "PYANNOTE_METRICS_ENABLED" not in os.environ:
