@@ -16,7 +16,6 @@ To activate / deactivate globally:
 
 from __future__ import annotations
 
-import atexit
 import logging
 import os
 from pathlib import Path
@@ -42,11 +41,10 @@ SESSION_ID = str(uuid4())
 DEFAULT_LOG_LEVEL = CONFIG["telemetry_log_level"]
 
 # Initialize metrics with basic setup
-exporter = OTLPSpanExporter(endpoint=OTLP_ENDPOINT, headers=OTLP_HEADERS)
-provider = TracerProvider()
-provider.add_span_processor(BatchSpanProcessor(exporter))
+exporter = OTLPSpanExporter(endpoint=OTLP_ENDPOINT, headers=OTLP_HEADERS, timeout=10)
+provider = TracerProvider(shutdown_on_exit=True)
+provider.add_span_processor(BatchSpanProcessor(exporter, schedule_delay_millis=1000))
 tracer = provider.get_tracer(__name__)
-atexit.register(provider.shutdown)
 
 
 def track_model_init(model: "Model") -> None:
