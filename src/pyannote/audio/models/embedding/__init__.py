@@ -21,6 +21,7 @@
 # SOFTWARE.
 
 
+from .redimnet2 import BaseReDimNet2, ReDimNet2
 from .wespeaker import (
     WeSpeakerResNet34,
     WeSpeakerResNet152,
@@ -36,4 +37,6 @@ __all__ = [
     "WeSpeakerResNet152",
     "WeSpeakerResNet221",
     "WeSpeakerResNet293",
+    "BaseReDimNet2",
+    "ReDimNet2",
 ]
