@@ -435,6 +435,10 @@ class ReDimNet2Wrap(nn.Module):
         fbank : (batch, frames, num_mel_bins) torch.Tensor
             Batch of (log-mel) features.
         """
+        # make sure the waveform lives on the same device as the model: the feature
+        # extractor holds device-bound buffers (e.g. the pre-emphasis filter), so a
+        # CPU waveform fed to a GPU model would otherwise raise a device mismatch.
+        x = x.to(self.linear.weight.device)
         if self.pad_right_samples is not None:
             x = torch.nn.functional.pad(x, (0, self.pad_right_samples), mode='constant', value=None)
         fbank = self.spec(x)
@@ -489,6 +493,10 @@ class ReDimNet2Wrap(nn.Module):
         embedding : (batch, embed_dim) or (batch, speakers, embed_dim) torch.Tensor
             Batch of speaker embeddings.
         """
+        if weights is not None:
+            # keep weights on the same device as the features they apply to
+            weights = weights.to(out.device)
+
         if weights is not None and weights.dim() == 3:
             # one embedding per speaker
             return torch.stack(
