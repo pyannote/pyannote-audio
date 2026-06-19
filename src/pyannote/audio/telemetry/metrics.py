@@ -153,7 +153,7 @@ def is_metrics_enabled() -> bool:
     if "PYANNOTE_METRICS_ENABLED" not in os.environ:
         raise ValueError("PYANNOTE_METRICS_ENABLED environment variable is not set.")
 
-    return os.environ["PYANNOTE_METRICS_ENABLED"].lower() == "true"
+    return os.environ["PYANNOTE_METRICS_ENABLED"].lower() in ["true", "1"]
 
 
 def _save_metrics_config(enabled: bool) -> None:
