@@ -67,7 +67,7 @@ class DiarizeOutput:
 
     # speaker diarization adapted to downstream transcription
     # (does not contain overlapping speech turns)
-    exclusive_speaker_diarization: Annotation
+    exclusive_speaker_diarization: Annotation | None = None
 
     # one speaker embedding per speaker
     # as (num_speakers, dimension) array
