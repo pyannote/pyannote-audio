@@ -1,7 +1,9 @@
 # CHANGELOG
 
-## develop (xxxx-xx-xx)
+## Version 4.0.5 (2026-06-22)
 
+- improve(telemetry): reduce number of sent packages [@litdarya](https://github.com/litdarya)
+- feat(cli): add `--average-case` option to `optimize` command [@antoinelaurent](https://github.com/antoinelaurent)
 - fix(task): fix  `Task.prepare_data` to support saving preprocessors that produce `int` values in metadata [@lylyhan](http://github.com/lylyhan)
 
 ## Version 4.0.4 (2026-02-07)
