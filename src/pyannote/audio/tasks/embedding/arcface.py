@@ -50,7 +50,7 @@ class SupervisedRepresentationLearningWithArcFace(
     duration : float, optional
         Chunks duration in seconds. Defaults to two seconds (2.).
     min_duration : float, optional
-        Sample training chunks duration uniformely between `min_duration`
+        Sample training chunks duration uniformly between `min_duration`
         and `duration`. Defaults to `duration` (i.e. fixed length chunks).
     num_classes_per_batch : int, optional
         Number of classes per batch. Defaults to 32.
