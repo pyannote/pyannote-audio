@@ -21,6 +21,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import functools
 import warnings
 from typing import Callable, List, Optional, Text, Tuple, Union
 
@@ -30,6 +31,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 from lightning.pytorch.utilities.memory import is_oom_error
+from torch.profiler import record_function
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import Model, Specifications
 from pyannote.audio.core.task import Resolution
@@ -37,6 +39,21 @@ from pyannote.audio.utils.multi_task import map_with_specifications
 from pyannote.audio.utils.powerset import Powerset
 from pyannote.audio.utils.reproducibility import fix_reproducibility
 from pyannote.core import Segment, SlidingWindow, SlidingWindowFeature
+
+
+@functools.lru_cache(maxsize=4)
+def _cached_hamming_window(num_frames_per_chunk: int) -> np.ndarray:
+    """Pre-computed Hamming window for the overlap-add aggregation loop.
+
+    Keyed by ``num_frames_per_chunk``, which is constant for a given segmentation
+    model's frame resolution. Previously recomputed from scratch on every
+    :py:meth:`Inference.aggregate` call; caching is byte-equivalent because
+    numpy.hamming is deterministic and the returned array is treated as
+    read-only by the callers (used only as a broadcasting multiplier).
+    """
+    window = np.hamming(num_frames_per_chunk).reshape(-1, 1)
+    window.flags.writeable = False  # catch accidental in-place mutation early
+    return window
 
 
 class BaseInference:
@@ -197,7 +214,12 @@ class Inference(BaseInference):
 
         with torch.inference_mode():
             try:
-                outputs = self.model(chunks.to(self.device))
+                if self.device.type == "cuda":
+                    outputs = self.model(
+                        chunks.pin_memory().to(self.device, non_blocking=True)
+                    )
+                else:
+                    outputs = self.model(chunks.to(self.device))
             except RuntimeError as exception:
                 if is_oom_error(exception):
                     raise MemoryError(
@@ -526,6 +548,103 @@ class Inference(BaseInference):
             Aggregated scores. Shape is (num_frames, num_classes)
         """
 
+        with record_function("pyannote::aggregation"):
+            # Phase 5.2: opt-in GPU scatter-add path. Default off; gated by
+            # PYANNOTE_GPU_AGGREGATE=1 env var + CUDA availability. Falls
+            # back to the numpy loop silently on any failure.
+            try:
+                from pyannote.audio.gpu_ops import gpu_aggregate_enabled
+                if gpu_aggregate_enabled():
+                    result = Inference._aggregate_impl_gpu(
+                        scores, frames, warm_up, epsilon, hamming, missing, skip_average
+                    )
+                    if result is not None:
+                        return result
+            except Exception:
+                pass  # fall back to CPU implementation
+            return Inference._aggregate_impl(
+                scores, frames, warm_up, epsilon, hamming, missing, skip_average
+            )
+
+    @staticmethod
+    def _aggregate_impl_gpu(
+        scores: SlidingWindowFeature,
+        frames: SlidingWindow,
+        warm_up: Tuple[float, float] = (0.0, 0.0),
+        epsilon: float = 1e-12,
+        hamming: bool = False,
+        missing: float = np.nan,
+        skip_average: bool = False,
+    ) -> "SlidingWindowFeature | None":
+        """Phase 5.2 GPU scatter-add aggregate. Returns None if GPU path declined
+        (VRAM budget exceeded, CUDA unavailable, etc)."""
+        from pyannote.audio.gpu_ops import try_aggregate_gpu
+
+        num_chunks, num_frames_per_chunk, num_classes = scores.data.shape
+        chunks = scores.sliding_window
+        frames_out = SlidingWindow(
+            start=chunks.start,
+            duration=frames.duration,
+            step=frames.step,
+        )
+
+        hamming_window = (
+            _cached_hamming_window(num_frames_per_chunk)
+            if hamming
+            else np.ones((num_frames_per_chunk, 1))
+        )
+        warm_up_window = np.ones((num_frames_per_chunk, 1))
+        warm_up_left = round(
+            warm_up[0] / scores.sliding_window.duration * num_frames_per_chunk
+        )
+        warm_up_window[:warm_up_left] = epsilon
+        warm_up_right = round(
+            warm_up[1] / scores.sliding_window.duration * num_frames_per_chunk
+        )
+        warm_up_window[num_frames_per_chunk - warm_up_right :] = epsilon
+
+        num_frames = (
+            frames_out.closest_frame(
+                scores.sliding_window.start
+                + scores.sliding_window.duration
+                + (num_chunks - 1) * scores.sliding_window.step
+                + 0.5 * frames_out.duration
+            )
+            + 1
+        )
+
+        # Build start-frame indices per chunk (mirrors the CPU loop's
+        # `frames.closest_frame(chunk.start + 0.5 * frames.duration)`).
+        start_frames = np.empty(num_chunks, dtype=np.int64)
+        for i, (chunk, _) in enumerate(scores):
+            start_frames[i] = frames_out.closest_frame(
+                chunk.start + 0.5 * frames_out.duration
+            )
+
+        out = try_aggregate_gpu(
+            scores.data, start_frames, num_frames, hamming_window, warm_up_window,
+        )
+        if out is None:
+            return None
+        agg_out, overlap, agg_mask = out
+
+        if skip_average:
+            average = agg_out
+        else:
+            average = agg_out / np.maximum(overlap, epsilon)
+        average[agg_mask == 0.0] = missing
+        return SlidingWindowFeature(average, frames_out)
+
+    @staticmethod
+    def _aggregate_impl(
+        scores: SlidingWindowFeature,
+        frames: SlidingWindow,
+        warm_up: Tuple[float, float] = (0.0, 0.0),
+        epsilon: float = 1e-12,
+        hamming: bool = False,
+        missing: float = np.nan,
+        skip_average: bool = False,
+    ) -> SlidingWindowFeature:
         num_chunks, num_frames_per_chunk, num_classes = scores.data.shape
 
         chunks = scores.sliding_window
@@ -535,9 +654,12 @@ class Inference(BaseInference):
             step=frames.step,
         )
 
-        # Hamming window used for overlap-add aggregation
+        # Hamming window used for overlap-add aggregation. Cached per
+        # num_frames_per_chunk (constant for a given segmentation model) to
+        # avoid recomputing on every aggregate() call. The fallback ones
+        # array is cheap enough to leave uncached.
         hamming_window = (
-            np.hamming(num_frames_per_chunk).reshape(-1, 1)
+            _cached_hamming_window(num_frames_per_chunk)
             if hamming
             else np.ones((num_frames_per_chunk, 1))
         )
@@ -585,7 +707,14 @@ class Inference(BaseInference):
             (num_frames, num_classes), dtype=np.float32
         )
 
-        # loop on the scores of sliding chunks
+        # Per-chunk loop intentionally preserved. Phase 3.5 measured a
+        # vectorized rewrite using np.add.at / np.maximum.at against a flat
+        # scatter index; on the 4.7h/8-speaker benchmark discrete_diarization
+        # went from 12.5s to 16.9s (+35%) because numpy's ufunc.at primitives
+        # disable the contiguous-stride optimization that this loop's
+        # `aggregated_output[sf:sf+F] += ...` contiguous slice assignment
+        # benefits from. Scatter-add is a GPU anti-pattern on CPU.
+        # A GPU port of this loop belongs to Phase 5.2.
         for chunk, score in scores:
             # chunk ~ Segment
             # score ~ (num_frames_per_chunk, num_classes)-shaped np.ndarray

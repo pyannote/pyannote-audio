@@ -25,16 +25,23 @@
 
 import functools
 import itertools
+import logging
 import math
+import os
 import textwrap
 import warnings
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Callable, Mapping, Optional, Text, Union, Any
 from dataclasses import dataclass
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from einops import rearrange
+from torch.profiler import record_function
+
+logger = logging.getLogger(__name__)
 from pyannote.audio import Audio, Inference, Model, Pipeline
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.pipelines.clustering import Clustering
@@ -213,8 +220,28 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         der_variant: Optional[dict] = None,
         token: Union[Text, None] = None,
         cache_dir: Union[Path, Text, None] = None,
+        # --- Optimization parameters ---
+        torch_compile: bool = False,
+        mixed_precision: bool = False,
+        onnx_cpu: bool = False,
+        onnx_quantize: bool = True,
+        onnx_num_threads: int = 0,
+        # --- VRAM budget (Phase B) ---
+        vram_budget_mb: Optional[int] = None,
+        embedding_mixed_precision: bool = False,
     ):
         super().__init__()
+
+        # Phase B: optional explicit VRAM budget in megabytes. When provided,
+        # the embedding-stage batch sizer uses this instead of querying live
+        # free VRAM (useful when coexisting with another model like Whisper).
+        # None means "query device"; see _budget.recommend_embedding_batch.
+        self.vram_budget_mb = vram_budget_mb
+        # Separate from the existing ``mixed_precision`` (which wraps the
+        # segmentation forward pass). This controls autocast around the
+        # embedding forward pass. Phase A DER data shows enabling this
+        # collapses speaker count on the measured corpus -- default False.
+        self.embedding_mixed_precision = embedding_mixed_precision
 
         self.legacy = legacy
 
@@ -278,6 +305,69 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
         self._expects_num_speakers = self.clustering.expects_num_clusters
 
+        # --- Optimization setup ---
+        self._mixed_precision = mixed_precision
+        self._onnx_cpu = onnx_cpu
+
+        # torch.compile() for kernel fusion (10-30% faster after warmup).
+        # Surface failures via the logger so silent fallbacks are visible;
+        # historically this was `except: pass` which hid Dynamo graph breaks
+        # that cost 10-20% of embedding-stage throughput without any signal.
+        if torch_compile and self._segmentation.device.type in ("cuda", "mps"):
+            try:
+                if self.klustering != "OracleClustering":
+                    # Attempted in Phase 6.3 follow-up (2026-04-23): compile
+                    # ``resnet`` explicitly because the pipeline calls
+                    # ``model_.resnet(...)`` directly. Result: E2E REGRESSED
+                    # (170s mean with cv=35% on 2.2h, embedding stage 92s vs
+                    # baseline 75s). Root cause: Dynamo recompiles on every
+                    # unique batch shape the pipeline emits (same class of
+                    # issue as the TRT EP rebuild storm). Without dynamic=True
+                    # torch.compile punishes pipelines with variable shapes.
+                    # Reverted to compiling only model_ (matches prior
+                    # Phase 2.1/6.1 behavior — noise-level change, not a win
+                    # but not a regression either).
+                    self._embedding.model_ = torch.compile(
+                        self._embedding.model_, mode="reduce-overhead"
+                    )
+                self._segmentation.model = torch.compile(
+                    self._segmentation.model, fullgraph=False
+                )
+                logger.info(
+                    "torch.compile enabled for segmentation + embedding on %s",
+                    self._segmentation.device.type,
+                )
+            except Exception as exc:  # noqa: BLE001 (torch.compile raises bare Exception)
+                logger.warning(
+                    "torch.compile unavailable, falling back to eager execution: %s",
+                    exc,
+                )
+
+        # cuDNN algorithm autotuning for fixed-shape segmentation/embedding
+        # convolutions. Safe for inference; pyannote's fix_reproducibility()
+        # does not touch this flag so one-time init is sufficient.
+        if self._segmentation.device.type == "cuda":
+            torch.backends.cudnn.benchmark = True
+
+        # ONNX CPU-only mode: export models to ONNX and replace forward passes
+        if onnx_cpu:
+            self._setup_onnx_cpu(onnx_quantize, onnx_num_threads)
+
+        # Phase 6.2 ONNX Runtime mode (CUDA EP / CoreML EP / CPU EP — opt-in
+        # via PYANNOTE_USE_ONNX=1 env var). Patches the segmentation infer()
+        # path and the embedding resnet/fbank pair without touching the hot
+        # call sites. See pyannote.audio.onnx for the runtime wrappers.
+        self._onnx_seg_runtime = None
+        self._onnx_emb_runtime = None
+        try:
+            from pyannote.audio.onnx import onnx_enabled
+            if onnx_enabled():
+                self._setup_phase6_onnx()
+        except Exception as exc:  # pragma: no cover — never break pipeline init
+            logger.warning("Phase 6.2 ONNX setup failed, falling back to eager: %s", exc)
+            self._onnx_seg_runtime = None
+            self._onnx_emb_runtime = None
+
     @property
     def segmentation_batch_size(self) -> int:
         return self._segmentation.batch_size
@@ -285,6 +375,193 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
     @segmentation_batch_size.setter
     def segmentation_batch_size(self, batch_size: int):
         self._segmentation.batch_size = batch_size
+
+    def _setup_phase6_onnx(self) -> None:
+        """Wire Phase 6.2 ONNX Runtime into the segmentation + embedding paths.
+
+        Triggered by ``PYANNOTE_USE_ONNX=1`` + ``PYANNOTE_ONNX_MODELS_DIR``
+        env vars. Loads per-device ORT sessions (CUDA EP, CoreML EP, or CPU
+        EP) and monkey-patches the inference call sites — the hot path in
+        ``get_segmentations()`` / ``get_embeddings()`` stays unchanged.
+
+        Provider order when ENABLE_TENSORRT=1 is set: TRT EP → CUDA EP → CPU
+        EP. ORT falls back automatically if any provider fails to build.
+
+        Falls back to eager PyTorch silently if artifacts are missing; the
+        attribute references stay ``None`` and the hot path branches use
+        PyTorch as before.
+        """
+        from pyannote.audio.onnx import (
+            ONNXSegmentationRuntime,
+            ONNXEmbeddingRuntime,
+            compute_fbank_batched,
+        )
+        from pyannote.audio.onnx.runtime import _onnx_models_dir
+
+        models_dir = _onnx_models_dir()
+        if models_dir is None:
+            logger.warning(
+                "PYANNOTE_USE_ONNX=1 but PYANNOTE_ONNX_MODELS_DIR is unset or "
+                "missing; ONNX runtime disabled."
+            )
+            return
+
+        seg_path = models_dir / "segmentation.onnx"
+        emb_path = models_dir / "embedding.onnx"
+        device = self._segmentation.device
+
+        # Phase 6.3 hybrid mode: allow skipping segmentation ONNX (keeps the
+        # fast eager PyTorch path) while still routing embedding through
+        # ORT+TensorRT. The segmentation ONNX is either a regression on
+        # CUDA EP (LSTM/If fallback) or roughly-parity on TRT EP; until its
+        # shape profile is tuned it is safer to leave it eager. Gate on
+        # PYANNOTE_ONNX_SEG_ENABLED (default "1" to preserve prior behavior).
+        seg_enabled = os.environ.get("PYANNOTE_ONNX_SEG_ENABLED", "1").strip().lower() in {
+            "1", "true", "yes", "on"
+        }
+        emb_enabled = os.environ.get("PYANNOTE_ONNX_EMB_ENABLED", "1").strip().lower() in {
+            "1", "true", "yes", "on"
+        }
+
+        # ---- segmentation ---------------------------------------------------
+        if seg_enabled and seg_path.exists():
+            try:
+                self._onnx_seg_runtime = ONNXSegmentationRuntime(seg_path, device)
+                logger.info(
+                    "Phase 6.2 ONNX: segmentation via %s",
+                    self._onnx_seg_runtime.providers[0],
+                )
+                orig_seg_runtime = self._onnx_seg_runtime
+
+                def _onnx_seg_infer(chunks):
+                    if not isinstance(chunks, torch.Tensor):
+                        chunks = torch.as_tensor(chunks, dtype=torch.float32)
+                    out = orig_seg_runtime(chunks)
+                    return out.detach().cpu().numpy()
+
+                self._segmentation.infer = _onnx_seg_infer
+            except Exception as exc:
+                logger.warning("ONNX segmentation runtime init failed: %s", exc)
+                self._onnx_seg_runtime = None
+
+        # ---- embedding ------------------------------------------------------
+        if emb_enabled and emb_path.exists():
+            try:
+                self._onnx_emb_runtime = ONNXEmbeddingRuntime(emb_path, device)
+                logger.info(
+                    "Phase 6.2 ONNX: embedding via %s",
+                    self._onnx_emb_runtime.providers[0],
+                )
+
+                # Monkey-patch the WeSpeakerResNet34 backbone: the pipeline
+                # calls ``self._embedding.model_.resnet(fbank, weights=imasks)``
+                # and unpacks (_, emb_tensor). We return a 2-tuple whose last
+                # element is the ONNX embedding so the unpack still works.
+                resnet = self._embedding.model_.resnet
+                onnx_emb = self._onnx_emb_runtime
+
+                def _onnx_resnet_forward(fbank, weights=None):
+                    emb = onnx_emb(fbank, weights=weights)
+                    return torch.zeros((), device=emb.device, dtype=emb.dtype), emb
+
+                # Replace the bound forward with our callable. The wrapping
+                # preserves __call__ → forward dispatch so the pipeline's
+                # ``resnet(fbank, weights=imasks)`` syntax keeps working.
+                resnet.forward = _onnx_resnet_forward
+
+                # Replace compute_fbank with the batched helper (no vmap).
+                wespeaker_model = self._embedding.model_
+                fbank_fn = wespeaker_model._fbank
+                centering_span = wespeaker_model.hparams.fbank_centering_span
+                sample_rate = wespeaker_model.hparams.sample_rate
+                frame_length_ms = wespeaker_model.hparams.frame_length
+                frame_shift_ms = wespeaker_model.hparams.frame_shift
+
+                def _batched_compute_fbank(waveforms):
+                    return compute_fbank_batched(
+                        waveforms, fbank_fn,
+                        fbank_centering_span=centering_span,
+                        sample_rate=sample_rate,
+                        frame_length_ms=frame_length_ms,
+                        frame_shift_ms=frame_shift_ms,
+                    )
+
+                wespeaker_model.compute_fbank = _batched_compute_fbank
+            except Exception as exc:
+                logger.warning("ONNX embedding runtime init failed: %s", exc)
+                self._onnx_emb_runtime = None
+
+    def _setup_onnx_cpu(self, quantize: bool = True, num_threads: int = 0) -> None:
+        """Load pre-cached ONNX models for CPU inference (no runtime conversion).
+
+        ONNX models must be pre-converted using scripts/preconvert-onnx-models.py
+        before calling this method. This method only loads cached models.
+
+        This frees the GPU entirely for other workloads (e.g., Whisper).
+
+        Args:
+            quantize: Whether to prefer INT8 model (if available)
+            num_threads: Number of CPU threads for ONNX Runtime
+        """
+        import os
+        try:
+            import onnxruntime as ort
+        except ImportError:
+            warnings.warn("onnxruntime not installed, ONNX CPU mode disabled")
+            self._onnx_cpu = False
+            return
+
+        cache_dir = os.environ.get("MODEL_CACHE_DIR", "./models")
+        onnx_dir = Path(cache_dir) / "onnx"
+
+        # Check for pre-cached ONNX models
+        int8_path = onnx_dir / "pyannote_segmentation_int8.onnx"
+        fp32_path = onnx_dir / "pyannote_segmentation_fp32.onnx"
+
+        # Prefer INT8 if quantize=True and it exists
+        if quantize and int8_path.exists():
+            seg_path = int8_path
+        elif fp32_path.exists():
+            seg_path = fp32_path
+        else:
+            # No cached models found
+            raise FileNotFoundError(
+                f"ONNX models not found in {onnx_dir}.\n"
+                f"Please pre-convert models once using:\n"
+                f"  python scripts/preconvert-onnx-models.py --cache-dir {cache_dir}\n"
+                f"This creates cached ONNX models for production use (no runtime conversion)."
+            )
+
+        if num_threads <= 0:
+            num_threads = max(1, (os.cpu_count() or 4) // 2)
+
+        # Load pre-cached ONNX model
+        print(f"Loading ONNX model from cache: {seg_path}")
+        opts = ort.SessionOptions()
+        opts.intra_op_num_threads = num_threads
+        opts.inter_op_num_threads = max(1, num_threads // 4)
+        opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        seg_session = ort.InferenceSession(str(seg_path), opts, ["CPUExecutionProvider"])
+
+        # Monkey-patch segmentation infer() to use ONNX
+        def onnx_infer(chunks):
+            chunks_np = chunks.numpy() if hasattr(chunks, 'numpy') else np.array(chunks)
+            return seg_session.run(["scores"], {"waveforms": chunks_np.astype(np.float32)})[0]
+        self._segmentation.infer = onnx_infer
+
+        # Move PyTorch models to CPU to free GPU VRAM
+        self._segmentation.model.cpu()
+        if hasattr(self, '_embedding') and hasattr(self._embedding, 'model_'):
+            self._embedding.model_.cpu()
+        self._gpu_empty_cache()
+
+    @staticmethod
+    def _gpu_empty_cache():
+        """Release cached GPU memory on CUDA or MPS devices."""
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        elif hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
+            torch.mps.empty_cache()
 
     def default_parameters(self):
         return {
@@ -318,14 +595,15 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         if hook is not None:
             hook = functools.partial(hook, "segmentation", None)
 
-        if self.training:
-            if self.CACHED_SEGMENTATION in file:
-                segmentations = file[self.CACHED_SEGMENTATION]
+        with record_function("pyannote::segmentation"):
+            if self.training:
+                if self.CACHED_SEGMENTATION in file:
+                    segmentations = file[self.CACHED_SEGMENTATION]
+                else:
+                    segmentations = self._segmentation(file, hook=hook)
+                    file[self.CACHED_SEGMENTATION] = segmentations
             else:
-                segmentations = self._segmentation(file, hook=hook)
-                file[self.CACHED_SEGMENTATION] = segmentations
-        else:
-            segmentations: SlidingWindowFeature = self._segmentation(file, hook=hook)
+                segmentations: SlidingWindowFeature = self._segmentation(file, hook=hook)
 
         return segmentations
 
@@ -396,67 +674,281 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                 binary_segmentations.data, binary_segmentations.sliding_window
             )
 
-        def iter_waveform_and_mask():
-            for (chunk, masks), (_, clean_masks) in zip(
-                binary_segmentations, clean_segmentations
-            ):
-                # chunk: Segment(t, t + duration)
-                # masks: (num_frames, local_num_speakers) np.ndarray
+        # --- Vectorized chunk extraction (Phase 2.1) ---
+        if hook is not None:
+            hook("embedding_chunk_extraction", None)
+        # Pre-compute all audio chunks in one pass instead of individual crop() calls
+        waveform = file["waveform"]  # (1, total_samples)
+        sample_rate = file["sample_rate"]
+        window_samples = int(duration * sample_rate)
+        step_samples = int(binary_segmentations.sliding_window.step * sample_rate)
 
-                waveform, _ = self._audio.crop(
-                    file,
-                    chunk,
-                    mode="pad",
-                )
-                # waveform: (1, num_samples) torch.Tensor
+        # Unfold creates all chunks at once: (num_possible_chunks, window_samples)
+        if waveform.shape[1] >= window_samples:
+            all_chunks = waveform.unfold(1, window_samples, step_samples).squeeze(0)
+        else:
+            # Short audio: just pad
+            all_chunks = F.pad(
+                waveform, (0, window_samples - waveform.shape[1])
+            ).squeeze(0).unsqueeze(0)
 
-                # mask may contain NaN (in case of partial stitching)
-                masks = np.nan_to_num(masks, nan=0.0).astype(np.float32)
-                clean_masks = np.nan_to_num(clean_masks, nan=0.0).astype(np.float32)
+        # Pad if we have fewer chunks than segmentation expects
+        if all_chunks.shape[0] < num_chunks:
+            pad_chunks = num_chunks - all_chunks.shape[0]
+            all_chunks = torch.cat([
+                all_chunks,
+                torch.zeros(pad_chunks, window_samples, dtype=all_chunks.dtype)
+            ], dim=0)
 
-                for mask, clean_mask in zip(masks.T, clean_masks.T):
-                    # mask: (num_frames, ) np.ndarray
+        # Truncate if we have more
+        all_chunks = all_chunks[:num_chunks]
+        # Shape: (num_chunks, window_samples)
 
-                    if np.sum(clean_mask) > min_num_frames:
-                        used_mask = clean_mask
-                    else:
-                        used_mask = mask
+        # --- Vectorized mask selection (Phase 2.2) ---
+        # Pre-compute which mask to use for all chunk x speaker pairs at once
+        binary_data = np.nan_to_num(
+            binary_segmentations.data, nan=0.0
+        ).astype(np.float32)
+        clean_data = np.nan_to_num(
+            clean_segmentations.data, nan=0.0
+        ).astype(np.float32)
 
-                    yield waveform[None], torch.from_numpy(used_mask)[None]
-                    # w: (1, 1, num_samples) torch.Tensor
-                    # m: (1, num_frames) torch.Tensor
+        if exclude_overlap:
+            # For each (chunk, speaker): use clean_mask if sum > min_num_frames
+            # binary_data shape: (num_chunks, num_frames, num_speakers)
+            # clean_data shape: (num_chunks, num_frames, num_speakers)
+            clean_sums = np.sum(clean_data, axis=1)  # (num_chunks, num_speakers)
+            use_clean = clean_sums > min_num_frames  # (num_chunks, num_speakers)
+            # Transpose to (num_chunks, num_speakers, num_frames) for per-speaker selection
+            binary_transposed = np.transpose(binary_data, (0, 2, 1))
+            clean_transposed = np.transpose(clean_data, (0, 2, 1))
+            final_masks = np.where(
+                use_clean[:, :, np.newaxis],
+                clean_transposed,
+                binary_transposed,
+            )
+        else:
+            # (num_chunks, num_speakers, num_frames)
+            final_masks = np.transpose(binary_data, (0, 2, 1))
 
-        batches = batchify(
-            iter_waveform_and_mask(),
-            batch_size=self.embedding_batch_size,
-            fillvalue=(None, None),
+        # Reshape to flat list: (num_chunks * num_speakers, num_frames)
+        flat_masks = final_masks.reshape(-1, final_masks.shape[-1])
+        flat_masks_tensor = torch.from_numpy(flat_masks)
+        # (num_chunks * num_speakers, num_frames)
+
+        # Total items = num_chunks * num_speakers. Instead of materializing
+        # all combinations via repeat_interleave (which copies the full
+        # waveform data — 59GB for 4.7h/21-speaker files), we index into
+        # all_chunks on-the-fly per batch using: chunk_idx = item_idx // num_speakers
+        total_items = num_chunks * num_speakers
+
+        # Budget-aware embedding batch selection (Phase B, see _budget.py).
+        # Phase A (2026-04-20) empirically showed embedding throughput
+        # saturates at bs=16 for fp32; higher batches waste 3-7 GB of VRAM
+        # for <3 % speed gain. The prior auto-scaler chose bs=64-256 based
+        # on a scan of free VRAM and is removed here.
+        from pyannote.audio.pipelines._budget import recommend_embedding_batch
+
+        effective_batch_size = self.embedding_batch_size
+        device_type = (
+            self._embedding.device.type
+            if hasattr(self._embedding, "device")
+            else "cpu"
         )
 
-        batch_count = math.ceil(num_chunks * num_speakers / self.embedding_batch_size)
+        # Escape hatch preserved for the OpenTranscribe Phase A probe harness
+        # and for reproducing the measurement matrix. Not advertised as user
+        # API; the supported surface is the pipeline's vram_budget_mb kwarg
+        # (see __init__) plus embedding_batch_size.
+        _force = os.environ.get("PYANNOTE_FORCE_EMBEDDING_BATCH_SIZE")
+        if _force and _force.isdigit() and int(_force) > 0:
+            effective_batch_size = int(_force)
+        elif effective_batch_size <= 32 and device_type in ("cuda", "mps"):
+            # Only auto-select when caller left the default; >32 means the
+            # caller is explicitly overriding and we must honor it.
+            budget_mb = getattr(self, "vram_budget_mb", None)
+            try:
+                if budget_mb is None:
+                    if device_type == "cuda":
+                        budget_mb = (
+                            torch.cuda.get_device_properties(
+                                self._embedding.device
+                            ).total_mem
+                            - torch.cuda.memory_reserved(self._embedding.device)
+                        ) / (1024 * 1024)
+                    else:
+                        # MPS: Apple Unified Memory — estimate a safe budget.
+                        allocated = (
+                            torch.mps.driver_allocated_memory() / (1024 * 1024)
+                            if hasattr(torch.mps, "driver_allocated_memory")
+                            else 0
+                        )
+                        if hasattr(torch.mps, "recommended_max_memory"):
+                            total_mb = (
+                                torch.mps.recommended_max_memory() / (1024 * 1024)
+                            )
+                        else:
+                            try:
+                                import os as _os
+
+                                total_ram = _os.sysconf("SC_PHYS_PAGES") * _os.sysconf(
+                                    "SC_PAGE_SIZE"
+                                )
+                                total_mb = total_ram * 0.75 / (1024 * 1024)
+                            except (ValueError, OSError):
+                                total_mb = 8192  # 8 GB safe fallback
+                        budget_mb = max(0, total_mb - allocated)
+                rec = recommend_embedding_batch(
+                    free_mb=int(budget_mb), device=device_type
+                )
+                effective_batch_size = rec.batch_size
+            except Exception:
+                # Fall back to the old ceiling only if something upstream
+                # broke the budget query — never above 16.
+                effective_batch_size = 16
+
+        batch_count = math.ceil(total_items / effective_batch_size)
 
         embedding_batches = []
 
         if hook is not None:
+            hook("embedding_inference_start", None)
             hook("embeddings", None, total=batch_count, completed=0)
 
-        for i, batch in enumerate(batches, 1):
-            waveforms, masks = zip(*filter(lambda b: b[0] is not None, batch))
+        # --- Optimized embedding pipeline ---
+        # Strategy: call compute_fbank() + resnet() directly per batch,
+        # bypassing the PyAnnote wrapper overhead. On CUDA, uses double-
+        # buffered CUDA stream prefetch and TF32 acceleration. On MPS,
+        # uses direct model calls with native MPS FFT (PyTorch 2.3+).
+        use_split_pipeline = (
+            batch_count > 1
+            and hasattr(self._embedding, "device")
+            and self._embedding.device.type in ("cuda", "mps")
+            and hasattr(self._embedding, "model_")
+            and hasattr(self._embedding.model_, "compute_fbank")
+            and hasattr(self._embedding.model_, "resnet")
+        )
 
-            waveform_batch = torch.vstack(waveforms)
-            # (batch_size, 1, num_samples) torch.Tensor
+        def _get_batch_waveforms(start: int, end: int) -> torch.Tensor:
+            """Build waveform batch from all_chunks without materializing all combinations.
 
-            mask_batch = torch.vstack(masks)
-            # (batch_size, num_frames) torch.Tensor
+            Each flat index i corresponds to chunk i // num_speakers. We gather
+            the relevant chunks and add a channel dimension.
+            """
+            chunk_indices = torch.arange(start, end) // num_speakers
+            return all_chunks[chunk_indices].unsqueeze(1)
 
-            embedding_batch: np.ndarray = self._embedding(
-                waveform_batch, masks=mask_batch
-            )
-            # (batch_size, dimension) np.ndarray
+        if use_split_pipeline:
+            import warnings as _w
+            device = self._embedding.device
+            is_cuda = device.type == "cuda"
 
-            embedding_batches.append(embedding_batch)
+            if is_cuda:
+                # Enable TF32 for Tensor Core acceleration on Ampere+ GPUs.
+                # Must be set here because fix_reproducibility() disables it
+                # during segmentation. TF32 is safe for inference and provides
+                # ~15-20% speedup on Ampere+ (RTX 3000+, A-series, RTX 4000+).
+                # On pre-Ampere GPUs, these flags have no effect.
+                torch.backends.cuda.matmul.allow_tf32 = True
+                torch.backends.cudnn.allow_tf32 = True
 
-            if hook is not None:
-                hook("embeddings", embedding_batch, total=batch_count, completed=i)
+                # Double-buffered prefetch: transfer batch N+1 while GPU
+                # processes batch N via a separate CUDA stream.
+                transfer_stream = torch.cuda.Stream(device=device)
+
+                def prefetch_waveforms(idx):
+                    """Pin and transfer waveform batch to GPU on transfer_stream."""
+                    s = idx * effective_batch_size
+                    e = min(s + effective_batch_size, total_items)
+                    with torch.cuda.stream(transfer_stream):
+                        wf_gpu = _get_batch_waveforms(s, e).pin_memory().to(
+                            device, non_blocking=True
+                        )
+                        mk_gpu = flat_masks_tensor[s:e].pin_memory().to(
+                            device, non_blocking=True
+                        )
+                    return wf_gpu, mk_gpu
+
+                # Prefetch first batch
+                next_wf, next_mk = prefetch_waveforms(0)
+
+            for i in range(batch_count):
+                if is_cuda:
+                    # Wait for current batch transfer to complete
+                    torch.cuda.current_stream(device).wait_stream(
+                        transfer_stream
+                    )
+                    cur_wf, cur_mk = next_wf, next_mk
+
+                    # Start prefetching next batch while GPU computes
+                    if i + 1 < batch_count:
+                        next_wf, next_mk = prefetch_waveforms(i + 1)
+                else:
+                    # MPS path: simple .to(device) transfer (no pin_memory,
+                    # no CUDA streams — MPS uses unified memory)
+                    s = i * effective_batch_size
+                    e = min(s + effective_batch_size, total_items)
+                    cur_wf = _get_batch_waveforms(s, e).to(device)
+                    cur_mk = flat_masks_tensor[s:e].to(device)
+
+                # Phase 2.4: embedding_mixed_precision flag plumbed through.
+                # Default False preserves byte-exact fp32 behavior. Phase A DER
+                # measurements rejected fp16 (26-33% DER collapse in WeSpeaker
+                # std() pooling). The flag exists so future Phase B/C work can
+                # A/B test bf16 without re-plumbing; it is NOT a green-lit
+                # pipeline option yet.
+                amp_ctx = (
+                    torch.autocast(device.type, dtype=torch.float16)
+                    if self.embedding_mixed_precision and device.type in ("cuda", "mps")
+                    else nullcontext()
+                )
+                with torch.inference_mode(), _w.catch_warnings(), amp_ctx:
+                    _w.simplefilter("ignore")
+                    # fbank + resnet in one shot, data stays on device
+                    with record_function("pyannote::embedding_fbank"):
+                        fbank = self._embedding.model_.compute_fbank(cur_wf)
+                        # Interpolate masks to fbank frame-level
+                        num_frames = fbank.shape[1]
+                        imasks = F.interpolate(
+                            cur_mk.unsqueeze(1).to(device),
+                            size=num_frames, mode="nearest"
+                        ).squeeze(1)
+                        imasks = (imasks > 0.5).float()
+                    with record_function("pyannote::embedding_resnet"):
+                        _, emb_tensor = self._embedding.model_.resnet(
+                            fbank, weights=imasks
+                        )
+
+                embedding_batch = emb_tensor.cpu().numpy()
+                embedding_batches.append(embedding_batch)
+                del fbank, imasks, cur_wf, cur_mk
+
+                if hook is not None:
+                    hook(
+                        "embeddings", embedding_batch,
+                        total=batch_count, completed=i + 1,
+                    )
+        else:
+            # Fallback: simple sequential loop (CPU, ONNX, or single batch)
+            for i in range(batch_count):
+                start = i * effective_batch_size
+                end = min(start + effective_batch_size, total_items)
+
+                waveform_batch = _get_batch_waveforms(start, end)
+                mask_batch = flat_masks_tensor[start:end]
+
+                with record_function("pyannote::embedding_batch"):
+                    embedding_batch: np.ndarray = self._embedding(
+                        waveform_batch, masks=mask_batch
+                    )
+
+                embedding_batches.append(embedding_batch)
+
+                if hook is not None:
+                    hook(
+                        "embeddings", embedding_batch,
+                        total=batch_count, completed=i + 1,
+                    )
 
         embedding_batches = np.vstack(embedding_batches)
 
@@ -503,10 +995,31 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         num_chunks, num_frames, local_num_speakers = segmentations.data.shape
 
         num_clusters = np.max(hard_clusters) + 1
+
+        # Phase 5.2: opt-in GPU scatter-reduce path (PYANNOTE_GPU_RECONSTRUCT=1).
+        # Falls back to the CPU loop silently on budget/availability failure.
+        try:
+            from pyannote.audio.gpu_ops import try_reconstruct_gpu
+            gpu_result = try_reconstruct_gpu(
+                segmentations.data, hard_clusters, num_clusters
+            )
+        except Exception:
+            gpu_result = None
+
+        if gpu_result is not None:
+            return SlidingWindowFeature(gpu_result, segmentations.sliding_window)
+
         clustered_segmentations = np.nan * np.zeros(
             (num_chunks, num_frames, num_clusters)
         )
 
+        # Per-chunk loop intentionally preserved. Phase 3.5 measured a naive
+        # broadcast-max rewrite against this form on the 4.7h/8-speaker
+        # benchmark and it was 57% slower (10.74s vs 6.85s) — numpy's
+        # contiguous-slice ``segmentation[:, cluster == k]`` + axis=1 max
+        # beats scattered broadcast ops on CPU by a wide margin. Phase 5.2
+        # provides an opt-in GPU port (see gpu_ops.py); the naive CPU
+        # vectorization remains an anti-pattern.
         for c, (cluster, (chunk, segmentation)) in enumerate(
             zip(hard_clusters, segmentations)
         ):
@@ -590,8 +1103,23 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                     f"num_speakers must be provided when using {self.klustering} clustering"
                 )
 
-        segmentations = self.get_segmentations(file, hook=hook)
+        # Mixed precision context for Ampere+ GPUs / Apple Silicon
+        from contextlib import nullcontext
+        seg_device_type = self._segmentation.device.type
+        amp_ctx = (
+            torch.amp.autocast(seg_device_type, dtype=torch.float16)
+            if self._mixed_precision and seg_device_type in ("cuda", "mps")
+            else nullcontext()
+        )
+
+        with amp_ctx:
+            segmentations = self.get_segmentations(file, hook=hook)
         hook("segmentation", segmentations)
+
+        hook("vram_cleanup_post_segmentation", None)
+        # Free GPU memory used by segmentation before embedding stage
+        self._gpu_empty_cache()
+
         #   shape: (num_chunks, num_frames, local_num_speakers)
         num_chunks, num_frames, local_num_speakers = segmentations.data.shape
 
@@ -628,15 +1156,28 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
             return output
 
-        embeddings = self.get_embeddings(
-            file,
-            binarized_segmentations,
-            exclude_overlap=self.embedding_exclude_overlap,
-            hook=hook,
-        )
+        hook("binarization", binarized_segmentations)
+
+        with amp_ctx:
+            embeddings = self.get_embeddings(
+                file,
+                binarized_segmentations,
+                exclude_overlap=self.embedding_exclude_overlap,
+                hook=hook,
+            )
         hook("embeddings", embeddings)
+
+        # Phase 5: Release waveform tensor after embedding extraction (~1GB for 4.7h audio)
+        if "waveform" in file and hasattr(file["waveform"], "storage"):
+            del file["waveform"]
+
+        hook("vram_cleanup_post_embedding", None)
+        # Free GPU memory used by embeddings before clustering stage
+        self._gpu_empty_cache()
+
         #   shape: (num_chunks, local_num_speakers, dimension)
 
+        hook("clustering_start", None)
         hard_clusters, _, centroids = self.clustering(
             embeddings=embeddings,
             segmentations=binarized_segmentations,
@@ -684,7 +1225,10 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         # force-assign them to throw-away cluster
         hard_clusters[inactive_speakers] = -2
 
+        hook("clustering_done", None)
+
         # convert to continuous diarization
+        hook("reconstruction_start", None)
         discrete_diarization = self.reconstruct(
             segmentations,
             hard_clusters,
