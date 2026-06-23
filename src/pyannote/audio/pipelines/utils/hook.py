@@ -208,7 +208,7 @@ class Hooks:
 
     Usage
     -----
-    >>> with Hooks(ProgessHook(), TimingHook(), ArtifactHook()) as hook:
+    >>> with Hooks(ProgressHook(), TimingHook(), ArtifactHook()) as hook:
     ...     output = pipeline("audio.wav", hook=hook)
 
     """
