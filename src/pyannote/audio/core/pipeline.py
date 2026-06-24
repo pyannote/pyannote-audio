@@ -49,6 +49,7 @@ from pyannote.pipeline import Pipeline as _Pipeline
 def expand_subfolders(
     config,
     model_id: str | None = None,
+    parent_subfolder: str | None = None,
     parent_revision: str | None = None,
     cache_dir: Path | str | None = None,
     token: str | None = None,
@@ -65,6 +66,9 @@ def expand_subfolders(
     config : dict
     model_id : str, optional
         Model identifier when loading from the huggingface.co model hub.
+    parent_subfolder : str, optional
+        Subfolder from which the pipeline config was loaded. When set, child
+        "$model/{child}" paths are resolved as "{parent_subfolder}/{child}".
     parent_revision : str, optional
         Revision when loading from the huggingface.co model hub.
     token : str or bool, optional
@@ -85,6 +89,9 @@ def expand_subfolders(
                 else:
                     revision = parent_revision
 
+                if parent_subfolder:
+                    subfolder = f"{parent_subfolder}/{subfolder}"
+
                 config[key] = {
                     "checkpoint": model_id,
                     "revision": revision,
@@ -96,6 +103,7 @@ def expand_subfolders(
                 expand_subfolders(
                     value,
                     model_id,
+                    parent_subfolder=parent_subfolder,
                     parent_revision=parent_revision,
                     token=token,
                     cache_dir=cache_dir,
@@ -113,6 +121,9 @@ def expand_subfolders(
                 else:
                     revision = parent_revision
 
+                if parent_subfolder:
+                    subfolder = f"{parent_subfolder}/{subfolder}"
+
                 config[idx] = {
                     "checkpoint": model_id,
                     "revision": revision,
@@ -125,6 +136,7 @@ def expand_subfolders(
                 expand_subfolders(
                     value,
                     model_id,
+                    parent_subfolder=parent_subfolder,
                     parent_revision=parent_revision,
                     token=token,
                     cache_dir=cache_dir,
@@ -138,6 +150,7 @@ class Pipeline(_Pipeline):
         checkpoint: str | Path | dict,
         revision: str | None = None,
         hparams_file: str | Path | None = None,
+        subfolder: str | None = None,
         token: str | bool | None = None,
         cache_dir: Path | str | None = None,
     ) -> Optional["Pipeline"]:
@@ -154,6 +167,8 @@ class Pipeline(_Pipeline):
         revision : str, optional
             Revision when loading from the huggingface.co model hub.
         hparams_file: Path or str, optional
+        subfolder : str, optional
+            Folder inside the hf.co model repo (or local directory).
         token : str or bool, optional
             Token to be used for the download.
         cache_dir: Path or str, optional
@@ -170,12 +185,15 @@ class Pipeline(_Pipeline):
             otel_origin: str = "local"
 
         # if checkpoint is a directory, look for the pipeline checkpoint
-        # inside this directory
+        # inside this directory (or inside a subfolder if specified)
         elif os.path.isdir(checkpoint):
             if revision is not None:
                 raise ValueError("Revisions cannot be used with local checkpoints.")
             model_id = Path(checkpoint)
-            config_yml = model_id / AssetFileName.Pipeline.value
+            if subfolder:
+                config_yml = model_id / subfolder / AssetFileName.Pipeline.value
+            else:
+                config_yml = model_id / AssetFileName.Pipeline.value
             otel_origin: str = "local"
 
         # if checkpoint is a file, assume it is the pipeline checkpoint
@@ -198,6 +216,7 @@ class Pipeline(_Pipeline):
             config_yml = download_from_hf_hub(
                 model_id,
                 AssetFileName.Pipeline,
+                subfolder=subfolder,
                 revision=revision,
                 cache_dir=cache_dir,
                 token=token,
@@ -219,6 +238,7 @@ class Pipeline(_Pipeline):
         expand_subfolders(
             config,
             model_id,
+            parent_subfolder=subfolder,
             parent_revision=revision,
             token=token,
             cache_dir=cache_dir,
