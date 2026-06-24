@@ -676,19 +676,26 @@ def benchmark(
         if rttm_file.exists():
             raise FileExistsError(f"{rttm_file} already exists.")
 
-    # iterate over all files in the specified subset
-    for file in track(files, disable=not progress):
-        # gather file metadata
+    for file in files:
+        playing_time[file["uri"]] = Audio().get_duration(file)
+
+    # run inference — use apply_batch when available, sequential otherwise
+    if hasattr(pretrained_pipeline, "apply_batch"):
+        tic = time.time()
+        batch_preds = dict(pretrained_pipeline.apply_batch(files))
+        batch_time = time.time() - tic
+        predictions = [batch_preds[f["uri"]] for f in files]
+        for f in files:
+            processing_time[f["uri"]] = batch_time / len(files)
+    else:
+        predictions = []
+        for file in track(files, disable=not progress):
+            tic = time.time()
+            predictions.append(pretrained_pipeline(file, **file.get("pipeline_kwargs", {})))
+            processing_time[file["uri"]] = time.time() - tic
+
+    for file, prediction in track(zip(files, predictions), disable=not progress, total=len(files)):
         uri: str = file["uri"]
-        playing_time[uri] = Audio().get_duration(file)
-
-        tic: float = time.time()
-
-        # apply pretrained pipeline to file
-        prediction = pretrained_pipeline(file, **file.get("pipeline_kwargs", {}))
-
-        tac: float = time.time()
-        processing_time[uri] = tac - tic
 
         # if prediction has a built-in serialize method, save serialized version
         if hasattr(prediction, "serialize"):
