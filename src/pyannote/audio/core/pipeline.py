@@ -28,7 +28,7 @@ from collections import OrderedDict
 from collections.abc import Iterator
 from functools import partial
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Any
 
 import torch
 import torch.nn as nn
@@ -407,22 +407,39 @@ class Pipeline(_Pipeline):
         """
         raise NotImplementedError()
 
-    def __call__(self, file: AudioFile, preload: bool = False, **kwargs):
+    def __call__(
+        self,
+        file: AudioFile | list[AudioFile],
+        preload: bool = False,
+        **kwargs,
+    ) -> Any | Iterator[tuple[str, Any]]:
         """Validate file, (optionally) load it in memory, then process it
 
         Parameters
         ----------
-        file : AudioFile
-            File to process
+        file : AudioFile or list[AudioFile]
+            File to process, or a list of AudioFiles for batch processing.
+            All files in the list must have distinct URIs.
+            Files are processed in sequence unless the pipeline defines an
+            `apply_batch` method, which is called instead.
         preload : bool, optional
             Whether to preload waveform before applying the pipeline.
+            Ignored for batch input when `apply_batch` is available.
         kwargs : keyword arguments, optional
-            Additional keyword arguments passed to `self.apply(...)`
+            Additional keyword arguments passed to `self.apply(...)` or
+            `self.apply_batch(...)`
 
-        Returns
-        -------
+        Returns (for single file)
+        -------------------------
         output : Any
-            Whatever `self.apply(...)` returns
+            Whatever `self.apply(...)` returns for a single file, or a dict
+            mapping each URI to its output for batch input.
+
+        Yields (for multiple files)
+        ---------------------------
+        uri : str
+        output : Any
+
         """
         fix_reproducibility(getattr(self, "device", torch.device("cpu")))
 
@@ -446,6 +463,23 @@ class Pipeline(_Pipeline):
             warnings.warn(
                 f"The pipeline has been automatically instantiated with {default_parameters}."
             )
+
+        # detect batched input
+        if isinstance(file, list):
+            uris = [Audio.validate_file(f)["uri"] for f in file]
+            if len(uris) != len(set(uris)):
+                seen: set[str] = set()
+                duplicates = [u for u in uris if u in seen or seen.add(u)]
+                raise ValueError(
+                    f"All files in a batch must have distinct URIs. "
+                    f"Duplicate URIs: {duplicates}"
+                )
+            if hasattr(self, "apply_batch"):
+                return self.apply_batch(file, preload=preload, **kwargs)
+            return {
+                uri: self(audio_file, preload=preload, **kwargs)
+                for uri, audio_file in zip(uris, file)
+            }
 
         file = Audio.validate_file(file)
 
