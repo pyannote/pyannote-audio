@@ -22,13 +22,14 @@
 # SOFTWARE.
 
 from __future__ import annotations
+
 import os
 import warnings
 from collections import OrderedDict
 from collections.abc import Iterator
 from functools import partial
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Any
+from typing import Any, Callable, Dict, List, Mapping, Optional
 
 import torch
 import torch.nn as nn
@@ -90,7 +91,9 @@ def expand_subfolders(
                     revision = parent_revision
 
                 if parent_subfolder:
-                    subfolder = f"{parent_subfolder.rstrip('/')}/{subfolder.lstrip('/')}"
+                    subfolder = (
+                        f"{parent_subfolder.rstrip('/')}/{subfolder.lstrip('/')}"
+                    )
 
                 config[key] = {
                     "checkpoint": model_id,
@@ -122,7 +125,9 @@ def expand_subfolders(
                     revision = parent_revision
 
                 if parent_subfolder:
-                    subfolder = f"{parent_subfolder.rstrip('/')}/{subfolder.lstrip('/')}"
+                    subfolder = (
+                        f"{parent_subfolder.rstrip('/')}/{subfolder.lstrip('/')}"
+                    )
 
                 config[idx] = {
                     "checkpoint": model_id,
@@ -435,17 +440,64 @@ class Pipeline(_Pipeline):
         """
         raise NotImplementedError()
 
+    def prepare_one(self, file: AudioFile, preload: bool = False) -> Mapping:
+        """Prepare one file for being processed by the pipeline
+        
+        1. Validate file
+        2. Add pipeline preprocessors if any
+        3. Preload in memory if requested
+
+        Parameters
+        ----------
+        file : AudioFile
+            File to process
+        preload : bool
+            Whether to preload in memory
+        
+        Returns
+        -------
+        file : Mapping
+            Prepared file
+        """
+
+        file = Audio.validate_file(file)
+
+        # check if the instance has preprocessors and wrap the file if so
+        if hasattr(self, "preprocessors"):
+            file = ProtocolFile(file, lazy=self.preprocessors)
+
+        # pre-load the audio in memory if requested
+        if preload:
+            # raise error if `waveform`` is already in memory (or will be via a preprocessor)
+            if (
+                "waveform" in getattr(self, "preprocessors", dict())
+                or "waveform" in file
+            ):
+                raise ValueError(
+                    "Cannot preload audio: `waveform` key is already available or will be via a preprocessor."
+                )
+
+            # load waveform in memory (and keep track of its original sample rate)
+            file["waveform"], file["sample_rate"] = Audio()(file)
+
+            # the above line already took care of channel selection,
+            # therefore we remove the `channel` key from the file
+            file.pop("channel", None)
+
+        return file
+
+
     def __call__(
         self,
         file: AudioFile | list[AudioFile],
         preload: bool = False,
         **kwargs,
     ) -> Any | Iterator[tuple[str, Any]]:
-        """Validate file, (optionally) load it in memory, then process it
+        """Validate file(s), (optionally) load it/them in memory, then process it/them
 
         Parameters
         ----------
-        file : AudioFile or list[AudioFile]
+        file  : AudioFile or list[AudioFile]
             File to process, or a list of AudioFiles for batch processing.
             All files in the list must have distinct URIs.
             Files are processed in sequence unless the pipeline defines an
@@ -465,7 +517,7 @@ class Pipeline(_Pipeline):
 
         Yields (for multiple files)
         ---------------------------
-        uri : str
+        file : AudioFile
         output : Any
 
         """
@@ -492,9 +544,12 @@ class Pipeline(_Pipeline):
                 f"The pipeline has been automatically instantiated with {default_parameters}."
             )
 
-        # detect batched input
         if isinstance(file, list):
-            uris = [Audio.validate_file(f)["uri"] for f in file]
+            # prepare every file
+            files = [self.prepare_one(f, preload=preload) for f in file]
+
+            # check for duplicate uris (and complain if any)
+            uris = [f["uri"] for f in files]
             if len(uris) != len(set(uris)):
                 seen: set[str] = set()
                 duplicates = [u for u in uris if u in seen or seen.add(u)]
@@ -502,42 +557,39 @@ class Pipeline(_Pipeline):
                     f"All files in a batch must have distinct URIs. "
                     f"Duplicate URIs: {duplicates}"
                 )
+
+            # if pipeline natively supports batch processing, use it
             if hasattr(self, "apply_batch"):
-                return self.apply_batch(file, preload=preload, **kwargs)
-            return {
-                uri: self(audio_file, preload=preload, **kwargs)
-                for uri, audio_file in zip(uris, file)
-            }
+                # TODO: warn user that pipeline_kwargs might not be taken into account.
+                for f, prediction in self.apply_batch(files, **kwargs):
 
-        file = Audio.validate_file(file)
+                    # send file duration to telemetry as well as
+                    # requested number of speakers in case of diarization
+                    track_pipeline_apply(self, f, **kwargs)
 
-        # check if the instance has preprocessors and wrap the file if so
-        if hasattr(self, "preprocessors"):
-            file = ProtocolFile(file, lazy=self.preprocessors)
+                    yield f, prediction
 
-        # pre-load the audio in memory if requested
-        if preload:
-            # raise error if `waveform`` is already in memory (or will be via a preprocessor)
-            if (
-                "waveform" in getattr(self, "preprocessors", dict())
-                or "waveform" in file
-            ):
-                raise ValueError(
-                    "Cannot preload audio: `waveform` key is already available or will be via a preprocessor."
-                )
+            # otherwise process files sequentially
+            else:
+                for f in files:
+                    prediction = self.apply(f, **f.get("pipeline_kwargs", {}), **kwargs)
 
-            # load waveform in memory (and keep track of its original sample rate)
-            file["waveform"], file["sample_rate"] = Audio()(file)
+                    # send file duration to telemetry as well as
+                    # requested number of speakers in case of diarization
+                    track_pipeline_apply(self, f, **kwargs)
 
-            # the above line already took care of channel selection,
-            # therefore we remove the `channel` key from the file
-            file.pop("channel", None)
+                    yield f, prediction
+
+            return
+
+        file = self.prepare_one(file, preload=preload)
+        prediction = self.apply(file, **file.get("pipeline_kwargs", {}), **kwargs)
 
         # send file duration to telemetry as well as
         # requested number of speakers in case of diarization
         track_pipeline_apply(self, file, **kwargs)
 
-        return self.apply(file, **kwargs)
+        return prediction
 
     def to(self, device: torch.device) -> Pipeline:
         """Send pipeline to `device`"""
@@ -569,5 +621,7 @@ class Pipeline(_Pipeline):
             return self.to(torch.device("cuda", device))
         else:
             if device.type != "cuda":
-                raise ValueError("Expected CUDA device. Use `Pipeline.to(device)` for other devices.")
+                raise ValueError(
+                    "Expected CUDA device. Use `Pipeline.to(device)` for other devices."
+                )
             return self.to(device)
