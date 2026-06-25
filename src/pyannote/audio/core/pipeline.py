@@ -90,7 +90,7 @@ def expand_subfolders(
                     revision = parent_revision
 
                 if parent_subfolder:
-                    subfolder = f"{parent_subfolder}/{subfolder}"
+                    subfolder = f"{parent_subfolder.rstrip('/')}/{subfolder.lstrip('/')}"
 
                 config[key] = {
                     "checkpoint": model_id,
@@ -122,7 +122,7 @@ def expand_subfolders(
                     revision = parent_revision
 
                 if parent_subfolder:
-                    subfolder = f"{parent_subfolder}/{subfolder}"
+                    subfolder = f"{parent_subfolder.rstrip('/')}/{subfolder.lstrip('/')}"
 
                 config[idx] = {
                     "checkpoint": model_id,
