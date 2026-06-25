@@ -22,13 +22,14 @@
 # SOFTWARE.
 
 from __future__ import annotations
+
 import os
 import warnings
 from collections import OrderedDict
 from collections.abc import Iterator
 from functools import partial
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional
 
 import torch
 import torch.nn as nn
@@ -90,7 +91,9 @@ def expand_subfolders(
                     revision = parent_revision
 
                 if parent_subfolder:
-                    subfolder = f"{parent_subfolder.rstrip('/')}/{subfolder.lstrip('/')}"
+                    subfolder = (
+                        f"{parent_subfolder.rstrip('/')}/{subfolder.lstrip('/')}"
+                    )
 
                 config[key] = {
                     "checkpoint": model_id,
@@ -122,7 +125,9 @@ def expand_subfolders(
                     revision = parent_revision
 
                 if parent_subfolder:
-                    subfolder = f"{parent_subfolder.rstrip('/')}/{subfolder.lstrip('/')}"
+                    subfolder = (
+                        f"{parent_subfolder.rstrip('/')}/{subfolder.lstrip('/')}"
+                    )
 
                 config[idx] = {
                     "checkpoint": model_id,
@@ -435,45 +440,25 @@ class Pipeline(_Pipeline):
         """
         raise NotImplementedError()
 
-    def __call__(self, file: AudioFile, preload: bool = False, **kwargs):
-        """Validate file, (optionally) load it in memory, then process it
+    def prepare_one(self, file: AudioFile, preload: bool = False) -> Mapping:
+        """Prepare one file for being processed by the pipeline
+        
+        1. Validate file
+        2. Add pipeline preprocessors if any
+        3. Preload in memory if requested
 
         Parameters
         ----------
         file : AudioFile
             File to process
-        preload : bool, optional
-            Whether to preload waveform before applying the pipeline.
-        kwargs : keyword arguments, optional
-            Additional keyword arguments passed to `self.apply(...)`
-
+        preload : bool
+            Whether to preload in memory
+        
         Returns
         -------
-        output : Any
-            Whatever `self.apply(...)` returns
+        file : Mapping
+            Prepared file
         """
-        fix_reproducibility(getattr(self, "device", torch.device("cpu")))
-
-        if not self.instantiated:
-            # instantiate with default parameters when available
-            try:
-                default_parameters = self.default_parameters()
-            except NotImplementedError:
-                raise RuntimeError(
-                    "A pipeline must be instantiated with `pipeline.instantiate(parameters)` before it can be applied."
-                )
-
-            try:
-                self.instantiate(default_parameters)
-            except ValueError:
-                raise RuntimeError(
-                    "A pipeline must be instantiated with `pipeline.instantiate(parameters)` before it can be applied. "
-                    "Tried to use parameters provided by `pipeline.default_parameters()` but those are not compatible. "
-                )
-
-            warnings.warn(
-                f"The pipeline has been automatically instantiated with {default_parameters}."
-            )
 
         file = Audio.validate_file(file)
 
@@ -499,11 +484,112 @@ class Pipeline(_Pipeline):
             # therefore we remove the `channel` key from the file
             file.pop("channel", None)
 
+        return file
+
+
+    def __call__(
+        self,
+        file: AudioFile | list[AudioFile],
+        preload: bool = False,
+        **kwargs,
+    ) -> Any | Iterator[tuple[str, Any]]:
+        """Validate file(s), (optionally) load it/them in memory, then process it/them
+
+        Parameters
+        ----------
+        file  : AudioFile or list[AudioFile]
+            File to process, or a list of AudioFiles for batch processing.
+            All files in the list must have distinct URIs.
+            Files are processed in sequence unless the pipeline defines an
+            `apply_batch` method, which is called instead.
+        preload : bool, optional
+            Whether to preload waveform before applying the pipeline.
+            Ignored for batch input when `apply_batch` is available.
+        kwargs : keyword arguments, optional
+            Additional keyword arguments passed to `self.apply(...)` or
+            `self.apply_batch(...)`
+
+        Returns (for single file)
+        -------------------------
+        output : Any
+            Whatever `self.apply(...)` returns for a single file, or a dict
+            mapping each URI to its output for batch input.
+
+        Yields (for multiple files)
+        ---------------------------
+        file : AudioFile
+        output : Any
+
+        """
+        fix_reproducibility(getattr(self, "device", torch.device("cpu")))
+
+        if not self.instantiated:
+            # instantiate with default parameters when available
+            try:
+                default_parameters = self.default_parameters()
+            except NotImplementedError:
+                raise RuntimeError(
+                    "A pipeline must be instantiated with `pipeline.instantiate(parameters)` before it can be applied."
+                )
+
+            try:
+                self.instantiate(default_parameters)
+            except ValueError:
+                raise RuntimeError(
+                    "A pipeline must be instantiated with `pipeline.instantiate(parameters)` before it can be applied. "
+                    "Tried to use parameters provided by `pipeline.default_parameters()` but those are not compatible. "
+                )
+
+            warnings.warn(
+                f"The pipeline has been automatically instantiated with {default_parameters}."
+            )
+
+        if isinstance(file, list):
+            # prepare every file
+            files = [self.prepare_one(f, preload=preload) for f in file]
+
+            # check for duplicate uris (and complain if any)
+            uris = [f["uri"] for f in files]
+            if len(uris) != len(set(uris)):
+                seen: set[str] = set()
+                duplicates = [u for u in uris if u in seen or seen.add(u)]
+                raise ValueError(
+                    f"All files in a batch must have distinct URIs. "
+                    f"Duplicate URIs: {duplicates}"
+                )
+
+            # if pipeline natively supports batch processing, use it
+            if hasattr(self, "apply_batch"):
+                # TODO: warn user that pipeline_kwargs might not be taken into account.
+                for f, prediction in self.apply_batch(files, **kwargs):
+
+                    # send file duration to telemetry as well as
+                    # requested number of speakers in case of diarization
+                    track_pipeline_apply(self, f, **kwargs)
+
+                    yield f, prediction
+
+            # otherwise process files sequentially
+            else:
+                for f in files:
+                    prediction = self.apply(f, **f.get("pipeline_kwargs", {}), **kwargs)
+
+                    # send file duration to telemetry as well as
+                    # requested number of speakers in case of diarization
+                    track_pipeline_apply(self, f, **kwargs)
+
+                    yield f, prediction
+
+            return
+
+        file = self.prepare_one(file, preload=preload)
+        prediction = self.apply(file, **file.get("pipeline_kwargs", {}), **kwargs)
+
         # send file duration to telemetry as well as
         # requested number of speakers in case of diarization
         track_pipeline_apply(self, file, **kwargs)
 
-        return self.apply(file, **kwargs)
+        return prediction
 
     def to(self, device: torch.device) -> Pipeline:
         """Send pipeline to `device`"""
@@ -535,5 +621,7 @@ class Pipeline(_Pipeline):
             return self.to(torch.device("cuda", device))
         else:
             if device.type != "cuda":
-                raise ValueError("Expected CUDA device. Use `Pipeline.to(device)` for other devices.")
+                raise ValueError(
+                    "Expected CUDA device. Use `Pipeline.to(device)` for other devices."
+                )
             return self.to(device)
