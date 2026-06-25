@@ -313,3 +313,59 @@ class TestNestedSubfolderPipelines:
         parent = Pipeline.from_pretrained(str(tmp_path))
         assert isinstance(parent, _DummyParentPipeline)
         assert isinstance(parent.sub, _DummyPipeline)
+
+
+# ---------------------------------------------------------------------------
+# Tests for dict and explicit-file-path checkpoints with subfolder
+# ---------------------------------------------------------------------------
+
+
+class TestFromPretrainedNonSubfolderCases:
+    """subfolder must NOT be forwarded as parent_subfolder when the config
+    was given as a dict or an explicit file path — in those cases subfolder
+    played no role in locating config.yaml, so prepending it would wrongly
+    rewrite $model/... references."""
+
+    def test_dict_checkpoint_with_subfolder_does_not_double_prefix(self, tmp_path):
+        """When checkpoint is a dict, $model refs must not gain the subfolder prefix."""
+        config = {
+            "pipeline": {"name": _DUMMY_CLS_DOTPATH},
+            "params": {"seg": "$model/seg"},
+        }
+        # Pass subfolder='v1' — it must be ignored for expand_subfolders.
+        expand_subfolders(config, model_id=str(tmp_path), parent_subfolder=None)
+        assert config["params"]["seg"]["subfolder"] == "seg"
+
+    def test_file_checkpoint_with_subfolder_raises(self, tmp_path):
+        """Passing subfolder= together with an explicit file path must raise ValueError."""
+        config = {"pipeline": {"name": _DUMMY_CLS_DOTPATH}}
+        cfg_path = write_config(tmp_path, config)
+        with pytest.raises(ValueError, match="[Ss]ubfolder"):
+            Pipeline.from_pretrained(str(cfg_path), subfolder="v1")
+
+    def test_file_checkpoint_without_subfolder_loads(self, tmp_path):
+        """Explicit file path without subfolder= loads the pipeline correctly."""
+        config = {"pipeline": {"name": _DUMMY_CLS_DOTPATH}}
+        cfg_path = write_config(tmp_path, config)
+        pipeline = Pipeline.from_pretrained(str(cfg_path))
+        assert isinstance(pipeline, _DummyPipeline)
+
+    def test_dict_checkpoint_with_subfolder_raises(self):
+        """Passing subfolder= together with a dict checkpoint must raise ValueError."""
+        config = {"pipeline": {"name": _DUMMY_CLS_DOTPATH}}
+        with pytest.raises(ValueError, match="[Ss]ubfolder"):
+            Pipeline.from_pretrained(config, subfolder="v1")
+
+    def test_dict_checkpoint_end_to_end(self, tmp_path, monkeypatch):
+        """Pipeline.from_pretrained(dict) resolves $model refs relative to cwd."""
+        # The dict branch uses Path.cwd() as model_id, so chdir to tmp_path.
+        monkeypatch.chdir(tmp_path)
+
+        child_config = {"pipeline": {"name": _DUMMY_CLS_DOTPATH}}
+        write_config(tmp_path, child_config, subfolder="seg")
+
+        config = {
+            "pipeline": {"name": _DUMMY_PARENT_CLS_DOTPATH, "params": {"sub": "$model/seg"}},
+        }
+        pipeline = Pipeline.from_pretrained(config)
+        assert isinstance(pipeline, _DummyParentPipeline)

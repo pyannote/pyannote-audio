@@ -180,6 +180,10 @@ class Pipeline(_Pipeline):
         if isinstance(checkpoint, dict):
             if revision is not None:
                 raise ValueError("Revisions cannot be used with local checkpoints.")
+            if subfolder is not None:
+                raise ValueError(
+                    "Subfolder cannot be used when checkpoint is a config dictionary. "
+                )
             model_id = Path.cwd()
             config = checkpoint
             otel_origin: str = "local"
@@ -200,6 +204,10 @@ class Pipeline(_Pipeline):
         elif os.path.isfile(checkpoint):
             if revision is not None:
                 raise ValueError("Revisions cannot be used with local checkpoints.")
+            if subfolder is not None:
+                raise ValueError(
+                    "Subfolder cannot be used when checkpoint is a path to a config.yaml file. "
+                )
             model_id = Path(checkpoint).parent
             config_yml = checkpoint
             otel_origin: str = "local"
