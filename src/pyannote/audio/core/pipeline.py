@@ -442,7 +442,7 @@ class Pipeline(_Pipeline):
 
     def prepare_one(self, file: AudioFile, preload: bool = False) -> Mapping:
         """Prepare one file for being processed by the pipeline
-        
+
         1. Validate file
         2. Add pipeline preprocessors if any
         3. Preload in memory if requested
@@ -453,7 +453,7 @@ class Pipeline(_Pipeline):
             File to process
         preload : bool
             Whether to preload in memory
-        
+
         Returns
         -------
         file : Mapping
@@ -485,7 +485,6 @@ class Pipeline(_Pipeline):
             file.pop("channel", None)
 
         return file
-
 
     def __call__(
         self,
@@ -562,7 +561,6 @@ class Pipeline(_Pipeline):
             if hasattr(self, "apply_batch"):
                 # TODO: warn user that pipeline_kwargs might not be taken into account.
                 for f, prediction in self.apply_batch(files, **kwargs):
-
                     # send file duration to telemetry as well as
                     # requested number of speakers in case of diarization
                     track_pipeline_apply(self, f, **kwargs)

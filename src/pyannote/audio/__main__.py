@@ -4,7 +4,7 @@
 # MIT License
 #
 # Copyright (c) 2024-2025 CNRS
-# Copyright (c) 2025 pyannoteAI
+# Copyright (c) 2025- pyannoteAI
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -604,7 +604,10 @@ def benchmark(
 
     # load pretrained pipeline
     pretrained_pipeline = Pipeline.from_pretrained(
-        pipeline, revision=revision, token=token, cache_dir=cache, 
+        pipeline,
+        revision=revision,
+        token=token,
+        cache_dir=cache,
     )
     if pretrained_pipeline is None:
         print(f"Could not load pretrained pipeline from {pipeline}.")
@@ -672,7 +675,7 @@ def benchmark(
         # make sure we don't overwrite previous results
         if rttm_file.exists():
             raise FileExistsError(f"{rttm_file} already exists.")
-        
+
     if hasattr(pretrained_pipeline, "apply_batch"):
         iterator = pretrained_pipeline(files, progress=progress)
     else:
@@ -680,9 +683,8 @@ def benchmark(
 
     tic: float = time.time()
     for file, prediction in iterator:
+        uri = file["uri"]
 
-        uri = file['uri']
-        
         # if prediction has a built-in serialize method, save serialized version
         if hasattr(prediction, "serialize"):
             if per_file:
@@ -723,7 +725,6 @@ def benchmark(
         # keep track of prediction for later "min_duration_off" optimization
         if optimize:
             file["speaker_diarization"] = speaker_diarization
-
 
     tac: float = time.time()
 
