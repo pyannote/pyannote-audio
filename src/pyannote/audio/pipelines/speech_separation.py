@@ -108,7 +108,7 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
     clustering.method : {'centroid', 'average', ...}
         Linkage used for agglomerative clustering
     clustering.min_cluster_size : int
-        Minium cluster size.
+        Minimum cluster size.
     clustering.threshold : float
         Clustering threshold used to stop merging clusters.
     separation.leakage_removal : bool

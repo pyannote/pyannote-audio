@@ -13,7 +13,7 @@
 # Revision History
 #   L. Burget   20/1/2021 1:00AM - original version derived from the more
 #   P. Pálka    28/4/2025 17:00PM - original version derived from the more
-#                                  complex VB_diarization.py avaiable at
+#                                  complex VB_diarization.py available at
 # https://github.com/BUTSpeechFIT/VBx/blob/e39af548bb41143a7136d08310765746192e34da/VBx/VB_diarization.py
 #   H. Bredin   12/8/2025 2:00PM - update vbx_setup signature to expect two paths
 #                                  drop HMM support
@@ -55,7 +55,7 @@ def VBx(
     gamma       - An initialization for the matrix of responsibilities (see Outputs: gamma)
     maxIters    - The maximum number of VB iterations
     epsilon     - Stop iterating, if the obj. fun. improvement is less than epsilon
-    alphaQInit  - Dirichlet concentraion parameter for initializing gamma
+    alphaQInit  - Dirichlet concentration parameter for initializing gamma
     ref         - T dim. integer vector with per frame reference speaker IDs (0:maxSpeakers)
     plot        - If set to True, plot per-frame marginal speaker posteriors 'gamma'
     return_model- Return also speaker model parameter

@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## next
+
+- improve(pipeline): add support for `subfolder` in `Pipeline.from_pretrained`
+
+## Version 4.0.5 (2026-06-22)
+
+- improve(telemetry): reduce number of sent packages [@litdarya](https://github.com/litdarya)
+- feat(cli): add `--average-case` option to `optimize` command [@antoinelaurent](https://github.com/antoinelaurent)
+- fix(task): fix  `Task.prepare_data` to support saving preprocessors that produce `int` values in metadata [@lylyhan](http://github.com/lylyhan)
+
 ## Version 4.0.4 (2026-02-07)
 
 - feat(sample): add transcription of sample file
@@ -376,7 +386,7 @@ Providing `num_speakers` to [`pyannote/speaker-diarization-3.1`](https://hf.co/p
 ## Version 1.0 (2018-07-03)
 
 - chore: switch from keras to pytorch (with tensorboard support)
-- improve: faster & better traning (`AutoLR`, advanced learning rate schedulers, improved batch generators)
+- improve: faster & better training (`AutoLR`, advanced learning rate schedulers, improved batch generators)
 - feat: add tunable speaker diarization pipeline (with its own tutorial)
 - chore: drop support for Python 2 (use Python 3.6 or later)
 

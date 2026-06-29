@@ -162,6 +162,10 @@ def optimize(
             case_sensitive=False,
         ),
     ] = Metric.DiarizationErrorRate,
+    average_case: Annotated[
+        bool,
+        typer.Option(help="Optimize for average case rather than worst case."),
+    ] = False,
 ):
     """
     Optimize a PIPELINE
@@ -227,7 +231,7 @@ def optimize(
         study_name=study_name,
         sampler=None,  # TODO: support sampler
         pruner=None,  # TODO: support pruner
-        average_case=False,
+        average_case=average_case,
     )
 
     direction = 1 if optimized_pipeline.get_direction() == "minimize" else -1

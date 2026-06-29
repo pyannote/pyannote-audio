@@ -434,7 +434,7 @@ class Inference(BaseInference):
             window is set to "sliding", this is equivalent to calling crop on
             the smallest chunk that contains all chunks. In case window is set
             to "whole", this is equivalent to concatenating each chunk into one
-            (artifical) chunk before processing it.
+            (artificial) chunk before processing it.
         hook : callable, optional
             When a callable is provided, it is called everytime a batch is processed
             with two keyword arguments:
