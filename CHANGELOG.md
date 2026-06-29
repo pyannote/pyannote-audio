@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## next
+
+- improve(pipeline): add support for `subfolder` in `Pipeline.from_pretrained`
+
 ## Version 4.0.5 (2026-06-22)
 
 - improve(telemetry): reduce number of sent packages [@litdarya](https://github.com/litdarya)
