@@ -4,7 +4,7 @@
 # MIT License
 #
 # Copyright (c) 2024-2025 CNRS
-# Copyright (c) 2025 pyannoteAI
+# Copyright (c) 2025- pyannoteAI
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -97,6 +97,7 @@ def parse_device(device: Device) -> torch.device:
 
 
 def get_diarization(prediction) -> Annotation:
+
     # if result is an Annotation, assume it is speaker diarization
     if isinstance(prediction, Annotation):
         return prediction
@@ -603,7 +604,10 @@ def benchmark(
 
     # load pretrained pipeline
     pretrained_pipeline = Pipeline.from_pretrained(
-        pipeline, revision=revision, token=token, cache_dir=cache, 
+        pipeline,
+        revision=revision,
+        token=token,
+        cache_dir=cache,
     )
     if pretrained_pipeline is None:
         print(f"Could not load pretrained pipeline from {pipeline}.")
@@ -646,10 +650,6 @@ def benchmark(
     if num_speakers == NumSpeakers.ORACLE:
         benchmark_name += ".OracleNumSpeakers"
 
-    # used to store processing time and file duration
-    processing_time: dict[str, float] = dict()
-    playing_time: dict[str, float] = dict()
-
     # used to store raw predictions in JSON format
     serialized_predictions: dict[str, dict] = dict()
 
@@ -676,19 +676,14 @@ def benchmark(
         if rttm_file.exists():
             raise FileExistsError(f"{rttm_file} already exists.")
 
-    # iterate over all files in the specified subset
-    for file in track(files, disable=not progress):
-        # gather file metadata
-        uri: str = file["uri"]
-        playing_time[uri] = Audio().get_duration(file)
+    if hasattr(pretrained_pipeline, "apply_batch"):
+        iterator = pretrained_pipeline(files, progress=progress)
+    else:
+        iterator = track(pretrained_pipeline(files), disable=not progress)
 
-        tic: float = time.time()
-
-        # apply pretrained pipeline to file
-        prediction = pretrained_pipeline(file, **file.get("pipeline_kwargs", {}))
-
-        tac: float = time.time()
-        processing_time[uri] = tac - tic
+    tic: float = time.time()
+    for file, prediction in iterator:
+        uri = file["uri"]
 
         # if prediction has a built-in serialize method, save serialized version
         if hasattr(prediction, "serialize"):
@@ -731,6 +726,8 @@ def benchmark(
         if optimize:
             file["speaker_diarization"] = speaker_diarization
 
+    tac: float = time.time()
+
     # save serialized predictions to disk (might contain more than just diarization results)
     if serialized_predictions and not per_file:
         with open(into / f"{benchmark_name}.json", "w") as f:
@@ -738,8 +735,8 @@ def benchmark(
 
     # log processing time and capacity
     processing = dict()
-    total_processing_time: float = sum(processing_time.values())
-    total_playing_time: float = sum(playing_time.values())
+    total_processing_time = tac - tic
+    total_playing_time = sum(Audio().get_duration(file) for file in files)
     processing["seconds_per_hour"] = total_processing_time / (total_playing_time / 3600)
     processing["times_faster_than_realtime"] = (
         total_playing_time / total_processing_time
