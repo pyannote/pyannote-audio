@@ -486,12 +486,33 @@ class Pipeline(_Pipeline):
 
         return file
 
+    def _apply_batch(
+        self,
+        files: list,
+        **kwargs,
+    ) -> Iterator[tuple[Any, Any]]:
+        """Process a list of prepared files, yielding (file, prediction) pairs"""
+
+        # if pipeline natively supports batch processing, use it
+        if hasattr(self, "apply_batch"):
+            # TODO: warn user that pipeline_kwargs might not be taken into account.
+            for f, prediction in self.apply_batch(files, **kwargs):
+                track_pipeline_apply(self, f, **kwargs)
+                yield f, prediction
+
+        # otherwise process files sequentially
+        else:
+            for f in files:
+                prediction = self.apply(f, **f.get("pipeline_kwargs", {}), **kwargs)
+                track_pipeline_apply(self, f, **kwargs)
+                yield f, prediction
+
     def __call__(
         self,
         file: AudioFile | list[AudioFile],
         preload: bool = False,
         **kwargs,
-    ) -> Any | Iterator[tuple[str, Any]]:
+    ) -> Any | Iterator[tuple[Any, Any]]:
         """Validate file(s), (optionally) load it/them in memory, then process it/them
 
         Parameters
@@ -511,13 +532,12 @@ class Pipeline(_Pipeline):
         Returns (for single file)
         -------------------------
         output : Any
-            Whatever `self.apply(...)` returns for a single file, or a dict
-            mapping each URI to its output for batch input.
+            Whatever `self.apply(...)` returns for a single file.
 
-        Yields (for multiple files)
+        Returns (for list of files)
         ---------------------------
-        file : AudioFile
-        output : Any
+        predictions : Iterator[tuple[AudioFile, Any]]
+            Iterator of (file, prediction) pairs.
 
         """
         fix_reproducibility(getattr(self, "device", torch.device("cpu")))
@@ -557,28 +577,7 @@ class Pipeline(_Pipeline):
                     f"Duplicate URIs: {duplicates}"
                 )
 
-            # if pipeline natively supports batch processing, use it
-            if hasattr(self, "apply_batch"):
-                # TODO: warn user that pipeline_kwargs might not be taken into account.
-                for f, prediction in self.apply_batch(files, **kwargs):
-                    # send file duration to telemetry as well as
-                    # requested number of speakers in case of diarization
-                    track_pipeline_apply(self, f, **kwargs)
-
-                    yield f, prediction
-
-            # otherwise process files sequentially
-            else:
-                for f in files:
-                    prediction = self.apply(f, **f.get("pipeline_kwargs", {}), **kwargs)
-
-                    # send file duration to telemetry as well as
-                    # requested number of speakers in case of diarization
-                    track_pipeline_apply(self, f, **kwargs)
-
-                    yield f, prediction
-
-            return
+            return self._apply_batch(files, **kwargs)
 
         file = self.prepare_one(file, preload=preload)
         prediction = self.apply(file, **file.get("pipeline_kwargs", {}), **kwargs)
