@@ -233,7 +233,7 @@ If you use `pyannote.audio` please use the following citations:
 The commands below will setup pre-commit hooks and packages needed for developing the `pyannote.audio` library.
 
 ```bash
-pip install -e .[dev,testing]
+pip install -e '.[dev,testing]'
 pre-commit install
 ```
 
