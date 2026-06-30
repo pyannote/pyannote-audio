@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## Version 4.0.6 (2026-06-29)
+## Version 4.0.7 (2026-06-30)
 
 - fix(pipeline): add missing support for `subfolder` in `Pipeline.from_pretrained`
 - feat(pipeline): add basic support for (sequential) batch inference
