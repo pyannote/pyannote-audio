@@ -334,7 +334,7 @@ class Peak:
         alpha: float = 0.5,
         min_duration: float = 1.0,
     ):
-        super(Peak, self).__init__()
+        super().__init__()
         self.alpha = alpha
         self.min_duration = min_duration
 
