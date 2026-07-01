@@ -155,6 +155,12 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         Batch size used for speaker segmentation. Defaults to 1.
     embedding_batch_size : int, optional
         Batch size used for speaker embedding. Defaults to 1.
+    embedding_precision : torch.dtype, optional
+        When set (e.g. torch.float16), use autocast on the embedding model's
+        forward_frames pass to leverage GPU tensor cores. Only applies on CUDA
+        and when the embedding model supports the forward_frames/forward_embedding
+        split API (e.g. WeSpeaker). The pooling step remains in float32 to preserve
+        embedding precision for cosine-similarity clustering. Defaults to None (fp32).
     der_variant : dict, optional
         Optimize for a variant of diarization error rate.
         Defaults to {"collar": 0.0, "skip_overlap": False}. This is used in `get_metric`
@@ -210,6 +216,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         clustering: str = "VBxClustering",
         embedding_batch_size: int = 1,
         segmentation_batch_size: int = 1,
+        embedding_precision: Optional[torch.dtype] = None,
         der_variant: Optional[dict] = None,
         token: Union[Text, None] = None,
         cache_dir: Union[Path, Text, None] = None,
@@ -217,6 +224,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         super().__init__()
 
         self.legacy = legacy
+        self.embedding_precision = embedding_precision
 
         self.segmentation_model = segmentation
         model: Model = get_model(segmentation, token=token, cache_dir=cache_dir)
@@ -329,6 +337,133 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
         return segmentations
 
+    def _get_masks(
+        self,
+        binary_segmentations: SlidingWindowFeature,
+        exclude_overlap: bool = False,
+    ):
+        """Compute masks for embedding extraction
+
+        Parameters
+        ----------
+        binary_segmentations : (num_chunks, num_frames, num_speakers) SlidingWindowFeature
+            Binarized segmentation.
+        exclude_overlap : bool, optional
+            Exclude overlapping speech regions when extracting embeddings.
+
+        Returns
+        -------
+        masks : (num_chunks, num_frames, num_speakers) np.ndarray
+        clean_masks : (num_chunks, num_frames, num_speakers) np.ndarray
+        min_num_frames : int
+        """
+
+        duration = binary_segmentations.sliding_window.duration
+        num_chunks, num_frames, num_speakers = binary_segmentations.data.shape
+
+        masks = np.nan_to_num(binary_segmentations.data, nan=0.0).astype(np.float32)
+
+        if exclude_overlap:
+            min_num_samples = self._embedding.min_num_samples
+            num_samples = duration * self._embedding.sample_rate
+            min_num_frames = math.ceil(num_frames * min_num_samples / num_samples)
+
+            overlap = np.sum(binary_segmentations.data, axis=2, keepdims=True) < 2
+            clean_masks = np.nan_to_num(
+                binary_segmentations.data * overlap, nan=0.0
+            ).astype(np.float32)
+        else:
+            min_num_frames = -1
+            clean_masks = masks
+
+        return masks, clean_masks, min_num_frames
+
+    def _get_active_pairs(
+        self,
+        masks: np.ndarray,
+        clean_masks: np.ndarray,
+        min_num_frames: int,
+    ):
+        """Find active (chunk, speaker) pairs and their resolved masks
+
+        Parameters
+        ----------
+        masks : (num_chunks, num_frames, num_speakers) np.ndarray
+        clean_masks : (num_chunks, num_frames, num_speakers) np.ndarray
+        min_num_frames : int
+
+        Returns
+        -------
+        active_pairs : list of (chunk_idx, speaker_idx)
+        active_masks : dict mapping (chunk_idx, speaker_idx) to (num_frames,) np.ndarray
+        """
+
+        num_chunks, _, num_speakers = masks.shape
+        active_pairs = []
+        active_masks = {}
+
+        for c in range(num_chunks):
+            for s in range(num_speakers):
+                cm = clean_masks[c, :, s]
+                m = masks[c, :, s]
+                used = cm if np.sum(cm) > min_num_frames else m
+                if np.sum(used) == 0.0:
+                    continue
+                active_pairs.append((c, s))
+                active_masks[(c, s)] = used
+
+        return active_pairs, active_masks
+
+    def _preslice_waveforms(
+        self,
+        file,
+        binary_segmentations: SlidingWindowFeature,
+    ) -> torch.Tensor:
+        """Pre-slice all chunk waveforms from in-memory audio
+
+        Parameters
+        ----------
+        file : AudioFile
+        binary_segmentations : SlidingWindowFeature
+
+        Returns
+        -------
+        all_waveforms : (num_chunks, 1, window_samples) torch.Tensor
+        """
+
+        duration = binary_segmentations.sliding_window.duration
+        num_chunks = binary_segmentations.data.shape[0]
+        waveform = file["waveform"]
+        sample_rate = file["sample_rate"]
+        window_samples = int(duration * sample_rate)
+
+        sw = binary_segmentations.sliding_window
+        start_samples = np.array(
+            [int(sw[i].start * sample_rate) for i in range(num_chunks)]
+        )
+
+        all_waveforms = torch.zeros(
+            (num_chunks, 1, window_samples), dtype=waveform.dtype
+        )
+        total_samples = waveform.shape[1]
+
+        for i, s in enumerate(start_samples):
+            src_start = max(s, 0)
+            src_end = min(s + window_samples, total_samples)
+            dst_start = max(-s, 0)
+            length = src_end - src_start
+            if length > 0:
+                all_waveforms[i, :, dst_start : dst_start + length] = waveform[
+                    :, src_start:src_end
+                ]
+
+        return all_waveforms
+
+    def _has_split_embedding_api(self) -> bool:
+        """Check if the embedding model supports forward_frames/forward_embedding"""
+        model = getattr(self._embedding, "model_", None)
+        return model is not None and hasattr(model, "forward_frames") and hasattr(model, "forward_embedding")
+
     def get_embeddings(
         self,
         file,
@@ -359,9 +494,6 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         # bringing a massive speed up to the optimization process (and hence allowing to use
         # a larger search space).
         if self.training:
-            # we only re-use embeddings if they were extracted based on the same value of the
-            # "segmentation.threshold" hyperparameter or if the segmentation model relies on
-            # `powerset` mode
             cache = file.get("training_cache/embeddings", dict())
             if ("embeddings" in cache) and (
                 self._segmentation.model.specifications.powerset
@@ -369,19 +501,178 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             ):
                 return cache["embeddings"]
 
+        num_chunks, num_frames, num_speakers = binary_segmentations.data.shape
+
+        # use the fast path when:
+        # - audio is already in memory (no disk I/O per chunk)
+        # - embedding model supports split forward_frames/forward_embedding
+        has_waveform = isinstance(file, Mapping) and "waveform" in file
+        has_split_api = self._has_split_embedding_api()
+
+        if has_waveform and has_split_api:
+            embeddings = self._get_embeddings_fast(
+                file, binary_segmentations, exclude_overlap, hook
+            )
+        else:
+            embeddings = self._get_embeddings_legacy(
+                file, binary_segmentations, exclude_overlap, hook
+            )
+
+        # caching embeddings for subsequent trials
+        if self.training:
+            if self._segmentation.model.specifications.powerset:
+                file["training_cache/embeddings"] = {
+                    "embeddings": embeddings,
+                }
+            else:
+                file["training_cache/embeddings"] = {
+                    "segmentation.threshold": self.segmentation.threshold,
+                    "embeddings": embeddings,
+                }
+
+        return embeddings
+
+    def _get_embeddings_fast(
+        self,
+        file,
+        binary_segmentations: SlidingWindowFeature,
+        exclude_overlap: bool = False,
+        hook: Optional[Callable] = None,
+    ):
+        """Fast embedding extraction path
+
+        Optimizations over the legacy path:
+        - pre-slices all chunk waveforms at once (no per-chunk audio.crop)
+        - skips inactive (chunk, speaker) pairs with all-zero masks
+        - computes forward_frames once per chunk, then forward_embedding per active pair
+
+        Parameters
+        ----------
+        file : AudioFile
+            Must contain "waveform" and "sample_rate" keys.
+        binary_segmentations : (num_chunks, num_frames, num_speakers) SlidingWindowFeature
+        exclude_overlap : bool, optional
+        hook : Optional[Callable]
+
+        Returns
+        -------
+        embeddings : (num_chunks, num_speakers, dimension) np.ndarray
+        """
+
+        num_chunks, num_frames, num_speakers = binary_segmentations.data.shape
+        batch_size = self.embedding_batch_size
+        model = self._embedding.model_
+        device = next(model.parameters()).device
+
+        masks, clean_masks, min_num_frames = self._get_masks(
+            binary_segmentations, exclude_overlap
+        )
+        active_pairs, active_masks = self._get_active_pairs(
+            masks, clean_masks, min_num_frames
+        )
+
+        # pre-slice all chunk waveforms from in-memory audio
+        all_waveforms = self._preslice_waveforms(file, binary_segmentations)
+
+        # Step 1: compute frame-level features once per chunk
+        # (fbank extraction + ResNet forward, the expensive part)
+        # When embedding_precision is set (e.g. torch.float16), use autocast
+        # on the forward_frames pass to leverage GPU tensor cores.
+        # The resulting frames are cast back to float32 before pooling
+        # to preserve embedding precision for cosine-similarity clustering.
+        use_autocast = (
+            self.embedding_precision is not None and device.type == "cuda"
+        )
+
+        all_frames = []
+        with torch.inference_mode():
+            for i in range(0, num_chunks, batch_size):
+                batch = all_waveforms[i : i + batch_size].to(device)
+                if use_autocast:
+                    with torch.autocast(
+                        device_type="cuda", dtype=self.embedding_precision
+                    ):
+                        frames = model.forward_frames(batch)
+                    frames = frames.float()
+                else:
+                    frames = model.forward_frames(batch)
+                all_frames.append(frames)
+            all_frames = torch.cat(all_frames, dim=0)
+
+        # Step 2: compute embeddings only for active (chunk, speaker) pairs
+        # (statistics pooling only, much cheaper than the full forward pass)
+        dimension = self._embedding.dimension
+        embeddings = np.full(
+            (num_chunks * num_speakers, dimension), np.nan, dtype=np.float32
+        )
+
+        total_pool_batches = math.ceil(max(1, len(active_pairs)) / batch_size)
+
+        if hook is not None:
+            hook("embeddings", None, total=total_pool_batches, completed=0)
+
+        with torch.inference_mode():
+            for bi, i in enumerate(
+                range(0, len(active_pairs), batch_size), start=1
+            ):
+                batch_pairs = active_pairs[i : i + batch_size]
+
+                frames_batch = torch.stack(
+                    [all_frames[c] for c, _ in batch_pairs], dim=0
+                )
+                masks_batch = torch.stack(
+                    [
+                        torch.from_numpy(active_masks[(c, s)])
+                        for c, s in batch_pairs
+                    ],
+                    dim=0,
+                ).to(device=device, dtype=torch.float32)
+
+                emb = model.forward_embedding(frames_batch, weights=masks_batch)
+                emb_np = emb.cpu().numpy()
+
+                for j, (c, s) in enumerate(batch_pairs):
+                    embeddings[c * num_speakers + s] = emb_np[j]
+
+                if hook is not None:
+                    hook(
+                        "embeddings", emb_np, total=total_pool_batches, completed=bi
+                    )
+
+        return rearrange(embeddings, "(c s) d -> c s d", c=num_chunks)
+
+    def _get_embeddings_legacy(
+        self,
+        file,
+        binary_segmentations: SlidingWindowFeature,
+        exclude_overlap: bool = False,
+        hook: Optional[Callable] = None,
+    ):
+        """Legacy embedding extraction path
+
+        Used as fallback when audio is not in memory or the embedding model
+        does not support the forward_frames/forward_embedding split API.
+
+        Parameters
+        ----------
+        file : AudioFile
+        binary_segmentations : (num_chunks, num_frames, num_speakers) SlidingWindowFeature
+        exclude_overlap : bool, optional
+        hook : Optional[Callable]
+
+        Returns
+        -------
+        embeddings : (num_chunks, num_speakers, dimension) np.ndarray
+        """
+
         duration = binary_segmentations.sliding_window.duration
         num_chunks, num_frames, num_speakers = binary_segmentations.data.shape
 
         if exclude_overlap:
-            # minimum number of samples needed to extract an embedding
-            # (a lower number of samples would result in an error)
             min_num_samples = self._embedding.min_num_samples
-
-            # corresponding minimum number of frames
             num_samples = duration * self._embedding.sample_rate
             min_num_frames = math.ceil(num_frames * min_num_samples / num_samples)
 
-            # zero-out frames with overlapping speech
             clean_frames = 1.0 * (
                 np.sum(binary_segmentations.data, axis=2, keepdims=True) < 2
             )
@@ -389,7 +680,6 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                 binary_segmentations.data * clean_frames,
                 binary_segmentations.sliding_window,
             )
-
         else:
             min_num_frames = -1
             clean_segmentations = SlidingWindowFeature(
@@ -400,31 +690,22 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             for (chunk, masks), (_, clean_masks) in zip(
                 binary_segmentations, clean_segmentations
             ):
-                # chunk: Segment(t, t + duration)
-                # masks: (num_frames, local_num_speakers) np.ndarray
-
                 waveform, _ = self._audio.crop(
                     file,
                     chunk,
                     mode="pad",
                 )
-                # waveform: (1, num_samples) torch.Tensor
 
-                # mask may contain NaN (in case of partial stitching)
                 masks = np.nan_to_num(masks, nan=0.0).astype(np.float32)
                 clean_masks = np.nan_to_num(clean_masks, nan=0.0).astype(np.float32)
 
                 for mask, clean_mask in zip(masks.T, clean_masks.T):
-                    # mask: (num_frames, ) np.ndarray
-
                     if np.sum(clean_mask) > min_num_frames:
                         used_mask = clean_mask
                     else:
                         used_mask = mask
 
                     yield waveform[None], torch.from_numpy(used_mask)[None]
-                    # w: (1, 1, num_samples) torch.Tensor
-                    # m: (1, num_frames) torch.Tensor
 
         batches = batchify(
             iter_waveform_and_mask(),
@@ -443,15 +724,11 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             waveforms, masks = zip(*filter(lambda b: b[0] is not None, batch))
 
             waveform_batch = torch.vstack(waveforms)
-            # (batch_size, 1, num_samples) torch.Tensor
-
             mask_batch = torch.vstack(masks)
-            # (batch_size, num_frames) torch.Tensor
 
             embedding_batch: np.ndarray = self._embedding(
                 waveform_batch, masks=mask_batch
             )
-            # (batch_size, dimension) np.ndarray
 
             embedding_batches.append(embedding_batch)
 
@@ -460,22 +737,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
         embedding_batches = np.vstack(embedding_batches)
 
-        embeddings = rearrange(embedding_batches, "(c s) d -> c s d", c=num_chunks)
-
-        # caching embeddings for subsequent trials
-        # (see comments at the top of this method for more details)
-        if self.training:
-            if self._segmentation.model.specifications.powerset:
-                file["training_cache/embeddings"] = {
-                    "embeddings": embeddings,
-                }
-            else:
-                file["training_cache/embeddings"] = {
-                    "segmentation.threshold": self.segmentation.threshold,
-                    "embeddings": embeddings,
-                }
-
-        return embeddings
+        return rearrange(embedding_batches, "(c s) d -> c s d", c=num_chunks)
 
     def reconstruct(
         self,
