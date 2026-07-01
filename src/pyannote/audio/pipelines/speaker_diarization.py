@@ -396,6 +396,36 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                 binary_segmentations.data, binary_segmentations.sliding_window
             )
 
+        # Look for full zero masks : we won't infer on them we will map them directly to NaN
+        def get_empty_flags():
+            empty_flags = []
+            for (_, masks), (_, clean_masks) in zip(
+                binary_segmentations, clean_segmentations
+            ):
+                # chunk: Segment(t, t + duration)
+                # masks: (num_frames, local_num_speakers) np.ndarray
+
+                # mask may contain NaN (in case of partial stitching)
+                masks = np.nan_to_num(masks, nan=0.0).astype(np.float32)
+                clean_masks = np.nan_to_num(clean_masks, nan=0.0).astype(np.float32)
+
+                for mask, clean_mask in zip(masks.T, clean_masks.T):
+                    # mask: (num_frames, ) np.ndarray
+
+                    if np.sum(clean_mask) > min_num_frames:
+                        used_mask = clean_mask
+                    else:
+                        used_mask = mask
+
+                    # Check if input is empty (mask sum is 0)
+                    mask_sum = np.sum(used_mask)
+                    is_empty = (mask_sum == 0)
+                    empty_flags.append(is_empty)
+
+            return empty_flags
+
+        empty_flags = get_empty_flags()
+
         def iter_waveform_and_mask():
             for (chunk, masks), (_, clean_masks) in zip(
                 binary_segmentations, clean_segmentations
@@ -422,9 +452,14 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                     else:
                         used_mask = mask
 
-                    yield waveform[None], torch.from_numpy(used_mask)[None]
-                    # w: (1, 1, num_samples) torch.Tensor
-                    # m: (1, num_frames) torch.Tensor
+                    # Check if input is empty (mask sum is 0)
+                    mask_sum = np.sum(used_mask)
+                    is_empty = (mask_sum == 0)
+
+                    if not is_empty:
+                        yield waveform[None], torch.from_numpy(used_mask)[None]
+                        # w: (1, 1, num_samples) torch.Tensor
+                        # m: (1, num_frames) torch.Tensor
 
         batches = batchify(
             iter_waveform_and_mask(),
@@ -432,7 +467,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             fillvalue=(None, None),
         )
 
-        batch_count = math.ceil(num_chunks * num_speakers / self.embedding_batch_size)
+        batch_count = math.ceil((num_chunks * num_speakers - sum(empty_flags)) / self.embedding_batch_size)
 
         embedding_batches = []
 
@@ -458,7 +493,24 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             if hook is not None:
                 hook("embeddings", embedding_batch, total=batch_count, completed=i)
 
-        embedding_batches = np.vstack(embedding_batches)
+        if embedding_batches:
+            valid_embeddings = np.vstack(embedding_batches)
+        else:
+            valid_embeddings = np.array([]).reshape(0, self._embedding.dimension)
+
+        # Reconstruct the full embedding tensor, with the empty and non-empty masked chunck results
+        full_embeddings = []
+        valid_idx = 0
+        for is_empty in empty_flags:
+            if is_empty:
+                # Empty input - add NaN embedding
+                full_embeddings.append(np.nan * np.zeros((1, self._embedding.dimension)))
+            else:
+                # Valid input - use inference result
+                full_embeddings.append(valid_embeddings[valid_idx:valid_idx+1])
+                valid_idx += 1
+
+        embedding_batches = np.vstack(full_embeddings)
 
         embeddings = rearrange(embedding_batches, "(c s) d -> c s d", c=num_chunks)
 
