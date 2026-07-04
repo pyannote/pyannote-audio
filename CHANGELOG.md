@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## Version 4.0.7 (2026-06-30)
+
+- fix(pipeline): add missing support for `subfolder` in `Pipeline.from_pretrained`
+- feat(pipeline): add basic support for (sequential) batch inference
+
 ## Version 4.0.5 (2026-06-22)
 
 - improve(telemetry): reduce number of sent packages [@litdarya](https://github.com/litdarya)

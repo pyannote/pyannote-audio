@@ -43,6 +43,7 @@ try:
     import torchcodec
     from torchcodec import AudioSamples
     from torchcodec.decoders import AudioDecoder, AudioStreamMetadata
+    TORCHCODEC_AVAILABLE = True
 except Exception as e:
     warnings.warn(
         "\ntorchcodec is not installed correctly so built-in audio decoding will fail. Solutions are:\n"
@@ -50,6 +51,9 @@ except Exception as e:
         "* fix torchcodec installation. Error message was:\n\n"
         f"{e}"
     )
+    TORCHCODEC_AVAILABLE = False
+    AudioDecoder = None
+    AudioStreamMetadata = None
 
 
 AudioFile = str | Path | IOBase | Mapping
@@ -81,7 +85,18 @@ def get_audio_metadata(file: AudioFile) -> "AudioStreamMetadata":
     -------
     metadata : AudioStreamMetadata
         Audio file metadata
+
+    Raises
+    ------
+    RuntimeError if torchcodec is not available.
     """
+
+    if not TORCHCODEC_AVAILABLE:
+        raise RuntimeError(
+            "torchcodec is not available. Cannot read audio metadata. "
+            "Please install torchcodec or provide audio as a waveform dictionary: "
+            "{'waveform': (channel, time) torch.Tensor, 'sample_rate': int}"
+        )
 
     metadata = AudioDecoder(file["audio"]).metadata
 
@@ -316,6 +331,13 @@ class Audio:
 
             return self.downmix_and_resample(waveform, sample_rate, channel=channel)
 
+        if not TORCHCODEC_AVAILABLE:
+            raise RuntimeError(
+                "torchcodec is not available. Cannot read audio file. "
+                "Please install torchcodec or provide audio as a waveform dictionary: "
+                "{'waveform': (channel, time) torch.Tensor, 'sample_rate': int}"
+            )
+
         decoder = AudioDecoder(file["audio"])
         samples: AudioSamples = decoder.get_all_samples()
 
@@ -390,6 +412,13 @@ class Audio:
             data = waveform[:, start_sample:end_sample]
             data = F.pad(data, (pad_start, pad_end))
             return self.downmix_and_resample(data, sample_rate, channel=channel)
+
+        if not TORCHCODEC_AVAILABLE:
+            raise RuntimeError(
+                "torchcodec is not available. Cannot crop audio file. "
+                "Please install torchcodec or provide audio as a waveform dictionary: "
+                "{'waveform': (channel, time) torch.Tensor, 'sample_rate': int}"
+            )
 
         decoder = AudioDecoder(file["audio"])
 
