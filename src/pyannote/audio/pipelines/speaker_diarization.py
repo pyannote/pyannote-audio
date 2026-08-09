@@ -146,7 +146,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         Exclude overlapping speech regions when extracting embeddings.
         Defaults (False) to use the whole speech.
     plda : PLDA, str, or dict, optional
-        Pretrained PLDA.
+        Pretrained PLDA. Only loaded when `clustering` is "VBxClustering".
         See pyannote.audio.pipelines.utils.get_plda for supported format.
     clustering : str, optional
         Clustering algorithm. See pyannote.audio.pipelines.clustering.Clustering
@@ -228,7 +228,9 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         self.embedding_exclude_overlap = embedding_exclude_overlap
 
         self.plda = plda
-        self._plda = get_plda(plda, token=token, cache_dir=cache_dir)
+        # only VBxClustering uses the PLDA: loading it here would download
+        # files from a gated repository that other methods end up discarding.
+        self._plda = None
 
         self.klustering = clustering
 
@@ -272,6 +274,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             )
 
         if self.klustering == "VBxClustering":
+            self._plda = get_plda(plda, token=token, cache_dir=cache_dir)
             self.clustering = Klustering.value(self._plda, metric=metric)
         else:
             self.clustering = Klustering.value(metric=metric)
