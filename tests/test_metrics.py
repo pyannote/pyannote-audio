@@ -20,6 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import numpy as np
 import pytest
 import torch
 
@@ -27,6 +28,7 @@ from pyannote.audio.torchmetrics.functional.audio.diarization_error_rate import 
     _der_update,
     diarization_error_rate,
 )
+from pyannote.audio.utils.metric import discrete_diarization_error_rate
 
 
 @pytest.fixture
@@ -140,3 +142,34 @@ def test_batch_der_with_components(target, prediction):
 def test_chunk_der(target, prediction):
     der = diarization_error_rate(prediction, target, reduce="chunk")
     torch.testing.assert_close(der, torch.Tensor([4.0 / 8.0, 2.0 / 4.0]))
+
+
+@pytest.mark.parametrize(
+    "num_frames",
+    [
+        pytest.param(1_000, id="short"),
+        pytest.param(65_000, id="just-below-float16-max"),
+        pytest.param(70_000, id="just-above-float16-max"),
+        pytest.param(450_000, id="two-hours"),
+    ],
+)
+def test_discrete_der_does_not_saturate(num_frames: int):
+    """Frame counts have to accumulate in float64.
+
+    reference and hypothesis are cast to float16, whose maximum is 65504. If the
+    reduction stays in that dtype the total saturates to inf on any recording
+    past roughly 18 minutes of one speaker, and an obviously wrong hypothesis
+    scores a perfect 0.0.
+    """
+    num_false_alarm = 100
+    reference = np.zeros((num_frames, 2))
+    reference[:, 0] = 1
+    hypothesis = reference.copy()
+    hypothesis[:num_false_alarm, 1] = 1
+
+    der, components = discrete_diarization_error_rate(reference, hypothesis)
+
+    assert np.isfinite(components["total"])
+    assert components["total"] == pytest.approx(num_frames)
+    assert components["false alarm"] == pytest.approx(num_false_alarm)
+    assert der == pytest.approx(num_false_alarm / num_frames)
