@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## develop
+
+- improve(pipeline): run the embedding model once per chunk instead of once per (chunk, speaker) pair when the backend applies masks at the pooling stage, making `SpeakerDiarization` ~2x faster end to end [@happyarts](https://github.com/happyarts)
+
 ## Version 4.0.7 (2026-06-30)
 
 - fix(pipeline): add missing support for `subfolder` in `Pipeline.from_pretrained`

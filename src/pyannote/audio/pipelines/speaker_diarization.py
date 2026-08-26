@@ -396,6 +396,15 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                 binary_segmentations.data, binary_segmentations.sliding_window
             )
 
+        # When the embedding backend applies speaker masks at its pooling
+        # stage only (e.g. the pyannote-native WeSpeaker models), the
+        # per-(chunk, speaker) iteration below would run the expensive
+        # frame-wise part of the model num_speakers times on the very same
+        # waveform. Stacking each chunk's masks and calling the model once
+        # per chunk computes the exact same statistics with ~num_speakers
+        # times less work.
+        stack_masks = getattr(self._embedding, "supports_stacked_masks", False)
+
         def iter_waveform_and_mask():
             for (chunk, masks), (_, clean_masks) in zip(
                 binary_segmentations, clean_segmentations
@@ -414,17 +423,22 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                 masks = np.nan_to_num(masks, nan=0.0).astype(np.float32)
                 clean_masks = np.nan_to_num(clean_masks, nan=0.0).astype(np.float32)
 
-                for mask, clean_mask in zip(masks.T, clean_masks.T):
-                    # mask: (num_frames, ) np.ndarray
+                used_masks = [
+                    clean_mask if np.sum(clean_mask) > min_num_frames else mask
+                    for mask, clean_mask in zip(masks.T, clean_masks.T)
+                ]
+                # used_masks: local_num_speakers x (num_frames, ) np.ndarray
 
-                    if np.sum(clean_mask) > min_num_frames:
-                        used_mask = clean_mask
-                    else:
-                        used_mask = mask
-
-                    yield waveform[None], torch.from_numpy(used_mask)[None]
+                if stack_masks:
+                    yield waveform[None], torch.from_numpy(np.stack(used_masks))[None]
                     # w: (1, 1, num_samples) torch.Tensor
-                    # m: (1, num_frames) torch.Tensor
+                    # m: (1, local_num_speakers, num_frames) torch.Tensor
+
+                else:
+                    for used_mask in used_masks:
+                        yield waveform[None], torch.from_numpy(used_mask)[None]
+                        # w: (1, 1, num_samples) torch.Tensor
+                        # m: (1, num_frames) torch.Tensor
 
         batches = batchify(
             iter_waveform_and_mask(),
@@ -432,7 +446,8 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             fillvalue=(None, None),
         )
 
-        batch_count = math.ceil(num_chunks * num_speakers / self.embedding_batch_size)
+        items_per_chunk = 1 if stack_masks else num_speakers
+        batch_count = math.ceil(num_chunks * items_per_chunk / self.embedding_batch_size)
 
         embedding_batches = []
 
@@ -447,11 +462,13 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
             mask_batch = torch.vstack(masks)
             # (batch_size, num_frames) torch.Tensor
+            # or (batch_size, num_speakers, num_frames) when stack_masks
 
             embedding_batch: np.ndarray = self._embedding(
                 waveform_batch, masks=mask_batch
             )
             # (batch_size, dimension) np.ndarray
+            # or (batch_size, num_speakers, dimension) when stack_masks
 
             embedding_batches.append(embedding_batch)
 
@@ -460,7 +477,11 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
         embedding_batches = np.vstack(embedding_batches)
 
-        embeddings = rearrange(embedding_batches, "(c s) d -> c s d", c=num_chunks)
+        if stack_masks:
+            # batches were (batch_size, num_speakers, dimension) already
+            embeddings = embedding_batches
+        else:
+            embeddings = rearrange(embedding_batches, "(c s) d -> c s d", c=num_chunks)
 
         # caching embeddings for subsequent trials
         # (see comments at the top of this method for more details)

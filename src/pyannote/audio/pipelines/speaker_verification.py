@@ -686,6 +686,25 @@ class PyannoteAudioPretrainedSpeakerEmbedding(BaseInference):
         return "cosine"
 
     @cached_property
+    def supports_stacked_masks(self) -> bool:
+        """Whether __call__ accepts (batch_size, num_speakers, num_frames) masks
+
+        True when the underlying model applies masks at its statistics-pooling
+        stage only, so that one call with stacked masks returns
+        (batch_size, num_speakers, dimension) embeddings computed from a single
+        pass over the frame-wise part of the model. Backends that apply masks
+        to the waveform or features before the frame-wise part cannot do this.
+        """
+        from pyannote.audio.models.embedding.wespeaker import BaseWeSpeakerResNet
+
+        # two_emb_layer runs BatchNorm1d over the pooled stats, which reads
+        # dim 1 as channels and rejects a (batch, speakers, dim) tensor; the
+        # models shipped with pyannote all set it to False.
+        return isinstance(self.model_, BaseWeSpeakerResNet) and not getattr(
+            getattr(self.model_, "resnet", None), "two_emb_layer", True
+        )
+
+    @cached_property
     def min_num_samples(self) -> int:
         with torch.inference_mode():
             lower, upper = 2, round(0.5 * self.sample_rate)
