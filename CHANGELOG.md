@@ -3,6 +3,7 @@
 ## next
 
 - feat(cli): add `--subfolder` option to `benchmark` command [@antoinelaurent](https://github.com/antoinelaurent)
+- fix(pipeline): fix `SpeakerDiarizationMixin.optimal_mapping` raising `TypeError` when `reference` is a protocol file, and make it honor the `"annotated"` region [@Kayvan-Zahiri](https://github.com/Kayvan-Zahiri)
 
 ## Version 4.0.7 (2026-06-30)
 
