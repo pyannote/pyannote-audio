@@ -129,7 +129,6 @@ class SpeakerDiarizationMixin:
         """
 
         if isinstance(reference, Mapping):
-            # read "annotated" before `reference` is rebound to the annotation
             annotated = reference["annotated"] if "annotated" in reference else None
             reference = reference["annotation"]
         else:
