@@ -18,7 +18,7 @@ dependencies = [
     "pyannote-core>=6.0.1",
     "pyannote-database>=6.1.1",
     "pyannote-metrics>=4.0.0",
-    "pyannote-pipeline>=4.0.0",
+    "pyannote-pipeline @ git+https://github.com/pyannote/pyannote-pipeline.git@feat/multi-objective",
     "pytorch-metric-learning>=2.8.1",
     "rich>=13.9.4",
     "safetensors>=0.5.2",
