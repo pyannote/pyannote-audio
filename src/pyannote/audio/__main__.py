@@ -78,6 +78,7 @@ class Metric(str, Enum):
     JaccardErrorRate = "JaccardErrorRate"
     DiarizationPurity = "DiarizationPurity"
     DiarizationCoverage = "DiarizationCoverage"
+    DiarizationSpeakerCountError = "DiarizationSpeakerCountError"
 
     @classmethod
     def from_str(cls, metric: str) -> BaseMetric:
@@ -92,6 +93,16 @@ class Metric(str, Enum):
             return DiarizationPurity()
         if metric == cls.DiarizationCoverage:
             return DiarizationCoverage()
+        if metric == cls.DiarizationSpeakerCountError:
+            try:
+                from pyannote.metrics.diarization import DiarizationSpeakerCountError
+            except ImportError as exc:
+                raise typer.BadParameter(
+                    "DiarizationSpeakerCountError requires pyannote-metrics from "
+                    "https://github.com/pyannote/pyannote-metrics/"
+                    "tree/feat/speaker-count-metrics."
+                ) from exc
+            return DiarizationSpeakerCountError()
 
         raise ValueError(f"Unsupported metric: {metric}")
 

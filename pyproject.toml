@@ -32,6 +32,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
+pyannote-metrics = { git = "https://github.com/pyannote/pyannote-metrics", rev = "feat/speaker-count-metrics" }
 pyannote-pipeline = { git = "https://github.com/pyannote/pyannote-pipeline", rev = "feat/multi-objective" }
 
 [project.scripts]
