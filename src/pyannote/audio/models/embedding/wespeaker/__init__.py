@@ -321,27 +321,6 @@ class BaseWeSpeakerResNet(Model):
         """
         return self.resnet.forward_embedding(frames, weights=weights)[1]
 
-    def forward(
-        self, waveforms: torch.Tensor, weights: Optional[torch.Tensor] = None
-    ) -> torch.Tensor:
-        """Extract speaker embeddings
-
-        Parameters
-        ----------
-        waveforms : torch.Tensor
-            Batch of waveforms with shape (batch, channel, sample)
-        weights : (batch, frames) or (batch, speakers, frames) torch.Tensor, optional
-            Batch of weights passed to statistics pooling layer.
-
-        Returns
-        -------
-        embeddings : (batch, dimension) or (batch, speakers, dimension) torch.Tensor
-            Batch of embeddings.
-        """
-
-        fbank = self.compute_fbank(waveforms)
-        return self.resnet(fbank, weights=weights)[1]
-
 
 class WeSpeakerResNet34(BaseWeSpeakerResNet):
     def __init__(
