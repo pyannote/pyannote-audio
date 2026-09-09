@@ -22,9 +22,11 @@
 
 from types import SimpleNamespace
 
+import pytest
+import typer
 import yaml
 from pyannote.audio.__main__ import Pipeline as AudioPipeline
-from pyannote.audio.__main__ import app
+from pyannote.audio.__main__ import Metric, app
 from pyannote.core import Annotation, Segment
 from pyannote.pipeline import Pipeline
 from pyannote.pipeline.parameter import Integer
@@ -157,3 +159,86 @@ def test_optimize_cli_with_multiple_objectives(tmp_path, monkeypatch):
             "params": {"threshold": 0},
         }
     ]
+
+
+@pytest.mark.parametrize("multi_objective", [False, True])
+def test_optimize_cli_with_speaker_count_error(tmp_path, monkeypatch, multi_objective):
+    """Count errors respect UEM and average files equally in both optimization modes."""
+
+    class SpeakerCountPipeline(MockPipeline):
+        def __call__(self, current_file, **kwargs):
+            return SimpleNamespace(speaker_diarization=current_file["hypothesis"])
+
+    class SpeakerCountProtocol:
+        def development(self):
+            for index, (duration, extra_speakers) in enumerate([(1.0, 1), (10.0, 3)]):
+                reference = Annotation(uri=f"file{index}")
+                reference[Segment(0.0, duration)] = "speaker"
+                hypothesis = reference.copy()
+                for speaker in range(extra_speakers):
+                    hypothesis[Segment(0.0, duration), speaker + 1] = f"extra{speaker}"
+                hypothesis[Segment(duration, duration + 1.0)] = "outside_uem"
+                yield {
+                    "uri": reference.uri,
+                    "annotation": reference,
+                    "annotated": reference.get_timeline(),
+                    "hypothesis": hypothesis,
+                }
+
+    pipeline_yml = tmp_path / "pipeline.yaml"
+    pipeline_yml.write_text("pipeline: mock\n")
+    mock_pipeline = SpeakerCountPipeline()
+    monkeypatch.setattr(
+        AudioPipeline, "from_pretrained", lambda *args, **kwargs: mock_pipeline
+    )
+    monkeypatch.setattr(
+        "pyannote.audio.__main__.pyannote.database.registry.get_protocol",
+        lambda *args, **kwargs: SpeakerCountProtocol(),
+    )
+
+    metrics = ["DiarizationSpeakerCountError"]
+    if multi_objective:
+        metrics.append("DiarizationCoverage")
+    metric_options = [option for metric in metrics for option in ("--metric", metric)]
+    result = CliRunner().invoke(
+        app,
+        [
+            "optimize",
+            str(pipeline_yml),
+            "Debug.SpeakerDiarization.Debug",
+            "--device",
+            "cpu",
+            "--max-iterations",
+            "1",
+            "--average-case",
+            *metric_options,
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert Metric.DiarizationSpeakerCountError.direction == "minimize"
+
+    suffix = ".pareto.yaml" if multi_objective else ".yaml"
+    output = tmp_path / (
+        "pipeline.Debug.SpeakerDiarization.Debug.development."
+        + "+".join(metrics)
+        + suffix
+    )
+    optimization = yaml.safe_load(output.read_text())["optimization"]
+    if multi_objective:
+        assert mock_pipeline.get_direction() == ("minimize", "maximize")
+        assert optimization["metrics"] == metrics
+        assert optimization["status"]["pareto_front"][0]["values"] == {
+            "DiarizationSpeakerCountError": 2.0,
+            "DiarizationCoverage": 1.0,
+        }
+    else:
+        assert optimization["status"]["best_loss"] == 2.0
+
+
+def test_speaker_count_error_requires_recent_metrics(monkeypatch):
+    import pyannote.metrics.diarization as diarization_metrics
+
+    monkeypatch.delattr(diarization_metrics, "DiarizationSpeakerCountError", raising=False)
+    with pytest.raises(typer.BadParameter, match="feat/speaker-count-metrics"):
+        Metric.from_str("DiarizationSpeakerCountError")
+    assert Metric.from_str("DiarizationErrorRate").name == "diarization error rate"
