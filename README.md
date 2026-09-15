@@ -196,7 +196,8 @@ set_telemetry_metrics(False, save_choice_as_default=True)
   - 2024-04-05 > [Offline speaker diarization (speaker-diarization-3.1)](tutorials/community/offline_usage_speaker_diarization.ipynb) by [Simon Ottenhaus](https://github.com/simonottenhauskenbun)
   - 2024-09-24 > [Evaluating `pyannote` pretrained speech separation pipelines](tutorials/community/eval_separation_pipeline.ipynb) by  [Clément Pagés](https://github.com/)
 - Tutorials  
-*Those tutorials were written for older versions of pyannote.audio and should be updated. Interested in working for pyannoteAI as a community manager or developer advocate? This might be a nice place to start!*
+*The multi-objective tutorial targets the current version. The others were written for older versions of pyannote.audio and should be updated. Interested in working for pyannoteAI as a community manager or developer advocate? This might be a nice place to start!*
+  - [Finding the purity/coverage Pareto front of Community-1](tutorials/multi_objective_optimization.ipynb)
   - [Applying a pretrained pipeline](tutorials/applying_a_pipeline.ipynb)
   - [Adapting a pretrained pipeline to your own data](tutorials/adapting_pretrained_pipeline.ipynb)
   - [Training a pipeline](tutorials/voice_activity_detection.ipynb)

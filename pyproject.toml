@@ -18,7 +18,7 @@ dependencies = [
     "pyannote-core>=6.0.1",
     "pyannote-database>=6.1.1",
     "pyannote-metrics>=4.0.0",
-    "pyannote-pipeline>=4.0.0",
+    "pyannote-pipeline",
     "pytorch-metric-learning>=2.8.1",
     "rich>=13.9.4",
     "safetensors>=0.5.2",
@@ -30,6 +30,10 @@ dependencies = [
     "matplotlib>=3.10.0",
     "pyannoteai-sdk>=0.3.0",
 ]
+
+[tool.uv.sources]
+pyannote-metrics = { git = "https://github.com/pyannote/pyannote-metrics", rev = "feat/speaker-count-metrics" }
+pyannote-pipeline = { git = "https://github.com/pyannote/pyannote-pipeline", rev = "feat/multi-objective" }
 
 [project.scripts]
 pyannote-audio = "pyannote.audio.__main__:app"

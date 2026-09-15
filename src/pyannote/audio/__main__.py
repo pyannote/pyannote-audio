@@ -43,7 +43,12 @@ import yaml
 from pyannote.audio import Audio, Model, Pipeline
 from pyannote.core import Annotation
 from pyannote.metrics.base import BaseMetric
-from pyannote.metrics.diarization import DiarizationErrorRate, JaccardErrorRate
+from pyannote.metrics.diarization import (
+    DiarizationCoverage,
+    DiarizationErrorRate,
+    DiarizationPurity,
+    JaccardErrorRate,
+)
 from pyannote.pipeline.optimizer import Optimizer
 from rich.progress import track
 from scipy.optimize import minimize_scalar
@@ -71,15 +76,42 @@ class NumSpeakers(str, Enum):
 class Metric(str, Enum):
     DiarizationErrorRate = "DiarizationErrorRate"
     JaccardErrorRate = "JaccardErrorRate"
+    DiarizationPurity = "DiarizationPurity"
+    DiarizationCoverage = "DiarizationCoverage"
+    DiarizationSpeakerCountError = "DiarizationSpeakerCountError"
 
     @classmethod
-    def from_str(cls, metric: str):
+    def from_str(cls, metric: str) -> BaseMetric:
         """Convert a string to a Metric enum value."""
 
-        if metric == "DiarizationErrorRate":
+        metric = cls(metric)
+        if metric == cls.DiarizationErrorRate:
             return DiarizationErrorRate()
-        elif metric == "JaccardErrorRate":
+        if metric == cls.JaccardErrorRate:
             return JaccardErrorRate()
+        if metric == cls.DiarizationPurity:
+            return DiarizationPurity()
+        if metric == cls.DiarizationCoverage:
+            return DiarizationCoverage()
+        if metric == cls.DiarizationSpeakerCountError:
+            try:
+                from pyannote.metrics.diarization import DiarizationSpeakerCountError
+            except ImportError as exc:
+                raise typer.BadParameter(
+                    "DiarizationSpeakerCountError requires pyannote-metrics from "
+                    "https://github.com/pyannote/pyannote-metrics/"
+                    "tree/feat/speaker-count-metrics."
+                ) from exc
+            return DiarizationSpeakerCountError()
+
+        raise ValueError(f"Unsupported metric: {metric}")
+
+    @property
+    def direction(self) -> str:
+        """Return the optimization direction of this metric."""
+        if self in {self.DiarizationPurity, self.DiarizationCoverage}:
+            return "maximize"
+        return "minimize"
 
 
 def parse_device(device: Device) -> torch.device:
@@ -107,6 +139,23 @@ def get_diarization(prediction) -> Annotation:
         return prediction.speaker_diarization
 
     raise ValueError("Could not find speaker diarization in prediction.")
+
+
+class DiarizationMetricAdapter:
+    """Apply a diarization metric to legacy and rich pipeline outputs."""
+
+    def __init__(self, metric: BaseMetric):
+        self.metric = metric
+        self.name = metric.name
+
+    def __call__(self, reference, hypothesis, **kwargs):
+        return self.metric(reference, get_diarization(hypothesis), **kwargs)
+
+    def __abs__(self):
+        return abs(self.metric)
+
+    def confidence_interval(self, **kwargs):
+        return self.metric.confidence_interval(**kwargs)
 
 
 app = typer.Typer()
@@ -157,12 +206,12 @@ def optimize(
         NumSpeakers, typer.Option(help="Number of speakers (oracle or auto)")
     ] = NumSpeakers.AUTO,
     metric: Annotated[
-        Metric,
+        list[Metric],
         typer.Option(
-            help="Metric to optimize against",
+            help="Metric to optimize against. Repeat for multi-objective optimization.",
             case_sensitive=False,
         ),
-    ] = Metric.DiarizationErrorRate,
+    ] = [Metric.DiarizationErrorRate],
     average_case: Annotated[
         bool,
         typer.Option(help="Optimize for average case rather than worst case."),
@@ -171,6 +220,11 @@ def optimize(
     """
     Optimize a PIPELINE
     """
+
+    if not metric:
+        raise typer.BadParameter("At least one metric must be provided.")
+    if len(metric) != len(set(metric)):
+        raise typer.BadParameter("Each optimization metric must be unique.")
 
     # load pipeline configuration file in memory. this will
     # be dumped later to disk with optimized parameters
@@ -207,11 +261,23 @@ def optimize(
         getattr(loaded_protocol, subset.value)()
     )
 
-    # update `get_metric` method to return the requested metric instance
+    # update `get_metric` and `get_direction` methods to return one value per
+    # requested objective
     def _get_metric(self):
-        return Metric.from_str(metric)
+        metrics = tuple(
+            DiarizationMetricAdapter(Metric.from_str(current_metric))
+            for current_metric in metric
+        )
+        return metrics if len(metrics) > 1 else metrics[0]
+
+    def _get_direction(self):
+        directions = tuple(current_metric.direction for current_metric in metric)
+        return directions if len(directions) > 1 else directions[0]
 
     optimized_pipeline.get_metric = types.MethodType(_get_metric, optimized_pipeline)
+    optimized_pipeline.get_direction = types.MethodType(
+        _get_direction, optimized_pipeline
+    )
 
     # setting study name to this allows to store multiple optimizations
     # for the same pipeline in the same database
@@ -220,11 +286,19 @@ def optimize(
     if num_speakers == NumSpeakers.ORACLE:
         study_name += ".OracleNumSpeakers"
 
+    # keep the historical name for the default DER study while preventing
+    # studies with different objective counts or directions from colliding
+    if metric != [Metric.DiarizationErrorRate]:
+        study_name += f".{'+'.join(current_metric.value for current_metric in metric)}"
+
     # journal file to store optimization results
     # if pipeline path is "config.yml", it will be stored in "config.journal"
     journal = pipeline.with_suffix(".journal")
 
-    result: Path = pipeline.with_suffix(f".{study_name}.yaml")
+    if len(metric) > 1:
+        result: Path = pipeline.with_suffix(f".{study_name}.pareto.yaml")
+    else:
+        result: Path = pipeline.with_suffix(f".{study_name}.yaml")
 
     optimizer = Optimizer(
         optimized_pipeline,
@@ -235,17 +309,59 @@ def optimize(
         average_case=average_case,
     )
 
+    try:
+        warm_start = optimized_pipeline.default_parameters()
+    except NotImplementedError:
+        warm_start = None
+
+    if optimizer.multi_objective:
+        previous_pareto_trials: set[int] = set()
+        iterations = optimizer.tune_iter(files, warm_start=warm_start)
+
+        for i, status in enumerate(iterations):
+            pareto_front = status["pareto_front"]
+            pareto_trials = {point["number"] for point in pareto_front}
+
+            if pareto_trials != previous_pareto_trials:
+                serialized_front = []
+                for point in pareto_front:
+                    serialized_front.append(
+                        {
+                            "trial": point["number"],
+                            "values": {
+                                current_metric.value: float(value)
+                                for current_metric, value in zip(
+                                    metric, point["values"]
+                                )
+                            },
+                            "params": point["params"],
+                        }
+                    )
+
+                original_config["optimization"] = {
+                    "protocol": protocol,
+                    "subset": subset.value,
+                    "metrics": [current_metric.value for current_metric in metric],
+                    "status": {
+                        "pareto_front": serialized_front,
+                        "last_updated": datetime.now().isoformat(),
+                    },
+                }
+                with open(result, "w") as fp:
+                    yaml.dump(original_config, fp)
+
+                previous_pareto_trials = pareto_trials
+
+            if max_iterations and i + 1 >= max_iterations:
+                break
+
+        return
+
     direction = 1 if optimized_pipeline.get_direction() == "minimize" else -1
 
     # read best loss so far
     global_best_loss: float = optimizer.best_loss
     local_best_loss: float = global_best_loss
-
-    #
-    try:
-        warm_start = optimized_pipeline.default_parameters()
-    except NotImplementedError:
-        warm_start = None
 
     iterations = optimizer.tune_iter(files, warm_start=warm_start)
 

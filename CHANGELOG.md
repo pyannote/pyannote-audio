@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## Next version
+
+- feat(cli): support `--metric DiarizationSpeakerCountError` for pipeline optimization
+- feat(cli): support multi-objective pipeline optimization with repeatable `--metric` options
+- doc(tutorial): add multi-objective optimization of Community-1 for diarization purity and coverage
+
 ## Version 4.0.7 (2026-06-30)
 
 - fix(pipeline): add missing support for `subfolder` in `Pipeline.from_pretrained`
