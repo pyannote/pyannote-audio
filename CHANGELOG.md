@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## next
+
+- feat(cli): add `--subfolder` option to `benchmark` command [@antoinelaurent](https://github.com/antoinelaurent)
+
 ## Version 4.0.7 (2026-06-30)
 
 - fix(pipeline): add missing support for `subfolder` in `Pipeline.from_pretrained`
