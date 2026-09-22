@@ -35,7 +35,6 @@ import tempfile
 import warnings
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 try:
@@ -140,6 +139,16 @@ def preview(
 
     if not MOVIEPY_INSTALLED:
         warnings.warn("You need MoviePy installed to use this method")
+        return
+
+    # matplotlib is an optional dependency (pip install pyannote.audio[plot])
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError:
+        warnings.warn(
+            "You need matplotlib installed to use this method "
+            "(pip install pyannote.audio[plot])"
+        )
         return
 
     if display and not IPYTHON_INSTALLED:
