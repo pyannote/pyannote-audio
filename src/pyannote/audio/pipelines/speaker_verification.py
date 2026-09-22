@@ -701,6 +701,26 @@ class PyannoteAudioPretrainedSpeakerEmbedding(BaseInference):
 
         return upper
 
+    @cached_property
+    def supports_multi_speaker_masks(self) -> bool:
+        """Whether the wrapped model supports (batch, speakers, frames)-shaped masks
+
+        Models pooling with `StatsPool` do, but layers sitting after the pooling layer
+        may not be agnostic to the extra dimension. Rather than enumerating model
+        classes, run the model once and look at the shape of its output.
+        """
+        with torch.inference_mode(), warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            try:
+                embeddings = self.model_(
+                    torch.randn(1, 1, self.sample_rate).to(self.device),
+                    weights=torch.ones(1, 2, 16).to(self.device),
+                )
+            except Exception:
+                return False
+
+        return tuple(embeddings.shape) == (1, 2, self.dimension)
+
     def __call__(
         self, waveforms: torch.Tensor, masks: Optional[torch.Tensor] = None
     ) -> np.ndarray:

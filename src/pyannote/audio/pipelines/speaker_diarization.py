@@ -370,7 +370,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                 return cache["embeddings"]
 
         duration = binary_segmentations.sliding_window.duration
-        num_chunks, num_frames, num_speakers = binary_segmentations.data.shape
+        num_frames = binary_segmentations.data.shape[1]
 
         if exclude_overlap:
             # minimum number of samples needed to extract an embedding
@@ -395,6 +395,59 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             clean_segmentations = SlidingWindowFeature(
                 binary_segmentations.data, binary_segmentations.sliding_window
             )
+
+        # masks are only used by the pooling layer of speaker embedding models: the
+        # (much more expensive) layers before it do not depend on them. For models that
+        # support it, we therefore run the model once per chunk with the masks of all
+        # its speakers at once, instead of once per (chunk, speaker) pair.
+        if self._embedding.supports_multi_speaker_masks:
+            embeddings = self._get_embeddings_per_chunk(
+                file,
+                binary_segmentations,
+                clean_segmentations,
+                min_num_frames,
+                hook=hook,
+            )
+        else:
+            embeddings = self._get_embeddings_per_pair(
+                file,
+                binary_segmentations,
+                clean_segmentations,
+                min_num_frames,
+                hook=hook,
+            )
+
+        # caching embeddings for subsequent trials
+        # (see comments at the top of this method for more details)
+        if self.training:
+            if self._segmentation.model.specifications.powerset:
+                file["training_cache/embeddings"] = {
+                    "embeddings": embeddings,
+                }
+            else:
+                file["training_cache/embeddings"] = {
+                    "segmentation.threshold": self.segmentation.threshold,
+                    "embeddings": embeddings,
+                }
+
+        return embeddings
+
+    def _get_embeddings_per_pair(
+        self,
+        file,
+        binary_segmentations: SlidingWindowFeature,
+        clean_segmentations: SlidingWindowFeature,
+        min_num_frames: int,
+        hook: Optional[Callable] = None,
+    ) -> np.ndarray:
+        """Extract embeddings with one model call per (chunk, speaker) pair
+
+        Returns
+        -------
+        embeddings : (num_chunks, num_speakers, dimension) array
+        """
+
+        num_chunks, _, num_speakers = binary_segmentations.data.shape
 
         def iter_waveform_and_mask():
             for (chunk, masks), (_, clean_masks) in zip(
@@ -460,20 +513,82 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
         embedding_batches = np.vstack(embedding_batches)
 
-        embeddings = rearrange(embedding_batches, "(c s) d -> c s d", c=num_chunks)
+        return rearrange(embedding_batches, "(c s) d -> c s d", c=num_chunks)
 
-        # caching embeddings for subsequent trials
-        # (see comments at the top of this method for more details)
-        if self.training:
-            if self._segmentation.model.specifications.powerset:
-                file["training_cache/embeddings"] = {
-                    "embeddings": embeddings,
-                }
-            else:
-                file["training_cache/embeddings"] = {
-                    "segmentation.threshold": self.segmentation.threshold,
-                    "embeddings": embeddings,
-                }
+    def _get_embeddings_per_chunk(
+        self,
+        file,
+        binary_segmentations: SlidingWindowFeature,
+        clean_segmentations: SlidingWindowFeature,
+        min_num_frames: int,
+        hook: Optional[Callable] = None,
+    ) -> np.ndarray:
+        """Extract embeddings with one model call per chunk
+
+        Same output as `_get_embeddings_per_pair`, but relies on the embedding model
+        supporting (batch, speakers, frames)-shaped masks: everything but the pooling
+        layer is then computed once per chunk instead of once per (chunk, speaker) pair.
+
+        Returns
+        -------
+        embeddings : (num_chunks, num_speakers, dimension) array
+        """
+
+        num_chunks, _, num_speakers = binary_segmentations.data.shape
+        chunks = binary_segmentations.sliding_window
+
+        # `embedding_batch_size` keeps counting (chunk, speaker) pairs, so that peak
+        # memory does not depend on which of the two implementations is used
+        batch_size = max(1, self.embedding_batch_size // num_speakers)
+        batch_count = math.ceil(num_chunks / batch_size)
+
+        embeddings = np.empty(
+            (num_chunks, num_speakers, self._embedding.dimension), dtype=np.float32
+        )
+
+        if hook is not None:
+            hook("embeddings", None, total=batch_count, completed=0)
+
+        for i, start in enumerate(range(0, num_chunks, batch_size), 1):
+            stop = min(start + batch_size, num_chunks)
+
+            waveform_batch = torch.vstack(
+                [
+                    self._audio.crop(file, chunks[c], mode="pad")[0][None]
+                    for c in range(start, stop)
+                ]
+            )
+            # (batch_size, 1, num_samples) torch.Tensor
+
+            # masks may contain NaN (in case of partial stitching)
+            masks = np.nan_to_num(binary_segmentations.data[start:stop], nan=0.0)
+            clean_masks = np.nan_to_num(clean_segmentations.data[start:stop], nan=0.0)
+
+            # use clean (non-overlapping) speech when there is enough of it
+            used_masks = np.where(
+                np.sum(clean_masks, axis=1, keepdims=True) > min_num_frames,
+                clean_masks,
+                masks,
+            )
+            mask_batch = torch.from_numpy(
+                np.ascontiguousarray(used_masks.transpose(0, 2, 1), dtype=np.float32)
+            )
+            # (batch_size, num_speakers, num_frames) torch.Tensor
+
+            embedding_batch: np.ndarray = self._embedding(
+                waveform_batch, masks=mask_batch
+            )
+            # (batch_size, num_speakers, dimension) np.ndarray
+
+            embeddings[start:stop] = embedding_batch
+
+            if hook is not None:
+                hook(
+                    "embeddings",
+                    rearrange(embedding_batch, "c s d -> (c s) d"),
+                    total=batch_count,
+                    completed=i,
+                )
 
         return embeddings
 
