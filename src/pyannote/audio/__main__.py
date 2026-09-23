@@ -378,6 +378,12 @@ def apply(
     device: Annotated[
         Device, typer.Option(help="Accelerator to use (CPU, CUDA, MPS)")
     ] = Device.AUTO,
+    vad_sensitivity: Annotated[
+        Optional[float], typer.Option(help="vad sensitivity")
+    ] = 0.0,
+    crosstalk_sensitivity: Annotated[
+        Optional[float], typer.Option(help="crosstalk sensitivy")
+    ] = 0.0,
 ):
     """
     Apply a pretrained PIPELINE to an AUDIO file or directory
@@ -414,7 +420,11 @@ def apply(
         jsons: list[Path | None] = [into.with_suffix(".json") if into else None]
 
     for current_input, current_rttm, current_json in zip(inputs, rttms, jsons):
-        prediction = pretrained_pipeline(current_input)
+        prediction = pretrained_pipeline(
+            current_input,
+            vad_sensitivity=vad_sensitivity,
+            crosstalk_sensitivity=crosstalk_sensitivity,
+        )
 
         speaker_diarization = get_diarization(prediction)
 
@@ -592,6 +602,12 @@ def benchmark(
     per_file: Annotated[
         bool, typer.Option(help="Save one RTTM/JSON file per processed audio file.")
     ] = False,
+    vad_sensitivity: Annotated[
+        Optional[float], typer.Option(help="vad sensitivity")
+    ] = 0.0,
+    crosstalk_sensitivity: Annotated[
+        Optional[float], typer.Option(help="crosstalk sensitivy")
+    ] = 0.0,
 ):
     """
     Benchmark a pretrained diarization PIPELINE
@@ -677,9 +693,21 @@ def benchmark(
             raise FileExistsError(f"{rttm_file} already exists.")
 
     if hasattr(pretrained_pipeline, "apply_batch"):
-        iterator = pretrained_pipeline(files, progress=progress)
+        iterator = pretrained_pipeline(
+            files,
+            progress=progress,
+            vad_sensitivity=vad_sensitivity,
+            crosstalk_sensitivity=crosstalk_sensitivity,
+        )
     else:
-        iterator = track(pretrained_pipeline(files), disable=not progress)
+        iterator = track(
+            pretrained_pipeline(
+                files,
+                vad_sensitivity=vad_sensitivity,
+                crosstalk_sensitivity=crosstalk_sensitivity,
+            ),
+            disable=not progress,
+        )
 
     tic: float = time.time()
     for file, prediction in iterator:
