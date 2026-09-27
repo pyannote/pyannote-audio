@@ -557,10 +557,21 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
 
     @staticmethod
     def _gpu_empty_cache():
-        """Release cached GPU memory on CUDA or MPS devices."""
+        """Release cached GPU memory on CUDA or MPS devices; no-op on CPU-only hosts.
+
+        ``torch.mps.empty_cache()`` exists on every build but raises
+        ``RuntimeError: Cannot execute emptyCache() without MPS backend`` when no
+        MPS backend is present, so the attribute check alone is not enough: every
+        ``apply()`` on a CPU-only Linux host crashed here.
+        """
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-        elif hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
+        elif (
+            hasattr(torch, "mps")
+            and hasattr(torch.mps, "empty_cache")
+            and hasattr(torch.backends, "mps")
+            and torch.backends.mps.is_available()
+        ):
             torch.mps.empty_cache()
 
     def default_parameters(self):
