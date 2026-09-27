@@ -127,12 +127,19 @@ class BaseWeSpeakerResNet(Model):
 
         waveforms = waveforms * (1 << 15)
 
-        # fall back to CPU for FFT computation when using MPS
-        # until FFT is fixed in MPS
+        # FFT computation: keep on device when possible.
+        # MPS FFT is supported in PyTorch 2.3+ (was broken in earlier versions).
+        # Fall back to CPU only for older PyTorch where MPS FFT is broken.
         device = waveforms.device
-        fft_device = torch.device("cpu") if device.type == "mps" else device
-
-        features = torch.vmap(self._fbank)(waveforms.to(fft_device)).to(device)
+        if device.type == "mps":
+            try:
+                # Test if MPS FFT works (PyTorch 2.3+)
+                features = torch.vmap(self._fbank)(waveforms)
+            except RuntimeError:
+                # Fallback for older PyTorch where MPS FFT is broken
+                features = torch.vmap(self._fbank)(waveforms.cpu()).to(device)
+        else:
+            features = torch.vmap(self._fbank)(waveforms)
 
         # center features with global average
         if self.hparams.fbank_centering_span is None:
