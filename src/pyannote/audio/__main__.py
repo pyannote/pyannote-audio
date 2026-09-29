@@ -546,6 +546,12 @@ def benchmark(
             help="Pretrained pipeline revision.",
         ),
     ] = None,
+    subfolder: Annotated[
+        Optional[str],
+        typer.Option(
+            help="Folder inside the hf.co model repo (or local directory) to load the pipeline from.",
+        ),
+    ] = None,
     token: Annotated[
         Optional[str],
         typer.Argument(help="Huggingface token."),
@@ -606,6 +612,7 @@ def benchmark(
     pretrained_pipeline = Pipeline.from_pretrained(
         pipeline,
         revision=revision,
+        subfolder=subfolder,
         token=token,
         cache_dir=cache,
     )
