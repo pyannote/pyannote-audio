@@ -3068,7 +3068,6 @@ dependencies = [
     { name = "einops" },
     { name = "huggingface-hub" },
     { name = "lightning" },
-    { name = "matplotlib" },
     { name = "opentelemetry-api" },
     { name = "opentelemetry-exporter-otlp" },
     { name = "opentelemetry-sdk" },
@@ -3101,11 +3100,15 @@ doc = [
     { name = "sphinx", version = "9.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "sphinx-rtd-theme" },
 ]
+plot = [
+    { name = "matplotlib" },
+]
 separation = [
     { name = "asteroid" },
     { name = "transformers" },
 ]
 test = [
+    { name = "matplotlib" },
     { name = "papermill" },
     { name = "pytest" },
 ]
@@ -3123,7 +3126,8 @@ requires-dist = [
     { name = "huggingface-hub", specifier = ">=0.28.1" },
     { name = "ipython", marker = "extra == 'dev'", specifier = ">=8.32.0" },
     { name = "lightning", specifier = ">=2.4" },
-    { name = "matplotlib", specifier = ">=3.10.0" },
+    { name = "matplotlib", marker = "extra == 'plot'", specifier = ">=3.10.0" },
+    { name = "matplotlib", marker = "extra == 'test'", specifier = ">=3.10.0" },
     { name = "opentelemetry-api", specifier = ">=1.34.0" },
     { name = "opentelemetry-exporter-otlp", specifier = ">=1.34.0" },
     { name = "opentelemetry-sdk", specifier = ">=1.34.0" },
@@ -3147,7 +3151,7 @@ requires-dist = [
     { name = "transformers", marker = "extra == 'separation'", specifier = ">=4.48.3" },
     { name = "typer", marker = "extra == 'cli'", specifier = ">=0.15.1" },
 ]
-provides-extras = ["cli", "dev", "doc", "separation", "test"]
+provides-extras = ["cli", "dev", "doc", "plot", "separation", "test"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "ipykernel", specifier = ">=6.29.5" }]

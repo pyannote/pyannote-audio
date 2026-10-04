@@ -32,5 +32,10 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
 
+      - name: Check that inference does not need the optional dependencies
+        # --exact removes everything the extras would add (matplotlib among them),
+        # so this is the environment of a plain `pip install pyannote.audio`.
+        run: uv run --exact python -c "from pyannote.audio import Pipeline"
+
       - name: Run tests
         run: uv run --extra test pytest
