@@ -23,9 +23,14 @@
 import pytest
 import torch
 
+from pyannote.audio.torchmetrics.audio.diarization_error_rate import (
+    OptimalDiarizationErrorRate,
+    OptimalDiarizationErrorRateThreshold,
+)
 from pyannote.audio.torchmetrics.functional.audio.diarization_error_rate import (
     _der_update,
     diarization_error_rate,
+    optimal_diarization_error_rate,
 )
 
 
@@ -140,3 +145,45 @@ def test_batch_der_with_components(target, prediction):
 def test_chunk_der(target, prediction):
     der = diarization_error_rate(prediction, target, reduce="chunk")
     torch.testing.assert_close(der, torch.Tensor([4.0 / 8.0, 2.0 / 4.0]))
+
+
+def test_optimal_der_with_custom_thresholds(target, prediction):
+    # binary predictions: any threshold below 1.0 gives DER = 6 / 12,
+    # while threshold 1.0 leads to 12 / 12 missed detection
+    threshold = torch.tensor([1.0, 0.5])
+
+    opt_der, opt_threshold = optimal_diarization_error_rate(
+        prediction, target, threshold=threshold
+    )
+    torch.testing.assert_close(opt_der.item(), 6.0 / 12.0)
+    torch.testing.assert_close(opt_threshold.item(), 0.5)
+
+    metric = OptimalDiarizationErrorRate(threshold=threshold)
+    metric.update(prediction, target)
+    torch.testing.assert_close(metric.compute().item(), 6.0 / 12.0)
+
+    metric = OptimalDiarizationErrorRateThreshold(threshold=threshold)
+    metric.update(prediction, target)
+    torch.testing.assert_close(metric.compute().item(), 0.5)
+
+
+def test_optimal_der_with_single_zero_threshold(target):
+    # every speaker is scored 0.5 everywhere: threshold 0.0 marks them all as
+    # active (16 frames of false alarm), whereas default thresholds greater than
+    # or equal to 0.5 mark them all as inactive (12 frames of missed detection)
+    prediction = torch.full_like(target, 0.5)
+    threshold = torch.tensor([0.0])
+
+    opt_der, opt_threshold = optimal_diarization_error_rate(
+        prediction, target, threshold=threshold
+    )
+    torch.testing.assert_close(opt_der.item(), 16.0 / 12.0)
+    torch.testing.assert_close(opt_threshold.item(), 0.0)
+
+    metric = OptimalDiarizationErrorRate(threshold=threshold)
+    metric.update(prediction, target)
+    torch.testing.assert_close(metric.compute().item(), 16.0 / 12.0)
+
+    metric = OptimalDiarizationErrorRateThreshold(threshold=threshold)
+    metric.update(prediction, target)
+    torch.testing.assert_close(metric.compute().item(), 0.0)

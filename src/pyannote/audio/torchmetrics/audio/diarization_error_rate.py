@@ -293,7 +293,8 @@ class OptimalDiarizationErrorRate(Metric):
     def __init__(self, threshold: Optional[torch.Tensor] = None):
         super().__init__()
 
-        threshold = threshold or torch.linspace(0.0, 1.0, 51)
+        if threshold is None:
+            threshold = torch.linspace(0.0, 1.0, 51)
         self.add_state("threshold", default=threshold, dist_reduce_fx="mean")
         (num_thresholds,) = threshold.shape
 
