@@ -129,8 +129,8 @@ class SpeakerDiarizationMixin:
         """
 
         if isinstance(reference, Mapping):
-            reference = reference["annotation"]
             annotated = reference["annotated"] if "annotated" in reference else None
+            reference = reference["annotation"]
         else:
             annotated = None
 
