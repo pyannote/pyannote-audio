@@ -38,6 +38,17 @@ from pyannote.metrics.diarization import DiarizationErrorRate
 from pyannote.audio.utils.permutation import permutate
 
 
+def _error_rate(error: float, total: float) -> float:
+    """Error over total, for a reference that may contain no speech at all
+
+    Follows the convention used by `pyannote.metrics.detection`: an empty
+    reference scores 0 when nothing was detected either, and 1 otherwise.
+    """
+    if total == 0.0:
+        return 0.0 if error == 0 else 1.0
+    return error / total
+
+
 def discrete_diarization_error_rate(reference: np.ndarray, hypothesis: np.ndarray):
     """Discrete diarization error rate
 
@@ -65,22 +76,31 @@ def discrete_diarization_error_rate(reference: np.ndarray, hypothesis: np.ndarra
     # permutate hypothesis to maximize similarity to reference
     (hypothesis,), _ = permutate(reference[np.newaxis], hypothesis)
 
+    # frame counts are accumulated in float64: summing the float16 arrays above
+    # saturates to infinity past 65504 active frames, which is reached by any
+    # recording longer than a few minutes.
+
     # total speech duration (in number of frames)
-    total = 1.0 * np.sum(reference)
+    total = 1.0 * np.sum(reference, dtype=np.float64)
 
     # false alarm and missed detection (in number of frames)
-    detection_error = np.sum(hypothesis, axis=1) - np.sum(reference, axis=1)
+    detection_error = np.sum(hypothesis, axis=1, dtype=np.float64) - np.sum(
+        reference, axis=1, dtype=np.float64
+    )
     false_alarm = np.maximum(0, detection_error)
     missed_detection = np.maximum(0, -detection_error)
 
     # speaker confusion (in number of frames)
-    confusion = np.sum((hypothesis != reference) * hypothesis, axis=1) - false_alarm
+    confusion = (
+        np.sum((hypothesis != reference) * hypothesis, axis=1, dtype=np.float64)
+        - false_alarm
+    )
 
     false_alarm = np.sum(false_alarm)
     missed_detection = np.sum(missed_detection)
     confusion = np.sum(confusion)
 
-    der = (false_alarm + missed_detection + confusion) / total
+    der = _error_rate(false_alarm + missed_detection + confusion, total)
 
     return (
         der,
@@ -235,11 +255,12 @@ class DiscreteDiarizationErrorRate(BaseMetric):
             return components
 
     def compute_metric(self, components):
-        return (
+        return _error_rate(
             components["false alarm"]
             + components["missed detection"]
-            + components["confusion"]
-        ) / components["total"]
+            + components["confusion"],
+            components["total"],
+        )
 
 
 class SlidingDiarizationErrorRate(BaseMetric):
@@ -279,11 +300,12 @@ class SlidingDiarizationErrorRate(BaseMetric):
         return der[:]
 
     def compute_metric(self, components):
-        return (
+        return _error_rate(
             components["false alarm"]
             + components["missed detection"]
-            + components["confusion"]
-        ) / components["total"]
+            + components["confusion"],
+            components["total"],
+        )
 
 
 class MacroAverageFMeasure(BaseMetric):

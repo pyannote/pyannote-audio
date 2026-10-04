@@ -140,3 +140,38 @@ def test_batch_der_with_components(target, prediction):
 def test_chunk_der(target, prediction):
     der = diarization_error_rate(prediction, target, reduce="chunk")
     torch.testing.assert_close(der, torch.Tensor([4.0 / 8.0, 2.0 / 4.0]))
+
+
+def test_discrete_der_long_recording_does_not_overflow():
+    """Frame counts must not saturate float16 on a long recording."""
+    import numpy as np
+
+    from pyannote.audio.utils.metric import discrete_diarization_error_rate
+
+    # 450000 frames is about two hours at the usual frame resolution, well past
+    # the 65504 that float16 can hold. summing in float16 gave an infinite
+    # total, so the error rate came out as 0.0 for an obviously wrong output.
+    reference = np.zeros((450000, 2))
+    reference[:, 0] = 1
+    hypothesis = reference.copy()
+    hypothesis[:1000, 1] = 1
+
+    der, components = discrete_diarization_error_rate(reference, hypothesis)
+
+    assert np.isfinite(components["total"])
+    assert components["total"] == 450000.0
+    assert der == pytest.approx(1000 / 450000)
+
+
+def test_discrete_der_empty_reference():
+    """A reference with no speech must not divide by zero."""
+    import numpy as np
+
+    from pyannote.audio.utils.metric import discrete_diarization_error_rate
+
+    empty = np.zeros((100, 2))
+    detected = np.zeros((100, 2))
+    detected[:5, 0] = 1
+
+    assert discrete_diarization_error_rate(empty, empty)[0] == 0.0
+    assert discrete_diarization_error_rate(empty, detected)[0] == 1.0
