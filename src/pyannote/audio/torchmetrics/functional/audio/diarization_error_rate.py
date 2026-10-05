@@ -256,7 +256,8 @@ def optimal_diarization_error_rate(
         Optimal threshold and corresponding diarization error rate.
     """
 
-    threshold = threshold or torch.linspace(0.0, 1.0, 51, device=preds.device)
+    if threshold is None:
+        threshold = torch.linspace(0.0, 1.0, 51, device=preds.device)
     der = diarization_error_rate(preds, target, threshold=threshold)
     opt_der, opt_threshold_idx = torch.min(der, dim=0)
     return opt_der, threshold[opt_threshold_idx]
