@@ -302,7 +302,10 @@ class Inference(BaseInference):
             )
 
             if hook is not None:
-                hook(completed=c + self.batch_size, total=num_chunks + has_last_chunk)
+                hook(
+                    completed=min(c + self.batch_size, num_chunks),
+                    total=num_chunks + has_last_chunk,
+                )
 
         # process orphan last chunk
         if has_last_chunk:
