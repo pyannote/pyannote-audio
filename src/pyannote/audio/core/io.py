@@ -164,6 +164,7 @@ class Audio:
             {"audio": str, "uri": str, ...}
             {"waveform": tensor, "sample_rate": int, "uri": str, ...}
             {"audio": file, "uri": "stream"} if `file` is an IOBase instance
+            (or a Mapping whose "audio" is one and that provides no "uri")
 
         Raises
         ------
@@ -200,6 +201,7 @@ class Audio:
 
         elif "audio" in file:
             if isinstance(file["audio"], IOBase):
+                file.setdefault("uri", "stream")
                 return file
 
             path = Path(file["audio"])

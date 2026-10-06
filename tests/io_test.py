@@ -83,6 +83,21 @@ def test_can_load_from_file_like():
     assert sr == 16000
 
 
+def test_validate_file_sets_uri_for_file_like_in_mapping():
+    "A file like object wrapped in a mapping gets the same default uri as a bare one"
+    with open("tests/data/dev00.wav", "rb") as f:
+        assert Audio.validate_file(f)["uri"] == "stream"
+        assert Audio.validate_file({"audio": f, "channel": 0})["uri"] == "stream"
+
+
+def test_validate_file_keeps_provided_uri_for_file_like_in_mapping():
+    "A uri provided alongside a file like object is left untouched"
+    with open("tests/data/dev00.wav", "rb") as f:
+        file = Audio.validate_file({"audio": f, "uri": "dev00"})
+
+    assert file["uri"] == "dev00"
+
+
 def test_can_crop_from_file_like():
     "Load cropped sections from file like objects"
     loader = Audio(mono="downmix")
