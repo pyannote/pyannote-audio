@@ -2,6 +2,7 @@
 
 ## next
 
+- fix(inference): fix `Inference` reporting more `completed` chunks than `total` to progress hooks when the number of chunks is not a multiple of `batch_size` [@sungbin1015](https://github.com/sungbin1015)
 - fix(io): fix `Audio.crop` raising when an in-memory waveform is cropped up to its very end [@MohammadHijjawi97](https://github.com/MohammadHijjawi97)
 - feat(cli): add `--subfolder` option to `benchmark` command [@antoinelaurent](https://github.com/antoinelaurent)
 - fix(utils): fix `SpeakerDiarizationMixin.optimal_mapping` `reference` is a mapping [@Kayvan-Zahiri](https://github.com/Kayvan-Zahiri)
