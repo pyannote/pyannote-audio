@@ -601,7 +601,7 @@ class SpeakerDiarization(SegmentationTask):
         # plot each sample
         for sample_idx in range(num_samples):
             # find where in the grid it should be plotted
-            row_idx = sample_idx // nrows
+            row_idx = sample_idx // ncols
             col_idx = sample_idx % ncols
 
             # plot target

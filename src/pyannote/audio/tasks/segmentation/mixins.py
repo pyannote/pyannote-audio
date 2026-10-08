@@ -382,7 +382,7 @@ class SegmentationTask(Task):
         y_pred = y_pred.cpu().numpy()
 
         # prepare 3 x 3 grid (or smaller if batch size is smaller)
-        num_samples = min(self.batch_size, 9)
+        num_samples = min(self.batch_size, 9, y.shape[0])
         nrows = math.ceil(math.sqrt(num_samples))
         ncols = math.ceil(num_samples / nrows)
         fig, axes = plt.subplots(
@@ -398,7 +398,7 @@ class SegmentationTask(Task):
         # plot each sample
         for sample_idx in range(num_samples):
             # find where in the grid it should be plotted
-            row_idx = sample_idx // nrows
+            row_idx = sample_idx // ncols
             col_idx = sample_idx % ncols
 
             # plot target
