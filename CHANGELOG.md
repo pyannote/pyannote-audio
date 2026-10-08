@@ -8,6 +8,7 @@
   Python 3.14's default on Linux, by warning and using `num_workers=0`
 
 - fix(pipeline): omit unset `token` and `cache_dir` when expanding `$model/` references so loaders can inherit runtime options
+- fix(task): fix validation samples figure overlapping samples when `batch_size` is 2, 5 or 6, and raising `IndexError` when the first validation batch is smaller [@antonsoo](https://github.com/antonsoo)
 - fix(io): fix `Audio.crop` raising when an in-memory waveform is cropped up to its very end [@MohammadHijjawi97](https://github.com/MohammadHijjawi97)
 - feat(cli): add `--subfolder` option to `benchmark` command [@antoinelaurent](https://github.com/antoinelaurent)
 - fix(utils): fix `SpeakerDiarizationMixin.optimal_mapping` `reference` is a mapping [@Kayvan-Zahiri](https://github.com/Kayvan-Zahiri)
