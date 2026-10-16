@@ -62,6 +62,15 @@ def test_can_crop_waveform():
     assert sr == 16000
 
 
+def test_can_crop_waveform_up_to_its_end():
+    "Cropping a raw waveform up to its very last sample does not raise"
+    waveform = torch.rand(1, 16000 * 2)
+    loader = Audio(mono="downmix")
+    segment = Segment(1.5, 2.0)
+    wav, sr = loader.crop({"waveform": waveform, "sample_rate": 16000}, segment)
+    assert torch.equal(wav, waveform[:, 24000:])
+
+
 # File Like Object Tests
 def test_can_load_from_file_like():
     "Load entire wav of file like"

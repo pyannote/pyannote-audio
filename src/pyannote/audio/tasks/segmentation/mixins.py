@@ -88,7 +88,7 @@ class SegmentationTask(Task):
         )
         for key, value in filters.items():
             training &= self.prepared_data["audio-metadata"][key] == self.prepared_data[
-                "metadata"
+                "metadata-values"
             ][key].index(value)
         file_ids = np.where(training)[0]
 
@@ -163,7 +163,7 @@ class SegmentationTask(Task):
             # create a subchunk generator for each combination of "balance" keys
             subchunks = dict()
             for product in itertools.product(
-                *[self.prepared_data["metadata"][key] for key in balance]
+                *[self.prepared_data["metadata-values"][key] for key in balance]
             ):
                 # we iterate on the cartesian product of the values in metadata_unique_values
                 # eg: for balance=["database", "split"], with 2 databases and 2 splits:

@@ -624,6 +624,10 @@ class Task(lightning.LightningDataModule):
         try:
             with open(self.cache, "rb") as cache_file:
                 self.prepared_data = dict(np.load(cache_file, allow_pickle=True))
+            # np.savez stores the `metadata-values` dict as a 0-d object array: unwrap it
+            self.prepared_data["metadata-values"] = self.prepared_data[
+                "metadata-values"
+            ].item()
         except FileNotFoundError:
             print(
                 "Cached data for protocol not found. Ensure that prepare_data() was called",

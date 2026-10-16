@@ -5,6 +5,10 @@
 - feat(cli): support `--metric DiarizationSpeakerCountError` for pipeline optimization
 - feat(cli): support multi-objective pipeline optimization with repeatable `--metric` options
 - doc(tutorial): add multi-objective optimization of Community-1 for diarization purity and coverage
+- fix(io): fix `Audio.crop` raising when an in-memory waveform is cropped up to its very end [@MohammadHijjawi97](https://github.com/MohammadHijjawi97)
+- feat(cli): add `--subfolder` option to `benchmark` command [@antoinelaurent](https://github.com/antoinelaurent)
+- fix(utils): fix `SpeakerDiarizationMixin.optimal_mapping` `reference` is a mapping [@Kayvan-Zahiri](https://github.com/Kayvan-Zahiri)
+- fix(task): fix `balance` option crashing training with `KeyError: 'metadata'` [@MohammadHijjawi97](https://github.com/MohammadHijjawi97)
 
 ## Version 4.0.7 (2026-06-30)
 

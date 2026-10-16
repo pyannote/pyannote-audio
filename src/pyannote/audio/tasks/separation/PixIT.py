@@ -503,7 +503,7 @@ class PixIT(SegmentationTask):
         for key, value in filters.items():
             split_files &= self.prepared_data["audio-metadata"][
                 key
-            ] == self.prepared_data["metadata"][key].index(value)
+            ] == self.prepared_data["metadata-values"][key].index(value)
         file_ids = np.where(split_files)[0]
 
         # turn annotated duration into a probability distribution

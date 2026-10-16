@@ -76,6 +76,13 @@ def test_train_segmentation(protocol):
     trainer.fit(model)
 
 
+def test_train_segmentation_with_balance(protocol):
+    segmentation = SpeakerDiarization(protocol, balance=["database"])
+    model = SimpleSegmentationModel(task=segmentation)
+    trainer = Trainer(fast_dev_run=True, accelerator="cpu")
+    trainer.fit(model)
+
+
 def test_train_segmentation_with_cached_data_mono_device(protocol, cache):
     first_task = SpeakerDiarization(protocol, cache=cache)
     first_model = SimpleSegmentationModel(task=first_task)
