@@ -57,8 +57,8 @@ def _sample(uri: str = "sample") -> AudioFile:
 
     sample_rttm = Path(__file__).parent / f"{uri}.rttm"
     diarization: Annotation = load_rttm(sample_rttm)[uri]
-    duration = audio.get_duration(sample_wav)
 
+    duration = waveform.shape[1] / sample_rate
     annotated: Timeline = Timeline([Segment(0.0, duration)], uri=uri)
 
     sample_stm = Path(__file__).parent / f"{uri}.stm"

@@ -294,8 +294,7 @@ class Model(lightning.LightningModule):
                 return nn.Sigmoid()
 
             else:
-                msg = "TODO: implement default activation for other types of problems"
-                raise NotImplementedError(msg)
+                return nn.Identity()
 
         return map_with_specifications(self.specifications, __default_activation)
 
