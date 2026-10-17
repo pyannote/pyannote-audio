@@ -2,6 +2,7 @@
 
 ## next
 
+- fix(pipeline): fix `VBxClustering` crashing when more speakers are requested than there are embeddings to cluster [@MohammadHijjawi97](https://github.com/MohammadHijjawi97)
 - fix(io): fix `Audio.crop` raising when an in-memory waveform is cropped up to its very end [@MohammadHijjawi97](https://github.com/MohammadHijjawi97)
 - feat(cli): add `--subfolder` option to `benchmark` command [@antoinelaurent](https://github.com/antoinelaurent)
 - fix(utils): fix `SpeakerDiarizationMixin.optimal_mapping` `reference` is a mapping [@Kayvan-Zahiri](https://github.com/Kayvan-Zahiri)

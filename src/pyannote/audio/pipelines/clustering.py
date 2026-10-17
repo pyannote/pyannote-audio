@@ -585,7 +585,17 @@ class VBxClustering(BaseClustering):
             embeddings, segmentations=segmentations
         )
 
-        if train_embeddings.shape[0] < 2:
+        num_embeddings, _ = train_embeddings.shape
+
+        # there cannot be more clusters than training embeddings
+        num_clusters, min_clusters, max_clusters = self.set_num_clusters(
+            num_embeddings,
+            num_clusters=num_clusters,
+            min_clusters=min_clusters,
+            max_clusters=max_clusters,
+        )
+
+        if num_embeddings < 2:
             # do NOT apply clustering when the number of training embeddings is less than 2
             num_chunks, num_speakers, _ = embeddings.shape
             hard_clusters = np.zeros((num_chunks, num_speakers), dtype=np.int8)
