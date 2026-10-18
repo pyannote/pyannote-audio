@@ -16,25 +16,21 @@ dependencies = [
     "opentelemetry-api>=1.34.0",
     "opentelemetry-sdk>=1.34.0",
     "opentelemetry-exporter-otlp>=1.34.0",
-    "pyannote-core>=6.0.1",
+    "pyannote-core>=6.1.0",
     "pyannote-database>=6.1.1",
-    "pyannote-metrics>=4.0.0",
-    "pyannote-pipeline",
+    "pyannote-metrics>=4.2.0",
+    "pyannote-pipeline>=4.1.0",
     "pytorch-metric-learning>=2.8.1",
     "rich>=13.9.4",
     "safetensors>=0.5.2",
     "torch-audiomentations>=0.12.0",
     "torch>=2.8.0",
-    "torchaudio>=2.8.0",
+    "torchaudio==2.8.0",
     "torchcodec>=0.7.0",
     "torchmetrics>=1.6.1",
     "matplotlib>=3.11.0",
     "pyannoteai-sdk>=0.3.0",
 ]
-
-[tool.uv.sources]
-pyannote-metrics = { git = "https://github.com/pyannote/pyannote-metrics", rev = "feat/speaker-count-metrics" }
-pyannote-pipeline = { git = "https://github.com/pyannote/pyannote-pipeline", rev = "feat/multi-objective" }
 
 [project.scripts]
 pyannote-audio = "pyannote.audio.__main__:app"
@@ -63,7 +59,7 @@ include = [
 ]
 
 [dependency-groups]
-dev = ["ipykernel>=6.29.5"]
+dev = ["ipykernel>=6.29.5", "soundfile>=0.14.0"]
 
 [tool.pytest.ini_options]
 markers = [
