@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import List, Mapping, Optional, Text, Union
+from collections.abc import Mapping
 
 from lightning import Callback, Trainer
 from lightning.pytorch.utilities.model_summary import ModelSummary
@@ -66,13 +66,13 @@ class GraduallyUnfreeze(Callback):
 
     def __init__(
         self,
-        schedule: Union[Mapping[Text, int], List[Union[List[Text], Text]]] = None,
-        epochs_per_stage: Optional[int] = None,
+        schedule: Mapping[str, int] | list[list[str] | str] | None = None,
+        epochs_per_stage: int | None = None,
     ):
         super().__init__()
 
         if (
-            (schedule is None) or (isinstance(schedule, List))
+            (schedule is None) or (isinstance(schedule, list))
         ) and epochs_per_stage is None:
             epochs_per_stage = 1
 
@@ -92,10 +92,10 @@ class GraduallyUnfreeze(Callback):
         if schedule is None:
             schedule = backbone_layers
 
-        if isinstance(schedule, List):
-            _schedule = dict()
+        if isinstance(schedule, list):
+            _schedule = {}
             for depth, layers in enumerate(schedule):
-                layers = layers if isinstance(layers, List) else [layers]
+                layers = layers if isinstance(layers, list) else [layers]
                 for layer in layers:
                     _schedule[layer] = (depth + 1) * self.epochs_per_stage
             schedule = _schedule

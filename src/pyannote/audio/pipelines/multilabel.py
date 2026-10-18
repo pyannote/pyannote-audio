@@ -25,17 +25,18 @@
 # Hadrien TITEUX - https://github.com/hadware
 # Hervé BREDIN - http://herve.niderb.fr
 
+from collections.abc import Callable
 from functools import partial
 from pathlib import Path
-from typing import Callable, Optional, Text, Union
+
+from pyannote.core import Annotation, SlidingWindowFeature
+from pyannote.metrics.identification import IdentificationErrorRate
+from pyannote.pipeline.parameter import ParamDict, Uniform
 
 from pyannote.audio import Inference
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.pipeline import Pipeline
 from pyannote.audio.utils.metric import MacroAverageFMeasure
-from pyannote.core import Annotation, SlidingWindowFeature
-from pyannote.metrics.identification import IdentificationErrorRate
-from pyannote.pipeline.parameter import ParamDict, Uniform
 
 from ..utils.signal import Binarize
 from .utils import PipelineModel, get_model
@@ -76,11 +77,11 @@ class MultiLabelSegmentation(Pipeline):
 
     def __init__(
         self,
-        segmentation: Optional[PipelineModel] = None,
+        segmentation: PipelineModel | None = None,
         fscore: bool = False,
         share_min_duration: bool = False,
-        token: Union[Text, None] = None,
-        cache_dir: Union[Path, Text, None] = None,
+        token: str | None = None,
+        cache_dir: Path | str | None = None,
         **inference_kwargs,
     ):
         super().__init__()
@@ -141,19 +142,19 @@ class MultiLabelSegmentation(Pipeline):
                     self.thresholds[label]["min_duration_on"]
                     if not self.share_min_duration
                     else self.min_duration_on
-                ),  # noqa
+                ),
                 min_duration_off=(
                     self.thresholds[label]["min_duration_off"]
                     if not self.share_min_duration
                     else self.min_duration_off
-                ),  # noqa
+                ),
             )
             for label in self._classes
         }
 
     CACHED_SEGMENTATION = "cache/segmentation"
 
-    def apply(self, file: AudioFile, hook: Optional[Callable] = None) -> Annotation:
+    def apply(self, file: AudioFile, hook: Callable | None = None) -> Annotation:
         """Apply multi-label detection
 
         Parameters
@@ -215,7 +216,7 @@ class MultiLabelSegmentation(Pipeline):
 
         return detection
 
-    def get_metric(self) -> Union[MacroAverageFMeasure, IdentificationErrorRate]:
+    def get_metric(self) -> MacroAverageFMeasure | IdentificationErrorRate:
         """Return new instance of identification metric"""
 
         if self.fscore:

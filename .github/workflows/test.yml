@@ -1,36 +1,101 @@
 name: Test
 
 on:
-  pull_request:
-    branches:
-      - develop
-  push:
-    branches:
-      - develop
-      - master
-      - release/*
+  workflow_call:
 
+permissions:
+  contents: read
 
 jobs:
   test:
-    name: Test
+    name: Test Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version:
-          - "3.10"
-          - "3.11"
-          - "3.12"
     env:
-      UV_PYTHON: ${{ matrix.python-version }}
+      PYANNOTE_METRICS_ENABLED: "0"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      HF_HUB_OFFLINE: "1"
+      OMP_NUM_THREADS: "2"
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
     steps:
-      - uses: actions/checkout@v4
-
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+      - id: python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: python-package-distributions
+          path: dist/
       - name: Install FFmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install the built wheel with test dependencies
+        run: |
+          uv venv --python "${{ steps.python.outputs.python-path }}"
+          uv pip install --torch-backend cpu "$(echo dist/*.whl)[test,cli]"
+      - name: Run tests against the installed wheel
+        run: uv run --no-project --no-sync python -m pytest tests -m "not network and not notebook"
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
+  integration:
+    name: Public model integration (Python 3.11)
+    runs-on: ubuntu-latest
+    env:
+      PYANNOTE_METRICS_ENABLED: "0"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      OMP_NUM_THREADS: "2"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+      - id: python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: python-package-distributions
+          path: dist/
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install the built wheel with test dependencies
+        run: |
+          uv venv --python "${{ steps.python.outputs.python-path }}"
+          uv pip install --torch-backend cpu "$(echo dist/*.whl)[test,cli]"
+      - name: Run tests against the installed wheel
+        run: uv run --no-project --no-sync python -m pytest tests -m network
 
-      - name: Run tests
-        run: uv run --extra test pytest
+  separation:
+    name: Optional separation (Python 3.11)
+    runs-on: ubuntu-latest
+    env:
+      PYANNOTE_METRICS_ENABLED: "0"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      HF_HUB_OFFLINE: "1"
+      OMP_NUM_THREADS: "2"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+      - id: python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: python-package-distributions
+          path: dist/
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install the built wheel with test dependencies
+        run: |
+          uv venv --python "${{ steps.python.outputs.python-path }}"
+          uv pip install --torch-backend cpu "$(echo dist/*.whl)[test,cli,separation]"
+      - name: Run tests against the installed wheel
+        run: uv run --no-project --no-sync python -m pytest tests/test_separation.py

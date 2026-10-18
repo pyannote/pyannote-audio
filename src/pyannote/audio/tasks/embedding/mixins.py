@@ -22,13 +22,10 @@
 # SOFTWARE.
 
 import math
-from typing import Dict, Sequence, Union
+from collections.abc import Sequence
 
 import torch
 import torch.nn.functional as F
-from pyannote.audio.core.task import Problem, Resolution, Specifications
-from pyannote.audio.torchmetrics.classification import EqualErrorRate
-from pyannote.audio.utils.random import create_rng_for_worker
 from pyannote.core import Segment
 from pyannote.database.protocol import (
     SpeakerDiarizationProtocol,
@@ -38,6 +35,10 @@ from torch.utils.data._utils.collate import default_collate
 from torchmetrics import Metric
 from torchmetrics.classification import BinaryAUROC
 from tqdm import tqdm
+
+from pyannote.audio.core.task import Problem, Resolution, Specifications
+from pyannote.audio.torchmetrics.classification import EqualErrorRate
+from pyannote.audio.utils.random import create_rng_for_worker
 
 
 class SupervisedRepresentationLearningTaskMixin:
@@ -79,7 +80,7 @@ class SupervisedRepresentationLearningTaskMixin:
         # loop over the training set, remove annotated regions shorter than
         # chunk duration, and keep track of the reference annotations, per class.
 
-        self._train = dict()
+        self._train = {}
 
         desc = f"Loading {self.protocol.name} training labels"
         for f in tqdm(iterable=self.protocol.train(), desc=desc, unit="file"):
@@ -100,7 +101,7 @@ class SupervisedRepresentationLearningTaskMixin:
 
                 # add class to the list of classes
                 if klass not in self._train:
-                    self._train[klass] = list()
+                    self._train[klass] = []
 
                 self._train[klass].append(
                     {
@@ -121,7 +122,7 @@ class SupervisedRepresentationLearningTaskMixin:
 
     def default_metric(
         self,
-    ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
+    ) -> Metric | Sequence[Metric] | dict[str, Metric]:
         return [
             EqualErrorRate(compute_on_cpu=True, distances=False),
             BinaryAUROC(compute_on_cpu=True),
@@ -243,7 +244,7 @@ class SupervisedRepresentationLearningTaskMixin:
 
         return {"loss": loss}
 
-    def prepare_validation(self, prepared_dict: Dict):
+    def prepare_validation(self, prepared_dict: dict):
         if isinstance(self.protocol, SpeakerVerificationProtocol):
             prepared_dict["validation"] = list(self.protocol.development_trial())
 
@@ -251,7 +252,7 @@ class SupervisedRepresentationLearningTaskMixin:
         if isinstance(self.protocol, SpeakerVerificationProtocol):
             trial = self.prepared_data["validation"][idx]
 
-            data = dict()
+            data = {}
             for idx in [1, 2]:
                 file = trial[f"file{idx:d}"]
                 duration = self.model.audio.get_duration(file)

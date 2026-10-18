@@ -30,26 +30,28 @@ import multiprocessing
 import sys
 import warnings
 from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 from functools import cached_property, partial
 from numbers import Number
 from pathlib import Path
 from tempfile import mkstemp
-from typing import Dict, List, Literal, Optional, Sequence, Text, Tuple, Union
+from typing import Literal
 
 import lightning
 import numpy as np
 import scipy.special
 import torch
-from pyannote.audio.utils.loss import binary_cross_entropy, nll_loss
-from pyannote.audio.utils.protocol import check_protocol
 from pyannote.database import Protocol
 from pyannote.database.protocol.protocol import Scope, Subset
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 from torch_audiomentations import Identity
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchmetrics import Metric, MetricCollection
+
+from pyannote.audio.utils.loss import binary_cross_entropy, nll_loss
+from pyannote.audio.utils.protocol import check_protocol
 
 Subsets = list(Subset.__args__)
 Scopes = list(Scope.__args__)
@@ -86,7 +88,7 @@ class Specifications:
     duration: float
 
     # (for variable-duration tasks only) minimum chunk duration in seconds
-    min_duration: Optional[float] = None
+    min_duration: float | None = None
 
     # use that many seconds on the left- and rightmost parts of each chunk
     # to warm up the model. This is mostly useful for segmentation tasks.
@@ -94,14 +96,14 @@ class Specifications:
     # the remaining central part of each chunk is used for computing the
     # loss during training, and for aggregating scores during inference.
     # Defaults to 0. (i.e. no warm-up).
-    warm_up: Optional[Tuple[float, float]] = (0.0, 0.0)
+    warm_up: tuple[float, float] | None = (0.0, 0.0)
 
     # (for classification tasks only) list of classes
-    classes: Optional[List[Text]] = None
+    classes: list[str] | None = None
 
     # (for powerset only) max number of simultaneous classes
     # (n choose k with k <= powerset_max_classes)
-    powerset_max_classes: Optional[int] = None
+    powerset_max_classes: int | None = None
 
     # whether classes are permutation-invariant (e.g. diarization)
     permutation_invariant: bool = False
@@ -126,7 +128,7 @@ class Specifications:
         return int(
             sum(
                 scipy.special.binom(len(self.classes), i)
-                for i in range(0, self.powerset_max_classes + 1)
+                for i in range(self.powerset_max_classes + 1)
             )
         )
 
@@ -249,15 +251,15 @@ class Task(lightning.LightningDataModule):
     def __init__(
         self,
         protocol: Protocol,
-        cache: Optional[Union[str, None]] = None,
+        cache: str | None = None,
         duration: float = 2.0,
-        min_duration: Optional[float] = None,
-        warm_up: Union[float, Tuple[float, float]] = 0.0,
+        min_duration: float | None = None,
+        warm_up: float | tuple[float, float] = 0.0,
         batch_size: int = 32,
-        num_workers: Optional[int] = None,
+        num_workers: int | None = None,
         pin_memory: bool = False,
-        augmentation: Optional[BaseWaveformTransform] = None,
-        metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
+        augmentation: BaseWaveformTransform | None = None,
+        metric: Metric | Sequence[Metric] | dict[str, Metric] = None,
     ):
         super().__init__()
 
@@ -288,12 +290,7 @@ class Task(lightning.LightningDataModule):
         if num_workers is None:
             num_workers = multiprocessing.cpu_count() // 2
 
-        if (
-            num_workers > 0
-            and sys.platform == "darwin"
-            and sys.version_info[0] >= 3
-            and sys.version_info[1] >= 8
-        ):
+        if num_workers > 0 and sys.platform == "darwin":
             warnings.warn(
                 "num_workers > 0 is not supported with macOS and Python 3.8+: "
                 "setting num_workers = 0."
@@ -347,19 +344,17 @@ class Task(lightning.LightningDataModule):
         metadata_unique_values["subset"] = Subsets
         metadata_unique_values["scope"] = Scopes
 
-        audios = list()  # list of path to audio files
-        metadata = list()  # list of metadata
+        audios = []  # list of path to audio files
+        metadata = []  # list of metadata
 
-        annotated_duration = list()  # total duration of annotated regions (per file)
-        annotated_regions = list()  # annotated regions
-        audio_regions_ids = list()  # start/end indices of annotated regions (per file)
+        annotated_duration = []  # total duration of annotated regions (per file)
+        annotated_regions = []  # annotated regions
+        audio_regions_ids = []  # start/end indices of annotated regions (per file)
 
-        annotations = list()  # actual annotations
-        audio_segments_ids = (
-            list()
-        )  # start/end indices of annotated segments (per file)
+        annotations = []  # actual annotations
+        audio_segments_ids = []  # start/end indices of annotated segments (per file)
 
-        unique_labels = list()
+        unique_labels = []
         database_unique_labels = {}
 
         if self.has_validation:
@@ -376,7 +371,7 @@ class Task(lightning.LightningDataModule):
         for file_id, (subset, file) in enumerate(files_iter):
             # gather metadata and update metadata_unique_values so that each metadatum
             # (e.g. source database or label) is represented by an integer.
-            metadatum = dict()
+            metadatum = {}
 
             # keep track of source database and subset (train, development, or test)
             if file["database"] not in metadata_unique_values["database"]:
@@ -390,18 +385,16 @@ class Task(lightning.LightningDataModule):
             # keep track of label scope (file, database, or global)
             metadatum["scope"] = Scopes.index(file["scope"])
 
-            remaining_metadata_keys = set(file) - set(
-                [
-                    "uri",
-                    "database",
-                    "subset",
-                    "audio",
-                    "scope",
-                    "classes",
-                    "annotation",
-                    "annotated",
-                ]
-            )
+            remaining_metadata_keys = set(file) - {
+                "uri",
+                "database",
+                "subset",
+                "audio",
+                "scope",
+                "classes",
+                "annotation",
+                "annotated",
+            }
 
             # keep track of any other (integer or string) metadata provided by the protocol
             # (e.g. a "domain" key for domain-adversarial training)
@@ -427,7 +420,7 @@ class Task(lightning.LightningDataModule):
             metadata.append(metadatum)
 
             # reset list of file-scoped labels
-            file_unique_labels = list()
+            file_unique_labels = []
 
             # path to audio file
             audios.append(str(file["audio"]))
@@ -596,7 +589,7 @@ class Task(lightning.LightningDataModule):
         with open(self.cache, "wb") as cache_file:
             np.savez_compressed(cache_file, **prepared_data)
 
-    def post_prepare_data(self, prepared_data: Dict):
+    def post_prepare_data(self, prepared_data: dict):
         """Method for completing `prepared_data` with task-specific data.
         For instance, for a classification task, this could be a list of
         possible classes.
@@ -611,7 +604,6 @@ class Task(lightning.LightningDataModule):
         This method does not return anything. Thus, user have to directly modify
         `prepared_data`, for updates to be taken into account
         """
-        pass
 
     def setup(self, stage=None):
         """Setup data cached by prepare_data into the task on each device"""
@@ -651,7 +643,7 @@ class Task(lightning.LightningDataModule):
         self.model.automatic_optimization = automatic_optimisation
 
     @property
-    def specifications(self) -> Union[Specifications, Tuple[Specifications]]:
+    def specifications(self) -> Specifications | tuple[Specifications]:
         # setup metadata on-demand the first time specifications are requested and missing
         if not hasattr(self, "_specifications"):
             raise UnknownSpecificationsError(
@@ -662,9 +654,7 @@ class Task(lightning.LightningDataModule):
         return self._specifications
 
     @specifications.setter
-    def specifications(
-        self, specifications: Union[Specifications, Tuple[Specifications]]
-    ):
+    def specifications(self, specifications: Specifications | tuple[Specifications]):
         self._specifications = specifications
 
     def setup_loss_func(self):
@@ -817,7 +807,7 @@ class Task(lightning.LightningDataModule):
         msg = f"Missing '{self.__class__.__name__}.val__len__' method."
         raise NotImplementedError(msg)
 
-    def val_dataloader(self) -> Optional[DataLoader]:
+    def val_dataloader(self) -> DataLoader | None:
         if self.has_validation:
             return DataLoader(
                 ValDataset(self),
@@ -835,7 +825,7 @@ class Task(lightning.LightningDataModule):
     def validation_step(self, batch, batch_idx: int):
         return self.common_step(batch, batch_idx, "val")
 
-    def default_metric(self) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
+    def default_metric(self) -> Metric | Sequence[Metric] | dict[str, Metric]:
         """Default validation metric"""
         msg = f"Missing '{self.__class__.__name__}.default_metric' method."
         raise NotImplementedError(msg)

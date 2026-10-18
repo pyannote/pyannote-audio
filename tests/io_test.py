@@ -1,8 +1,7 @@
 import torch
-from torchcodec.decoders import AudioDecoder, AudioStreamMetadata
-
 from pyannote.core import Segment
 from torch import Tensor
+from torchcodec.decoders import AudioDecoder, AudioStreamMetadata
 
 from pyannote.audio.core.io import Audio
 
@@ -21,7 +20,7 @@ def test_audio_resample():
 def test_basic_load_with_defaults():
     test_file = "tests/data/dev00.wav"
     loader = Audio(mono="downmix")
-    wav, sr = loader(test_file)
+    wav, _sr = loader(test_file)
     assert isinstance(wav, Tensor)
 
 
@@ -67,7 +66,7 @@ def test_can_crop_waveform_up_to_its_end():
     waveform = torch.rand(1, 16000 * 2)
     loader = Audio(mono="downmix")
     segment = Segment(1.5, 2.0)
-    wav, sr = loader.crop({"waveform": waveform, "sample_rate": 16000}, segment)
+    wav, _sr = loader.crop({"waveform": waveform, "sample_rate": 16000}, segment)
     assert torch.equal(wav, waveform[:, 24000:])
 
 

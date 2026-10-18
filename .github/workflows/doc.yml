@@ -1,33 +1,56 @@
 name: Documentation
+
 on:
+  pull_request:
   push:
-    branches:
-      - master
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v4
-      with:
-        persist-credentials: false
-        fetch-depth: 0
-    - name: Install uv
-      uses: astral-sh/setup-uv@v5
-      with:
-          enable-cache: true
-          cache-dependency-glob: uv.lock
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # hatch-vcs needs Git history and tags to derive the package version.
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version-file: .python-version
+      - name: Install documentation dependencies
+        run: |
+          uv venv
+          uv pip install --no-deps .
+          uv pip install sphinx sphinx-rtd-theme
+      - name: Build documentation
+        run: uv run --no-project --no-sync sphinx-build -W --keep-going -b html doc/source doc/build/html
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: documentation
+          path: doc/build/html
+          include-hidden-files: true
+          retention-days: 3
 
-    - name: Install the project
-      run: uv sync --extra doc
-
-    - name: Build documentation
-      run: |
-        make --directory=doc html
-        touch ./doc/build/html/.nojekyll
-    - name: Deploy
-      uses: peaceiris/actions-gh-pages@v3
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./doc/build/html
+  deploy:
+    if: github.event_name == 'push'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: documentation
+          path: doc/build/html
+      - uses: peaceiris/actions-gh-pages@373f7f263a76c20808c831209c920827a82a2847 # v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: doc/build/html
