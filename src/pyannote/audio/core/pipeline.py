@@ -62,6 +62,9 @@ def expand_subfolders(
                  "subfolder": {subfolder},
                  "token": token}
 
+    Token and cache directory options are included only when not None, so
+    loaders can inherit these options from the calling pipeline.
+
     Parameters
     ----------
     config : dict
@@ -99,9 +102,11 @@ def expand_subfolders(
                     "checkpoint": model_id,
                     "revision": revision,
                     "subfolder": subfolder,
-                    "token": token,
-                    "cache_dir": cache_dir,
                 }
+                if token is not None:
+                    config[key]["token"] = token
+                if cache_dir is not None:
+                    config[key]["cache_dir"] = cache_dir
             else:
                 expand_subfolders(
                     value,
@@ -133,9 +138,11 @@ def expand_subfolders(
                     "checkpoint": model_id,
                     "revision": revision,
                     "subfolder": subfolder,
-                    "token": token,
-                    "cache_dir": cache_dir,
                 }
+                if token is not None:
+                    config[idx]["token"] = token
+                if cache_dir is not None:
+                    config[idx]["cache_dir"] = cache_dir
 
             else:
                 expand_subfolders(
