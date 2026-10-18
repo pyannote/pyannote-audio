@@ -23,7 +23,6 @@
 from types import SimpleNamespace
 
 import pytest
-import typer
 import yaml
 from pyannote.audio.__main__ import Pipeline as AudioPipeline
 from pyannote.audio.__main__ import Metric, app
@@ -233,12 +232,3 @@ def test_optimize_cli_with_speaker_count_error(tmp_path, monkeypatch, multi_obje
         }
     else:
         assert optimization["status"]["best_loss"] == 2.0
-
-
-def test_speaker_count_error_requires_recent_metrics(monkeypatch):
-    import pyannote.metrics.diarization as diarization_metrics
-
-    monkeypatch.delattr(diarization_metrics, "DiarizationSpeakerCountError", raising=False)
-    with pytest.raises(typer.BadParameter, match="feat/speaker-count-metrics"):
-        Metric.from_str("DiarizationSpeakerCountError")
-    assert Metric.from_str("DiarizationErrorRate").name == "diarization error rate"

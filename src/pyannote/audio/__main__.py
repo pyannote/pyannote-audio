@@ -29,7 +29,7 @@ import sys
 import time
 import types
 from contextlib import nullcontext
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from functools import partial
 from pathlib import Path
@@ -41,12 +41,14 @@ import torch
 import typer
 import yaml
 from pyannote.audio import Audio, Model, Pipeline
+from pyannote.audio.core.pipeline import expand_subfolders
 from pyannote.core import Annotation
 from pyannote.metrics.base import BaseMetric
 from pyannote.metrics.diarization import (
     DiarizationCoverage,
     DiarizationErrorRate,
     DiarizationPurity,
+    DiarizationSpeakerCountError,
     JaccardErrorRate,
 )
 from pyannote.pipeline.optimizer import Optimizer
@@ -94,14 +96,6 @@ class Metric(str, Enum):
         if metric == cls.DiarizationCoverage:
             return DiarizationCoverage()
         if metric == cls.DiarizationSpeakerCountError:
-            try:
-                from pyannote.metrics.diarization import DiarizationSpeakerCountError
-            except ImportError as exc:
-                raise typer.BadParameter(
-                    "DiarizationSpeakerCountError requires pyannote-metrics from "
-                    "https://github.com/pyannote/pyannote-metrics/"
-                    "tree/feat/speaker-count-metrics."
-                ) from exc
             return DiarizationSpeakerCountError()
 
         raise ValueError(f"Unsupported metric: {metric}")
@@ -159,6 +153,112 @@ class DiarizationMetricAdapter:
 
 
 app = typer.Typer()
+
+
+def resolve_pipeline_config(
+    pipeline: Path,
+    metric: Metric | None = None,
+) -> dict:
+    """Resolve a local pipeline configuration and select a Pareto trial if needed.
+
+    Parameters
+    ----------
+    pipeline : Path
+        Path to a local pipeline YAML file, including a Pareto manifest.
+    metric : Metric, optional
+        Preferred objective when selecting a trial from a Pareto manifest.
+        Defaults to the first objective in the manifest. Ties are resolved by
+        the remaining objectives in manifest order, then by trial number.
+        Has no effect on single-objective configurations.
+
+    Returns
+    -------
+    config : dict
+        Configuration ready to serialize as YAML or pass directly to
+        Pipeline.from_pretrained. No file is written by this function.
+
+    Notes
+    -----
+    References such as ``$model/segmentation`` are expanded into checkpoint
+    dictionaries whose ``checkpoint`` is the absolute path to the source
+    YAML's directory and whose ``subfolder`` is ``segmentation``. Any revision
+    specified in the reference is preserved.
+
+    """
+    # load the original pipeline configuration
+    path = Path(pipeline)
+    with open(path) as fp:
+        config = yaml.safe_load(fp)
+
+    # keep optimization provenance, without carrying the whole Pareto front
+    # into the configuration of the selected pipeline
+    optimization = config.pop("optimization", {})
+    status = optimization.pop("status", {})
+    metadata = {
+        key: value
+        for key, value in (optimization | status).items()
+        if key in (
+            "metric", "protocol", "subset", "trial", "values", "best_loss", "last_updated"
+        )
+    }
+    # older single-objective configurations may not record the metric
+    metadata.setdefault("metric", None)
+
+    # a Pareto manifest contains several possible sets of parameters
+    if "pareto_front" in status:
+        metrics = [Metric(name) for name in optimization.get("metrics", [])]
+        front = status["pareto_front"]
+        if not metrics or not front:
+            raise typer.BadParameter(
+                "The Pareto manifest must contain objectives and trials."
+            )
+        # use the first optimization objective when no preference is provided
+        preferred = metric or metrics[0]
+        if preferred not in metrics:
+            raise typer.BadParameter(
+                f"Metric {preferred.value} is not in the Pareto manifest. "
+                f"Available metrics: {', '.join(m.value for m in metrics)}.",
+                param_hint="--metric",
+            )
+        # rank trials by the preferred metric, then by the remaining objectives
+        # and trial number to resolve ties deterministically
+        ordered = [preferred] + [m for m in metrics if m != preferred]
+        selected = min(
+            front,
+            key=lambda point: tuple(
+                # negate maximized metrics so that min handles both directions
+                (1 if m.direction == "minimize" else -1) * point["values"][m.value]
+                for m in ordered
+            )
+            + (point["trial"],),
+        )
+        # replace the original parameters with those of the selected trial
+        # and keep its objective values for later reference
+        config["params"] = selected["params"]
+        metadata.update(
+            metric=preferred.value,
+            trial=selected["trial"],
+            values=selected["values"],
+        )
+        typer.echo(
+            f"Selected trial {selected['trial']} using {preferred.value}: "
+            + ", ".join(
+                f"{name}={value:g}" for name, value in selected["values"].items()
+            ),
+            err=True,
+        )
+
+    # resolve $model/... against the original YAML directory so that model
+    # locations are preserved when the config is moved or passed as a dictionary
+    expand_subfolders(config, str(path.resolve().parent))
+
+    # record when this configuration was resolved and where it came from
+    metadata.update(
+        date=datetime.now(timezone.utc).isoformat(),
+        source=str(path.resolve()),
+    )
+    config["optimization"] = metadata
+    return config
 
 
 @app.command("optimize")
@@ -382,6 +482,7 @@ def optimize(
                 # if we have a new global best loss, save it to disk
                 original_config["params"] = status["params"]
                 original_config["optimization"] = {
+                    "metric": metric[0].value,
                     "protocol": protocol,
                     "subset": subset.value,
                     "status": {
@@ -714,6 +815,13 @@ def benchmark(
     per_file: Annotated[
         bool, typer.Option(help="Save one RTTM/JSON file per processed audio file.")
     ] = False,
+    metric: Annotated[
+        Optional[Metric],
+        typer.Option(
+            help="Preferred Pareto objective (defaults to the first objective).",
+            case_sensitive=False,
+        ),
+    ] = None,
 ):
     """
     Benchmark a pretrained diarization PIPELINE
@@ -724,9 +832,20 @@ def benchmark(
     by filling short within speaker gaps and save the results in a separate file.
     """
 
-    # load pretrained pipeline
+    benchmark_name = f"{protocol}.{subset.value}"
+    if num_speakers == NumSpeakers.ORACLE:
+        benchmark_name += ".OracleNumSpeakers"
+    output_config = into / "config.yaml"
+
+    # Materialize local optimization results before loading normally.
+    checkpoint: str | dict = pipeline
+    if Path(pipeline).is_file():
+        checkpoint = resolve_pipeline_config(Path(pipeline), metric=metric)
+        with open(output_config, "x") as fp:
+            fp.write(f"# created_at: {checkpoint['optimization']['date']}\n")
+            yaml.safe_dump(checkpoint, fp)
     pretrained_pipeline = Pipeline.from_pretrained(
-        pipeline,
+        checkpoint,
         revision=revision,
         subfolder=subfolder,
         token=token,
@@ -767,11 +886,6 @@ def benchmark(
             f"Manual annotation is not available for files in {protocol} {subset.value} subset so skipping metric evaluation."
         )
         skip_metric = True
-
-    # `benchmark_name` is used as prefix to output files
-    benchmark_name = f"{protocol}.{subset.value}"
-    if num_speakers == NumSpeakers.ORACLE:
-        benchmark_name += ".OracleNumSpeakers"
 
     # used to store raw predictions in JSON format
     serialized_predictions: dict[str, dict] = dict()
