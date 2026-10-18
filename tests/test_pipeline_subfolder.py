@@ -99,8 +99,20 @@ class TestExpandSubfolders:
             "revision": None,
             "subfolder": "embeddings",
             "token": "tok",
-            "cache_dir": None,
         }
+
+    @pytest.mark.parametrize("as_list", [False, True])
+    @pytest.mark.parametrize("token", [None, False, "tok"])
+    @pytest.mark.parametrize("cache_dir", [None, Path("cache")])
+    def test_optional_runtime_options(self, as_list, token, cache_dir):
+        config = ["$model/weights"] if as_list else {"model": "$model/weights"}
+        expand_subfolders(config, model_id="org/repo", token=token, cache_dir=cache_dir)
+        model = config[0] if as_list else config["model"]
+        for key, value in {"token": token, "cache_dir": cache_dir}.items():
+            if value is None:
+                assert key not in model
+            else:
+                assert model[key] == value
 
     def test_dict_model_reference_with_parent_subfolder(self):
         """Child $model refs are resolved under parent_subfolder."""
