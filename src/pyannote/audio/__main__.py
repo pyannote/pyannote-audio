@@ -739,7 +739,7 @@ def benchmark(
     benchmark_name = f"{protocol}.{subset.value}"
     if num_speakers == NumSpeakers.ORACLE:
         benchmark_name += ".OracleNumSpeakers"
-    output_config = into / "config.yaml"
+    output_config = into / f"{benchmark_name}.config.yaml"
 
     # Materialize local optimization results before loading normally.
     checkpoint: str | dict = pipeline
