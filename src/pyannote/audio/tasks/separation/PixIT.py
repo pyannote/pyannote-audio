@@ -34,7 +34,6 @@ from typing import Dict, Literal, Optional, Sequence, Text, Union
 import numpy as np
 import torch
 from lightning.pytorch.loggers import MLFlowLogger, TensorBoardLogger
-from matplotlib import pyplot as plt
 from pyannote.audio.core.task import Problem, Resolution, Specifications
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTask, Task
 from pyannote.audio.torchmetrics import (
@@ -1121,6 +1120,17 @@ class PixIT(SegmentationTask):
         num_samples = min(self.batch_size, 9)
         nrows = math.ceil(math.sqrt(num_samples))
         ncols = math.ceil(num_samples / nrows)
+        # matplotlib is an optional dependency (pip install pyannote.audio[plot]);
+        # without it, training goes on and only these sample plots are skipped.
+        try:
+            import matplotlib.pyplot as plt
+        except ImportError:
+            warnings.warn(
+                "matplotlib is not installed: skipping validation sample plots. "
+                "Install it with `pip install pyannote.audio[plot]`."
+            )
+            return
+
         fig, axes = plt.subplots(
             nrows=2 * nrows, ncols=ncols, figsize=(8, 5), squeeze=False
         )
