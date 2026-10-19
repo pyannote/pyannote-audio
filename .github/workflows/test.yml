@@ -39,7 +39,7 @@ jobs:
           uv venv --python "${{ steps.python.outputs.python-path }}"
           uv pip install --torch-backend cpu "$(echo dist/*.whl)[test,cli]"
       - name: Run tests against the installed wheel
-        run: uv run --no-project --no-sync python -m pytest tests -m "not network and not notebook"
+        run: uv run --no-project --python .venv/bin/python python -m pytest tests -m "not network and not notebook"
 
   integration:
     name: Public model integration (Python 3.11)
@@ -68,7 +68,7 @@ jobs:
           uv venv --python "${{ steps.python.outputs.python-path }}"
           uv pip install --torch-backend cpu "$(echo dist/*.whl)[test,cli]"
       - name: Run tests against the installed wheel
-        run: uv run --no-project --no-sync python -m pytest tests -m network
+        run: uv run --no-project --python .venv/bin/python python -m pytest tests -m network
 
   separation:
     name: Optional separation (Python 3.11)
@@ -98,4 +98,4 @@ jobs:
           uv venv --python "${{ steps.python.outputs.python-path }}"
           uv pip install --torch-backend cpu "$(echo dist/*.whl)[test,cli,separation]"
       - name: Run tests against the installed wheel
-        run: uv run --no-project --no-sync python -m pytest tests/test_separation.py
+        run: uv run --no-project --python .venv/bin/python python -m pytest tests/test_separation.py
