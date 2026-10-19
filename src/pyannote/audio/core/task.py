@@ -230,6 +230,8 @@ class Task(lightning.LightningDataModule):
     num_workers : int, optional
         Number of workers used for generating training samples.
         Defaults to multiprocessing.cpu_count() // 2.
+        Falls back to zero with a warning on macOS or when the multiprocessing
+        start method is spawn/forkserver, because protocols cannot be pickled.
     pin_memory : bool, optional
         If True, data loaders will copy tensors into CUDA pinned
         memory before returning them. See pytorch documentation
@@ -296,6 +298,21 @@ class Task(lightning.LightningDataModule):
                 "setting num_workers = 0."
             )
             num_workers = 0
+
+        if num_workers > 0:
+            # Protocols and their preprocessors cannot currently be pickled for
+            # spawn/forkserver workers (the latter is the Python 3.14 default).
+            # Inspect the default without fixing the global multiprocessing context.
+            start_method = multiprocessing.get_start_method(allow_none=True)
+            if start_method is None:
+                start_method = multiprocessing.get_all_start_methods()[0]
+            if start_method != "fork":
+                warnings.warn(
+                    f"num_workers > 0 is not supported with {start_method!r} "
+                    "multiprocessing because database protocols cannot be pickled: "
+                    "setting num_workers = 0."
+                )
+                num_workers = 0
 
         self.num_workers = num_workers
         self.pin_memory = pin_memory

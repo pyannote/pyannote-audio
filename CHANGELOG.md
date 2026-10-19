@@ -4,6 +4,8 @@
 
 - BREAKING: require Python 3.11 or newer; Python 3.10 is no longer supported
 - fix(model): restore `fbank_only` mode in WeSpeaker embedding models
+- fix(task): avoid training crashes with `spawn`/`forkserver` workers, including
+  Python 3.14's default on Linux, by warning and using `num_workers=0`
 
 - fix(pipeline): omit unset `token` and `cache_dir` when expanding `$model/` references so loaders can inherit runtime options
 - fix(io): fix `Audio.crop` raising when an in-memory waveform is cropped up to its very end [@MohammadHijjawi97](https://github.com/MohammadHijjawi97)
