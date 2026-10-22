@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import Dict, Mapping, Optional, Tuple, Union
+from collections.abc import Mapping
 
 import numpy as np
 from pyannote.core import Annotation, SlidingWindow, SlidingWindowFeature
@@ -32,9 +32,9 @@ from pyannote.audio.utils.signal import Binarize
 
 
 def set_num_speakers(
-    num_speakers: Optional[int] = None,
-    min_speakers: Optional[int] = None,
-    max_speakers: Optional[int] = None,
+    num_speakers: int | None = None,
+    min_speakers: int | None = None,
+    max_speakers: int | None = None,
 ):
     """Validate number of speakers
 
@@ -74,9 +74,9 @@ class SpeakerDiarizationMixin:
 
     @staticmethod
     def set_num_speakers(
-        num_speakers: Optional[int] = None,
-        min_speakers: Optional[int] = None,
-        max_speakers: Optional[int] = None,
+        num_speakers: int | None = None,
+        min_speakers: int | None = None,
+        max_speakers: int | None = None,
     ):
         """Validate number of speakers
 
@@ -103,10 +103,10 @@ class SpeakerDiarizationMixin:
 
     @staticmethod
     def optimal_mapping(
-        reference: Union[Mapping, Annotation],
+        reference: Mapping | Annotation,
         hypothesis: Annotation,
         return_mapping: bool = False,
-    ) -> Union[Annotation, Tuple[Annotation, Dict[Label, Label]]]:
+    ) -> Annotation | tuple[Annotation, dict[Label, Label]]:
         """Find the optimal bijective mapping between reference and hypothesis labels
 
         Parameters
@@ -129,7 +129,7 @@ class SpeakerDiarizationMixin:
         """
 
         if isinstance(reference, Mapping):
-            annotated = reference["annotated"] if "annotated" in reference else None
+            annotated = reference.get("annotated", None)
             reference = reference["annotation"]
         else:
             annotated = None
@@ -150,7 +150,7 @@ class SpeakerDiarizationMixin:
     def speaker_count(
         binarized_segmentations: SlidingWindowFeature,
         frames: SlidingWindow,
-        warm_up: Tuple[float, float] = (0.1, 0.1),
+        warm_up: tuple[float, float] = (0.1, 0.1),
     ) -> SlidingWindowFeature:
         """Estimate frame-level number of instantaneous speakers
 

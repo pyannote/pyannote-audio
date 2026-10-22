@@ -20,7 +20,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import Optional
 
 import torch
 from einops import rearrange
@@ -116,7 +115,7 @@ class SegmentationErrorRate(DiarizationErrorRate):
     """
 
     def __init__(
-        self, window_size: int, step_size: Optional[int] = None, threshold: float = 0.5
+        self, window_size: int, step_size: int | None = None, threshold: float = 0.5
     ):
         super().__init__(threshold=threshold)
         self.window_size = window_size
@@ -290,7 +289,7 @@ class OptimalDiarizationErrorRate(Metric):
     higher_is_better = False
     is_differentiable = False
 
-    def __init__(self, threshold: Optional[torch.Tensor] = None):
+    def __init__(self, threshold: torch.Tensor | None = None):
         super().__init__()
 
         if threshold is None:

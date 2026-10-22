@@ -23,15 +23,14 @@
 import warnings
 from functools import cached_property
 from pathlib import Path
-from typing import Optional, Text, Union
 
 import numpy as np
 import torch
 import torch.nn.functional as F
-import torchaudio.compliance.kaldi as kaldi
 from huggingface_hub import hf_hub_download
 from huggingface_hub.utils import RepositoryNotFoundError
 from torch.nn.utils.rnn import pad_sequence
+from torchaudio.compliance import kaldi
 
 from pyannote.audio import Inference, Model, Pipeline
 from pyannote.audio.core.inference import BaseInference
@@ -65,8 +64,8 @@ except ImportError:
 class NeMoPretrainedSpeakerEmbedding(BaseInference):
     def __init__(
         self,
-        embedding: Text = "nvidia/speakerverification_en_titanet_large",
-        device: Optional[torch.device] = None,
+        embedding: str = "nvidia/speakerverification_en_titanet_large",
+        device: torch.device | None = None,
     ):
         if not NEMO_IS_AVAILABLE:
             raise ImportError(
@@ -132,7 +131,7 @@ class NeMoPretrainedSpeakerEmbedding(BaseInference):
         return upper
 
     def __call__(
-        self, waveforms: torch.Tensor, masks: Optional[torch.Tensor] = None
+        self, waveforms: torch.Tensor, masks: torch.Tensor | None = None
     ) -> np.ndarray:
         """
 
@@ -230,10 +229,10 @@ class SpeechBrainPretrainedSpeakerEmbedding(BaseInference):
 
     def __init__(
         self,
-        embedding: Text = "speechbrain/spkrec-ecapa-voxceleb",
-        device: Optional[torch.device] = None,
-        token: Union[Text, None] = None,
-        cache_dir: Union[Path, Text, None] = None,
+        embedding: str = "speechbrain/spkrec-ecapa-voxceleb",
+        device: torch.device | None = None,
+        token: str | None = None,
+        cache_dir: Path | str | None = None,
     ):
         if not SPEECHBRAIN_IS_AVAILABLE:
             raise ImportError(
@@ -311,7 +310,7 @@ class SpeechBrainPretrainedSpeakerEmbedding(BaseInference):
         return upper
 
     def __call__(
-        self, waveforms: torch.Tensor, masks: Optional[torch.Tensor] = None
+        self, waveforms: torch.Tensor, masks: torch.Tensor | None = None
     ) -> np.ndarray:
         """
 
@@ -414,10 +413,10 @@ class ONNXWeSpeakerPretrainedSpeakerEmbedding(BaseInference):
 
     def __init__(
         self,
-        embedding: Text = "hbredin/wespeaker-voxceleb-resnet34-LM",
-        device: Optional[torch.device] = None,
-        token: Union[Text, None] = None,
-        cache_dir: Union[Path, Text, None] = None,
+        embedding: str = "hbredin/wespeaker-voxceleb-resnet34-LM",
+        device: torch.device | None = None,
+        token: str | None = None,
+        cache_dir: Path | str | None = None,
     ):
         if not ONNX_IS_AVAILABLE:
             raise ImportError(
@@ -427,7 +426,6 @@ class ONNXWeSpeakerPretrainedSpeakerEmbedding(BaseInference):
         super().__init__()
 
         if not Path(embedding).exists():
-
             try:
                 embedding = hf_hub_download(
                     repo_id=embedding,
@@ -566,7 +564,7 @@ class ONNXWeSpeakerPretrainedSpeakerEmbedding(BaseInference):
         return features - torch.mean(features, dim=1, keepdim=True)
 
     def __call__(
-        self, waveforms: torch.Tensor, masks: Optional[torch.Tensor] = None
+        self, waveforms: torch.Tensor, masks: torch.Tensor | None = None
     ) -> np.ndarray:
         """
 
@@ -582,7 +580,7 @@ class ONNXWeSpeakerPretrainedSpeakerEmbedding(BaseInference):
 
         """
 
-        batch_size, num_channels, num_samples = waveforms.shape
+        batch_size, num_channels, _num_samples = waveforms.shape
         assert num_channels == 1
 
         features = self.compute_fbank(waveforms.to(self.device))
@@ -651,9 +649,9 @@ class PyannoteAudioPretrainedSpeakerEmbedding(BaseInference):
     def __init__(
         self,
         embedding: PipelineModel = "pyannote/embedding",
-        device: Optional[torch.device] = None,
-        token: Union[Text, None] = None,
-        cache_dir: Union[Path, Text, None] = None,
+        device: torch.device | None = None,
+        token: str | None = None,
+        cache_dir: Path | str | None = None,
     ):
         super().__init__()
         self.embedding = embedding
@@ -702,7 +700,7 @@ class PyannoteAudioPretrainedSpeakerEmbedding(BaseInference):
         return upper
 
     def __call__(
-        self, waveforms: torch.Tensor, masks: Optional[torch.Tensor] = None
+        self, waveforms: torch.Tensor, masks: torch.Tensor | None = None
     ) -> np.ndarray:
         with torch.inference_mode():
             if masks is None:
@@ -718,9 +716,9 @@ class PyannoteAudioPretrainedSpeakerEmbedding(BaseInference):
 
 def PretrainedSpeakerEmbedding(
     embedding: PipelineModel,
-    device: Optional[torch.device] = None,
-    token: Union[Text, None] = None,
-    cache_dir: Union[Path, Text, None] = None,
+    device: torch.device | None = None,
+    token: str | None = None,
+    cache_dir: Path | str | None = None,
 ):
     """Pretrained speaker embedding
 
@@ -811,9 +809,9 @@ class SpeakerEmbedding(Pipeline):
     def __init__(
         self,
         embedding: PipelineModel = "pyannote/embedding",
-        segmentation: Optional[PipelineModel] = None,
-        token: Union[Text, None] = None,
-        cache_dir: Union[Path, Text, None] = None,
+        segmentation: PipelineModel | None = None,
+        token: str | None = None,
+        cache_dir: Path | str | None = None,
     ):
         super().__init__()
 
@@ -859,7 +857,7 @@ def main(
     protocol: str = "VoxCeleb.SpeakerVerification.VoxCeleb1",
     subset: str = "test",
     embedding: str = "pyannote/embedding",
-    segmentation: Optional[str] = None,
+    segmentation: str | None = None,
 ):
     import typer
     from pyannote.database import FileFinder, get_protocol
@@ -873,7 +871,7 @@ def main(
 
     y_true, y_pred = [], []
 
-    emb = dict()
+    emb = {}
 
     trials = getattr(protocol, f"{subset}_trial")()
 

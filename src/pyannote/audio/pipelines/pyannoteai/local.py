@@ -22,9 +22,10 @@
 
 import os
 
+from pyannote.core import Annotation, Segment
+
 from pyannote.audio import Pipeline
 from pyannote.audio.core.io import AudioFile
-from pyannote.core import Annotation, Segment
 
 from ..speaker_diarization import DiarizeOutput
 

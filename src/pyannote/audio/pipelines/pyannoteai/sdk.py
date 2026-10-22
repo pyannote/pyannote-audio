@@ -22,13 +22,13 @@
 
 import os
 
-from pyannote.audio import Pipeline
-from pyannote.audio.core.io import AudioFile
 from pyannote.core import Annotation, Segment
-
 from pyannoteai.sdk import Client
 
+from pyannote.audio import Pipeline
+from pyannote.audio.core.io import AudioFile
 from pyannote.audio.pipelines.speaker_diarization import DiarizeOutput
+
 
 class SDK(Pipeline):
     """Wrapper around official pyannoteAI API client
@@ -64,7 +64,6 @@ class SDK(Pipeline):
             speaker = turn["speaker"]
             annotation[segment, t] = speaker
         return annotation.rename_tracks("string")
-
 
     def apply(
         self,
@@ -123,11 +122,14 @@ class SDK(Pipeline):
         # retrieve job output (once completed)
         job_output = self._client.retrieve(job_id)
 
-        speaker_diarization: Annotation = self._deserialize(job_output["output"]["diarization"])
-        exclusive_speaker_diarization: Annotation = self._deserialize(job_output["output"]["exclusiveDiarization"])
+        speaker_diarization: Annotation = self._deserialize(
+            job_output["output"]["diarization"]
+        )
+        exclusive_speaker_diarization: Annotation = self._deserialize(
+            job_output["output"]["exclusiveDiarization"]
+        )
 
         return DiarizeOutput(
             speaker_diarization=speaker_diarization,
             exclusive_speaker_diarization=exclusive_speaker_diarization,
         )
-

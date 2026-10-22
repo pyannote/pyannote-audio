@@ -127,11 +127,14 @@ def test_batch_der(target, prediction):
 
 
 def test_batch_der_with_components(target, prediction):
-    der, (
-        false_alarm,
-        missed_detection,
-        speaker_confusion,
-        speech_total,
+    (
+        der,
+        (
+            false_alarm,
+            missed_detection,
+            speaker_confusion,
+            speech_total,
+        ),
     ) = diarization_error_rate(
         prediction, target, reduce="batch", return_components=True
     )

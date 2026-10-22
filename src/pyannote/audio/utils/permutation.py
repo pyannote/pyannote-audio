@@ -23,8 +23,9 @@
 
 
 import math
+from collections.abc import Callable
 from functools import partial, singledispatch
-from typing import Callable, List, Literal, Tuple
+from typing import Literal
 
 import networkx as nx
 import numpy as np
@@ -35,7 +36,12 @@ from scipy.optimize import linear_sum_assignment
 
 
 @singledispatch
-def permutate(y1, y2, cost_func: Callable | Literal["mse", "mae"] = "mse", return_cost: bool = False):
+def permutate(
+    y1,
+    y2,
+    cost_func: Callable | Literal["mse", "mae"] = "mse",
+    return_cost: bool = False,
+):
     """Find cost-minimizing permutation
 
     Parameters
@@ -46,7 +52,7 @@ def permutate(y1, y2, cost_func: Callable | Literal["mse", "mae"] = "mse", retur
         (num_samples, num_classes_2) or (batch_size, num_samples, num_classes_2)
     cost_func : callable or {"mse", "mae"}, optional
         Can be either "mse" (mean squared error) or "mae" (mean absolute error) or a callable.
-        When callable, takes two (num_samples, num_classes) sequences 
+        When callable, takes two (num_samples, num_classes) sequences
         and returns (num_classes, ) pairwise cost.
         Defaults to computing mean squared error ("mse").
     return_cost : bool, optional
@@ -102,7 +108,7 @@ def permutate_torch(
     y2: torch.Tensor,
     cost_func: Callable | Literal["mse", "mae"] = "mse",
     return_cost: bool = False,
-) -> Tuple[torch.Tensor, List[Tuple[int]]]:
+) -> tuple[torch.Tensor, list[tuple[int]]]:
 
     batch_size, num_samples, num_classes_1 = y1.shape
 
@@ -179,7 +185,7 @@ def permutate_numpy(
     y2: np.ndarray,
     cost_func: Callable | Literal["mse", "mae"] = "mse",
     return_cost: bool = False,
-) -> Tuple[np.ndarray, List[Tuple[int]]]:
+) -> tuple[np.ndarray, list[tuple[int]]]:
 
     output = permutate(
         torch.from_numpy(y1),
@@ -233,7 +239,6 @@ def build_permutation_graph(
 
     for C, (chunk, segmentation) in enumerate(segmentations):
         for c in range(max(0, C - lookahead[0]), min(num_chunks, C + lookahead[1] + 1)):
-
             if c == C:
                 continue
 
@@ -257,7 +262,6 @@ def build_permutation_graph(
             )
 
             for this, that in enumerate(permutation):
-
                 this_is_active = np.any(this_segmentations[:, this] > onset)
                 that_is_active = np.any(that_segmentations[:, that] > onset)
 

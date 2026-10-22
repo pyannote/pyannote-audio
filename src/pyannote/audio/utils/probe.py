@@ -21,13 +21,13 @@
 # SOFTWARE.
 
 
+from collections.abc import Callable
 from functools import partial
-from typing import Callable, Dict, Set, Text
 
-import torch.nn as nn
+from torch import nn
 
 
-def probe(trunk: nn.Module, branches: Dict[Text, Text]) -> Callable:
+def probe(trunk: nn.Module, branches: dict[str, str]) -> Callable:
     """Add probing branches to a trunk module
 
     Parameters
@@ -99,7 +99,7 @@ def probe(trunk: nn.Module, branches: Dict[Text, Text]) -> Callable:
     trunk.__probe_handles = []
 
     def __probe_init(module, input):
-        trunk.__probe = dict()
+        trunk.__probe = {}
 
     handle = trunk.register_forward_pre_hook(__probe_init)
     trunk.__probe_handles.append(handle)
@@ -110,7 +110,7 @@ def probe(trunk: nn.Module, branches: Dict[Text, Text]) -> Callable:
     if not isinstance(branches, dict):
         branches = {b: b for b in branches}
 
-    sehcnarb: Dict[Text, Set] = dict()
+    sehcnarb: dict[str, set] = {}
     for branch_name, layer_name in branches.items():
         if layer_name not in sehcnarb:
             sehcnarb[layer_name] = set()

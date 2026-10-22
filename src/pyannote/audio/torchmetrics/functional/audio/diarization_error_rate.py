@@ -22,7 +22,6 @@
 
 
 from numbers import Number
-from typing import Optional, Tuple, Union
 
 import torch
 import torch.nn.functional as F
@@ -33,9 +32,9 @@ from pyannote.audio.utils.permutation import permutate
 def _der_update(
     preds: torch.Tensor,
     target: torch.Tensor,
-    threshold: Union[torch.Tensor, float] = 0.5,
+    threshold: torch.Tensor | float = 0.5,
     reduce: str = "batch",
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Compute components of diarization error rate
 
     Parameters
@@ -190,7 +189,7 @@ def _der_compute(
 def diarization_error_rate(
     preds: torch.Tensor,
     target: torch.Tensor,
-    threshold: Union[torch.Tensor, float] = 0.5,
+    threshold: torch.Tensor | float = 0.5,
     reduce: str = "batch",
     return_components: bool = False,
 ) -> torch.Tensor:
@@ -235,7 +234,7 @@ def diarization_error_rate(
 def optimal_diarization_error_rate(
     preds: torch.Tensor,
     target: torch.Tensor,
-    threshold: Optional[torch.Tensor] = None,
+    threshold: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Compute optimal diarization error rate
 

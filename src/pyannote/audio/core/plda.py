@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
+
 from pyannote.audio.utils.hf_hub import download_from_hf_hub
 from pyannote.audio.utils.vbx import vbx_setup
 

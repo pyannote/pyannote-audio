@@ -24,6 +24,7 @@ var/
 *.egg-info/
 .installed.cfg
 *.egg
+uv.lock
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -89,3 +90,7 @@ pyannote/audio/version.py
 
 # vim
 .vim
+
+.venv/
+.ruff_cache/
+.pytest_cache/

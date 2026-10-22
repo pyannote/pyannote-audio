@@ -1,6 +1,4 @@
-<p align="center">
-  <a href="https://pyannote.ai/" target="blank"><img src="https://avatars.githubusercontent.com/u/162698670" width="64" /></a>
-</p>
+![pyannote.audio social preview](https://raw.githubusercontent.com/pyannote/pyannote-audio/main/.github/social-preview.png)
 
 <div align="center">
     <h1><code>pyannote</code> speaker diarization toolkit</h1>
@@ -35,8 +33,8 @@ from pyannote.audio.pipelines.utils.hook import ProgressHook
 
 # Community-1 open-source speaker diarization pipeline
 pipeline = Pipeline.from_pretrained(
-    "pyannote/speaker-diarization-community-1",
-    token="HUGGINGFACE_ACCESS_TOKEN")
+    "pyannote/speaker-diarization-community-1", token="HUGGINGFACE_ACCESS_TOKEN"
+)
 
 # send pipeline to GPU (when available)
 pipeline.to(torch.device("cuda"))
@@ -52,7 +50,6 @@ for turn, speaker in output.speaker_diarization:
 # start=1.8s stop=3.9s speaker_1
 # start=4.2s stop=5.7s speaker_0
 # ...
-
 ```
 
 ## `precision-2` premium speaker diarization
@@ -65,7 +62,8 @@ from pyannote.audio import Pipeline
 
 # Precision-2 premium speaker diarization service
 pipeline = Pipeline.from_pretrained(
-    "pyannote/speaker-diarization-precision-2", token="PYANNOTEAI_API_KEY")
+    "pyannote/speaker-diarization-precision-2", token="PYANNOTEAI_API_KEY"
+)
 
 output = pipeline("audio.wav")  # runs on pyannoteAI servers
 
@@ -73,7 +71,7 @@ output = pipeline("audio.wav")  # runs on pyannoteAI servers
 for turn, speaker in output.speaker_diarization:
     print(f"start={turn.start:.1f}s stop={turn.end:.1f}s {speaker}")
 # start=0.2s stop=1.6s SPEAKER_00
-# start=1.8s stop=4.0s SPEAKER_01 
+# start=1.8s stop=4.0s SPEAKER_01
 # start=4.2s stop=5.6s SPEAKER_00
 # ...
 ```
@@ -182,7 +180,7 @@ set_telemetry_metrics(False, save_choice_as_default=True)
 
 ## Documentation
 
-- [Changelog](CHANGELOG.md)
+- [Changelog](https://github.com/pyannote/pyannote-audio/blob/main/CHANGELOG.md)
 - Videos
   - [Speaker diarization, a ~~love~~ loss story](https://www.youtube.com/watch?v=CtjDotATEI0&list=PLSeS0sl8xpTwz7h5iJSniiF89iUdZXNJ2&index=13) / JSALT 2025 plenary talk / 60 min 
   - [Introduction to speaker diarization](https://umotion.univ-lemans.fr/video/9513-speech-segmentation-and-speaker-diarization/) / JSALT 2023 summer school / 90 min
@@ -233,12 +231,23 @@ If you use `pyannote.audio` please use the following citations:
 The commands below will setup pre-commit hooks and packages needed for developing the `pyannote.audio` library.
 
 ```bash
-pip install -e .[dev,testing]
-pre-commit install
+uv sync --extra dev --extra test --extra cli
+uvx pre-commit install
 ```
 
 ## Test
 
 ```bash
-pytest
+uv run --extra test --extra cli pytest -m "not network and not notebook"
 ```
+
+Tests marked `network` download a public model from Hugging Face:
+
+```bash
+uv run --extra test --extra cli pytest -m network
+```
+
+Historical notebooks are opt-in (`pytest -m notebook`) and may require additional
+models, datasets, credentials, and updates for the current API.
+
+Run lint and formatting checks with `uvx ruff check .` and `uvx ruff format --check .`.

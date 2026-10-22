@@ -31,9 +31,9 @@ from .embedding.arcface import SupervisedRepresentationLearningWithArcFace  # is
 SpeakerEmbedding = SupervisedRepresentationLearningWithArcFace
 
 __all__ = [
-    "SpeakerDiarization",
-    "VoiceActivityDetection",
     "MultiLabelSegmentation",
-    "SpeakerEmbedding",
     "PixIT",
+    "SpeakerDiarization",
+    "SpeakerEmbedding",
+    "VoiceActivityDetection",
 ]
