@@ -33,7 +33,10 @@ jobs:
           name: python-package-distributions
           path: dist/
       - name: Install FFmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+        # TorchCodec needs FFmpeg's shared libraries, but not recommended extras.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
       - name: Install the built wheel with test dependencies
         run: |
           uv venv --python "${{ steps.python.outputs.python-path }}"
@@ -62,7 +65,10 @@ jobs:
           name: python-package-distributions
           path: dist/
       - name: Install FFmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+        # TorchCodec needs FFmpeg's shared libraries, but not recommended extras.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
       - name: Install the built wheel with test dependencies
         run: |
           uv venv --python "${{ steps.python.outputs.python-path }}"
@@ -92,7 +98,10 @@ jobs:
           name: python-package-distributions
           path: dist/
       - name: Install FFmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+        # TorchCodec needs FFmpeg's shared libraries, but not recommended extras.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
       - name: Install the built wheel with test dependencies
         run: |
           uv venv --python "${{ steps.python.outputs.python-path }}"
