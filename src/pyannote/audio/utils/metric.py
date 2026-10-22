@@ -66,7 +66,10 @@ def discrete_diarization_error_rate(reference: np.ndarray, hypothesis: np.ndarra
     (hypothesis,), _ = permutate(reference[np.newaxis], hypothesis)
 
     # total speech duration (in number of frames)
-    total = 1.0 * np.sum(reference)
+    # NOTE: reference and hypothesis are float16, whose maximum is 65504. Frame
+    # counts pass that after about 18 minutes of one speaker, so the reduction
+    # has to accumulate in float64 or it saturates to inf and the rate is 0.
+    total = np.sum(reference, dtype=np.float64)
 
     # false alarm and missed detection (in number of frames)
     detection_error = np.sum(hypothesis, axis=1) - np.sum(reference, axis=1)
@@ -76,9 +79,9 @@ def discrete_diarization_error_rate(reference: np.ndarray, hypothesis: np.ndarra
     # speaker confusion (in number of frames)
     confusion = np.sum((hypothesis != reference) * hypothesis, axis=1) - false_alarm
 
-    false_alarm = np.sum(false_alarm)
-    missed_detection = np.sum(missed_detection)
-    confusion = np.sum(confusion)
+    false_alarm = np.sum(false_alarm, dtype=np.float64)
+    missed_detection = np.sum(missed_detection, dtype=np.float64)
+    confusion = np.sum(confusion, dtype=np.float64)
 
     der = (false_alarm + missed_detection + confusion) / total
 
