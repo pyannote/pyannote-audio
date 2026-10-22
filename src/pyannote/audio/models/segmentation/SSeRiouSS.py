@@ -21,13 +21,13 @@
 # SOFTWARE.
 
 from functools import lru_cache
-from typing import Optional, Union
+from typing import ClassVar
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 import torchaudio
 from pyannote.core.utils.generators import pairwise
+from torch import nn
 
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
@@ -71,25 +71,25 @@ class SSeRiouSS(Model):
 
     WAV2VEC_DEFAULTS = "WAVLM_BASE"
 
-    LSTM_DEFAULTS = {
+    LSTM_DEFAULTS: ClassVar[dict] = {
         "hidden_size": 128,
         "num_layers": 4,
         "bidirectional": True,
         "monolithic": True,
         "dropout": 0.0,
     }
-    LINEAR_DEFAULTS = {"hidden_size": 128, "num_layers": 2}
+    LINEAR_DEFAULTS: ClassVar[dict] = {"hidden_size": 128, "num_layers": 2}
 
     def __init__(
         self,
-        wav2vec: Union[dict, str] = None,
+        wav2vec: dict | str | None = None,
         wav2vec_frozen: bool = False,
         wav2vec_layer: int = -1,
-        lstm: Optional[dict] = None,
-        linear: Optional[dict] = None,
+        lstm: dict | None = None,
+        linear: dict | None = None,
         sample_rate: int = 16000,
         num_channels: int = 1,
-        task: Optional[Task] = None,
+        task: Task | None = None,
     ):
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
 

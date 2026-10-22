@@ -80,7 +80,7 @@ def test_permutate_less_speakers():
             if j is not None:
                 y1[p, :, i] = y2[:, j]
 
-    permutated_y2, permutations = permutate(y1, y2)
+    _permutated_y2, permutations = permutate(y1, y2)
 
     assert permutations == actual_permutations
 

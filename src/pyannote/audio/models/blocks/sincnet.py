@@ -26,9 +26,9 @@
 from functools import lru_cache
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from asteroid_filterbanks import Encoder, ParamSincFB
+from torch import nn
 
 from pyannote.audio.utils.receptive_field import (
     multi_conv_num_frames,

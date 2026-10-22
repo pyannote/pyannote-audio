@@ -27,12 +27,10 @@ import warnings
 import torch
 
 
-class ReproducibilityError(Exception):
-    ...
+class ReproducibilityError(Exception): ...
 
 
-class ReproducibilityWarning(UserWarning):
-    ...
+class ReproducibilityWarning(UserWarning): ...
 
 
 def raise_reproducibility(device: torch.device):

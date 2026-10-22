@@ -24,15 +24,16 @@
 
 from pathlib import Path
 
-from pyannote.audio.core.io import Audio, AudioFile
 from pyannote.core import Annotation, Segment, Timeline
 from pyannote.database.util import load_rttm
+
+from pyannote.audio.core.io import Audio, AudioFile
 
 
 def load_stm(file_stm: str | Path) -> dict[str, list[dict]]:
     session_ids = {}
 
-    with open(file_stm, "r") as stm:
+    with open(file_stm) as stm:
         for line in stm:
             infos = line.strip().split()
             session_id, _, spk, start, end, *words = infos
@@ -57,8 +58,8 @@ def _sample(uri: str = "sample") -> AudioFile:
 
     sample_rttm = Path(__file__).parent / f"{uri}.rttm"
     diarization: Annotation = load_rttm(sample_rttm)[uri]
-    duration = audio.get_duration(sample_wav)
 
+    duration = waveform.shape[1] / sample_rate
     annotated: Timeline = Timeline([Segment(0.0, duration)], uri=uri)
 
     sample_stm = Path(__file__).parent / f"{uri}.stm"

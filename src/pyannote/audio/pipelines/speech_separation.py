@@ -28,12 +28,17 @@ import itertools
 import math
 import textwrap
 import warnings
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional, Text, Tuple, Union
 
 import numpy as np
 import torch
 from einops import rearrange
+from pyannote.core import Annotation, SlidingWindow, SlidingWindowFeature
+from pyannote.metrics.diarization import GreedyDiarizationErrorRate
+from pyannote.pipeline.parameter import Categorical, ParamDict, Uniform
+from scipy.ndimage import binary_dilation
+
 from pyannote.audio import Audio, Inference, Model, Pipeline
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.pipelines.clustering import Clustering
@@ -45,10 +50,6 @@ from pyannote.audio.pipelines.utils import (
 )
 from pyannote.audio.pipelines.utils.diarization import set_num_speakers
 from pyannote.audio.utils.signal import binarize
-from pyannote.core import Annotation, SlidingWindow, SlidingWindowFeature
-from pyannote.metrics.diarization import GreedyDiarizationErrorRate
-from pyannote.pipeline.parameter import Categorical, ParamDict, Uniform
-from scipy.ndimage import binary_dilation
 
 
 def batchify(iterable, batch_size: int = 32, fillvalue=None):
@@ -133,9 +134,9 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
         clustering: str = "AgglomerativeClustering",
         embedding_batch_size: int = 1,
         segmentation_batch_size: int = 1,
-        der_variant: Optional[dict] = None,
-        token: Union[Text, None] = None,
-        cache_dir: Union[Path, Text, None] = None,
+        der_variant: dict | None = None,
+        token: str | None = None,
+        cache_dir: Path | str | None = None,
     ):
         super().__init__()
 
@@ -218,7 +219,7 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
 
     def get_segmentations(
         self, file, hook=None
-    ) -> Tuple[SlidingWindowFeature, SlidingWindowFeature]:
+    ) -> tuple[SlidingWindowFeature, SlidingWindowFeature]:
         """Apply segmentation model
 
         Parameter
@@ -251,7 +252,7 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
         file,
         binary_segmentations: SlidingWindowFeature,
         exclude_overlap: bool = False,
-        hook: Optional[Callable] = None,
+        hook: Callable | None = None,
     ):
         """Extract embeddings for each (chunk, speaker) pair
 
@@ -279,7 +280,7 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
             # we only re-use embeddings if they were extracted based on the same value of the
             # "segmentation.threshold" hyperparameter or if the segmentation model relies on
             # `powerset` mode
-            cache = file.get("training_cache/embeddings", dict())
+            cache = file.get("training_cache/embeddings", {})
             if ("embeddings" in cache) and (
                 self._segmentation.model.specifications[0].powerset
                 or (cache["segmentation.threshold"] == self.segmentation.threshold)
@@ -419,7 +420,7 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
             Discrete (0s and 1s) diarization.
         """
 
-        num_chunks, num_frames, local_num_speakers = segmentations.data.shape
+        num_chunks, num_frames, _local_num_speakers = segmentations.data.shape
 
         num_clusters = np.max(hard_clusters) + 1
         clustered_segmentations = np.nan * np.zeros(
@@ -448,11 +449,11 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
     def apply(
         self,
         file: AudioFile,
-        num_speakers: Optional[int] = None,
-        min_speakers: Optional[int] = None,
-        max_speakers: Optional[int] = None,
+        num_speakers: int | None = None,
+        min_speakers: int | None = None,
+        max_speakers: int | None = None,
         return_embeddings: bool = False,
-        hook: Optional[Callable] = None,
+        hook: Callable | None = None,
     ) -> Annotation:
         """Apply speaker diarization
 
@@ -600,7 +601,7 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
         active_speakers = np.sum(discrete_diarization, axis=0) > 0
         # shape: (num_speakers, )
         discrete_diarization.data = discrete_diarization.data[:, active_speakers]
-        num_frames, num_speakers = discrete_diarization.data.shape
+        _num_frames, num_speakers = discrete_diarization.data.shape
         hook("discrete_diarization", discrete_diarization)
 
         clustered_separations = self.reconstruct(separations, hard_clusters, count)
@@ -670,7 +671,7 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
         # at this point, `diarization` speaker labels are integers
         # from 0 to `num_speakers - 1`, aligned with `centroids` rows.
 
-        if "annotation" in file and file["annotation"]:
+        if file.get("annotation"):
             # when reference is available, use it to map hypothesized speakers
             # to reference speakers (this makes later error analysis easier
             # but does not modify the actual output of the diarization pipeline)

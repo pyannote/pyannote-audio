@@ -22,17 +22,22 @@
 # SOFTWARE.
 
 from __future__ import annotations
+
 import os
 import warnings
 from collections import OrderedDict
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator, Mapping
 from functools import partial
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Any
 
 import torch
-import torch.nn as nn
 import yaml
+from pyannote.core.utils.helper import get_class_by_name
+from pyannote.database import FileFinder, ProtocolFile
+from pyannote.pipeline import Pipeline as _Pipeline
+from torch import nn
+
 from pyannote.audio import Audio
 from pyannote.audio.core.inference import BaseInference
 from pyannote.audio.core.io import AudioFile
@@ -41,14 +46,12 @@ from pyannote.audio.telemetry import track_pipeline_apply, track_pipeline_init
 from pyannote.audio.utils.dependencies import check_dependencies
 from pyannote.audio.utils.hf_hub import AssetFileName, download_from_hf_hub
 from pyannote.audio.utils.reproducibility import fix_reproducibility
-from pyannote.core.utils.helper import get_class_by_name
-from pyannote.database import FileFinder, ProtocolFile
-from pyannote.pipeline import Pipeline as _Pipeline
 
 
 def expand_subfolders(
     config,
     model_id: str | None = None,
+    parent_subfolder: str | None = None,
     parent_revision: str | None = None,
     cache_dir: Path | str | None = None,
     token: str | None = None,
@@ -60,11 +63,17 @@ def expand_subfolders(
                  "subfolder": {subfolder},
                  "token": token}
 
+    Token and cache directory options are included only when not None, so
+    loaders can inherit these options from the calling pipeline.
+
     Parameters
     ----------
     config : dict
     model_id : str, optional
         Model identifier when loading from the huggingface.co model hub.
+    parent_subfolder : str, optional
+        Subfolder from which the pipeline config was loaded. When set, child
+        "$model/{child}" paths are resolved as "{parent_subfolder}/{child}".
     parent_revision : str, optional
         Revision when loading from the huggingface.co model hub.
     token : str or bool, optional
@@ -85,17 +94,25 @@ def expand_subfolders(
                 else:
                     revision = parent_revision
 
+                if parent_subfolder:
+                    subfolder = (
+                        f"{parent_subfolder.rstrip('/')}/{subfolder.lstrip('/')}"
+                    )
+
                 config[key] = {
                     "checkpoint": model_id,
                     "revision": revision,
                     "subfolder": subfolder,
-                    "token": token,
-                    "cache_dir": cache_dir,
                 }
+                if token is not None:
+                    config[key]["token"] = token
+                if cache_dir is not None:
+                    config[key]["cache_dir"] = cache_dir
             else:
                 expand_subfolders(
                     value,
                     model_id,
+                    parent_subfolder=parent_subfolder,
                     parent_revision=parent_revision,
                     token=token,
                     cache_dir=cache_dir,
@@ -113,18 +130,26 @@ def expand_subfolders(
                 else:
                     revision = parent_revision
 
+                if parent_subfolder:
+                    subfolder = (
+                        f"{parent_subfolder.rstrip('/')}/{subfolder.lstrip('/')}"
+                    )
+
                 config[idx] = {
                     "checkpoint": model_id,
                     "revision": revision,
                     "subfolder": subfolder,
-                    "token": token,
-                    "cache_dir": cache_dir,
                 }
+                if token is not None:
+                    config[idx]["token"] = token
+                if cache_dir is not None:
+                    config[idx]["cache_dir"] = cache_dir
 
             else:
                 expand_subfolders(
                     value,
                     model_id,
+                    parent_subfolder=parent_subfolder,
                     parent_revision=parent_revision,
                     token=token,
                     cache_dir=cache_dir,
@@ -138,9 +163,10 @@ class Pipeline(_Pipeline):
         checkpoint: str | Path | dict,
         revision: str | None = None,
         hparams_file: str | Path | None = None,
+        subfolder: str | None = None,
         token: str | bool | None = None,
         cache_dir: Path | str | None = None,
-    ) -> Optional["Pipeline"]:
+    ) -> Pipeline | None:
         """Load pretrained pipeline
 
         Parameters
@@ -154,6 +180,8 @@ class Pipeline(_Pipeline):
         revision : str, optional
             Revision when loading from the huggingface.co model hub.
         hparams_file: Path or str, optional
+        subfolder : str, optional
+            Folder inside the hf.co model repo (or local directory).
         token : str or bool, optional
             Token to be used for the download.
         cache_dir: Path or str, optional
@@ -165,23 +193,34 @@ class Pipeline(_Pipeline):
         if isinstance(checkpoint, dict):
             if revision is not None:
                 raise ValueError("Revisions cannot be used with local checkpoints.")
+            if subfolder is not None:
+                raise ValueError(
+                    "Subfolder cannot be used when checkpoint is a config dictionary. "
+                )
             model_id = Path.cwd()
             config = checkpoint
             otel_origin: str = "local"
 
         # if checkpoint is a directory, look for the pipeline checkpoint
-        # inside this directory
+        # inside this directory (or inside a subfolder if specified)
         elif os.path.isdir(checkpoint):
             if revision is not None:
                 raise ValueError("Revisions cannot be used with local checkpoints.")
             model_id = Path(checkpoint)
-            config_yml = model_id / AssetFileName.Pipeline.value
+            if subfolder:
+                config_yml = model_id / subfolder / AssetFileName.Pipeline.value
+            else:
+                config_yml = model_id / AssetFileName.Pipeline.value
             otel_origin: str = "local"
 
         # if checkpoint is a file, assume it is the pipeline checkpoint
         elif os.path.isfile(checkpoint):
             if revision is not None:
                 raise ValueError("Revisions cannot be used with local checkpoints.")
+            if subfolder is not None:
+                raise ValueError(
+                    "Subfolder cannot be used when checkpoint is a path to a config.yaml file. "
+                )
             model_id = Path(checkpoint).parent
             config_yml = checkpoint
             otel_origin: str = "local"
@@ -198,6 +237,7 @@ class Pipeline(_Pipeline):
             config_yml = download_from_hf_hub(
                 model_id,
                 AssetFileName.Pipeline,
+                subfolder=subfolder,
                 revision=revision,
                 cache_dir=cache_dir,
                 token=token,
@@ -212,13 +252,14 @@ class Pipeline(_Pipeline):
             )
 
         if not isinstance(checkpoint, dict):
-            with open(config_yml, "r") as fp:
+            with open(config_yml) as fp:
                 config = yaml.load(fp, Loader=yaml.SafeLoader)
 
         # expand $model/{subfolder}-like entries in config
         expand_subfolders(
             config,
             model_id,
+            parent_subfolder=subfolder,
             parent_revision=revision,
             token=token,
             cache_dir=cache_dir,
@@ -231,7 +272,7 @@ class Pipeline(_Pipeline):
             del config["version"]
 
         # check that dependencies are available (in their required version)
-        dependencies: dict[str, str] = config.get("dependencies", dict())
+        dependencies: dict[str, str] = config.get("dependencies", {})
         check_dependencies(dependencies, "Pipeline")
 
         # initialize pipeline
@@ -302,8 +343,8 @@ class Pipeline(_Pipeline):
 
     def __init__(self):
         super().__init__()
-        self._models: Dict[str, Model] = OrderedDict()
-        self._inferences: Dict[str, BaseInference] = OrderedDict()
+        self._models: dict[str, Model] = OrderedDict()
+        self._inferences: dict[str, BaseInference] = OrderedDict()
 
     def __getattr__(self, name):
         """(Advanced) attribute getter
@@ -386,7 +427,7 @@ class Pipeline(_Pipeline):
     def default_parameters(self):
         raise NotImplementedError()
 
-    def classes(self) -> List | Iterator:
+    def classes(self) -> list | Iterator:
         """Classes returned by the pipeline
 
         Returns
@@ -407,22 +448,102 @@ class Pipeline(_Pipeline):
         """
         raise NotImplementedError()
 
-    def __call__(self, file: AudioFile, preload: bool = False, **kwargs):
-        """Validate file, (optionally) load it in memory, then process it
+    def prepare_one(self, file: AudioFile, preload: bool = False) -> Mapping:
+        """Prepare one file for being processed by the pipeline
+
+        1. Validate file
+        2. Add pipeline preprocessors if any
+        3. Preload in memory if requested
 
         Parameters
         ----------
         file : AudioFile
             File to process
-        preload : bool, optional
-            Whether to preload waveform before applying the pipeline.
-        kwargs : keyword arguments, optional
-            Additional keyword arguments passed to `self.apply(...)`
+        preload : bool
+            Whether to preload in memory
 
         Returns
         -------
+        file : Mapping
+            Prepared file
+        """
+
+        file = Audio.validate_file(file)
+
+        # check if the instance has preprocessors and wrap the file if so
+        if hasattr(self, "preprocessors"):
+            file = ProtocolFile(file, lazy=self.preprocessors)
+
+        # pre-load the audio in memory if requested
+        if preload:
+            # raise error if `waveform`` is already in memory (or will be via a preprocessor)
+            if "waveform" in getattr(self, "preprocessors", {}) or "waveform" in file:
+                raise ValueError(
+                    "Cannot preload audio: `waveform` key is already available or will be via a preprocessor."
+                )
+
+            # load waveform in memory (and keep track of its original sample rate)
+            file["waveform"], file["sample_rate"] = Audio()(file)
+
+            # the above line already took care of channel selection,
+            # therefore we remove the `channel` key from the file
+            file.pop("channel", None)
+
+        return file
+
+    def _apply_batch(
+        self,
+        files: list,
+        **kwargs,
+    ) -> Iterator[tuple[Any, Any]]:
+        """Process a list of prepared files, yielding (file, prediction) pairs"""
+
+        # if pipeline natively supports batch processing, use it
+        if hasattr(self, "apply_batch"):
+            # TODO: warn user that pipeline_kwargs might not be taken into account.
+            for f, prediction in self.apply_batch(files, **kwargs):
+                track_pipeline_apply(self, f, **kwargs)
+                yield f, prediction
+
+        # otherwise process files sequentially
+        else:
+            for f in files:
+                prediction = self.apply(f, **f.get("pipeline_kwargs", {}), **kwargs)
+                track_pipeline_apply(self, f, **kwargs)
+                yield f, prediction
+
+    def __call__(
+        self,
+        file: AudioFile | list[AudioFile],
+        preload: bool = False,
+        **kwargs,
+    ) -> Any | Iterator[tuple[Any, Any]]:
+        """Validate file(s), (optionally) load it/them in memory, then process it/them
+
+        Parameters
+        ----------
+        file  : AudioFile or list[AudioFile]
+            File to process, or a list of AudioFiles for batch processing.
+            All files in the list must have distinct URIs.
+            Files are processed in sequence unless the pipeline defines an
+            `apply_batch` method, which is called instead.
+        preload : bool, optional
+            Whether to preload waveform before applying the pipeline.
+            Ignored for batch input when `apply_batch` is available.
+        kwargs : keyword arguments, optional
+            Additional keyword arguments passed to `self.apply(...)` or
+            `self.apply_batch(...)`
+
+        Returns (for single file)
+        -------------------------
         output : Any
-            Whatever `self.apply(...)` returns
+            Whatever `self.apply(...)` returns for a single file.
+
+        Returns (for list of files)
+        ---------------------------
+        predictions : Iterator[tuple[AudioFile, Any]]
+            Iterator of (file, prediction) pairs.
+
         """
         fix_reproducibility(getattr(self, "device", torch.device("cpu")))
 
@@ -447,35 +568,30 @@ class Pipeline(_Pipeline):
                 f"The pipeline has been automatically instantiated with {default_parameters}."
             )
 
-        file = Audio.validate_file(file)
+        if isinstance(file, list):
+            # prepare every file
+            files = [self.prepare_one(f, preload=preload) for f in file]
 
-        # check if the instance has preprocessors and wrap the file if so
-        if hasattr(self, "preprocessors"):
-            file = ProtocolFile(file, lazy=self.preprocessors)
-
-        # pre-load the audio in memory if requested
-        if preload:
-            # raise error if `waveform`` is already in memory (or will be via a preprocessor)
-            if (
-                "waveform" in getattr(self, "preprocessors", dict())
-                or "waveform" in file
-            ):
+            # check for duplicate uris (and complain if any)
+            uris = [f["uri"] for f in files]
+            if len(uris) != len(set(uris)):
+                seen: set[str] = set()
+                duplicates = [u for u in uris if u in seen or seen.add(u)]
                 raise ValueError(
-                    "Cannot preload audio: `waveform` key is already available or will be via a preprocessor."
+                    f"All files in a batch must have distinct URIs. "
+                    f"Duplicate URIs: {duplicates}"
                 )
 
-            # load waveform in memory (and keep track of its original sample rate)
-            file["waveform"], file["sample_rate"] = Audio()(file)
+            return self._apply_batch(files, **kwargs)
 
-            # the above line already took care of channel selection,
-            # therefore we remove the `channel` key from the file
-            file.pop("channel", None)
+        file = self.prepare_one(file, preload=preload)
+        prediction = self.apply(file, **file.get("pipeline_kwargs", {}), **kwargs)
 
         # send file duration to telemetry as well as
         # requested number of speakers in case of diarization
         track_pipeline_apply(self, file, **kwargs)
 
-        return self.apply(file, **kwargs)
+        return prediction
 
     def to(self, device: torch.device) -> Pipeline:
         """Send pipeline to `device`"""
@@ -485,14 +601,14 @@ class Pipeline(_Pipeline):
                 f"`device` must be an instance of `torch.device`, got `{type(device).__name__}`"
             )
 
-        for _, pipeline in self._pipelines.items():
+        for pipeline in self._pipelines.values():
             if hasattr(pipeline, "to"):
                 _ = pipeline.to(device)
 
-        for _, model in self._models.items():
+        for model in self._models.values():
             _ = model.to(device)
 
-        for _, inference in self._inferences.items():
+        for inference in self._inferences.values():
             _ = inference.to(device)
 
         self.device = device
@@ -507,5 +623,7 @@ class Pipeline(_Pipeline):
             return self.to(torch.device("cuda", device))
         else:
             if device.type != "cuda":
-                raise ValueError("Expected CUDA device. Use `Pipeline.to(device)` for other devices.")
+                raise ValueError(
+                    "Expected CUDA device. Use `Pipeline.to(device)` for other devices."
+                )
             return self.to(device)

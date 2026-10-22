@@ -27,11 +27,10 @@
 
 from functools import cached_property
 from itertools import combinations, permutations
-from typing import Dict, Tuple
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+from torch import nn
 
 
 class Powerset(nn.Module):
@@ -53,7 +52,6 @@ class Powerset(nn.Module):
         self.register_buffer("mapping", self.build_mapping(), persistent=False)
         self.register_buffer("cardinality", self.build_cardinality(), persistent=False)
 
-
     @cached_property
     def powerset_classes(self) -> list[set[int]]:
         """List of powerset classes
@@ -67,7 +65,7 @@ class Powerset(nn.Module):
             List of powerset classes, each represented as a set of regular class indices.
         """
         powerset_classes = []
-        for set_size in range(0, self.max_set_size + 1):
+        for set_size in range(self.max_set_size + 1):
             for current_set in combinations(range(self.num_classes), set_size):
                 powerset_classes.append(set(current_set))
         return powerset_classes
@@ -101,7 +99,7 @@ class Powerset(nn.Module):
         """
         mapping = torch.zeros(self.num_powerset_classes, self.num_classes)
         powerset_k = 0
-        for set_size in range(0, self.max_set_size + 1):
+        for set_size in range(self.max_set_size + 1):
             for current_set in combinations(range(self.num_classes), set_size):
                 mapping[powerset_k, current_set] = 1
                 powerset_k += 1
@@ -168,8 +166,8 @@ class Powerset(nn.Module):
         )
 
     def _permutation_powerset(
-        self, multilabel_permutation: Tuple[int, ...]
-    ) -> Tuple[int, ...]:
+        self, multilabel_permutation: tuple[int, ...]
+    ) -> tuple[int, ...]:
         """Helper function for `permutation_mapping` property
 
         Takes a (num_classes,)-shaped permutation in multilabel space and returns
@@ -213,7 +211,7 @@ class Powerset(nn.Module):
         return tuple(powerset_permutation.tolist())
 
     @cached_property
-    def permutation_mapping(self) -> Dict[Tuple[int, ...], Tuple[int, ...]]:
+    def permutation_mapping(self) -> dict[tuple[int, ...], tuple[int, ...]]:
         """Mapping between multilabel and powerset permutations
 
         Example
@@ -234,8 +232,8 @@ class Powerset(nn.Module):
         for multilabel_permutation in permutations(
             range(self.num_classes), self.num_classes
         ):
-            permutation_mapping[
-                tuple(multilabel_permutation)
-            ] = self._permutation_powerset(multilabel_permutation)
+            permutation_mapping[tuple(multilabel_permutation)] = (
+                self._permutation_powerset(multilabel_permutation)
+            )
 
         return permutation_mapping

@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-# encoding: utf-8
 #
 # The MIT License (MIT)
 #
@@ -32,7 +30,6 @@
 
 from functools import singledispatch
 from itertools import zip_longest
-from typing import Optional, Union
 
 import einops
 import numpy as np
@@ -45,8 +42,8 @@ from pyannote.core.utils.generators import pairwise, string_generator
 def binarize(
     scores,
     onset: float = 0.5,
-    offset: Optional[float] = None,
-    initial_state: Optional[Union[bool, np.ndarray]] = None,
+    offset: float | None = None,
+    initial_state: bool | np.ndarray | None = None,
 ):
     """(Batch) hysteresis thresholding
 
@@ -79,8 +76,8 @@ def binarize(
 def binarize_ndarray(
     scores: np.ndarray,
     onset: float = 0.5,
-    offset: Optional[float] = None,
-    initial_state: Optional[Union[bool, np.ndarray]] = None,
+    offset: float | None = None,
+    initial_state: bool | np.ndarray | None = None,
 ):
     """(Batch) hysteresis thresholding
 
@@ -145,8 +142,8 @@ def binarize_ndarray(
 def binarize_swf(
     scores: SlidingWindowFeature,
     onset: float = 0.5,
-    offset: Optional[float] = None,
-    initial_state: Optional[bool] = None,
+    offset: float | None = None,
+    initial_state: bool | None = None,
 ):
     """(Batch) hysteresis thresholding
 
@@ -233,7 +230,7 @@ class Binarize:
     def __init__(
         self,
         onset: float = 0.5,
-        offset: Optional[float] = None,
+        offset: float | None = None,
         min_duration_on: float = 0.0,
         min_duration_off: float = 0.0,
         pad_onset: float = 0.0,
@@ -265,7 +262,7 @@ class Binarize:
             Binarized scores.
         """
 
-        num_frames, num_classes = scores.data.shape
+        num_frames, _num_classes = scores.data.shape
         frames = scores.sliding_window
         timestamps = [frames[i].middle for i in range(num_frames)]
 
@@ -282,7 +279,6 @@ class Binarize:
             is_active = k_scores[0] > self.onset
 
             for t, y in zip(timestamps[1:], k_scores[1:]):
-
                 # currently active
                 if is_active:
                     # switching from active to inactive
@@ -334,7 +330,7 @@ class Peak:
         alpha: float = 0.5,
         min_duration: float = 1.0,
     ):
-        super(Peak, self).__init__()
+        super().__init__()
         self.alpha = alpha
         self.min_duration = min_duration
 

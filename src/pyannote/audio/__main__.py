@@ -1,10 +1,7 @@
-#!/usr/bin/env python
-# encoding: utf-8
-
 # MIT License
 #
 # Copyright (c) 2024-2025 CNRS
-# Copyright (c) 2025 pyannoteAI
+# Copyright (c) 2025- pyannoteAI
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -33,21 +30,21 @@ from datetime import datetime
 from enum import Enum
 from functools import partial
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Annotated
 
 import numpy as np
 import pyannote.database
 import torch
 import typer
 import yaml
-from pyannote.audio import Audio, Model, Pipeline
 from pyannote.core import Annotation
 from pyannote.metrics.base import BaseMetric
 from pyannote.metrics.diarization import DiarizationErrorRate, JaccardErrorRate
 from pyannote.pipeline.optimizer import Optimizer
 from rich.progress import track
 from scipy.optimize import minimize_scalar
-from typing_extensions import Annotated
+
+from pyannote.audio import Audio, Model, Pipeline
 
 
 class Subset(str, Enum):
@@ -97,6 +94,7 @@ def parse_device(device: Device) -> torch.device:
 
 
 def get_diarization(prediction) -> Annotation:
+
     # if result is an Annotation, assume it is speaker diarization
     if isinstance(prediction, Annotation):
         return prediction
@@ -139,7 +137,7 @@ def optimize(
         Device, typer.Option(help="Accelerator to use (CPU, CUDA, MPS)")
     ] = Device.AUTO,
     registry: Annotated[
-        Optional[Path],
+        Path | None,
         typer.Option(
             help="Loaded registry",
             exists=True,
@@ -149,7 +147,7 @@ def optimize(
         ),
     ] = None,
     max_iterations: Annotated[
-        Optional[int],
+        int | None,
         typer.Option(help="Number of iterations to run. Defaults to run indefinitely."),
     ] = None,
     num_speakers: Annotated[
@@ -173,7 +171,7 @@ def optimize(
 
     # load pipeline configuration file in memory. this will
     # be dumped later to disk with optimized parameters
-    with open(pipeline, "r") as fp:
+    with open(pipeline) as fp:
         original_config = yaml.load(fp, Loader=yaml.SafeLoader)
 
     # load pipeline
@@ -240,7 +238,6 @@ def optimize(
     global_best_loss: float = optimizer.best_loss
     local_best_loss: float = global_best_loss
 
-    #
     try:
         warm_start = optimized_pipeline.default_parameters()
     except NotImplementedError:
@@ -290,17 +287,17 @@ def download(
         ),
     ],
     revision: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             help="Pretrained pipeline revision.",
         ),
     ] = None,
     token: Annotated[
-        Optional[str],
+        str | None,
         typer.Argument(help="Huggingface token."),
     ] = None,
     cache: Annotated[
-        Optional[Path],
+        Path | None,
         typer.Option(
             help="Path to the folder where files downloaded from Huggingface are stored.",
             exists=True,
@@ -343,7 +340,7 @@ def apply(
         ),
     ],
     into: Annotated[
-        Optional[Path],
+        Path | None,
         typer.Option(
             help="Path to file or directory where results are saved.",
             exists=False,
@@ -354,17 +351,17 @@ def apply(
         ),
     ] = None,
     revision: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             help="Pretrained pipeline revision.",
         ),
     ] = None,
     token: Annotated[
-        Optional[str],
+        str | None,
         typer.Argument(help="Huggingface token."),
     ] = None,
     cache: Annotated[
-        Optional[Path],
+        Path | None,
         typer.Option(
             help="Path to the folder where files downloaded from Huggingface are stored.",
             exists=True,
@@ -424,6 +421,10 @@ def apply(
             serialized: dict = prediction.serialize()
             with open(current_json, "w") as j:
                 json.dump(serialized, j, indent=2)
+
+
+if TYPE_CHECKING:
+    from pandas import DataFrame
 
 
 class MinDurationOffOptimizer:
@@ -488,7 +489,7 @@ class MinDurationOffOptimizer:
         # assumes metric should be minimized
         # TODO: use -inf when/if metric should be maximized
         self._best_metric = float("inf")
-        self._reports: dict[float, "DataFrame"] = dict()
+        self._reports: dict[float, DataFrame] = {}
 
         # force test with no collar
         no_collar_metric = self._compute_metric(files, metric, 0.0)
@@ -540,17 +541,23 @@ def benchmark(
         ),
     ] = Subset.test,
     revision: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             help="Pretrained pipeline revision.",
         ),
     ] = None,
+    subfolder: Annotated[
+        str | None,
+        typer.Option(
+            help="Folder inside the hf.co model repo (or local directory) to load the pipeline from.",
+        ),
+    ] = None,
     token: Annotated[
-        Optional[str],
+        str | None,
         typer.Argument(help="Huggingface token."),
     ] = None,
     cache: Annotated[
-        Optional[Path],
+        Path | None,
         typer.Option(
             help="Path to the folder where files downloaded from Huggingface are stored.",
             exists=True,
@@ -564,7 +571,7 @@ def benchmark(
         Device, typer.Option(help="Accelerator to use (CPU, CUDA, MPS)")
     ] = Device.AUTO,
     registry: Annotated[
-        Optional[Path],
+        Path | None,
         typer.Option(
             help="Loaded registry",
             exists=True,
@@ -603,7 +610,11 @@ def benchmark(
 
     # load pretrained pipeline
     pretrained_pipeline = Pipeline.from_pretrained(
-        pipeline, revision=revision, token=token, cache_dir=cache, 
+        pipeline,
+        revision=revision,
+        subfolder=subfolder,
+        token=token,
+        cache_dir=cache,
     )
     if pretrained_pipeline is None:
         print(f"Could not load pretrained pipeline from {pipeline}.")
@@ -646,12 +657,8 @@ def benchmark(
     if num_speakers == NumSpeakers.ORACLE:
         benchmark_name += ".OracleNumSpeakers"
 
-    # used to store processing time and file duration
-    processing_time: dict[str, float] = dict()
-    playing_time: dict[str, float] = dict()
-
     # used to store raw predictions in JSON format
-    serialized_predictions: dict[str, dict] = dict()
+    serialized_predictions: dict[str, dict] = {}
 
     if not skip_metric:
         # initialize diarization error rate metric
@@ -660,7 +667,7 @@ def benchmark(
     # speaker count confusion matrix
     # speaker_count[i][j] is the number of files with i speakers in the
     # manual annotation and j speakers in the prediction
-    speaker_count: dict[int, dict[int, int]] = dict()
+    speaker_count: dict[int, dict[int, int]] = {}
 
     if per_file:
         benchmark_dir = into / benchmark_name
@@ -676,19 +683,14 @@ def benchmark(
         if rttm_file.exists():
             raise FileExistsError(f"{rttm_file} already exists.")
 
-    # iterate over all files in the specified subset
-    for file in track(files, disable=not progress):
-        # gather file metadata
-        uri: str = file["uri"]
-        playing_time[uri] = Audio().get_duration(file)
+    if hasattr(pretrained_pipeline, "apply_batch"):
+        iterator = pretrained_pipeline(files, progress=progress)
+    else:
+        iterator = track(pretrained_pipeline(files), disable=not progress)
 
-        tic: float = time.time()
-
-        # apply pretrained pipeline to file
-        prediction = pretrained_pipeline(file, **file.get("pipeline_kwargs", {}))
-
-        tac: float = time.time()
-        processing_time[uri] = tac - tic
+    tic: float = time.time()
+    for file, prediction in iterator:
+        uri = file["uri"]
 
         # if prediction has a built-in serialize method, save serialized version
         if hasattr(prediction, "serialize"):
@@ -722,14 +724,14 @@ def benchmark(
         # increment speaker count confusion matrix
         pred_num_speakers: int = len(speaker_diarization.labels())
         true_num_speakers: int = len(file["annotation"].labels())
-        speaker_count.setdefault(true_num_speakers, dict()).setdefault(
-            pred_num_speakers, 0
-        )
+        speaker_count.setdefault(true_num_speakers, {}).setdefault(pred_num_speakers, 0)
         speaker_count[true_num_speakers][pred_num_speakers] += 1
 
         # keep track of prediction for later "min_duration_off" optimization
         if optimize:
             file["speaker_diarization"] = speaker_diarization
+
+    tac: float = time.time()
 
     # save serialized predictions to disk (might contain more than just diarization results)
     if serialized_predictions and not per_file:
@@ -737,9 +739,9 @@ def benchmark(
             json.dump(serialized_predictions, f, indent=2)
 
     # log processing time and capacity
-    processing = dict()
-    total_processing_time: float = sum(processing_time.values())
-    total_playing_time: float = sum(playing_time.values())
+    processing = {}
+    total_processing_time = tac - tic
+    total_playing_time = sum(Audio().get_duration(file) for file in files)
     processing["seconds_per_hour"] = total_processing_time / (total_playing_time / 3600)
     processing["times_faster_than_realtime"] = (
         total_playing_time / total_processing_time
@@ -782,8 +784,7 @@ def benchmark(
     # and save it to disk as a CSV file
     max_true_speakers = max(speaker_count.keys())
     max_pred_speakers = max(
-        max(speaker_count[true_speakers].keys())
-        for true_speakers in speaker_count.keys()
+        max(speaker_count[true_speakers].keys()) for true_speakers in speaker_count
     )
     speaker_count_matrix = np.zeros(
         (max_true_speakers + 1, max_pred_speakers + 1), dtype=int
@@ -824,9 +825,7 @@ def benchmark(
 
         with open(into / f"{benchmark_name}.OptimizedMinDurationOff.txt", "w") as txt:
             txt.write(
-                best_report.to_string(
-                    sparsify=False, float_format=lambda f: "{0:.2f}".format(f)
-                )
+                best_report.to_string(sparsify=False, float_format=lambda f: f"{f:.2f}")
             )
 
         # keep track of the best `min_duration_off` value for later reference

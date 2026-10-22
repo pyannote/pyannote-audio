@@ -28,7 +28,7 @@ from .voice_activity_detection import VoiceActivityDetection
 
 __all__ = [
     "MultiLabelSegmentation",
-    "VoiceActivityDetection",
     "SpeakerDiarization",
     "SpeechSeparation",
+    "VoiceActivityDetection",
 ]

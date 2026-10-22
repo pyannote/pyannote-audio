@@ -21,8 +21,9 @@
 # SOFTWARE.
 
 import time
+from collections.abc import Mapping
 from copy import deepcopy
-from typing import Any, Mapping, Optional, Text
+from typing import Any
 
 import torch
 from rich.progress import (
@@ -65,11 +66,11 @@ class ArtifactHook:
 
     def __call__(
         self,
-        step_name: Text,
+        step_name: str,
         step_artifact: Any,
-        file: Optional[Mapping] = None,
-        total: Optional[int] = None,
-        completed: Optional[int] = None,
+        file: Mapping | None = None,
+        total: int | None = None,
+        completed: int | None = None,
     ):
         if (step_artifact is None) or (
             self.artifacts and step_name not in self.artifacts
@@ -79,7 +80,7 @@ class ArtifactHook:
         if isinstance(step_artifact, torch.Tensor):
             step_artifact = step_artifact.numpy(force=True)
 
-        file.setdefault(self.file_key, dict())[step_name] = deepcopy(step_artifact)
+        file.setdefault(self.file_key, {})[step_name] = deepcopy(step_artifact)
 
 
 class ProgressHook:
@@ -124,11 +125,11 @@ class ProgressHook:
 
     def __call__(
         self,
-        step_name: Text,
+        step_name: str,
         step_artifact: Any,
-        file: Optional[Mapping] = None,
-        total: Optional[int] = None,
-        completed: Optional[int] = None,
+        file: Mapping | None = None,
+        total: int | None = None,
+        completed: int | None = None,
     ):
         if self.hidden:
             return
@@ -168,13 +169,13 @@ class TimingHook:
 
     def __enter__(self):
         self._pipeline_start_time = time.time()
-        self._start_time = dict()
-        self._end_time = dict()
+        self._start_time = {}
+        self._end_time = {}
         return self
 
     def __exit__(self, *args):
         _pipeline_end_time = time.time()
-        processing_time = dict()
+        processing_time = {}
         processing_time["total"] = _pipeline_end_time - self._pipeline_start_time
         for step_name, _start_time in self._start_time.items():
             _end_time = self._end_time[step_name]
@@ -184,11 +185,11 @@ class TimingHook:
 
     def __call__(
         self,
-        step_name: Text,
+        step_name: str,
         step_artifact: Any,
-        file: Optional[Mapping] = None,
-        total: Optional[int] = None,
-        completed: Optional[int] = None,
+        file: Mapping | None = None,
+        total: int | None = None,
+        completed: int | None = None,
     ):
         if not hasattr(self, "_file"):
             self._file = file
@@ -229,11 +230,11 @@ class Hooks:
 
     def __call__(
         self,
-        step_name: Text,
+        step_name: str,
         step_artifact: Any,
-        file: Optional[Mapping] = None,
-        total: Optional[int] = None,
-        completed: Optional[int] = None,
+        file: Mapping | None = None,
+        total: int | None = None,
+        completed: int | None = None,
     ):
         for hook in self.hooks:
             hook(step_name, step_artifact, file=file, total=total, completed=completed)

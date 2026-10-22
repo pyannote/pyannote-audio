@@ -1,6 +1,6 @@
-from lightning import Trainer
 import numpy as np
 import pytest
+from lightning import Trainer
 from pyannote.core import SlidingWindowFeature
 from pyannote.database import FileFinder, registry
 
@@ -12,12 +12,14 @@ from pyannote.audio.tasks import VoiceActivityDetection
 HF_SAMPLE_MODEL_ID = "pyannote/ci-segmentation"
 
 
+@pytest.mark.network
 def test_hf_download_inference():
     model = Model.from_pretrained(HF_SAMPLE_MODEL_ID)
     inference = Inference(model, device="cpu")
     assert isinstance(inference, Inference)
 
 
+@pytest.mark.network
 def test_hf_download_model():
     model = Model.from_pretrained(HF_SAMPLE_MODEL_ID)
     assert isinstance(model, Model)
@@ -49,7 +51,7 @@ def dev_file():
 
 
 def test_duration_warning(trained):
-    protocol, model = trained
+    _protocol, model = trained
     with pytest.warns(UserWarning):
         duration = model.specifications.duration
         new_duration = duration + 1
@@ -57,20 +59,20 @@ def test_duration_warning(trained):
 
 
 def test_step_check_warning(trained):
-    protocol, model = trained
+    _protocol, model = trained
     with pytest.raises(ValueError):
         duration = model.specifications.duration
         Inference(model, step=duration + 1, batch_size=128)
 
 
 def test_invalid_window_fails(trained):
-    protocol, model = trained
+    _protocol, model = trained
     with pytest.raises(ValueError):
         Inference(model, window="unknown")
 
 
 def test_invalid_resolution_fails(trained):
-    protocol, model = trained
+    _protocol, model = trained
     with pytest.warns(UserWarning):
         model.specifications.resolution = Resolution.FRAME
         Inference(model, window="whole", batch_size=128)
@@ -85,12 +87,13 @@ def test_whole_window_slide(trained):
 
 
 def test_on_file_path(trained):
-    protocol, model = trained
+    _protocol, model = trained
     inference = Inference(model, batch_size=128)
     output = inference("tests/data/dev00.wav")
     assert isinstance(output, SlidingWindowFeature)
 
 
+@pytest.mark.network
 def test_skip_aggregation(pretrained_model, dev_file):
     inference = Inference(pretrained_model, skip_aggregation=True)
     scores = inference(dev_file)

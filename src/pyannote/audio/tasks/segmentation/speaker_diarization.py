@@ -24,12 +24,20 @@
 import math
 import warnings
 from collections import Counter
-from typing import Dict, Literal, Optional, Sequence, Text, Union
+from collections.abc import Sequence
+from typing import Literal
 
 import numpy as np
 import torch
 from lightning.pytorch.loggers import MLFlowLogger, TensorBoardLogger
 from matplotlib import pyplot as plt
+from pyannote.core import Segment, SlidingWindowFeature
+from pyannote.database.protocol import SpeakerDiarizationProtocol
+from pyannote.database.protocol.protocol import Scope, Subset
+from rich.progress import track
+from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
+from torchmetrics import Metric
+
 from pyannote.audio.core.task import Problem, Resolution, Specifications
 from pyannote.audio.tasks.segmentation.mixins import SegmentationTask
 from pyannote.audio.torchmetrics import (
@@ -44,12 +52,6 @@ from pyannote.audio.torchmetrics import (
 from pyannote.audio.utils.loss import nll_loss
 from pyannote.audio.utils.permutation import permutate
 from pyannote.audio.utils.powerset import Powerset
-from pyannote.core import Segment, SlidingWindowFeature
-from pyannote.database.protocol import SpeakerDiarizationProtocol
-from pyannote.database.protocol.protocol import Scope, Subset
-from rich.progress import track
-from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
-from torchmetrics import Metric
 
 Subsets = list(Subset.__args__)
 Scopes = list(Scope.__args__)
@@ -112,21 +114,20 @@ class SpeakerDiarization(SegmentationTask):
     def __init__(
         self,
         protocol: SpeakerDiarizationProtocol,
-        cache: Optional[Union[str, None]] = None,
+        cache: str | None = None,
         duration: float = 10.0,
-        max_speakers_per_chunk: Optional[int] = None,
+        max_speakers_per_chunk: int | None = None,
         max_speakers_per_frame: int = 2,
-        balance: Optional[Sequence[Text]] = None,
-        weight: Optional[Text] = None,
+        balance: Sequence[str] | None = None,
+        weight: str | None = None,
         batch_size: int = 32,
-        num_workers: Optional[int] = None,
+        num_workers: int | None = None,
         pin_memory: bool = False,
-        augmentation: Optional[BaseWaveformTransform] = None,
-        metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
-        max_num_speakers: Optional[
-            int
-        ] = None,  # deprecated in favor of `max_speakers_per_chunk``
-        loss: Literal["bce", "mse"] = None,  # deprecated
+        augmentation: BaseWaveformTransform | None = None,
+        metric: Metric | Sequence[Metric] | dict[str, Metric] = None,
+        max_num_speakers: int
+        | None = None,  # deprecated in favor of `max_speakers_per_chunk``
+        loss: Literal["bce", "mse"] | None = None,  # deprecated
     ):
         super().__init__(
             protocol,
@@ -298,10 +299,9 @@ class SpeakerDiarization(SegmentationTask):
         label_scope = Scopes[self.prepared_data["audio-metadata"][file_id]["scope"]]
         label_scope_key = f"{label_scope}_label_idx"
 
-        #
         chunk = Segment(start_time, start_time + duration)
 
-        sample = dict()
+        sample = {}
         sample["X"], _ = self.model.audio.crop(file, chunk)
 
         # gather all annotations of current file
@@ -486,7 +486,7 @@ class SpeakerDiarization(SegmentationTask):
 
     def default_metric(
         self,
-    ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
+    ) -> Metric | Sequence[Metric] | dict[str, Metric]:
         """Returns diarization error rate and its components"""
 
         return {
@@ -639,12 +639,13 @@ class SpeakerDiarization(SegmentationTask):
 def evaluate(protocol: str, subset: str = "test", model: str = "pyannote/segmentation"):
     """Evaluate a segmentation model"""
 
+    from pyannote.database import FileFinder, get_protocol
+    from rich.progress import Progress
+
     from pyannote.audio import Inference
     from pyannote.audio.pipelines.utils import get_devices
     from pyannote.audio.utils.metric import DiscreteDiarizationErrorRate
     from pyannote.audio.utils.signal import binarize
-    from pyannote.database import FileFinder, get_protocol
-    from rich.progress import Progress
 
     (device,) = get_devices(needs=1)
     metric = DiscreteDiarizationErrorRate()
@@ -655,7 +656,7 @@ def evaluate(protocol: str, subset: str = "test", model: str = "pyannote/segment
         main_task = progress.add_task(protocol.name, total=len(files))
         file_task = progress.add_task("Processing", total=1.0)
 
-        def progress_hook(completed: Optional[int] = None, total: Optional[int] = None):
+        def progress_hook(completed: int | None = None, total: int | None = None):
             progress.update(file_task, completed=completed / total)
 
         inference = Inference(model, device=device)
