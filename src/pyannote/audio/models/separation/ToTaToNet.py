@@ -233,7 +233,9 @@ class ToTaToNet(Model):
 
     def build(self):
         if self.hparams.linear["num_layers"] > 0:
-            self.classifier = nn.Linear(64, self.dimension)
+            self.classifier = nn.Linear(
+                self.hparams.linear["hidden_size"], self.dimension
+            )
         else:
             self.classifier = nn.Linear(1, self.dimension)
         self.activation = self.default_activation()
