@@ -1,10 +1,14 @@
 # CHANGELOG
 
-## Next version
+## next
 
-- feat(cli): add support for multi-objective pipeline optimization
+- BREAKING: require Python 3.11 or newer; Python 3.10 is no longer supported
+- fix(model): restore `fbank_only` mode in WeSpeaker embedding models
+- fix(task): avoid training crashes with `spawn`/`forkserver` workers, including
+  Python 3.14's default on Linux, by warning and using `num_workers=0`
 - fix(pipeline): omit unset `token` and `cache_dir` when expanding `$model/` references so loaders can inherit runtime options
 - fix(io): fix `Audio.crop` raising when an in-memory waveform is cropped up to its very end [@MohammadHijjawi97](https://github.com/MohammadHijjawi97)
+- feat(cli): add support for multi-objective pipeline optimization
 - feat(cli): add `--subfolder` option to `benchmark` command [@antoinelaurent](https://github.com/antoinelaurent)
 - fix(utils): fix `SpeakerDiarizationMixin.optimal_mapping` `reference` is a mapping [@Kayvan-Zahiri](https://github.com/Kayvan-Zahiri)
 - fix(task): fix `balance` option crashing training with `KeyError: 'metadata'` [@MohammadHijjawi97](https://github.com/MohammadHijjawi97)
@@ -65,10 +69,12 @@ This is a feature which is [backported from our latest commercial model](https:/
 
 ```python
 from pyannote.audio import Pipeline
+
 pipeline = Pipeline.from_pretrained(
-    "pyannote/speaker-diarization-community-1", token="huggingface-access-token")
+    "pyannote/speaker-diarization-community-1", token="huggingface-access-token"
+)
 output = pipeline("/path/to/conversation.wav")
-print(output.speaker_diarization)            # regular speaker diarization
+print(output.speaker_diarization)  # regular speaker diarization
 print(output.exclusive_speaker_diarization)  # exclusive speaker diarization
 ```
 
@@ -106,7 +112,10 @@ Pipelines can now be stored alongside their internal models in the same reposito
     ```python
     # load pipeline from disk (works without internet connection)
     from pyannote.audio import Pipeline
-    pipeline = Pipeline.from_pretrained('/path/to/directory/pyannote-speaker-diarization-community-1')
+
+    pipeline = Pipeline.from_pretrained(
+        "/path/to/directory/pyannote-speaker-diarization-community-1"
+    )
 
     # run the pipeline locally on your computer
     diarization = pipeline("audio.wav")
@@ -202,7 +211,7 @@ With the optional telemetry feature in `pyannote.audio`, you can choose to send 
 `pyannote.audio` does [speech separation](https://hf.co/pyannote/speech-separation-ami-1.0): multi-speaker audio in, one audio channel per speaker out!
 
 ```bash
-pip install pyannote.audio[separation]==3.3.0
+pip install 'pyannote.audio[separation]==3.3.0'
 ```
 
 ### New features

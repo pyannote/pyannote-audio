@@ -40,15 +40,15 @@ from .diarization_error_rate import (
 __all__ = [
     "DetectionErrorRate",
     "DiarizationErrorRate",
-    "SegmentationErrorRate",
     "DiarizationPrecision",
     "DiarizationRecall",
     "FalseAlarmRate",
     "MissedDetectionRate",
     "OptimalDiarizationErrorRate",
+    "OptimalDiarizationErrorRateThreshold",
     "OptimalFalseAlarmRate",
     "OptimalMissedDetectionRate",
     "OptimalSpeakerConfusionRate",
-    "OptimalDiarizationErrorRateThreshold",
+    "SegmentationErrorRate",
     "SpeakerConfusionRate",
 ]

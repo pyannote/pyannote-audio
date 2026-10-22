@@ -20,8 +20,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import List
-
 
 def conv1d_num_frames(
     num_samples, kernel_size=5, stride=1, padding=0, dilation=1
@@ -55,10 +53,10 @@ def conv1d_num_frames(
 
 def multi_conv_num_frames(
     num_samples: int,
-    kernel_size: List[int] = None,
-    stride: List[int] = None,
-    padding: List[int] = None,
-    dilation: List[int] = None,
+    kernel_size: list[int] | None = None,
+    stride: list[int] | None = None,
+    padding: list[int] | None = None,
+    dilation: list[int] | None = None,
 ) -> int:
     num_frames = num_samples
     for k, s, p, d in zip(kernel_size, stride, padding, dilation):
@@ -99,10 +97,10 @@ def conv1d_receptive_field_size(
 
 def multi_conv_receptive_field_size(
     num_frames: int,
-    kernel_size: List[int] = None,
-    stride: List[int] = None,
-    padding: List[int] = None,
-    dilation: List[int] = None,
+    kernel_size: list[int] | None = None,
+    stride: list[int] | None = None,
+    padding: list[int] | None = None,
+    dilation: list[int] | None = None,
 ) -> int:
     receptive_field_size = num_frames
 
@@ -147,10 +145,10 @@ def conv1d_receptive_field_center(
 
 def multi_conv_receptive_field_center(
     frame: int,
-    kernel_size: List[int] = None,
-    stride: List[int] = None,
-    padding: List[int] = None,
-    dilation: List[int] = None,
+    kernel_size: list[int] | None = None,
+    stride: list[int] | None = None,
+    padding: list[int] | None = None,
+    dilation: list[int] | None = None,
 ) -> int:
     receptive_field_center = frame
     for k, s, p, d in reversed(list(zip(kernel_size, stride, padding, dilation))):

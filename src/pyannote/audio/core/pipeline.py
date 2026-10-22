@@ -26,14 +26,18 @@ from __future__ import annotations
 import os
 import warnings
 from collections import OrderedDict
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator, Mapping
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Mapping, Optional
+from typing import Any
 
 import torch
-import torch.nn as nn
 import yaml
+from pyannote.core.utils.helper import get_class_by_name
+from pyannote.database import FileFinder, ProtocolFile
+from pyannote.pipeline import Pipeline as _Pipeline
+from torch import nn
+
 from pyannote.audio import Audio
 from pyannote.audio.core.inference import BaseInference
 from pyannote.audio.core.io import AudioFile
@@ -42,9 +46,6 @@ from pyannote.audio.telemetry import track_pipeline_apply, track_pipeline_init
 from pyannote.audio.utils.dependencies import check_dependencies
 from pyannote.audio.utils.hf_hub import AssetFileName, download_from_hf_hub
 from pyannote.audio.utils.reproducibility import fix_reproducibility
-from pyannote.core.utils.helper import get_class_by_name
-from pyannote.database import FileFinder, ProtocolFile
-from pyannote.pipeline import Pipeline as _Pipeline
 
 
 def expand_subfolders(
@@ -165,7 +166,7 @@ class Pipeline(_Pipeline):
         subfolder: str | None = None,
         token: str | bool | None = None,
         cache_dir: Path | str | None = None,
-    ) -> Optional["Pipeline"]:
+    ) -> Pipeline | None:
         """Load pretrained pipeline
 
         Parameters
@@ -251,7 +252,7 @@ class Pipeline(_Pipeline):
             )
 
         if not isinstance(checkpoint, dict):
-            with open(config_yml, "r") as fp:
+            with open(config_yml) as fp:
                 config = yaml.load(fp, Loader=yaml.SafeLoader)
 
         # expand $model/{subfolder}-like entries in config
@@ -271,7 +272,7 @@ class Pipeline(_Pipeline):
             del config["version"]
 
         # check that dependencies are available (in their required version)
-        dependencies: dict[str, str] = config.get("dependencies", dict())
+        dependencies: dict[str, str] = config.get("dependencies", {})
         check_dependencies(dependencies, "Pipeline")
 
         # initialize pipeline
@@ -342,8 +343,8 @@ class Pipeline(_Pipeline):
 
     def __init__(self):
         super().__init__()
-        self._models: Dict[str, Model] = OrderedDict()
-        self._inferences: Dict[str, BaseInference] = OrderedDict()
+        self._models: dict[str, Model] = OrderedDict()
+        self._inferences: dict[str, BaseInference] = OrderedDict()
 
     def __getattr__(self, name):
         """(Advanced) attribute getter
@@ -426,7 +427,7 @@ class Pipeline(_Pipeline):
     def default_parameters(self):
         raise NotImplementedError()
 
-    def classes(self) -> List | Iterator:
+    def classes(self) -> list | Iterator:
         """Classes returned by the pipeline
 
         Returns
@@ -476,10 +477,7 @@ class Pipeline(_Pipeline):
         # pre-load the audio in memory if requested
         if preload:
             # raise error if `waveform`` is already in memory (or will be via a preprocessor)
-            if (
-                "waveform" in getattr(self, "preprocessors", dict())
-                or "waveform" in file
-            ):
+            if "waveform" in getattr(self, "preprocessors", {}) or "waveform" in file:
                 raise ValueError(
                     "Cannot preload audio: `waveform` key is already available or will be via a preprocessor."
                 )
@@ -603,14 +601,14 @@ class Pipeline(_Pipeline):
                 f"`device` must be an instance of `torch.device`, got `{type(device).__name__}`"
             )
 
-        for _, pipeline in self._pipelines.items():
+        for pipeline in self._pipelines.values():
             if hasattr(pipeline, "to"):
                 _ = pipeline.to(device)
 
-        for _, model in self._models.items():
+        for model in self._models.values():
             _ = model.to(device)
 
-        for _, inference in self._inferences.items():
+        for inference in self._inferences.values():
             _ = inference.to(device)
 
         self.device = device

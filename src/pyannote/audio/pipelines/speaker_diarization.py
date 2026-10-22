@@ -28,13 +28,18 @@ import itertools
 import math
 import textwrap
 import warnings
-from pathlib import Path
-from typing import Callable, Mapping, Optional, Text, Union, Any
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 import torch
 from einops import rearrange
+from pyannote.core import Annotation, SlidingWindowFeature
+from pyannote.metrics.diarization import GreedyDiarizationErrorRate
+from pyannote.pipeline.parameter import ParamDict, Uniform
+
 from pyannote.audio import Audio, Inference, Model, Pipeline
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.pipelines.clustering import Clustering
@@ -48,9 +53,6 @@ from pyannote.audio.pipelines.utils import (
 )
 from pyannote.audio.pipelines.utils.diarization import set_num_speakers
 from pyannote.audio.utils.signal import binarize
-from pyannote.core import Annotation, SlidingWindowFeature
-from pyannote.metrics.diarization import GreedyDiarizationErrorRate
-from pyannote.pipeline.parameter import ParamDict, Uniform
 
 
 def batchify(iterable, batch_size: int = 32, fillvalue=None):
@@ -73,7 +75,6 @@ class DiarizeOutput:
     # as (num_speakers, dimension) array
     # sorted in speaker_diarization.labels() order
     speaker_embeddings: np.ndarray | None = None
-
 
     def serialize(self) -> dict[str, Any]:
         """Serialize diarization output
@@ -133,14 +134,14 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         Return only the diarization output. Defaults to return the full output
         with diarization, exclusive diarization, and speaker embeddings.
     segmentation : Model, str, or dict, optional
-        Pretrained segmentation model. 
+        Pretrained segmentation model.
         See pyannote.audio.pipelines.utils.get_model for supported format.
     segmentation_step: float, optional
         The segmentation model is applied on a window sliding over the whole audio file.
         `segmentation_step` controls the step of this window, provided as a ratio of its
         duration. Defaults to 0.1 (i.e. 90% overlap between two consecuive windows).
     embedding : Model, str, or dict, optional
-        Pretrained embedding model. 
+        Pretrained embedding model.
         See pyannote.audio.pipelines.utils.get_model for supported format.
     embedding_exclude_overlap : bool, optional
         Exclude overlapping speech regions when extracting embeddings.
@@ -150,7 +151,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         See pyannote.audio.pipelines.utils.get_plda for supported format.
     clustering : str, optional
         Clustering algorithm. See pyannote.audio.pipelines.clustering.Clustering
-        for available options. 
+        for available options.
     segmentation_batch_size : int, optional
         Batch size used for speaker segmentation. Defaults to 1.
     embedding_batch_size : int, optional
@@ -163,7 +164,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         Huggingface token to be used for downloading from Huggingface hub.
     cache_dir: Path or str, optional
         Path to the folder where files downloaded from Huggingface hub are stored.
-        
+
     Usage
     -----
     # process audio file
@@ -173,13 +174,13 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
     >>> assert isinstance(output.speaker_diarization, pyannote.core.Annotation)
     >>> for turn, speaker in output.speaker_diarization:
     ...     print(f"start={turn.start:.1f}s stop={turn.end:.1f}s speaker_{speaker}")
-    
+
     # get one speaker embedding per speaker
     >>> assert isinstance(output.speaker_embeddings, np.ndarray)
     >>> for s, speaker in enumerate(output.speaker_diarization.labels()):
     ...     # output.speaker_embeddings[s] is the embedding of speaker `speaker`
 
-    # exclusive diarization is the same as diarization except 
+    # exclusive diarization is the same as diarization except
     # that it does not contain overlapping speech segments
     >>> assert isinstance(output.exclusive_speaker_diarization, pyannote.core.Annotation)
 
@@ -193,27 +194,33 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
     def __init__(
         self,
         legacy: bool = False,
-        segmentation: PipelineModel = {
-            "checkpoint": "pyannote/speaker-diarization-community-1",
-            "subfolder": "segmentation",
-        },
+        segmentation: PipelineModel = None,
         segmentation_step: float = 0.1,
-        embedding: PipelineModel = {
-            "checkpoint": "pyannote/speaker-diarization-community-1",
-            "subfolder": "embedding",
-        },
+        embedding: PipelineModel = None,
         embedding_exclude_overlap: bool = False,
-        plda: PipelinePLDA = {
-            "checkpoint": "pyannote/speaker-diarization-community-1",
-            "subfolder": "plda",
-        },
+        plda: PipelinePLDA = None,
         clustering: str = "VBxClustering",
         embedding_batch_size: int = 1,
         segmentation_batch_size: int = 1,
-        der_variant: Optional[dict] = None,
-        token: Union[Text, None] = None,
-        cache_dir: Union[Path, Text, None] = None,
+        der_variant: dict | None = None,
+        token: str | None = None,
+        cache_dir: Path | str | None = None,
     ):
+        if plda is None:
+            plda = {
+                "checkpoint": "pyannote/speaker-diarization-community-1",
+                "subfolder": "plda",
+            }
+        if embedding is None:
+            embedding = {
+                "checkpoint": "pyannote/speaker-diarization-community-1",
+                "subfolder": "embedding",
+            }
+        if segmentation is None:
+            segmentation = {
+                "checkpoint": "pyannote/speaker-diarization-community-1",
+                "subfolder": "segmentation",
+            }
         super().__init__()
 
         self.legacy = legacy
@@ -334,7 +341,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         file,
         binary_segmentations: SlidingWindowFeature,
         exclude_overlap: bool = False,
-        hook: Optional[Callable] = None,
+        hook: Callable | None = None,
     ):
         """Extract embeddings for each (chunk, speaker) pair
 
@@ -362,7 +369,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             # we only re-use embeddings if they were extracted based on the same value of the
             # "segmentation.threshold" hyperparameter or if the segmentation model relies on
             # `powerset` mode
-            cache = file.get("training_cache/embeddings", dict())
+            cache = file.get("training_cache/embeddings", {})
             if ("embeddings" in cache) and (
                 self._segmentation.model.specifications.powerset
                 or (cache["segmentation.threshold"] == self.segmentation.threshold)
@@ -500,7 +507,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             Discrete (0s and 1s) diarization.
         """
 
-        num_chunks, num_frames, local_num_speakers = segmentations.data.shape
+        num_chunks, num_frames, _local_num_speakers = segmentations.data.shape
 
         num_clusters = np.max(hard_clusters) + 1
         clustered_segmentations = np.nan * np.zeros(
@@ -530,10 +537,10 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
     def apply(
         self,
         file: AudioFile,
-        num_speakers: Optional[int] = None,
-        min_speakers: Optional[int] = None,
-        max_speakers: Optional[int] = None,
-        hook: Optional[Callable] = None,
+        num_speakers: int | None = None,
+        min_speakers: int | None = None,
+        max_speakers: int | None = None,
+        hook: Callable | None = None,
         **kwargs,
     ) -> DiarizeOutput | Annotation:
         """Apply speaker diarization
@@ -593,7 +600,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         segmentations = self.get_segmentations(file, hook=hook)
         hook("segmentation", segmentations)
         #   shape: (num_chunks, num_frames, local_num_speakers)
-        num_chunks, num_frames, local_num_speakers = segmentations.data.shape
+        _num_chunks, _num_frames, _local_num_speakers = segmentations.data.shape
 
         # binarize segmentation
         if self._segmentation.model.specifications.powerset:
@@ -715,7 +722,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         # at this point, `diarization` speaker labels are integers
         # from 0 to `num_speakers - 1`, aligned with `centroids` rows.
 
-        if "annotation" in file and file["annotation"]:
+        if file.get("annotation"):
             # when reference is available, use it to map hypothesized speakers
             # to reference speakers (this makes later error analysis easier
             # but does not modify the actual output of the diarization pipeline)

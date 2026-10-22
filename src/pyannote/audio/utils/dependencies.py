@@ -67,10 +67,7 @@ def check_dependencies(dependencies: dict[str, str], what: str) -> None:
         If a required dependency has an incompatible version.
     """
 
-    skip_dependency_check: bool = os.getenv(
-        "PYANNOTE_SKIP_DEPENDENCY_CHECK", False
-    ) in [
-        True,
+    skip_dependency_check: bool = os.getenv("PYANNOTE_SKIP_DEPENDENCY_CHECK", "0") in [
         "1",
         "true",
         "True",

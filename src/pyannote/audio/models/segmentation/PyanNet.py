@@ -21,13 +21,13 @@
 # SOFTWARE.
 
 from functools import lru_cache
-from typing import Optional
+from typing import ClassVar
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 from pyannote.core.utils.generators import pairwise
+from torch import nn
 
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
@@ -61,24 +61,24 @@ class PyanNet(Model):
         i.e. two linear layers with 128 units each.
     """
 
-    SINCNET_DEFAULTS = {"stride": 10}
-    LSTM_DEFAULTS = {
+    SINCNET_DEFAULTS: ClassVar[dict] = {"stride": 10}
+    LSTM_DEFAULTS: ClassVar[dict] = {
         "hidden_size": 128,
         "num_layers": 2,
         "bidirectional": True,
         "monolithic": True,
         "dropout": 0.0,
     }
-    LINEAR_DEFAULTS = {"hidden_size": 128, "num_layers": 2}
+    LINEAR_DEFAULTS: ClassVar[dict] = {"hidden_size": 128, "num_layers": 2}
 
     def __init__(
         self,
-        sincnet: Optional[dict] = None,
-        lstm: Optional[dict] = None,
-        linear: Optional[dict] = None,
+        sincnet: dict | None = None,
+        lstm: dict | None = None,
+        linear: dict | None = None,
         sample_rate: int = 16000,
         num_channels: int = 1,
-        task: Optional[Task] = None,
+        task: Task | None = None,
     ):
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
 
@@ -113,7 +113,7 @@ class PyanNet(Model):
                         60
                         if i == 0
                         else lstm["hidden_size"] * (2 if lstm["bidirectional"] else 1),
-                        **one_layer_lstm
+                        **one_layer_lstm,
                     )
                     for i in range(num_layers)
                 ]

@@ -1,40 +1,7 @@
-exclude: '^docs/conf.py'
-
 repos:
-    # # Clean Notebooks
-    # - repo: https://github.com/kynan/nbstripout
-    #   rev: master
-    #   hooks:
-    #     - id: nbstripout
-    # Format Code
-    - repo: https://github.com/ambv/black
-      rev: 22.3.0
-      hooks:
-        - id: black
-
-    # Sort imports
-    - repo: https://github.com/PyCQA/isort
-      rev: 5.12.0
-      hooks:
-      - id: isort
-        args: ["--profile", "black"]
-
-    # Formatting, Whitespace, etc
-    - repo: https://github.com/pre-commit/pre-commit-hooks
-      rev: v2.2.3
-      hooks:
-      - id: trailing-whitespace
-      - id: check-added-large-files
-        args: ['--maxkb=1000']
-      - id: check-ast
-      - id: check-json
-      - id: check-merge-conflict
-      - id: check-xml
-      - id: check-yaml
-      - id: debug-statements
-      - id: end-of-file-fixer
-      - id: requirements-txt-fixer
-      - id: mixed-line-ending
-        args: ['--fix=no']
-      - id: flake8
-        args: ['--ignore=E203,E501,F811,E712,W503']
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.1
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format

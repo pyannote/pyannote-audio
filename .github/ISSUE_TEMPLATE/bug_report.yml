@@ -51,6 +51,6 @@ body:
     label: Minimal reproduction example (MRE)
     description: |
       Having reproducible issues is a prerequisite for contributors to be able to solve them.
-      Include a link to minimal reproduction example using [this Google Colab notebook](https://colab.research.google.com/github/pyannote/pyannote-audio/blob/develop/tutorials/MRE_template.ipynb) as a starting point.
+      Include a link to minimal reproduction example using [this Google Colab notebook](https://colab.research.google.com/github/pyannote/pyannote-audio/blob/main/tutorials/MRE_template.ipynb) as a starting point.
   validations:
     required: true
