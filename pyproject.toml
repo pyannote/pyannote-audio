@@ -54,7 +54,7 @@ packages = ["src/pyannote"]
 [tool.hatch.build.targets.sdist]
 include = [
     "/src", "/tests", "/doc", "/README.md", "/CHANGELOG.md", "/LICENSE",
-    "/pyproject.toml", "/uv.lock", "/.python-version",
+    "/pyproject.toml",
 ]
 
 [dependency-groups]
