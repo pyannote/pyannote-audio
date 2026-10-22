@@ -23,18 +23,19 @@
 
 import itertools
 import textwrap
-from typing import Dict, List, Optional, Sequence, Text, Tuple, Union
+from collections.abc import Sequence
 
 import numpy as np
 import torch
 import torch.nn.functional as F
-from pyannote.audio.core.task import Problem, Resolution, Specifications
-from pyannote.audio.tasks.segmentation.mixins import SegmentationTask
 from pyannote.core import Segment, SlidingWindowFeature
 from pyannote.database import Protocol
 from pyannote.database.protocol import SegmentationProtocol
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchmetrics import Metric
+
+from pyannote.audio.core.task import Problem, Resolution, Specifications
+from pyannote.audio.tasks.segmentation.mixins import SegmentationTask
 
 
 class MultiLabelSegmentation(SegmentationTask):
@@ -92,17 +93,17 @@ class MultiLabelSegmentation(SegmentationTask):
     def __init__(
         self,
         protocol: Protocol,
-        cache: Optional[Union[str, None]] = None,
-        classes: Optional[List[str]] = None,
+        cache: str | None = None,
+        classes: list[str] | None = None,
         duration: float = 2.0,
-        warm_up: Union[float, Tuple[float, float]] = 0.0,
-        balance: Optional[Sequence[Text]] = None,
-        weight: Optional[Text] = None,
+        warm_up: float | tuple[float, float] = 0.0,
+        balance: Sequence[str] | None = None,
+        weight: str | None = None,
         batch_size: int = 32,
-        num_workers: Optional[int] = None,
+        num_workers: int | None = None,
         pin_memory: bool = False,
-        augmentation: Optional[BaseWaveformTransform] = None,
-        metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
+        augmentation: BaseWaveformTransform | None = None,
+        metric: Metric | Sequence[Metric] | dict[str, Metric] = None,
     ):
         if not isinstance(protocol, SegmentationProtocol):
             raise ValueError(
@@ -129,7 +130,7 @@ class MultiLabelSegmentation(SegmentationTask):
         # classes should be detected. therefore, we postpone the definition of
         # specifications to setup()
 
-    def post_prepare_data(self, prepared_data: Dict):
+    def post_prepare_data(self, prepared_data: dict):
         # as different files may be annotated using a different set of classes
         # (e.g. one database for speech/music/noise, and another one for
         # male/female/child), we keep track of this information. this is used
@@ -154,8 +155,8 @@ class MultiLabelSegmentation(SegmentationTask):
             files_iter = self.protocol.train()
 
         if self.classes is None:
-            classes = list()  # overall list of classes
-            annotated_classes = list()  # list of annotated classes (per file)
+            classes = []  # overall list of classes
+            annotated_classes = []  # list of annotated classes (per file)
 
             for file in files_iter:
                 file_classes = file.get("classes", None)
@@ -163,7 +164,7 @@ class MultiLabelSegmentation(SegmentationTask):
                 if not file_classes:
                     msg = textwrap.dedent(
                         f"""
-                        File "{file['uri']}" (from {file['database']} database) does not
+                        File "{file["uri"]}" (from {file["database"]} database) does not
                         provide a 'classes' entry. Please make sure the corresponding
                         training protocol provides a 'classes' entry for all files. See
                         https://github.com/pyannote/pyannote-database#segmentation for more
@@ -183,14 +184,14 @@ class MultiLabelSegmentation(SegmentationTask):
             self.classes = classes
 
         else:
-            annotated_classes = list()  # list of annotated classes (per file)
+            annotated_classes = []  # list of annotated classes (per file)
             for file in files_iter:
                 file_classes = file.get("classes", None)
 
                 if not file_classes:
                     msg = textwrap.dedent(
                         f"""
-                        File "{file['uri']}" (from {file['database']} database) does not
+                        File "{file["uri"]}" (from {file["database"]} database) does not
                         provide a 'classes' entry. Please make sure the corresponding
                         training protocol provides a 'classes' entry for all files. See
                         https://github.com/pyannote/pyannote-database#segmentation for more
@@ -203,7 +204,7 @@ class MultiLabelSegmentation(SegmentationTask):
                 if extra_classes:
                     msg = textwrap.dedent(
                         f"""
-                        File "{file['uri']}" (from {file['database']} database) provides
+                        File "{file["uri"]}" (from {file["database"]} database) provides
                         extra classes ({", ".join(extra_classes)}) that are ignored.
                         """
                     )
@@ -279,7 +280,7 @@ class MultiLabelSegmentation(SegmentationTask):
 
         chunk = Segment(start_time, start_time + duration)
 
-        sample = dict()
+        sample = {}
         sample["X"], _ = self.model.audio.crop(file, chunk)
         # gather all annotations of current file
         annotations = self.prepared_data["annotations-segments"][

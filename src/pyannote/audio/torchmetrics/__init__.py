@@ -44,9 +44,9 @@ __all__ = [
     "FalseAlarmRate",
     "MissedDetectionRate",
     "OptimalDiarizationErrorRate",
+    "OptimalDiarizationErrorRateThreshold",
     "OptimalFalseAlarmRate",
     "OptimalMissedDetectionRate",
     "OptimalSpeakerConfusionRate",
-    "OptimalDiarizationErrorRateThreshold",
     "SpeakerConfusionRate",
 ]

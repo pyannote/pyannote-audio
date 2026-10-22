@@ -21,15 +21,16 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import Dict, Optional, Sequence, Text, Tuple, Union
+from collections.abc import Sequence
 
 import numpy as np
-from pyannote.audio.core.task import Problem, Resolution, Specifications
-from pyannote.audio.tasks.segmentation.mixins import SegmentationTask
 from pyannote.core import Segment, SlidingWindowFeature
 from pyannote.database import Protocol
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchmetrics import Metric
+
+from pyannote.audio.core.task import Problem, Resolution, Specifications
+from pyannote.audio.tasks.segmentation.mixins import SegmentationTask
 
 
 class VoiceActivityDetection(SegmentationTask):
@@ -86,16 +87,16 @@ class VoiceActivityDetection(SegmentationTask):
     def __init__(
         self,
         protocol: Protocol,
-        cache: Optional[Union[str, None]] = None,
+        cache: str | None = None,
         duration: float = 2.0,
-        warm_up: Union[float, Tuple[float, float]] = 0.0,
-        balance: Optional[Sequence[Text]] = None,
-        weight: Optional[Text] = None,
+        warm_up: float | tuple[float, float] = 0.0,
+        balance: Sequence[str] | None = None,
+        weight: str | None = None,
         batch_size: int = 32,
-        num_workers: Optional[int] = None,
+        num_workers: int | None = None,
         pin_memory: bool = False,
-        augmentation: Optional[BaseWaveformTransform] = None,
-        metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
+        augmentation: BaseWaveformTransform | None = None,
+        metric: Metric | Sequence[Metric] | dict[str, Metric] = None,
     ):
         super().__init__(
             protocol,
@@ -150,7 +151,7 @@ class VoiceActivityDetection(SegmentationTask):
 
         chunk = Segment(start_time, start_time + duration)
 
-        sample = dict()
+        sample = {}
         sample["X"], _ = self.model.audio.crop(file, chunk)
 
         # gather all annotations of current file

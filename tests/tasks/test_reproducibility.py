@@ -33,12 +33,12 @@ def test_seeding_ensures_data_loaders():
     "Setting a global seed for the dataloaders ensures that we get data back in the same order"
 
     seed_everything(1)
-    protocol, vad = setup_tasks(VoiceActivityDetection)
+    _protocol, vad = setup_tasks(VoiceActivityDetection)
     dl = create_dl(SimpleSegmentationModel, vad)
     last5a = get_next5(dl)
 
     seed_everything(1)
-    protocol, vad = setup_tasks(VoiceActivityDetection)
+    __protocol, vad = setup_tasks(VoiceActivityDetection)
     dl = create_dl(SimpleSegmentationModel, vad)
     last5b = get_next5(dl)
 
@@ -49,12 +49,12 @@ def test_seeding_ensures_data_loaders():
 def test_different_seeds():
     "Changing the global seed will change the order of the data that loads"
 
-    protocol, vad = setup_tasks(VoiceActivityDetection)
+    _protocol, vad = setup_tasks(VoiceActivityDetection)
     seed_everything(4)
     dl = create_dl(SimpleSegmentationModel, vad)
     last5a = get_next5(dl)
 
-    protocol, vad = setup_tasks(VoiceActivityDetection)
+    __protocol, vad = setup_tasks(VoiceActivityDetection)
     seed_everything(5)
     dl = create_dl(SimpleSegmentationModel, vad)
     last5b = get_next5(dl)

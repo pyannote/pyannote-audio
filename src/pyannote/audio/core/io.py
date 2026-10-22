@@ -30,9 +30,9 @@ pyannote.audio relies on torchcodec for reading and torchaudio for resampling.
 
 import random
 import warnings
+from collections.abc import Mapping
 from io import IOBase
 from pathlib import Path
-from typing import Mapping, Optional, Tuple
 
 import torch.nn.functional as F
 import torchaudio
@@ -40,9 +40,9 @@ from pyannote.core import Segment
 from torch import Tensor
 
 try:
-    import torchcodec
     from torchcodec import AudioSamples
     from torchcodec.decoders import AudioDecoder, AudioStreamMetadata
+
     TORCHCODEC_AVAILABLE = True
 except Exception as e:
     warnings.warn(
@@ -215,14 +215,14 @@ class Audio:
 
         return file
 
-    def __init__(self, sample_rate: int = None, mono=None):
+    def __init__(self, sample_rate: int | None = None, mono=None):
         super().__init__()
         self.sample_rate = sample_rate
         self.mono = mono
 
     def downmix_and_resample(
         self, waveform: Tensor, sample_rate: int, channel: int | None = None
-    ) -> Tuple[Tensor, int]:
+    ) -> tuple[Tensor, int]:
         """Downmix and resample
 
         Parameters
@@ -289,9 +289,7 @@ class Audio:
 
         return metadata.duration_seconds_from_header
 
-    def get_num_samples(
-        self, duration: float, sample_rate: Optional[int] = None
-    ) -> int:
+    def get_num_samples(self, duration: float, sample_rate: int | None = None) -> int:
         """Deterministic number of samples from duration and sample rate"""
 
         sample_rate = sample_rate or self.sample_rate
@@ -303,7 +301,7 @@ class Audio:
 
         return round(duration * sample_rate)
 
-    def __call__(self, file: AudioFile) -> Tuple[Tensor, int]:
+    def __call__(self, file: AudioFile) -> tuple[Tensor, int]:
         """Obtain waveform
 
         Parameters
@@ -355,7 +353,7 @@ class Audio:
         file: AudioFile,
         segment: Segment,
         mode="raise",
-    ) -> Tuple[Tensor, int]:
+    ) -> tuple[Tensor, int]:
         """Fast version of self(file).crop(segment, **kwargs)
 
         Parameters
@@ -400,7 +398,7 @@ class Audio:
 
             end_sample: int = self.get_num_samples(segment.end, sample_rate)
             pad_end: int = max(end_sample, num_samples) - num_samples
-            if end_sample >= num_samples:
+            if end_sample > num_samples:
                 if mode == "raise":
                     raise ValueError(
                         f"requested chunk with end time (t={segment.end:.3f}s) greater than "

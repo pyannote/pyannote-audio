@@ -22,21 +22,22 @@
 # SOFTWARE.
 
 import warnings
-from typing import Callable, List, Optional, Text, Tuple, Union
+from collections.abc import Callable
 
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 from lightning.pytorch.utilities.memory import is_oom_error
+from pyannote.core import Segment, SlidingWindow, SlidingWindowFeature
+from torch import nn
+
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import Model, Specifications
 from pyannote.audio.core.task import Resolution
 from pyannote.audio.utils.multi_task import map_with_specifications
 from pyannote.audio.utils.powerset import Powerset
 from pyannote.audio.utils.reproducibility import fix_reproducibility
-from pyannote.core import Segment, SlidingWindow, SlidingWindowFeature
 
 
 class BaseInference:
@@ -85,13 +86,13 @@ class Inference(BaseInference):
     def __init__(
         self,
         model: Model,
-        window: Text = "sliding",
-        duration: Optional[float] = None,
-        step: Optional[float] = None,
-        pre_aggregation_hook: Callable[[np.ndarray], np.ndarray] = None,
+        window: str = "sliding",
+        duration: float | None = None,
+        step: float | None = None,
+        pre_aggregation_hook: Callable[[np.ndarray], np.ndarray] | None = None,
         skip_aggregation: bool = False,
         skip_conversion: bool = False,
-        device: Optional[torch.device] = None,
+        device: torch.device | None = None,
         batch_size: int = 32,
     ):
         # ~~~~ model ~~~~~
@@ -134,7 +135,7 @@ class Inference(BaseInference):
 
         self.skip_conversion = skip_conversion
 
-        conversion = list()
+        conversion = []
         for s in specifications:
             if s.powerset and not skip_conversion:
                 c = Powerset(len(s.classes), s.powerset_max_classes)
@@ -186,7 +187,7 @@ class Inference(BaseInference):
         self.device = device
         return self
 
-    def infer(self, chunks: torch.Tensor) -> Union[np.ndarray, Tuple[np.ndarray]]:
+    def infer(self, chunks: torch.Tensor) -> np.ndarray | tuple[np.ndarray]:
         """Forward pass
 
         Takes care of sending chunks to right device and outputs back to CPU
@@ -212,7 +213,7 @@ class Inference(BaseInference):
                         f"Try with a smaller value until memory error disappears."
                     )
                 else:
-                    raise exception
+                    raise
 
         def __convert(output: torch.Tensor, conversion: nn.Module, **kwargs):
             return conversion(output).cpu().numpy()
@@ -225,8 +226,8 @@ class Inference(BaseInference):
         self,
         waveform: torch.Tensor,
         sample_rate: int,
-        hook: Optional[Callable],
-    ) -> Union[SlidingWindowFeature, Tuple[SlidingWindowFeature]]:
+        hook: Callable | None,
+    ) -> SlidingWindowFeature | tuple[SlidingWindowFeature]:
         """Slide model on a waveform
 
         Parameters
@@ -236,7 +237,7 @@ class Inference(BaseInference):
         sample_rate : int
             Sample rate.
         hook: Optional[Callable]
-            When a callable is provided, it is called everytime a batch is
+            When a callable is provided, it is called every time a batch is
             processed with two keyword arguments:
             - `completed`: the number of chunks that have been processed so far
             - `total`: the total number of chunks
@@ -253,13 +254,13 @@ class Inference(BaseInference):
         _, num_samples = waveform.shape
 
         def __frames(
-            receptive_field, specifications: Optional[Specifications] = None
+            receptive_field, specifications: Specifications | None = None
         ) -> SlidingWindow:
             if specifications.resolution == Resolution.CHUNK:
                 return SlidingWindow(start=0.0, duration=self.duration, step=self.step)
             return receptive_field
 
-        frames: Union[SlidingWindow, Tuple[SlidingWindow]] = map_with_specifications(
+        frames: SlidingWindow | tuple[SlidingWindow] = map_with_specifications(
             self.model.specifications, __frames, self.model.receptive_field
         )
 
@@ -285,10 +286,10 @@ class Inference(BaseInference):
             last_chunk = F.pad(last_chunk, (0, last_pad))
 
         def __empty_list(**kwargs):
-            return list()
+            return []
 
-        outputs: list[np.ndarray] | tuple[list[np.ndarray]] = (
-            map_with_specifications(self.model.specifications, __empty_list)
+        outputs: list[np.ndarray] | tuple[list[np.ndarray]] = map_with_specifications(
+            self.model.specifications, __empty_list
         )
 
         if hook is not None:
@@ -296,13 +297,12 @@ class Inference(BaseInference):
 
         def __append_batch(output, batch_output, **kwargs) -> None:
             output.append(batch_output)
-            return
 
         # slide over audio chunks in batch
         for c in np.arange(0, num_chunks, self.batch_size):
             batch: torch.Tensor = chunks[c : c + self.batch_size]
 
-            batch_outputs: Union[np.ndarray, Tuple[np.ndarray]] = self.infer(batch)
+            batch_outputs: np.ndarray | tuple[np.ndarray] = self.infer(batch)
 
             _ = map_with_specifications(
                 self.model.specifications, __append_batch, outputs, batch_outputs
@@ -325,17 +325,17 @@ class Inference(BaseInference):
                     total=num_chunks + has_last_chunk,
                 )
 
-        def __vstack(output: List[np.ndarray], **kwargs) -> np.ndarray:
+        def __vstack(output: list[np.ndarray], **kwargs) -> np.ndarray:
             return np.vstack(output)
 
-        outputs: Union[np.ndarray, Tuple[np.ndarray]] = map_with_specifications(
+        outputs: np.ndarray | tuple[np.ndarray] = map_with_specifications(
             self.model.specifications, __vstack, outputs
         )
 
         def __aggregate(
             outputs: np.ndarray,
             frames: SlidingWindow,
-            specifications: Optional[Specifications] = None,
+            specifications: Specifications | None = None,
         ) -> SlidingWindowFeature:
             # skip aggregation when requested,
             # or when model outputs just one vector per chunk
@@ -380,11 +380,8 @@ class Inference(BaseInference):
         )
 
     def __call__(
-        self, file: AudioFile, hook: Optional[Callable] = None
-    ) -> Union[
-        Tuple[Union[SlidingWindowFeature, np.ndarray]],
-        Union[SlidingWindowFeature, np.ndarray],
-    ]:
+        self, file: AudioFile, hook: Callable | None = None
+    ) -> tuple[SlidingWindowFeature | np.ndarray] | SlidingWindowFeature | np.ndarray:
         """Run inference on a whole file
 
         Parameters
@@ -392,7 +389,7 @@ class Inference(BaseInference):
         file : AudioFile
             Audio file.
         hook : callable, optional
-            When a callable is provided, it is called everytime a batch is processed
+            When a callable is provided, it is called every time a batch is processed
             with two keyword arguments:
             - `completed`: the number of chunks that have been processed so far
             - `total`: the total number of chunks
@@ -412,7 +409,7 @@ class Inference(BaseInference):
         if self.window == "sliding":
             return self.slide(waveform, sample_rate, hook=hook)
 
-        outputs: Union[np.ndarray, Tuple[np.ndarray]] = self.infer(waveform[None])
+        outputs: np.ndarray | tuple[np.ndarray] = self.infer(waveform[None])
 
         def __first_sample(outputs: np.ndarray, **kwargs) -> np.ndarray:
             return outputs[0]
@@ -424,12 +421,9 @@ class Inference(BaseInference):
     def crop(
         self,
         file: AudioFile,
-        chunk: Union[Segment, List[Segment]],
-        hook: Optional[Callable] = None,
-    ) -> Union[
-        Tuple[Union[SlidingWindowFeature, np.ndarray]],
-        Union[SlidingWindowFeature, np.ndarray],
-    ]:
+        chunk: Segment | list[Segment],
+        hook: Callable | None = None,
+    ) -> tuple[SlidingWindowFeature | np.ndarray] | SlidingWindowFeature | np.ndarray:
         """Run inference on a chunk or a list of chunks
 
         Parameters
@@ -443,7 +437,7 @@ class Inference(BaseInference):
             to "whole", this is equivalent to concatenating each chunk into one
             (artificial) chunk before processing it.
         hook : callable, optional
-            When a callable is provided, it is called everytime a batch is processed
+            When a callable is provided, it is called every time a batch is processed
             with two keyword arguments:
             - `completed`: the number of chunks that have been processed so far
             - `total`: the total number of chunks
@@ -473,8 +467,8 @@ class Inference(BaseInference):
                 chunk = Segment(start=start, end=end)
 
             waveform, sample_rate = self.model.audio.crop(file, chunk)
-            outputs: SlidingWindowFeature | tuple[SlidingWindowFeature] = (
-                self.slide(waveform, sample_rate, hook=hook)
+            outputs: SlidingWindowFeature | tuple[SlidingWindowFeature] = self.slide(
+                waveform, sample_rate, hook=hook
             )
 
             def __shift(output: SlidingWindowFeature, **kwargs) -> SlidingWindowFeature:
@@ -493,7 +487,7 @@ class Inference(BaseInference):
                 [self.model.audio.crop(file, c)[0] for c in chunk], dim=1
             )
 
-        outputs: Union[np.ndarray, Tuple[np.ndarray]] = self.infer(waveform[None])
+        outputs: np.ndarray | tuple[np.ndarray] = self.infer(waveform[None])
 
         def __first_sample(outputs: np.ndarray, **kwargs) -> np.ndarray:
             return outputs[0]
@@ -506,7 +500,7 @@ class Inference(BaseInference):
     def aggregate(
         scores: SlidingWindowFeature,
         frames: SlidingWindow,
-        warm_up: Tuple[float, float] = (0.0, 0.0),
+        warm_up: tuple[float, float] = (0.0, 0.0),
         epsilon: float = 1e-12,
         hamming: bool = False,
         missing: float = np.nan,
@@ -629,7 +623,7 @@ class Inference(BaseInference):
     @staticmethod
     def trim(
         scores: SlidingWindowFeature,
-        warm_up: Tuple[float, float] = (0.1, 0.1),
+        warm_up: tuple[float, float] = (0.1, 0.1),
     ) -> SlidingWindowFeature:
         """Trim left and right warm-up regions
 

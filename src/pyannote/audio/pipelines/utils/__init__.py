@@ -35,15 +35,15 @@ from .getter import (
 from .oracle import oracle_segmentation
 
 __all__ = [
-    "SpeakerDiarizationMixin",
-    "oracle_segmentation",
-    "get_augmentation",
     "PipelineAugmentation",
+    "PipelineCalibration",
+    "PipelineModel",
+    "PipelinePLDA",
+    "SpeakerDiarizationMixin",
+    "get_augmentation",
+    "get_calibration",
     "get_devices",
     "get_model",
-    "PipelineModel",
     "get_plda",
-    "PipelinePLDA",
-    "get_calibration",
-    "PipelineCalibration",
+    "oracle_segmentation",
 ]
