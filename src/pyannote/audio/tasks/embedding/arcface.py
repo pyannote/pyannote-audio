@@ -23,7 +23,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, Optional, Sequence, Union
+from collections.abc import Sequence
 
 import pytorch_metric_learning.losses
 from pyannote.database import Protocol
@@ -82,16 +82,16 @@ class SupervisedRepresentationLearningWithArcFace(
     def __init__(
         self,
         protocol: Protocol,
-        min_duration: Optional[float] = None,
+        min_duration: float | None = None,
         duration: float = 2.0,
         num_classes_per_batch: int = 32,
         num_chunks_per_class: int = 1,
         margin: float = 28.6,
         scale: float = 64.0,
-        num_workers: Optional[int] = None,
+        num_workers: int | None = None,
         pin_memory: bool = False,
-        augmentation: Optional[BaseWaveformTransform] = None,
-        metric: Union[Metric, Sequence[Metric], Dict[str, Metric]] = None,
+        augmentation: BaseWaveformTransform | None = None,
+        metric: Metric | Sequence[Metric] | dict[str, Metric] = None,
     ):
 
         self.num_chunks_per_class = num_chunks_per_class

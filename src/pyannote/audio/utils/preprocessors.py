@@ -1,6 +1,3 @@
-#!/usr/bin/env python
-# encoding: utf-8
-
 # The MIT License (MIT)
 
 # Copyright (c) 2022-2025 CNRS
@@ -28,11 +25,11 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 from functools import reduce
-from typing import Dict, List, Optional, Set
 
-from pyannote.audio.core.io import Audio, get_audio_metadata
 from pyannote.core import Annotation, Segment
 from pyannote.database import ProtocolFile
+
+from pyannote.audio.core.io import Audio, get_audio_metadata
 
 
 class LowerTemporalResolution:
@@ -84,16 +81,16 @@ class DeriveMetaLabels:
 
     def __init__(
         self,
-        classes: List[str],
-        unions: Optional[Dict[str, List[str]]] = None,
-        intersections: Optional[Dict[str, List[str]]] = None,
+        classes: list[str],
+        unions: dict[str, list[str]] | None = None,
+        intersections: dict[str, list[str]] | None = None,
     ):
-        self.classes: Set[str] = set(classes)
-        self.unions = unions if unions is not None else dict()
-        self.intersections = intersections if intersections is not None else dict()
+        self.classes: set[str] = set(classes)
+        self.unions = unions if unions is not None else {}
+        self.intersections = intersections if intersections is not None else {}
 
     @property
-    def all_classes(self) -> List[str]:
+    def all_classes(self) -> list[str]:
         """A list of all the classes (base, union-based and intersection-based) that can be found
         in output annotations from this preprocessor"""
         return sorted(

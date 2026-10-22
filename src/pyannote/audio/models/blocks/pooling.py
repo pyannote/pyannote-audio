@@ -20,11 +20,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import Optional
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+from torch import nn
 
 
 def _pool(sequences: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:
@@ -74,7 +73,7 @@ class StatsPool(nn.Module):
     """
 
     def forward(
-        self, sequences: torch.Tensor, weights: Optional[torch.Tensor] = None
+        self, sequences: torch.Tensor, weights: torch.Tensor | None = None
     ) -> torch.Tensor:
         """Forward pass
 

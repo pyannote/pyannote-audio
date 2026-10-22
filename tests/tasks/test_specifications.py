@@ -1,8 +1,8 @@
 import pytest
 from pyannote.database import FileFinder, registry
 
-from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import UnknownSpecificationsError
+from pyannote.audio.models.segmentation.debug import SimpleSegmentationModel
 from pyannote.audio.tasks import SpeakerDiarization
 
 
@@ -21,7 +21,7 @@ def test_unknown_specifications_error_raised_on_non_setup_task(protocol):
 
 def test_unknown_specifications_error_raised_on_non_setup_model_task(protocol):
     task = SpeakerDiarization(protocol=protocol)
-    model = Model.from_pretrained("pyannote/ci-segmentation")
+    model = SimpleSegmentationModel()
     model.task = task
     with pytest.raises(UnknownSpecificationsError):
         _ = model.specifications

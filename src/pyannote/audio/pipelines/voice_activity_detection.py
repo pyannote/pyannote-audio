@@ -22,9 +22,9 @@
 
 """Voice activity detection pipelines"""
 
+from collections.abc import Callable
 from functools import partial
 from pathlib import Path
-from typing import Callable, Optional, Text, Union
 
 import numpy as np
 from pyannote.core import Annotation, SlidingWindowFeature
@@ -96,8 +96,8 @@ class VoiceActivityDetection(Pipeline):
         self,
         segmentation: PipelineModel = "pyannote/segmentation",
         fscore: bool = False,
-        token: Union[Text, None] = None,
-        cache_dir: Union[Path, Text, None] = None,
+        token: str | None = None,
+        cache_dir: Path | str | None = None,
         **inference_kwargs,
     ):
         super().__init__()
@@ -158,7 +158,7 @@ class VoiceActivityDetection(Pipeline):
 
     CACHED_SEGMENTATION = "cache/segmentation/inference"
 
-    def apply(self, file: AudioFile, hook: Optional[Callable] = None) -> Annotation:
+    def apply(self, file: AudioFile, hook: Callable | None = None) -> Annotation:
         """Apply voice activity detection
 
         Parameters
@@ -204,7 +204,7 @@ class VoiceActivityDetection(Pipeline):
         speech.uri = file["uri"]
         return speech.rename_labels({label: "SPEECH" for label in speech.labels()})
 
-    def get_metric(self) -> Union[DetectionErrorRate, DetectionPrecisionRecallFMeasure]:
+    def get_metric(self) -> DetectionErrorRate | DetectionPrecisionRecallFMeasure:
         """Return new instance of detection metric"""
 
         if self.fscore:

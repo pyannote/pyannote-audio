@@ -22,16 +22,17 @@
 # SOFTWARE.
 
 import itertools
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Dict, Mapping
 
 import torch
+from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
+from torch_audiomentations.utils.config import from_dict as augmentation_from_dict
+
 from pyannote.audio.core.calibration import Calibration
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.pipeline import Pipeline
 from pyannote.audio.core.plda import PLDA
-from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
-from torch_audiomentations.utils.config import from_dict as augmentation_from_dict
 
 
 def get_pipeline(
@@ -139,7 +140,7 @@ def get_model(
 PipelineAugmentation = BaseWaveformTransform | Mapping
 
 
-PipelineCalibration = Calibration | str | Dict
+PipelineCalibration = Calibration | str | dict
 
 
 def get_calibration(
@@ -181,7 +182,7 @@ def get_calibration(
             cache_dir=cache_dir,
         )
 
-    elif isinstance(calibration, Dict):
+    elif isinstance(calibration, dict):
         calibration.setdefault("token", token)
         calibration.setdefault("cache_dir", cache_dir)
         loaded_calibration = Calibration.from_pretrained(**calibration)
@@ -195,7 +196,7 @@ def get_calibration(
     return loaded_calibration
 
 
-PipelinePLDA = PLDA | str | Dict
+PipelinePLDA = PLDA | str | dict
 
 
 def get_plda(
@@ -233,7 +234,7 @@ def get_plda(
     elif isinstance(plda, str):
         loaded_plda = PLDA.from_pretrained(plda, token=token, cache_dir=cache_dir)
 
-    elif isinstance(plda, Dict):
+    elif isinstance(plda, dict):
         plda.setdefault("token", token)
         plda.setdefault("cache_dir", cache_dir)
         loaded_plda = PLDA.from_pretrained(**plda)
