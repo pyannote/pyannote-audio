@@ -2,6 +2,7 @@
 name = "pyannote-audio"
 description = "State-of-the-art speaker diarization toolkit"
 readme = "README.md"
+license = "MIT"
 authors = [{ name = "Hervé BREDIN", email = "herve@pyannote.ai" }]
 requires-python = ">=3.11"
 
