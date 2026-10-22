@@ -173,8 +173,7 @@ def l2_norm(vec_or_matrix):
         )
     else:
         raise ValueError(
-            "Wrong number of dimensions, 1 or 2 is supported, not %i."
-            % len(vec_or_matrix.shape)
+            f"Wrong number of dimensions, 1 or 2 is supported, not {len(vec_or_matrix.shape)}."
         )
 
 
@@ -208,11 +207,13 @@ def vbx_setup(transform_npz, plda_npz):
     plda_tr = wccn.T[::-1]
 
     # tf for preprocessing x-vectors (centering, whitening, LDA)
-    xvec_tf = lambda x: np.sqrt(lda.shape[1]) * l2_norm(
-        lda.T.dot(np.sqrt(lda.shape[0]) * l2_norm(x - mean1).T).T - mean2
-    )
+    def xvec_tf(x):
+        return np.sqrt(lda.shape[1]) * l2_norm(
+            lda.T.dot(np.sqrt(lda.shape[0]) * l2_norm(x - mean1).T).T - mean2
+        )
+
     # tf to map x-vectors to the PLDA latent space (center, apply transform, optional truncate to 'lda_dim')
-    plda_tf = lambda x0, lda_dim=lda.shape[1]: (x0 - plda_mu).dot(plda_tr.T)[
-        :, :lda_dim
-    ]
+    def plda_tf(x0, lda_dim=lda.shape[1]):
+        return (x0 - plda_mu).dot(plda_tr.T)[:, :lda_dim]
+
     return xvec_tf, plda_tf, plda_psi

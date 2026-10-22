@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 
-from typing import Optional
+from typing import ClassVar
 
 import torch
 from torch import Tensor
@@ -46,7 +46,7 @@ class MixSpeakerDiarization(Mix):
         of speakers in each batch.
     """
 
-    supported_modes = {"per_example", "per_channel"}
+    supported_modes: ClassVar[set] = {"per_example", "per_channel"}
 
     supports_multichannel = True
     requires_sample_rate = False
@@ -60,10 +60,10 @@ class MixSpeakerDiarization(Mix):
         max_snr_in_db: float = 5.0,
         mode: str = "per_example",
         p: float = 0.5,
-        p_mode: Optional[str] = None,
-        sample_rate: Optional[int] = None,
-        target_rate: Optional[int] = None,
-        max_num_speakers: Optional[int] = None,
+        p_mode: str | None = None,
+        sample_rate: int | None = None,
+        target_rate: int | None = None,
+        max_num_speakers: int | None = None,
         output_type: str = "tensor",
     ):
         super().__init__(
@@ -80,12 +80,12 @@ class MixSpeakerDiarization(Mix):
 
     def randomize_parameters(
         self,
-        samples: Optional[Tensor] = None,
-        sample_rate: Optional[int] = None,
-        targets: Optional[Tensor] = None,
-        target_rate: Optional[int] = None,
+        samples: Tensor | None = None,
+        sample_rate: int | None = None,
+        targets: Tensor | None = None,
+        target_rate: int | None = None,
     ):
-        batch_size, num_channels, num_samples = samples.shape
+        batch_size, _num_channels, _num_samples = samples.shape
         snr_distribution = torch.distributions.Uniform(
             low=torch.tensor(
                 self.min_snr_in_db,
@@ -136,6 +136,6 @@ class MixSpeakerDiarization(Mix):
                     device=samples.device,
                 )
             ]
-            self.transform_parameters["sample_idx"][
-                samples_with_n_speakers
-            ] = selected_candidates
+            self.transform_parameters["sample_idx"][samples_with_n_speakers] = (
+                selected_candidates
+            )

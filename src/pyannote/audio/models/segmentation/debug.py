@@ -22,11 +22,10 @@
 
 
 from functools import lru_cache
-from typing import Optional
 
 import torch
-import torch.nn as nn
 from einops import rearrange
+from torch import nn
 from torchaudio.transforms import MFCC
 
 from pyannote.audio.core.model import Model
@@ -38,7 +37,7 @@ class SimpleSegmentationModel(Model):
         self,
         sample_rate: int = 16000,
         num_channels: int = 1,
-        task: Optional[Task] = None,
+        task: Task | None = None,
     ):
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
 
@@ -159,6 +158,6 @@ class SimpleSegmentationModel(Model):
         # extract MFCC
         mfcc = self.mfcc(waveforms)
         # pass MFCC sequence into the recurrent layer
-        output, hidden = self.lstm(rearrange(mfcc, "b c f t -> b t (c f)"))
+        output, _hidden = self.lstm(rearrange(mfcc, "b c f t -> b t (c f)"))
         # apply the final classifier to get logits
         return self.activation(self.classifier(output))

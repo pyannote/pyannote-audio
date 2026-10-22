@@ -2,8 +2,9 @@
 name = "pyannote-audio"
 description = "State-of-the-art speaker diarization toolkit"
 readme = "README.md"
+license = "MIT"
 authors = [{ name = "Hervé BREDIN", email = "herve@pyannote.ai" }]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 
 dynamic = ["version"]
 
@@ -27,7 +28,7 @@ dependencies = [
     "torchaudio>=2.8.0",
     "torchcodec>=0.7.0",
     "torchmetrics>=1.6.1",
-    "matplotlib>=3.10.0",
+    "matplotlib>=3.11.0",
     "pyannoteai-sdk>=0.3.0",
 ]
 
@@ -42,7 +43,7 @@ separation = ["asteroid>=0.5.2", "transformers>=4.48.3"]
 dev = ["ipython>=8.32.0"]
 
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+requires = ["hatchling==1.32.0", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [tool.hatch.version]
@@ -51,5 +52,29 @@ source = "vcs"
 [tool.hatch.build.targets.wheel]
 packages = ["src/pyannote"]
 
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src", "/tests", "/doc", "/README.md", "/CHANGELOG.md", "/LICENSE",
+    "/pyproject.toml",
+]
+
 [dependency-groups]
 dev = ["ipykernel>=6.29.5"]
+
+[tool.pytest.ini_options]
+markers = [
+    "network: downloads public models from Hugging Face",
+    "notebook: executes historical tutorial notebooks (opt in explicitly)",
+]
+addopts = "-m 'not notebook'"
+
+[tool.ruff]
+target-version = "py311"
+# Historical notebooks target older APIs and are maintained separately.
+extend-exclude = ["*.ipynb", "tutorials/AMI-diarization-setup"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP"]
+# Imports intentionally follow version initialization or notebook setup.
+# Preserve existing enum string behavior and mathematical variable names.
+ignore = ["E402", "E741", "UP042"]

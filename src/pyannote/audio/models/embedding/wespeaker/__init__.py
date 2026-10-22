@@ -22,11 +22,10 @@
 
 
 from functools import lru_cache, partial
-from typing import Optional
 
 import torch
 import torch.nn.functional as F
-import torchaudio.compliance.kaldi as kaldi
+from torchaudio.compliance import kaldi
 
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
@@ -66,8 +65,8 @@ class BaseWeSpeakerResNet(Model):
         dither: float = 0.0,
         window_type: str = "hamming",
         use_energy: bool = False,
-        fbank_centering_span: Optional[float] = None,
-        task: Optional[Task] = None,
+        fbank_centering_span: float | None = None,
+        task: Task | None = None,
     ):
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
 
@@ -262,7 +261,7 @@ class BaseWeSpeakerResNet(Model):
         )
 
     def forward(
-        self, waveforms: torch.Tensor, weights: Optional[torch.Tensor] = None
+        self, waveforms: torch.Tensor, weights: torch.Tensor | None = None
     ) -> torch.Tensor:
         """Extract speaker embeddings
 
@@ -333,7 +332,7 @@ class WeSpeakerResNet34(BaseWeSpeakerResNet):
         dither: float = 0.0,
         window_type: str = "hamming",
         use_energy: bool = False,
-        task: Optional[Task] = None,
+        task: Task | None = None,
     ):
         super().__init__(
             sample_rate=sample_rate,
@@ -362,7 +361,7 @@ class WeSpeakerResNet152(BaseWeSpeakerResNet):
         dither: float = 0.0,
         window_type: str = "hamming",
         use_energy: bool = False,
-        task: Optional[Task] = None,
+        task: Task | None = None,
     ):
         super().__init__(
             sample_rate=sample_rate,
@@ -391,7 +390,7 @@ class WeSpeakerResNet221(BaseWeSpeakerResNet):
         dither: float = 0.0,
         window_type: str = "hamming",
         use_energy: bool = False,
-        task: Optional[Task] = None,
+        task: Task | None = None,
     ):
         super().__init__(
             sample_rate=sample_rate,
@@ -420,7 +419,7 @@ class WeSpeakerResNet293(BaseWeSpeakerResNet):
         dither: float = 0.0,
         window_type: str = "hamming",
         use_energy: bool = False,
-        task: Optional[Task] = None,
+        task: Task | None = None,
     ):
         super().__init__(
             sample_rate=sample_rate,

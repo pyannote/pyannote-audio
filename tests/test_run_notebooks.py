@@ -1,16 +1,14 @@
-from glob import glob
+"""Opt-in checks for historical notebooks: pytest -m notebook."""
+
+from pathlib import Path
 
 import papermill as pm
+import pytest
 
 
-def test_can_run_notebooks():
-    # Search for all notebooks in directory
-    notebooks = glob("**/notebook/**/*.ipynb")
-    for nb in notebooks:
-        try:
-            pm.execute_notebook(
-                nb, "/dev/null", progress_bar=False, kernel_name="python"
-            )
-        except Exception as e:
-            # Which notebook caused the error
-            raise Exception(nb, e)
+@pytest.mark.notebook
+@pytest.mark.parametrize("notebook", sorted(Path("notebook").glob("*.ipynb")))
+def test_can_run_notebook(notebook, tmp_path):
+    pm.execute_notebook(
+        notebook, tmp_path / notebook.name, progress_bar=False, kernel_name="python"
+    )
