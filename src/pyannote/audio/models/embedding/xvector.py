@@ -21,10 +21,10 @@
 # SOFTWARE.
 
 from functools import lru_cache
-from typing import Optional
+from typing import ClassVar
 
 import torch
-import torch.nn as nn
+from torch import nn
 from torchaudio.transforms import MFCC
 
 from pyannote.audio.core.model import Model
@@ -40,15 +40,20 @@ from pyannote.audio.utils.receptive_field import (
 
 
 class XVectorMFCC(Model):
-    MFCC_DEFAULTS = {"n_mfcc": 40, "dct_type": 2, "norm": "ortho", "log_mels": False}
+    MFCC_DEFAULTS: ClassVar[dict] = {
+        "n_mfcc": 40,
+        "dct_type": 2,
+        "norm": "ortho",
+        "log_mels": False,
+    }
 
     def __init__(
         self,
         sample_rate: int = 16000,
         num_channels: int = 1,
-        mfcc: Optional[dict] = None,
+        mfcc: dict | None = None,
         dimension: int = 512,
-        task: Optional[Task] = None,
+        task: Task | None = None,
     ):
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
 
@@ -183,7 +188,7 @@ class XVectorMFCC(Model):
             return receptive_field_center * hop_length + n_fft // 2
 
     def forward(
-        self, waveforms: torch.Tensor, weights: Optional[torch.Tensor] = None
+        self, waveforms: torch.Tensor, weights: torch.Tensor | None = None
     ) -> torch.Tensor:
         """
 
@@ -203,15 +208,15 @@ class XVectorMFCC(Model):
 
 
 class XVectorSincNet(Model):
-    SINCNET_DEFAULTS = {"stride": 10}
+    SINCNET_DEFAULTS: ClassVar[dict] = {"stride": 10}
 
     def __init__(
         self,
         sample_rate: int = 16000,
         num_channels: int = 1,
-        sincnet: Optional[dict] = None,
+        sincnet: dict | None = None,
         dimension: int = 512,
-        task: Optional[Task] = None,
+        task: Task | None = None,
     ):
         super().__init__(sample_rate=sample_rate, num_channels=num_channels, task=task)
 
@@ -330,7 +335,7 @@ class XVectorSincNet(Model):
         return self.sincnet.receptive_field_center(frame=receptive_field_center)
 
     def forward(
-        self, waveforms: torch.Tensor, weights: Optional[torch.Tensor] = None
+        self, waveforms: torch.Tensor, weights: torch.Tensor | None = None
     ) -> torch.Tensor:
         """
 

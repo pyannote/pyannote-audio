@@ -16,12 +16,11 @@
 # limitations under the License.
 
 from functools import lru_cache
-from typing import Optional
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
+from torch import nn
 
 from pyannote.audio.models.blocks.pooling import StatsPool
 from pyannote.audio.utils.receptive_field import (
@@ -42,11 +41,11 @@ class TSTP(nn.Module):
     """
 
     def __init__(self, in_dim=0, **kwargs):
-        super(TSTP, self).__init__()
+        super().__init__()
         self.in_dim = in_dim
         self.stats_pool = StatsPool()
 
-    def forward(self, features, weights: Optional[torch.Tensor] = None):
+    def forward(self, features, weights: torch.Tensor | None = None):
         """
 
         Parameters
@@ -85,7 +84,7 @@ class BasicBlock(nn.Module):
     expansion = 1
 
     def __init__(self, in_planes, planes, stride=1):
-        super(BasicBlock, self).__init__()
+        super().__init__()
         self.stride = stride
         self.conv1 = nn.Conv2d(
             in_planes, planes, kernel_size=3, stride=stride, padding=1, bias=False
@@ -149,7 +148,7 @@ class Bottleneck(nn.Module):
     expansion = 4
 
     def __init__(self, in_planes, planes, stride=1):
-        super(Bottleneck, self).__init__()
+        super().__init__()
         self.stride = stride
         self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=1, bias=False)
         self.bn1 = nn.BatchNorm2d(planes)
@@ -223,7 +222,7 @@ class ResNet(nn.Module):
         pooling_func="TSTP",
         two_emb_layer=True,
     ):
-        super(ResNet, self).__init__()
+        super().__init__()
         self.in_planes = m_channels
         self.feat_dim = feat_dim
         self.embed_dim = embed_dim
@@ -396,7 +395,7 @@ class ResNet(nn.Module):
         else:
             return torch.tensor(0.0), embed_a
 
-    def forward(self, fbank: torch.Tensor, weights: Optional[torch.Tensor] = None):
+    def forward(self, fbank: torch.Tensor, weights: torch.Tensor | None = None):
         """Extract speaker embeddings
 
         Parameters

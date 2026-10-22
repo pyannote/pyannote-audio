@@ -22,12 +22,12 @@
 
 """Tests for subfolder support in Pipeline.from_pretrained"""
 
-import pytest
-import yaml
 from pathlib import Path
 
-from pyannote.audio.core.pipeline import Pipeline, expand_subfolders
+import pytest
+import yaml
 
+from pyannote.audio.core.pipeline import Pipeline, expand_subfolders
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -99,8 +99,20 @@ class TestExpandSubfolders:
             "revision": None,
             "subfolder": "embeddings",
             "token": "tok",
-            "cache_dir": None,
         }
+
+    @pytest.mark.parametrize("as_list", [False, True])
+    @pytest.mark.parametrize("token", [None, False, "tok"])
+    @pytest.mark.parametrize("cache_dir", [None, Path("cache")])
+    def test_optional_runtime_options(self, as_list, token, cache_dir):
+        config = ["$model/weights"] if as_list else {"model": "$model/weights"}
+        expand_subfolders(config, model_id="org/repo", token=token, cache_dir=cache_dir)
+        model = config[0] if as_list else config["model"]
+        for key, value in {"token": token, "cache_dir": cache_dir}.items():
+            if value is None:
+                assert key not in model
+            else:
+                assert model[key] == value
 
     def test_dict_model_reference_with_parent_subfolder(self):
         """Child $model refs are resolved under parent_subfolder."""
@@ -195,7 +207,7 @@ class TestFromPretrainedLocalSubfolder:
     def test_subfolder_does_not_exist_raises(self, tmp_path):
         """Requesting a non-existent subfolder should raise (file not found)."""
         write_config(tmp_path, self._minimal_config())
-        with pytest.raises(Exception):
+        with pytest.raises(FileNotFoundError):
             Pipeline.from_pretrained(str(tmp_path), subfolder="missing")
 
     def test_model_refs_resolved_under_subfolder(self, tmp_path):
@@ -259,12 +271,22 @@ class TestNestedSubfolderPipelines:
     def _write_three_level_tree(self, root: Path) -> None:
         write_config(
             root,
-            {"pipeline": {"name": _DUMMY_PARENT_CLS_DOTPATH, "params": {"sub": "$model/child"}}},
+            {
+                "pipeline": {
+                    "name": _DUMMY_PARENT_CLS_DOTPATH,
+                    "params": {"sub": "$model/child"},
+                }
+            },
             subfolder="v1",
         )
         write_config(
             root,
-            {"pipeline": {"name": _DUMMY_PARENT_CLS_DOTPATH, "params": {"sub": "$model/grandchild"}}},
+            {
+                "pipeline": {
+                    "name": _DUMMY_PARENT_CLS_DOTPATH,
+                    "params": {"sub": "$model/grandchild"},
+                }
+            },
             subfolder="v1/child",
         )
         write_config(
@@ -307,9 +329,16 @@ class TestNestedSubfolderPipelines:
         """Without subfolder=, the root config.yaml is used (one-level tree)."""
         write_config(
             tmp_path,
-            {"pipeline": {"name": _DUMMY_PARENT_CLS_DOTPATH, "params": {"sub": "$model/child"}}},
+            {
+                "pipeline": {
+                    "name": _DUMMY_PARENT_CLS_DOTPATH,
+                    "params": {"sub": "$model/child"},
+                }
+            },
         )
-        write_config(tmp_path, {"pipeline": {"name": _DUMMY_CLS_DOTPATH}}, subfolder="child")
+        write_config(
+            tmp_path, {"pipeline": {"name": _DUMMY_CLS_DOTPATH}}, subfolder="child"
+        )
         parent = Pipeline.from_pretrained(str(tmp_path))
         assert isinstance(parent, _DummyParentPipeline)
         assert isinstance(parent.sub, _DummyPipeline)
@@ -365,7 +394,10 @@ class TestFromPretrainedNonSubfolderCases:
         write_config(tmp_path, child_config, subfolder="seg")
 
         config = {
-            "pipeline": {"name": _DUMMY_PARENT_CLS_DOTPATH, "params": {"sub": "$model/seg"}},
+            "pipeline": {
+                "name": _DUMMY_PARENT_CLS_DOTPATH,
+                "params": {"sub": "$model/seg"},
+            },
         }
         pipeline = Pipeline.from_pretrained(config)
         assert isinstance(pipeline, _DummyParentPipeline)

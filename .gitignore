@@ -89,3 +89,7 @@ pyannote/audio/version.py
 
 # vim
 .vim
+
+.venv/
+.ruff_cache/
+.pytest_cache/

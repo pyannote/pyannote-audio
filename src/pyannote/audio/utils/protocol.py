@@ -21,12 +21,12 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import Optional
 
-from pyannote.audio.core.io import Audio
 from pyannote.core import Annotation
 from pyannote.database import FileFinder, Protocol, get_annotated
 from pyannote.database.protocol import SpeakerVerificationProtocol
+
+from pyannote.audio.core.io import Audio
 
 get_duration = Audio(mono="downmix").get_duration
 
@@ -136,9 +136,9 @@ class FilterByNumberOfSpeakers:
 
     def __init__(
         self,
-        num_speakers: Optional[int] = None,
-        min_speakers: Optional[int] = None,
-        max_speakers: Optional[int] = None,
+        num_speakers: int | None = None,
+        min_speakers: int | None = None,
+        max_speakers: int | None = None,
     ):
         from pyannote.audio.pipelines.utils.diarization import set_num_speakers
 
@@ -161,7 +161,4 @@ class FilterByNumberOfSpeakers:
         if self.min_speakers is not None and self.min_speakers > num_speakers:
             return False
 
-        if self.max_speakers is not None and self.max_speakers < num_speakers:
-            return False
-
-        return True
+        return not (self.max_speakers is not None and self.max_speakers < num_speakers)

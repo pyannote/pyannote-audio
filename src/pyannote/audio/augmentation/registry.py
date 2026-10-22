@@ -23,7 +23,7 @@
 from functools import singledispatch
 
 import torch
-import torch.nn as nn
+from torch import nn
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 
 from pyannote.audio.core.model import Model
@@ -98,7 +98,7 @@ def register_augmentation(
 
     if not hasattr(module, "__augmentation"):
         module.__augmentation = nn.ModuleDict()
-        module.__augmentation_handle = dict()
+        module.__augmentation_handle = {}
 
     # unregister any augmentation that might already exist
     if when in module.__augmentation:

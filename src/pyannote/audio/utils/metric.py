@@ -21,7 +21,6 @@
 # SOFTWARE.
 
 from functools import singledispatchmethod
-from typing import Dict, List, Optional
 
 import numpy as np
 from pyannote.core import (
@@ -108,13 +107,13 @@ class DiscreteDiarizationErrorRate(BaseMetric):
         self,
         reference,
         hypothesis,
-        uem: Optional[Timeline] = None,
+        uem: Timeline | None = None,
     ):
         return self.compute_components_helper(hypothesis, reference, uem=uem)
 
     @singledispatchmethod
     def compute_components_helper(
-        self, hypothesis, reference, uem: Optional[Timeline] = None
+        self, hypothesis, reference, uem: Timeline | None = None
     ):
         klass = hypothesis.__class__.__name__
         raise NotImplementedError(
@@ -126,7 +125,7 @@ class DiscreteDiarizationErrorRate(BaseMetric):
         self,
         hypothesis: np.ndarray,
         reference: np.ndarray,
-        uem: Optional[Timeline] = None,
+        uem: Timeline | None = None,
     ):
 
         if reference.ndim != 2:
@@ -167,7 +166,7 @@ class DiscreteDiarizationErrorRate(BaseMetric):
         self,
         hypothesis: SlidingWindowFeature,
         reference: Annotation,
-        uem: Optional[Timeline] = None,
+        uem: Timeline | None = None,
     ):
 
         ndim = hypothesis.data.ndim
@@ -194,7 +193,6 @@ class DiscreteDiarizationErrorRate(BaseMetric):
 
         # if (num_frames, num_speakers)-shaped, compute just one DER for the whole file
         if ndim == 2:
-
             if uem is None:
                 return self.compute_components_helper(hypothesis.data, reference.data)
 
@@ -212,10 +210,8 @@ class DiscreteDiarizationErrorRate(BaseMetric):
 
         # if (num_chunks, num_frames, num_speakers)-shared, compute one DER per chunk and aggregate
         elif ndim == 3:
-
             components = self.init_components()
             for window, hypothesis_window in hypothesis:
-
                 # Skip any window not fully covered by a segment of the uem
                 if uem is not None and not uem.covers(Timeline([window])):
                     continue
@@ -259,7 +255,7 @@ class SlidingDiarizationErrorRate(BaseMetric):
         self,
         reference,
         hypothesis,
-        uem: Optional[Timeline] = None,
+        uem: Timeline | None = None,
     ):
 
         if uem is None:
@@ -313,7 +309,7 @@ class MacroAverageFMeasure(BaseMetric):
 
     def __init__(
         self,
-        classes: List[str],  # noqa
+        classes: list[str],
         collar: float = 0.0,
         beta: float = 1.0,
         **kwargs,
@@ -326,7 +322,7 @@ class MacroAverageFMeasure(BaseMetric):
         self.collar = collar
         self.beta = beta
 
-        self._sub_metrics: Dict[str, DetectionPrecisionRecallFMeasure] = {
+        self._sub_metrics: dict[str, DetectionPrecisionRecallFMeasure] = {
             label: DetectionPrecisionRecallFMeasure(collar=collar, beta=beta, **kwargs)
             for label in self.classes
         }
@@ -352,7 +348,7 @@ class MacroAverageFMeasure(BaseMetric):
             )
         return details
 
-    def compute_metric(self, detail: Dict[str, float]):
+    def compute_metric(self, detail: dict[str, float]):
         return np.mean(list(detail.values()))
 
     def report(self, display=False):
@@ -367,7 +363,7 @@ class MacroAverageFMeasure(BaseMetric):
                     index=True,
                     sparsify=False,
                     justify="right",
-                    float_format=lambda f: "{0:.2f}".format(f),
+                    float_format=lambda f: f"{f:.2f}",
                 )
             )
 

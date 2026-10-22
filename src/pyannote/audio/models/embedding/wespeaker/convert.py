@@ -28,9 +28,9 @@ from pathlib import Path
 import lightning
 import torch
 
-import pyannote.audio.models.embedding.wespeaker as wespeaker
 from pyannote.audio import Model
 from pyannote.audio.core.task import Problem, Resolution, Specifications
+from pyannote.audio.models.embedding import wespeaker
 
 wespeaker_checkpoint_dir = sys.argv[1]  # /path/to/wespeaker_cnceleb-resnet34-LM
 

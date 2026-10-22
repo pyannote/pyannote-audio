@@ -23,13 +23,13 @@
 # AUTHOR: Joonas Kalda (github.com/joonaskalda)
 
 from functools import lru_cache
-from typing import Optional
+from typing import ClassVar
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from asteroid_filterbanks import make_enc_dec
 from pyannote.core.utils.generators import pairwise
+from torch import nn
 
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.task import Task
@@ -110,14 +110,14 @@ class ToTaToNet(Model):
     Odyssey 2024. https://arxiv.org/abs/2403.02288
     """
 
-    ENCODER_DECODER_DEFAULTS = {
+    ENCODER_DECODER_DEFAULTS: ClassVar[dict] = {
         "fb_name": "free",
         "kernel_size": 32,
         "n_filters": 64,
         "stride": 16,
     }
-    LINEAR_DEFAULTS = {"hidden_size": 64, "num_layers": 2}
-    DPRNN_DEFAULTS = {
+    LINEAR_DEFAULTS: ClassVar[dict] = {"hidden_size": 64, "num_layers": 2}
+    DPRNN_DEFAULTS: ClassVar[dict] = {
         "n_repeats": 6,
         "bn_chan": 128,
         "hid_size": 128,
@@ -126,17 +126,17 @@ class ToTaToNet(Model):
         "mask_act": "relu",
         "rnn_type": "LSTM",
     }
-    DIAR_DEFAULTS = {"frames_per_second": 125}
+    DIAR_DEFAULTS: ClassVar[dict] = {"frames_per_second": 125}
 
     def __init__(
         self,
-        encoder_decoder: dict = None,
-        linear: Optional[dict] = None,
-        diar: Optional[dict] = None,
-        dprnn: dict = None,
+        encoder_decoder: dict | None = None,
+        linear: dict | None = None,
+        diar: dict | None = None,
+        dprnn: dict | None = None,
         sample_rate: int = 16000,
         num_channels: int = 1,
-        task: Optional[Task] = None,
+        task: Task | None = None,
         n_sources: int = 3,
         use_wavlm: bool = True,
         wavlm_frozen: bool = False,
