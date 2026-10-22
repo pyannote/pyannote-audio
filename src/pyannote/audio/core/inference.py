@@ -229,7 +229,7 @@ class Inference(BaseInference):
         sample_rate : int
             Sample rate.
         hook: Optional[Callable]
-            When a callable is provided, it is called everytime a batch is
+            When a callable is provided, it is called every time a batch is
             processed with two keyword arguments:
             - `completed`: the number of chunks that have been processed so far
             - `total`: the total number of chunks
@@ -385,7 +385,7 @@ class Inference(BaseInference):
         file : AudioFile
             Audio file.
         hook : callable, optional
-            When a callable is provided, it is called everytime a batch is processed
+            When a callable is provided, it is called every time a batch is processed
             with two keyword arguments:
             - `completed`: the number of chunks that have been processed so far
             - `total`: the total number of chunks
@@ -436,7 +436,7 @@ class Inference(BaseInference):
             to "whole", this is equivalent to concatenating each chunk into one
             (artificial) chunk before processing it.
         hook : callable, optional
-            When a callable is provided, it is called everytime a batch is processed
+            When a callable is provided, it is called every time a batch is processed
             with two keyword arguments:
             - `completed`: the number of chunks that have been processed so far
             - `total`: the total number of chunks

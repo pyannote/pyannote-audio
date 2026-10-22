@@ -400,7 +400,7 @@ class Audio:
 
             end_sample: int = self.get_num_samples(segment.end, sample_rate)
             pad_end: int = max(end_sample, num_samples) - num_samples
-            if end_sample >= num_samples:
+            if end_sample > num_samples:
                 if mode == "raise":
                     raise ValueError(
                         f"requested chunk with end time (t={segment.end:.3f}s) greater than "
