@@ -21,16 +21,17 @@
 # SOFTWARE.
 
 
-from typing import Any, Callable, Tuple, Union
+from collections.abc import Callable
+from typing import Any
 
 from pyannote.audio.core.model import Specifications
 
 
 def map_with_specifications(
-    specifications: Union[Specifications, Tuple[Specifications]],
+    specifications: Specifications | tuple[Specifications],
     func: Callable,
     *iterables,
-) -> Union[Any, Tuple[Any]]:
+) -> Any | tuple[Any]:
     """Compute the function using arguments from each of the iterables
 
     Returns a tuple if provided `specifications` is a tuple,

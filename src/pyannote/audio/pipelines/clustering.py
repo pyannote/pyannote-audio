@@ -27,11 +27,6 @@ from enum import Enum
 
 import numpy as np
 from einops import rearrange
-from pyannote.audio.core.io import AudioFile
-from pyannote.audio.core.plda import PLDA
-from pyannote.audio.pipelines.utils import oracle_segmentation
-from pyannote.audio.utils.permutation import permutate
-from pyannote.audio.utils.vbx import cluster_vbx
 from pyannote.core import SlidingWindow, SlidingWindowFeature
 from pyannote.pipeline import Pipeline
 from pyannote.pipeline.parameter import Categorical, Integer, Uniform
@@ -39,6 +34,12 @@ from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.optimize import linear_sum_assignment
 from scipy.spatial.distance import cdist
 from sklearn.cluster import KMeans
+
+from pyannote.audio.core.io import AudioFile
+from pyannote.audio.core.plda import PLDA
+from pyannote.audio.pipelines.utils import oracle_segmentation
+from pyannote.audio.utils.permutation import permutate
+from pyannote.audio.utils.vbx import cluster_vbx
 
 
 class BaseClustering(Pipeline):
@@ -106,12 +107,12 @@ class BaseClustering(Pipeline):
         _, num_frames, _ = segmentations.data.shape
 
         # frames where only one speaker is active
-        single_active_mask = (np.sum(segmentations.data, axis=2, keepdims=True) == 1)
-        
+        single_active_mask = np.sum(segmentations.data, axis=2, keepdims=True) == 1
+
         # count number of clean frames per chunk and speaker
         num_clean_frames = np.sum(segmentations.data * single_active_mask, axis=1)
         # num_chunks, num_speakers
-                
+
         # whether speaker is active enough on their own
         active = num_clean_frames >= min_active_ratio * num_frames
         # num_chunks, num_speakers
@@ -125,9 +126,9 @@ class BaseClustering(Pipeline):
         return embeddings[chunk_idx, speaker_idx], chunk_idx, speaker_idx
 
     def constrained_argmax(self, soft_clusters: np.ndarray) -> np.ndarray:
-        
+
         soft_clusters = np.nan_to_num(soft_clusters, nan=np.nanmin(soft_clusters))
-        num_chunks, num_speakers, num_clusters = soft_clusters.shape
+        num_chunks, num_speakers, _num_clusters = soft_clusters.shape
         # num_chunks, num_speakers, num_clusters
 
         hard_clusters = -2 * np.ones((num_chunks, num_speakers), dtype=np.int8)
@@ -175,7 +176,7 @@ class BaseClustering(Pipeline):
         # TODO: option to add a new (dummy) cluster in case num_clusters < max(frame_speaker_count)
 
         num_clusters = np.max(train_clusters) + 1
-        num_chunks, num_speakers, dimension = embeddings.shape
+        num_chunks, num_speakers, _dimension = embeddings.shape
 
         train_embeddings = embeddings[train_chunk_idx, train_speaker_idx]
 
@@ -548,9 +549,7 @@ class KMeansClustering(BaseClustering):
 
 
 class VBxClustering(BaseClustering):
-
     expects_num_clusters: bool = False
-
 
     def __init__(
         self,
@@ -578,7 +577,7 @@ class VBxClustering(BaseClustering):
         max_clusters: int | None = None,
         **kwargs,
     ) -> np.ndarray:
-        
+
         constrained_assignment = self.constrained_assignment
 
         train_embeddings, _, _ = self.filter_embeddings(
@@ -626,8 +625,10 @@ class VBxClustering(BaseClustering):
         )
 
         num_chunks, num_speakers, dimension = embeddings.shape
-        W = q[:, sp > 1e-7] # responsibilities of speakers that VBx kept
-        centroids = W.T @ train_embeddings.reshape(-1, dimension) / W.sum(0, keepdims=True).T
+        W = q[:, sp > 1e-7]  # responsibilities of speakers that VBx kept
+        centroids = (
+            W.T @ train_embeddings.reshape(-1, dimension) / W.sum(0, keepdims=True).T
+        )
 
         # (optional) K-Means
         # re-cluster with Kmeans only in case the automatically determined
@@ -649,7 +650,8 @@ class VBxClustering(BaseClustering):
                 [
                     np.mean(train_embeddings[kmeans_clusters == k], axis=0)
                     for k in range(num_clusters)
-                ])
+                ]
+            )
 
         # calculate distance
         e2k_distance = rearrange(
@@ -666,7 +668,7 @@ class VBxClustering(BaseClustering):
 
         # assign each embedding to the cluster with the most similar centroid
         if constrained_assignment:
-            const = soft_clusters.min() - 1.   # const < any_valid_score
+            const = soft_clusters.min() - 1.0  # const < any_valid_score
             soft_clusters[segmentations.data.sum(1) == 0] = const
             hard_clusters = self.constrained_argmax(
                 soft_clusters,
@@ -675,7 +677,7 @@ class VBxClustering(BaseClustering):
             hard_clusters = np.argmax(soft_clusters, axis=2)
 
         hard_clusters = hard_clusters.reshape(num_chunks, num_speakers)
-        
+
         return hard_clusters, soft_clusters, centroids
 
 

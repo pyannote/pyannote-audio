@@ -89,7 +89,9 @@ def download_from_hf_hub(
             token=token,
         )
     except HfHubHTTPError:
-        asset_file_name: str = asset_file.name if isinstance(asset_file, AssetFileName) else asset_file
+        asset_file_name: str = (
+            asset_file.name if isinstance(asset_file, AssetFileName) else asset_file
+        )
         print(
             f"""
 Could not download {asset_file_name} from {model_id}.

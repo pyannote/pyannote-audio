@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 import numpy as np
@@ -27,7 +27,12 @@ import yaml
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
 from pyannote.audio import __version__
+
+if TYPE_CHECKING:
+    from pyannote.audio import Model, Pipeline
+    from pyannote.audio.core.io import AudioFile
 
 CONFIG_FILE = Path(__file__).parent / "config.yaml"
 
@@ -43,11 +48,13 @@ DEFAULT_LOG_LEVEL = CONFIG["telemetry_log_level"]
 # Initialize metrics with basic setup
 exporter = OTLPSpanExporter(endpoint=OTLP_ENDPOINT, headers=OTLP_HEADERS, timeout=5)
 provider = TracerProvider(shutdown_on_exit=False)
-provider.add_span_processor(BatchSpanProcessor(exporter, schedule_delay_millis=500, export_timeout_millis=5000))
+provider.add_span_processor(
+    BatchSpanProcessor(exporter, schedule_delay_millis=500, export_timeout_millis=5000)
+)
 tracer = provider.get_tracer(__name__)
 
 
-def track_model_init(model: "Model") -> None:
+def track_model_init(model: Model) -> None:
     """
     Increment the model initialization counter.
 
@@ -67,7 +74,7 @@ def track_model_init(model: "Model") -> None:
             )
 
 
-def track_pipeline_init(pipeline: "Pipeline") -> None:
+def track_pipeline_init(pipeline: Pipeline) -> None:
     """
     Track pipeline initialization
 
@@ -89,8 +96,8 @@ def track_pipeline_init(pipeline: "Pipeline") -> None:
 
 
 def track_pipeline_apply(
-    pipeline: "Pipeline",
-    file: "AudioFile",
+    pipeline: Pipeline,
+    file: AudioFile,
     num_speakers: int | None = None,
     min_speakers: int | None = None,
     max_speakers: int | None = None,
@@ -111,9 +118,11 @@ def track_pipeline_apply(
 
     if is_metrics_enabled():
         from pyannote.audio.core.io import Audio
+
         duration: float = Audio().get_duration(file)
 
         from pyannote.audio.pipelines.utils.diarization import set_num_speakers
+
         num_speakers, min_speakers, max_speakers = set_num_speakers(
             num_speakers=num_speakers,
             min_speakers=min_speakers,
@@ -130,7 +139,9 @@ def track_pipeline_apply(
                     "duration": duration,
                     "num_speakers": num_speakers,
                     "min_speakers": min_speakers,
-                    "max_speakers": max_speakers if np.isfinite(max_speakers) else "inf",
+                    "max_speakers": max_speakers
+                    if np.isfinite(max_speakers)
+                    else "inf",
                 },
             )
 

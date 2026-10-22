@@ -21,8 +21,6 @@
 # SOFTWARE.
 
 
-from typing import Union
-
 try:
     from IPython.display import Audio as IPythonAudio
     from IPython.display import Video as IPythonVideo
@@ -47,7 +45,7 @@ except ImportError:
     MOVIEPY_INSTALLED = False
 
 
-from typing import Mapping, Optional
+from collections.abc import Mapping
 
 import torch
 from pyannote.core import (
@@ -64,7 +62,7 @@ from pyannote.audio.core.model import Model
 from pyannote.audio.utils.signal import Binarize
 
 
-def listen(audio_file: AudioFile, segment: Optional[Segment] = None) -> None:
+def listen(audio_file: AudioFile, segment: Segment | None = None) -> None:
     """listen to audio
 
     Allows playing of audio files. It will play the whole thing unless
@@ -91,7 +89,7 @@ def listen(audio_file: AudioFile, segment: Optional[Segment] = None) -> None:
 
 def preview(
     audio_file: AudioFile,
-    segment: Optional[Segment] = None,
+    segment: Segment | None = None,
     zoom: float = 10.0,
     video_fps: int = 5,
     video_ext: str = "webm",
@@ -262,7 +260,7 @@ def BROKEN_preview_training_samples(
     video_fps: int = 5,
     video_ext: str = "webm",
     display: bool = True,
-) -> Union[IPythonVideo, str]:
+) -> IPythonVideo | str:
     """Preview training samples of a given model
 
     Parameters
@@ -291,7 +289,7 @@ def BROKEN_preview_training_samples(
     """
 
     batch = next(iter(model.train_dataloader()))
-    batch_size, num_channels, num_samples = batch["X"].shape
+    batch_size, _num_channels, num_samples = batch["X"].shape
     batch_size, num_frames, num_speakers = batch["y"].shape
     sample_rate = model.audio.sample_rate
 

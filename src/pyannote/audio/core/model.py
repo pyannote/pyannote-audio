@@ -30,14 +30,17 @@ from dataclasses import dataclass
 from functools import cached_property
 from importlib import import_module
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import lightning
 import torch
-import torch.nn as nn
 import torch.optim
 from lightning.fabric.utilities.cloud_io import _load as pl_load
 from lightning.pytorch.utilities.model_summary.model_summary import ModelSummary
+from pyannote.core import SlidingWindow
+from torch import nn
+from torch.utils.data import DataLoader
+
 from pyannote.audio import __version__
 from pyannote.audio.core.io import Audio
 from pyannote.audio.core.task import (
@@ -50,8 +53,6 @@ from pyannote.audio.telemetry import track_model_init
 from pyannote.audio.utils.dependencies import check_dependencies
 from pyannote.audio.utils.hf_hub import AssetFileName, download_from_hf_hub
 from pyannote.audio.utils.multi_task import map_with_specifications
-from pyannote.core import SlidingWindow
-from torch.utils.data import DataLoader
 
 
 # NOTE: needed to backward compatibility to load models trained before pyannote.audio 3.x
@@ -135,11 +136,11 @@ class Model(lightning.LightningModule):
                 "Only regular specifications or tuple of specifications are supported."
             )
 
-        durations = set(s.duration for s in specifications)
+        durations = {s.duration for s in specifications}
         if len(durations) > 1:
             raise ValueError("All tasks must share the same (maximum) duration.")
 
-        min_durations = set(s.min_duration for s in specifications)
+        min_durations = {s.min_duration for s in specifications}
         if len(min_durations) > 1:
             raise ValueError("All tasks must share the same minimum duration.")
 
@@ -197,7 +198,7 @@ class Model(lightning.LightningModule):
             self.task.setup(stage)
 
         # list of layers before adding task-dependent layers
-        before = set((name, id(module)) for name, module in self.named_modules())
+        before = {(name, id(module)) for name, module in self.named_modules()}
 
         # add task-dependent layers (e.g. final classification layer)
         # and re-use original weights when compatible
@@ -206,7 +207,7 @@ class Model(lightning.LightningModule):
         self.build()
 
         try:
-            missing_keys, unexpected_keys = self.load_state_dict(
+            _missing_keys, _unexpected_keys = self.load_state_dict(
                 original_state_dict, strict=False
             )
 
@@ -219,7 +220,7 @@ class Model(lightning.LightningModule):
                 )
                 warnings.warn(msg)
             else:
-                raise e
+                raise
 
         # move layers that were added by build() to same device as the rest of the model
         for name, module in self.named_modules():
@@ -236,10 +237,10 @@ class Model(lightning.LightningModule):
             self.task.setup_validation_metric()
 
         # list of layers after adding task-dependent layers
-        after = set((name, id(module)) for name, module in self.named_modules())
+        after = {(name, id(module)) for name, module in self.named_modules()}
 
         # list of task-dependent layers
-        self.task_dependent = list(name for name, _ in after - before)
+        self.task_dependent = [name for name, _ in after - before]
 
     def on_save_checkpoint(self, checkpoint):
         # put everything pyannote.audio-specific under pyannote.audio
@@ -325,15 +326,15 @@ class Model(lightning.LightningModule):
         """Helper function for freeze_up_to and unfreeze_up_to"""
 
         tokens = module_name.split(".")
-        updated_modules = list()
+        updated_modules = []
 
         for name, module in ModelSummary(self, max_depth=-1).named_modules:
             name_tokens = name.split(".")
-            matching_tokens = list(
+            matching_tokens = [
                 token
                 for token, other_token in zip(name_tokens, tokens)
                 if token == other_token
-            )
+            ]
 
             # if module is A.a.1 & name is A.a, we do not want to freeze the whole A.a module
             # because it might contain other modules like A.a.2 and A.a.3
@@ -413,7 +414,7 @@ class Model(lightning.LightningModule):
     ) -> list[str]:
         """Helper function for freeze_by_name and unfreeze_by_name"""
 
-        updated_modules = list()
+        updated_modules = []
 
         # Force modules to be a list
         if isinstance(modules, str):
@@ -504,7 +505,7 @@ class Model(lightning.LightningModule):
         token: str | bool | None = None,
         cache_dir: Path | str | None = None,
         **kwargs,
-    ) -> Optional["Model"]:
+    ) -> Model | None:
         """Load pretrained model
 
         Parameters
@@ -645,7 +646,7 @@ class Model(lightning.LightningModule):
                 )
                 return model
 
-            raise e
+            raise
 
         # save model origin (HF, local, etc) as attribute for telemetry purposes
         model._otel_origin = otel_origin

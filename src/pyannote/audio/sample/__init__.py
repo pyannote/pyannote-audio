@@ -24,15 +24,16 @@
 
 from pathlib import Path
 
-from pyannote.audio.core.io import Audio, AudioFile
 from pyannote.core import Annotation, Segment, Timeline
 from pyannote.database.util import load_rttm
+
+from pyannote.audio.core.io import Audio, AudioFile
 
 
 def load_stm(file_stm: str | Path) -> dict[str, list[dict]]:
     session_ids = {}
 
-    with open(file_stm, "r") as stm:
+    with open(file_stm) as stm:
         for line in stm:
             infos = line.strip().split()
             session_id, _, spk, start, end, *words = infos

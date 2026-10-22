@@ -30,10 +30,10 @@ from .wespeaker import (
 from .xvector import XVectorMFCC, XVectorSincNet
 
 __all__ = [
-    "XVectorSincNet",
-    "XVectorMFCC",
     "WeSpeakerResNet34",
     "WeSpeakerResNet152",
     "WeSpeakerResNet221",
     "WeSpeakerResNet293",
+    "XVectorMFCC",
+    "XVectorSincNet",
 ]

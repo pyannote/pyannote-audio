@@ -29,9 +29,10 @@ from typing import Optional
 import numpy as np
 import safetensors.numpy
 import scipy.interpolate
-from pyannote.audio.utils.hf_hub import AssetFileName, download_from_hf_hub
 from sklearn.isotonic import IsotonicRegression
 from sklearn.utils.validation import NotFittedError, check_is_fitted
+
+from pyannote.audio.utils.hf_hub import AssetFileName, download_from_hf_hub
 
 
 class Calibration(IsotonicRegression):
@@ -46,7 +47,7 @@ class Calibration(IsotonicRegression):
         nan_value: float = 2.0,
     ) -> np.ndarray:
         """Apply calibration handling NaN values and any shape gracefully
-        
+
         Parameters
         ----------
         values : np.ndarray

@@ -21,8 +21,6 @@
 # SOFTWARE.
 
 
-from typing import Optional
-
 import torch
 from pyannote.metrics.binary_classification import det_curve
 from torchmetrics import Metric
@@ -30,9 +28,8 @@ from torchmetrics.utilities.data import dim_zero_cat
 
 
 class EqualErrorRate(Metric):
-
-    is_differentiable: Optional[bool] = False
-    higher_is_better: Optional[bool] = False
+    is_differentiable: bool | None = False
+    higher_is_better: bool | None = False
     full_state_update: bool = True
 
     def __init__(self, distances: bool = True, compute_on_cpu: bool = True, **kwargs):

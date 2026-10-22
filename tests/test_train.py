@@ -26,6 +26,8 @@ from tempfile import mkstemp
 
 import pytest
 from lightning import Trainer
+from pyannote.database import FileFinder, registry
+
 from pyannote.audio.models.embedding.debug import SimpleEmbeddingModel
 from pyannote.audio.models.segmentation.debug import SimpleSegmentationModel
 from pyannote.audio.tasks import (
@@ -34,7 +36,6 @@ from pyannote.audio.tasks import (
     SupervisedRepresentationLearningWithArcFace,
     VoiceActivityDetection,
 )
-from pyannote.database import FileFinder, registry
 
 
 @pytest.fixture()

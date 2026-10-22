@@ -24,19 +24,20 @@
 import itertools
 import math
 import random
-from typing import Dict, Sequence, Union
+from collections.abc import Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from lightning.pytorch.loggers import MLFlowLogger, TensorBoardLogger
-from pyannote.audio.core.task import Problem, Task, get_dtype
-from pyannote.audio.utils.random import create_rng_for_worker
 from pyannote.database.protocol.protocol import Scope, Subset
 from torch.nn import functional as F
 from torch.utils.data._utils.collate import default_collate
 from torchmetrics import Metric
 from torchmetrics.classification import BinaryAUROC, MulticlassAUROC, MultilabelAUROC
+
+from pyannote.audio.core.task import Problem, Task, get_dtype
+from pyannote.audio.utils.random import create_rng_for_worker
 
 Subsets = list(Subset.__args__)
 Scopes = list(Scope.__args__)
@@ -50,7 +51,7 @@ class SegmentationTask(Task):
 
     def default_metric(
         self,
-    ) -> Union[Metric, Sequence[Metric], Dict[str, Metric]]:
+    ) -> Metric | Sequence[Metric] | dict[str, Metric]:
         """Returns macro-average of the area under the ROC curve"""
 
         num_classes = len(self.specifications.classes)
@@ -161,7 +162,7 @@ class SegmentationTask(Task):
 
         else:
             # create a subchunk generator for each combination of "balance" keys
-            subchunks = dict()
+            subchunks = {}
             for product in itertools.product(
                 *[self.prepared_data["metadata-values"][key] for key in balance]
             ):
@@ -181,7 +182,7 @@ class SegmentationTask(Task):
             yield next(chunks)
 
     def collate_X(self, batch) -> torch.Tensor:
-        lengths = set(b["X"].shape[-1] for b in batch)
+        lengths = {b["X"].shape[-1] for b in batch}
 
         # just stack waveforms as they are if they all have the same length
         if len(lengths) == 1:
@@ -251,8 +252,8 @@ class SegmentationTask(Task):
         duration = np.sum(self.prepared_data["audio-annotated"][train_file_ids])
         return max(self.batch_size, math.ceil(duration / self.duration))
 
-    def prepare_validation(self, prepared_data: Dict):
-        validation_chunks = list()
+    def prepare_validation(self, prepared_data: dict):
+        validation_chunks = []
 
         # obtain indexes of files in the validation subset
         validation_file_ids = np.where(
