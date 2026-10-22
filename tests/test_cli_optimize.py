@@ -24,12 +24,13 @@ from types import SimpleNamespace
 
 import pytest
 import yaml
-from pyannote.audio.__main__ import Pipeline as AudioPipeline
-from pyannote.audio.__main__ import Metric, app
 from pyannote.core import Annotation, Segment
 from pyannote.pipeline import Pipeline
 from pyannote.pipeline.parameter import Integer
 from typer.testing import CliRunner
+
+from pyannote.audio.__main__ import Metric, app
+from pyannote.audio.__main__ import Pipeline as AudioPipeline
 
 
 class MockPipeline(Pipeline):

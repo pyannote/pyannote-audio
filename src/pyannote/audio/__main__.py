@@ -26,7 +26,7 @@ import sys
 import time
 import types
 from contextlib import nullcontext
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from functools import partial
 from pathlib import Path
@@ -260,7 +260,7 @@ def resolve_pipeline_config(
 
     # record when this configuration was resolved and where it came from
     metadata.update(
-        date=datetime.now(timezone.utc).isoformat(),
+        date=datetime.now(UTC).isoformat(),
         source=str(path.resolve()),
     )
     config["optimization"] = metadata
@@ -826,7 +826,7 @@ def benchmark(
         bool, typer.Option(help="Save one RTTM/JSON file per processed audio file.")
     ] = False,
     metric: Annotated[
-        Optional[Metric],
+        Metric | None,
         typer.Option(
             help="Preferred Pareto objective (defaults to the first objective).",
             case_sensitive=False,
