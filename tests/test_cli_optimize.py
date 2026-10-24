@@ -26,6 +26,7 @@ import pytest
 import yaml
 from pyannote.core import Annotation, Segment
 from pyannote.pipeline import Pipeline
+from pyannote.pipeline.optimizer import Optimizer
 from pyannote.pipeline.parameter import Integer
 from typer.testing import CliRunner
 
@@ -159,6 +160,87 @@ def test_optimize_cli_with_multiple_objectives(tmp_path, monkeypatch):
             "params": {"threshold": 0},
         }
     ]
+
+
+def test_multi_objective_export_refreshes_pareto_front(tmp_path, monkeypatch):
+    pipeline_yml = tmp_path / "pipeline.yaml"
+    pipeline_yml.write_text("pipeline: mock\n")
+
+    monkeypatch.setattr(
+        AudioPipeline, "from_pretrained", lambda *args, **kwargs: MockPipeline()
+    )
+    monkeypatch.setattr(
+        "pyannote.audio.__main__.pyannote.database.registry.get_protocol",
+        lambda *args, **kwargs: MockProtocol(),
+    )
+    monkeypatch.setattr(
+        Optimizer,
+        "tune_iter",
+        lambda self, *args, **kwargs: iter(
+            [
+                {
+                    "pareto_front": [
+                        {
+                            "number": 0,
+                            "values": (0.5, 0.5),
+                            "params": {"threshold": 0},
+                        }
+                    ]
+                }
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        Optimizer,
+        "pareto_front",
+        property(
+            lambda self: [
+                {
+                    "number": 1,
+                    "values": (0.25, 0.75),
+                    "params": {"threshold": 1},
+                }
+            ]
+        ),
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "optimize",
+            str(pipeline_yml),
+            "Debug.SpeakerDiarization.Debug",
+            "--subset",
+            "development",
+            "--device",
+            "cpu",
+            "--max-iterations",
+            "1",
+            "--metric",
+            "DiarizationPurity",
+            "--metric",
+            "DiarizationCoverage",
+            "--average-case",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    output = tmp_path / (
+        "pipeline.Debug.SpeakerDiarization.Debug.development."
+        "DiarizationPurity+DiarizationCoverage.pareto.yaml"
+    )
+    pareto = yaml.safe_load(output.read_text())["optimization"]["status"][
+        "pareto_front"
+    ]
+    assert pareto == [
+        {
+            "trial": 1,
+            "values": {"DiarizationPurity": 0.25, "DiarizationCoverage": 0.75},
+            "params": {"threshold": 1},
+        }
+    ]
+    assert (tmp_path / f"{output.name}.lock").exists()
+    assert not list(tmp_path.glob(f".{output.name}.*.tmp"))
 
 
 @pytest.mark.parametrize("multi_objective", [False, True])

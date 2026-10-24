@@ -22,7 +22,9 @@
 # SOFTWARE.
 
 import json
+import os
 import sys
+import tempfile
 import time
 import types
 from contextlib import nullcontext
@@ -37,6 +39,7 @@ import pyannote.database
 import torch
 import typer
 import yaml
+from filelock import FileLock
 from pyannote.core import Annotation
 from pyannote.metrics.base import BaseMetric
 from pyannote.metrics.diarization import (
@@ -429,34 +432,50 @@ def optimize(
             pareto_trials = {point["number"] for point in pareto_front}
 
             if pareto_trials != previous_pareto_trials:
-                serialized_front = []
-                for point in pareto_front:
-                    serialized_front.append(
-                        {
-                            "trial": point["number"],
-                            "values": {
-                                current_metric.value: float(value)
-                                for current_metric, value in zip(
-                                    metric, point["values"]
-                                )
-                            },
-                            "params": point["params"],
-                        }
-                    )
+                with FileLock(str(result) + ".lock"):
+                    pareto_front = optimizer.pareto_front
+                    pareto_trials = {point["number"] for point in pareto_front}
+                    serialized_front = []
+                    for point in pareto_front:
+                        serialized_front.append(
+                            {
+                                "trial": point["number"],
+                                "values": {
+                                    current_metric.value: float(value)
+                                    for current_metric, value in zip(
+                                        metric, point["values"]
+                                    )
+                                },
+                                "params": point["params"],
+                            }
+                        )
 
-                original_config["optimization"] = {
-                    "protocol": protocol,
-                    "subset": subset.value,
-                    "metrics": [current_metric.value for current_metric in metric],
-                    "status": {
-                        "pareto_front": serialized_front,
-                        "last_updated": datetime.now().isoformat(),
-                    },
-                }
-                with open(result, "w") as fp:
-                    yaml.dump(original_config, fp)
+                    original_config["optimization"] = {
+                        "protocol": protocol,
+                        "subset": subset.value,
+                        "metrics": [current_metric.value for current_metric in metric],
+                        "status": {
+                            "pareto_front": serialized_front,
+                            "last_updated": datetime.now().isoformat(),
+                        },
+                    }
+                    temporary_result = None
+                    try:
+                        with tempfile.NamedTemporaryFile(
+                            mode="w",
+                            dir=result.parent,
+                            prefix=f".{result.name}.",
+                            suffix=".tmp",
+                            delete=False,
+                        ) as fp:
+                            temporary_result = Path(fp.name)
+                            yaml.dump(original_config, fp)
+                        os.replace(temporary_result, result)
+                    finally:
+                        if temporary_result is not None:
+                            temporary_result.unlink(missing_ok=True)
 
-                previous_pareto_trials = pareto_trials
+                    previous_pareto_trials = pareto_trials
 
             if max_iterations and i + 1 >= max_iterations:
                 break
