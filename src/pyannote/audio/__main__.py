@@ -851,9 +851,6 @@ def benchmark(
     checkpoint: str | dict = pipeline
     if Path(pipeline).is_file():
         checkpoint = resolve_pipeline_config(Path(pipeline), metric=metric)
-        with open(output_config, "x") as fp:
-            fp.write(f"# created_at: {checkpoint['optimization']['date']}\n")
-            yaml.safe_dump(checkpoint, fp)
     pretrained_pipeline = Pipeline.from_pretrained(
         checkpoint,
         revision=revision,
@@ -896,6 +893,11 @@ def benchmark(
             f"Manual annotation is not available for files in {protocol} {subset.value} subset so skipping metric evaluation."
         )
         skip_metric = True
+
+    if Path(pipeline).is_file():
+        with open(output_config, "x") as fp:
+            fp.write(f"# created_at: {checkpoint['optimization']['date']}\n")
+            yaml.safe_dump(checkpoint, fp)
 
     # used to store raw predictions in JSON format
     serialized_predictions: dict[str, dict] = {}
