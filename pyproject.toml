@@ -60,7 +60,7 @@ include = [
 ]
 
 [dependency-groups]
-dev = ["ipykernel>=6.29.5", "soundfile>=0.14.0"]
+dev = ["ipykernel>=6.29.5"]
 
 [tool.pytest.ini_options]
 markers = [

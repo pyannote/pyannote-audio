@@ -52,6 +52,7 @@ from pyannote.pipeline.optimizer import Optimizer
 from rich.progress import track
 
 from pyannote.audio import Audio, Model, Pipeline
+from pyannote.audio.core.pipeline import expand_subfolders
 
 
 class Subset(str, Enum):
@@ -379,14 +380,13 @@ def optimize(
     # setting study name to this allows to store multiple optimizations
     # for the same pipeline in the same database
     study_name = f"{protocol}.{subset.value}"
+    
     # add suffix if we are using oracle number of speakers
     if num_speakers == NumSpeakers.ORACLE:
         study_name += ".OracleNumSpeakers"
 
-    # keep the historical name for the default DER study while preventing
-    # studies with different objective counts or directions from colliding
-    if metric != [Metric.DiarizationErrorRate]:
-        study_name += f".{'+'.join(current_metric.value for current_metric in metric)}"
+    # add suffix with optimized metric(s)
+    study_name += f".{'+'.join(current_metric.value for current_metric in metric)}"
 
     # journal file to store optimization results
     # if pipeline path is "config.yml", it will be stored in "config.journal"

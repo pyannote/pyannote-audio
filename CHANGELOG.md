@@ -7,16 +7,12 @@
 - fix(model): restore `fbank_only` mode in WeSpeaker embedding models
 - fix(task): avoid training crashes with `spawn`/`forkserver` workers, including
   Python 3.14's default on Linux, by warning and using `num_workers=0`
-
-- feat(cli): add support for multi-objective pipeline optimization
 - fix(pipeline): omit unset `token` and `cache_dir` when expanding `$model/` references so loaders can inherit runtime options
 - fix(io): fix `Audio.crop` raising when an in-memory waveform is cropped up to its very end [@MohammadHijjawi97](https://github.com/MohammadHijjawi97)
+- feat(cli): add support for multi-objective pipeline optimization
 - feat(cli): add `--subfolder` option to `benchmark` command [@antoinelaurent](https://github.com/antoinelaurent)
 - fix(utils): fix `SpeakerDiarizationMixin.optimal_mapping` `reference` is a mapping [@Kayvan-Zahiri](https://github.com/Kayvan-Zahiri)
 - fix(task): fix `balance` option crashing training with `KeyError: 'metadata'` [@MohammadHijjawi97](https://github.com/MohammadHijjawi97)
-- feat(cli): support `--metric DiarizationSpeakerCountError` for pipeline optimization
-- feat(cli): support multi-objective pipeline optimization with repeatable `--metric` options
-- doc(tutorial): add multi-objective optimization of Community-1 for diarization purity and coverage
 
 ## Version 4.0.7 (2026-06-30)
 
