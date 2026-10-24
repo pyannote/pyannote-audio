@@ -244,7 +244,7 @@ def resolve_pipeline_config(
 
     # resolve $model/... against the original YAML directory so that model
     # locations are preserved when the config is moved or passed as a dictionary
-    expand_subfolders(config, str(path.resolve().parent))
+    expand_subfolders(config, str(path.parent.resolve()))
 
     # record when this configuration was resolved and where it came from
     metadata.update(
