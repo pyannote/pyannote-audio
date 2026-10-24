@@ -760,7 +760,6 @@ def benchmark(
         benchmark_name += ".OracleNumSpeakers"
     output_config = into / f"{benchmark_name}.config.yaml"
 
-    # Materialize local optimization results before loading normally.
     checkpoint: str | dict = pipeline
     if Path(pipeline).is_file():
         checkpoint = resolve_pipeline_config(Path(pipeline), metric=metric)
