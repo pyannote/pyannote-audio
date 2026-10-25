@@ -5,6 +5,7 @@
 - BREAKING(cli): remove gap-filling optimization (`--optimize`) and `OptimizedMinDurationOff` outputs from the `benchmark` command
 - BREAKING: require Python 3.11 or newer; Python 3.10 is no longer supported
 - fix(model): restore `fbank_only` mode in WeSpeaker embedding models
+- improve(model): compute WeSpeaker fbank features on MPS instead of falling back to CPU [@Isalia20](https://github.com/Isalia20)
 - fix(task): avoid training crashes with `spawn`/`forkserver` workers, including
   Python 3.14's default on Linux, by warning and using `num_workers=0`
 
