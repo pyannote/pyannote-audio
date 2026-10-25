@@ -195,8 +195,15 @@ def resolve_pipeline_config(
     metadata = {
         key: value
         for key, value in (optimization | status).items()
-        if key in (
-            "metric", "protocol", "subset", "trial", "values", "best_loss", "last_updated"
+        if key
+        in (
+            "metric",
+            "protocol",
+            "subset",
+            "trial",
+            "values",
+            "best_loss",
+            "last_updated",
         )
     }
     # older single-objective configurations may not record the metric
@@ -223,12 +230,14 @@ def resolve_pipeline_config(
         ordered = [preferred] + [m for m in metrics if m != preferred]
         selected = min(
             front,
-            key=lambda point: tuple(
-                # negate maximized metrics so that min handles both directions
-                (1 if m.direction == "minimize" else -1) * point["values"][m.value]
-                for m in ordered
-            )
-            + (point["trial"],),
+            key=lambda point: (
+                tuple(
+                    # negate maximized metrics so that min handles both directions
+                    (1 if m.direction == "minimize" else -1) * point["values"][m.value]
+                    for m in ordered
+                )
+                + (point["trial"],)
+            ),
         )
         # replace the original parameters with those of the selected trial
         # and keep its objective values for later reference
@@ -740,9 +749,9 @@ def benchmark(
         bool, typer.Option(help="Save one RTTM/JSON file per processed audio file.")
     ] = False,
     metric: Annotated[
-        Metric | None,
+        list[Metric] | None,
         typer.Option(
-            help="Preferred Pareto objective (defaults to the first objective).",
+            help="Preferred Pareto objective (defaults to the first objective). Repeat to benchmark each selected configuration. Explicit selections save results in OptimizedFor<Metric> subdirectories.",
             case_sensitive=False,
         ),
     ] = None,
@@ -752,9 +761,51 @@ def benchmark(
 
     This will run the pipeline on all files in the specified protocol and subset,
     save the results in RTTM format, and compute the Diarization Error Rate (DER)
-    for each file.
+    for each file. Repeated `--metric` options select separate configurations from
+    a Pareto manifest; each is evaluated with the same metrics. Explicit metric
+    selections save results in OptimizedFor<Metric> subdirectories of INTO.
     """
 
+    objectives = list(dict.fromkeys(metric)) if metric else [None]
+    for objective in objectives:
+        output_dir = (
+            into if objective is None else into / f"OptimizedFor{objective.value}"
+        )
+        output_dir.mkdir(exist_ok=True)
+        _benchmark(
+            pipeline=pipeline,
+            protocol=protocol,
+            into=output_dir,
+            subset=subset,
+            revision=revision,
+            subfolder=subfolder,
+            token=token,
+            cache=cache,
+            device=device,
+            registry=registry,
+            num_speakers=num_speakers,
+            progress=progress,
+            per_file=per_file,
+            metric=objective,
+        )
+
+
+def _benchmark(
+    pipeline: str,
+    protocol: str,
+    into: Path,
+    subset: Subset,
+    revision: str | None,
+    subfolder: str | None,
+    token: str | None,
+    cache: Path | None,
+    device: Device,
+    registry: Path | None,
+    num_speakers: NumSpeakers,
+    progress: bool,
+    per_file: bool,
+    metric: Metric | None,
+):
     benchmark_name = f"{protocol}.{subset.value}"
     if num_speakers == NumSpeakers.ORACLE:
         benchmark_name += ".OracleNumSpeakers"
@@ -815,7 +866,6 @@ def benchmark(
     serialized_predictions: dict[str, dict] = {}
 
     if not skip_metric:
-        # initialize diarization error rate metric
         metric = DiarizationErrorRate()
 
     # speaker count confusion matrix
@@ -869,7 +919,7 @@ def benchmark(
 
         # compute metric when possible
         if not skip_metric:
-            _ = metric(
+            metric(
                 file["annotation"],
                 speaker_diarization,
                 uem=file.get("annotated", None),
