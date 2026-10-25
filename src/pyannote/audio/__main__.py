@@ -389,7 +389,7 @@ def optimize(
     # setting study name to this allows to store multiple optimizations
     # for the same pipeline in the same database
     study_name = f"{protocol}.{subset.value}"
-    
+
     # add suffix if we are using oracle number of speakers
     if num_speakers == NumSpeakers.ORACLE:
         study_name += ".OracleNumSpeakers"
