@@ -1,3 +1,4 @@
+import pytest
 import torch
 from pyannote.core import Segment
 from torch import Tensor
@@ -68,6 +69,29 @@ def test_can_crop_waveform_up_to_its_end():
     segment = Segment(1.5, 2.0)
     wav, _sr = loader.crop({"waveform": waveform, "sample_rate": 16000}, segment)
     assert torch.equal(wav, waveform[:, 24000:])
+
+
+@pytest.mark.parametrize(
+    "segment", [Segment(12.0, 13.0), Segment(-3.0, -2.0), Segment(10.0, 11.0)]
+)
+def test_can_pad_waveform_segment_outside_of_it(segment):
+    "Padding a segment entirely outside of a raw waveform returns zeros"
+    waveform = torch.ones(1, 16000 * 10)
+    loader = Audio(mono="downmix")
+    wav, _sr = loader.crop(
+        {"waveform": waveform, "sample_rate": 16000}, segment, mode="pad"
+    )
+    assert wav.shape == (1, 16000)
+    assert not wav.any()
+
+
+@pytest.mark.parametrize("segment", [Segment(100.0, 101.0), Segment(-3.0, -2.0)])
+def test_can_pad_file_segment_outside_of_it(segment):
+    "Padding a segment entirely outside of an audio file returns zeros"
+    loader = Audio(mono="downmix")
+    wav, sr = loader.crop("tests/data/dev00.wav", segment, mode="pad")
+    assert wav.shape == (1, sr)
+    assert not wav.any()
 
 
 # File Like Object Tests
