@@ -81,7 +81,6 @@ gh-pages.pub
 
 *.zip
 .mypy_cache/
-.vscode/
 
 **/lightning_logs/**
 
@@ -94,3 +93,5 @@ pyannote/audio/version.py
 .venv/
 .ruff_cache/
 .pytest_cache/
+config.bat
+node_modules
