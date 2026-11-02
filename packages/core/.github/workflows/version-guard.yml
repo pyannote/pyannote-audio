@@ -1,0 +1,70 @@
+name: Version Guard
+
+on:
+  workflow_call:
+    inputs:
+      release-tag:
+        description: Release tag expected to match the package version
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  not-already-published:
+    name: pyannote-core
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version-file: .python-version
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: python-package-distributions
+          path: dist/
+      - name: Compare distributions with PyPI
+        env:
+          RELEASE_TAG: ${{ inputs.release-tag }}
+        shell: python
+        run: |
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          from urllib.error import HTTPError
+          from urllib.request import urlopen
+          from zipfile import ZipFile
+          from email.parser import BytesParser
+
+
+          directory = Path("dist")
+          tag = os.environ["RELEASE_TAG"]
+          wheels = list(directory.glob("*.whl"))
+          sources = list(directory.glob("*.tar.gz"))
+          if len(wheels) != 1 or len(sources) != 1:
+              raise ValueError("Expected exactly one wheel and one source distribution")
+          with ZipFile(wheels[0]) as wheel:
+              metadata_path, = [n for n in wheel.namelist() if n.endswith(".dist-info/METADATA")]
+              metadata = BytesParser().parsebytes(wheel.read(metadata_path))
+          version = metadata["Version"]
+          if metadata["Name"] != "pyannote-core" or version != tag.removeprefix("v"):
+              raise ValueError(f"Release tag {tag!r} does not match pyannote-core {version}")
+          try:
+              with urlopen(f"https://pypi.org/pypi/pyannote-core/{version}/json", timeout=30) as response:
+                  published = json.load(response)["urls"]
+          except HTTPError as error:
+              if error.code != 404:
+                  raise
+              published = []
+          hashes = {item["filename"]: item["digests"]["sha256"] for item in published}
+          for artifact in wheels + sources:
+              if artifact.name not in hashes:
+                  print(f"{artifact.name}: not published yet")
+              elif hashlib.sha256(artifact.read_bytes()).hexdigest() == hashes[artifact.name]:
+                  print(f"{artifact.name}: already published with identical contents")
+              else:
+                  raise ValueError(f"{artifact.name} already exists with different contents. Use a new version.")
