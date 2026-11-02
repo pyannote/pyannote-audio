@@ -28,9 +28,8 @@ import types
 from contextlib import nullcontext
 from datetime import datetime
 from enum import Enum
-from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated
+from typing import Annotated
 
 import numpy as np
 import pyannote.database
@@ -42,7 +41,6 @@ from pyannote.metrics.base import BaseMetric
 from pyannote.metrics.diarization import DiarizationErrorRate, JaccardErrorRate
 from pyannote.pipeline.optimizer import Optimizer
 from rich.progress import track
-from scipy.optimize import minimize_scalar
 
 from pyannote.audio import Audio, Model, Pipeline
 
@@ -423,93 +421,6 @@ def apply(
                 json.dump(serialized, j, indent=2)
 
 
-if TYPE_CHECKING:
-    from pandas import DataFrame
-
-
-class MinDurationOffOptimizer:
-    """Utility to optimize `min_duration_off`
-
-    Depending on the pipeline used for speaker diarization, short breaks within speaker turns
-    (e.g. between each word) might lead to unfair missed detection rates.
-
-    This utility aims at finding the best value for `min_duration_off` parameter that controls
-    how short a within-speaker gap must be to be filled.
-    """
-
-    def _compute_metric(self, files, metric, collar: float) -> float:
-        metric.reset()
-        for file in files:
-            file["temporary_speaker_diarization"] = file["speaker_diarization"].support(
-                collar=collar
-            )
-            _ = metric(
-                file["annotation"],
-                file["temporary_speaker_diarization"],
-                uem=file["annotated"],
-            )
-        self._reports[collar] = metric.report()
-
-        current_metric = abs(metric)
-
-        # store best postprocessed speaker diarization
-        if current_metric < self._best_metric:
-            self._best_metric = current_metric
-            for file in files:
-                file["best_speaker_diarization"] = file.pop(
-                    "temporary_speaker_diarization"
-                )
-
-        return current_metric
-
-    def __call__(
-        self, files, metric: BaseMetric, bounds: tuple[float, float] = (0.0, 1.0)
-    ) -> tuple[float, "DataFrame"]:
-        """Optimize 'min_duration_off' value for `metric`
-
-        Parameters
-        ----------
-        files : list[dict]
-            List of dictionaries containing 'annotation', 'annotated',
-            and 'speaker_diarization' keys.
-        metric : BaseMetric
-            Metric to optimize against (usually a DiarizationErrorRate instance).
-        bounds : tuple[float, float], optional
-            Lower and upper bounds for the `min_duration_off` parameter (in seconds).
-            Defaults to (0.0, 1.0).
-
-        Returns
-        -------
-        best_min_duration_off : float
-            Optimized min_duration_off parameter.
-        best_report: pandas.DataFrame
-            Corresponding pyannote.metrics report.
-        """
-
-        # assumes metric should be minimized
-        # TODO: use -inf when/if metric should be maximized
-        self._best_metric = float("inf")
-        self._reports: dict[float, DataFrame] = {}
-
-        # force test with no collar
-        no_collar_metric = self._compute_metric(files, metric, 0.0)
-
-        res = minimize_scalar(
-            partial(self._compute_metric, files, metric),
-            bounds=bounds,
-            method="Bounded",
-        )
-
-        # in case where better results are obtained without a collar
-        if no_collar_metric == self._best_metric:
-            best_min_duration_off = 0.0
-
-        else:
-            best_min_duration_off = float(res.x)
-
-        return best_min_duration_off, self._reports[best_min_duration_off]
-
-
 @app.command("benchmark")
 def benchmark(
     pipeline: Annotated[
@@ -583,12 +494,6 @@ def benchmark(
     num_speakers: Annotated[
         NumSpeakers, typer.Option(help="Number of speakers (oracle or auto)")
     ] = NumSpeakers.AUTO,
-    optimize: Annotated[
-        bool,
-        typer.Option(
-            help="Evaluate both original and post-processed predictions.",
-        ),
-    ] = False,
     progress: Annotated[
         bool,
         typer.Option(
@@ -604,8 +509,7 @@ def benchmark(
 
     This will run the pipeline on all files in the specified protocol and subset,
     save the results in RTTM format, and compute the Diarization Error Rate (DER)
-    for each file. If `--optimize` is used, it will also post-process predictions
-    by filling short within speaker gaps and save the results in a separate file.
+    for each file.
     """
 
     # load pretrained pipeline
@@ -727,10 +631,6 @@ def benchmark(
         speaker_count.setdefault(true_num_speakers, {}).setdefault(pred_num_speakers, 0)
         speaker_count[true_num_speakers][pred_num_speakers] += 1
 
-        # keep track of prediction for later "min_duration_off" optimization
-        if optimize:
-            file["speaker_diarization"] = speaker_diarization
-
     tac: float = time.time()
 
     # save serialized predictions to disk (might contain more than just diarization results)
@@ -814,41 +714,6 @@ def benchmark(
         fmt="%3d",
         footer=f"Accuracy = {speaker_count_accuracy:.1%} / Average error = {speaker_count_error:.2f} speakers off",
     )
-
-    # report metric results with an optimized min_duration_off
-    if optimize:
-        minDurationOffOptimizer = MinDurationOffOptimizer()
-        best_min_duration_off, best_report = minDurationOffOptimizer(files, metric)
-
-        with open(into / f"{benchmark_name}.OptimizedMinDurationOff.csv", "w") as csv:
-            best_report.to_csv(csv)
-
-        with open(into / f"{benchmark_name}.OptimizedMinDurationOff.txt", "w") as txt:
-            txt.write(
-                best_report.to_string(sparsify=False, float_format=lambda f: f"{f:.2f}")
-            )
-
-        # keep track of the best `min_duration_off` value for later reference
-        with open(into / f"{benchmark_name}.OptimizedMinDurationOff.yml", "w") as yml:
-            yaml.dump({"min_duration_off": best_min_duration_off}, yml)
-
-        if not per_file:
-            optimized_rttm_file = (
-                into / f"{benchmark_name}.OptimizedMinDurationOff.rttm"
-            )
-
-            # make sure we don't overwrite previous results
-            if optimized_rttm_file.exists():
-                raise FileExistsError(f"{optimized_rttm_file} already exists.")
-
-        for file in files:
-            if per_file:
-                optimized_rttm_file = (
-                    rttm_dir / f"{file['uri']}.OptimizedMinDurationOff.rttm"
-                )
-
-            with open(optimized_rttm_file, "w" if per_file else "a") as rttm:
-                file["best_speaker_diarization"].write_rttm(rttm)
 
 
 @app.command("strip")
