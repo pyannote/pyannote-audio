@@ -1,15 +1,15 @@
 # Changelog
 
-## Next version
+## Version 6.2.0 (2026-11-02)
 
 - BREAKING: require Python 3.11 or newer; Python 3.10 is no longer supported
-- fix: resolve meta-protocol members using the registry that loaded them
 - BREAKING: forbid `@` in protocol names (now used to select a version)
 - BREAKING: reserve `version` key in subsets (now used to store the annotation version)
-- fix: fix `X` meta-protocols with Python 3.14
-- fix: `FileFinder` patterns only match files (not directories nor hidden files)
 - feat: add annotation versions with optional metadata (selected with `Database.Task.Protocol@version`)
 - feat: add `PYANNOTE_DATABASE_DATA_DIRS` environment variable to set root directories of relative `Databases:` paths
+- fix: resolve meta-protocol members using the registry that loaded them
+- fix: support `X` meta-protocols with Python 3.14
+- fix: `FileFinder` patterns only match files (not directories nor hidden files)
 
 ## Version 6.1.1 (2025-12-07)
 
