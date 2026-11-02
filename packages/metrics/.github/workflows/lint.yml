@@ -1,0 +1,28 @@
+name: Lint
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  ruff:
+    name: python
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Report lint/format issues without blocking PRs.
+      # Remove continue-on-error once the codebase is clean.
+      - name: Run ruff check
+        uses: astral-sh/ruff-action@0ce1b0bf8b818ef400413f810f8a11cdbda0034b # v4.0.0
+        continue-on-error: true
+        with:
+          args: "check ."
+      - name: Run ruff format
+        uses: astral-sh/ruff-action@0ce1b0bf8b818ef400413f810f8a11cdbda0034b # v4.0.0
+        continue-on-error: true
+        with:
+          args: "format --check ."
