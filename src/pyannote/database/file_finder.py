@@ -27,12 +27,37 @@
 # Hervé BREDIN - http://herve.niderb.fr
 # Alexis PLAQUET
 
+import glob
+import os
 import warnings
 from pathlib import Path
 from typing import Text
+
 from pyannote.database.protocol.protocol import ProtocolFile
-from .registry import registry as global_registry
+
 from .registry import Registry
+from .registry import registry as global_registry
+
+
+def _scan_candidate(path: Path) -> list[Path]:
+    """Find files matching a path
+
+    Parameters
+    ----------
+    path : Path
+        Path to a file, possibly with "*" or "**" glob patterns.
+
+    Returns
+    -------
+    matches : list of Path
+        Existing files matching `path`.
+    """
+
+    if "*" not in str(path):
+        return [path] if path.is_file() else []
+
+    pattern = glob.escape(str(path)).replace("[*]", "*")
+    return [p for match in glob.iglob(pattern, recursive=True) if (p := Path(match)).is_file()]
 
 
 class FileFinder:
@@ -82,39 +107,29 @@ class FileFinder:
         uri = current_file["uri"]
         database = current_file["database"]
 
-        path_templates = self.registry.sources[database]
-        if isinstance(path_templates, Text):
-            path_templates = [path_templates]
+        content = os.environ.get("PYANNOTE_DATABASE_DATA_DIRS", "")
+        data_dirs = [Path(d).expanduser() for d in content.split(os.pathsep) if d]
+        data_dirs = list(dict.fromkeys(data_dirs))  # Remove duplicates
+        yml_dir = self.registry.source_dirs[database]
 
-        searched = []
-        found = []
+        searched: list[Path] = []
+        fallback: list[Path] = []
+        for template in self.registry.sources[database]:
+            path = Path(template.format(uri=uri, database=database))
+            if path.is_absolute():
+                searched.append(path)
+            elif data_dirs:
+                searched.extend(data_dir / path for data_dir in data_dirs)
+                fallback.append(yml_dir / path)
+            else:
+                searched.append(yml_dir / path)
 
-        for path_template in path_templates:
-            path = Path(path_template.format(uri=uri, database=database))
-            searched.append(path)
+        found = [match for path in searched for match in _scan_candidate(path)]
 
-            # paths with "*" or "**" patterns are split into two parts,
-            # - the root part (from the root up to the first occurrence of *)
-            # - the pattern part (from the first occurrence of * to the end)
-            #   which is looked for (inside root) using Path.glob
-            # Example with path = '/path/to/**/*/file.wav'
-            #   root = '/path/to'
-            #   pattern = '**/*/file.wav'
-
-            if "*" in str(path):
-                parts = path.parent.parts
-                for p, part in enumerate(parts):
-                    if "*" in part:
-                        break
-
-                root = path.parents[len(parts) - p]
-                pattern = str(path.relative_to(root))
-                found_ = root.glob(pattern)
-                found.extend(found_)
-
-            # a path without "*" patterns is supposed to be an actual file
-            elif path.is_file():
-                found.append(path)
+        # relative paths are looked for next to database.yml only as a last resort
+        if not found and fallback:
+            searched.extend(fallback)
+            found = [match for path in fallback for match in _scan_candidate(path)]
 
         if len(found) == 1:
             return found[0]

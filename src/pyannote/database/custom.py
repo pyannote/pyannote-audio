@@ -404,6 +404,7 @@ def create_protocol(
     protocol: Text,
     protocol_entries: Dict,
     database_yml: Path,
+    version: dict | None = None,
 ) -> Union[type, None]:
     """Create new protocol class
 
@@ -413,6 +414,8 @@ def create_protocol(
     task : str
     protocol : str
     protocol_entries : dict
+    version : dict, optional
+        Annotation version as {"name": ..., "metadata": ...}
 
     Returns
     -------
@@ -448,6 +451,9 @@ def create_protocol(
         protocol_entries = {"files": protocol_entries}
 
     metadata = dict()
+
+    if version is not None:
+        metadata["version"] = version
 
     if issubclass(base_class, SegmentationProtocol):
         if "classes" in protocol_entries:
@@ -486,16 +492,27 @@ def create_protocol(
             warnings.warn(msg)
             continue
 
+        # "version" is reserved for the annotation version (see `metadata`)
+        if isinstance(subset_entries, dict) and "version" in subset_entries:
+            msg = (
+                f"'{database}.{task}.{protocol}.{subset}' ({database_yml}) defines "
+                f"its own 'version' entry, but 'version' is reserved for annotation "
+                f"versioning."
+            )
+            raise ValueError(msg)
+
         method_name = f"{subset}_iter"
         if database == "X":
-            methods[method_name] = functools.partial(
-                meta_subset_iter,
-                database,
-                task,
-                protocol,
-                subset,
-                subset_entries,
-                database_yml,
+            methods[method_name] = staticmethod(
+                functools.partial(
+                    meta_subset_iter,
+                    database,
+                    task,
+                    protocol,
+                    subset,
+                    subset_entries,
+                    database_yml,
+                )
             )
         else:
 

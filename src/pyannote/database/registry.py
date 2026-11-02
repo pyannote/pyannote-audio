@@ -47,6 +47,106 @@ class LoadingMode(Enum):
     ERROR = 2  # raise an error
 
 
+def _apply_version(entries: Dict, version: Text) -> Dict:
+    """Replace {version} placeholder in protocol entries
+
+    Parameters
+    ----------
+    entries : dict
+        Protocol entries (e.g. {"scope": "file", "train": {"uri": ...}}).
+    version : str
+        Version name (e.g. "original").
+
+    Returns
+    -------
+    versioned_entries : dict
+        Copy of `entries` where {version} is replaced in subset keys and
+        string values. Other entries (e.g. "scope") are left unchanged.
+    """
+
+    def sub(value):
+        return value.replace("{version}", version) if isinstance(value, str) else value
+
+    return {
+        key: {sub(k): sub(v) for k, v in value.items()} if isinstance(value, dict) else value
+        for key, value in entries.items()
+    }
+
+
+def _expand_versions(
+    db_name: Text,
+    task_name: Text,
+    protocol: Text,
+    protocol_entries: Dict,
+    database_yml: Path,
+) -> list[tuple[str, dict, dict | None]]:
+    """Expand protocol into one protocol per version
+
+    Parameters
+    ----------
+    db_name : str
+        Database name (e.g. "MyDatabase").
+    task_name : str
+        Task name (e.g. "SpeakerDiarization").
+    protocol : str
+        Protocol name (e.g. "MyProtocol").
+    protocol_entries : dict
+        Protocol entries, as found in `database_yml`.
+    database_yml : Path
+        Path to YAML configuration file (used in error messages).
+
+    Returns
+    -------
+    versioned_protocols : list of ("<protocol>@<name>", entries, version) tuples, one
+    per declared version, the default (first listed) version first, where
+    version is {"name": name, "metadata": metadata}.
+    Protocol blocks without a `versions:` key are returned as
+    [(protocol, entries, None)], i.e. the exact unversioned behavior.
+
+    Raises
+    ------
+    ValueError
+        If `versions:` does not follow the expected indentation format,
+        or if a version name contains ".".
+    """
+
+    where = f"'{db_name}.{task_name}.{protocol}' ({database_yml})"
+
+    if not isinstance(protocol_entries, dict) or "versions" not in protocol_entries:
+        return [(protocol, protocol_entries, None)]
+
+    entries = dict(protocol_entries)
+    versions = entries.pop("versions")
+
+    if not isinstance(versions, dict) or not versions:
+        msg = (
+            f"{where}: 'versions' must be a non-empty mapping of version names "
+            f"to (optional) metadata."
+        )
+        raise ValueError(msg)
+
+    invalid = [str(n) for n, m in versions.items() if not (m is None or isinstance(m, dict))]
+    if invalid:
+        msg = f"{where}: metadata of versions {invalid} must be a mapping (e.g. {{closing: 0.2}})."
+        raise ValueError(msg)
+
+    versions = [{"name": str(n), "metadata": m or {}} for n, m in versions.items()]
+    version_names = [v["name"] for v in versions]
+
+    # "." would end up in the protocol class name, which pickle cannot resolve
+    dotted = [v for v in version_names if "." in v]
+    if dotted:
+        msg = (
+            f"{where}: version names must not contain '.' (got {dotted}); "
+            f"please rename them (e.g. 'v2.1' -> 'v2_1')."
+        )
+        raise ValueError(msg)
+
+    return [
+        (f"{protocol}@{v['name']}", _apply_version(entries, v["name"]), v) for v in versions
+    ]
+
+
 # To ease the understanding of future me, all comments inside Registry codebase
 # assume the existence of the following database.yml files.
 
@@ -145,18 +245,28 @@ class Registry:
         #   }
         self.configs: Dict[Path, Dict] = dict()
 
-        # Content of the "Database" root item (= where to find file content)
-        # Example after loading both database.yml:
+        # Content of the "Database" root item (= where to find file content),
+        # with paths as written in database.yml. Only used by FileFinder.
         #   {
         #   "DatabaseA": [
-        #       "/path/to/first/relative/path/A/trn/{uri}.wav",
-        #       "/path/to/first/relative/path/A/dev/{uri}.wav",
-        #       /path/to/first/relative/path/A/tst/{uri}.wav
+        #       "relative/path/A/trn/{uri}.wav",
+        #       "relative/path/A/dev/{uri}.wav",
+        #       "relative/path/A/tst/{uri}.wav",
         #       ],
         #   "DatabaseB": ["/absolute/path/B/{uri}.wav"],
         #   "DatabaseC": ["/absolute/path/C/{uri}.wav"]
         #   }
-        self.sources: Dict[Text, List[Text]] = dict()
+        self.sources: dict[str, list[str]] = dict()
+
+        # Directory of the database.yml defining each database's sources
+        # (relative sources are relative to it). Only used by FileFinder.
+        # Example after loading both database.yml:
+        #   {
+        #   "DatabaseA": Path("/path/to/first"),
+        #   "DatabaseB": Path("/path/to/second"),
+        #   "DatabaseC": Path("/path/to/second"),
+        #   }
+        self.source_dirs: dict[str, Path] = dict()
 
         # Mapping of database names to a type that inherits from Database
         # Example after loading both database.yml:
@@ -252,13 +362,8 @@ class Registry:
             if not isinstance(value, list):
                 value = [value]
 
-            path_list: List[str] = list()
-            for p in value:
-                path = Path(p)
-                if not path.is_absolute():
-                    path = database_yml.parent / path
-                path_list.append(str(path))
-            self.sources[str(db_name)] = path_list
+            self.sources[str(db_name)] = [str(p) for p in value]
+            self.source_dirs[str(db_name)] = database_yml.parent
 
         # save configuration for later reloading of meta-protocols
         self.configs[database_yml] = config
@@ -306,7 +411,10 @@ class Registry:
         Parameters
         ----------
         name : str
-            Protocol full name (e.g. "Etape.SpeakerDiarization.TV")
+            Protocol full name (e.g. "Etape.SpeakerDiarization.TV").
+            An annotation version may be selected with an "@" suffix
+            (e.g. "AMI.SpeakerDiarization.Raw@only_words"); without it,
+            the protocol's default version is used.
         preprocessors : dict or (key, preprocessor) iterable
             When provided, each protocol item (dictionary) are preprocessed, such
             that item[key] = preprocessor(item). In case 'preprocessor' is not
@@ -319,11 +427,35 @@ class Registry:
             Protocol instance
         """
 
-        database_name, task_name, protocol_name = name.split(".")
+        base_name, at, version = name.partition("@")
+        if at and (not version or "@" in version):
+            msg = (
+                f"Invalid protocol name '{name}': expected at most one '@', "
+                f"followed by a version name (e.g. 'Database.Task.Protocol@version')."
+            )
+            raise ValueError(msg)
+        database_name, task_name, protocol_name = base_name.split(".")
         database = self.get_database(database_name)
-        protocol = database.get_protocol(
-            task_name, protocol_name, preprocessors=preprocessors
-        )
+        try:
+            protocol = database.get_protocol(
+                task_name,
+                f"{protocol_name}@{version}" if version else protocol_name,
+                preprocessors=preprocessors,
+            )
+        except KeyError:
+            if not version:
+                raise
+            available = sorted(
+                p.partition("@")[2]
+                for p in database.get_protocols(task_name)
+                if p.startswith(f"{protocol_name}@")
+            )
+            msg = (
+                f"Could not find version '{version}' of protocol "
+                f"'{database_name}.{task_name}.{protocol_name}' "
+                f"(available versions: {available or 'none'})."
+            )
+            raise ValueError(msg)
         protocol.name = name
         return protocol
 
@@ -362,13 +494,37 @@ class Registry:
         for task_name, task_entries in db_entries.items():
             for protocol, protocol_entries in task_entries.items():
                 protocol = str(protocol)
-                CustomProtocol = create_protocol(
+
+                if "@" in protocol:
+                    msg = (
+                        f"Protocol name '{protocol}' ({db_name}.{task_name}, "
+                        f"{database_yml}) must not contain '@': it is reserved to "
+                        f"select an annotation version (e.g. 'Protocol@version')."
+                    )
+                    raise ValueError(msg)
+
+                # one protocol per version (just `protocol` when unversioned)
+                expanded = _expand_versions(
                     db_name, task_name, protocol, protocol_entries, database_yml
                 )
-                if CustomProtocol is None:
-                    continue
+                for versioned_protocol, entries, version in expanded:
+                    CustomProtocol = create_protocol(
+                        db_name,
+                        task_name,
+                        versioned_protocol,
+                        entries,
+                        database_yml,
+                        version=version,
+                    )
+                    if CustomProtocol is None:
+                        continue
 
-                protocols[(task_name, protocol)] = CustomProtocol
+                    protocols[(task_name, versioned_protocol)] = CustomProtocol
+
+                # expanded[0] is the default (first listed) version, e.g. "Raw@original":
+                default_protocol, _, default_version = expanded[0]
+                if default_version is not None and (task_name, default_protocol) in protocols:
+                    protocols[(task_name, protocol)] = protocols[(task_name, default_protocol)]
 
         # If needed, merge old protocols dict with the new one (according to current override rules)
         if db_name in self.databases:

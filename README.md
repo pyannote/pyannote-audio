@@ -17,6 +17,7 @@ $ pip install pyannote.database
     - [Segmentation](#segmentation)
     - [Speaker diarization](#speaker-diarization)
     - [Speaker verification](#speaker-verification)
+  - [Versioning](#versioning)
   - [Meta-protocols and requirements](#meta-protocols-and-requirements)
   - [Plugins](#plugins)
   - [API](#api)
@@ -256,7 +257,7 @@ Protocols:
               uri: lists/train.lst
   ```
 
-Note that any pattern supported by `pathlib.Path.glob` is supported (but avoid `**` as much as possible).  Paths can also be relative to the location of `database.yml`. It will then do its best to locate the file at runtime:
+Note that `*` and `**` patterns are supported. Paths can also be relative to the location of `database.yml`. It will then do its best to locate the file at runtime:
 
   ```python
   from pyannote.database import registry
@@ -268,6 +269,19 @@ Note that any pattern supported by `pathlib.Path.glob` is supported (but avoid `
   /path/to/audio/filename1.wav
   /path/to/audio/filename2.mp3
   ```
+
+Relative paths can also be looked for in other directories, listed in the `PYANNOTE_DATABASE_DATA_DIRS` environment variable (separated by `:`, or `;` on Windows):
+
+  ```bash
+  export PYANNOTE_DATABASE_DATA_DIRS=/mnt/data:/home/me/data
+  ```
+
+  ```yaml
+  Databases:
+    MyDatabase: audio/{uri}.wav
+  ```
+
+`FileFinder` then looks for `/mnt/data/audio/{uri}.wav` and `/home/me/data/audio/{uri}.wav`, and only if neither exists, for `audio/{uri}.wav` next to `database.yml`. A file found in more than one directory raises an error. Absolute paths are not affected.
 
 ## Tasks
 
@@ -504,6 +518,44 @@ It can then be used in Python like this:
   ```
 
 Note that speaker verification protocols (`SpeakerVerificationProtocol`) are a subclass of speaker diarization protocols (`SpeakerDiarizationProtocol`). As such, they also define regular `{subset}` methods.
+
+## Versioning
+
+A protocol can provide several versions of its annotations (e.g. original and forced-aligned) using `versions:` and the `{version}` placeholder:
+
+```yaml
+Protocols:
+  MyDatabase:
+    SpeakerDiarization:
+      MyProtocol:
+        versions:
+          original:
+          forced_alignment:
+            closing: 0.2
+            aligner: mfa
+        scope: file
+        train:
+          uri: /path/to/train.lst
+          annotation: /path/to/{version}/train.rttm
+          annotated: /path/to/train.uem
+```
+
+where `{version}` is replaced by the version name. Each version can have optional metadata (anything describing it), passed as is to every file.
+
+Select a version by appending `@version` to the protocol name:
+
+```python
+from pyannote.database import registry
+protocol = registry.get_protocol('MyDatabase.SpeakerDiarization.MyProtocol@forced_alignment')
+
+for file in protocol.train():
+    file["annotation"]  # loaded from /path/to/forced_alignment/train.rttm
+    file["version"]     # {"name": "forced_alignment", "metadata": {"closing": 0.2, "aligner": "mfa"}}
+```
+
+Without `@version`, the first version listed (here `original`) is used.
+
+Note that protocol names cannot contain `@`, version names cannot contain `.`, and `version` cannot be used as a subset key.
 
 ## Meta-protocols and requirements
 
