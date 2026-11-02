@@ -1,6 +1,3 @@
-#!/usr/bin/env python
-# encoding: utf-8
-
 # The MIT License (MIT)
 
 # Copyright (c) 2016 CNRS
@@ -27,9 +24,9 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 
-from typing import Optional
-from .protocol.protocol import Preprocessors
 import warnings
+
+from .protocol.protocol import Preprocessors
 
 
 class Database:
@@ -49,7 +46,7 @@ class Database:
             )
             warnings.warn(msg)
 
-        super(Database, self).__init__()
+        super().__init__()
 
     def register_protocol(self, task_name, protocol_name, protocol):
         if not hasattr(self, "protocols_"):
@@ -74,9 +71,7 @@ class Database:
     def get_protocols(self, task):
         return sorted(self.protocols_[task].keys())
 
-    def get_protocol(
-        self, task, protocol, preprocessors: Optional[Preprocessors] = None
-    ):
+    def get_protocol(self, task, protocol, preprocessors: Preprocessors | None = None):
         return self.protocols_[task][protocol](preprocessors=preprocessors)
 
     def __str__(self):

@@ -1,6 +1,3 @@
-#!/usr/bin/env python
-# encoding: utf-8
-
 # The MIT License (MIT)
 
 # Copyright (c) 2020- CNRS
@@ -28,20 +25,19 @@
 # Alexis PLAQUET
 
 
-import typer
-from enum import Enum
 import math
-from typing import Text
-from pyannote.database import Database
-from pyannote.database import registry
-from pyannote.database.protocol import CollectionProtocol
-from pyannote.database.protocol import SpeakerDiarizationProtocol
+from enum import StrEnum
+
+import typer
 from pyannote.core import Annotation
+
+from pyannote.database import Database, registry
+from pyannote.database.protocol import CollectionProtocol, SpeakerDiarizationProtocol
 
 app = typer.Typer()
 
 
-class Task(str, Enum):
+class Task(StrEnum):
     Any = "Any"
     Protocol = "Protocol"
     Collection = "Collection"
@@ -65,7 +61,7 @@ def task(
         metavar="DATABASE",
         help="Filter tasks by DATABASE.",
         case_sensitive=False,
-    )
+    ),
 ):
     """Print list of tasks"""
 
@@ -90,7 +86,11 @@ def protocol(
         case_sensitive=False,
     ),
     task: Task = typer.Option(
-        "Any", "--task", "-t", help="Filter protocols by TASK.", case_sensitive=False,
+        "Any",
+        "--task",
+        "-t",
+        help="Filter protocols by TASK.",
+        case_sensitive=False,
     ),
 ):
     """Print list of protocols"""
@@ -112,7 +112,7 @@ def protocol(
                 typer.echo(f"{database_name}.{task_name}.{protocol}")
 
 
-def duration_to_str(seconds: float) -> Text:
+def duration_to_str(seconds: float) -> str:
     hours = math.floor(seconds / 3600)
     minutes = math.floor((seconds - 3600 * hours) / 60)
     return f"{hours}h{minutes:02d}m"
@@ -137,7 +137,6 @@ def info(protocol: str):
         typer.Exit(code=1)
 
     for subset in subsets:
-
         num_files = 0
         speakers = set()
         duration = 0.0
@@ -145,8 +144,7 @@ def info(protocol: str):
 
         def iterate():
             try:
-                for file in getattr(p, subset)():
-                    yield file
+                yield from getattr(p, subset)()
             except (AttributeError, NotImplementedError):
                 return
 

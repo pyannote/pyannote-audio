@@ -23,7 +23,9 @@ def _duration(file):
 
 
 def _protocols(database):
-    return set(global_registry.get_database(database).get_protocols("SpeakerDiarization"))
+    return set(
+        global_registry.get_database(database).get_protocols("SpeakerDiarization")
+    )
 
 
 @pytest.fixture(scope="module")
@@ -96,8 +98,12 @@ Protocols:
 def test_selecting_a_version_changes_annotation_only(versioned_dataset):
     """Selecting a version changes the annotation content, not which
     recordings are covered."""
-    original = global_registry.get_protocol("VersionedTestDB.SpeakerDiarization.Raw@original")
-    refined = global_registry.get_protocol("VersionedTestDB.SpeakerDiarization.Raw@refined")
+    original = global_registry.get_protocol(
+        "VersionedTestDB.SpeakerDiarization.Raw@original"
+    )
+    refined = global_registry.get_protocol(
+        "VersionedTestDB.SpeakerDiarization.Raw@refined"
+    )
 
     assert sorted(f["uri"] for f in original.train()) == ["u1", "u2"]
     assert sorted(f["uri"] for f in refined.train()) == ["u1", "u2"]
@@ -121,7 +127,11 @@ def test_one_protocol_per_version_and_default_is_first_listed(versioned_dataset)
         ("Raw", {"name": "original", "metadata": {}}),
         ("Other", {"name": "refined", "metadata": {"closing": 0.2}}),
     ):
-        files = list(global_registry.get_protocol(f"VersionedTestDB.SpeakerDiarization.{name}").train())
+        files = list(
+            global_registry.get_protocol(
+                f"VersionedTestDB.SpeakerDiarization.{name}"
+            ).train()
+        )
         assert sorted(f["uri"] for f in files) == ["u1", "u2"]
         assert all(f["version"] == default for f in files)
 
@@ -129,9 +139,15 @@ def test_one_protocol_per_version_and_default_is_first_listed(versioned_dataset)
 def test_versions_without_placeholder_are_still_expanded(versioned_dataset):
     """Declaring `versions:` is enough to version a protocol: paths without
     `{version}` are simply shared by every version."""
-    assert {"Shared", "Shared@original", "Shared@refined"} <= _protocols("VersionedTestDB")
+    assert {"Shared", "Shared@original", "Shared@refined"} <= _protocols(
+        "VersionedTestDB"
+    )
 
-    files = list(global_registry.get_protocol("VersionedTestDB.SpeakerDiarization.Shared@refined").train())
+    files = list(
+        global_registry.get_protocol(
+            "VersionedTestDB.SpeakerDiarization.Shared@refined"
+        ).train()
+    )
     assert all(f["version"]["name"] == "refined" and _duration(f) == 1.0 for f in files)
 
 
@@ -150,7 +166,9 @@ def test_unversioned_protocol_stays_flat(versioned_dataset):
 
 def test_compound_member_with_version(versioned_dataset):
     """X meta-protocol members can pin an annotation version with @."""
-    compound = global_registry.get_protocol("X.SpeakerDiarization.VersionedTestCompound")
+    compound = global_registry.get_protocol(
+        "X.SpeakerDiarization.VersionedTestCompound"
+    )
     files = list(compound.train())
 
     assert sorted(f["uri"] for f in files) == ["u1", "u2"]
@@ -175,14 +193,23 @@ def test_invalid_version_selection_is_rejected(versioned_dataset, name, match):
     "protocol_block, match",
     [
         # "version" is a reserved subset entry, even without `versions:`
-        ("Raw:\n  train:\n    version: not_allowed", r"reserved for annotation versioning"),
+        (
+            "Raw:\n  train:\n    version: not_allowed",
+            r"reserved for annotation versioning",
+        ),
         # "@" is reserved to select a version
         ("Foo@Bar:\n  scope: file", r"Foo@Bar.*must not contain '@'"),
         # versions map names to (optional) metadata mappings
         ("Raw:\n  versions: [original, refined]", r"must be a non-empty mapping"),
         ("Raw:\n  versions: {}", r"must be a non-empty mapping"),
-        ("Raw:\n  versions: {original, refined: 0.2}", r"metadata of versions \['refined'\]"),
-        ("Raw:\n  versions: {original, refined: 0}", r"metadata of versions \['refined'\]"),
+        (
+            "Raw:\n  versions: {original, refined: 0.2}",
+            r"metadata of versions \['refined'\]",
+        ),
+        (
+            "Raw:\n  versions: {original, refined: 0}",
+            r"metadata of versions \['refined'\]",
+        ),
         # "." would make the protocol class unpicklable
         ("Raw:\n  versions: {original, v2.1}", r"must not contain '\.'.*v2\.1"),
     ],

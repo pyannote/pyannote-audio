@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# encoding: utf-8
 
 # The MIT License (MIT)
 
@@ -29,13 +28,26 @@
 # Alexis PLAQUET
 
 
-from pyannote.database import registry
+from pathlib import Path
 
-protocol = registry.get_protocol('MyDatabase.SpeakerVerification.MySpeakerVerification')
-for elt in protocol.train_trial():
-    print(elt)
-    print(elt['file1']['try_with'])
-    file1_annotation = elt['file1']['annotation']
-    print('annotation : ', file1_annotation)
-    file1_annotated  = elt['file1']['annotated']
-    print('annotated : ', file1_annotated)
+from pyannote.core import Annotation, Timeline
+
+from pyannote.database.registry import Registry
+
+
+def test_verification_trials():
+    registry = Registry()
+    registry.load_database(Path(__file__).parent / "data/database.yml")
+    protocol = registry.get_protocol(
+        "MyDatabase.SpeakerVerification.MySpeakerVerification"
+    )
+    trials = list(protocol.train_trial())
+    assert len(trials) == 1
+    trial = trials[0]
+    assert not trial["reference"]
+    for key, uri in (("file1", "filename1"), ("file2", "filename2")):
+        file = trial[key]
+        assert file["uri"] == uri
+        assert isinstance(file["annotation"], Annotation)
+        assert isinstance(file["annotated"], Timeline)
+        assert file["try_with"].duration() > 0

@@ -1,6 +1,3 @@
-#!/usr/bin/env python
-# encoding: utf-8
-
 # The MIT License (MIT)
 
 # Copyright (c) 2016-2020 CNRS
@@ -26,20 +23,13 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
-import yaml
-from pathlib import Path
 import warnings
+
 import pandas as pd
-from pyannote.core import Segment, Timeline, Annotation
-from .protocol.protocol import ProtocolFile
+from pyannote.core import Annotation, Segment, Timeline
 
-from typing import Text
-from typing import Union
-from typing import Dict
-from typing import List
-
-DatabaseName = Text
-PathTemplate = Text
+DatabaseName = str
+PathTemplate = str
 
 
 def get_unique_identifier(item):
@@ -332,7 +322,7 @@ def load_lst(file_lst):
         List or uris
     """
 
-    with open(file_lst, mode="r") as fp:
+    with open(file_lst) as fp:
         lines = fp.readlines()
     return [line.strip() for line in lines]
 
@@ -351,7 +341,7 @@ def load_mapping(mapping_txt):
         {1st field: 2nd field} dictionary
     """
 
-    with open(mapping_txt, mode="r") as fp:
+    with open(mapping_txt) as fp:
         lines = fp.readlines()
 
     mapping = dict()
@@ -362,7 +352,7 @@ def load_mapping(mapping_txt):
     return mapping
 
 
-class LabelMapper(object):
+class LabelMapper:
     """Label mapper for use as pyannote.database preprocessor
 
     Parameters

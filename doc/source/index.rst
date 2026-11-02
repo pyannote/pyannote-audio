@@ -14,7 +14,7 @@ Installation
 
 ::
 
-$ pip install pyannote.database
+    pip install pyannote.database
 
 
 API documentation
@@ -23,4 +23,4 @@ API documentation
 .. toctree::
    :maxdepth: 2
 
-   changelog
+   Changelog <https://github.com/pyannote/pyannote-database/blob/main/CHANGELOG.md>

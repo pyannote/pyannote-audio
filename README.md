@@ -1,3 +1,5 @@
+![pyannote.database social preview](https://raw.githubusercontent.com/pyannote/pyannote-database/main/.github/social-preview.png)
+
 # pyannote-database
 
 Reproducible experimental protocols for multimedia (audio, video, text) database.
@@ -75,6 +77,7 @@ Since version `5.0`, configuration files must be loaded into the `registry` like
 
 ```python
 from pyannote.database import registry
+
 registry.load_database("/path/to/database.yml")
 ```
 
@@ -93,9 +96,10 @@ Once loaded in the registry, protocols can be used in Python like this:
 
   ```python
   from pyannote.database import registry
+
   registry.load_database("/path/to/database.yml")
 
-  protocol = registry.get_protocol('MyDatabase.Protocol.MyProtocol')
+  protocol = registry.get_protocol("MyDatabase.Protocol.MyProtocol")
   for resource in protocol.train():
       print(resource["uri"])
   filename1
@@ -125,6 +129,8 @@ with the content of `database.yml` as follows:
 
 ## Data loaders
 
+STM transcription loading requires the optional dependencies: `uv add "pyannote.database[transcription]"`.
+
 The above `MyDatabase.Protocol.MyProtocol` protocol is not very useful as it only allows to iterate over a list of resources with a single `'uri'` key. Metadata can be added to each resource with the following syntax:  
 
   ```yaml
@@ -135,7 +141,7 @@ The above `MyDatabase.Protocol.MyProtocol` protocol is not very useful as it onl
           train:
               uri: lists/train.lst
               speaker: rttms/train.rttm
-              transcription: ctms/{uri}.ctm
+              transcription: stms/{uri}.stm
   ```
 
 and the following directory structure:
@@ -147,60 +153,61 @@ and the following directory structure:
   |   └── train.lst
   ├── rttms
   |   └── train.rttm
-  └── ctms
-      ├── filename1.ctm
-      └── filename2.ctm
+  └── stms
+      ├── filename1.stm
+      └── filename2.stm
   ```
 
 Now, resources have both `'speaker'` and `'transcription'` keys:
 
   ```python
   from pyannote.database import registry
-  protocol = registry.get_protocol('MyDatabase.Protocol.MyProtocol')
+
+  protocol = registry.get_protocol("MyDatabase.Protocol.MyProtocol")
 
   for resource in protocol.train():
       assert "speaker" in resource
       assert isinstance(resource["speaker"], pyannote.core.Annotation)
       assert "transcription" in resource
-      assert isinstance(resource["transcription"], spacy.tokens.Doc)
+      assert isinstance(resource["transcription"], meeteval.io.SegLST)
   ```
 
 What happened exactly? Data loaders were automatically selected based on metadata file suffix:
 
 - `pyannote.database.loader.RTTMLoader` for `speaker` entry with `.rttm` suffix
-- `pyannote.database.loader.CTMLoader` for  `transcription` entry with `ctm` suffix).
+- `pyannote.database.loader.STMLoader` for  `transcription` entry with `.stm` suffix).
 
 and used to populate `speaker` and `transcription` keys. In pseudo-code:
 
   ```python
   # instantiate loader registered with `.rttm` suffix
-  speaker = RTTMLoader('rttms/train.rttm')
+  speaker = RTTMLoader("rttms/train.rttm")
 
   # entries with {placeholders} serve as path templates
-  transcription_template = 'ctms/{uri}.ctm'
+  transcription_template = "stms/{uri}.stm"
 
   for resource in protocol.train():
       # unique resource identifier
-      uri = resource['uri']
+      uri = resource["uri"]
 
       # only select parts of `rttms/train.rttm` that are relevant to current resource,
-      # convert it into a convenient data structure (here pyannote.core.Annotation), 
-      # and assign it to `'speaker'` resource key 
-      resource['speaker'] = speaker[uri]
+      # convert it into a convenient data structure (here pyannote.core.Annotation),
+      # and assign it to `'speaker'` resource key
+      resource["speaker"] = speaker(resource)
 
       # replace placeholders in `transcription` path template
-      ctm = transcription_template.format(uri=uri)
+      stm = transcription_template.format(uri=uri)
 
-      # instantiate loader registered with `.ctm` suffix
-      transcription = CTMLoader(ctm)
+      # instantiate loader registered with `.stm` suffix
+      transcription = STMLoader(stm)
 
-      # only select parts of the `ctms/{uri}.ctm` that are relevant to current resource
+      # only select parts of the `stms/{uri}.stm` that are relevant to current resource
       # (here, most likely the whole file), convert it into a convenient data structure
-      # (here spacy.tokens.Doc), and assign it to `'transcription'` resource key 
-      resource['transcription'] = transcription[uri]
+      # (here meeteval.io.SegLST), and assign it to `'transcription'` resource key
+      resource["transcription"] = transcription(resource)
   ```
 
-`pyannote.database` provides built-in data loaders for a limited set of file formats: `RTTMLoader` for `.rttm` files, `UEMLoader` for `.uem` files, and `CTMLoader` for `.ctm` files. See [Custom data loaders](#custom-data-loaders) section to learn how to add your own. 
+`pyannote.database` provides built-in data loaders for a limited set of file formats: `RTTMLoader` for `.rttm` files, `UEMLoader` for `.uem` files, and `STMLoader` for `.stm` files. See [Custom data loaders](#custom-data-loaders) section to learn how to add your own.
 
 ## Preprocessors
 
@@ -313,10 +320,11 @@ It can the be used in Python like this:
 
   ```python
   from pyannote.database import registry
-  collection = registry.get_protocol('MyDatabase.Collection.MyCollection')
+
+  collection = registry.get_protocol("MyDatabase.Collection.MyCollection")
 
   for file in collection.files():
-     print(file["uri"])
+      print(file["uri"])
   filename1
   filename2
   filename3
@@ -379,12 +387,13 @@ It can then be used in Python like this:
 
   ```python
   from pyannote.database import registry
-  protocol = registry.get_protocol('MyDatabase.Segmentation.MyProtocol')
+
+  protocol = registry.get_protocol("MyDatabase.Segmentation.MyProtocol")
 
   for file in protocol.train():
-     print(file["uri"])
-     assert "annotation" in file
-     assert "annotated" in file
+      print(file["uri"])
+      assert "annotation" in file
+      assert "annotated" in file
   filename1
   filename2
   ```
@@ -443,12 +452,13 @@ It can then be used in Python like this:
 
   ```python
   from pyannote.database import registry
-  protocol = registry.get_protocol('MyDatabase.SpeakerDiarization.MyProtocol')
+
+  protocol = registry.get_protocol("MyDatabase.SpeakerDiarization.MyProtocol")
 
   for file in protocol.train():
-     print(file["uri"])
-     assert "annotation" in file
-     assert "annotated" in file
+      print(file["uri"])
+      assert "annotation" in file
+      assert "annotated" in file
   filename1
   filename2
   ```
@@ -546,11 +556,16 @@ Select a version by appending `@version` to the protocol name:
 
 ```python
 from pyannote.database import registry
-protocol = registry.get_protocol('MyDatabase.SpeakerDiarization.MyProtocol@forced_alignment')
+
+protocol = registry.get_protocol(
+    "MyDatabase.SpeakerDiarization.MyProtocol@forced_alignment"
+)
 
 for file in protocol.train():
     file["annotation"]  # loaded from /path/to/forced_alignment/train.rttm
-    file["version"]     # {"name": "forced_alignment", "metadata": {"closing": 0.2, "aligner": "mfa"}}
+    file[
+        "version"
+    ]  # {"name": "forced_alignment", "metadata": {"closing": 0.2, "aligner": "mfa"}}
 ```
 
 Without `@version`, the first version listed (here `original`) is used.
@@ -589,8 +604,9 @@ This new "meta-protocol" can be used like any other protocol of the (fake) `X` d
 
   ```python
   from pyannote.database import registry
-  protocol = registry.get_protocol('X.Protocol.MyMetaProtocol')
-  
+
+  protocol = registry.get_protocol("X.Protocol.MyMetaProtocol")
+
   for resource in protocol.train():
       pass
   ```
@@ -628,7 +644,7 @@ One can get a list of tasks using `get_tasks` method:
 
 ### Custom data loaders
 
-`pyannote.database` provides built-in data loaders for a limited set of file formats: `RTTMLoader` for `.rttm` files, `UEMLoader` for `.uem` files, and `CTMLoader` for `.ctm` files.
+`pyannote.database` provides built-in data loaders for a limited set of file formats: `RTTMLoader` for `.rttm` files, `UEMLoader` for `.uem` files, and `STMLoader` for `.stm` files.
 
 In case those are not enough, `pyannote.database` supports the addition of custom data loaders using the `pyannote.database.loader` entry point.
 
@@ -641,33 +657,37 @@ Here is an example of a Python package called `your_package` that defines two cu
 from pyannote.database import ProtocolFile
 from pathlib import Path
 
+
 class Ext1Loader:
     def __init__(self, ext1: Path):
-        print(f'Initializing Ext1Loader with {ext1}')
+        print(f"Initializing Ext1Loader with {ext1}")
         # your code should obviously do something smarter.
         # see pyannote.database.loader.RTTMLoader for an example.
         self.ext1 = ext1
 
     def __call__(self, current_file: ProtocolFile) -> Text:
         uri = current_file["uri"]
-        print(f'Processing {uri} with Ext1Loader')
+        print(f"Processing {uri} with Ext1Loader")
         # your code should obviously do something smarter.
         # see pyannote.database.loader.RTTMLoader for an example.
-        return f'{uri}.ext1'
+        return f"{uri}.ext1"
+
 
 class Ext2Loader:
     def __init__(self, ext2: Path):
-        print(f'Initializing Ext2Loader with {ext2}')
+        print(f"Initializing Ext2Loader with {ext2}")
         # your code should obviously do something smarter.
         # see pyannote.database.loader.RTTMLoader for an example.
         self.ext2 = ext2
 
     def __call__(self, current_file: ProtocolFile) -> Text:
         uri = current_file["uri"]
-        print(f'Processing {uri} with Ext2Loader')
+        print(f"Processing {uri} with Ext2Loader")
         # your code should obviously do something smarter.
         # see pyannote.database.loader.RTTMLoader for an example.
-        return f'{uri}.ext2'
+        return f"{uri}.ext2"
+
+
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ```
 
@@ -796,7 +816,7 @@ It can then be used in Python like this:
   ```python
   collection = MyCollection()
   for file in collection.files():
-     print(file["uri"])
+      print(file["uri"])
   filename1
   filename2
   filename3
@@ -811,12 +831,16 @@ least one of `train_iter`, `development_iter` and `test_iter` methods:
   ```python
   class MySpeakerDiarizationProtocol(SpeakerDiarizationProtocol):
       def train_iter(self) -> Iterator[Dict]:
-          yield {"uri": "filename1",
-                 "annotation": Annotation(...),
-                 "annotated": Timeline(...)}
-          yield {"uri": "filename2",
-                 "annotation": Annotation(...),
-                 "annotated": Timeline(...)}
+          yield {
+              "uri": "filename1",
+              "annotation": Annotation(...),
+              "annotated": Timeline(...),
+          }
+          yield {
+              "uri": "filename2",
+              "annotation": Annotation(...),
+              "annotated": Timeline(...),
+          }
   ```
 
 `{subset}_iter` should return an iterator of dictionnaries with
@@ -840,7 +864,7 @@ It can then be used in Python like this:
   ```python
   protocol = MySpeakerDiarizationProtocol()
   for file in protocol.train():
-     print(file["uri"])
+      print(file["uri"])
   filename1
   filename2
   ```
@@ -854,26 +878,24 @@ A speaker verification protocol can be defined programmatically by creating a cl
   ```python
   class MySpeakerVerificationProtocol(SpeakerVerificationProtocol):
       def train_iter(self) -> Iterator[Dict]:
-          yield {"uri": "filename1",
-                 "annotation": Annotation(...),
-                 "annotated": Timeline(...)}
-          yield {"uri": "filename2",
-                 "annotation": Annotation(...),
-                 "annotated": Timeline(...)}
+          yield {
+              "uri": "filename1",
+              "annotation": Annotation(...),
+              "annotated": Timeline(...),
+          }
+          yield {
+              "uri": "filename2",
+              "annotation": Annotation(...),
+              "annotated": Timeline(...),
+          }
+
       def train_trial_iter(self) -> Iterator[Dict]:
-          yield {"reference": 1,
-                 "file1": ProtocolFile(...),
-                 "file2": ProtocolFile(...)}
-          yield {"reference": 0,
-                 "file1": {
-                   "uri":"filename1",
-                   "try_with":Timeline(...)
-                    },
-                 "file1": {
-                   "uri":"filename3",
-                   "try_with":Timeline(...)
-                   }
-                 }
+          yield {"reference": 1, "file1": ProtocolFile(...), "file2": ProtocolFile(...)}
+          yield {
+              "reference": 0,
+              "file1": {"uri": "filename1", "try_with": Timeline(...)},
+              "file1": {"uri": "filename3", "try_with": Timeline(...)},
+          }
   ```
 
 `{subset}_trial_iter` should return an iterator of dictionnaries with
@@ -897,3 +919,16 @@ It can then be used in Python like this:
   1 filename1 filename2
   0 filename1 filename3
   ```
+
+## Development
+
+Requires Python 3.11 or newer.
+
+```bash
+uv sync --extra test --extra cli --extra transcription
+uv run pytest tests
+uvx ruff check .
+uvx ruff format --check .
+```
+
+See the [changelog](https://github.com/pyannote/pyannote-database/blob/main/CHANGELOG.md) for release history.

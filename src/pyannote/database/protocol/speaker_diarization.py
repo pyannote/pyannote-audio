@@ -1,6 +1,3 @@
-#!/usr/bin/env python
-# encoding: utf-8
-
 # The MIT License (MIT)
 
 # Copyright (c) 2016- CNRS
@@ -27,6 +24,7 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 from .segmentation import SegmentationProtocol
+
 
 class SpeakerDiarizationProtocol(SegmentationProtocol):
     """A protocol for speaker diarization experiments

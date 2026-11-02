@@ -1,36 +1,59 @@
 name: Test
 
 on:
-  pull_request:
-    branches:
-      - develop
-  push:
-    branches:
-      - develop
-      - master
-      - release/*
+  workflow_call:
 
+permissions:
+  contents: read
 
 jobs:
   test:
-    name: Test
+    name: Test Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        python-version: 
-          - "3.10"
-          - "3.11"
-          - "3.12"
-    env:
-      UV_PYTHON: ${{ matrix.python-version }}
+        python-version: ["3.11", "3.12", "3.13", "3.14", "3.15", "3.x"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+      - id: python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          check-latest: ${{ matrix.python-version == '3.x' }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: python-package-distributions
+          path: dist/
+      - name: Install the built wheel with test dependencies
+        run: |
+          uv venv --python "${{ steps.python.outputs.python-path }}"
+          uv pip install "$(echo dist/*.whl)[test]"
+      - name: Run tests against the installed wheel
+        run: uv run --no-project --python .venv/bin/python python -m pytest tests
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install the project
-        run: uv sync --extra test
-
-      - name: Run tests
-        run: uv run pytest tests
+  optional-features:
+    name: Optional features (Python 3.11)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+      - id: python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: python-package-distributions
+          path: dist/
+      - name: Install the built wheel with test dependencies
+        run: |
+          uv venv --python "${{ steps.python.outputs.python-path }}"
+          uv pip install "$(echo dist/*.whl)[test,cli,transcription]"
+      - name: Run tests against the installed wheel
+        run: uv run --no-project --python .venv/bin/python python -m pytest tests/test_optional_features.py

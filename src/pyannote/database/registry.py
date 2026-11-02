@@ -1,6 +1,3 @@
-#!/usr/bin/env python
-# encoding: utf-8
-
 # The MIT License (MIT)
 
 # Copyright (c) 2022- CNRS
@@ -28,16 +25,17 @@
 # Hervé BREDIN - http://herve.niderb.fr
 # Alexis PLAQUET
 
-from enum import Enum
 import os
-from pathlib import Path
-from typing import Dict, List, Set, Optional, Text, Tuple, Type, Union
 import warnings
+from enum import Enum
+from pathlib import Path
+
+import yaml
 
 from pyannote.database.protocol.protocol import Preprocessors, Protocol
+
 from .custom import create_protocol, get_init
 from .database import Database
-import yaml
 
 
 # controls what to do in case of protocol name conflict
@@ -47,7 +45,7 @@ class LoadingMode(Enum):
     ERROR = 2  # raise an error
 
 
-def _apply_version(entries: Dict, version: Text) -> Dict:
+def _apply_version(entries: dict, version: str) -> dict:
     """Replace {version} placeholder in protocol entries
 
     Parameters
@@ -68,16 +66,18 @@ def _apply_version(entries: Dict, version: Text) -> Dict:
         return value.replace("{version}", version) if isinstance(value, str) else value
 
     return {
-        key: {sub(k): sub(v) for k, v in value.items()} if isinstance(value, dict) else value
+        key: {sub(k): sub(v) for k, v in value.items()}
+        if isinstance(value, dict)
+        else value
         for key, value in entries.items()
     }
 
 
 def _expand_versions(
-    db_name: Text,
-    task_name: Text,
-    protocol: Text,
-    protocol_entries: Dict,
+    db_name: str,
+    task_name: str,
+    protocol: str,
+    protocol_entries: dict,
     database_yml: Path,
 ) -> list[tuple[str, dict, dict | None]]:
     """Expand protocol into one protocol per version
@@ -125,7 +125,9 @@ def _expand_versions(
         )
         raise ValueError(msg)
 
-    invalid = [str(n) for n, m in versions.items() if not (m is None or isinstance(m, dict))]
+    invalid = [
+        str(n) for n, m in versions.items() if not (m is None or isinstance(m, dict))
+    ]
     if invalid:
         msg = f"{where}: metadata of versions {invalid} must be a mapping (e.g. {{closing: 0.2}})."
         raise ValueError(msg)
@@ -143,7 +145,8 @@ def _expand_versions(
         raise ValueError(msg)
 
     return [
-        (f"{protocol}@{v['name']}", _apply_version(entries, v["name"]), v) for v in versions
+        (f"{protocol}@{v['name']}", _apply_version(entries, v["name"]), v)
+        for v in versions
     ]
 
 
@@ -243,7 +246,7 @@ class Registry:
         #           }
         #       }
         #   }
-        self.configs: Dict[Path, Dict] = dict()
+        self.configs: dict[Path, dict] = dict()
 
         # Content of the "Database" root item (= where to find file content),
         # with paths as written in database.yml. Only used by FileFinder.
@@ -274,11 +277,11 @@ class Registry:
         #    "DatabaseB": pyannote.database.registry.DatabaseB,
         #    "DatabaseC": pyannote.database.registry.DatabaseC,
         #    "X": pyannote.database.registry.X}
-        self.databases: Dict[Text, Type] = dict()
+        self.databases: dict[str, type] = dict()
 
     def load_database(
         self,
-        path: Union[Text, Path],
+        path: str | Path,
         mode: LoadingMode = LoadingMode.OVERRIDE,
     ):
         """Load YAML configuration file into the registry
@@ -302,9 +305,9 @@ class Registry:
 
     def _load_database_helper(
         self,
-        database_yml: Union[Text, Path],
+        database_yml: str | Path,
         mode: LoadingMode = LoadingMode.KEEP,
-        loading: Set[Path] = set(),
+        loading: set[Path] = set(),
     ):
         """Helper function for recursive loading
 
@@ -329,7 +332,7 @@ class Registry:
         loading.add(database_yml)
 
         # load configuration
-        with open(database_yml, "r") as f:
+        with open(database_yml) as f:
             config = yaml.load(f, Loader=yaml.SafeLoader)
 
         # load every requirement
@@ -404,7 +407,7 @@ class Registry:
         return database(**kwargs)
 
     def get_protocol(
-        self, name, preprocessors: Optional[Preprocessors] = None
+        self, name, preprocessors: Preprocessors | None = None
     ) -> Protocol:
         """Get protocol by full name
 
@@ -471,7 +474,7 @@ class Registry:
         self,
         db_name,
         db_entries: dict,
-        database_yml: Union[Text, Path] = None,
+        database_yml: str | Path = None,
         mode: LoadingMode = LoadingMode.OVERRIDE,
     ):
         """Load all protocols from this database into the registry.
@@ -489,7 +492,7 @@ class Registry:
         db_name = str(db_name)
 
         # maps tuple (task,protocol) to the custom protocol class
-        protocols: Dict[Tuple[Text, Text], Type] = dict()
+        protocols: dict[tuple[str, str], type] = dict()
 
         for task_name, task_entries in db_entries.items():
             for protocol, protocol_entries in task_entries.items():
@@ -515,6 +518,7 @@ class Registry:
                         entries,
                         database_yml,
                         version=version,
+                        registry=self,
                     )
                     if CustomProtocol is None:
                         continue
@@ -523,8 +527,13 @@ class Registry:
 
                 # expanded[0] is the default (first listed) version, e.g. "Raw@original":
                 default_protocol, _, default_version = expanded[0]
-                if default_version is not None and (task_name, default_protocol) in protocols:
-                    protocols[(task_name, protocol)] = protocols[(task_name, default_protocol)]
+                if (
+                    default_version is not None
+                    and (task_name, default_protocol) in protocols
+                ):
+                    protocols[(task_name, protocol)] = protocols[
+                        (task_name, default_protocol)
+                    ]
 
         # If needed, merge old protocols dict with the new one (according to current override rules)
         if db_name in self.databases:
@@ -558,7 +567,7 @@ class Registry:
                 )
 
 
-def _env_config_paths() -> List[Path]:
+def _env_config_paths() -> list[Path]:
     """Parse PYANNOTE_DATABASE_CONFIG environment variable
 
     PYANNOTE_DATABASE_CONFIG may contain multiple paths separation by ";".
@@ -579,7 +588,7 @@ def _env_config_paths() -> List[Path]:
     return paths
 
 
-def _find_default_ymls() -> List[Path]:
+def _find_default_ymls() -> list[Path]:
     """Get paths to default YAML configuration files
 
     * $HOME/.pyannote/database.yml
@@ -592,7 +601,7 @@ def _find_default_ymls() -> List[Path]:
         List of existing default YAML configuration files
     """
 
-    paths: List[Path] = []
+    paths: list[Path] = []
 
     home_db_yml = Path("~/.pyannote/database.yml").expanduser()
     if home_db_yml.is_file():
@@ -608,8 +617,8 @@ def _find_default_ymls() -> List[Path]:
 
 
 def _merge_protocols_inplace(
-    new_protocols: Dict[Tuple[Text, Text], Type],
-    old_protocols: Dict[Tuple[Text, Text], Type],
+    new_protocols: dict[tuple[str, str], type],
+    old_protocols: dict[tuple[str, str], type],
     mode: LoadingMode,
     db_name: str,
     database_yml: str,

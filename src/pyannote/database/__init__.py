@@ -1,6 +1,3 @@
-#!/usr/bin/env python
-# encoding: utf-8
-
 # The MIT License (MIT)
 
 # Copyright (c) 2016- CNRS
@@ -29,29 +26,19 @@
 
 """pyannote.database"""
 
-
-from typing import Optional
+import importlib.metadata
 import warnings
 
-from .registry import registry, LoadingMode
-
 from .database import Database
-
-from .protocol.protocol import Protocol
-from .protocol.protocol import ProtocolFile
-from .protocol.protocol import Subset
-from .protocol.protocol import Preprocessors
-
 from .file_finder import FileFinder
-from .util import get_annotated
-from .util import get_unique_identifier
-from .util import get_label_identifier
+from .protocol.protocol import Preprocessors, Protocol, ProtocolFile, Subset
+from .registry import LoadingMode, registry
+from .util import get_annotated, get_label_identifier, get_unique_identifier
 
-import importlib.metadata
 __version__ = importlib.metadata.version("pyannote-database")
 
 
-def get_protocol(name, preprocessors: Optional[Preprocessors] = None) -> Protocol:
+def get_protocol(name, preprocessors: Preprocessors | None = None) -> Protocol:
     """Get protocol by full name
 
     name : str
@@ -68,8 +55,9 @@ def get_protocol(name, preprocessors: Optional[Preprocessors] = None) -> Protoco
         Protocol instance
     """
     warnings.warn(
-        "`get_protocol` has been deprecated in favor of `pyannote.database.registry.get_protocol`.", 
-        DeprecationWarning)
+        "`get_protocol` has been deprecated in favor of `pyannote.database.registry.get_protocol`.",
+        DeprecationWarning,
+    )
     return registry.get_protocol(name, preprocessors=preprocessors)
 
 

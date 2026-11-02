@@ -1,6 +1,3 @@
-#!/usr/bin/env python
-# encoding: utf-8
-
 # The MIT License (MIT)
 
 # Copyright (c) 2018-2020 CNRS
@@ -27,7 +24,8 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 
-from typing import Iterator, Dict
+from collections.abc import Iterator
+
 from .protocol import Protocol
 
 
@@ -90,9 +88,9 @@ class CollectionProtocol(Protocol):
     """
 
     # this method should be overriden
-    def files_iter(self) -> Iterator[Dict]:
+    def files_iter(self) -> Iterator[dict]:
         raise NotImplementedError()
 
     # this allows Protocol.files() to iterate over the collection
-    def train_iter(self) -> Iterator[Dict]:
+    def train_iter(self) -> Iterator[dict]:
         return self.files_iter()

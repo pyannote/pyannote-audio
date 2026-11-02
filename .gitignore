@@ -89,3 +89,10 @@ ENV/
 .ropeproject
 
 .mypy_cache
+
+.venv/
+.ruff_cache/
+.pytest_cache/
+
+# Local dependency resolution
+uv.lock

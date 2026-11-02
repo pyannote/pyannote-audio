@@ -10,7 +10,7 @@ Protocols:
         train:
           uri: lists/train.lst
           speaker: rttms/train.rttm
-          transcription: _ctms/{uri}.ctm
+          transcription: stms/{uri}.stm
           domain: mapping/domain.map
       
     SpeakerDiarization:

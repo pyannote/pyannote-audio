@@ -1,6 +1,3 @@
-#!/usr/bin/env python
-# encoding: utf-8
-
 # The MIT License (MIT)
 
 # Copyright (c) 2016- CNRS
@@ -27,20 +24,15 @@
 # Hervé BREDIN - http://herve.niderb.fr
 
 
-from typing import Dict, Optional
-from .protocol import Protocol
-from .protocol import ProtocolFile
-from .protocol import Subset
-from .protocol import Preprocessor
-from .protocol import Preprocessors
-from pyannote.core import Annotation
-from pyannote.core import Timeline
-from pyannote.core import Segment
 import functools
+
+from pyannote.core import Annotation, Segment, Timeline
+
+from .protocol import Preprocessor, Preprocessors, Protocol, ProtocolFile, Subset
 
 
 def crop_annotated(
-    current_file: ProtocolFile, existing_preprocessor: Optional[Preprocessor] = None
+    current_file: ProtocolFile, existing_preprocessor: Preprocessor | None = None
 ) -> Timeline:
     """Preprocessor that crops 'annotated' according to 'duration'
 
@@ -75,14 +67,14 @@ def crop_annotated(
     # crop 'annotated' to 'duration'
     duration = Segment(0.0, duration)
 
-    if annotated and not annotated.extent() in duration:
+    if annotated and annotated.extent() not in duration:
         return annotated.crop(duration, mode="intersection")
 
     return annotated
 
 
 def crop_annotation(
-    current_file: ProtocolFile, existing_preprocessor: Optional[Preprocessor] = None
+    current_file: ProtocolFile, existing_preprocessor: Preprocessor | None = None
 ) -> Annotation:
     """Preprocessor that crops 'annotation' by 'annotated'
 
@@ -215,7 +207,7 @@ class SegmentationProtocol(Protocol):
         filename2
     """
 
-    def __init__(self, preprocessors: Optional[Preprocessors] = None):
+    def __init__(self, preprocessors: Preprocessors | None = None):
 
         if preprocessors is None:
             preprocessors = dict()
@@ -234,7 +226,7 @@ class SegmentationProtocol(Protocol):
 
         super().__init__(preprocessors=preprocessors)
 
-    def stats(self, subset: Subset = "train") -> Dict:
+    def stats(self, subset: Subset = "train") -> dict:
         """Obtain global statistics on a given subset
 
         Parameters
@@ -263,7 +255,6 @@ class SegmentationProtocol(Protocol):
         labels = {}
 
         for item in getattr(self, subset)():
-
             annotated = get_annotated(item)
             annotated_duration += annotated.duration()
 

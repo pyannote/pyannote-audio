@@ -1,6 +1,3 @@
-#!/usr/bin/env python
-# encoding: utf-8
-
 # The MIT License (MIT)
 
 # Copyright (c) 2020-2025 CNRS
@@ -33,10 +30,11 @@
 import string
 import warnings
 from pathlib import Path
-from typing import Any, Text
+from typing import Any
 
 import pandas as pd
 from pyannote.core import Annotation, Timeline
+
 from pyannote.database.protocol.protocol import ProtocolFile
 from pyannote.database.util import load_lab, load_rttm, load_uem
 
@@ -66,7 +64,7 @@ def load_lst(file_lst):
         List or uris
     """
 
-    with open(file_lst, mode="r") as fp:
+    with open(file_lst) as fp:
         lines = fp.readlines()
     return [line.strip() for line in lines]
 
@@ -105,7 +103,7 @@ class RTTMLoader:
         (e.g. "/path/to/{database}/{subset}/{uri}.rttm")
     """
 
-    def __init__(self, path: Text = None):
+    def __init__(self, path: str = None):
         super().__init__()
 
         self.path = str(path)
@@ -156,7 +154,7 @@ class STMLoader:
         self.placeholders_ = set(placeholders) - set([None])
 
         if self.placeholders_:
-            self.loaded_: dict[str, "SegLST"] = dict()
+            self.loaded_: dict[str, SegLST] = dict()
             return
 
         if MEETEVAL_IS_AVAILABLE:
@@ -170,7 +168,7 @@ class STMLoader:
             return
 
         warnings.warn("MeetEval is not available, STM files cannot be loaded.")
-        self.loaded_: dict[str, "SegLST"] = dict()
+        self.loaded_: dict[str, SegLST] = dict()
 
     def __call__(self, file: ProtocolFile) -> "SegLST":
         uri = file["uri"]
@@ -223,7 +221,7 @@ class UEMLoader:
         (e.g. "/path/to/{database}/{subset}/{uri}.uem")
     """
 
-    def __init__(self, path: Text = None):
+    def __init__(self, path: str = None):
         super().__init__()
 
         self.path = str(path)
@@ -273,7 +271,7 @@ class LABLoader:
         ...
     """
 
-    def __init__(self, path: Text = None):
+    def __init__(self, path: str = None):
         super().__init__()
 
         self.path = str(path)

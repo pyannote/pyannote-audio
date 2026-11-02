@@ -1,6 +1,3 @@
-#!/usr/bin/env python
-# encoding: utf-8
-
 # The MIT License (MIT)
 
 # Copyright (c) 2016- CNRS
@@ -31,7 +28,6 @@ import glob
 import os
 import warnings
 from pathlib import Path
-from typing import Text
 
 from pyannote.database.protocol.protocol import ProtocolFile
 
@@ -57,12 +53,16 @@ def _scan_candidate(path: Path) -> list[Path]:
         return [path] if path.is_file() else []
 
     pattern = glob.escape(str(path)).replace("[*]", "*")
-    return [p for match in glob.iglob(pattern, recursive=True) if (p := Path(match)).is_file()]
+    return [
+        p
+        for match in glob.iglob(pattern, recursive=True)
+        if (p := Path(match)).is_file()
+    ]
 
 
 class FileFinder:
-    """Database file finder. 
-    
+    """Database file finder.
+
     Retrieve media files by URI.
 
     Parameters
@@ -71,16 +71,15 @@ class FileFinder:
         Database registry. Defaults to `pyannote.database.registry`.
     """
 
-    def __init__(
-        self, 
-        registry: Registry = None,
-        database_yml: Text = None):
+    def __init__(self, registry: Registry = None, database_yml: str = None):
         super().__init__()
         if registry is None:
             if database_yml is None:
                 registry = global_registry
             else:
-                warnings.warn("Passing `database.yml` to `FileFinder` is deprecated in favor of `registry`.")
+                warnings.warn(
+                    "Passing `database.yml` to `FileFinder` is deprecated in favor of `registry`."
+                )
                 registry = Registry()
                 registry.load_database(database_yml)
         self.registry = registry

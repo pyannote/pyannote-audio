@@ -1,6 +1,3 @@
-#!/usr/bin/env python
-# encoding: utf-8
-
 # The MIT License (MIT)
 
 # Copyright (c) 2016- CNRS
@@ -26,15 +23,14 @@
 # AUTHORS
 # Hervé BREDIN - http://herve.niderb.fr
 
-from .protocol import Protocol
 from .collection import CollectionProtocol
+from .protocol import Protocol
 from .segmentation import SegmentationProtocol
 from .speaker_diarization import SpeakerDiarizationProtocol
-from .speaker_spotting import SpeakerSpottingProtocol
-from .speaker_verification import SpeakerVerificationProtocol
 from .speaker_identification import SpeakerIdentificationProtocol
 from .speaker_recognition import SpeakerRecognitionProtocol
-
+from .speaker_spotting import SpeakerSpottingProtocol
+from .speaker_verification import SpeakerVerificationProtocol
 
 __all__ = [
     "Protocol",
@@ -46,4 +42,3 @@ __all__ = [
     "SpeakerIdentificationProtocol",
     "SpeakerRecognitionProtocol",
 ]
-

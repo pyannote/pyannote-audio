@@ -1,6 +1,3 @@
-#!/usr/bin/env python
-# encoding: utf-8
-
 # The MIT License (MIT)
 
 # Copyright (c) 2019-2020 CNRS
@@ -42,38 +39,29 @@ Protocols:
           annotated: xxx.uem
 """
 
-from pathlib import Path
+import functools
 import string
-
-
-from . import protocol as protocol_module
+import warnings
+from collections.abc import Callable
+from importlib.metadata import entry_points
+from numbers import Number
+from pathlib import Path
+from typing import Any
 
 from pyannote.database.protocol.protocol import ProtocolFile
 
-
-import warnings
-from numbers import Number
-from typing import Text, Dict, Callable, Any, Union
-import functools
-
+from . import protocol as protocol_module
+from .loader import load_lst, load_trial
 from .protocol.protocol import Subset
 from .protocol.segmentation import SegmentationProtocol
 from .protocol.speaker_diarization import SpeakerDiarizationProtocol
-
-from importlib.metadata import entry_points
-
 from .util import get_annotated
 
-from .loader import load_lst, load_trial
-
 # All "Loader" classes types (eg RTTMLoader, UEMLoader, ...) retrieved from the entry point.
-LOADERS = {
-    ep.name: ep
-    for ep in entry_points(group="pyannote.database.loader")
-}
+LOADERS = {ep.name: ep for ep in entry_points(group="pyannote.database.loader")}
 
 
-def Template(template: Text, database_yml: Path) -> Callable[[ProtocolFile], Any]:
+def Template(template: str, database_yml: Path) -> Callable[[ProtocolFile], Any]:
     """Get data loader based on template
 
     Parameters
@@ -83,7 +71,7 @@ def Template(template: Text, database_yml: Path) -> Callable[[ProtocolFile], Any
         Extension (here ".csv") determined which data loader to use.
     database_yml : Path
         Path to YAML configuration file, to which `template` is relative.
-        Defaults to assume that `template` is absolute or relative to 
+        Defaults to assume that `template` is absolute or relative to
         current working directory.
 
     Returns
@@ -120,6 +108,7 @@ def Template(template: Text, database_yml: Path) -> Callable[[ProtocolFile], Any
 def NumericValue(value):
     def load(current_file: ProtocolFile):
         return value
+
     return load
 
 
@@ -129,10 +118,10 @@ def resolve_path(path: Path, database_yml: Path) -> Path:
     Parameters
     ----------
     path : `Path`
-        Path. Can be either absolute, relative to current working directory, 
+        Path. Can be either absolute, relative to current working directory,
         or relative to `database_yml` parent directory.
     database_yml : `Path`
-        Path to YAML configuration file. 
+        Path to YAML configuration file.
 
     Returns
     -------
@@ -155,12 +144,13 @@ def resolve_path(path: Path, database_yml: Path) -> Path:
 
 
 def meta_subset_iter(
-    meta_database: Text,
-    meta_task: Text,
-    meta_protocol: Text,
+    meta_database: str,
+    meta_task: str,
+    meta_protocol: str,
     meta_subset: Subset,
-    subset_entries: Dict,
+    subset_entries: dict,
     database_yml: Path,
+    registry=None,
 ):
     """Meta-protocol method that iterates over a subset
 
@@ -181,19 +171,19 @@ def meta_subset_iter(
             REPERE.SpeakerDiarization.Phase2: [train, development]
     """
 
-    # this is imported here to avoid circular imports
-    from . import registry
+    # Keep direct callers compatible, but prefer the registry that loaded this protocol.
+    if registry is None:
+        from . import registry
 
     for protocol, subsets in subset_entries.items():
         partial_protocol = registry.get_protocol(protocol)
         for subset in subsets:
             method_name = f"{subset}_iter"
-            for file in getattr(partial_protocol, method_name)():
-                yield file
+            yield from getattr(partial_protocol, method_name)()
 
 
 def gather_loaders(
-    entries: Dict,
+    entries: dict,
     database_yml: Path,
 ) -> dict:
     """Loads all Loaders for data type specified in 'entries' into a dict.
@@ -215,7 +205,6 @@ def gather_loaders(
     lazy_loader = dict()
 
     for key, value in entries.items():
-
         if key == "uri" or key == "trial":
             continue
 
@@ -228,7 +217,6 @@ def gather_loaders(
         is_template = len(set(placeholders) - set([None])) > 0
 
         if is_template:
-
             # make sure old database.yml specifications still work but warn the user
             # that they can now get rid of this "_" prefix
             if value.startswith("_"):
@@ -243,7 +231,6 @@ def gather_loaders(
             lazy_loader[key] = Template(value, database_yml)
 
         else:
-
             path = resolve_path(Path(value), database_yml)
 
             # check if file exists
@@ -273,11 +260,11 @@ def gather_loaders(
 
 def subset_iter(
     self,
-    database: Text = None,
-    task: Text = None,
-    protocol: Text = None,
+    database: str = None,
+    task: str = None,
+    protocol: str = None,
     subset: Subset = None,
-    entries: Dict = None,
+    entries: dict = None,
     database_yml: Path = None,
     **metadata,
 ):
@@ -323,16 +310,18 @@ def subset_iter(
 
     for uri in uris:
         yield ProtocolFile(
-            {"uri": uri, "database": database, "subset": subset, **metadata}, lazy=lazy_loader
+            {"uri": uri, "database": database, "subset": subset, **metadata},
+            lazy=lazy_loader,
         )
+
 
 def subset_trial(
     self,
-    database: Text = None,
-    task: Text = None,
-    protocol: Text = None,
+    database: str = None,
+    task: str = None,
+    protocol: str = None,
     subset: Subset = None,
-    entries: Dict = None,
+    entries: dict = None,
     database_yml: Path = None,
 ):
     """
@@ -357,7 +346,7 @@ def subset_trial(
     lazy_loader["try_with"] = get_annotated
 
     # meant to store and cache one `ProtocolFile` instance per file
-    files: Dict[Text, ProtocolFile] = dict()
+    files: dict[str, ProtocolFile] = dict()
 
     # iterate trials and use preloaded test files
     for trial in load_trial(resolve_path(Path(entries["trial"]), database_yml)):
@@ -394,18 +383,19 @@ def get_init(protocols):
     return init
 
 
-def get_custom_protocol_class_name(database: Text, task: Text, protocol: Text):
+def get_custom_protocol_class_name(database: str, task: str, protocol: str):
     return f"{database}__{task}__{protocol}"
 
 
 def create_protocol(
-    database: Text,
-    task: Text,
-    protocol: Text,
-    protocol_entries: Dict,
+    database: str,
+    task: str,
+    protocol: str,
+    protocol_entries: dict,
     database_yml: Path,
     version: dict | None = None,
-) -> Union[type, None]:
+    registry=None,
+) -> type | None:
     """Create new protocol class
 
     Parameters
@@ -416,6 +406,8 @@ def create_protocol(
     protocol_entries : dict
     version : dict, optional
         Annotation version as {"name": ..., "metadata": ...}
+    registry : Registry, optional
+        Registry used to resolve members of meta-protocols.
 
     Returns
     -------
@@ -423,7 +415,6 @@ def create_protocol(
 
     """
 
-    
     try:
         base_class = getattr(
             protocol_module, "Protocol" if task == "Protocol" else f"{task}Protocol"
@@ -466,7 +457,7 @@ def create_protocol(
             msg = (
                 f"'{database}.{task}.{protocol}' found in {database_yml} does not define "
                 f"the 'scope' of speaker labels (file, database, or global). Setting it to 'file'."
-            )   
+            )
             print(msg)
             metadata["scope"] = "file"
 
@@ -475,7 +466,6 @@ def create_protocol(
 
     methods = dict()
     for subset, subset_entries in protocol_entries.items():
-
         if subset not in [
             "files",
             "train",
@@ -512,10 +502,10 @@ def create_protocol(
                     subset,
                     subset_entries,
                     database_yml,
+                    registry=registry,
                 )
             )
         else:
-
             methods[method_name] = functools.partialmethod(
                 subset_iter,
                 database=database,
