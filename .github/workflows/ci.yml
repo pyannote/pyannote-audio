@@ -41,6 +41,9 @@ jobs:
 
   docs:
     needs: build
+    # The reusable workflow declares a main-only deployment job.
+    permissions:
+      contents: write
     uses: ./.github/workflows/doc.yml
 
   documentation-complete:
