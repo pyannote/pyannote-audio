@@ -34,12 +34,14 @@ import torch
 def get_accelerator_device() -> torch.device:
     """Device of the active accelerator, or CPU when there is none."""
 
-    try:
-        if torch.accelerator.is_available():
-            return torch.accelerator.current_accelerator()
-    except (AttributeError, RuntimeError):
-        # `torch.accelerator` is only available in torch >= 2.5.
-        pass
+    # `current_accelerator()` reports the accelerator torch was *built* for,
+    # so a CUDA build on a machine without a GPU still returns `cuda`.
+    # `is_available()` is what tells the two apart, and it returns False
+    # (rather than raising) when no accelerator is usable.
+    if torch.accelerator.is_available():
+        device = torch.accelerator.current_accelerator()
+        if device is not None:
+            return device
 
     # `torch.accelerator` does not know about every backend (e.g. MPS on
     # builds that do not register it as an accelerator).
@@ -61,7 +63,4 @@ def get_accelerator_device_count() -> int:
     if get_accelerator_device_type() == "cpu":
         return 0
 
-    try:
-        return torch.accelerator.device_count()
-    except (AttributeError, RuntimeError):
-        return 0
+    return torch.accelerator.device_count()
