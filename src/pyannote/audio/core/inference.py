@@ -41,7 +41,14 @@ from pyannote.audio.utils.reproducibility import fix_reproducibility
 
 
 class BaseInference:
-    pass
+    @property
+    def supports_multi_speaker_masks(self) -> bool:
+        """Whether `__call__` supports (batch, speakers, frames)-shaped masks
+
+        When `True`, `__call__` accepts the masks of several speakers for the very same
+        batch of waveforms, and returns a (batch, speakers, dimension)-shaped array.
+        """
+        return False
 
 
 class Inference(BaseInference):
