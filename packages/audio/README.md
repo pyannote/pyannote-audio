@@ -95,7 +95,7 @@ Visit [`docs.pyannote.ai`](https://docs.pyannote.ai) to learn about other pyanno
 | [REPERE](https://www.islrn.org/resources/360-758-359-485-0/) (phase2)                                                       | 7.9  |  8.9 |  7.4 |
 | [VoxConverse](https://github.com/joonson/voxconverse) (v0.3)                                                                | 11.2 | 11.2 |  8.5 |
 
-__[Diarization error rate](http://pyannote.github.io/pyannote-metrics/reference.html#diarization) (in %, the lower, the better)__
+__[Diarization error rate](http://pyannote.github.io/pyannote-audio/metrics/reference.html#diarization) (in %, the lower, the better)__
 
 Compared to the [`3.1`](https://hf.co/pyannote/speaker-diarization-3.1) legacy pipeline, [`community-1`](https://hf.co/pyannote/speaker-diarization-community-1) brings significant improvement in terms of speaker counting and assignment.
 [`precision-2`](https://www.pyannote.ai/blog/precision-2) premium pipeline further improves accuracy as well as processing speed (in its self-hosted version).
@@ -202,7 +202,7 @@ set_telemetry_metrics(False, save_choice_as_default=True)
   - [Training, fine-tuning, and transfer learning](tutorials/training_a_model.ipynb)
   - [Adding a new model](tutorials/add_your_own_model.ipynb)
   - [Adding a new task](tutorials/add_your_own_task.ipynb)
-  - [Frequently asked questions](FAQ.md)
+  - [Frequently asked questions](https://github.com/pyannote/pyannote-audio/blob/main/FAQ.md)
 
 ## Citations
 
@@ -228,26 +228,4 @@ If you use `pyannote.audio` please use the following citations:
 
 ## Development
 
-The commands below will setup pre-commit hooks and packages needed for developing the `pyannote.audio` library.
-
-```bash
-uv sync --extra dev --extra test --extra cli
-uvx pre-commit install
-```
-
-## Test
-
-```bash
-uv run --extra test --extra cli pytest -m "not network and not notebook"
-```
-
-Tests marked `network` download a public model from Hugging Face:
-
-```bash
-uv run --extra test --extra cli pytest -m network
-```
-
-Historical notebooks are opt-in (`pytest -m notebook`) and may require additional
-models, datasets, credentials, and updates for the current API.
-
-Run lint and formatting checks with `uvx ruff check .` and `uvx ruff format --check .`.
+See the [workspace development guide](https://github.com/pyannote/pyannote-audio/blob/main/CONTRIBUTING.md).

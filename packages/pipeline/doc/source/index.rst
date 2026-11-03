@@ -5,7 +5,7 @@ pyannote.pipeline
 
 `pyannote.pipeline` is an open-source Python library for pipeline optimization
 
-See the `changelog <https://github.com/pyannote/pyannote-pipeline/blob/main/CHANGELOG.md>`_
+See the `changelog <https://github.com/pyannote/pyannote-audio/blob/main/CHANGELOG.md>`_
 for release notes and compatibility changes.
 
 

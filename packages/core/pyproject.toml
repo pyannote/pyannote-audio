@@ -41,6 +41,17 @@ build-backend = "hatchling.build"
 [tool.hatch.version]
 source = "vcs"
 
+
+[tool.hatch.version.raw-options]
+# Ignore pre-monorepo tags: all distributions share tags starting at 7.0.0.
+search_parent_directories = true
+fallback_version = "7.0.0.dev0"
+git_describe_command = [
+    "git", "describe", "--dirty", "--tags", "--long",
+    "--match", "[0-9]*", "--match", "v[0-9]*",
+    "--exclude", "[0-6].*", "--exclude", "v[0-6].*",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/pyannote"]
 
@@ -48,3 +59,6 @@ packages = ["src/pyannote"]
 dev = [
     "ipykernel>=6.29.5",
 ]
+
+[tool.hatch.build.targets.sdist]
+include = ["/src", "/tests", "/doc", "/README.md", "/CHANGELOG.md", "/LICENSE", "/pyproject.toml"]

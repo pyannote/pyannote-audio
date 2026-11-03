@@ -23,4 +23,4 @@ API documentation
 .. toctree::
    :maxdepth: 2
 
-   Changelog <https://github.com/pyannote/pyannote-database/blob/main/CHANGELOG.md>
+   Changelog <https://github.com/pyannote/pyannote-audio/blob/main/CHANGELOG.md>

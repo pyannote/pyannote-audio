@@ -1,0 +1,21 @@
+# Virtual workspace: the five packages remain independently installable.
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+pyannote-core = { workspace = true }
+pyannote-database = { workspace = true }
+pyannote-metrics = { workspace = true }
+pyannote-pipeline = { workspace = true }
+pyannote-audio = { workspace = true }
+
+[dependency-groups]
+dev = ["pytest>=8.3.4", "ruff==0.17.1", "packaging>=24", "pyyaml>=6", "twine>=6"]
+
+[tool.ruff]
+target-version = "py311"
+src = [".", "packages/*/src"]
+extend-exclude = ["*.ipynb", "packages/audio/tutorials/AMI-diarization-setup"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP"]

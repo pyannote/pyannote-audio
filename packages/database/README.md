@@ -1,4 +1,4 @@
-![pyannote.database social preview](https://raw.githubusercontent.com/pyannote/pyannote-database/main/.github/social-preview.png)
+![pyannote.database social preview](https://raw.githubusercontent.com/pyannote/pyannote-audio/main/packages/database/.github/social-preview.png)
 
 # pyannote-database
 
@@ -931,4 +931,4 @@ uvx ruff check .
 uvx ruff format --check .
 ```
 
-See the [changelog](https://github.com/pyannote/pyannote-database/blob/main/CHANGELOG.md) for release history.
+See the [changelog](https://github.com/pyannote/pyannote-audio/blob/main/CHANGELOG.md) for release history.

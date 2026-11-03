@@ -44,7 +44,7 @@ API documentation
    :maxdepth: 2
 
    reference
-   Changelog <https://github.com/pyannote/pyannote-core/blob/main/CHANGELOG.md>
+   Changelog <https://github.com/pyannote/pyannote-audio/blob/main/CHANGELOG.md>
 
 Indices and tables
 ==================

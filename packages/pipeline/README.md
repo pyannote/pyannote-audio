@@ -1,4 +1,4 @@
-![pyannote.pipeline](https://raw.githubusercontent.com/pyannote/pyannote-pipeline/main/.github/social-preview.png)
+![pyannote.pipeline](https://raw.githubusercontent.com/pyannote/pyannote-audio/main/packages/pipeline/.github/social-preview.png)
 
 ## Installation
 ```bash

@@ -1,4 +1,4 @@
-![pyannote.core](https://raw.githubusercontent.com/pyannote/pyannote-core/main/.github/social-preview.png)
+![pyannote.core](https://raw.githubusercontent.com/pyannote/pyannote-audio/main/packages/core/.github/social-preview.png)
 
 > advanced data structures for handling and visualizing temporal segments with attached labels.
 

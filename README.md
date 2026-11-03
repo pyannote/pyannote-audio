@@ -11,6 +11,22 @@
  <a href="https://www.youtube.com/watch?v=37R_R82lfwA"><img src="https://img.youtube.com/vi/37R_R82lfwA/0.jpg"></a>
 </p>
 
+## Monorepo
+
+This repository develops and releases all five packages together, starting at **7.0.0**.
+The existing PyPI names and `pyannote.*` imports are unchanged.
+
+| Package | Source and package documentation |
+| --- | --- |
+| `pyannote.core` | [packages/core](packages/core) |
+| `pyannote.database` | [packages/database](packages/database) |
+| `pyannote.metrics` | [packages/metrics](packages/metrics) |
+| `pyannote.pipeline` | [packages/pipeline](packages/pipeline) |
+| `pyannote.audio` | [packages/audio](packages/audio) |
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for workspace development and
+[RELEASING.md](RELEASING.md) for the shared release process and migration checklist.
+
 ## Highlights
 
 - :exploding_head: state-of-the-art performance (see [Benchmark](#benchmark))
@@ -95,7 +111,7 @@ Visit [`docs.pyannote.ai`](https://docs.pyannote.ai) to learn about other pyanno
 | [REPERE](https://www.islrn.org/resources/360-758-359-485-0/) (phase2)                                                       | 7.9  |  8.9 |  7.4 |
 | [VoxConverse](https://github.com/joonson/voxconverse) (v0.3)                                                                | 11.2 | 11.2 |  8.5 |
 
-__[Diarization error rate](http://pyannote.github.io/pyannote-metrics/reference.html#diarization) (in %, the lower, the better)__
+__[Diarization error rate](http://pyannote.github.io/pyannote-audio/metrics/reference.html#diarization) (in %, the lower, the better)__
 
 Compared to the [`3.1`](https://hf.co/pyannote/speaker-diarization-3.1) legacy pipeline, [`community-1`](https://hf.co/pyannote/speaker-diarization-community-1) brings significant improvement in terms of speaker counting and assignment.
 [`precision-2`](https://www.pyannote.ai/blog/precision-2) premium pipeline further improves accuracy as well as processing speed (in its self-hosted version).
@@ -187,21 +203,21 @@ set_telemetry_metrics(False, save_choice_as_default=True)
   - [Speaker segmentation model](https://www.youtube.com/watch?v=wDH2rvkjymY) / Interspeech 2021 / 3 min
   - [First release of pyannote.audio](https://www.youtube.com/watch?v=37R_R82lfwA) / ICASSP 2020 / 8 min
 - Blog
-  - 2022-12-02 > ["How I reached 1st place at Ego4D 2022, 1st place at Albayzin 2022, and 6th place at VoxSRC 2022 speaker diarization challenges"](tutorials/adapting_pretrained_pipeline.ipynb)
+  - 2022-12-02 > ["How I reached 1st place at Ego4D 2022, 1st place at Albayzin 2022, and 6th place at VoxSRC 2022 speaker diarization challenges"](packages/audio/tutorials/adapting_pretrained_pipeline.ipynb)
   - 2022-10-23 > ["One speaker segmentation model to rule them all"](https://herve.niderb.fr/fastpages/2022/10/23/One-speaker-segmentation-model-to-rule-them-all)
   - 2021-08-05 > ["Streaming voice activity detection with pyannote.audio"](https://herve.niderb.fr/fastpages/2021/08/05/Streaming-voice-activity-detection-with-pyannote.html)
 - Community contributions (not maintained by the core team)
-  - 2024-04-05 > [Offline speaker diarization (speaker-diarization-3.1)](tutorials/community/offline_usage_speaker_diarization.ipynb) by [Simon Ottenhaus](https://github.com/simonottenhauskenbun)
-  - 2024-09-24 > [Evaluating `pyannote` pretrained speech separation pipelines](tutorials/community/eval_separation_pipeline.ipynb) by  [Clément Pagés](https://github.com/)
+  - 2024-04-05 > [Offline speaker diarization (speaker-diarization-3.1)](packages/audio/tutorials/community/offline_usage_speaker_diarization.ipynb) by [Simon Ottenhaus](https://github.com/simonottenhauskenbun)
+  - 2024-09-24 > [Evaluating `pyannote` pretrained speech separation pipelines](packages/audio/tutorials/community/eval_separation_pipeline.ipynb) by  [Clément Pagés](https://github.com/)
 - Tutorials  
 *Those tutorials were written for older versions of pyannote.audio and should be updated. Interested in working for pyannoteAI as a community manager or developer advocate? This might be a nice place to start!*
-  - [Applying a pretrained pipeline](tutorials/applying_a_pipeline.ipynb)
-  - [Adapting a pretrained pipeline to your own data](tutorials/adapting_pretrained_pipeline.ipynb)
-  - [Training a pipeline](tutorials/voice_activity_detection.ipynb)
-  - [Applying a pretrained model](tutorials/applying_a_model.ipynb)
-  - [Training, fine-tuning, and transfer learning](tutorials/training_a_model.ipynb)
-  - [Adding a new model](tutorials/add_your_own_model.ipynb)
-  - [Adding a new task](tutorials/add_your_own_task.ipynb)
+  - [Applying a pretrained pipeline](packages/audio/tutorials/applying_a_pipeline.ipynb)
+  - [Adapting a pretrained pipeline to your own data](packages/audio/tutorials/adapting_pretrained_pipeline.ipynb)
+  - [Training a pipeline](packages/audio/tutorials/voice_activity_detection.ipynb)
+  - [Applying a pretrained model](packages/audio/tutorials/applying_a_model.ipynb)
+  - [Training, fine-tuning, and transfer learning](packages/audio/tutorials/training_a_model.ipynb)
+  - [Adding a new model](packages/audio/tutorials/add_your_own_model.ipynb)
+  - [Adding a new task](packages/audio/tutorials/add_your_own_task.ipynb)
   - [Frequently asked questions](FAQ.md)
 
 ## Citations
@@ -228,26 +244,4 @@ If you use `pyannote.audio` please use the following citations:
 
 ## Development
 
-The commands below will setup pre-commit hooks and packages needed for developing the `pyannote.audio` library.
-
-```bash
-uv sync --extra dev --extra test --extra cli
-uvx pre-commit install
-```
-
-## Test
-
-```bash
-uv run --extra test --extra cli pytest -m "not network and not notebook"
-```
-
-Tests marked `network` download a public model from Hugging Face:
-
-```bash
-uv run --extra test --extra cli pytest -m network
-```
-
-Historical notebooks are opt-in (`pytest -m notebook`) and may require additional
-models, datasets, credentials, and updates for the current API.
-
-Run lint and formatting checks with `uvx ruff check .` and `uvx ruff format --check .`.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for uv workspace commands and testing.
