@@ -33,6 +33,10 @@ from pyannote.audio.core.calibration import Calibration
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.pipeline import Pipeline
 from pyannote.audio.core.plda import PLDA
+from pyannote.audio.utils.device import (
+    get_accelerator_device_count,
+    get_accelerator_device_type,
+)
 
 
 def get_pipeline(
@@ -293,15 +297,19 @@ def get_devices(needs: int | None = None):
         When `needs` is provided, returns that many devices.
     """
 
-    num_gpus = torch.cuda.device_count()
+    device_type = get_accelerator_device_type()
 
-    if num_gpus == 0:
+    if device_type == "cpu":
         devices = [torch.device("cpu")]
-        if needs is None:
-            return devices
-        return devices * needs
+    else:
+        num_devices = get_accelerator_device_count()
+        if num_devices == 0:
+            devices = [torch.device(device_type)]
+        else:
+            devices = [
+                torch.device(device_type, index) for index in range(num_devices)
+            ]
 
-    devices = [torch.device(f"cuda:{index:d}") for index in range(num_gpus)]
     if needs is None:
         return devices
     return [device for _, device in zip(range(needs), itertools.cycle(devices))]

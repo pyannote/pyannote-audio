@@ -43,6 +43,7 @@ from pyannote.pipeline.optimizer import Optimizer
 from rich.progress import track
 
 from pyannote.audio import Audio, Model, Pipeline
+from pyannote.audio.utils.device import get_accelerator_device
 
 
 class Subset(str, Enum):
@@ -55,6 +56,7 @@ class Device(str, Enum):
     CPU = "cpu"
     CUDA = "cuda"
     MPS = "mps"
+    NPU = "npu"
     AUTO = "auto"
 
 
@@ -79,14 +81,7 @@ class Metric(str, Enum):
 
 def parse_device(device: Device) -> torch.device:
     if device == Device.AUTO:
-        if torch.cuda.is_available():
-            device = Device.CUDA
-
-        elif torch.backends.mps.is_available():
-            device = Device.MPS
-
-        else:
-            device = Device.CPU
+        return get_accelerator_device()
 
     return torch.device(device.value)
 
