@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   not-already-published:
-    name: pyannote-audio
+    name: all-packages
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -26,45 +26,8 @@ jobs:
         with:
           name: python-package-distributions
           path: dist/
-      - name: Compare distributions with PyPI
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+      - name: Validate all package versions and PyPI artifacts
         env:
           RELEASE_TAG: ${{ inputs.release-tag }}
-        shell: python
-        run: |
-          import hashlib
-          import json
-          import os
-          from pathlib import Path
-          from urllib.error import HTTPError
-          from urllib.request import urlopen
-          from zipfile import ZipFile
-          from email.parser import BytesParser
-
-
-          directory = Path("dist")
-          tag = os.environ["RELEASE_TAG"]
-          wheels = list(directory.glob("*.whl"))
-          sources = list(directory.glob("*.tar.gz"))
-          if len(wheels) != 1 or len(sources) != 1:
-              raise ValueError("Expected exactly one wheel and one source distribution")
-          with ZipFile(wheels[0]) as wheel:
-              metadata_path, = [n for n in wheel.namelist() if n.endswith(".dist-info/METADATA")]
-              metadata = BytesParser().parsebytes(wheel.read(metadata_path))
-          version = metadata["Version"]
-          if metadata["Name"] != "pyannote-audio" or version != tag.removeprefix("v"):
-              raise ValueError(f"Release tag {tag!r} does not match pyannote-audio {version}")
-          try:
-              with urlopen(f"https://pypi.org/pypi/pyannote-audio/{version}/json", timeout=30) as response:
-                  published = json.load(response)["urls"]
-          except HTTPError as error:
-              if error.code != 404:
-                  raise
-              published = []
-          hashes = {item["filename"]: item["digests"]["sha256"] for item in published}
-          for artifact in wheels + sources:
-              if artifact.name not in hashes:
-                  print(f"{artifact.name}: not published yet")
-              elif hashlib.sha256(artifact.read_bytes()).hexdigest() == hashes[artifact.name]:
-                  print(f"{artifact.name}: already published with identical contents")
-              else:
-                  raise ValueError(f"{artifact.name} already exists with different contents. Use a new version.")
+        run: uv run --no-project --with packaging python -m scripts.release --tag "$RELEASE_TAG" --check-pypi

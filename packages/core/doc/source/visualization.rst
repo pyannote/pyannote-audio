@@ -1,0 +1,1 @@
+.. automodule:: pyannote.core.notebook

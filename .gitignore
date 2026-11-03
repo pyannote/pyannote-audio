@@ -94,3 +94,10 @@ pyannote/audio/version.py
 .venv/
 .ruff_cache/
 .pytest_cache/
+
+# Workspace environments and locally resolved dependencies
+.venv/
+uv.lock
+site/
+
+.wheel-venv/

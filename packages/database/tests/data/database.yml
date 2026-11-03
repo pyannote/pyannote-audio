@@ -1,0 +1,39 @@
+Protocols:
+  MyDatabase:
+
+    Collection:
+      MyCollection:
+        uri: lists/train.lst
+
+    Protocol:
+      MyProtocol:
+        train:
+          uri: lists/train.lst
+          speaker: rttms/train.rttm
+          transcription: stms/{uri}.stm
+          domain: mapping/domain.map
+      
+    SpeakerDiarization:
+      MySpeakerDiarization:
+        train: 
+          uri: lists/train.lst
+          annotation: rttms/train.rttm
+          annotated: uems/train.uem
+    
+    SpeakerVerification:
+      MySpeakerVerification:
+        train:
+          uri: lists/train.lst
+          annotation: rttms/train.rttm # we need the annotation to specify the speaker !
+          # duration: mapping/duration.map # can use duration or annotated
+          annotated: uems/train.uem
+          trial: trial/train.trial
+
+  X:
+    SpeakerDiarization:
+      MyMetaProtocol:
+        train: 
+          MyDatabase.Protocol.MyProtocol: [train, ]
+        development:
+          MyDatabase.SpeakerDiarization.MySpeakerDiarization: [train, ]
+          MyDatabase.SpeakerVerification.MySpeakerVerification: [train, ]

@@ -1,0 +1,76 @@
+[project]
+name = "pyannote-metrics"
+description = "A toolkit for reproducible evaluation, diagnostic, and error analysis of speaker diarization systems"
+readme = "README.md"
+authors = [
+    { name = "Hervé BREDIN", email = "herve@pyannote.ai" }
+]
+requires-python = ">=3.11"
+
+dynamic = [
+  "version",
+]
+
+dependencies = [
+    "numpy>=2.2.2",
+    "pandas>=2.2.3",
+    "pyannote-core>=7.0.0.dev0,<8",
+    "pyannote-database>=7.0.0.dev0,<8",
+    "scikit-learn>=1.6.1",
+    "scipy>=1.15.1",
+]
+
+[project.scripts]
+pyannote-metrics = "pyannote.metrics.cli:main"
+
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.3.4",
+]
+doc = [
+    "sphinx-rtd-theme>=3.0.2",
+    "sphinx>=8.1.3",
+    "ipython>=8.32.0",
+    "matplotlib>=3.10.0",
+]
+cli = [
+    "docopt>=0.6.2",
+    "sympy>=1.13.3",
+    "tabulate>=0.9.0",
+]
+plot = [
+    "matplotlib>=3.10.0",
+]
+transcription = [
+    "meeteval>=0.4.3",
+]
+
+[build-system]
+requires = ["hatchling==1.32.0", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+
+
+[tool.hatch.version.raw-options]
+# Ignore pre-monorepo tags: all distributions share tags starting at 7.0.0.
+search_parent_directories = true
+fallback_version = "7.0.0.dev0"
+git_describe_command = [
+    "git", "describe", "--dirty", "--tags", "--long",
+    "--match", "[0-9]*", "--match", "v[0-9]*",
+    "--exclude", "[0-6].*", "--exclude", "v[0-6].*",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pyannote"]
+
+[dependency-groups]
+dev = [
+    "ipykernel>=6.29.5",
+]
+
+[tool.hatch.build.targets.sdist]
+include = ["/src", "/tests", "/doc", "/README.md", "/CHANGELOG.md", "/LICENSE", "/pyproject.toml"]

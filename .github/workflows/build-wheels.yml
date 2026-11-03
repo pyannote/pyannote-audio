@@ -26,7 +26,11 @@ jobs:
         with:
           python-version-file: .python-version
       - name: Build wheel and source distribution
-        run: uv build
+        run: |
+          uv build --all-packages
+          uv run --no-project --with packaging python -m scripts.release
+          uvx twine check --strict dist/*.whl dist/*.tar.gz
+          uv run --no-project --with pytest --with packaging python -m pytest tests/monorepo -q
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: python-package-distributions
