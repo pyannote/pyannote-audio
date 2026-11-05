@@ -453,7 +453,12 @@ class Audio:
             else:
                 end = duration
 
-        samples: AudioSamples = decoder.get_samples_played_in_range(start, end)
+        # decoded timestamps do not always start at 0 (e.g. MP3 encoder delay,
+        # MPEG-TS streams). Like `__call__`, count time from the first sample.
+        offset = max(0.0, metadata.begin_stream_seconds_from_header or 0.0)
+        samples: AudioSamples = decoder.get_samples_played_in_range(
+            offset + start, offset + end
+        )
         data = samples.data
         sample_rate = samples.sample_rate
 

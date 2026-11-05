@@ -1,3 +1,4 @@
+import pytest
 import torch
 from pyannote.core import Segment
 from torch import Tensor
@@ -59,6 +60,18 @@ def test_can_crop_waveform():
     wav, sr = loader.crop({"waveform": waveform, "sample_rate": 16000}, segment)
     assert isinstance(wav, Tensor)
     assert sr == 16000
+
+
+@pytest.mark.parametrize("segment", [Segment(0.0, 1.0), Segment(2.5, 3.5)])
+def test_crop_mp3_matches_full_load(segment):
+    "Cropping an MP3 file counts time from its first decoded sample"
+    # this MP3's first sample is timestamped 1105/16000 s (encoder delay)
+    test_file = "tests/data/dev00.mp3"
+    loader = Audio(mono="downmix")
+    waveform, sr = loader(test_file)
+    wav, _sr = loader.crop(test_file, segment)
+    start = round(segment.start * sr)
+    assert torch.equal(wav, waveform[:, start : start + sr])
 
 
 def test_can_crop_waveform_up_to_its_end():
