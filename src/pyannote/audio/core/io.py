@@ -454,8 +454,13 @@ class Audio:
                 end = duration
 
         # decoded timestamps do not always start at 0 (e.g. MP3 encoder delay,
-        # MPEG-TS streams). Like `__call__`, count time from the first sample.
-        offset = max(0.0, metadata.begin_stream_seconds_from_header or 0.0)
+        # MPEG-TS streams). For these codecs the header start is the timestamp
+        # of the first decoded sample: like `__call__`, count time from it.
+        # Other codecs are read as before: with FFmpeg 8.1, Opus in Matroska
+        # can report a positive header start while its audio starts at 0.
+        offset = 0.0
+        if metadata.codec in ("mp3", "mp2", "aac"):
+            offset = max(0.0, metadata.begin_stream_seconds_from_header or 0.0)
         samples: AudioSamples = decoder.get_samples_played_in_range(
             offset + start, offset + end
         )

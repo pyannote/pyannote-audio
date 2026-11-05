@@ -74,6 +74,25 @@ def test_crop_mp3_matches_full_load(segment):
     assert torch.equal(wav, waveform[:, start : start + sr])
 
 
+def test_crop_ignores_header_start_of_other_codecs(monkeypatch):
+    "Cropping counts from the header start only for MP3, MP2 and AAC"
+    import pyannote.audio.core.io as io
+
+    class Decoder(io.AudioDecoder):
+        # with FFmpeg 8.1, Opus in Matroska can report a positive header start
+        # while its decoded audio starts at 0
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.metadata.begin_stream_seconds_from_header = 0.032
+
+    monkeypatch.setattr(io, "AudioDecoder", Decoder)
+    test_file = "tests/data/dev00.wav"
+    loader = Audio(mono="downmix")
+    waveform, sr = loader(test_file)
+    wav, _sr = loader.crop(test_file, Segment(1.0, 2.0))
+    assert torch.equal(wav, waveform[:, sr : 2 * sr])
+
+
 def test_can_crop_waveform_up_to_its_end():
     "Cropping a raw waveform up to its very last sample does not raise"
     waveform = torch.rand(1, 16000 * 2)
