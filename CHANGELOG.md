@@ -9,6 +9,7 @@
   Python 3.14's default on Linux, by warning and using `num_workers=0`
 - fix(pipeline): omit unset `token` and `cache_dir` when expanding `$model/` references so loaders can inherit runtime options
 - fix(model): honor the configured linear hidden size in `ToTaToNet` [@antonsoo](https://github.com/antonsoo)
+- fix(io): fix `Audio.crop` shifting (or raising on) audio files whose first sample is not at timestamp 0, such as MP3 [@antonsoo](https://github.com/antonsoo)
 - fix(io): fix `Audio.crop` raising when an in-memory waveform is cropped up to its very end [@MohammadHijjawi97](https://github.com/MohammadHijjawi97)
 - feat(cli): add support for multi-objective pipeline optimization
 - feat(cli): add `--subfolder` option to `benchmark` command [@antoinelaurent](https://github.com/antoinelaurent)
