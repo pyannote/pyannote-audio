@@ -16,10 +16,10 @@ dependencies = [
     "opentelemetry-api>=1.34.0",
     "opentelemetry-sdk>=1.34.0",
     "opentelemetry-exporter-otlp>=1.34.0",
-    "pyannote-core>=6.0.1",
+    "pyannote-core>=6.1.0",
     "pyannote-database>=6.1.1",
-    "pyannote-metrics>=4.0.0",
-    "pyannote-pipeline>=4.0.0",
+    "pyannote-metrics>=4.2.0",
+    "pyannote-pipeline>=4.1.0",
     "pytorch-metric-learning>=2.8.1",
     "rich>=13.9.4",
     "safetensors>=0.5.2",
@@ -38,7 +38,7 @@ pyannote-audio = "pyannote.audio.__main__:app"
 [project.optional-dependencies]
 test = ["papermill>=2.6.0", "pytest>=8.3.4"]
 doc = ["sphinx-rtd-theme>=3.0.2", "sphinx>=8.1.3"]
-cli = ["typer>=0.15.1"]
+cli = ["filelock>=3.18.0", "typer>=0.15.1"]
 separation = ["asteroid>=0.5.2", "transformers>=4.48.3"]
 dev = ["ipython>=8.32.0"]
 
