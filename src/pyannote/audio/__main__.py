@@ -342,7 +342,7 @@ def optimize(
     optimized_pipeline = Pipeline.from_pretrained(pipeline)
     if optimized_pipeline is None:
         print(f"Could not load pipeline from {pipeline}.")
-        raise typer.exit(code=1)
+        raise typer.Exit(code=1)
 
     # send pipeline to device
     torch_device = parse_device(device)
@@ -561,7 +561,7 @@ def download(
     )
     if pretrained_pipeline is None:
         print(f"Could not load pretrained pipeline from {pipeline}.")
-        raise typer.exit(code=1)
+        raise typer.Exit(code=1)
 
 
 @app.command("apply")
@@ -628,7 +628,7 @@ def apply(
     )
     if pretrained_pipeline is None:
         print(f"Could not load pretrained pipeline from {pipeline}.")
-        raise typer.exit(code=1)
+        raise typer.Exit(code=1)
 
     # send pipeline to device
     torch_device = parse_device(device)
@@ -637,7 +637,7 @@ def apply(
     if audio.is_dir():
         if into is None or not into.is_dir():
             typer.echo("When AUDIO is a directory, INTO must also be a directory.")
-            raise typer.exit(code=1)
+            raise typer.Exit(code=1)
 
         inputs: list[Path] = sorted(path for path in audio.iterdir() if path.is_file())
         rttms: list[Path | None] = [into / (path.stem + ".rttm") for path in inputs]
@@ -646,7 +646,7 @@ def apply(
     else:
         if not (into is None or into.is_file()):
             typer.echo("When AUDIO is a file, INTO must also be a file.")
-            raise typer.exit(code=1)
+            raise typer.Exit(code=1)
 
         inputs = [audio]
         rttms: list[Path | None] = [into]
@@ -823,7 +823,7 @@ def _benchmark(
     )
     if pretrained_pipeline is None:
         print(f"Could not load pretrained pipeline from {pipeline}.")
-        raise typer.exit(code=1)
+        raise typer.Exit(code=1)
 
     # send pipeline to device
     torch_device = parse_device(device)
@@ -971,7 +971,7 @@ def _benchmark(
 
     # no need to go further than this point if evaluation is not possible
     if skip_metric:
-        raise typer.exit()
+        raise typer.Exit()
 
     # save metric results in both CSV and human-readable formats
     with open(into / f"{benchmark_name}.csv", "w") as csv:
