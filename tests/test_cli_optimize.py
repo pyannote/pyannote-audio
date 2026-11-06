@@ -98,7 +98,7 @@ def test_optimize_cli_with_single_objective(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
 
     optimized_yml = tmp_path / (
-        "pipeline.Debug.SpeakerDiarization.Debug.development.yaml"
+        "pipeline.Debug.SpeakerDiarization.Debug.development.DiarizationErrorRate.yaml"
     )
     optimized = yaml.safe_load(optimized_yml.read_text())
     assert optimized["params"] == {"threshold": 0}
