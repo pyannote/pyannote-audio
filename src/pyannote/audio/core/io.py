@@ -37,7 +37,7 @@ from pathlib import Path
 import torch.nn.functional as F
 import torchaudio
 from pyannote.core import Segment
-from torch import Tensor
+from torch import Tensor, float32, zeros
 
 try:
     from torchcodec import AudioSamples
@@ -385,6 +385,15 @@ class Audio:
             sample_rate = file["sample_rate"]
             duration = num_samples / sample_rate
 
+            if mode == "pad" and (segment.end <= 0 or segment.start >= duration):
+                # No overlap: don't let negative slicing or distance from the file
+                # boundary turn an out-of-bounds crop into real audio or excess padding.
+                data = waveform.new_zeros(
+                    waveform.shape[0],
+                    self.get_num_samples(segment.duration, sample_rate),
+                )
+                return self.downmix_and_resample(data, sample_rate, channel=channel)
+
             start_sample: int = self.get_num_samples(segment.start, sample_rate)
             pad_start: int = max(0, -start_sample)
             if start_sample < 0:
@@ -431,6 +440,18 @@ class Audio:
         # convert to float to avoid issues with np.float32 rounding errors when training
         start: float = float(segment.start)
         end: float = float(segment.end)
+
+        if mode == "pad" and (end <= 0 or start >= duration):
+            # TorchCodec cannot decode an empty/reversed interval after clamping.
+            data = zeros(
+                metadata.num_channels,
+                self.get_num_samples(segment.duration, sample_rate),
+                dtype=float32,
+                device="cpu",
+            )
+            if isinstance(file["audio"], IOBase):
+                file["audio"].seek(0)
+            return self.downmix_and_resample(data, sample_rate, channel=channel)
 
         pad_start: int = max(0, self.get_num_samples(-start, sample_rate))
         if start < 0:

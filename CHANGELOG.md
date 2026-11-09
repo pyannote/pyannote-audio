@@ -2,6 +2,8 @@
 
 ## next
 
+- fix(io): return correctly sized zero padding for `Audio.crop(mode="pad")` segments entirely outside a waveform or audio file
+
 - BREAKING(cli): remove gap-filling optimization (`--optimize`) and `OptimizedMinDurationOff` outputs from the `benchmark` command
 - BREAKING: require Python 3.11 or newer; Python 3.10 is no longer supported
 - fix(model): restore `fbank_only` mode in WeSpeaker embedding models
