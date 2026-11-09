@@ -11,6 +11,7 @@
 - fix(pipeline): fix `VBxClustering` crashing when more speakers are requested than there are embeddings to cluster [@MohammadHijjawi97](https://github.com/MohammadHijjawi97)
 - fix(pipeline): omit unset `token` and `cache_dir` when expanding `$model/` references so loaders can inherit runtime options
 - fix(model): honor the configured linear hidden size in `ToTaToNet` [@antonsoo](https://github.com/antonsoo)
+- fix(task): fix validation samples figure overlapping samples when `batch_size` is 2, 5 or 6, and raising `IndexError` when the first validation batch is smaller [@antonsoo](https://github.com/antonsoo)
 - fix(io): fix `Audio.crop` raising when an in-memory waveform is cropped up to its very end [@MohammadHijjawi97](https://github.com/MohammadHijjawi97)
 - feat(cli): add support for multi-objective pipeline optimization
 - feat(cli): add `--subfolder` option to `benchmark` command [@antoinelaurent](https://github.com/antoinelaurent)
