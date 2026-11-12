@@ -67,7 +67,7 @@ class _DummyParentPipeline(Pipeline):
         if isinstance(sub, dict):
             # Assigning a Pipeline instance triggers __setattr__ which registers
             # it in self._pipelines — the standard pyannote sub-pipeline pattern.
-            self.sub = Pipeline.from_pretrained(**sub)
+            self.sub = Pipeline.from_pretrained(**sub, trust_remote_code=True)
 
     def apply(self, file, **kwargs):
         return None
@@ -195,13 +195,13 @@ class TestFromPretrainedLocalSubfolder:
     def test_loads_config_from_root_without_subfolder(self, tmp_path):
         """Without subfolder, config.yaml is read from the directory root."""
         write_config(tmp_path, self._minimal_config())
-        pipeline = Pipeline.from_pretrained(str(tmp_path))
+        pipeline = Pipeline.from_pretrained(str(tmp_path), trust_remote_code=True)
         assert isinstance(pipeline, _DummyPipeline)
 
     def test_loads_config_from_subfolder(self, tmp_path):
         """With subfolder='sub', config.yaml is read from <root>/sub/config.yaml."""
         write_config(tmp_path, self._minimal_config(), subfolder="sub")
-        pipeline = Pipeline.from_pretrained(str(tmp_path), subfolder="sub")
+        pipeline = Pipeline.from_pretrained(str(tmp_path), subfolder="sub", trust_remote_code=True)
         assert isinstance(pipeline, _DummyPipeline)
 
     def test_subfolder_does_not_exist_raises(self, tmp_path):
@@ -226,7 +226,7 @@ class TestFromPretrainedLocalSubfolder:
     def test_nested_subfolder_path(self, tmp_path):
         """subfolder can be a multi-level path like 'a/b'."""
         write_config(tmp_path, self._minimal_config(), subfolder="a/b")
-        pipeline = Pipeline.from_pretrained(str(tmp_path), subfolder="a/b")
+        pipeline = Pipeline.from_pretrained(str(tmp_path), subfolder="a/b", trust_remote_code=True)
         assert isinstance(pipeline, _DummyPipeline)
 
     def test_model_refs_resolved_under_nested_subfolder(self, tmp_path):
@@ -298,31 +298,31 @@ class TestNestedSubfolderPipelines:
     def test_parent_is_correct_type(self, tmp_path):
         """Top-level pipeline is a _DummyParentPipeline."""
         self._write_three_level_tree(tmp_path)
-        parent = Pipeline.from_pretrained(str(tmp_path), subfolder="v1")
+        parent = Pipeline.from_pretrained(str(tmp_path), subfolder="v1", trust_remote_code=True)
         assert isinstance(parent, _DummyParentPipeline)
 
     def test_subpipeline_is_registered(self, tmp_path):
         """Sub-pipeline is stored in parent._pipelines under the 'sub' key."""
         self._write_three_level_tree(tmp_path)
-        parent = Pipeline.from_pretrained(str(tmp_path), subfolder="v1")
+        parent = Pipeline.from_pretrained(str(tmp_path), subfolder="v1", trust_remote_code=True)
         assert "sub" in parent._pipelines
 
     def test_subpipeline_is_correct_type(self, tmp_path):
         """Sub-pipeline is itself a _DummyParentPipeline."""
         self._write_three_level_tree(tmp_path)
-        parent = Pipeline.from_pretrained(str(tmp_path), subfolder="v1")
+        parent = Pipeline.from_pretrained(str(tmp_path), subfolder="v1", trust_remote_code=True)
         assert isinstance(parent.sub, _DummyParentPipeline)
 
     def test_grandchild_pipeline_is_registered(self, tmp_path):
         """Grand-child pipeline is stored in child._pipelines under 'sub'."""
         self._write_three_level_tree(tmp_path)
-        parent = Pipeline.from_pretrained(str(tmp_path), subfolder="v1")
+        parent = Pipeline.from_pretrained(str(tmp_path), subfolder="v1", trust_remote_code=True)
         assert "sub" in parent.sub._pipelines
 
     def test_grandchild_pipeline_is_leaf_type(self, tmp_path):
         """Grand-child pipeline is a _DummyPipeline (the leaf class)."""
         self._write_three_level_tree(tmp_path)
-        parent = Pipeline.from_pretrained(str(tmp_path), subfolder="v1")
+        parent = Pipeline.from_pretrained(str(tmp_path), subfolder="v1", trust_remote_code=True)
         assert isinstance(parent.sub.sub, _DummyPipeline)
 
     def test_without_subfolder_loads_from_root(self, tmp_path):
@@ -339,7 +339,7 @@ class TestNestedSubfolderPipelines:
         write_config(
             tmp_path, {"pipeline": {"name": _DUMMY_CLS_DOTPATH}}, subfolder="child"
         )
-        parent = Pipeline.from_pretrained(str(tmp_path))
+        parent = Pipeline.from_pretrained(str(tmp_path), trust_remote_code=True)
         assert isinstance(parent, _DummyParentPipeline)
         assert isinstance(parent.sub, _DummyPipeline)
 
@@ -376,7 +376,7 @@ class TestFromPretrainedNonSubfolderCases:
         """Explicit file path without subfolder= loads the pipeline correctly."""
         config = {"pipeline": {"name": _DUMMY_CLS_DOTPATH}}
         cfg_path = write_config(tmp_path, config)
-        pipeline = Pipeline.from_pretrained(str(cfg_path))
+        pipeline = Pipeline.from_pretrained(str(cfg_path), trust_remote_code=True)
         assert isinstance(pipeline, _DummyPipeline)
 
     def test_dict_checkpoint_with_subfolder_raises(self):
@@ -399,5 +399,5 @@ class TestFromPretrainedNonSubfolderCases:
                 "params": {"sub": "$model/seg"},
             },
         }
-        pipeline = Pipeline.from_pretrained(config)
+        pipeline = Pipeline.from_pretrained(config, trust_remote_code=True)
         assert isinstance(pipeline, _DummyParentPipeline)
