@@ -1,12 +1,17 @@
 import numpy as np
 import pytest
+import torch
 from lightning import Trainer
 from pyannote.core import SlidingWindowFeature
 from pyannote.database import FileFinder, registry
 
-from pyannote.audio import Inference, Model
-from pyannote.audio.core.task import Resolution
+from pyannote.audio import Audio, Inference, Model
+from pyannote.audio.core.task import Problem, Resolution, Specifications
+from pyannote.audio.models.segmentation import PyanNet
 from pyannote.audio.models.segmentation.debug import SimpleSegmentationModel
+from pyannote.audio.pipelines import (
+    VoiceActivityDetection as VoiceActivityDetectionPipeline,
+)
 from pyannote.audio.tasks import VoiceActivityDetection
 
 HF_SAMPLE_MODEL_ID = "pyannote/ci-segmentation"
@@ -98,3 +103,36 @@ def test_skip_aggregation(pretrained_model, dev_file):
     inference = Inference(pretrained_model, skip_aggregation=True)
     scores = inference(dev_file)
     assert len(scores.data.shape) == 3
+
+
+class AlwaysSpeech(PyanNet):
+    def forward(self, waveforms):
+        return torch.ones_like(super().forward(waveforms))
+
+
+# 2.2s lies on the chunk grid (2s chunks, 0.2s step), others need padding
+@pytest.mark.parametrize("duration", [0.5, 2.2, 3.3, 4.7])
+def test_speech_does_not_extend_past_end_of_file(duration):
+    model = AlwaysSpeech()
+    model.specifications = Specifications(
+        problem=Problem.BINARY_CLASSIFICATION,
+        resolution=Resolution.FRAME,
+        duration=2.0,
+        classes=["speech"],
+    )
+    model.build()
+
+    pipeline = VoiceActivityDetectionPipeline(segmentation=model)
+    pipeline.instantiate(
+        {"onset": 0.5, "offset": 0.5, "min_duration_on": 0.0, "min_duration_off": 0.0}
+    )
+
+    sample_rate = 16000
+    file = {
+        "waveform": torch.zeros(1, int(duration * sample_rate)),
+        "sample_rate": sample_rate,
+    }
+    last_region = pipeline(file).get_timeline()[-1]
+    assert last_region.end <= duration
+    # cutting the audio along the detected speech must not raise
+    Audio().crop(file, last_region)

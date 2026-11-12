@@ -360,11 +360,19 @@ class Inference(BaseInference):
                 missing=0.0,
             )
 
-            # remove padding that was added to last chunk
+            # remove padding that was added to last chunk: only keep frames
+            # whose center lies within the file (at least one frame), so that
+            # downstream binarization does not report activity past its end.
+            # crop(mode="center") is not enough: it may keep a frame whose center
+            # lies up to half a step past the end.
             if has_last_chunk:
-                aggregated.data = aggregated.crop(
-                    Segment(0.0, num_samples / sample_rate), mode="loose"
-                )
+                output_frames = aggregated.sliding_window
+                num_frames = (
+                    num_samples / sample_rate
+                    - output_frames.start
+                    - 0.5 * output_frames.duration
+                ) // output_frames.step + 1
+                aggregated.data = aggregated.data[: max(1, int(num_frames))]
 
             return aggregated
 
