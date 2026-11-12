@@ -39,22 +39,40 @@ def get_pipeline(
     pipeline: Pipeline | str | dict,
     token: str | None = None,
     cache_dir: Path | str | None = None,
+    trust_remote_code: bool = False,
 ) -> Pipeline:
+    """Load a pipeline, honoring the caller's trust_remote_code flag only.
+
+    A nested dict may include ``trust_remote_code`` (for example a malicious
+    config that points ``pipeline.name`` at this factory). That value is
+    ignored: only the ``trust_remote_code`` argument is forwarded.
+    """
     if isinstance(pipeline, Pipeline):
         _pipeline = pipeline
 
     elif isinstance(pipeline, str):
-        _pipeline = Pipeline.from_pretrained(pipeline, token=token, cache_dir=cache_dir)
+        _pipeline = Pipeline.from_pretrained(
+            pipeline,
+            token=token,
+            cache_dir=cache_dir,
+            trust_remote_code=trust_remote_code,
+        )
 
     elif isinstance(pipeline, dict):
         if "checkpoint" in pipeline:
-            pipeline.setdefault("token", token)
-            pipeline.setdefault("cache_dir", cache_dir)
-            _pipeline = Pipeline.from_pretrained(**pipeline)
+            options = dict(pipeline)
+            options.setdefault("token", token)
+            options.setdefault("cache_dir", cache_dir)
+            # Caller decision wins: a config cannot escalate trust.
+            options["trust_remote_code"] = trust_remote_code
+            _pipeline = Pipeline.from_pretrained(**options)
 
         else:
             _pipeline = Pipeline.from_pretrained(
-                pipeline, token=token, cache_dir=cache_dir
+                pipeline,
+                token=token,
+                cache_dir=cache_dir,
+                trust_remote_code=trust_remote_code,
             )
 
     else:

@@ -23,6 +23,7 @@
 
 from __future__ import annotations
 
+import inspect
 import os
 import warnings
 from collections import OrderedDict
@@ -293,6 +294,21 @@ class Pipeline(_Pipeline):
         params = config["pipeline"].get("params", {})
         params.setdefault("token", token)
         params.setdefault("cache_dir", cache_dir)
+        # Factories such as get_pipeline must see the caller's trust flag so a
+        # nested config cannot raise it on its own. Official pipeline classes
+        # do not take this argument, so only set it when the callable accepts it.
+        try:
+            signature = inspect.signature(Klass)
+        except (TypeError, ValueError):
+            signature = None
+        if signature is not None and (
+            "trust_remote_code" in signature.parameters
+            or any(
+                parameter.kind is inspect.Parameter.VAR_KEYWORD
+                for parameter in signature.parameters.values()
+            )
+        ):
+            params.setdefault("trust_remote_code", trust_remote_code)
         pipeline = Klass(**params)
 
         # save pipeline origin (HF, local, etc) and class name as attributes for telemetry purposes
