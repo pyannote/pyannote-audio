@@ -25,6 +25,7 @@
 - fix(model): restore `fbank_only` mode in WeSpeaker embedding models
 - fix(model): honor the configured linear hidden size in `ToTaToNet` [@antonsoo](https://github.com/antonsoo)
 - fix(pipeline): fix `VBxClustering` crashing when more speakers are requested than there are embeddings to cluster [@MohammadHijjawi97](https://github.com/MohammadHijjawi97)
+- fix(pipeline): warn instead of printing when `AgglomerativeClustering` finds fewer clusters than requested [@VenishPaneliya](https://github.com/VenishPaneliya)
 - fix(pipeline): omit unset `token` and `cache_dir` when expanding `$model/` references so loaders can inherit runtime options
 - fix(utils): fix `SpeakerDiarizationMixin.optimal_mapping` `reference` is a mapping [@Kayvan-Zahiri](https://github.com/Kayvan-Zahiri)
 - fix(utils): fix `discrete_diarization_error_rate` returning 0.0 on long recordings (float16 frame counts overflowed) [@Kayvan-Zahiri](https://github.com/Kayvan-Zahiri)
