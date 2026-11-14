@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## next
+
+- fix(utils): fix `Binarize` crashing on scores with fewer than two frames (e.g. voice activity detection on very short audio) [@rishi02102017](https://github.com/rishi02102017)
+
 ## Version 4.1.1 (2026-11-19)
 
 - fix(task): avoid replaying the same training samples when resuming mid-epoch
