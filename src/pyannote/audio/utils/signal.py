@@ -268,6 +268,9 @@ class Binarize:
 
         # annotation meant to store 'active' regions
         active = Annotation()
+        if num_frames == 0:
+            return active
+
         track_generator = string_generator()
 
         for k, k_scores in enumerate(scores.data.T):
@@ -297,7 +300,9 @@ class Binarize:
 
             # if active at the end, add final region
             if is_active:
-                region = Segment(start - self.pad_onset, t + self.pad_offset)
+                region = Segment(
+                    start - self.pad_onset, timestamps[-1] + self.pad_offset
+                )
                 active[region, track] = label
 
         # because of padding, some active regions might be overlapping: merge them.

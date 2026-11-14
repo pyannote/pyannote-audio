@@ -17,6 +17,7 @@
 - fix(utils): fix `SpeakerDiarizationMixin.optimal_mapping` `reference` is a mapping [@Kayvan-Zahiri](https://github.com/Kayvan-Zahiri)
 - fix(utils): fix `discrete_diarization_error_rate` returning 0.0 on long recordings (float16 frame counts overflowed) [@Kayvan-Zahiri](https://github.com/Kayvan-Zahiri)
 - fix(task): fix `balance` option crashing training with `KeyError: 'metadata'` [@MohammadHijjawi97](https://github.com/MohammadHijjawi97)
+- fix(utils): fix `Binarize` crashing on scores with fewer than two frames (e.g. voice activity detection on very short audio) [@rishi02102017](https://github.com/rishi02102017)
 
 ## Version 4.0.7 (2026-06-30)
 
