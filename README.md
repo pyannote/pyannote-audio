@@ -21,7 +21,7 @@
 
 ## `community-1` open-source speaker diarization
 
-1. Make sure [`ffmpeg`](https://ffmpeg.org/) is installed on your machine (needed by [`torchcodec`](https://docs.pytorch.org/torchcodec/) audio decoding library)
+1. Make sure [`ffmpeg`](https://ffmpeg.org/) is installed on your machine (needed by `torchcodec` audio decoding library)
 2. Install with [`uv`](https://docs.astral.sh/uv/)`add pyannote.audio` (recommended) or `pip install pyannote.audio`
 3. Accept [`pyannote/speaker-diarization-community-1`](https://hf.co/pyannote/speaker-diarization-community-1) user conditions
 4. Create Huggingface access token at [`hf.co/settings/tokens`](https://hf.co/settings/tokens)
