@@ -17,6 +17,7 @@
 - fix(utils): fix `SpeakerDiarizationMixin.optimal_mapping` `reference` is a mapping [@Kayvan-Zahiri](https://github.com/Kayvan-Zahiri)
 - fix(utils): fix `discrete_diarization_error_rate` returning 0.0 on long recordings (float16 frame counts overflowed) [@Kayvan-Zahiri](https://github.com/Kayvan-Zahiri)
 - fix(task): fix `balance` option crashing training with `KeyError: 'metadata'` [@MohammadHijjawi97](https://github.com/MohammadHijjawi97)
+- fix(pipeline): warn instead of printing when `AgglomerativeClustering` finds fewer clusters than requested [@VenishPaneliya](https://github.com/VenishPaneliya)
 
 ## Version 4.0.7 (2026-06-30)
 

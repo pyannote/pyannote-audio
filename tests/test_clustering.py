@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 from pyannote.core import SlidingWindow, SlidingWindowFeature
 
 from pyannote.audio.pipelines.clustering import AgglomerativeClustering, VBxClustering
@@ -28,6 +29,28 @@ def test_agglomerative_clustering_num_cluster():
         embeddings=embeddings, min_clusters=2, max_clusters=2, num_clusters=2
     )
     assert np.array_equal(clusters, np.array([0, 1]))
+
+
+def test_agglomerative_clustering_warns_when_it_finds_fewer_clusters():
+    """
+    Make sure AgglomerativeClustering warns, rather than printing, when it
+    cannot reach the requested number of clusters.
+    """
+
+    embeddings = np.random.default_rng(0).normal(size=(20, 4))
+
+    clustering = AgglomerativeClustering().instantiate(
+        {
+            "method": "centroid",
+            "min_cluster_size": 5,
+            "threshold": 0.1,
+        }
+    )
+
+    with pytest.warns(UserWarning, match="min_cluster_size"):
+        clustering.cluster(
+            embeddings=embeddings, min_clusters=10, max_clusters=10, num_clusters=10
+        )
 
 
 class IdentityPLDA:

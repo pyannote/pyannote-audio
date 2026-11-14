@@ -23,6 +23,7 @@
 
 """Clustering pipelines"""
 
+import warnings
 from enum import Enum
 
 import numpy as np
@@ -447,7 +448,7 @@ class AgglomerativeClustering(BaseClustering):
                 cluster_unique, cluster_counts = np.unique(clusters, return_counts=True)
                 large_clusters = cluster_unique[cluster_counts >= min_cluster_size]
                 num_large_clusters = len(large_clusters)
-                print(
+                warnings.warn(
                     f"Found only {num_large_clusters} clusters. Using a smaller value than {min_cluster_size} for `min_cluster_size` might help."
                 )
 
