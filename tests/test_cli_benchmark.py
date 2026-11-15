@@ -122,3 +122,59 @@ def test_benchmark_configurations(tmp_path, monkeypatch, selected, per_file):
             *(f"OptimizedFor{name}" for name in selected),
         }
     assert not list(tmp_path.rglob("*OptimizedMinDurationOff*"))
+
+
+@pytest.mark.parametrize("selected", [[], ["DiarizationPurity", "DiarizationCoverage"]])
+@pytest.mark.parametrize("per_file", [False, True])
+def test_benchmark_without_manual_annotation(tmp_path, monkeypatch, selected, per_file):
+    # protocol files have no "annotation" key, so metrics cannot be computed
+    files = [{"uri": "file1"}, {"uri": "file2"}]
+
+    class Pipeline:
+        def to(self, device):
+            return self
+
+        def __call__(self, files):
+            for file in files:
+                prediction = Annotation(uri=file["uri"])
+                prediction[Segment(0, 1)] = "speaker"
+                yield file, SimpleNamespace(speaker_diarization=prediction)
+
+    monkeypatch.setattr(cli.Pipeline, "from_pretrained", lambda *a, **kw: Pipeline())
+    monkeypatch.setattr(
+        cli.pyannote.database.registry,
+        "get_protocol",
+        lambda *a, **kw: SimpleNamespace(test=lambda: iter(files)),
+    )
+    monkeypatch.setattr(cli.Audio, "get_duration", lambda self, file: 2.0)
+    result = CliRunner().invoke(
+        cli.app,
+        [
+            "benchmark",
+            "mock/pipeline",
+            "Debug.SpeakerDiarization.Debug",
+            str(tmp_path),
+            "--device",
+            "cpu",
+            *[arg for name in selected for arg in ("--metric", name)],
+            *(["--per-file"] if per_file else []),
+        ],
+    )
+    assert result.exit_code == 0, (result.output, result.exception)
+    assert "skipping metric evaluation" in result.output
+
+    stem = "Debug.SpeakerDiarization.Debug.test"
+    # every selected configuration is benchmarked, not just the first one
+    output_dirs = [tmp_path / f"OptimizedFor{name}" for name in selected]
+    for output_dir in output_dirs or [tmp_path]:
+        # predictions and timing are saved for all files...
+        if per_file:
+            rttm_files = sorted((output_dir / stem / "rttm").iterdir())
+            assert [path.name for path in rttm_files] == ["file1.rttm", "file2.rttm"]
+        else:
+            rttm = (output_dir / f"{stem}.rttm").read_text()
+            assert "file1" in rttm and "file2" in rttm
+        assert (output_dir / f"{stem}.yml").exists()
+        # ...but metric reports are not
+        assert not (output_dir / f"{stem}.csv").exists()
+        assert not (output_dir / f"{stem}.SpeakerCount.csv").exists()
