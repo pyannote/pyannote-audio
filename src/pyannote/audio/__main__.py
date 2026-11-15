@@ -925,11 +925,13 @@ def _benchmark(
                 uem=file.get("annotated", None),
             )
 
-        # increment speaker count confusion matrix
-        pred_num_speakers: int = len(speaker_diarization.labels())
-        true_num_speakers: int = len(file["annotation"].labels())
-        speaker_count.setdefault(true_num_speakers, {}).setdefault(pred_num_speakers, 0)
-        speaker_count[true_num_speakers][pred_num_speakers] += 1
+            # increment speaker count confusion matrix
+            pred_num_speakers: int = len(speaker_diarization.labels())
+            true_num_speakers: int = len(file["annotation"].labels())
+            speaker_count.setdefault(true_num_speakers, {}).setdefault(
+                pred_num_speakers, 0
+            )
+            speaker_count[true_num_speakers][pred_num_speakers] += 1
 
     tac: float = time.time()
 
@@ -970,8 +972,9 @@ def _benchmark(
         yaml.dump(processing, yml)
 
     # no need to go further than this point if evaluation is not possible
+    # (return rather than exit so that other selected configurations still run)
     if skip_metric:
-        raise typer.Exit()
+        return
 
     # save metric results in both CSV and human-readable formats
     with open(into / f"{benchmark_name}.csv", "w") as csv:
