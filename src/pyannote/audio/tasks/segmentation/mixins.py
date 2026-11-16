@@ -37,7 +37,7 @@ from torchmetrics import Metric
 from torchmetrics.classification import BinaryAUROC, MulticlassAUROC, MultilabelAUROC
 
 from pyannote.audio.core.io import Channel
-from pyannote.audio.core.task import Problem, Task, get_dtype
+from pyannote.audio.core.task import Problem, Task, _CachedChannel, get_dtype
 from pyannote.audio.utils.random import create_rng_for_worker
 
 Subsets = list(Subset.__args__)
@@ -50,15 +50,15 @@ class SegmentationTask(Task):
     def get_file(self, file_id):
         file = {"audio": self.prepared_data["audio-path"][file_id]}
         metadata = self.prepared_data["audio-metadata"][file_id]
-        # Channels are cached as literal indices or named Channel modes.
+        # Channels are cached as literal indices or named _CachedChannel modes.
         if "channel" in metadata.dtype.names:
             channel = int(metadata["channel"])
-            if channel == Channel.RANDOM:
-                file["channel"] = "random"
-            elif channel == Channel.ALL:
-                file["channel"] = "all"
-            elif channel == Channel.DOWNMIX:
-                file["channel"] = "downmix"
+            if channel == _CachedChannel.RANDOM:
+                file["channel"] = Channel.RANDOM
+            elif channel == _CachedChannel.ALL:
+                file["channel"] = Channel.ALL
+            elif channel == _CachedChannel.DOWNMIX:
+                file["channel"] = Channel.DOWNMIX
             elif channel >= 0:
                 file["channel"] = channel
         return file

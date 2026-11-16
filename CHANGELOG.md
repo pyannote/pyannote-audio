@@ -2,6 +2,9 @@
 
 ## next
 
+- BREAKING(io): remove `Audio(mono=...)`; use the file's `channel` policy instead. Omitted channels now always downmix; use `channel: all` to preserve channels.
+- improve(io): normalize string and `Channel` enum policies, preserve raw channels during preloading, and validate model input channel counts
+- feat(pipeline): add `embedding_channel` to explicitly override channel selection for embedding extraction
 - feat(task): support explicit `channel: downmix` during training and validation
 - fix(task): preserve explicit audio channel selection during segmentation training and validation
 - feat(task): support `channel: random` per training crop; reject random channel selection in validation

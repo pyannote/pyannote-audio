@@ -40,7 +40,7 @@ from pyannote.pipeline.parameter import Categorical, ParamDict, Uniform
 from scipy.ndimage import binary_dilation
 
 from pyannote.audio import Audio, Inference, Model, Pipeline
-from pyannote.audio.core.io import AudioFile
+from pyannote.audio.core.io import AudioFile, Channel
 from pyannote.audio.pipelines.clustering import Clustering
 from pyannote.audio.pipelines.speaker_verification import PretrainedSpeakerEmbedding
 from pyannote.audio.pipelines.utils import (
@@ -74,6 +74,9 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
     embedding : Model, str, or dict, optional
         Pretrained embedding model. Defaults to "speechbrain/spkrec-ecapa-voxceleb@5c0be38".
         See pyannote.audio.pipelines.utils.get_model for supported format.
+    embedding_channel : int or str, optional
+        Explicit channel policy for embedding extraction. When omitted, inherit
+        the input file policy. Use "downmix" for mono embeddings with multi-channel segmentation.
     embedding_exclude_overlap : bool, optional
         Exclude overlapping speech regions when extracting embeddings.
         Defaults (False) to use the whole speech.
@@ -137,6 +140,7 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
         der_variant: dict | None = None,
         token: str | None = None,
         cache_dir: Path | str | None = None,
+        embedding_channel: int | str | Channel | None = None,
     ):
         super().__init__()
 
@@ -148,6 +152,9 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
         self.embedding = embedding
         self.embedding_batch_size = embedding_batch_size
         self.embedding_exclude_overlap = embedding_exclude_overlap
+        self.embedding_channel = (
+            None if embedding_channel is None else Channel.normalize(embedding_channel)
+        )
 
         self.klustering = clustering
 
@@ -180,7 +187,7 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
             self._embedding = PretrainedSpeakerEmbedding(
                 self.embedding, token=token, cache_dir=cache_dir
             )
-            self._audio = Audio(sample_rate=self._embedding.sample_rate, mono="downmix")
+            self._audio = Audio(sample_rate=self._embedding.sample_rate)
             metric = self._embedding.metric
 
         try:
@@ -321,8 +328,13 @@ class SpeechSeparation(SpeakerDiarizationMixin, Pipeline):
                 # chunk: Segment(t, t + duration)
                 # masks: (num_frames, local_num_speakers) np.ndarray
 
+                embedding_file = (
+                    file
+                    if self.embedding_channel is None
+                    else {**file, "channel": self.embedding_channel}
+                )
                 waveform, _ = self._audio.crop(
-                    file,
+                    embedding_file,
                     chunk,
                     mode="pad",
                 )

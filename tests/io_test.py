@@ -6,7 +6,7 @@ from pyannote.core import Segment
 from torch import Tensor
 from torchcodec.decoders import AudioDecoder, AudioStreamMetadata
 
-from pyannote.audio.core.io import Audio
+from pyannote.audio.core.io import Audio, Channel
 
 
 def test_audio_resample():
@@ -14,7 +14,7 @@ def test_audio_resample():
     test_file = "tests/data/dev00.wav"
     metadata: AudioStreamMetadata = AudioDecoder(test_file).metadata
     old_sr = metadata.sample_rate
-    loader = Audio(sample_rate=old_sr // 2, mono="downmix")
+    loader = Audio(sample_rate=old_sr // 2)
     wav, sr = loader(test_file)
     assert isinstance(wav, Tensor)
     assert sr == old_sr // 2
@@ -22,7 +22,7 @@ def test_audio_resample():
 
 def test_basic_load_with_defaults():
     test_file = "tests/data/dev00.wav"
-    loader = Audio(mono="downmix")
+    loader = Audio()
     wav, _sr = loader(test_file)
     assert isinstance(wav, Tensor)
 
@@ -30,7 +30,7 @@ def test_basic_load_with_defaults():
 def test_correct_audio_channel():
     "When we specify an audio channel, it is chosen correctly"
     waveform = torch.rand(2, 16000 * 2)
-    loader = Audio(mono="downmix")
+    loader = Audio()
     wav, sr = loader({"waveform": waveform, "sample_rate": 16000, "channel": 1})
     assert torch.equal(wav, waveform[1:2])
     assert sr == 16000
@@ -41,7 +41,7 @@ def test_correct_audio_channel():
 def test_random_audio_channel(monkeypatch, crop, num_channels):
     waveform = torch.arange(num_channels).float().unsqueeze(1).repeat(1, 16000)
     file = {"waveform": waveform, "sample_rate": 16000, "channel": "random"}
-    loader = Audio(sample_rate=8000, mono="downmix")
+    loader = Audio(sample_rate=8000)
     rng = random.Random(42)
     monkeypatch.setattr("pyannote.audio.core.io.random.randint", rng.randint)
     expected_rng = random.Random(42)
@@ -60,19 +60,23 @@ def test_random_audio_channel(monkeypatch, crop, num_channels):
 
 
 @pytest.mark.parametrize("crop", [False, True])
-@pytest.mark.parametrize("mono", [None, "downmix", "random"])
+@pytest.mark.parametrize("as_enum", [False, True])
 @pytest.mark.parametrize("num_channels", [1, 3])
-def test_all_audio_channels(crop, mono, num_channels):
+def test_all_audio_channels(crop, as_enum, num_channels):
     waveform = torch.randn(num_channels, 16000)
-    file = {"waveform": waveform, "sample_rate": 16000, "channel": "all"}
-    loader = Audio(sample_rate=8000, mono=mono)
+    file = {
+        "waveform": waveform,
+        "sample_rate": 16000,
+        "channel": Channel.ALL if as_enum else "all",
+    }
+    loader = Audio(sample_rate=8000)
     if crop:
         actual, sr = loader.crop(file, Segment(0.25, 0.75))
     else:
         actual, sr = loader(file)
 
     # Each output channel must match independently loading and resampling that
-    # channel, preserving order even when the loader would normally mix to mono.
+    # channel, preserving their original order.
     expected = []
     for channel in range(num_channels):
         selected = {**file, "channel": channel}
@@ -87,13 +91,17 @@ def test_all_audio_channels(crop, mono, num_channels):
 
 
 @pytest.mark.parametrize("crop", [False, True])
-@pytest.mark.parametrize("mono", [None, "downmix", "random"])
+@pytest.mark.parametrize("as_enum", [False, True])
 @pytest.mark.parametrize("num_channels", [1, 3])
-def test_explicit_downmix(crop, mono, num_channels, monkeypatch):
+def test_explicit_downmix(crop, as_enum, num_channels, monkeypatch):
     waveform = torch.randn(num_channels, 16000)
-    file = {"waveform": waveform, "sample_rate": 16000, "channel": "downmix"}
+    file = {
+        "waveform": waveform,
+        "sample_rate": 16000,
+        "channel": Channel.DOWNMIX if as_enum else "downmix",
+    }
     averaged = {"waveform": waveform.mean(dim=0, keepdim=True), "sample_rate": 16000}
-    loader = Audio(sample_rate=8000, mono=mono)
+    loader = Audio(sample_rate=8000)
 
     def unexpected_random(*args):
         pytest.fail("Explicit downmix must not randomly select a channel")
@@ -113,7 +121,7 @@ def test_explicit_downmix(crop, mono, num_channels, monkeypatch):
 def test_can_load_with_waveform():
     "We can load a raw waveform"
     waveform = torch.rand(2, 16000 * 2)
-    loader = Audio(mono="downmix")
+    loader = Audio()
     wav, sr = loader({"waveform": waveform, "sample_rate": 16000})
     assert isinstance(wav, Tensor)
     assert sr == 16000
@@ -122,7 +130,7 @@ def test_can_load_with_waveform():
 def test_can_crop():
     "Cropping works when we give a Segment"
     test_file = "tests/data/dev00.wav"
-    loader = Audio(mono="downmix")
+    loader = Audio()
     segment = Segment(0.2, 0.7)
     wav, sr = loader.crop(test_file, segment)
     assert wav.shape[1] / sr == 0.5
@@ -131,7 +139,7 @@ def test_can_crop():
 def test_can_crop_waveform():
     "Cropping works on raw waveforms"
     waveform = torch.rand(1, 16000 * 2)
-    loader = Audio(mono="downmix")
+    loader = Audio()
     segment = Segment(0.2, 0.7)
     wav, sr = loader.crop({"waveform": waveform, "sample_rate": 16000}, segment)
     assert isinstance(wav, Tensor)
@@ -141,7 +149,7 @@ def test_can_crop_waveform():
 def test_can_crop_waveform_up_to_its_end():
     "Cropping a raw waveform up to its very last sample does not raise"
     waveform = torch.rand(1, 16000 * 2)
-    loader = Audio(mono="downmix")
+    loader = Audio()
     segment = Segment(1.5, 2.0)
     wav, _sr = loader.crop({"waveform": waveform, "sample_rate": 16000}, segment)
     assert torch.equal(wav, waveform[:, 24000:])
@@ -150,7 +158,7 @@ def test_can_crop_waveform_up_to_its_end():
 # File Like Object Tests
 def test_can_load_from_file_like():
     "Load entire wav of file like"
-    loader = Audio(mono="downmix")
+    loader = Audio()
 
     with open("tests/data/dev00.wav", "rb") as f:
         wav, sr = loader(f)
@@ -161,7 +169,7 @@ def test_can_load_from_file_like():
 
 def test_can_crop_from_file_like():
     "Load cropped sections from file like objects"
-    loader = Audio(mono="downmix")
+    loader = Audio()
 
     with open("tests/data/dev00.wav", "rb") as f:
         segment = Segment(0.2, 0.7)

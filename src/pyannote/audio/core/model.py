@@ -88,14 +88,25 @@ class Model(lightning.LightningModule):
     ):
         super().__init__()
 
-        assert num_channels == 1, (
-            "Only mono audio is supported for now (num_channels = 1)"
-        )
+        if not isinstance(num_channels, int) or num_channels < 1:
+            raise ValueError("num_channels must be a positive integer.")
 
         self.save_hyperparameters("sample_rate", "num_channels")
 
         self.task = task
-        self.audio = Audio(sample_rate=self.hparams.sample_rate, mono="downmix")
+        self.audio = Audio(sample_rate=self.hparams.sample_rate)
+        self.register_forward_pre_hook(self._validate_input_channels, with_kwargs=True)
+
+    def _validate_input_channels(self, module, args, kwargs):
+        """Check the declared input channel count without transforming audio."""
+        waveforms = args[0] if args else kwargs.get("waveforms")
+        if isinstance(waveforms, torch.Tensor) and waveforms.ndim == 3:
+            if waveforms.shape[1] != self.hparams.num_channels:
+                raise ValueError(
+                    f"{type(self).__name__} expects {self.hparams.num_channels} audio "
+                    f"channel(s), but received {waveforms.shape[1]}. "
+                    "Set the file's channel policy to match the model input."
+                )
 
     @property
     def task(self) -> Task:

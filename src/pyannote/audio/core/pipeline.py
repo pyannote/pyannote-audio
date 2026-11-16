@@ -483,11 +483,9 @@ class Pipeline(_Pipeline):
                 )
 
             # load waveform in memory (and keep track of its original sample rate)
-            file["waveform"], file["sample_rate"] = Audio()(file)
-
-            # the above line already took care of channel selection,
-            # therefore we remove the `channel` key from the file
-            file.pop("channel", None)
+            # Decode raw channels. Each consumer applies the file's policy when
+            # loading/cropping, just as it would without preloading.
+            file["waveform"], file["sample_rate"] = Audio()({**file, "channel": "all"})
 
         return file
 

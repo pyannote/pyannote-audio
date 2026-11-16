@@ -31,10 +31,10 @@ pyannote.audio relies on torchcodec for reading and torchaudio for resampling.
 import random
 import warnings
 from collections.abc import Mapping
-from enum import IntEnum
+from enum import StrEnum
 from io import IOBase
+from numbers import Integral
 from pathlib import Path
-from typing import Literal
 
 import torch.nn.functional as F
 import torchaudio
@@ -58,13 +58,29 @@ except Exception as e:
     AudioStreamMetadata = None
 
 
-class Channel(IntEnum):
-    """Special channel selection values; non-negative integers are channel indices."""
+class Channel(StrEnum):
+    """Audio channel policies accepted in file dictionaries."""
 
-    UNSPECIFIED = -1
-    RANDOM = -2
-    ALL = -3
-    DOWNMIX = -4
+    RANDOM = "random"
+    ALL = "all"
+    DOWNMIX = "downmix"
+
+    @classmethod
+    def normalize(cls, channel) -> "int | Channel":
+        """Normalize a file's channel policy. Missing values default to downmix."""
+        if channel is None:
+            return cls.DOWNMIX
+        if isinstance(channel, Integral) and not isinstance(channel, bool):
+            if channel >= 0:
+                return int(channel)
+        elif isinstance(channel, str):
+            try:
+                return cls(channel)
+            except ValueError:
+                pass
+        raise ValueError(
+            'channel must be a non-negative integer, "random", "all", or "downmix".'
+        )
 
 
 AudioFile = str | Path | IOBase | Mapping
@@ -80,8 +96,9 @@ Audio files can be provided to the Audio class using different types:
 For last two options, an additional "channel" key can be provided as a zero-indexed
 integer to load a specific channel: {"audio": "stereo.wav", "channel": 0}
 or "random" to select a channel randomly on each load or crop. Use "all" to
-preserve all channels in their original order, overriding the mono setting.
-Use "downmix" to average all channels, also overriding the mono setting.
+preserve all channels in their original order. Use "downmix" (the default when
+channel is omitted or None) to average all channels. Channel enum members are
+also accepted. Random selection happens independently on each load or crop.
 """
 
 
@@ -128,14 +145,14 @@ class Audio:
     ----------
     sample_rate: int, optional
         Target sampling rate. Defaults to using native sampling rate.
-    mono : {'random', 'downmix'}, optional
-        In case of multi-channel audio, convert to single-channel audio
-        using one of the following strategies: select one channel at
-        'random' or 'downmix' by averaging all channels.
+
+    Notes
+    -----
+    Channel selection is controlled by the file dictionary, defaulting to downmix.
 
     Usage
     -----
-    >>> audio = Audio(sample_rate=16000, mono='downmix')
+    >>> audio = Audio(sample_rate=16000)
     >>> waveform, sample_rate = audio({"audio": "/path/to/audio.wav"})
     >>> assert sample_rate == 16000
     >>> sample_rate = 44100
@@ -229,16 +246,15 @@ class Audio:
 
         return file
 
-    def __init__(self, sample_rate: int | None = None, mono=None):
+    def __init__(self, sample_rate: int | None = None):
         super().__init__()
         self.sample_rate = sample_rate
-        self.mono = mono
 
     def downmix_and_resample(
         self,
         waveform: Tensor,
         sample_rate: int,
-        channel: int | Literal["random", "all", "downmix"] | None = None,
+        channel: int | str | Channel | None = None,
     ) -> tuple[Tensor, int]:
         """Downmix and resample
 
@@ -250,8 +266,8 @@ class Audio:
             Sample rate.
         channel : int, "random", "all", or "downmix", optional
             Zero-based channel to use, "random" to select one on each call, or
-            "all" to preserve every channel regardless of the mono setting.
-            "downmix" averages all channels regardless of the mono setting.
+            "all" to preserve every channel. "downmix" averages all channels.
+            Defaults to downmix when omitted or None. Enum members are accepted.
 
         Returns
         -------
@@ -261,20 +277,20 @@ class Audio:
             New sample rate
         """
 
-        # select channel if requested
-        if channel == "random":
-            channel = random.randint(0, waveform.shape[0] - 1)
-        if channel is not None and channel not in ("all", "downmix"):
-            waveform = waveform[channel : channel + 1]
-
-        # downmix to mono
+        channel = Channel.normalize(channel)
         num_channels = waveform.shape[0]
-        if num_channels > 1 and channel != "all":
-            if channel == "downmix" or self.mono == "downmix":
-                waveform = waveform.mean(dim=0, keepdim=True)
-            elif self.mono == "random":
-                channel = random.randint(0, num_channels - 1)
-                waveform = waveform[channel : channel + 1]
+        if num_channels < 1:
+            raise ValueError("Audio must contain at least one channel.")
+        if channel == Channel.RANDOM:
+            channel = random.randint(0, num_channels - 1)
+        if isinstance(channel, int):
+            if channel >= num_channels:
+                raise ValueError(
+                    f"Requested channel {channel}, but audio has {num_channels} channels."
+                )
+            waveform = waveform[channel : channel + 1]
+        elif channel == Channel.DOWNMIX and num_channels > 1:
+            waveform = waveform.mean(dim=0, keepdim=True)
 
         # resample
         if (self.sample_rate is not None) and (self.sample_rate != sample_rate):
