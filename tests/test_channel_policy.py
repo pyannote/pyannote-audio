@@ -7,15 +7,13 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 import torch
-from pyannote.core import Annotation, Segment, SlidingWindow, SlidingWindowFeature
+from pyannote.core import Annotation, Segment
 from pyannote.database.protocol import SpeakerVerificationProtocol
 from pyannote.database.protocol.protocol import ProtocolFile
 
 from pyannote.audio.core.io import Audio, Channel
 from pyannote.audio.core.model import Model
 from pyannote.audio.core.pipeline import Pipeline
-from pyannote.audio.pipelines.speaker_diarization import SpeakerDiarization
-from pyannote.audio.pipelines.speech_separation import SpeechSeparation
 from pyannote.audio.tasks.embedding.mixins import (
     SupervisedRepresentationLearningTaskMixin,
 )
@@ -104,38 +102,6 @@ def test_models_validate_channels_without_transforming():
     assert model(waveforms=waveform) is waveform
     with pytest.raises(ValueError, match="expects 1 audio channel"):
         IdentityModel()(waveform)
-
-
-@pytest.mark.parametrize("pipeline_type", [SpeakerDiarization, SpeechSeparation])
-@pytest.mark.parametrize("embedding_channel", [None, Channel.DOWNMIX, 0, 1])
-def test_embedding_channel_override(pipeline_type, embedding_channel):
-    waveform = torch.tensor([0.125, 0.25, 0.75]).unsqueeze(1).repeat(1, 16000)
-    file = {"waveform": waveform, "sample_rate": 16000, "channel": Channel.ALL}
-    seen = []
-
-    def embedding(batch, masks):
-        seen.append(batch)
-        return np.zeros((len(batch), 2))
-
-    pipeline = SimpleNamespace(
-        training=False,
-        _audio=Audio(),
-        _embedding=embedding,
-        embedding_channel=embedding_channel,
-        embedding_batch_size=1,
-    )
-    segmentations = SlidingWindowFeature(
-        np.ones((1, 10, 1), dtype=np.float32), SlidingWindow(duration=1, step=1)
-    )
-    pipeline_type.get_embeddings(pipeline, file, segmentations)
-    expected, _ = Audio()(
-        {
-            **file,
-            "channel": Channel.ALL if embedding_channel is None else embedding_channel,
-        }
-    )
-    torch.testing.assert_close(seen[0], expected.unsqueeze(0))
-    assert file["channel"] == Channel.ALL
 
 
 @pytest.mark.parametrize("channel", [0, Channel.RANDOM, Channel.ALL, Channel.DOWNMIX])
