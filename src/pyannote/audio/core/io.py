@@ -266,7 +266,7 @@ class Audio:
         channel : int, "random", "all", or "downmix", optional
             Zero-based channel to use, "random" to select one on each call, or
             "all" to preserve every channel. "downmix" averages all channels.
-            Defaults to downmix when omitted or None. Enum members are accepted.
+            Defaults to downmix when omitted or None.
 
         Returns
         -------
