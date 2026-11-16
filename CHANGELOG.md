@@ -2,6 +2,7 @@
 
 ## next
 
+- feat(task): support explicit `channel: downmix` during training and validation
 - fix(task): preserve explicit audio channel selection during segmentation training and validation
 - feat(task): support `channel: random` per training crop; reject random channel selection in validation
 - feat(task): support `channel: all` to preserve multi-channel audio during training and validation

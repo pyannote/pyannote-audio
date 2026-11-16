@@ -86,6 +86,30 @@ def test_all_audio_channels(crop, mono, num_channels):
     torch.testing.assert_close(actual, torch.cat(expected))
 
 
+@pytest.mark.parametrize("crop", [False, True])
+@pytest.mark.parametrize("mono", [None, "downmix", "random"])
+@pytest.mark.parametrize("num_channels", [1, 3])
+def test_explicit_downmix(crop, mono, num_channels, monkeypatch):
+    waveform = torch.randn(num_channels, 16000)
+    file = {"waveform": waveform, "sample_rate": 16000, "channel": "downmix"}
+    averaged = {"waveform": waveform.mean(dim=0, keepdim=True), "sample_rate": 16000}
+    loader = Audio(sample_rate=8000, mono=mono)
+
+    def unexpected_random(*args):
+        pytest.fail("Explicit downmix must not randomly select a channel")
+
+    monkeypatch.setattr("pyannote.audio.core.io.random.randint", unexpected_random)
+    if crop:
+        actual, sr = loader.crop(file, Segment(0.25, 0.75))
+        expected, _ = loader.crop(averaged, Segment(0.25, 0.75))
+    else:
+        actual, sr = loader(file)
+        expected, _ = loader(averaged)
+    assert sr == 8000
+    assert actual.shape[0] == 1
+    torch.testing.assert_close(actual, expected)
+
+
 def test_can_load_with_waveform():
     "We can load a raw waveform"
     waveform = torch.rand(2, 16000 * 2)

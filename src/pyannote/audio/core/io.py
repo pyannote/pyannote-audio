@@ -71,6 +71,7 @@ For last two options, an additional "channel" key can be provided as a zero-inde
 integer to load a specific channel: {"audio": "stereo.wav", "channel": 0}
 or "random" to select a channel randomly on each load or crop. Use "all" to
 preserve all channels in their original order, overriding the mono setting.
+Use "downmix" to average all channels, also overriding the mono setting.
 """
 
 
@@ -227,7 +228,7 @@ class Audio:
         self,
         waveform: Tensor,
         sample_rate: int,
-        channel: int | Literal["random", "all"] | None = None,
+        channel: int | Literal["random", "all", "downmix"] | None = None,
     ) -> tuple[Tensor, int]:
         """Downmix and resample
 
@@ -237,9 +238,10 @@ class Audio:
             Waveform.
         sample_rate : int
             Sample rate.
-        channel : int, "random", or "all", optional
+        channel : int, "random", "all", or "downmix", optional
             Zero-based channel to use, "random" to select one on each call, or
             "all" to preserve every channel regardless of the mono setting.
+            "downmix" averages all channels regardless of the mono setting.
 
         Returns
         -------
@@ -252,17 +254,17 @@ class Audio:
         # select channel if requested
         if channel == "random":
             channel = random.randint(0, waveform.shape[0] - 1)
-        if channel is not None and channel != "all":
+        if channel is not None and channel not in ("all", "downmix"):
             waveform = waveform[channel : channel + 1]
 
         # downmix to mono
         num_channels = waveform.shape[0]
         if num_channels > 1 and channel != "all":
-            if self.mono == "random":
+            if channel == "downmix" or self.mono == "downmix":
+                waveform = waveform.mean(dim=0, keepdim=True)
+            elif self.mono == "random":
                 channel = random.randint(0, num_channels - 1)
                 waveform = waveform[channel : channel + 1]
-            elif self.mono == "downmix":
-                waveform = waveform.mean(dim=0, keepdim=True)
 
         # resample
         if (self.sample_rate is not None) and (self.sample_rate != sample_rate):

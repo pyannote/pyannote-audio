@@ -51,12 +51,15 @@ class SegmentationTask(Task):
         metadata = self.prepared_data["audio-metadata"][file_id]
         # Channels are cached as literal integers, with -1 for missing and -2
         # for random selection (training only), and -3 to preserve all channels.
+        # Explicit downmix uses -4, overriding the loader's mono setting.
         if "channel" in metadata.dtype.names:
             channel = int(metadata["channel"])
             if channel == -2:
                 file["channel"] = "random"
             elif channel == -3:
                 file["channel"] = "all"
+            elif channel == -4:
+                file["channel"] = "downmix"
             elif channel >= 0:
                 file["channel"] = channel
         return file

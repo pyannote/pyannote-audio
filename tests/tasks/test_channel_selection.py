@@ -57,7 +57,8 @@ class ChannelProtocol(SpeakerDiarizationProtocol):
         (None, 2, 0),
         ("random",),
         ("all",),
-        (0, "random", None, 2, "all"),
+        ("downmix",),
+        (0, "random", None, 2, "all", "downmix"),
     ],
 )
 @pytest.mark.parametrize("stage", ["train", "development"])
@@ -131,7 +132,7 @@ def test_cached_channel_selection(tmp_path, monkeypatch, channels, stage):
         assert not selections
         if channel == "all":
             expected = waveform
-        elif channel is None:
+        elif channel is None or channel == "downmix":
             expected = waveform.mean(dim=0, keepdim=True)
         else:
             expected = waveform[channel : channel + 1]
@@ -179,8 +180,9 @@ def test_invalid_cached_random_channels_rejected(tmp_path, legacy):
         task.setup()
 
 
-def test_legacy_all_channels_cache_rejected(tmp_path):
-    task = make_task(tmp_path, validation_channels=("all",))
+@pytest.mark.parametrize("channel", ["all", "downmix"])
+def test_legacy_channel_mode_cache_rejected(tmp_path, channel):
+    task = make_task(tmp_path, validation_channels=(channel,))
     task.prepare_data()
     with np.load(task.cache, allow_pickle=True) as archive:
         cached = dict(archive)

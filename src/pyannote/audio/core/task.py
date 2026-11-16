@@ -334,7 +334,8 @@ class Task(lightning.LightningDataModule):
             'audio-path': array of N paths to audio
             'audio-metadata': array of N audio infos such as audio subset, scope and database.
                 Channel values are zero-based integers, -1 when unspecified, or -2
-                for random selection (training only), or -3 to preserve all channels.
+                for random selection (training only), -3 to preserve all channels,
+                or -4 for explicit downmix.
             'audio-annotated': array of N annotated duration (usually equals file duration but might be shorter if file is not fully annotated)
             'annotations-regions': array of M annotated regions
             'audio-regions-ids': array of N start/end indices of annotated regions
@@ -425,18 +426,20 @@ class Task(lightning.LightningDataModule):
                         if subset != "train":
                             raise ValueError(
                                 'channel="random" is only supported for training. '
-                                'Use a fixed channel, "all", or omit channel for validation.'
+                                'Use a fixed channel, "all", "downmix", or omit channel for validation.'
                             )
                         # Reserve -2 for random selection, distinct from missing
                         # (-1) and literal zero-based channel numbers.
                         metadatum[key] = -2
                     elif value == "all":
                         metadatum[key] = -3
+                    elif value == "downmix":
+                        metadatum[key] = -4
                     elif isinstance(value, int) and value >= 0:
                         metadatum[key] = value
                     else:
                         raise ValueError(
-                            'channel must be a non-negative integer, "random", or "all".'
+                            'channel must be a non-negative integer, "random", "all", or "downmix".'
                         )
                     if value not in metadata_unique_values[key]:
                         metadata_unique_values[key].append(value)
@@ -678,7 +681,7 @@ class Task(lightning.LightningDataModule):
         metadata = self.prepared_data["audio-metadata"]
         if "channel" in metadata.dtype.names:
             random_channel = metadata["channel"] == -2
-            for selection, encoded in (("random", -2), ("all", -3)):
+            for selection, encoded in (("random", -2), ("all", -3), ("downmix", -4)):
                 if selection in self.prepared_data["metadata-values"].get(
                     "channel", []
                 ) and not np.any(metadata["channel"] == encoded):
@@ -689,7 +692,7 @@ class Task(lightning.LightningDataModule):
             if np.any(random_channel & (metadata["subset"] != Subsets.index("train"))):
                 raise ValueError(
                     'channel="random" is only supported for training. '
-                    'Use a fixed channel, "all", or omit channel for validation.'
+                    'Use a fixed channel, "all", "downmix", or omit channel for validation.'
                 )
 
     @property
