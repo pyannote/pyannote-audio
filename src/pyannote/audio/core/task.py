@@ -32,7 +32,7 @@ import warnings
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
-from enum import Enum
+from enum import Enum, IntEnum
 from functools import cached_property, partial
 from numbers import Number
 from pathlib import Path
@@ -55,6 +55,17 @@ from pyannote.audio.utils.protocol import check_protocol
 
 Subsets = list(Subset.__args__)
 Scopes = list(Scope.__args__)
+
+MISSING_METADATA = -1
+
+
+class CachedChannel(IntEnum):
+    """Channel modes stored in task caches; non-negative values are channel indices."""
+
+    UNSPECIFIED = MISSING_METADATA
+    RANDOM = -2
+    ALL = -3
+    DOWNMIX = -4
 
 
 # Type of machine learning problem
@@ -333,9 +344,8 @@ class Task(lightning.LightningDataModule):
             'protocol': name of the protocol
             'audio-path': array of N paths to audio
             'audio-metadata': array of N audio infos such as audio subset, scope and database.
-                Channel values are zero-based integers, -1 when unspecified, or -2
-                for random selection (training only), -3 to preserve all channels,
-                or -4 for explicit downmix.
+                Channel values are zero-based integers or CachedChannel modes:
+                UNSPECIFIED, RANDOM (training only), ALL, or DOWNMIX.
             'audio-annotated': array of N annotated duration (usually equals file duration but might be shorter if file is not fully annotated)
             'annotations-regions': array of M annotated regions
             'audio-regions-ids': array of N start/end indices of annotated regions
@@ -428,13 +438,11 @@ class Task(lightning.LightningDataModule):
                                 'channel="random" is only supported for training. '
                                 'Use a fixed channel, "all", "downmix", or omit channel for validation.'
                             )
-                        # Reserve -2 for random selection, distinct from missing
-                        # (-1) and literal zero-based channel numbers.
-                        metadatum[key] = -2
+                        metadatum[key] = CachedChannel.RANDOM
                     elif value == "all":
-                        metadatum[key] = -3
+                        metadatum[key] = CachedChannel.ALL
                     elif value == "downmix":
-                        metadatum[key] = -4
+                        metadatum[key] = CachedChannel.DOWNMIX
                     elif isinstance(value, int) and value >= 0:
                         metadatum[key] = value
                     else:
@@ -552,9 +560,11 @@ class Task(lightning.LightningDataModule):
             # append segment IDs (start and end time)
             audio_segments_ids.append((_segments_id, segments_id))
 
-        # since not all metadata keys are present in all files, fallback to -1 when a key is missing
+        # Not all metadata keys are present in every file.
         metadata = [
-            tuple(metadatum.get(key, -1) for key in metadata_unique_values)
+            tuple(
+                metadatum.get(key, MISSING_METADATA) for key in metadata_unique_values
+            )
             for metadatum in metadata
         ]
         metadata_dtype = [
@@ -680,8 +690,12 @@ class Task(lightning.LightningDataModule):
 
         metadata = self.prepared_data["audio-metadata"]
         if "channel" in metadata.dtype.names:
-            random_channel = metadata["channel"] == -2
-            for selection, encoded in (("random", -2), ("all", -3), ("downmix", -4)):
+            random_channel = metadata["channel"] == CachedChannel.RANDOM
+            for selection, encoded in (
+                ("random", CachedChannel.RANDOM),
+                ("all", CachedChannel.ALL),
+                ("downmix", CachedChannel.DOWNMIX),
+            ):
                 if selection in self.prepared_data["metadata-values"].get(
                     "channel", []
                 ) and not np.any(metadata["channel"] == encoded):

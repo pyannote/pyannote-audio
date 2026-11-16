@@ -8,6 +8,7 @@ from pyannote.core import Annotation, Segment, Timeline
 from pyannote.database.protocol import SpeakerDiarizationProtocol
 
 from pyannote.audio.core import io
+from pyannote.audio.core.task import CachedChannel
 from pyannote.audio.models.segmentation.debug import SimpleSegmentationModel
 from pyannote.audio.tasks import SpeakerDiarization
 
@@ -173,7 +174,7 @@ def test_invalid_cached_random_channels_rejected(tmp_path, legacy):
         cached["audio-metadata"]["channel"][0] = 0
         message = "Remove the cache"
     else:
-        cached["audio-metadata"]["channel"][1] = -2
+        cached["audio-metadata"]["channel"][1] = CachedChannel.RANDOM
         message = "only supported for training"
     np.savez(task.cache, **cached)
     with pytest.raises(ValueError, match=message):
