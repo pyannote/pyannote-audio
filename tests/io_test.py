@@ -59,6 +59,33 @@ def test_random_audio_channel(monkeypatch, crop, num_channels):
         torch.testing.assert_close(actual, expected)
 
 
+@pytest.mark.parametrize("crop", [False, True])
+@pytest.mark.parametrize("mono", [None, "downmix", "random"])
+@pytest.mark.parametrize("num_channels", [1, 3])
+def test_all_audio_channels(crop, mono, num_channels):
+    waveform = torch.randn(num_channels, 16000)
+    file = {"waveform": waveform, "sample_rate": 16000, "channel": "all"}
+    loader = Audio(sample_rate=8000, mono=mono)
+    if crop:
+        actual, sr = loader.crop(file, Segment(0.25, 0.75))
+    else:
+        actual, sr = loader(file)
+
+    # Each output channel must match independently loading and resampling that
+    # channel, preserving order even when the loader would normally mix to mono.
+    expected = []
+    for channel in range(num_channels):
+        selected = {**file, "channel": channel}
+        if crop:
+            single, _ = loader.crop(selected, Segment(0.25, 0.75))
+        else:
+            single, _ = loader(selected)
+        expected.append(single)
+    assert sr == 8000
+    assert actual.shape[0] == num_channels
+    torch.testing.assert_close(actual, torch.cat(expected))
+
+
 def test_can_load_with_waveform():
     "We can load a raw waveform"
     waveform = torch.rand(2, 16000 * 2)

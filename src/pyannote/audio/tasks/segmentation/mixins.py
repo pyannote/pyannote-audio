@@ -50,11 +50,13 @@ class SegmentationTask(Task):
         file = {"audio": self.prepared_data["audio-path"][file_id]}
         metadata = self.prepared_data["audio-metadata"][file_id]
         # Channels are cached as literal integers, with -1 for missing and -2
-        # for random selection (only allowed in the training subset).
+        # for random selection (training only), and -3 to preserve all channels.
         if "channel" in metadata.dtype.names:
             channel = int(metadata["channel"])
             if channel == -2:
                 file["channel"] = "random"
+            elif channel == -3:
+                file["channel"] = "all"
             elif channel >= 0:
                 file["channel"] = channel
         return file

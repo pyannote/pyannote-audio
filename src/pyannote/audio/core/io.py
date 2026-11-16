@@ -69,7 +69,8 @@ Audio files can be provided to the Audio class using different types:
 
 For last two options, an additional "channel" key can be provided as a zero-indexed
 integer to load a specific channel: {"audio": "stereo.wav", "channel": 0}
-or "random" to select a channel randomly on each load or crop.
+or "random" to select a channel randomly on each load or crop. Use "all" to
+preserve all channels in their original order, overriding the mono setting.
 """
 
 
@@ -226,7 +227,7 @@ class Audio:
         self,
         waveform: Tensor,
         sample_rate: int,
-        channel: int | Literal["random"] | None = None,
+        channel: int | Literal["random", "all"] | None = None,
     ) -> tuple[Tensor, int]:
         """Downmix and resample
 
@@ -236,8 +237,9 @@ class Audio:
             Waveform.
         sample_rate : int
             Sample rate.
-        channel : int or "random", optional
-            Zero-based channel to use, or "random" to select one on each call.
+        channel : int, "random", or "all", optional
+            Zero-based channel to use, "random" to select one on each call, or
+            "all" to preserve every channel regardless of the mono setting.
 
         Returns
         -------
@@ -250,12 +252,12 @@ class Audio:
         # select channel if requested
         if channel == "random":
             channel = random.randint(0, waveform.shape[0] - 1)
-        if channel is not None:
+        if channel is not None and channel != "all":
             waveform = waveform[channel : channel + 1]
 
         # downmix to mono
         num_channels = waveform.shape[0]
-        if num_channels > 1:
+        if num_channels > 1 and channel != "all":
             if self.mono == "random":
                 channel = random.randint(0, num_channels - 1)
                 waveform = waveform[channel : channel + 1]

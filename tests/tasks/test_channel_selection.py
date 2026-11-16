@@ -49,7 +49,16 @@ class ChannelProtocol(SpeakerDiarizationProtocol):
 
 
 @pytest.mark.parametrize(
-    "channels", [(0,), (2,), (None,), (None, 2, 0), ("random",), (0, "random", None, 2)]
+    "channels",
+    [
+        (0,),
+        (2,),
+        (None,),
+        (None, 2, 0),
+        ("random",),
+        ("all",),
+        (0, "random", None, 2, "all"),
+    ],
 )
 @pytest.mark.parametrize("stage", ["train", "development"])
 def test_cached_channel_selection(tmp_path, monkeypatch, channels, stage):
@@ -120,12 +129,16 @@ def test_cached_channel_selection(tmp_path, monkeypatch, channels, stage):
             continue
 
         assert not selections
-        expected = (
-            waveform.mean(dim=0, keepdim=True)
-            if channel is None
-            else waveform[channel : channel + 1]
-        )
+        if channel == "all":
+            expected = waveform
+        elif channel is None:
+            expected = waveform.mean(dim=0, keepdim=True)
+        else:
+            expected = waveform[channel : channel + 1]
         torch.testing.assert_close(sample["X"], expected)
+        torch.testing.assert_close(
+            task.collate_X([sample, sample]), torch.stack([expected, expected])
+        )
         if stage == "development":
             torch.testing.assert_close(task.val__getitem__(index)["X"], expected)
             assert not selections
@@ -163,4 +176,15 @@ def test_invalid_cached_random_channels_rejected(tmp_path, legacy):
         message = "only supported for training"
     np.savez(task.cache, **cached)
     with pytest.raises(ValueError, match=message):
+        task.setup()
+
+
+def test_legacy_all_channels_cache_rejected(tmp_path):
+    task = make_task(tmp_path, validation_channels=("all",))
+    task.prepare_data()
+    with np.load(task.cache, allow_pickle=True) as archive:
+        cached = dict(archive)
+    cached["audio-metadata"]["channel"][1] = 1
+    np.savez(task.cache, **cached)
+    with pytest.raises(ValueError, match="Remove the cache"):
         task.setup()
