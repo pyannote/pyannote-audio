@@ -97,8 +97,7 @@ For last two options, an additional "channel" key can be provided as a zero-inde
 integer to load a specific channel: {"audio": "stereo.wav", "channel": 0}
 or "random" to select a channel randomly on each load or crop. Use "all" to
 preserve all channels in their original order. Use "downmix" (the default when
-channel is omitted or None) to average all channels. Channel enum members are
-also accepted. Random selection happens independently on each load or crop.
+channel is omitted or None) to average all channels.
 """
 
 
