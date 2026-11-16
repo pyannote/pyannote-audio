@@ -171,6 +171,8 @@ class SegmentationTask(Task):
         rng = create_rng_for_worker(self.model)
 
         balance = getattr(self, "balance", None)
+        if balance is not None and "channel" in balance:
+            raise ValueError("Channel selection cannot be used for balancing.")
         if balance is None:
             chunks = self.train__iter__helper(rng)
 

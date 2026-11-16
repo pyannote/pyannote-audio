@@ -97,6 +97,8 @@ def test_cached_channel_selection(tmp_path, monkeypatch, channels, stage):
     )
     task.prepare_data()
     task.setup()
+    assert "channel" in task.prepared_data["audio-metadata"].dtype.names
+    assert "channel" not in task.prepared_data["metadata-values"]
     task.model = SimpleSegmentationModel()
 
     expected_channels = channels if stage == "train" else validation_channels
@@ -164,32 +166,24 @@ def test_random_validation_rejected_during_preparation(tmp_path):
         task.prepare_data()
 
 
-@pytest.mark.parametrize("legacy", [False, True])
-def test_invalid_cached_random_channels_rejected(tmp_path, legacy):
+def test_cached_random_validation_rejected(tmp_path):
     task = make_task(tmp_path)
     task.prepare_data()
     with np.load(task.cache, allow_pickle=True) as archive:
         cached = dict(archive)
-    if legacy:
-        # Older caches stored "random" as a category index, indistinguishable
-        # from a literal channel number in a mixed protocol.
-        cached["audio-metadata"]["channel"][0] = 0
-        message = "Remove the cache"
-    else:
-        cached["audio-metadata"]["channel"][1] = _CachedChannel.RANDOM
-        message = "only supported for training"
+    cached["audio-metadata"]["channel"][1] = _CachedChannel.RANDOM
     np.savez(task.cache, **cached)
-    with pytest.raises(ValueError, match=message):
+    with pytest.raises(ValueError, match="only supported for training"):
         task.setup()
 
 
-@pytest.mark.parametrize("channel", ["all", "downmix"])
-def test_legacy_channel_mode_cache_rejected(tmp_path, channel):
-    task = make_task(tmp_path, validation_channels=(channel,))
+def test_channel_balancing_rejected(tmp_path):
+    task = make_task(tmp_path)
     task.prepare_data()
-    with np.load(task.cache, allow_pickle=True) as archive:
-        cached = dict(archive)
-    cached["audio-metadata"]["channel"][1] = 1
-    np.savez(task.cache, **cached)
-    with pytest.raises(ValueError, match="Remove the cache"):
-        task.setup()
+    task.setup()
+    task.model = SimpleSegmentationModel()
+    task.balance = ["channel"]
+    with pytest.raises(
+        ValueError, match="Channel selection cannot be used for balancing"
+    ):
+        next(task.train__iter__())

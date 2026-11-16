@@ -61,7 +61,7 @@ MISSING_METADATA = -1
 
 
 class _CachedChannel(IntEnum):
-    """Private integer encoding, kept compatible with existing task caches."""
+    """Private integer encoding for channel selection in task caches."""
 
     UNSPECIFIED = MISSING_METADATA
     RANDOM = -2
@@ -416,6 +416,21 @@ class Task(lightning.LightningDataModule):
             # keep track of label scope (file, database, or global)
             metadatum["scope"] = Scopes.index(file["scope"])
 
+            # Channel selection is a loading option, not categorical metadata.
+            metadatum["channel"] = _CachedChannel.UNSPECIFIED
+            if "channel" in file:
+                channel = Channel.normalize(file["channel"])
+                if channel == Channel.RANDOM and subset != "train":
+                    raise ValueError(
+                        'channel="random" is only supported for training. '
+                        'Use a fixed channel, "all", "downmix", or omit channel for validation.'
+                    )
+                metadatum["channel"] = (
+                    _CachedChannel[channel.name]
+                    if isinstance(channel, Channel)
+                    else channel
+                )
+
             remaining_metadata_keys = set(file) - {
                 "uri",
                 "database",
@@ -423,6 +438,7 @@ class Task(lightning.LightningDataModule):
                 "audio",
                 "scope",
                 "classes",
+                "channel",
                 "annotation",
                 "annotated",
             }
@@ -431,31 +447,6 @@ class Task(lightning.LightningDataModule):
             # (e.g. a "domain" key for domain-adversarial training)
             for key in remaining_metadata_keys:
                 value = file[key]
-
-                if key == "channel":
-                    value = Channel.normalize(value)
-                    if value == "random":
-                        if subset != "train":
-                            raise ValueError(
-                                'channel="random" is only supported for training. '
-                                'Use a fixed channel, "all", "downmix", or omit channel for validation.'
-                            )
-                        metadatum[key] = _CachedChannel.RANDOM
-                    elif value == "all":
-                        metadatum[key] = _CachedChannel.ALL
-                    elif value == "downmix":
-                        metadatum[key] = _CachedChannel.DOWNMIX
-                    elif isinstance(value, int) and value >= 0:
-                        metadatum[key] = value
-                    else:
-                        raise ValueError(
-                            'channel must be a non-negative integer, "random", "all", or "downmix".'
-                        )
-                    if value not in metadata_unique_values[key]:
-                        metadata_unique_values[key].append(
-                            value.value if isinstance(value, Channel) else value
-                        )
-                    continue
 
                 if isinstance(value, str):
                     if value not in metadata_unique_values[key]:
@@ -564,16 +555,16 @@ class Task(lightning.LightningDataModule):
             # append segment IDs (start and end time)
             audio_segments_ids.append((_segments_id, segments_id))
 
+        # Register channel separately without collecting its possible values.
+        metadata_keys = [*metadata_unique_values, "channel"]
         # Not all metadata keys are present in every file.
         metadata = [
-            tuple(
-                metadatum.get(key, MISSING_METADATA) for key in metadata_unique_values
-            )
+            tuple(metadatum.get(key, MISSING_METADATA) for key in metadata_keys)
             for metadatum in metadata
         ]
         metadata_dtype = [
             (key, get_dtype(max(m[i] for m in metadata)))
-            for i, key in enumerate(metadata_unique_values)
+            for i, key in enumerate(metadata_keys)
         ]
 
         # turn list of annotated regions into a single numpy array
@@ -695,18 +686,6 @@ class Task(lightning.LightningDataModule):
         metadata = self.prepared_data["audio-metadata"]
         if "channel" in metadata.dtype.names:
             random_channel = metadata["channel"] == _CachedChannel.RANDOM
-            for selection, encoded in (
-                ("random", _CachedChannel.RANDOM),
-                ("all", _CachedChannel.ALL),
-                ("downmix", _CachedChannel.DOWNMIX),
-            ):
-                if selection in self.prepared_data["metadata-values"].get(
-                    "channel", []
-                ) and not np.any(metadata["channel"] == encoded):
-                    raise ValueError(
-                        f"This cache predates channel={selection!r} support and contains "
-                        "ambiguous channel metadata. Remove the cache and prepare it again."
-                    )
             if np.any(random_channel & (metadata["subset"] != Subsets.index("train"))):
                 raise ValueError(
                     'channel="random" is only supported for training. '
