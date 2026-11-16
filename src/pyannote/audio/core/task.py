@@ -32,7 +32,7 @@ import warnings
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
-from enum import Enum, IntEnum
+from enum import Enum
 from functools import cached_property, partial
 from numbers import Number
 from pathlib import Path
@@ -50,22 +50,14 @@ from torch_audiomentations import Identity
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchmetrics import Metric, MetricCollection
 
+from pyannote.audio.core.io import Channel
 from pyannote.audio.utils.loss import binary_cross_entropy, nll_loss
 from pyannote.audio.utils.protocol import check_protocol
 
 Subsets = list(Subset.__args__)
 Scopes = list(Scope.__args__)
 
-MISSING_METADATA = -1
-
-
-class CachedChannel(IntEnum):
-    """Channel modes stored in task caches; non-negative values are channel indices."""
-
-    UNSPECIFIED = MISSING_METADATA
-    RANDOM = -2
-    ALL = -3
-    DOWNMIX = -4
+MISSING_METADATA = int(Channel.UNSPECIFIED)
 
 
 # Type of machine learning problem
@@ -344,7 +336,7 @@ class Task(lightning.LightningDataModule):
             'protocol': name of the protocol
             'audio-path': array of N paths to audio
             'audio-metadata': array of N audio infos such as audio subset, scope and database.
-                Channel values are zero-based integers or CachedChannel modes:
+                Channel values are zero-based integers or Channel modes:
                 UNSPECIFIED, RANDOM (training only), ALL, or DOWNMIX.
             'audio-annotated': array of N annotated duration (usually equals file duration but might be shorter if file is not fully annotated)
             'annotations-regions': array of M annotated regions
@@ -438,11 +430,11 @@ class Task(lightning.LightningDataModule):
                                 'channel="random" is only supported for training. '
                                 'Use a fixed channel, "all", "downmix", or omit channel for validation.'
                             )
-                        metadatum[key] = CachedChannel.RANDOM
+                        metadatum[key] = Channel.RANDOM
                     elif value == "all":
-                        metadatum[key] = CachedChannel.ALL
+                        metadatum[key] = Channel.ALL
                     elif value == "downmix":
-                        metadatum[key] = CachedChannel.DOWNMIX
+                        metadatum[key] = Channel.DOWNMIX
                     elif isinstance(value, int) and value >= 0:
                         metadatum[key] = value
                     else:
@@ -690,11 +682,11 @@ class Task(lightning.LightningDataModule):
 
         metadata = self.prepared_data["audio-metadata"]
         if "channel" in metadata.dtype.names:
-            random_channel = metadata["channel"] == CachedChannel.RANDOM
+            random_channel = metadata["channel"] == Channel.RANDOM
             for selection, encoded in (
-                ("random", CachedChannel.RANDOM),
-                ("all", CachedChannel.ALL),
-                ("downmix", CachedChannel.DOWNMIX),
+                ("random", Channel.RANDOM),
+                ("all", Channel.ALL),
+                ("downmix", Channel.DOWNMIX),
             ):
                 if selection in self.prepared_data["metadata-values"].get(
                     "channel", []

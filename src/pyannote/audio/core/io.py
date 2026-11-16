@@ -31,6 +31,7 @@ pyannote.audio relies on torchcodec for reading and torchaudio for resampling.
 import random
 import warnings
 from collections.abc import Mapping
+from enum import IntEnum
 from io import IOBase
 from pathlib import Path
 from typing import Literal
@@ -55,6 +56,15 @@ except Exception as e:
     TORCHCODEC_AVAILABLE = False
     AudioDecoder = None
     AudioStreamMetadata = None
+
+
+class Channel(IntEnum):
+    """Special channel selection values; non-negative integers are channel indices."""
+
+    UNSPECIFIED = -1
+    RANDOM = -2
+    ALL = -3
+    DOWNMIX = -4
 
 
 AudioFile = str | Path | IOBase | Mapping
