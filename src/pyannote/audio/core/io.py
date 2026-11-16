@@ -33,6 +33,7 @@ import warnings
 from collections.abc import Mapping
 from io import IOBase
 from pathlib import Path
+from typing import Literal
 
 import torch.nn.functional as F
 import torchaudio
@@ -68,6 +69,7 @@ Audio files can be provided to the Audio class using different types:
 
 For last two options, an additional "channel" key can be provided as a zero-indexed
 integer to load a specific channel: {"audio": "stereo.wav", "channel": 0}
+or "random" to select a channel randomly on each load or crop.
 """
 
 
@@ -221,7 +223,10 @@ class Audio:
         self.mono = mono
 
     def downmix_and_resample(
-        self, waveform: Tensor, sample_rate: int, channel: int | None = None
+        self,
+        waveform: Tensor,
+        sample_rate: int,
+        channel: int | Literal["random"] | None = None,
     ) -> tuple[Tensor, int]:
         """Downmix and resample
 
@@ -231,8 +236,8 @@ class Audio:
             Waveform.
         sample_rate : int
             Sample rate.
-        channel : int, optional
-            Channel to use.
+        channel : int or "random", optional
+            Zero-based channel to use, or "random" to select one on each call.
 
         Returns
         -------
@@ -243,6 +248,8 @@ class Audio:
         """
 
         # select channel if requested
+        if channel == "random":
+            channel = random.randint(0, waveform.shape[0] - 1)
         if channel is not None:
             waveform = waveform[channel : channel + 1]
 

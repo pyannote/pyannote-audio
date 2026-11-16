@@ -332,7 +332,9 @@ class Task(lightning.LightningDataModule):
         prepared_data = {
             'protocol': name of the protocol
             'audio-path': array of N paths to audio
-            'audio-metadata': array of N audio infos such as audio subset, scope and database
+            'audio-metadata': array of N audio infos such as audio subset, scope and database.
+                Channel values are zero-based integers, -1 when unspecified, or -2
+                for random selection (training only).
             'audio-annotated': array of N annotated duration (usually equals file duration but might be shorter if file is not fully annotated)
             'annotations-regions': array of M annotated regions
             'audio-regions-ids': array of N start/end indices of annotated regions
@@ -417,6 +419,26 @@ class Task(lightning.LightningDataModule):
             # (e.g. a "domain" key for domain-adversarial training)
             for key in remaining_metadata_keys:
                 value = file[key]
+
+                if key == "channel":
+                    if value == "random":
+                        if subset != "train":
+                            raise ValueError(
+                                'channel="random" is only supported for training. '
+                                "Use a fixed channel or omit channel for validation."
+                            )
+                        # Reserve -2 for random selection, distinct from missing
+                        # (-1) and literal zero-based channel numbers.
+                        metadatum[key] = -2
+                    elif isinstance(value, int) and value >= 0:
+                        metadatum[key] = value
+                    else:
+                        raise ValueError(
+                            'channel must be a non-negative integer or "random".'
+                        )
+                    if value not in metadata_unique_values[key]:
+                        metadata_unique_values[key].append(value)
+                    continue
 
                 if isinstance(value, str):
                     if value not in metadata_unique_values[key]:
@@ -650,6 +672,22 @@ class Task(lightning.LightningDataModule):
                 f"Protocol specified for the task ({self.protocol.name}) "
                 f"does not correspond to the cached one ({self.prepared_data['protocol']})"
             )
+
+        metadata = self.prepared_data["audio-metadata"]
+        if "channel" in metadata.dtype.names:
+            random_channel = metadata["channel"] == -2
+            if "random" in self.prepared_data["metadata-values"].get(
+                "channel", []
+            ) and not np.any(random_channel):
+                raise ValueError(
+                    "This cache predates random channel support and contains ambiguous "
+                    "channel metadata. Remove the cache and prepare it again."
+                )
+            if np.any(random_channel & (metadata["subset"] != Subsets.index("train"))):
+                raise ValueError(
+                    'channel="random" is only supported for training. '
+                    "Use a fixed channel or omit channel for validation."
+                )
 
     @property
     def automatic_optimization(self) -> bool:

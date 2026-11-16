@@ -1,3 +1,6 @@
+import random
+
+import pytest
 import torch
 from pyannote.core import Segment
 from torch import Tensor
@@ -31,6 +34,29 @@ def test_correct_audio_channel():
     wav, sr = loader({"waveform": waveform, "sample_rate": 16000, "channel": 1})
     assert torch.equal(wav, waveform[1:2])
     assert sr == 16000
+
+
+@pytest.mark.parametrize("crop", [False, True])
+@pytest.mark.parametrize("num_channels", [1, 3])
+def test_random_audio_channel(monkeypatch, crop, num_channels):
+    waveform = torch.arange(num_channels).float().unsqueeze(1).repeat(1, 16000)
+    file = {"waveform": waveform, "sample_rate": 16000, "channel": "random"}
+    loader = Audio(sample_rate=8000, mono="downmix")
+    rng = random.Random(42)
+    monkeypatch.setattr("pyannote.audio.core.io.random.randint", rng.randint)
+    expected_rng = random.Random(42)
+    for _ in range(5):
+        channel = expected_rng.randint(0, num_channels - 1)
+        selected = {**file, "channel": channel}
+        if crop:
+            actual, sr = loader.crop(file, Segment(0.25, 0.75))
+            expected, _ = loader.crop(selected, Segment(0.25, 0.75))
+        else:
+            actual, sr = loader(file)
+            expected, _ = loader(selected)
+        assert sr == 8000
+        assert actual.shape[0] == 1
+        torch.testing.assert_close(actual, expected)
 
 
 def test_can_load_with_waveform():
