@@ -67,7 +67,26 @@ class Channel(StrEnum):
 
     @classmethod
     def normalize(cls, channel) -> "int | Channel":
-        """Normalize a file's channel policy. Missing values default to downmix."""
+        """Normalize channel selection
+
+        Parameters
+        ----------
+        channel : int, str, Channel, or None
+            Zero-based channel index or channel selection policy.
+            Supported policies are "random", "all", and "downmix".
+            None defaults to downmix. Boolean values are not accepted.
+
+        Returns
+        -------
+        channel : int or Channel
+            Non-negative Python integer or Channel enum member.
+
+        Raises
+        ------
+        ValueError
+            If channel is not a non-negative integer, a supported policy, or None.
+
+        """
         if channel is None:
             return cls.DOWNMIX
         if isinstance(channel, Integral) and not isinstance(channel, bool):
