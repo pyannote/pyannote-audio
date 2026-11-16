@@ -29,6 +29,8 @@ from pyannote.audio import Pipeline
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.pipelines.speaker_diarization import DiarizeOutput
 
+from . import _prepare_audio
+
 
 class SDK(Pipeline):
     """Wrapper around official pyannoteAI API client
@@ -97,6 +99,8 @@ class SDK(Pipeline):
 
         Raises
         ------
+        ValueError
+            If channel selection leaves multiple channels. The backend requires mono audio.
         PyannoteAIFailedJob
             If the job failed
         PyannoteAICanceledJob
@@ -106,7 +110,7 @@ class SDK(Pipeline):
         """
 
         # upload file to pyannoteAI cloud API
-        media_url: str = self._client.upload(file)
+        media_url: str = self._client.upload(_prepare_audio(file))
 
         # initiate diarization job
         job_id = self._client.diarize(
