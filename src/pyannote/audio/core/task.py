@@ -676,14 +676,6 @@ class Task(lightning.LightningDataModule):
                 f"does not correspond to the cached one ({self.prepared_data['protocol']})"
             )
 
-        metadata = self.prepared_data["audio-metadata"]
-        random_channel = metadata["channel"] == _CachedChannel.RANDOM
-        if np.any(random_channel & (metadata["subset"] != Subsets.index("train"))):
-            raise ValueError(
-                'channel="random" is only supported for training. '
-                'Use a fixed channel, "all", "downmix", or omit channel for validation.'
-            )
-
     @property
     def automatic_optimization(self) -> bool:
         return self.model.automatic_optimization
