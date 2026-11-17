@@ -418,11 +418,6 @@ class Task(lightning.LightningDataModule):
             metadatum["channel"] = _CachedChannel.UNSPECIFIED
             if "channel" in file:
                 channel = Channel.normalize(file["channel"])
-                if channel == Channel.RANDOM and subset != "train":
-                    raise ValueError(
-                        'channel="random" is only supported for training. '
-                        'Use a fixed channel, "all", "downmix", or omit channel for validation.'
-                    )
                 metadatum["channel"] = (
                     _CachedChannel[channel.name]
                     if isinstance(channel, Channel)
