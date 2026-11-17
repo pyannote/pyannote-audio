@@ -2,6 +2,8 @@
 
 ## next
 
+- BREAKING(io): rename `Audio.downmix_and_resample` to `Audio.select_channels_and_resample` to reflect support for fixed/random selection, all channels, and downmix.
+
 - BREAKING(io): remove `Audio(mono=...)`; use the file's `channel` policy instead. Omitted channels now always downmix; use `channel: all` to preserve channels.
 - improve(io): normalize string and `Channel` enum policies, preserve raw channels during preloading, and validate model input channel counts
 - feat(task): support explicit `channel: downmix` during training and validation

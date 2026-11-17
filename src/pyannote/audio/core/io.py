@@ -268,13 +268,13 @@ class Audio:
         super().__init__()
         self.sample_rate = sample_rate
 
-    def downmix_and_resample(
+    def select_channels_and_resample(
         self,
         waveform: Tensor,
         sample_rate: int,
         channel: int | str | Channel | None = None,
     ) -> tuple[Tensor, int]:
-        """Downmix and resample
+        """Apply the channel policy and resample
 
         Parameters
         ----------
@@ -290,7 +290,7 @@ class Audio:
         Returns
         -------
         waveform : (channel, time) Tensor
-            Remixed and resampled waveform
+            Waveform after applying the channel policy and resampling
         sample_rate : int
             New sample rate
         """
@@ -382,7 +382,9 @@ class Audio:
             waveform = file["waveform"]
             sample_rate = file["sample_rate"]
 
-            return self.downmix_and_resample(waveform, sample_rate, channel=channel)
+            return self.select_channels_and_resample(
+                waveform, sample_rate, channel=channel
+            )
 
         if not TORCHCODEC_AVAILABLE:
             raise RuntimeError(
@@ -401,7 +403,7 @@ class Audio:
         if isinstance(file["audio"], IOBase):
             file["audio"].seek(0)
 
-        return self.downmix_and_resample(waveform, sample_rate, channel=channel)
+        return self.select_channels_and_resample(waveform, sample_rate, channel=channel)
 
     def crop(
         self,
@@ -464,7 +466,7 @@ class Audio:
 
             data = waveform[:, start_sample:end_sample]
             data = F.pad(data, (pad_start, pad_end))
-            return self.downmix_and_resample(data, sample_rate, channel=channel)
+            return self.select_channels_and_resample(data, sample_rate, channel=channel)
 
         if not TORCHCODEC_AVAILABLE:
             raise RuntimeError(
@@ -534,4 +536,4 @@ class Audio:
             pad_end += 1
 
         data = F.pad(data, (pad_start, pad_end))
-        return self.downmix_and_resample(data, sample_rate, channel=channel)
+        return self.select_channels_and_resample(data, sample_rate, channel=channel)
