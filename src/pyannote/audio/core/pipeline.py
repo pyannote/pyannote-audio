@@ -23,6 +23,7 @@
 
 from __future__ import annotations
 
+import inspect
 import os
 import warnings
 from collections import OrderedDict
@@ -43,6 +44,7 @@ from pyannote.audio.core.inference import BaseInference
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.core.model import Model
 from pyannote.audio.telemetry import track_pipeline_apply, track_pipeline_init
+from pyannote.audio.utils.config_class import assert_trusted_config_class
 from pyannote.audio.utils.dependencies import check_dependencies
 from pyannote.audio.utils.hf_hub import AssetFileName, download_from_hf_hub
 from pyannote.audio.utils.reproducibility import fix_reproducibility
@@ -166,6 +168,7 @@ class Pipeline(_Pipeline):
         subfolder: str | None = None,
         token: str | bool | None = None,
         cache_dir: Path | str | None = None,
+        trust_remote_code: bool = False,
     ) -> Pipeline | None:
         """Load pretrained pipeline
 
@@ -186,6 +189,9 @@ class Pipeline(_Pipeline):
             Token to be used for the download.
         cache_dir: Path or str, optional
             Path to the folder where cached files are stored.
+        trust_remote_code : bool, optional
+            Allow loading classes outside pyannote.* / pyannoteai.*.
+            Defaults to False.
         """
 
         # if checkpoint is a dict, assume it is the actual content of
@@ -277,12 +283,32 @@ class Pipeline(_Pipeline):
 
         # initialize pipeline
         pipeline_name = config["pipeline"]["name"]
+        assert_trusted_config_class(
+            pipeline_name,
+            "pyannote.pipeline.blocks",
+            trust_remote_code=trust_remote_code,
+        )
         Klass = get_class_by_name(
             pipeline_name, default_module_name="pyannote.pipeline.blocks"
         )
         params = config["pipeline"].get("params", {})
         params.setdefault("token", token)
         params.setdefault("cache_dir", cache_dir)
+        # Factories such as get_pipeline must see the caller's trust flag so a
+        # nested config cannot raise it on its own. Official pipeline classes
+        # do not take this argument, so only set it when the callable accepts it.
+        try:
+            signature = inspect.signature(Klass)
+        except (TypeError, ValueError):
+            signature = None
+        if signature is not None and (
+            "trust_remote_code" in signature.parameters
+            or any(
+                parameter.kind is inspect.Parameter.VAR_KEYWORD
+                for parameter in signature.parameters.values()
+            )
+        ):
+            params.setdefault("trust_remote_code", trust_remote_code)
         pipeline = Klass(**params)
 
         # save pipeline origin (HF, local, etc) and class name as attributes for telemetry purposes
@@ -311,6 +337,11 @@ class Pipeline(_Pipeline):
                 #          param1: value1
                 #          param2: value2
                 if isinstance(preprocessor, dict):
+                    assert_trusted_config_class(
+                        preprocessor["name"],
+                        "pyannote.audio",
+                        trust_remote_code=trust_remote_code,
+                    )
                     Klass = get_class_by_name(
                         preprocessor["name"], default_module_name="pyannote.audio"
                     )
