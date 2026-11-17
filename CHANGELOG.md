@@ -1,25 +1,33 @@
 # CHANGELOG
 
-## next
+## Version 4.1.0 (2026-11-17)
 
+### Breaking changes
+
+- BREAKING: require Python 3.11 or newer; Python 3.10 is no longer supported
 - BREAKING(io): rename `Audio.downmix_and_resample` to `Audio.select_channels_and_resample`
 - BREAKING(io): remove `Audio(mono=...)`; use the file's `channel` policy instead.
 - BREAKING(cli): remove gap-filling optimization (`--optimize`) and `OptimizedMinDurationOff` outputs from the `benchmark` command
-- BREAKING: require Python 3.11 or newer; Python 3.10 is no longer supported
+
+### Features and improvements
+
 - feat(task): support `channel: {int | downmix | random | all}` for audio loading (requires `pyannote.database` >= 6.3.0)
-- fix(model): restore `fbank_only` mode in WeSpeaker embedding models
-- improve(model): compute WeSpeaker fbank features on MPS instead of falling back to CPU [@Isalia20](https://github.com/Isalia20)
-- fix(task): avoid training crashes with `spawn`/`forkserver` workers, including
-  Python 3.14's default on Linux, by warning and using `num_workers=0`
-- fix(pipeline): fix `VBxClustering` crashing when more speakers are requested than there are embeddings to cluster [@MohammadHijjawi97](https://github.com/MohammadHijjawi97)
-- fix(pipeline): omit unset `token` and `cache_dir` when expanding `$model/` references so loaders can inherit runtime options
-- fix(model): honor the configured linear hidden size in `ToTaToNet` [@antonsoo](https://github.com/antonsoo)
-- fix(io): fix `Audio.crop` raising when an in-memory waveform is cropped up to its very end [@MohammadHijjawi97](https://github.com/MohammadHijjawi97)
 - feat(cli): add support for multi-objective pipeline optimization
 - feat(cli): add `--subfolder` option to `benchmark` command [@antoinelaurent](https://github.com/antoinelaurent)
+- improve(model): compute WeSpeaker fbank features on MPS instead of falling back to CPU [@Isalia20](https://github.com/Isalia20)
+
+### Fixes
+
+- fix(io): fix `Audio.crop` raising when an in-memory waveform is cropped up to its very end [@MohammadHijjawi97](https://github.com/MohammadHijjawi97)
+- fix(task): avoid training crashes with `spawn`/`forkserver` workers, including
+  Python 3.14's default on Linux, by warning and using `num_workers=0`
+- fix(task): fix `balance` option crashing training with `KeyError: 'metadata'` [@MohammadHijjawi97](https://github.com/MohammadHijjawi97)
+- fix(model): restore `fbank_only` mode in WeSpeaker embedding models
+- fix(model): honor the configured linear hidden size in `ToTaToNet` [@antonsoo](https://github.com/antonsoo)
+- fix(pipeline): fix `VBxClustering` crashing when more speakers are requested than there are embeddings to cluster [@MohammadHijjawi97](https://github.com/MohammadHijjawi97)
+- fix(pipeline): omit unset `token` and `cache_dir` when expanding `$model/` references so loaders can inherit runtime options
 - fix(utils): fix `SpeakerDiarizationMixin.optimal_mapping` `reference` is a mapping [@Kayvan-Zahiri](https://github.com/Kayvan-Zahiri)
 - fix(utils): fix `discrete_diarization_error_rate` returning 0.0 on long recordings (float16 frame counts overflowed) [@Kayvan-Zahiri](https://github.com/Kayvan-Zahiri)
-- fix(task): fix `balance` option crashing training with `KeyError: 'metadata'` [@MohammadHijjawi97](https://github.com/MohammadHijjawi97)
 
 ## Version 4.0.7 (2026-06-30)
 
