@@ -257,8 +257,6 @@ class SupervisedRepresentationLearningTaskMixin:
             data = {}
             for idx in [1, 2]:
                 file = trial[f"file{idx:d}"]
-                if Channel.normalize(file.get("channel")) == Channel.RANDOM:
-                    raise ValueError('channel="random" is only supported for training.')
                 duration = self.model.audio.get_duration(file)
                 if duration > self.duration:
                     middle = Segment(
