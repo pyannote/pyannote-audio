@@ -2,16 +2,11 @@
 
 ## next
 
-- BREAKING(io): rename `Audio.downmix_and_resample` to `Audio.select_channels_and_resample` to reflect support for fixed/random selection, all channels, and downmix.
-
-- BREAKING(io): remove `Audio(mono=...)`; use the file's `channel` policy instead. Omitted channels now always downmix; use `channel: all` to preserve channels.
-- improve(io): normalize string and `Channel` enum policies and preserve raw channels during preloading
-- feat(task): support explicit `channel: downmix` during training and validation
-- fix(task): preserve explicit audio channel selection during segmentation training and validation
-- feat(task): support `channel: random` per load or crop in all subsets, including training and validation
-- feat(task): support `channel: all` to preserve multi-channel audio during training and validation
+- BREAKING(io): rename `Audio.downmix_and_resample` to `Audio.select_channels_and_resample`
+- BREAKING(io): remove `Audio(mono=...)`; use the file's `channel` policy instead.
 - BREAKING(cli): remove gap-filling optimization (`--optimize`) and `OptimizedMinDurationOff` outputs from the `benchmark` command
 - BREAKING: require Python 3.11 or newer; Python 3.10 is no longer supported
+- feat(task): support `channel: {int | downmix | random | all}` for audio loading (requires `pyannote.database` >= 6.3.0)
 - fix(model): restore `fbank_only` mode in WeSpeaker embedding models
 - improve(model): compute WeSpeaker fbank features on MPS instead of falling back to CPU [@Isalia20](https://github.com/Isalia20)
 - fix(task): avoid training crashes with `spawn`/`forkserver` workers, including
