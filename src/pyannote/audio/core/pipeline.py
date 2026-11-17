@@ -482,9 +482,8 @@ class Pipeline(_Pipeline):
                     "Cannot preload audio: `waveform` key is already available or will be via a preprocessor."
                 )
 
-            # load waveform in memory (and keep track of its original sample rate)
-            # Decode raw channels. Each consumer applies the file's policy when
-            # loading/cropping, just as it would without preloading.
+            # load waveform in memory and keep track of its original sample rate.
+            # keep all channels for now: channel selection is done later as load/crop time.
             file["waveform"], file["sample_rate"] = Audio()({**file, "channel": "all"})
 
         return file
