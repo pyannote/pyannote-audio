@@ -344,9 +344,7 @@ class Task(lightning.LightningDataModule):
         prepared_data = {
             'protocol': name of the protocol
             'audio-path': array of N paths to audio
-            'audio-metadata': array of N audio infos such as audio subset, scope and database.
-                Channel values are zero-based integers or _CachedChannel modes:
-                UNSPECIFIED, RANDOM (training only), ALL, or DOWNMIX.
+            'audio-metadata': array of N audio infos such as audio channel, subset, scope and database.
             'audio-annotated': array of N annotated duration (usually equals file duration but might be shorter if file is not fully annotated)
             'annotations-regions': array of M annotated regions
             'audio-regions-ids': array of N start/end indices of annotated regions
