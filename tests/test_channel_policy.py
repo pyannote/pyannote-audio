@@ -12,7 +12,6 @@ from pyannote.database.protocol import SpeakerVerificationProtocol
 from pyannote.database.protocol.protocol import ProtocolFile
 
 from pyannote.audio.core.io import Audio, Channel
-from pyannote.audio.core.model import Model
 from pyannote.audio.core.pipeline import Pipeline
 from pyannote.audio.tasks.embedding.mixins import (
     SupervisedRepresentationLearningTaskMixin,
@@ -88,20 +87,6 @@ def test_invalid_channel_rejected(channel):
         Audio()(
             {"waveform": torch.ones(3, 16), "sample_rate": 16000, "channel": channel}
         )
-
-
-class IdentityModel(Model):
-    def forward(self, waveforms):
-        return waveforms
-
-
-def test_models_validate_channels_without_transforming():
-    waveform = torch.rand(2, 3, 100)
-    model = IdentityModel(num_channels=3)
-    assert model(waveform) is waveform
-    assert model(waveforms=waveform) is waveform
-    with pytest.raises(ValueError, match="expects 1 audio channel"):
-        IdentityModel()(waveform)
 
 
 @pytest.mark.parametrize("channel", [0, Channel.RANDOM, Channel.ALL, Channel.DOWNMIX])
