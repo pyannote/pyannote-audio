@@ -8,7 +8,7 @@
 - improve(io): normalize string and `Channel` enum policies, preserve raw channels during preloading, and validate model input channel counts
 - feat(task): support explicit `channel: downmix` during training and validation
 - fix(task): preserve explicit audio channel selection during segmentation training and validation
-- feat(task): support `channel: random` per training crop; reject random channel selection in validation
+- feat(task): support `channel: random` per load or crop in all subsets, including training and validation
 - feat(task): support `channel: all` to preserve multi-channel audio during training and validation
 - BREAKING(cli): remove gap-filling optimization (`--optimize`) and `OptimizedMinDurationOff` outputs from the `benchmark` command
 - BREAKING: require Python 3.11 or newer; Python 3.10 is no longer supported

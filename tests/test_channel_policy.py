@@ -124,10 +124,34 @@ def test_embedding_training_keeps_channel(multichannel_file, channel):
 
 
 @pytest.mark.parametrize("channel", ["random", Channel.RANDOM])
-def test_embedding_validation_rejects_random(channel):
+@pytest.mark.parametrize("duration", [0.5, 1.0])
+def test_embedding_validation_supports_random(
+    multichannel_file, channel, duration, monkeypatch
+):
+    file = {**multichannel_file, "channel": channel}
     task = SimpleNamespace(
         protocol=SpeakerVerificationProtocol(),
-        prepared_data={"validation": [{"file1": {"channel": channel}}]},
+        prepared_data={
+            "validation": [{"file1": file, "file2": file, "reference": True}]
+        },
+        model=SimpleNamespace(audio=Audio(sample_rate=16000)),
+        duration=duration,
     )
-    with pytest.raises(ValueError, match="only supported for training"):
-        SupervisedRepresentationLearningTaskMixin.val__getitem__(task, 0)
+    selections = iter([1, 2, 2, 0])
+    calls = []
+
+    def select_channel(low, high):
+        assert (low, high) == (0, 2)
+        selected = next(selections)
+        calls.append(selected)
+        return selected
+
+    monkeypatch.setattr("pyannote.audio.core.io.random.randint", select_channel)
+    for expected_values in [(0.25, 0.75), (0.75, 0.125)]:
+        sample = SupervisedRepresentationLearningTaskMixin.val__getitem__(task, 0)
+        for index, value in enumerate(expected_values, start=1):
+            torch.testing.assert_close(
+                sample[f"X{index}"], torch.full((1, int(duration * 16000)), value)
+            )
+        assert sample["y"] is True
+    assert calls == [1, 2, 2, 0]

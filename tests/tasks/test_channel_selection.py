@@ -1,7 +1,6 @@
 import random
 from types import SimpleNamespace
 
-import numpy as np
 import pytest
 import torch
 from pyannote.core import Annotation, Segment, Timeline
@@ -9,7 +8,6 @@ from pyannote.database.protocol import SpeakerDiarizationProtocol
 
 from pyannote.audio.core import io
 from pyannote.audio.core.io import Channel
-from pyannote.audio.core.task import _CachedChannel
 from pyannote.audio.models.segmentation.debug import SimpleSegmentationModel
 from pyannote.audio.tasks import SpeakerDiarization
 
@@ -87,9 +85,8 @@ def test_cached_channel_selection(tmp_path, monkeypatch, channels, stage):
 
     monkeypatch.setattr(io, "AudioDecoder", Decoder, raising=False)
     monkeypatch.setattr(io, "TORCHCODEC_AVAILABLE", True)
-    validation_channels = tuple(0 if c == "random" else c for c in channels)
     task = SpeakerDiarization(
-        ChannelProtocol(audio_path, channels, validation_channels),
+        ChannelProtocol(audio_path, channels),
         cache=tmp_path / "task.npz",
         duration=1.0,
         max_speakers_per_chunk=2,
@@ -101,8 +98,7 @@ def test_cached_channel_selection(tmp_path, monkeypatch, channels, stage):
     assert "channel" not in task.prepared_data["metadata-values"]
     task.model = SimpleSegmentationModel()
 
-    expected_channels = channels if stage == "train" else validation_channels
-    for index, channel in enumerate(expected_channels):
+    for index, channel in enumerate(channels):
         file_id = index + (len(channels) if stage == "development" else 0)
         file = task.get_file(file_id)
         if channel is None:
@@ -130,7 +126,8 @@ def test_cached_channel_selection(tmp_path, monkeypatch, channels, stage):
 
         if channel == "random":
             torch.testing.assert_close(sample["X"], waveform[1:2])
-            torch.testing.assert_close(next(samples)["X"], waveform[2:3])
+            second = next(samples) if stage == "train" else task.val__getitem__(index)
+            torch.testing.assert_close(second["X"], waveform[2:3])
             assert selections == [1, 2]
             continue
 
@@ -158,23 +155,6 @@ def make_task(tmp_path, validation_channels=(0,)):
         max_speakers_per_chunk=2,
         num_workers=0,
     )
-
-
-def test_random_validation_rejected_during_preparation(tmp_path):
-    task = make_task(tmp_path, validation_channels=("random",))
-    with pytest.raises(ValueError, match="only supported for training"):
-        task.prepare_data()
-
-
-def test_cached_random_validation_rejected(tmp_path):
-    task = make_task(tmp_path)
-    task.prepare_data()
-    with np.load(task.cache, allow_pickle=True) as archive:
-        cached = dict(archive)
-    cached["audio-metadata"]["channel"][1] = _CachedChannel.RANDOM
-    np.savez(task.cache, **cached)
-    with pytest.raises(ValueError, match="only supported for training"):
-        task.setup()
 
 
 def test_channel_balancing_rejected(tmp_path):
