@@ -74,7 +74,7 @@ class Channel(StrEnum):
         channel : int, str, Channel, or None
             Zero-based channel index or channel selection policy.
             Supported policies are "random", "all", and "downmix".
-            None defaults to "downmix". Boolean values are not accepted.
+            None defaults to "downmix".
 
         Returns
         -------
