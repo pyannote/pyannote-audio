@@ -59,7 +59,7 @@ except Exception as e:
 
 
 class Channel(StrEnum):
-    """Audio channel policies accepted in file dictionaries."""
+    """Channel selection options"""
 
     RANDOM = "random"
     ALL = "all"
@@ -72,8 +72,8 @@ class Channel(StrEnum):
         Parameters
         ----------
         channel : int, str, Channel, or None
-            Zero-based channel index or channel selection policy.
-            Supported policies are "random", "all", and "downmix".
+            Zero-based channel index or channel selection option.
+            Supported options are "random", "all", and "downmix".
             None defaults to "downmix".
 
         Returns
@@ -84,7 +84,7 @@ class Channel(StrEnum):
         Raises
         ------
         ValueError
-            If channel is not a non-negative integer, a supported policy, or None.
+            If channel is not a non-negative integer, a supported option, or None.
 
         """
         if channel is None:
