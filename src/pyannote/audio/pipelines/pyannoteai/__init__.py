@@ -20,3 +20,32 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+
+from pyannote.audio.core.io import Audio, AudioFile
+
+
+def _prepare_audio(file: AudioFile) -> dict:
+    """Apply channel selection before handing audio to a mono-only backend.
+
+    Parameters
+    ----------
+    file : AudioFile
+        Audio file with an optional channel selection policy.
+
+    Returns
+    -------
+    audio : dict
+        Selected mono waveform as a NumPy array and its sample rate.
+
+    Raises
+    ------
+    ValueError
+        If the selected waveform contains more than one channel.
+    """
+    waveform, sample_rate = Audio()(file)
+    if waveform.shape[0] != 1:
+        raise ValueError(
+            'pyannoteAI backends require mono audio. Use channel="downmix", '
+            '"random", or a fixed channel index instead of "all" for multi-channel audio.'
+        )
+    return {"waveform": waveform.numpy(force=True), "sample_rate": sample_rate}

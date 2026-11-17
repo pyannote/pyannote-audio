@@ -32,7 +32,7 @@ import warnings
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
-from enum import Enum
+from enum import Enum, IntEnum
 from functools import cached_property, partial
 from numbers import Number
 from pathlib import Path
@@ -50,11 +50,23 @@ from torch_audiomentations import Identity
 from torch_audiomentations.core.transforms_interface import BaseWaveformTransform
 from torchmetrics import Metric, MetricCollection
 
+from pyannote.audio.core.io import Channel
 from pyannote.audio.utils.loss import binary_cross_entropy, nll_loss
 from pyannote.audio.utils.protocol import check_protocol
 
 Subsets = list(Subset.__args__)
 Scopes = list(Scope.__args__)
+
+MISSING_METADATA = -1
+
+
+class _CachedChannel(IntEnum):
+    """Private integer encoding for channel selection in task caches."""
+
+    UNSPECIFIED = MISSING_METADATA
+    RANDOM = -2
+    ALL = -3
+    DOWNMIX = -4
 
 
 # Type of machine learning problem
@@ -332,7 +344,7 @@ class Task(lightning.LightningDataModule):
         prepared_data = {
             'protocol': name of the protocol
             'audio-path': array of N paths to audio
-            'audio-metadata': array of N audio infos such as audio subset, scope and database
+            'audio-metadata': array of N audio infos such as audio channel, subset, scope and database.
             'audio-annotated': array of N annotated duration (usually equals file duration but might be shorter if file is not fully annotated)
             'annotations-regions': array of M annotated regions
             'audio-regions-ids': array of N start/end indices of annotated regions
@@ -402,6 +414,16 @@ class Task(lightning.LightningDataModule):
             # keep track of label scope (file, database, or global)
             metadatum["scope"] = Scopes.index(file["scope"])
 
+            # Channel selection is a loading option, not categorical metadata.
+            metadatum["channel"] = _CachedChannel.UNSPECIFIED
+            if "channel" in file:
+                channel = Channel.normalize(file["channel"])
+                metadatum["channel"] = (
+                    _CachedChannel[channel.name]
+                    if isinstance(channel, Channel)
+                    else channel
+                )
+
             remaining_metadata_keys = set(file) - {
                 "uri",
                 "database",
@@ -409,6 +431,7 @@ class Task(lightning.LightningDataModule):
                 "audio",
                 "scope",
                 "classes",
+                "channel",
                 "annotation",
                 "annotated",
             }
@@ -525,14 +548,16 @@ class Task(lightning.LightningDataModule):
             # append segment IDs (start and end time)
             audio_segments_ids.append((_segments_id, segments_id))
 
-        # since not all metadata keys are present in all files, fallback to -1 when a key is missing
+        # Register channel separately without collecting its possible values.
+        metadata_keys = [*metadata_unique_values, "channel"]
+        # Not all metadata keys are present in every file.
         metadata = [
-            tuple(metadatum.get(key, -1) for key in metadata_unique_values)
+            tuple(metadatum.get(key, MISSING_METADATA) for key in metadata_keys)
             for metadatum in metadata
         ]
         metadata_dtype = [
             (key, get_dtype(max(m[i] for m in metadata)))
-            for i, key in enumerate(metadata_unique_values)
+            for i, key in enumerate(metadata_keys)
         ]
 
         # turn list of annotated regions into a single numpy array

@@ -2,8 +2,11 @@
 
 ## next
 
+- BREAKING(io): rename `Audio.downmix_and_resample` to `Audio.select_channels_and_resample`
+- BREAKING(io): remove `Audio(mono=...)`; use the file's `channel` policy instead.
 - BREAKING(cli): remove gap-filling optimization (`--optimize`) and `OptimizedMinDurationOff` outputs from the `benchmark` command
 - BREAKING: require Python 3.11 or newer; Python 3.10 is no longer supported
+- feat(task): support `channel: {int | downmix | random | all}` for audio loading (requires `pyannote.database` >= 6.3.0)
 - fix(model): restore `fbank_only` mode in WeSpeaker embedding models
 - improve(model): compute WeSpeaker fbank features on MPS instead of falling back to CPU [@Isalia20](https://github.com/Isalia20)
 - fix(task): avoid training crashes with `spawn`/`forkserver` workers, including
