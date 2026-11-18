@@ -127,8 +127,9 @@ def get_decoder(audio: str | Path | IOBase) -> "AudioDecoder | WavDecoder":
     Uses torchcodec's WavDecoder for WAV files: it reads samples directly
     instead of going through FFmpeg, which makes opening the file and decoding
     a chunk of it much faster (the FFmpeg-based AudioDecoder gets slower as the
-    file gets bigger). Falls back to AudioDecoder for any other format, and for
-    WAV encodings that WavDecoder does not support.
+    file gets bigger). Paths without a ".wav" extension go straight to
+    AudioDecoder. File-like objects, and ".wav" paths that WavDecoder cannot
+    read (other formats, unsupported WAV encodings), fall back to AudioDecoder.
 
     Parameters
     ----------
@@ -141,11 +142,13 @@ def get_decoder(audio: str | Path | IOBase) -> "AudioDecoder | WavDecoder":
         Both provide `metadata`, `get_all_samples`, and `get_samples_played_in_range`.
     """
 
-    if WavDecoder is not None:
+    is_file_like = isinstance(audio, IOBase)
+    if WavDecoder is not None and (is_file_like or Path(audio).suffix.lower() == ".wav"):
         try:
             return WavDecoder(audio)
-        except Exception:
-            if isinstance(audio, IOBase):
+        except RuntimeError:
+            # not a WAV file, or a WAV encoding that WavDecoder does not support
+            if is_file_like:
                 audio.seek(0)
 
     return AudioDecoder(audio)
