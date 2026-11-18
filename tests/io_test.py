@@ -2,7 +2,6 @@ import random
 
 import pytest
 import torch
-import torchcodec.decoders
 from pyannote.core import Segment
 from torch import Tensor
 from torchcodec.decoders import AudioDecoder, AudioStreamMetadata
@@ -181,19 +180,12 @@ def test_can_crop_from_file_like():
     assert wav.shape[1] == 0.5 * 16000
 
 
-requires_wav_decoder = pytest.mark.skipif(
-    not hasattr(torchcodec.decoders, "WavDecoder"), reason="torchcodec.decoders.WavDecoder needs torchcodec >= 0.14"
-)
-
-
-@requires_wav_decoder
 def test_get_decoder_uses_wav_decoder_for_wav():
     from pyannote.audio.core.io import get_decoder
 
     assert type(get_decoder("tests/data/dev00.wav")).__name__ == "WavDecoder"
 
 
-@requires_wav_decoder
 def test_get_decoder_falls_back_for_non_wav(tmp_path):
     "Non-WAV files uses the FFmpeg-based AudioDecoder"
     from torchcodec.encoders import AudioEncoder
@@ -207,7 +199,6 @@ def test_get_decoder_falls_back_for_non_wav(tmp_path):
     torch.testing.assert_close(decoder.get_all_samples().data, wav, atol=1e-4, rtol=0)
 
 
-@requires_wav_decoder
 @pytest.mark.parametrize("file_like", [False, True])
 def test_wav_decoder_matches_audio_decoder(monkeypatch, file_like):
     "WavDecoder (fast path) returns the same samples as the FFmpeg-based AudioDecoder"
