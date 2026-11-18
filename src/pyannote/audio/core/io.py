@@ -43,14 +43,9 @@ from torch import Tensor
 
 try:
     from torchcodec import AudioSamples
-    from torchcodec.decoders import AudioDecoder, AudioStreamMetadata
+    from torchcodec.decoders import AudioDecoder, AudioStreamMetadata, WavDecoder
 
     TORCHCODEC_AVAILABLE = True
-
-    try:
-        from torchcodec.decoders import WavDecoder
-    except ImportError:
-        WavDecoder = None
 except Exception as e:
     warnings.warn(
         "\ntorchcodec is not installed correctly so built-in audio decoding will fail. Solutions are:\n"
@@ -129,11 +124,11 @@ channel is omitted or None) to average all channels.
 def get_decoder(audio: str | Path | IOBase) -> "AudioDecoder | WavDecoder":
     """Get a torchcodec decoder for `audio`
 
-    Uses torchcodec's WavDecoder (torchcodec >= 0.14) for WAV files: it reads
-    samples directly instead of going through FFmpeg, which makes opening the
-    file and decoding a chunk of it much faster (the FFmpeg-based AudioDecoder
-    gets slower as the file gets bigger). Falls back to AudioDecoder for any
-    other format, and for WAV encodings that WavDecoder does not support.
+    Uses torchcodec's WavDecoder for WAV files: it reads samples directly
+    instead of going through FFmpeg, which makes opening the file and decoding
+    a chunk of it much faster (the FFmpeg-based AudioDecoder gets slower as the
+    file gets bigger). Falls back to AudioDecoder for any other format, and for
+    WAV encodings that WavDecoder does not support.
 
     Parameters
     ----------
