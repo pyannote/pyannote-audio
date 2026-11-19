@@ -2,9 +2,7 @@
 
 ## Unreleased
 
-- fix(task): include restored global step in worker sampling seeds to avoid
-  replaying the epoch's opening samples when resuming mid-epoch. This changes
-  seeded sample sequences; it does not restore exact uninterrupted sampling.
+- fix(task): avoid replaying the same training samples when resuming mid-epoch
 
 ## Version 4.1.0 (2026-11-17)
 
