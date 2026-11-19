@@ -33,12 +33,17 @@ def create_rng_for_worker(model) -> Random:
 
     This makes sure that
     1. training samples generation is reproducible
-    2. every (worker, epoch) uses a different seed
+    2. every (worker, epoch, global step at iterator creation) uses a different seed
+
+    Including the restored global step prevents a mid-epoch restart from
+    replaying the epoch's opening samples. This does not restore the previous
+    iterator position or reproduce an uninterrupted run exactly. With worker
+    processes, the step is the snapshot inherited when the workers start.
 
     Parameters
     ----------
-    epoch : int
-        Current epoch.
+    model : Model
+        Model providing distributed ranks, current epoch, and global step.
     """
 
     # create random number generator
@@ -58,6 +63,7 @@ def create_rng_for_worker(model) -> Random:
         model.local_rank,
         model.global_rank,
         model.current_epoch,
+        model.global_step,
     )
     # use adler32 because python's `hash` is not deterministic.
     seed = zlib.adler32(str(seed_tuple).encode())
