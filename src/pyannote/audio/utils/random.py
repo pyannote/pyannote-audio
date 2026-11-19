@@ -1,6 +1,7 @@
 # MIT License
 #
-# Copyright (c) 2020 CNRS
+# Copyright (c) 2020-2025 CNRS
+# Copyright (c) 2026- pyannoteAI
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -33,12 +34,7 @@ def create_rng_for_worker(model) -> Random:
 
     This makes sure that
     1. training samples generation is reproducible
-    2. every (worker, epoch, global step at iterator creation) uses a different seed
-
-    Including the restored global step prevents a mid-epoch restart from
-    replaying the epoch's opening samples. This does not restore the previous
-    iterator position or reproduce an uninterrupted run exactly. With worker
-    processes, the step is the snapshot inherited when the workers start.
+    2. every (worker, epoch, global step) uses a different seed
 
     Parameters
     ----------
