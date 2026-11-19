@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## Version 4.1.1 (2026-11-19)
+
+- fix(task): avoid replaying the same training samples when resuming mid-epoch
+
 ## Version 4.1.0 (2026-11-17)
 
 ### Breaking changes
