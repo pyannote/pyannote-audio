@@ -178,3 +178,46 @@ def test_can_crop_from_file_like():
     assert isinstance(wav, Tensor)
     assert sr == 16000
     assert wav.shape[1] == 0.5 * 16000
+
+
+def test_get_decoder_uses_wav_decoder_for_wav():
+    from pyannote.audio.core.io import get_decoder
+
+    assert type(get_decoder("tests/data/dev00.wav")).__name__ == "WavDecoder"
+
+
+def test_get_decoder_falls_back_for_non_wav(tmp_path):
+    "Non-WAV files uses the FFmpeg-based AudioDecoder"
+    from torchcodec.encoders import AudioEncoder
+    from pyannote.audio.core.io import get_decoder
+
+    wav, sr = Audio()("tests/data/dev00.wav")
+    flac = tmp_path / "dev00.flac"
+    AudioEncoder(wav, sample_rate=sr).to_file(str(flac))
+    decoder = get_decoder(str(flac))
+    assert type(decoder).__name__ == "AudioDecoder"
+    torch.testing.assert_close(decoder.get_all_samples().data, wav, atol=1e-4, rtol=0)
+
+
+@pytest.mark.parametrize("file_like", [False, True])
+def test_wav_decoder_matches_audio_decoder(monkeypatch, file_like):
+    "WavDecoder (fast path) returns the same samples as the FFmpeg-based AudioDecoder"
+    test_file = "tests/data/dev00.wav"
+    loader = Audio()
+    segment = Segment(3.21, 7.89)
+
+    def load(path):
+        audio = open(path, "rb") if file_like else path
+        wav, sr = loader(audio)
+        audio = open(path, "rb") if file_like else path
+        chunk, _ = loader.crop(audio, segment)
+        return wav, chunk, sr, loader.get_duration(path)
+
+    fast = load(test_file)
+    monkeypatch.setattr("pyannote.audio.core.io.WavDecoder", None)
+    slow = load(test_file)
+
+    torch.testing.assert_close(fast[0], slow[0])
+    torch.testing.assert_close(fast[1], slow[1])
+    assert fast[2] == slow[2]
+    assert fast[3] == pytest.approx(slow[3])

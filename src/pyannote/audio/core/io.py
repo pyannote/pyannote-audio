@@ -43,7 +43,7 @@ from torch import Tensor
 
 try:
     from torchcodec import AudioSamples
-    from torchcodec.decoders import AudioDecoder, AudioStreamMetadata
+    from torchcodec.decoders import AudioDecoder, AudioStreamMetadata, WavDecoder
 
     TORCHCODEC_AVAILABLE = True
 except Exception as e:
@@ -56,6 +56,7 @@ except Exception as e:
     TORCHCODEC_AVAILABLE = False
     AudioDecoder = None
     AudioStreamMetadata = None
+    WavDecoder = None
 
 
 class Channel(StrEnum):
@@ -120,6 +121,39 @@ channel is omitted or None) to average all channels.
 """
 
 
+def get_decoder(audio: str | Path | IOBase) -> "AudioDecoder | WavDecoder":
+    """Get a torchcodec decoder for `audio`
+
+    Uses torchcodec's WavDecoder for WAV files: it reads samples directly
+    instead of going through FFmpeg, which makes opening the file and decoding
+    a chunk of it much faster (the FFmpeg-based AudioDecoder gets slower as the
+    file gets bigger). Paths without a ".wav" extension go straight to
+    AudioDecoder. File-like objects, and ".wav" paths that WavDecoder cannot
+    read (other formats, unsupported WAV encodings), fall back to AudioDecoder.
+
+    Parameters
+    ----------
+    audio : str, Path or IOBase
+        Path to the audio file, or file-like object.
+
+    Returns
+    -------
+    decoder : AudioDecoder or WavDecoder
+        Both provide `metadata`, `get_all_samples`, and `get_samples_played_in_range`.
+    """
+
+    is_file_like = isinstance(audio, IOBase)
+    if WavDecoder is not None and (is_file_like or Path(audio).suffix.lower() == ".wav"):
+        try:
+            return WavDecoder(audio)
+        except RuntimeError:
+            # not a WAV file, or a WAV encoding that WavDecoder does not support
+            if is_file_like:
+                audio.seek(0)
+
+    return AudioDecoder(audio)
+
+
 def get_audio_metadata(file: AudioFile) -> "AudioStreamMetadata":
     """Protocol preprocessor used to cache audio metadata
 
@@ -147,7 +181,7 @@ def get_audio_metadata(file: AudioFile) -> "AudioStreamMetadata":
             "{'waveform': (channel, time) torch.Tensor, 'sample_rate': int}"
         )
 
-    metadata = AudioDecoder(file["audio"]).metadata
+    metadata = get_decoder(file["audio"]).metadata
 
     # rewind if needed
     if isinstance(file["audio"], IOBase):
@@ -393,7 +427,7 @@ class Audio:
                 "{'waveform': (channel, time) torch.Tensor, 'sample_rate': int}"
             )
 
-        decoder = AudioDecoder(file["audio"])
+        decoder = get_decoder(file["audio"])
         samples: AudioSamples = decoder.get_all_samples()
 
         waveform = samples.data
@@ -475,7 +509,7 @@ class Audio:
                 "{'waveform': (channel, time) torch.Tensor, 'sample_rate': int}"
             )
 
-        decoder = AudioDecoder(file["audio"])
+        decoder = get_decoder(file["audio"])
 
         metadata: AudioStreamMetadata = decoder.metadata
 
