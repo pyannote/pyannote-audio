@@ -36,7 +36,7 @@ from typing import Any
 import numpy as np
 import torch
 from einops import rearrange
-from pyannote.core import Annotation, SlidingWindowFeature
+from pyannote.core import Annotation, Segment, SlidingWindowFeature
 from pyannote.metrics.diarization import GreedyDiarizationErrorRate
 from pyannote.pipeline.parameter import ParamDict, Uniform
 
@@ -156,6 +156,10 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         Batch size used for speaker segmentation. Defaults to 1.
     embedding_batch_size : int, optional
         Batch size used for speaker embedding. Defaults to 1.
+    embedding_block_duration : float, optional
+        Opt-in speed-up (WeSpeaker embeddings only): run the embedding network once per block of
+        `embedding_block_duration` seconds of chunk starts (20 is a good value) instead of once per
+        chunk, then pool the frames of each chunk. Approximates the default embeddings. Defaults to None (off).
     der_variant : dict, optional
         Optimize for a variant of diarization error rate.
         Defaults to {"collar": 0.0, "skip_overlap": False}. This is used in `get_metric`
@@ -202,6 +206,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         clustering: str = "VBxClustering",
         embedding_batch_size: int = 1,
         segmentation_batch_size: int = 1,
+        embedding_block_duration: float | None = None,
         der_variant: dict | None = None,
         token: str | None = None,
         cache_dir: Path | str | None = None,
@@ -233,6 +238,7 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
         self.embedding = embedding
         self.embedding_batch_size = embedding_batch_size
         self.embedding_exclude_overlap = embedding_exclude_overlap
+        self.embedding_block_duration = embedding_block_duration
 
         self.plda = plda
         self._plda = get_plda(plda, token=token, cache_dir=cache_dir)
@@ -413,6 +419,66 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
             use_clean = clean_masks.sum(axis=1, keepdims=True) > min_num_frames
             masks = np.where(use_clean, clean_masks, masks)
             # masks: (num_chunks, num_frames, num_speakers)
+
+            model = self._embedding.model_
+            if self.embedding_block_duration and hasattr(
+                model.hparams, "fbank_centering_span"
+            ):
+                # frames are shared by the overlapping chunks of a block: run the frame-wise
+                # network once per block, then pool the frames of each chunk
+                window = binary_segmentations.sliding_window
+                starts = window.start + window.step * np.arange(num_chunks)
+                chunk_frames = model.num_frames(
+                    int(window.duration * self._embedding.sample_rate)
+                )
+                embeddings = np.empty(
+                    (num_chunks, num_speakers, model.dimension), dtype=np.float32
+                )
+                if hook is not None:
+                    hook("embeddings", None, total=num_chunks, completed=0)
+                first = 0
+                while first < num_chunks:
+                    last = max(
+                        first + 1,
+                        np.searchsorted(
+                            starts, starts[first] + self.embedding_block_duration
+                        ),
+                    )
+                    waveform, _ = self._audio.crop(
+                        file,
+                        Segment(starts[first], starts[last - 1] + window.duration),
+                        mode="pad",
+                    )
+                    # fbank centered with a running mean over one chunk, as in the default path
+                    span = model.hparams.fbank_centering_span
+                    model.hparams.fbank_centering_span = window.duration
+                    try:
+                        with torch.inference_mode():
+                            frames = model.forward_frames(
+                                waveform[None].to(self._embedding.device)
+                            )
+                            for c in range(first, last):
+                                offset = round(
+                                    (starts[c] - starts[first])
+                                    * chunk_frames
+                                    / window.duration
+                                )
+                                embeddings[c] = (
+                                    model.forward_embedding(
+                                        frames[..., offset : offset + chunk_frames],
+                                        weights=torch.from_numpy(masks[c].T)[None].to(
+                                            self._embedding.device
+                                        ),
+                                    )[0]
+                                    .cpu()
+                                    .numpy()
+                                )
+                    finally:
+                        model.hparams.fbank_centering_span = span
+                    first = last
+                    if hook is not None:
+                        hook("embeddings", None, total=num_chunks, completed=last)
+                return embeddings
 
             chunk_batch_size = max(1, self.embedding_batch_size // num_speakers)
             batch_count = math.ceil(num_chunks / chunk_batch_size)
