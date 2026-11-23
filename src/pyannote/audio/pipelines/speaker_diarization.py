@@ -403,6 +403,45 @@ class SpeakerDiarization(SpeakerDiarizationMixin, Pipeline):
                 binary_segmentations.data, binary_segmentations.sliding_window
             )
 
+        if not self.training and getattr(self._embedding, "supports_speaker_masks", False):
+            # run the frame-wise network once per chunk and pool once per speaker
+            # (instead of once per chunk and speaker), keeping batches about as large
+            masks = np.nan_to_num(binary_segmentations.data, nan=0.0).astype(np.float32)
+            clean_masks = np.nan_to_num(clean_segmentations.data, nan=0.0).astype(
+                np.float32
+            )
+            use_clean = clean_masks.sum(axis=1, keepdims=True) > min_num_frames
+            masks = np.where(use_clean, clean_masks, masks)
+            # masks: (num_chunks, num_frames, num_speakers)
+
+            chunk_batch_size = max(1, self.embedding_batch_size // num_speakers)
+            batch_count = math.ceil(num_chunks / chunk_batch_size)
+            if hook is not None:
+                hook("embeddings", None, total=batch_count, completed=0)
+
+            embeddings = []
+            for i, start in enumerate(range(0, num_chunks, chunk_batch_size), 1):
+                stop = min(start + chunk_batch_size, num_chunks)
+                waveforms = torch.vstack(
+                    [
+                        self._audio.crop(
+                            file, binary_segmentations.sliding_window[c], mode="pad"
+                        )[0][None]
+                        for c in range(start, stop)
+                    ]
+                )
+                embeddings.append(
+                    self._embedding(
+                        waveforms,
+                        masks=torch.from_numpy(masks[start:stop]).transpose(1, 2),
+                    )
+                )
+                # (batch_size, num_speakers, dimension) np.ndarray
+                if hook is not None:
+                    hook("embeddings", embeddings[-1], total=batch_count, completed=i)
+
+            return np.vstack(embeddings)
+
         def iter_waveform_and_mask():
             for (chunk, masks), (_, clean_masks) in zip(
                 binary_segmentations, clean_segmentations

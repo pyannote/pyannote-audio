@@ -699,12 +699,25 @@ class PyannoteAudioPretrainedSpeakerEmbedding(BaseInference):
 
         return upper
 
+    @cached_property
+    def supports_speaker_masks(self) -> bool:
+        # (batch, speakers, frames) masks, see `__call__`
+        return hasattr(self.model_, "forward_frames") and hasattr(
+            self.model_, "forward_embedding"
+        )
+
     def __call__(
         self, waveforms: torch.Tensor, masks: torch.Tensor | None = None
     ) -> np.ndarray:
         with torch.inference_mode():
             if masks is None:
                 embeddings = self.model_(waveforms.to(self.device))
+            elif masks.ndim == 3:
+                # one embedding per speaker, frame-wise network run once
+                frames = self.model_.forward_frames(waveforms.to(self.device))
+                embeddings = self.model_.forward_embedding(
+                    frames, weights=masks.to(self.device)
+                )
             else:
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
