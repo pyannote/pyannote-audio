@@ -83,7 +83,7 @@ def test_interleaved_versions_share_recording_and_speaker_ids(tmp_path):
 
 
 @pytest.mark.parametrize("version", [None, {}, {"metadata": {}}])
-def test_missing_level_defaults_to_mixed(tmp_path, version):
+def test_missing_level_defaults_to_unknown(tmp_path, version):
     file = entry(level="ignored")
     file["level"] = "word"  # Top-level metadata must not override the nested level.
     if version is None:
@@ -91,7 +91,7 @@ def test_missing_level_defaults_to_mixed(tmp_path, version):
     else:
         file["version"] = version
     data = prepare(tmp_path, [file])
-    assert data["metadata-values"]["level"] == ["mixed"]
+    assert data["metadata-values"]["level"] == ["unknown"]
     assert data["annotations-segments"]["level"].tolist() == [0]
 
 
@@ -188,7 +188,7 @@ def test_invalid_level_rejected(tmp_path):
         prepare(tmp_path, [entry(level=42)])
 
 
-@pytest.mark.parametrize("level", ["word", "turn", "mixed"])
+@pytest.mark.parametrize("level", ["word", "turn", "unknown"])
 def test_duplicate_levels_rejected_even_for_silent_versions(tmp_path, level):
     with pytest.raises(
         ValueError, match=f"Recording .* has multiple versions with level '{level}'"
@@ -196,16 +196,16 @@ def test_duplicate_levels_rejected_even_for_silent_versions(tmp_path, level):
         prepare(tmp_path, [entry(level=level), entry(level=level, speakers=())])
 
 
-def test_missing_level_conflicts_with_explicit_mixed(tmp_path):
+def test_missing_level_conflicts_with_explicit_unknown(tmp_path):
     file = entry()
     del file["version"]
-    with pytest.raises(ValueError, match="multiple versions with level 'mixed'"):
-        prepare(tmp_path, [file, entry(level="mixed")])
+    with pytest.raises(ValueError, match="multiple versions with level 'unknown'"):
+        prepare(tmp_path, [file, entry(level="unknown")])
 
 
 def test_two_missing_levels_rejected(tmp_path):
     first, second = entry(), entry()
     del first["version"]
     second["version"] = {"metadata": {}}
-    with pytest.raises(ValueError, match="multiple versions with level 'mixed'"):
+    with pytest.raises(ValueError, match="multiple versions with level 'unknown'"):
         prepare(tmp_path, [first, second])
