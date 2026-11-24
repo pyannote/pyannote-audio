@@ -673,8 +673,8 @@ class Task(lightning.LightningDataModule):
                 "global_label_idx",
                 get_dtype(max((a[5] for a in annotations), default=0)),
             ),
+            ("level", get_dtype(len(metadata_unique_values["level"]))),
         ]
-        segment_dtype.append(("level", get_dtype(len(metadata_unique_values["level"]))))
         # save all protocol data in a dict
         prepared_data = {}
         # keep track of protocol name
