@@ -14,19 +14,19 @@ taken from the first entry; top-level ``level`` and ``version`` are not stored a
 audio metadata. Use distinct database names or URIs for different audio conditions.
 
 Levels and versions
----------------------
+-------------------
 
 The level is read from ``file["version"]["metadata"]["level"]``, defaulting to
 ``"unknown"`` when any of those keys is absent. Levels must be strings; their
 integer IDs are decoded using ``prepared_data["metadata-values"]["level"]``.
 
-* ``annotations-segments`` retains its existing fields and adds ``level`` and
-  ``version_id``.
-* ``annotations-versions`` contains ``file_id`` and ``level``. Its row index
-  is the version ID. Every protocol entry creates a version, including
-  silent versions. A recording may have only one version per level; duplicate
+The pair ``(file_id, level)`` uniquely identifies a version.
+
+* ``annotations-segments`` retains its existing fields and adds ``level``.
+* ``annotations-versions`` lists available ``(file_id, level)`` pairs, including
+  versions without speech segments or supervision regions. A recording may have only one version per level; duplicate
   levels raise ``ValueError``, including when missing metadata defaults to ``unknown``.
-* ``annotations-version-regions`` contains ``version_id``, ``start``, and
+* ``annotations-version-regions`` contains ``file_id``, ``level``, ``start``, and
   ``end``. These are the original supervision regions, including intervals
   shorter than the training chunk duration.
 
@@ -39,9 +39,9 @@ For example, select word-level segments of one recording with:
    word = prepared_data["metadata-values"]["level"].index("word")
    word_segments = segments[segments["level"] == word]
 
-To supervise separate versions, select rows from ``annotations-versions``
-by ``file_id`` and ``level``, then filter both segments and version regions by
-their ``version_id``. Regions distinguish annotated silence from missing
+To supervise separate versions, select available levels from
+``annotations-versions`` for the recording, then filter segments and version
+regions by the same ``(file_id, level)`` pair. Regions distinguish annotated silence from missing
 supervision; absence of a speech segment alone does not establish silence.
 
 Sampling and existing tasks
@@ -57,4 +57,5 @@ to consume all segments together. The cache provides the data needed for custom
 version-aware targets; it does not implement head routing or a multi-version loss.
 
 Existing caches are reused unchanged. Delete or choose a new cache path to
-rebuild them with level and version fields.
+rebuild them with level and version fields. This also applies to earlier branch
+caches that used a separate version ID.

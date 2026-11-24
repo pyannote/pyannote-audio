@@ -76,7 +76,12 @@ def test_interleaved_versions_share_recording_and_speaker_ids(tmp_path):
         segments["level"].tolist()
         == [levels.index("word")] * 2 + [levels.index("turn")] * 2
     )
-    assert segments["version_id"].tolist() == [0, 0, 1, 1]
+    assert "version_id" not in segments.dtype.names
+    assert data["annotations-version-regions"].tolist() == [
+        (0, levels.index("word"), 0.0, 4.0),
+        (0, levels.index("turn"), 0.0, 4.0),
+        (1, levels.index("word"), 0.0, 4.0),
+    ]
     assert data["annotations-versions"]["file_id"].tolist() == [0, 0, 1]
     assert "version" not in data["metadata-values"]
     assert "level" not in data["audio-metadata"].dtype.names
@@ -106,8 +111,8 @@ def test_short_silent_version_regions_survive(tmp_path):
     assert len(data["annotations-versions"]) == 2
     assert data["annotations-versions"]["level"].tolist() == [0, 1]
     assert data["annotations-version-regions"].tolist() == [
-        (0, 0.0, 4.0),
-        (1, 4.0, 4.5),
+        (0, 0, 0.0, 4.0),
+        (0, 1, 4.0, 4.5),
     ]
     assert data["audio-annotated"].tolist() == [4.5]
     assert len(data["annotations-segments"]) == 1
@@ -177,10 +182,11 @@ def test_nested_level_takes_precedence(tmp_path):
     assert data["metadata-values"]["level"] == ["turn"]
 
 
-def test_version_ids_do_not_overflow(tmp_path):
+def test_file_ids_do_not_overflow(tmp_path):
     data = prepare(tmp_path, [entry(str(index)) for index in range(130)])
     assert data["annotations-versions"]["file_id"].tolist() == list(range(130))
-    assert data["annotations-segments"]["version_id"].tolist() == list(range(130))
+    assert data["annotations-segments"]["file_id"].tolist() == list(range(130))
+    assert data["annotations-version-regions"]["file_id"].tolist() == list(range(130))
 
 
 def test_invalid_level_rejected(tmp_path):
@@ -209,3 +215,10 @@ def test_two_missing_levels_rejected(tmp_path):
     second["version"] = {"metadata": {}}
     with pytest.raises(ValueError, match="multiple versions with level 'unknown'"):
         prepare(tmp_path, [first, second])
+
+
+def test_version_without_segments_or_regions_remains_available(tmp_path):
+    data = prepare(tmp_path, [entry(), entry(level="turn", speakers=(), regions=())])
+    assert data["annotations-versions"].tolist() == [(0, 0), (0, 1)]
+    assert data["annotations-segments"]["level"].tolist() == [0]
+    assert data["annotations-version-regions"].tolist() == [(0, 0, 0.0, 4.0)]

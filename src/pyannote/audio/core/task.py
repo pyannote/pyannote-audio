@@ -349,7 +349,7 @@ class Task(lightning.LightningDataModule):
             'audio-annotated': array of N annotated duration (usually equals file duration but might be shorter if file is not fully annotated)
             'annotations-regions': array of M annotated regions
             'audio-regions-ids': array of N start/end indices of annotated regions
-            'annotations-segments': array of M' segments, including version_id and level
+            'annotations-segments': array of M' segments, including level
             'annotations-versions': array of versions (file_id and level)
             'annotations-version-regions': array of per-version supervision regions
             'audio-segments-ids': array of N start/end indices of annotated segments
@@ -368,8 +368,9 @@ class Task(lightning.LightningDataModule):
 
         Each version's level comes from file["version"]["metadata"]["level"],
         defaulting to "unknown" when absent. Integer levels in segments and
-        versions are decoded with metadata-values["level"]. Version IDs index
-        annotations-versions, including versions with no speech segments.
+        versions are decoded with metadata-values["level"]. The (file_id, level)
+        pair identifies a version. annotations-versions also records versions
+        with no speech segments or supervision regions.
         Version regions retain all supervision intervals, even those shorter
         than duration. Recording regions contain their union for chunk sampling.
 
@@ -401,7 +402,7 @@ class Task(lightning.LightningDataModule):
         annotated_regions = []  # annotated regions
         audio_regions_ids = []  # start/end indices of annotated regions (per file)
 
-        annotation_versions = []  # (file_id, level), indexed by version_id
+        annotation_versions = []  # available (file_id, level) pairs
         version_regions = []  # original supervision regions, including short ones
         annotations = []  # actual annotations
         audio_segments_ids = []  # start/end indices of annotated segments (per file)
@@ -566,10 +567,9 @@ class Task(lightning.LightningDataModule):
                 if level not in metadata_unique_values["level"]:
                     metadata_unique_values["level"].append(level)
                 level_id = metadata_unique_values["level"].index(level)
-                version_id = len(annotation_versions)
                 annotation_versions.append((file_id, level_id))
                 version_regions.extend(
-                    (version_id, region.start, region.end)
+                    (file_id, level_id, region.start, region.end)
                     for region in version["annotated"]
                 )
 
@@ -620,7 +620,6 @@ class Task(lightning.LightningDataModule):
                             file_label_idx,  # file-scope label index
                             database_label_idx,  # database-scope label index
                             global_label_idx,  # global-scope index
-                            version_id,  # index into annotations-versions
                             level_id,  # index into metadata-values["level"]
                         )
                     )
@@ -673,12 +672,7 @@ class Task(lightning.LightningDataModule):
                 get_dtype(max((a[5] for a in annotations), default=0)),
             ),
         ]
-        segment_dtype.extend(
-            [
-                ("version_id", get_dtype(len(annotation_versions))),
-                ("level", get_dtype(len(metadata_unique_values["level"]))),
-            ]
-        )
+        segment_dtype.append(("level", get_dtype(len(metadata_unique_values["level"]))))
         # save all protocol data in a dict
         prepared_data = {}
         # keep track of protocol name
@@ -721,7 +715,8 @@ class Task(lightning.LightningDataModule):
         prepared_data["annotations-version-regions"] = np.array(
             version_regions,
             dtype=[
-                ("version_id", get_dtype(len(annotation_versions))),
+                ("file_id", get_dtype(len(recordings))),
+                ("level", get_dtype(len(metadata_unique_values["level"]))),
                 ("start", "f"),
                 ("end", "f"),
             ],
