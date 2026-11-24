@@ -363,6 +363,9 @@ class Task(lightning.LightningDataModule):
         labels must identify the same people across versions. Recording-level
         metadata are taken from the first entry; version and level are excluded.
 
+        A recording may have at most one version per level. Duplicate levels,
+        including the default "mixed" level, raise ValueError.
+
         Each version's level comes from file["version"]["metadata"]["level"],
         defaulting to "mixed" when absent. Integer levels in segments and
         versions are decoded with metadata-values["level"]. Version IDs index
@@ -546,6 +549,7 @@ class Task(lightning.LightningDataModule):
 
             _segments_id = segments_id
 
+            seen_levels = set()
             for version in versions:
                 try:
                     level = version["version"]["metadata"]["level"]
@@ -553,6 +557,12 @@ class Task(lightning.LightningDataModule):
                     level = "mixed"
                 if not isinstance(level, str):
                     raise ValueError("Annotation level must be a string.")
+                if level in seen_levels:
+                    key = (file["database"], file["uri"])
+                    raise ValueError(
+                        f"Recording {key} has multiple versions with level {level!r}."
+                    )
+                seen_levels.add(level)
                 if level not in metadata_unique_values["level"]:
                     metadata_unique_values["level"].append(level)
                 level_id = metadata_unique_values["level"].index(level)

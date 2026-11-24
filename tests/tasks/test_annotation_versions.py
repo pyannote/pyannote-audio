@@ -95,16 +95,16 @@ def test_missing_level_defaults_to_mixed(tmp_path, version):
     assert data["annotations-segments"]["level"].tolist() == [0]
 
 
-def test_same_level_versions_and_short_silent_regions_survive(tmp_path):
+def test_short_silent_version_regions_survive(tmp_path):
     data = prepare(
         tmp_path,
         [
             entry(regions=((0, 4),)),
-            entry(speakers=(), regions=((4, 4.5),)),
+            entry(level="turn", speakers=(), regions=((4, 4.5),)),
         ],
     )
     assert len(data["annotations-versions"]) == 2
-    assert data["annotations-versions"]["level"].tolist() == [0, 0]
+    assert data["annotations-versions"]["level"].tolist() == [0, 1]
     assert data["annotations-version-regions"].tolist() == [
         (0, 0.0, 4.0),
         (1, 4.0, 4.5),
@@ -144,7 +144,7 @@ def test_different_databases_are_different_recordings(tmp_path):
 
 
 def test_equivalent_channel_policies_can_share_recording(tmp_path):
-    data = prepare(tmp_path, [entry(), entry(channel="downmix")])
+    data = prepare(tmp_path, [entry(), entry(level="turn", channel="downmix")])
     assert len(data["audio-path"]) == 1
 
 
@@ -186,3 +186,26 @@ def test_version_ids_do_not_overflow(tmp_path):
 def test_invalid_level_rejected(tmp_path):
     with pytest.raises(ValueError, match="Annotation level must be a string"):
         prepare(tmp_path, [entry(level=42)])
+
+
+@pytest.mark.parametrize("level", ["word", "turn", "mixed"])
+def test_duplicate_levels_rejected_even_for_silent_versions(tmp_path, level):
+    with pytest.raises(
+        ValueError, match=f"Recording .* has multiple versions with level '{level}'"
+    ):
+        prepare(tmp_path, [entry(level=level), entry(level=level, speakers=())])
+
+
+def test_missing_level_conflicts_with_explicit_mixed(tmp_path):
+    file = entry()
+    del file["version"]
+    with pytest.raises(ValueError, match="multiple versions with level 'mixed'"):
+        prepare(tmp_path, [file, entry(level="mixed")])
+
+
+def test_two_missing_levels_rejected(tmp_path):
+    first, second = entry(), entry()
+    del first["version"]
+    second["version"] = {"metadata": {}}
+    with pytest.raises(ValueError, match="multiple versions with level 'mixed'"):
+        prepare(tmp_path, [first, second])

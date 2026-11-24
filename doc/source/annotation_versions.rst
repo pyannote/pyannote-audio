@@ -24,7 +24,8 @@ integer IDs are decoded using ``prepared_data["metadata-values"]["level"]``.
   ``version_id``.
 * ``annotations-versions`` contains ``file_id`` and ``level``. Its row index
   is the version ID. Every protocol entry creates a version, including
-  silent versions and distinct versions with the same level.
+  silent versions. A recording may have only one version per level; duplicate
+  levels raise ``ValueError``, including when missing metadata defaults to ``mixed``.
 * ``annotations-version-regions`` contains ``version_id``, ``start``, and
   ``end``. These are the original supervision regions, including intervals
   shorter than the training chunk duration.

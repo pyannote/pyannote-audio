@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- feat(task): cache annotation versions under one recording ID, with per-segment levels and per-version supervision regions
+- feat(task): cache annotation versions under one recording ID, with per-segment levels and per-version supervision regions, rejecting duplicate levels within a recording
 
 ## Version 4.1.1 (2026-11-19)
 
