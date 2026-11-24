@@ -19,7 +19,7 @@ Levels and versions
 -------------------
 
 The level is read from ``file["version"]["metadata"]["level"]``, defaulting to
-``"unknown"`` when any of those keys is absent. Levels must be strings; their
+``"mixed"`` when any of those keys is absent. Levels must be strings; their
 integer IDs are decoded using ``prepared_data["metadata-values"]["level"]``.
 
 The pair ``(file_id, level)`` uniquely identifies a version.
@@ -27,7 +27,7 @@ The pair ``(file_id, level)`` uniquely identifies a version.
 * ``annotations-segments`` retains its existing fields and adds ``level``.
 * ``annotations-versions`` lists available ``(file_id, level)`` pairs, including
   versions without speech segments or supervision regions. A recording may have only one version per level; duplicate
-  levels raise ``ValueError``, including when missing metadata defaults to ``unknown``.
+  levels raise ``ValueError``, including when missing metadata defaults to ``mixed``.
 * ``annotations-version-regions`` contains ``file_id``, ``level``, ``start``, and
   ``end``. These are the shared supervision regions, stored for each level, including intervals
   shorter than the training chunk duration.

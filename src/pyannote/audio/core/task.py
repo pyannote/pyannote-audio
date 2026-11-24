@@ -366,10 +366,10 @@ class Task(lightning.LightningDataModule):
         metadata are taken from the first entry; version and level are excluded.
 
         A recording may have at most one version per level. Duplicate levels,
-        including the default "unknown" level, raise ValueError.
+        including the default "mixed" level, raise ValueError.
 
         Each version's level comes from file["version"]["metadata"]["level"],
-        defaulting to "unknown" when absent. Integer levels in segments and
+        defaulting to "mixed" when absent. Integer levels in segments and
         versions are decoded with metadata-values["level"]. The (file_id, level)
         pair identifies a version. annotations-versions also records versions
         with no speech segments or supervision regions.
@@ -559,7 +559,7 @@ class Task(lightning.LightningDataModule):
                 try:
                     level = version["version"]["metadata"]["level"]
                 except KeyError:
-                    level = "unknown"
+                    level = "mixed"
                 if not isinstance(level, str):
                     raise ValueError("Annotation level must be a string.")
                 if level in seen_levels:
