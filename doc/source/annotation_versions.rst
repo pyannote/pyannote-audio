@@ -7,7 +7,9 @@ share a ``file_id``, an audio entry, and a file-scoped speaker-label mapping.
 Their segments occupy one contiguous slice in ``audio-segments-ids`` even when
 the protocol yields versions in different places.
 
-Versions must agree on audio path, channel selection, and speaker scope. A
+Versions must agree on audio path, channel selection, speaker scope, and annotated
+regions. Coverage is compared after merging adjacent and overlapping intervals;
+different coverage raises ``ValueError``. A
 recording cannot appear in both training and development subsets. Speaker labels
 must identify the same people across versions. Other recording metadata are
 taken from the first entry; top-level ``level`` and ``version`` are not stored as
@@ -27,7 +29,7 @@ The pair ``(file_id, level)`` uniquely identifies a version.
   versions without speech segments or supervision regions. A recording may have only one version per level; duplicate
   levels raise ``ValueError``, including when missing metadata defaults to ``unknown``.
 * ``annotations-version-regions`` contains ``file_id``, ``level``, ``start``, and
-  ``end``. These are the original supervision regions, including intervals
+  ``end``. These are the shared supervision regions, stored for each level, including intervals
   shorter than the training chunk duration.
 
 For example, select word-level segments of one recording with:
@@ -47,9 +49,9 @@ supervision; absence of a speech segment alone does not establish silence.
 Sampling and existing tasks
 ---------------------------
 
-Recording-level ``annotations-regions`` contains the union of all version
+Recording-level ``annotations-regions`` contains the shared annotated
 regions, with the usual minimum chunk-duration filter. ``audio-annotated`` counts
-this union once, so adding versions does not multiply the recording's sampling
+this coverage once, so adding versions does not multiply the recording's sampling
 weight. Validation chunks are likewise generated once per recording.
 
 Existing task implementations that do not filter levels or versions continue

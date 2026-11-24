@@ -104,17 +104,19 @@ def test_short_silent_version_regions_survive(tmp_path):
     data = prepare(
         tmp_path,
         [
-            entry(regions=((0, 4),)),
-            entry(level="turn", speakers=(), regions=((4, 4.5),)),
+            entry(regions=((0, 4), (5, 5.5))),
+            entry(level="turn", speakers=(), regions=((0, 4), (5, 5.5))),
         ],
     )
     assert len(data["annotations-versions"]) == 2
     assert data["annotations-versions"]["level"].tolist() == [0, 1]
     assert data["annotations-version-regions"].tolist() == [
         (0, 0, 0.0, 4.0),
-        (0, 1, 4.0, 4.5),
+        (0, 0, 5.0, 5.5),
+        (0, 1, 0.0, 4.0),
+        (0, 1, 5.0, 5.5),
     ]
-    assert data["audio-annotated"].tolist() == [4.5]
+    assert data["audio-annotated"].tolist() == [4.0]
     assert len(data["annotations-segments"]) == 1
 
 
@@ -218,7 +220,27 @@ def test_two_missing_levels_rejected(tmp_path):
 
 
 def test_version_without_segments_or_regions_remains_available(tmp_path):
-    data = prepare(tmp_path, [entry(), entry(level="turn", speakers=(), regions=())])
+    data = prepare(
+        tmp_path,
+        [entry(speakers=(), regions=()), entry(level="turn", speakers=(), regions=())],
+    )
     assert data["annotations-versions"].tolist() == [(0, 0), (0, 1)]
-    assert data["annotations-segments"]["level"].tolist() == [0]
-    assert data["annotations-version-regions"].tolist() == [(0, 0, 0.0, 4.0)]
+    assert len(data["annotations-segments"]) == 0
+    assert len(data["annotations-version-regions"]) == 0
+
+
+@pytest.mark.parametrize("regions", [(), ((0, 3),), ((0, 1), (2, 4))])
+def test_versions_with_different_annotated_regions_rejected(tmp_path, regions):
+    with pytest.raises(ValueError, match="must share the same annotated regions"):
+        prepare(tmp_path, [entry(), entry(level="turn", regions=regions)])
+
+
+def test_equivalent_coverage_is_normalized(tmp_path):
+    data = prepare(
+        tmp_path, [entry(), entry(level="turn", regions=((0, 2), (1, 3), (3, 4)))]
+    )
+    assert data["annotations-version-regions"].tolist() == [
+        (0, 0, 0.0, 4.0),
+        (0, 1, 0.0, 4.0),
+    ]
+    assert data["audio-annotated"].tolist() == [4.0]

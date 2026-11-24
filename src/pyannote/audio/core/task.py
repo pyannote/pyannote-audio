@@ -43,7 +43,6 @@ import lightning
 import numpy as np
 import scipy.special
 import torch
-from pyannote.core import Timeline
 from pyannote.database import Protocol
 from pyannote.database.protocol.protocol import Scope, Subset
 from torch.utils.data import DataLoader, Dataset, IterableDataset
@@ -361,7 +360,8 @@ class Task(lightning.LightningDataModule):
         }
 
         Entries sharing (database, uri) are prepared as one recording. They must
-        agree on subset, audio path, channel selection, and speaker scope. Speaker
+        agree on subset, audio path, channel selection, speaker scope, and
+        annotated regions (after merging overlapping or adjacent intervals). Speaker
         labels must identify the same people across versions. Recording-level
         metadata are taken from the first entry; version and level are excluded.
 
@@ -374,7 +374,7 @@ class Task(lightning.LightningDataModule):
         pair identifies a version. annotations-versions also records versions
         with no speech segments or supervision regions.
         Version regions retain all supervision intervals, even those shorter
-        than duration. Recording regions contain their union for chunk sampling.
+        than duration. Recording regions contain the shared coverage for chunk sampling.
 
         Existing caches are reused unchanged. Rebuild them to access the new
         version and level fields. Tasks must explicitly filter versions or
@@ -441,6 +441,10 @@ class Task(lightning.LightningDataModule):
                 ):
                     raise ValueError(
                         f"Versions of recording {key} disagree on audio, channel, or scope."
+                    )
+                if first["annotated"].support() != file["annotated"].support():
+                    raise ValueError(
+                        f"Versions of recording {key} must share the same annotated regions."
                     )
                 versions.append(file)
             else:
@@ -521,10 +525,8 @@ class Task(lightning.LightningDataModule):
 
             # annotated regions and duration
             _annotated_duration = 0.0
-            # Union prevents repeated versions from multiplying sampling weight.
-            annotated = Timeline(
-                segment for version in versions for segment in version["annotated"]
-            ).support()
+            # All versions share this coverage; count it once for sampling.
+            annotated = file["annotated"].support()
             for segment in annotated:
                 # skip annotated regions that are shorter than training chunk duration
                 if segment.duration < self.duration:
@@ -572,7 +574,7 @@ class Task(lightning.LightningDataModule):
                 annotation_versions.append((file_id, level_id))
                 version_regions.extend(
                     (file_id, level_id, region.start, region.end)
-                    for region in version["annotated"]
+                    for region in version["annotated"].support()
                 )
 
                 # File-scoped labels are shared across all versions of a recording.
