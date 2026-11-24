@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## Unreleased
+
+- feat(task): cache annotation versions under one recording ID, with per-segment levels and per-reference supervision regions
+
 ## Version 4.1.1 (2026-11-19)
 
 - fix(task): avoid replaying the same training samples when resuming mid-epoch

@@ -592,6 +592,10 @@ class PixIT(SegmentationTask):
                         yield second_chunk
 
                 else:
+                    # Versions are stored consecutively, not in global time order.
+                    repeated_speaker_annotations = np.sort(
+                        repeated_speaker_annotations, order="start"
+                    )
                     # merge segments that contain repeated speakers
                     merged_repeated_segments = [
                         [
@@ -599,7 +603,10 @@ class PixIT(SegmentationTask):
                             repeated_speaker_annotations["end"][0],
                         ]
                     ]
-                    for _, start, end, _, _, _ in repeated_speaker_annotations:
+                    for start, end in zip(
+                        repeated_speaker_annotations["start"],
+                        repeated_speaker_annotations["end"],
+                    ):
                         previous = merged_repeated_segments[-1]
                         if start <= previous[1]:
                             previous[1] = max(previous[1], end)

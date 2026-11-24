@@ -8,4 +8,5 @@ pyannote.audio
 .. toctree::
    :maxdepth: 1
 
+   annotation_versions
    Changelog <https://github.com/pyannote/pyannote-audio/blob/main/CHANGELOG.md>

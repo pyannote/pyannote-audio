@@ -43,6 +43,7 @@ import lightning
 import numpy as np
 import scipy.special
 import torch
+from pyannote.core import Timeline
 from pyannote.database import Protocol
 from pyannote.database.protocol.protocol import Scope, Subset
 from torch.utils.data import DataLoader, Dataset, IterableDataset
@@ -348,13 +349,30 @@ class Task(lightning.LightningDataModule):
             'audio-annotated': array of N annotated duration (usually equals file duration but might be shorter if file is not fully annotated)
             'annotations-regions': array of M annotated regions
             'audio-regions-ids': array of N start/end indices of annotated regions
-            'annotations-segments': array of M' annotated segments
+            'annotations-segments': array of M' segments, including reference_id and level
+            'annotations-references': array of references (file_id and level)
+            'annotations-reference-regions': array of per-reference supervision regions
             'audio-segments-ids': array of N start/end indices of annotated segments
             'metadata-values': dict of lists of values for subset, scope and database
             'metadata-`database-name`-labels': array of `database-name` labels. Each database with "database" scope labels has it own array.
             'metadata-labels': array of global scope labels
         }
 
+        Entries sharing (database, uri) are prepared as one recording. They must
+        agree on subset, audio path, channel selection, and speaker scope. Speaker
+        labels must identify the same people across versions. Recording-level
+        metadata are taken from the first entry; version and level are excluded.
+
+        Each reference's level comes from file["version"]["metadata"]["level"],
+        defaulting to "mixed" when absent. Integer levels in segments and
+        references are decoded with metadata-values["level"]. Reference IDs index
+        annotations-references, including references with no speech segments.
+        Reference regions retain all supervision intervals, even those shorter
+        than duration. Recording regions contain their union for chunk sampling.
+
+        Existing caches are reused unchanged. Rebuild them to access the new
+        reference and level fields. Tasks must explicitly filter references or
+        levels when they do not want the combined activity of all versions.
         """
         if self.cache:
             # check if cache exists and is not empty:
@@ -380,6 +398,8 @@ class Task(lightning.LightningDataModule):
         annotated_regions = []  # annotated regions
         audio_regions_ids = []  # start/end indices of annotated regions (per file)
 
+        references = []  # (file_id, level), indexed by reference_id
+        reference_regions = []  # original supervision regions, including short ones
         annotations = []  # actual annotations
         audio_segments_ids = []  # start/end indices of annotated segments (per file)
 
@@ -397,7 +417,31 @@ class Task(lightning.LightningDataModule):
         regions_id: int = 0
         segments_id: int = 0
 
-        for file_id, (subset, file) in enumerate(files_iter):
+        # Group before serializing so each recording's segments remain contiguous,
+        # even when versions are interleaved in the protocol iterator.
+        recordings = {}
+        for subset, file in files_iter:
+            key = (file["database"], file["uri"])
+            if key not in recordings:
+                recordings[key] = (subset, [file])
+                continue
+            previous_subset, versions = recordings[key]
+            first = versions[0]
+            if previous_subset != subset:
+                raise ValueError(f"Recording {key} occurs in multiple subsets.")
+            if (
+                str(first["audio"]) != str(file["audio"])
+                or first["scope"] != file["scope"]
+                or Channel.normalize(first.get("channel"))
+                != Channel.normalize(file.get("channel"))
+            ):
+                raise ValueError(
+                    f"Versions of recording {key} disagree on audio, channel, or scope."
+                )
+            versions.append(file)
+
+        for file_id, (subset, versions) in enumerate(recordings.values()):
+            file = versions[0]
             # gather metadata and update metadata_unique_values so that each metadatum
             # (e.g. source database or label) is represented by an integer.
             metadatum = {}
@@ -434,6 +478,8 @@ class Task(lightning.LightningDataModule):
                 "channel",
                 "annotation",
                 "annotated",
+                "version",
+                "level",
             }
 
             # keep track of any other (integer or string) metadata provided by the protocol
@@ -469,7 +515,11 @@ class Task(lightning.LightningDataModule):
 
             # annotated regions and duration
             _annotated_duration = 0.0
-            for segment in file["annotated"]:
+            # Union prevents repeated versions from multiplying sampling weight.
+            annotated = Timeline(
+                segment for version in versions for segment in version["annotated"]
+            ).support()
+            for segment in annotated:
                 # skip annotated regions that are shorter than training chunk duration
                 if segment.duration < self.duration:
                     continue
@@ -496,60 +546,85 @@ class Task(lightning.LightningDataModule):
 
             _segments_id = segments_id
 
-            # annotations
-            for segment, _, label in file["annotation"].itertracks(yield_label=True):
-                # "scope" is provided by speaker diarization protocols to indicate
-                # whether speaker labels are local to the file ('file'), consistent across
-                # all files in a database ('database'), or globally consistent ('global')
-
-                # 0 = 'file' / 1 = 'database' / 2 = 'global'
-                scope = Scopes.index(file["scope"])
-
-                # update list of file-scope labels
-                if label not in file_unique_labels:
-                    file_unique_labels.append(label)
-                # and convert label to its (file-scope) index
-                file_label_idx = file_unique_labels.index(label)
-
-                database_label_idx = global_label_idx = -1
-
-                if scope > 0:  # 'database' or 'global'
-                    # update list of database-scope labels
-                    database = file["database"]
-                    if database not in database_unique_labels:
-                        database_unique_labels[database] = []
-                    if label not in database_unique_labels[database]:
-                        database_unique_labels[database].append(label)
-
-                    # and convert label to its (database-scope) index
-                    database_label_idx = database_unique_labels[database].index(label)
-
-                if scope > 1:  # 'global'
-                    # update list of global-scope labels
-                    if label not in unique_labels:
-                        unique_labels.append(label)
-                    # and convert label to its (global-scope) index
-                    global_label_idx = unique_labels.index(label)
-
-                annotations.append(
-                    (
-                        file_id,  # index of file
-                        segment.start,  # start time
-                        segment.end,  # end time
-                        file_label_idx,  # file-scope label index
-                        database_label_idx,  # database-scope label index
-                        global_label_idx,  # global-scope index
-                    )
+            for version in versions:
+                try:
+                    level = version["version"]["metadata"]["level"]
+                except KeyError:
+                    level = "mixed"
+                if not isinstance(level, str):
+                    raise ValueError("Annotation level must be a string.")
+                if level not in metadata_unique_values["level"]:
+                    metadata_unique_values["level"].append(level)
+                level_id = metadata_unique_values["level"].index(level)
+                reference_id = len(references)
+                references.append((file_id, level_id))
+                reference_regions.extend(
+                    (reference_id, region.start, region.end)
+                    for region in version["annotated"]
                 )
 
-                # increment current segment id
-                segments_id += 1
+                # File-scoped labels are shared across all versions of a recording.
+                for segment, _, label in version["annotation"].itertracks(
+                    yield_label=True
+                ):
+                    # "scope" is provided by speaker diarization protocols to indicate
+                    # whether speaker labels are local to the file ('file'), consistent across
+                    # all files in a database ('database'), or globally consistent ('global')
+
+                    # 0 = 'file' / 1 = 'database' / 2 = 'global'
+                    scope = Scopes.index(file["scope"])
+
+                    # update list of file-scope labels
+                    if label not in file_unique_labels:
+                        file_unique_labels.append(label)
+                    # and convert label to its (file-scope) index
+                    file_label_idx = file_unique_labels.index(label)
+
+                    database_label_idx = global_label_idx = -1
+
+                    if scope > 0:  # 'database' or 'global'
+                        # update list of database-scope labels
+                        database = file["database"]
+                        if database not in database_unique_labels:
+                            database_unique_labels[database] = []
+                        if label not in database_unique_labels[database]:
+                            database_unique_labels[database].append(label)
+
+                        # and convert label to its (database-scope) index
+                        database_label_idx = database_unique_labels[database].index(
+                            label
+                        )
+
+                    if scope > 1:  # 'global'
+                        # update list of global-scope labels
+                        if label not in unique_labels:
+                            unique_labels.append(label)
+                        # and convert label to its (global-scope) index
+                        global_label_idx = unique_labels.index(label)
+
+                    annotations.append(
+                        (
+                            file_id,  # index of file
+                            segment.start,  # start time
+                            segment.end,  # end time
+                            file_label_idx,  # file-scope label index
+                            database_label_idx,  # database-scope label index
+                            global_label_idx,  # global-scope index
+                            reference_id,  # index into annotations-references
+                            level_id,  # index into metadata-values["level"]
+                        )
+                    )
+
+                    # increment current segment id
+                    segments_id += 1
 
             # append segment IDs (start and end time)
             audio_segments_ids.append((_segments_id, segments_id))
 
         # Register channel separately without collecting its possible values.
-        metadata_keys = [*metadata_unique_values, "channel"]
+        metadata_keys = [key for key in metadata_unique_values if key != "level"] + [
+            "channel"
+        ]
         # Not all metadata keys are present in every file.
         metadata = [
             tuple(metadatum.get(key, MISSING_METADATA) for key in metadata_keys)
@@ -564,7 +639,7 @@ class Task(lightning.LightningDataModule):
         region_dtype = [
             (
                 "file_id",
-                get_dtype(max(ar[0] for ar in annotated_regions)),
+                get_dtype(max((ar[0] for ar in annotated_regions), default=0)),
             ),
             ("duration", "f"),
             ("start", "f"),
@@ -574,14 +649,26 @@ class Task(lightning.LightningDataModule):
         segment_dtype = [
             (
                 "file_id",
-                get_dtype(max(a[0] for a in annotations)),
+                get_dtype(max((a[0] for a in annotations), default=0)),
             ),
             ("start", "f"),
             ("end", "f"),
-            ("file_label_idx", get_dtype(max(a[3] for a in annotations))),
-            ("database_label_idx", get_dtype(max(a[4] for a in annotations))),
-            ("global_label_idx", get_dtype(max(a[5] for a in annotations))),
+            ("file_label_idx", get_dtype(max((a[3] for a in annotations), default=0))),
+            (
+                "database_label_idx",
+                get_dtype(max((a[4] for a in annotations), default=0)),
+            ),
+            (
+                "global_label_idx",
+                get_dtype(max((a[5] for a in annotations), default=0)),
+            ),
         ]
+        segment_dtype.extend(
+            [
+                ("reference_id", get_dtype(len(references))),
+                ("level", get_dtype(len(metadata_unique_values["level"]))),
+            ]
+        )
         # save all protocol data in a dict
         prepared_data = {}
         # keep track of protocol name
@@ -614,6 +701,21 @@ class Task(lightning.LightningDataModule):
         )
         audio_segments_ids.clear()
 
+        prepared_data["annotations-references"] = np.array(
+            references,
+            dtype=[
+                ("file_id", get_dtype(len(recordings))),
+                ("level", get_dtype(len(metadata_unique_values["level"]))),
+            ],
+        )
+        prepared_data["annotations-reference-regions"] = np.array(
+            reference_regions,
+            dtype=[
+                ("reference_id", get_dtype(len(references))),
+                ("start", "f"),
+                ("end", "f"),
+            ],
+        )
         prepared_data["metadata-values"] = metadata_unique_values
         for database, labels in database_unique_labels.items():
             prepared_data[f"metadata-{database}-labels"] = np.array(
