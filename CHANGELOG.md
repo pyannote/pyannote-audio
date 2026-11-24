@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## Unreleased
+
+- improve(task): reuse cached protocol-check results during construction without iterating source subsets; older caches retain source checks
+
 ## Version 4.1.1 (2026-11-19)
 
 - fix(task): avoid replaying the same training samples when resuming mid-epoch

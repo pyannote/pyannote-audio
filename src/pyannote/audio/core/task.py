@@ -59,6 +59,15 @@ Scopes = list(Scope.__args__)
 
 MISSING_METADATA = -1
 
+# A scalar structured array keeps constructor checks readable without unpickling.
+_PROTOCOL_CHECKS_DTYPE = np.dtype(
+    [
+        ("has_validation", "?"),
+        ("has_scope", "?"),
+        ("has_classes", "?"),
+    ]
+)
+
 
 class _CachedChannel(IntEnum):
     """Private integer encoding for channel selection in task caches."""
@@ -224,7 +233,11 @@ class Task(lightning.LightningDataModule):
         When `cache` does not exist, `Task.prepare_data()` generates training
         and validation metadata from `protocol` and save them to disk.
         When `cache` exists, `Task.prepare_data()` is skipped and (meta)-data
-        are loaded from disk. Defaults to a temporary path.
+        are loaded from disk. New caches also retain protocol-check results, so
+        construction can skip reading source examples. Older caches without those
+        results still run the usual protocol checks. The cached protocol name must
+        match; caches are explicit snapshots and do not detect changed source data.
+        Defaults to a temporary path.
     duration : float, optional
         Chunks duration in seconds. Defaults to two seconds (2.).
     min_duration : float, optional
@@ -277,8 +290,34 @@ class Task(lightning.LightningDataModule):
     ):
         super().__init__()
 
-        # dataset
-        self.protocol, checks = check_protocol(protocol)
+        # Inspect only small cache headers before consulting the source protocol.
+        self.cache = Path(cache) if cache else cache
+        self.protocol = protocol
+        checks = None
+        if self.cache and self.cache.is_file() and self.cache.stat().st_size:
+            with np.load(self.cache, allow_pickle=False) as data:
+                if str(data["protocol"]) != protocol.name:
+                    raise ValueError(
+                        "Cached protocol does not match the requested protocol."
+                    )
+                if "protocol-checks" in data.files:
+                    cached_checks = data["protocol-checks"]
+                    if (
+                        cached_checks.shape != ()
+                        or cached_checks.dtype != _PROTOCOL_CHECKS_DTYPE
+                    ):
+                        raise ValueError(
+                            "Invalid cached protocol checks; rebuild the task cache."
+                        )
+                    checks = {
+                        key: bool(cached_checks[key])
+                        for key in _PROTOCOL_CHECKS_DTYPE.names
+                    }
+
+        # Older caches have no stored checks and retain the existing source checks.
+        self._protocol_checks_from_cache = checks is not None
+        if checks is None:
+            self.protocol, checks = check_protocol(protocol)
         self.has_validation = checks["has_validation"]
         self.has_scope = checks["has_scope"]
         if not self.has_scope:
@@ -288,8 +327,6 @@ class Task(lightning.LightningDataModule):
 
         self.has_classes = checks["has_classes"]
 
-        # metadata cache
-        self.cache = Path(cache) if cache else cache
         # batching
         self.duration = duration
         self.min_duration = duration if min_duration is None else min_duration
@@ -343,6 +380,7 @@ class Task(lightning.LightningDataModule):
 
         prepared_data = {
             'protocol': name of the protocol
+            'protocol-checks': scalar structured array of has_validation, has_scope, has_classes
             'audio-path': array of N paths to audio
             'audio-metadata': array of N audio infos such as audio channel, subset, scope and database.
             'audio-annotated': array of N annotated duration (usually equals file duration but might be shorter if file is not fully annotated)
@@ -356,6 +394,14 @@ class Task(lightning.LightningDataModule):
         }
 
         """
+        # Cached checks bypass preprocessor setup. If the cache disappears, a new
+        # task must perform source checks before it can safely rebuild the data.
+        if self._protocol_checks_from_cache and not (
+            self.cache.is_file() and self.cache.stat().st_size
+        ):
+            raise FileNotFoundError(
+                "Prepared cache disappeared or became empty; construct a new task to rebuild it."
+            )
         if self.cache:
             # check if cache exists and is not empty:
             if self.cache.exists() and self.cache.stat().st_size > 0:
@@ -586,6 +632,10 @@ class Task(lightning.LightningDataModule):
         prepared_data = {}
         # keep track of protocol name
         prepared_data["protocol"] = self.protocol.name
+        prepared_data["protocol-checks"] = np.array(
+            (self.has_validation, self.has_scope, self.has_classes),
+            dtype=_PROTOCOL_CHECKS_DTYPE,
+        )
         prepared_data["audio-path"] = np.array(audios, dtype=np.str_)
         audios.clear()
 
