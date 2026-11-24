@@ -428,23 +428,23 @@ class Task(lightning.LightningDataModule):
         recordings = {}
         for subset, file in files_iter:
             key = (file["database"], file["uri"])
-            if key not in recordings:
+            if key in recordings:
+                previous_subset, versions = recordings[key]
+                first = versions[0]
+                if previous_subset != subset:
+                    raise ValueError(f"Recording {key} occurs in multiple subsets.")
+                if (
+                    str(first["audio"]) != str(file["audio"])
+                    or first["scope"] != file["scope"]
+                    or Channel.normalize(first.get("channel"))
+                    != Channel.normalize(file.get("channel"))
+                ):
+                    raise ValueError(
+                        f"Versions of recording {key} disagree on audio, channel, or scope."
+                    )
+                versions.append(file)
+            else:
                 recordings[key] = (subset, [file])
-                continue
-            previous_subset, versions = recordings[key]
-            first = versions[0]
-            if previous_subset != subset:
-                raise ValueError(f"Recording {key} occurs in multiple subsets.")
-            if (
-                str(first["audio"]) != str(file["audio"])
-                or first["scope"] != file["scope"]
-                or Channel.normalize(first.get("channel"))
-                != Channel.normalize(file.get("channel"))
-            ):
-                raise ValueError(
-                    f"Versions of recording {key} disagree on audio, channel, or scope."
-                )
-            versions.append(file)
 
         for file_id, (subset, versions) in enumerate(recordings.values()):
             file = versions[0]
