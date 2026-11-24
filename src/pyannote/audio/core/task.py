@@ -349,9 +349,9 @@ class Task(lightning.LightningDataModule):
             'audio-annotated': array of N annotated duration (usually equals file duration but might be shorter if file is not fully annotated)
             'annotations-regions': array of M annotated regions
             'audio-regions-ids': array of N start/end indices of annotated regions
-            'annotations-segments': array of M' segments, including reference_id and level
-            'annotations-references': array of references (file_id and level)
-            'annotations-reference-regions': array of per-reference supervision regions
+            'annotations-segments': array of M' segments, including version_id and level
+            'annotations-versions': array of versions (file_id and level)
+            'annotations-version-regions': array of per-version supervision regions
             'audio-segments-ids': array of N start/end indices of annotated segments
             'metadata-values': dict of lists of values for subset, scope and database
             'metadata-`database-name`-labels': array of `database-name` labels. Each database with "database" scope labels has it own array.
@@ -363,15 +363,15 @@ class Task(lightning.LightningDataModule):
         labels must identify the same people across versions. Recording-level
         metadata are taken from the first entry; version and level are excluded.
 
-        Each reference's level comes from file["version"]["metadata"]["level"],
+        Each version's level comes from file["version"]["metadata"]["level"],
         defaulting to "mixed" when absent. Integer levels in segments and
-        references are decoded with metadata-values["level"]. Reference IDs index
-        annotations-references, including references with no speech segments.
-        Reference regions retain all supervision intervals, even those shorter
+        versions are decoded with metadata-values["level"]. Version IDs index
+        annotations-versions, including versions with no speech segments.
+        Version regions retain all supervision intervals, even those shorter
         than duration. Recording regions contain their union for chunk sampling.
 
         Existing caches are reused unchanged. Rebuild them to access the new
-        reference and level fields. Tasks must explicitly filter references or
+        version and level fields. Tasks must explicitly filter versions or
         levels when they do not want the combined activity of all versions.
         """
         if self.cache:
@@ -398,8 +398,8 @@ class Task(lightning.LightningDataModule):
         annotated_regions = []  # annotated regions
         audio_regions_ids = []  # start/end indices of annotated regions (per file)
 
-        references = []  # (file_id, level), indexed by reference_id
-        reference_regions = []  # original supervision regions, including short ones
+        annotation_versions = []  # (file_id, level), indexed by version_id
+        version_regions = []  # original supervision regions, including short ones
         annotations = []  # actual annotations
         audio_segments_ids = []  # start/end indices of annotated segments (per file)
 
@@ -556,10 +556,10 @@ class Task(lightning.LightningDataModule):
                 if level not in metadata_unique_values["level"]:
                     metadata_unique_values["level"].append(level)
                 level_id = metadata_unique_values["level"].index(level)
-                reference_id = len(references)
-                references.append((file_id, level_id))
-                reference_regions.extend(
-                    (reference_id, region.start, region.end)
+                version_id = len(annotation_versions)
+                annotation_versions.append((file_id, level_id))
+                version_regions.extend(
+                    (version_id, region.start, region.end)
                     for region in version["annotated"]
                 )
 
@@ -610,7 +610,7 @@ class Task(lightning.LightningDataModule):
                             file_label_idx,  # file-scope label index
                             database_label_idx,  # database-scope label index
                             global_label_idx,  # global-scope index
-                            reference_id,  # index into annotations-references
+                            version_id,  # index into annotations-versions
                             level_id,  # index into metadata-values["level"]
                         )
                     )
@@ -665,7 +665,7 @@ class Task(lightning.LightningDataModule):
         ]
         segment_dtype.extend(
             [
-                ("reference_id", get_dtype(len(references))),
+                ("version_id", get_dtype(len(annotation_versions))),
                 ("level", get_dtype(len(metadata_unique_values["level"]))),
             ]
         )
@@ -701,17 +701,17 @@ class Task(lightning.LightningDataModule):
         )
         audio_segments_ids.clear()
 
-        prepared_data["annotations-references"] = np.array(
-            references,
+        prepared_data["annotations-versions"] = np.array(
+            annotation_versions,
             dtype=[
                 ("file_id", get_dtype(len(recordings))),
                 ("level", get_dtype(len(metadata_unique_values["level"]))),
             ],
         )
-        prepared_data["annotations-reference-regions"] = np.array(
-            reference_regions,
+        prepared_data["annotations-version-regions"] = np.array(
+            version_regions,
             dtype=[
-                ("reference_id", get_dtype(len(references))),
+                ("version_id", get_dtype(len(annotation_versions))),
                 ("start", "f"),
                 ("end", "f"),
             ],

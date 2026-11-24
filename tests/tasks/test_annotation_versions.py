@@ -76,8 +76,8 @@ def test_interleaved_versions_share_recording_and_speaker_ids(tmp_path):
         segments["level"].tolist()
         == [levels.index("word")] * 2 + [levels.index("turn")] * 2
     )
-    assert segments["reference_id"].tolist() == [0, 0, 1, 1]
-    assert data["annotations-references"]["file_id"].tolist() == [0, 0, 1]
+    assert segments["version_id"].tolist() == [0, 0, 1, 1]
+    assert data["annotations-versions"]["file_id"].tolist() == [0, 0, 1]
     assert "version" not in data["metadata-values"]
     assert "level" not in data["audio-metadata"].dtype.names
 
@@ -95,7 +95,7 @@ def test_missing_level_defaults_to_mixed(tmp_path, version):
     assert data["annotations-segments"]["level"].tolist() == [0]
 
 
-def test_same_level_references_and_short_silent_regions_survive(tmp_path):
+def test_same_level_versions_and_short_silent_regions_survive(tmp_path):
     data = prepare(
         tmp_path,
         [
@@ -103,9 +103,9 @@ def test_same_level_references_and_short_silent_regions_survive(tmp_path):
             entry(speakers=(), regions=((4, 4.5),)),
         ],
     )
-    assert len(data["annotations-references"]) == 2
-    assert data["annotations-references"]["level"].tolist() == [0, 0]
-    assert data["annotations-reference-regions"].tolist() == [
+    assert len(data["annotations-versions"]) == 2
+    assert data["annotations-versions"]["level"].tolist() == [0, 0]
+    assert data["annotations-version-regions"].tolist() == [
         (0, 0.0, 4.0),
         (1, 4.0, 4.5),
     ]
@@ -113,10 +113,10 @@ def test_same_level_references_and_short_silent_regions_survive(tmp_path):
     assert len(data["annotations-segments"]) == 1
 
 
-def test_all_silent_references(tmp_path):
+def test_all_silent_versions(tmp_path):
     data = prepare(tmp_path, [entry(speakers=())])
     assert len(data["annotations-segments"]) == 0
-    assert len(data["annotations-references"]) == 1
+    assert len(data["annotations-versions"]) == 1
     assert data["audio-segments-ids"].tolist() == [(0, 0)]
 
 
@@ -177,10 +177,10 @@ def test_nested_level_takes_precedence(tmp_path):
     assert data["metadata-values"]["level"] == ["turn"]
 
 
-def test_reference_ids_do_not_overflow(tmp_path):
+def test_version_ids_do_not_overflow(tmp_path):
     data = prepare(tmp_path, [entry(str(index)) for index in range(130)])
-    assert data["annotations-references"]["file_id"].tolist() == list(range(130))
-    assert data["annotations-segments"]["reference_id"].tolist() == list(range(130))
+    assert data["annotations-versions"]["file_id"].tolist() == list(range(130))
+    assert data["annotations-segments"]["version_id"].tolist() == list(range(130))
 
 
 def test_invalid_level_rejected(tmp_path):
