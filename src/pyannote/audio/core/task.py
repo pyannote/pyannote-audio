@@ -349,9 +349,11 @@ class Task(lightning.LightningDataModule):
             'audio-annotated': array of N annotated duration (usually equals file duration but might be shorter if file is not fully annotated)
             'annotations-regions': array of M annotated regions
             'audio-regions-ids': array of N start/end indices of annotated regions
-            'annotations-segments': array of M' segments, including level
+            'annotations-segments': array of M' segment tuples
+                (file_id, start, end, file_label_idx, database_label_idx, global_label_idx, level)
             'annotations-versions': array of versions (file_id and level)
-            'annotations-version-regions': array of per-version supervision regions
+            'annotations-version-regions': array of supervision-region tuples
+                (file_id, level, start, end), delimiting where each version is annotated
             'audio-segments-ids': array of N start/end indices of annotated segments
             'metadata-values': dict of lists of values for subset, scope and database
             'metadata-`database-name`-labels': array of `database-name` labels. Each database with "database" scope labels has it own array.
