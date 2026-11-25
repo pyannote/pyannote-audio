@@ -126,12 +126,7 @@ class BaseWeSpeakerResNet(Model):
 
         waveforms = waveforms * (1 << 15)
 
-        # fall back to CPU for FFT computation when using MPS
-        # until FFT is fixed in MPS
-        device = waveforms.device
-        fft_device = torch.device("cpu") if device.type == "mps" else device
-
-        features = torch.vmap(self._fbank)(waveforms.to(fft_device)).to(device)
+        features = torch.vmap(self._fbank)(waveforms)
 
         # center features with global average
         if self.hparams.fbank_centering_span is None:

@@ -28,7 +28,7 @@ from pyannote.database.protocol import SpeakerVerificationProtocol
 
 from pyannote.audio.core.io import Audio
 
-get_duration = Audio(mono="downmix").get_duration
+get_duration = Audio().get_duration
 
 
 def check_protocol(protocol: Protocol) -> Protocol:

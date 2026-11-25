@@ -36,7 +36,8 @@ from torch.utils.data._utils.collate import default_collate
 from torchmetrics import Metric
 from torchmetrics.classification import BinaryAUROC, MulticlassAUROC, MultilabelAUROC
 
-from pyannote.audio.core.task import Problem, Task, get_dtype
+from pyannote.audio.core.io import Channel
+from pyannote.audio.core.task import Problem, Task, _CachedChannel, get_dtype
 from pyannote.audio.utils.random import create_rng_for_worker
 
 Subsets = list(Subset.__args__)
@@ -47,7 +48,20 @@ class SegmentationTask(Task):
     """Methods common to most segmentation tasks"""
 
     def get_file(self, file_id):
-        return {"audio": self.prepared_data["audio-path"][file_id]}
+        file = {"audio": self.prepared_data["audio-path"][file_id]}
+        metadata = self.prepared_data["audio-metadata"][file_id]
+        # Channels are cached as literal indices or named _CachedChannel modes.
+        if "channel" in metadata.dtype.names:
+            channel = int(metadata["channel"])
+            if channel == _CachedChannel.RANDOM:
+                file["channel"] = Channel.RANDOM
+            elif channel == _CachedChannel.ALL:
+                file["channel"] = Channel.ALL
+            elif channel == _CachedChannel.DOWNMIX:
+                file["channel"] = Channel.DOWNMIX
+            elif channel >= 0:
+                file["channel"] = channel
+        return file
 
     def default_metric(
         self,
@@ -157,6 +171,8 @@ class SegmentationTask(Task):
         rng = create_rng_for_worker(self.model)
 
         balance = getattr(self, "balance", None)
+        if balance is not None and "channel" in balance:
+            raise ValueError("Channel selection cannot be used for balancing.")
         if balance is None:
             chunks = self.train__iter__helper(rng)
 

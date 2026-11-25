@@ -31,7 +31,9 @@ pyannote.audio relies on torchcodec for reading and torchaudio for resampling.
 import random
 import warnings
 from collections.abc import Mapping
+from enum import StrEnum
 from io import IOBase
+from numbers import Integral
 from pathlib import Path
 
 import torch.nn.functional as F
@@ -56,6 +58,50 @@ except Exception as e:
     AudioStreamMetadata = None
 
 
+class Channel(StrEnum):
+    """Channel selection options"""
+
+    RANDOM = "random"
+    ALL = "all"
+    DOWNMIX = "downmix"
+
+    @classmethod
+    def normalize(cls, channel) -> "int | Channel":
+        """Normalize channel selection
+
+        Parameters
+        ----------
+        channel : int, str, Channel, or None
+            Zero-based channel index or channel selection option.
+            Supported options are "random", "all", and "downmix".
+            None defaults to "downmix".
+
+        Returns
+        -------
+        channel : int or Channel
+            Non-negative Python integer or Channel enum member.
+
+        Raises
+        ------
+        ValueError
+            If channel is not a non-negative integer, a supported option, or None.
+
+        """
+        if channel is None:
+            return cls.DOWNMIX
+        if isinstance(channel, Integral) and not isinstance(channel, bool):
+            if channel >= 0:
+                return int(channel)
+        elif isinstance(channel, str):
+            try:
+                return cls(channel)
+            except ValueError:
+                pass
+        raise ValueError(
+            'channel must be a non-negative integer, "random", "all", or "downmix".'
+        )
+
+
 AudioFile = str | Path | IOBase | Mapping
 
 AudioFileDocString = """
@@ -68,6 +114,9 @@ Audio files can be provided to the Audio class using different types:
 
 For last two options, an additional "channel" key can be provided as a zero-indexed
 integer to load a specific channel: {"audio": "stereo.wav", "channel": 0}
+or "random" to select a channel randomly on each load or crop. Use "all" to
+preserve all channels in their original order. Use "downmix" (the default when
+channel is omitted or None) to average all channels.
 """
 
 
@@ -114,14 +163,14 @@ class Audio:
     ----------
     sample_rate: int, optional
         Target sampling rate. Defaults to using native sampling rate.
-    mono : {'random', 'downmix'}, optional
-        In case of multi-channel audio, convert to single-channel audio
-        using one of the following strategies: select one channel at
-        'random' or 'downmix' by averaging all channels.
+
+    Notes
+    -----
+    Channel selection is controlled by the file dictionary, defaulting to "downmix".
 
     Usage
     -----
-    >>> audio = Audio(sample_rate=16000, mono='downmix')
+    >>> audio = Audio(sample_rate=16000)
     >>> waveform, sample_rate = audio({"audio": "/path/to/audio.wav"})
     >>> assert sample_rate == 16000
     >>> sample_rate = 44100
@@ -215,15 +264,17 @@ class Audio:
 
         return file
 
-    def __init__(self, sample_rate: int | None = None, mono=None):
+    def __init__(self, sample_rate: int | None = None):
         super().__init__()
         self.sample_rate = sample_rate
-        self.mono = mono
 
-    def downmix_and_resample(
-        self, waveform: Tensor, sample_rate: int, channel: int | None = None
+    def select_channels_and_resample(
+        self,
+        waveform: Tensor,
+        sample_rate: int,
+        channel: int | str | Channel | None = None,
     ) -> tuple[Tensor, int]:
-        """Downmix and resample
+        """Apply the channel policy and resample
 
         Parameters
         ----------
@@ -231,29 +282,33 @@ class Audio:
             Waveform.
         sample_rate : int
             Sample rate.
-        channel : int, optional
-            Channel to use.
+        channel : int, "random", "all", or "downmix", optional
+            Zero-based channel to use, "random" to select one on each call, or
+            "all" to preserve every channel. "downmix" averages all channels.
+            Defaults to "downmix" when omitted or None.
 
         Returns
         -------
         waveform : (channel, time) Tensor
-            Remixed and resampled waveform
+            Waveform after applying the channel policy and resampling
         sample_rate : int
             New sample rate
         """
 
-        # select channel if requested
-        if channel is not None:
-            waveform = waveform[channel : channel + 1]
-
-        # downmix to mono
+        channel = Channel.normalize(channel)
         num_channels = waveform.shape[0]
-        if num_channels > 1:
-            if self.mono == "random":
-                channel = random.randint(0, num_channels - 1)
-                waveform = waveform[channel : channel + 1]
-            elif self.mono == "downmix":
-                waveform = waveform.mean(dim=0, keepdim=True)
+        if num_channels < 1:
+            raise ValueError("Audio must contain at least one channel.")
+        if channel == Channel.RANDOM:
+            channel = random.randint(0, num_channels - 1)
+        if isinstance(channel, int):
+            if channel >= num_channels:
+                raise ValueError(
+                    f"Requested channel {channel}, but audio has {num_channels} channels."
+                )
+            waveform = waveform[channel : channel + 1]
+        elif channel == Channel.DOWNMIX and num_channels > 1:
+            waveform = waveform.mean(dim=0, keepdim=True)
 
         # resample
         if (self.sample_rate is not None) and (self.sample_rate != sample_rate):
@@ -327,7 +382,9 @@ class Audio:
             waveform = file["waveform"]
             sample_rate = file["sample_rate"]
 
-            return self.downmix_and_resample(waveform, sample_rate, channel=channel)
+            return self.select_channels_and_resample(
+                waveform, sample_rate, channel=channel
+            )
 
         if not TORCHCODEC_AVAILABLE:
             raise RuntimeError(
@@ -346,7 +403,7 @@ class Audio:
         if isinstance(file["audio"], IOBase):
             file["audio"].seek(0)
 
-        return self.downmix_and_resample(waveform, sample_rate, channel=channel)
+        return self.select_channels_and_resample(waveform, sample_rate, channel=channel)
 
     def crop(
         self,
@@ -409,7 +466,7 @@ class Audio:
 
             data = waveform[:, start_sample:end_sample]
             data = F.pad(data, (pad_start, pad_end))
-            return self.downmix_and_resample(data, sample_rate, channel=channel)
+            return self.select_channels_and_resample(data, sample_rate, channel=channel)
 
         if not TORCHCODEC_AVAILABLE:
             raise RuntimeError(
@@ -479,4 +536,4 @@ class Audio:
             pad_end += 1
 
         data = F.pad(data, (pad_start, pad_end))
-        return self.downmix_and_resample(data, sample_rate, channel=channel)
+        return self.select_channels_and_resample(data, sample_rate, channel=channel)
