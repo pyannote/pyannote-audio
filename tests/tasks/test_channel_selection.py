@@ -74,7 +74,7 @@ def test_cached_channel_selection(tmp_path, monkeypatch, channels, stage):
         def __init__(self, path):
             assert str(path) == str(audio_path)
             self.metadata = SimpleNamespace(
-                sample_rate=16000, duration_seconds_from_header=1.0
+                sample_rate=16000, duration_seconds_from_header=1.0, codec="pcm_s16le"
             )
 
         def get_samples_played_in_range(self, start, end):
