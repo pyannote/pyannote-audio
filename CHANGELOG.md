@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## next
+
+- fix(io): fix `Audio.crop` shifting (or raising on) audio files whose first sample is not at timestamp 0, such as MP3 [@antonsoo](https://github.com/antonsoo)
+
 ## Version 4.1.1 (2026-11-19)
 
 - fix(task): avoid replaying the same training samples when resuming mid-epoch
