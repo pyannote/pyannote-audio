@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## next
+
+- fix(task): fix validation samples figure overlapping samples when `batch_size` is 2, 5 or 6, and raising `IndexError` when the first validation batch is smaller [@antonsoo](https://github.com/antonsoo)
+
 ## Version 4.1.1 (2026-11-19)
 
 - fix(task): avoid replaying the same training samples when resuming mid-epoch
