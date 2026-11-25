@@ -132,7 +132,8 @@ class Waveform:
         self._audio = Audio()
 
     def __call__(self, file: ProtocolFile):
-        waveform, _ = self._audio(file)
+        # Preprocessors decode raw audio; consumers apply the channel policy.
+        waveform, _ = self._audio({"audio": file["audio"], "channel": "all"})
         return waveform
 
 

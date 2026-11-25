@@ -482,12 +482,9 @@ class Pipeline(_Pipeline):
                     "Cannot preload audio: `waveform` key is already available or will be via a preprocessor."
                 )
 
-            # load waveform in memory (and keep track of its original sample rate)
-            file["waveform"], file["sample_rate"] = Audio()(file)
-
-            # the above line already took care of channel selection,
-            # therefore we remove the `channel` key from the file
-            file.pop("channel", None)
+            # load waveform in memory and keep track of its original sample rate.
+            # keep all channels for now: channel selection is done later at load/crop time.
+            file["waveform"], file["sample_rate"] = Audio()({**file, "channel": "all"})
 
         return file
 

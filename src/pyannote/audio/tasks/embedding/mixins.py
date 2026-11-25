@@ -36,6 +36,7 @@ from torchmetrics import Metric
 from torchmetrics.classification import BinaryAUROC
 from tqdm import tqdm
 
+from pyannote.audio.core.io import Channel
 from pyannote.audio.core.task import Problem, Resolution, Specifications
 from pyannote.audio.torchmetrics.classification import EqualErrorRate
 from pyannote.audio.utils.random import create_rng_for_worker
@@ -107,6 +108,7 @@ class SupervisedRepresentationLearningTaskMixin:
                     {
                         "uri": f["uri"],
                         "audio": f["audio"],
+                        "channel": Channel.normalize(f.get("channel")),
                         "duration": duration,
                         "speech_turns": speech_turns,
                     }

@@ -28,6 +28,7 @@ from pyannote.audio import Pipeline
 from pyannote.audio.core.io import AudioFile
 
 from ..speaker_diarization import DiarizeOutput
+from . import _prepare_audio
 
 
 class Local(Pipeline):
@@ -89,33 +90,20 @@ class Local(Pipeline):
         -------
         output : DiarizeOutput
             DiarizeOutput object containing both regular and exclusive speaker diarization results.
+
+        Raises
+        ------
+        ValueError
+            If channel selection leaves multiple channels. The backend requires mono audio.
         """
 
-        # if file provides "audio" path
-        if "audio" in file:
-            predictions = self._pipeline.diarize(
-                file["audio"],
-                num_speakers=num_speakers,
-                min_speakers=min_speakers,
-                max_speakers=max_speakers,
-                **kwargs,
-            )
-
-        # if file provides "waveform", make sure it is numpy (and not torch) array
-        elif "waveform" in file:
-            waveform = file["waveform"]
-            if hasattr(waveform, "numpy"):
-                waveform = waveform.numpy(force=True)
-
-            predictions = self._pipeline.diarize(
-                {"waveform": waveform, "sample_rate": file["sample_rate"]},
-                num_speakers=num_speakers,
-                min_speakers=min_speakers,
-                max_speakers=max_speakers,
-                **kwargs,
-            )
-        else:
-            raise ValueError("AudioFile must provide either 'audio' or 'waveform' key")
+        predictions = self._pipeline.diarize(
+            _prepare_audio(file),
+            num_speakers=num_speakers,
+            min_speakers=min_speakers,
+            max_speakers=max_speakers,
+            **kwargs,
+        )
 
         speaker_diarization: Annotation = self._deserialize(predictions["diarization"])
         exclusive_speaker_diarization: Annotation = self._deserialize(

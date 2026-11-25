@@ -1,6 +1,7 @@
 # MIT License
 #
-# Copyright (c) 2020 CNRS
+# Copyright (c) 2020-2025 CNRS
+# Copyright (c) 2026- pyannoteAI
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -33,12 +34,12 @@ def create_rng_for_worker(model) -> Random:
 
     This makes sure that
     1. training samples generation is reproducible
-    2. every (worker, epoch) uses a different seed
+    2. every (worker, epoch, global step) uses a different seed
 
     Parameters
     ----------
-    epoch : int
-        Current epoch.
+    model : Model
+        Model providing distributed ranks, current epoch, and global step.
     """
 
     # create random number generator
@@ -58,6 +59,7 @@ def create_rng_for_worker(model) -> Random:
         model.local_rank,
         model.global_rank,
         model.current_epoch,
+        model.global_step,
     )
     # use adler32 because python's `hash` is not deterministic.
     seed = zlib.adler32(str(seed_tuple).encode())
