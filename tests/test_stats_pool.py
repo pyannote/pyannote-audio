@@ -20,6 +20,8 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import warnings
+
 import torch
 
 from pyannote.audio.models.blocks.pooling import StatsPool
@@ -129,3 +131,35 @@ def test_stats_pool_all_zero_weights():
         torch.round(y, decimals=4),
         torch.Tensor([[2.0392, 2.0392, 1.4142, 1.4142], [0.0, 0.0, 0.0, 0.0]]),
     )
+
+
+def test_stats_pool_single_frame():
+    # A single frame gives the unbiased estimator zero degrees of freedom.
+    # torch then warns and returns NaN, which propagates into the embedding.
+    # See https://github.com/pyannote/pyannote-audio/issues/1861.
+    x = torch.Tensor([[[2.0], [4.0]], [[1.0], [1.0]]])
+    # (batch = 2, features = 2, frames = 1)
+
+    stats_pool = StatsPool()
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UserWarning)
+        y = stats_pool(x)
+    # (batch = 2, features = 4)
+
+    assert not torch.isnan(y).any()
+    assert torch.equal(y, torch.Tensor([[2.0, 4.0, 0.0, 0.0], [1.0, 1.0, 0.0, 0.0]]))
+
+
+def test_stats_pool_single_frame_matches_weighted():
+    # The weighted branch already returns zero standard deviation for a single
+    # frame. The weightless branch should not disagree with it.
+    x = torch.Tensor([[[2.0], [4.0]]])
+    # (batch = 1, features = 2, frames = 1)
+
+    stats_pool = StatsPool()
+
+    weightless = stats_pool(x)
+    weighted = stats_pool(x, weights=torch.ones(1, 1))
+
+    assert torch.allclose(weightless, weighted, atol=1e-6)
