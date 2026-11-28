@@ -542,53 +542,52 @@ class Pipeline(_Pipeline):
             Iterator of (file, prediction) pairs.
 
         """
-        fix_reproducibility(getattr(self, "device", torch.device("cpu")))
+        with fix_reproducibility(getattr(self, "device", torch.device("cpu"))):
+            if not self.instantiated:
+                # instantiate with default parameters when available
+                try:
+                    default_parameters = self.default_parameters()
+                except NotImplementedError:
+                    raise RuntimeError(
+                        "A pipeline must be instantiated with `pipeline.instantiate(parameters)` before it can be applied."
+                    )
 
-        if not self.instantiated:
-            # instantiate with default parameters when available
-            try:
-                default_parameters = self.default_parameters()
-            except NotImplementedError:
-                raise RuntimeError(
-                    "A pipeline must be instantiated with `pipeline.instantiate(parameters)` before it can be applied."
+                try:
+                    self.instantiate(default_parameters)
+                except ValueError:
+                    raise RuntimeError(
+                        "A pipeline must be instantiated with `pipeline.instantiate(parameters)` before it can be applied. "
+                        "Tried to use parameters provided by `pipeline.default_parameters()` but those are not compatible. "
+                    )
+
+                warnings.warn(
+                    f"The pipeline has been automatically instantiated with {default_parameters}."
                 )
 
-            try:
-                self.instantiate(default_parameters)
-            except ValueError:
-                raise RuntimeError(
-                    "A pipeline must be instantiated with `pipeline.instantiate(parameters)` before it can be applied. "
-                    "Tried to use parameters provided by `pipeline.default_parameters()` but those are not compatible. "
-                )
+            if isinstance(file, list):
+                # prepare every file
+                files = [self.prepare_one(f, preload=preload) for f in file]
 
-            warnings.warn(
-                f"The pipeline has been automatically instantiated with {default_parameters}."
-            )
+                # check for duplicate uris (and complain if any)
+                uris = [f["uri"] for f in files]
+                if len(uris) != len(set(uris)):
+                    seen: set[str] = set()
+                    duplicates = [u for u in uris if u in seen or seen.add(u)]
+                    raise ValueError(
+                        f"All files in a batch must have distinct URIs. "
+                        f"Duplicate URIs: {duplicates}"
+                    )
 
-        if isinstance(file, list):
-            # prepare every file
-            files = [self.prepare_one(f, preload=preload) for f in file]
+                return self._apply_batch(files, **kwargs)
 
-            # check for duplicate uris (and complain if any)
-            uris = [f["uri"] for f in files]
-            if len(uris) != len(set(uris)):
-                seen: set[str] = set()
-                duplicates = [u for u in uris if u in seen or seen.add(u)]
-                raise ValueError(
-                    f"All files in a batch must have distinct URIs. "
-                    f"Duplicate URIs: {duplicates}"
-                )
+            file = self.prepare_one(file, preload=preload)
+            prediction = self.apply(file, **file.get("pipeline_kwargs", {}), **kwargs)
 
-            return self._apply_batch(files, **kwargs)
+            # send file duration to telemetry as well as
+            # requested number of speakers in case of diarization
+            track_pipeline_apply(self, file, **kwargs)
 
-        file = self.prepare_one(file, preload=preload)
-        prediction = self.apply(file, **file.get("pipeline_kwargs", {}), **kwargs)
-
-        # send file duration to telemetry as well as
-        # requested number of speakers in case of diarization
-        track_pipeline_apply(self, file, **kwargs)
-
-        return prediction
+            return prediction
 
     def to(self, device: torch.device) -> Pipeline:
         """Send pipeline to `device`"""
