@@ -23,6 +23,8 @@
 # Context: https://github.com/pyannote/pyannote-audio/issues/1370
 
 import warnings
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 import torch
 
@@ -63,19 +65,38 @@ def warn_reproducibility(device: torch.device):
         )
 
 
-def fix_reproducibility(device: torch.device):
+@contextmanager
+def fix_reproducibility(device: torch.device) -> Iterator[None]:
+    """Temporarily disable TensorFloat-32 (TF32) for the duration of pyannote inference.
+
+    TF32 is disabled only while inside this context manager: the previous
+    values of `torch.backends.cuda.matmul.allow_tf32` and
+    `torch.backends.cudnn.allow_tf32` are restored on exit, so calling
+    pyannote no longer changes the TF32 settings of the whole process
+    (see https://github.com/pyannote/pyannote-audio/issues/2108).
+
+    Note that `fix_reproducibility` is a context manager and must be used
+    with a `with` statement: calling it without `with` has no effect.
+    """
     if (device.type == "cuda") and (
         torch.backends.cuda.matmul.allow_tf32 or torch.backends.cudnn.allow_tf32
     ):
+        allow_matmul_tf32 = torch.backends.cuda.matmul.allow_tf32
+        allow_cudnn_tf32 = torch.backends.cudnn.allow_tf32
         torch.backends.cuda.matmul.allow_tf32 = False
         torch.backends.cudnn.allow_tf32 = False
         warnings.warn(
             ReproducibilityWarning(
-                "TensorFloat-32 (TF32) has been disabled as it might lead to reproducibility issues and lower accuracy.\n"
-                "It can be re-enabled by calling\n"
-                "   >>> import torch\n"
-                "   >>> torch.backends.cuda.matmul.allow_tf32 = True\n"
-                "   >>> torch.backends.cudnn.allow_tf32 = True\n"
+                "TensorFloat-32 (TF32) has been disabled for the duration of this pyannote inference "
+                "as it might lead to reproducibility issues and lower accuracy.\n"
+                "Your original TF32 settings will be restored afterwards.\n"
                 "See https://github.com/pyannote/pyannote-audio/issues/1370 for more details.\n"
             )
         )
+        try:
+            yield
+        finally:
+            torch.backends.cuda.matmul.allow_tf32 = allow_matmul_tf32
+            torch.backends.cudnn.allow_tf32 = allow_cudnn_tf32
+    else:
+        yield
