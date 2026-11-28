@@ -395,21 +395,20 @@ class Inference(BaseInference):
 
         """
 
-        fix_reproducibility(self.device)
+        with fix_reproducibility(self.device):
+            waveform, sample_rate = self.model.audio(file)
 
-        waveform, sample_rate = self.model.audio(file)
+            if self.window == "sliding":
+                return self.slide(waveform, sample_rate, hook=hook)
 
-        if self.window == "sliding":
-            return self.slide(waveform, sample_rate, hook=hook)
+            outputs: np.ndarray | tuple[np.ndarray] = self.infer(waveform[None])
 
-        outputs: np.ndarray | tuple[np.ndarray] = self.infer(waveform[None])
+            def __first_sample(outputs: np.ndarray, **kwargs) -> np.ndarray:
+                return outputs[0]
 
-        def __first_sample(outputs: np.ndarray, **kwargs) -> np.ndarray:
-            return outputs[0]
-
-        return map_with_specifications(
-            self.model.specifications, __first_sample, outputs
-        )
+            return map_with_specifications(
+                self.model.specifications, __first_sample, outputs
+            )
 
     def crop(
         self,
@@ -451,43 +450,46 @@ class Inference(BaseInference):
         >>> inference.crop(file, extended_chunk).crop(chunk_of_interest, returns_data=False)
         """
 
-        fix_reproducibility(self.device)
+        with fix_reproducibility(self.device):
+            if self.window == "sliding":
+                if not isinstance(chunk, Segment):
+                    start = min(c.start for c in chunk)
+                    end = max(c.end for c in chunk)
+                    chunk = Segment(start=start, end=end)
 
-        if self.window == "sliding":
-            if not isinstance(chunk, Segment):
-                start = min(c.start for c in chunk)
-                end = max(c.end for c in chunk)
-                chunk = Segment(start=start, end=end)
-
-            waveform, sample_rate = self.model.audio.crop(file, chunk)
-            outputs: SlidingWindowFeature | tuple[SlidingWindowFeature] = self.slide(
-                waveform, sample_rate, hook=hook
-            )
-
-            def __shift(output: SlidingWindowFeature, **kwargs) -> SlidingWindowFeature:
-                frames = output.sliding_window
-                shifted_frames = SlidingWindow(
-                    start=chunk.start, duration=frames.duration, step=frames.step
+                waveform, sample_rate = self.model.audio.crop(file, chunk)
+                outputs: SlidingWindowFeature | tuple[SlidingWindowFeature] = (
+                    self.slide(waveform, sample_rate, hook=hook)
                 )
-                return SlidingWindowFeature(output.data, shifted_frames)
 
-            return map_with_specifications(self.model.specifications, __shift, outputs)
+                def __shift(
+                    output: SlidingWindowFeature, **kwargs
+                ) -> SlidingWindowFeature:
+                    frames = output.sliding_window
+                    shifted_frames = SlidingWindow(
+                        start=chunk.start, duration=frames.duration, step=frames.step
+                    )
+                    return SlidingWindowFeature(output.data, shifted_frames)
 
-        if isinstance(chunk, Segment):
-            waveform, sample_rate = self.model.audio.crop(file, chunk)
-        else:
-            waveform = torch.cat(
-                [self.model.audio.crop(file, c)[0] for c in chunk], dim=1
+                return map_with_specifications(
+                    self.model.specifications, __shift, outputs
+                )
+
+            if isinstance(chunk, Segment):
+                waveform, sample_rate = self.model.audio.crop(file, chunk)
+            else:
+                waveform = torch.cat(
+                    [self.model.audio.crop(file, c)[0] for c in chunk], dim=1
+                )
+
+            outputs: np.ndarray | tuple[np.ndarray] = self.infer(waveform[None])
+
+            def __first_sample(outputs: np.ndarray, **kwargs) -> np.ndarray:
+                return outputs[0]
+
+            return map_with_specifications(
+                self.model.specifications, __first_sample, outputs
             )
-
-        outputs: np.ndarray | tuple[np.ndarray] = self.infer(waveform[None])
-
-        def __first_sample(outputs: np.ndarray, **kwargs) -> np.ndarray:
-            return outputs[0]
-
-        return map_with_specifications(
-            self.model.specifications, __first_sample, outputs
-        )
 
     @staticmethod
     def aggregate(
